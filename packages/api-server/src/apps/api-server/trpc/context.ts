@@ -341,6 +341,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
+      actor: user.actingEditor ?? user.sub,
+      resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
       isAgentOwnedBy,
       l7Hosts,
       presetSeeder,
@@ -350,6 +352,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       db,
       ownerSub: user.sub,
       actor: user.actingEditor ?? user.sub,
+      actorEmail:
+        (user.actingEditor !== undefined
+          ? user.actingEditorEmail
+          : user.email) ?? null,
       agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),

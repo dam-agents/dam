@@ -66,6 +66,7 @@ interface CreateApprovalsServiceDeps {
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
   actor: string;
+  actorEmail: string | null;
   agentBinding: readonly string[] | "*";
 }
 
@@ -430,7 +431,12 @@ async function resolveAndDeliverAcpNative(
   const optionId = pickOptionId(row.payload.options ?? [], verdict, {
     idsWhole: row.payload.optionsWhole === true,
   });
-  const frame = JSON.stringify(buildAcpPermissionResponse(rpcId, optionId));
+  const frame = JSON.stringify(
+    buildAcpPermissionResponse(rpcId, optionId, {
+      sub: deps.actor,
+      ...(deps.actorEmail !== null && { email: deps.actorEmail }),
+    }),
+  );
   try {
     await deps.wrapperFrameSender.send(row.agentId, frame);
     await deps.repo.markDelivered(row.id);

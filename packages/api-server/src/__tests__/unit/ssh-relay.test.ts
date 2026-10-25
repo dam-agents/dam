@@ -66,6 +66,7 @@ async function harness() {
       surface: "web",
       attached: () => {},
       editor: null,
+      email: null,
       opened: () => {},
     }),
   );

@@ -1,4 +1,5 @@
 import { Checkmark, Close } from "@carbon/icons-react";
+import { platformVerdictKindSchema } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,9 @@ import type { VerdictPart } from "../../../types.js";
 import { OwnerConnectionsNote } from "../../agents/components/owner-connections-note.js";
 import { denyAllPrompt } from "../../approvals/lib/deny-all.js";
 import { withAttachmentNames } from "../../files/lib/upload-path.js";
+import { useSenderNames } from "../hooks/use-sender-names.js";
 import { denyOnceOption } from "../lib/permission-deny-all.js";
+import { verdictKindLabel } from "../lib/verdicts.js";
 import type {
   PendingPermission,
   PermissionOption,
@@ -66,18 +69,8 @@ function optionLabel(opt: PermissionOption): string {
 }
 
 function verdictLabel(opt: PermissionOption): string {
-  switch (opt.kind) {
-    case "allow_once":
-      return "Allowed once";
-    case "allow_always":
-      return "Always allowed";
-    case "reject_once":
-      return "Denied";
-    case "reject_always":
-      return "Always denied";
-    default:
-      return opt.name;
-  }
+  const kind = platformVerdictKindSchema.safeParse(opt.kind);
+  return kind.success ? verdictKindLabel(kind.data) : opt.name;
 }
 
 export function PermissionStatusLine() {
@@ -104,6 +97,9 @@ export function PermissionStatusLine() {
 
 export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
   const [expanded, setExpanded] = useState(false);
+  const selectedAgent = useStore((s) => s.selectedAgent);
+  const by = useSenderNames(selectedAgent).otherName(verdict.by);
+  const label = by === null ? verdict.label : `${verdict.label} by ${by}`;
 
   return (
     <div
@@ -116,9 +112,7 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
         ) : (
           <Close size={16} className="text-danger shrink-0 mt-0.5" />
         )}
-        <span className="text-muted-foreground shrink-0">
-          {verdict.label} —
-        </span>
+        <span className="text-muted-foreground shrink-0">{label} —</span>
         <span
           className={cn(
             "font-semibold text-foreground min-w-0 select-text",
@@ -130,7 +124,7 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
         </span>
       </div>
       <CopyButton
-        value={`${verdict.label} — ${verdict.subject}`}
+        value={`${label} — ${verdict.subject}`}
         label="Copy decision"
         stopPropagation
         className={HOVER_ACTION}
@@ -170,6 +164,7 @@ export function PermissionPrompt({
     (entry: PendingPermission, opt: PermissionOption) => {
       onResolved?.(
         {
+          toolCallId: entry.toolCallId,
           label: verdictLabel(opt),
           subject: toolTitle(entry.toolCall),
           allowed: opt.kind?.startsWith("allow") ?? false,

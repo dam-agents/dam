@@ -339,6 +339,7 @@ async function deliver(
     isAgentOwnedBy: async () => true,
     ownerSub: "owner-1",
     actor: "owner-1",
+    actorEmail: null,
     agentBinding: "*",
   });
 

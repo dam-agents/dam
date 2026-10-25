@@ -72,6 +72,7 @@ async function world(firePair: FirePair) {
       surface: "cli",
       attached: () => {},
       editor: null,
+      email: null,
       opened: () => {},
     });
   });

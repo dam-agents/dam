@@ -176,6 +176,7 @@ import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import { useSenderNames } from "../hooks/use-sender-names.js";
 import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
 import {
   pushSessionPath,
@@ -212,6 +213,7 @@ import {
   userRunsOf,
 } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
+import { withVerdicts } from "../lib/verdicts.js";
 import type { SessionError } from "../store/sessions.js";
 
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
@@ -260,16 +262,27 @@ export function ChatView() {
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
+  const attribution = useStore((s) => s.attribution);
+  const names = useSenderNames(selectedAgent);
   const shown = useMemo(
-    () => messages.filter((m) => !isQueuedSend(m)),
-    [messages],
+    () =>
+      withVerdicts(
+        messages.filter((m) => !isQueuedSend(m)),
+        attribution.verdicts,
+      ),
+    [messages, attribution.verdicts],
   );
   const now = useNow(60_000);
   const runStarts = useStore((s) => s.runStarts);
   const items = useMemo(
-    () => threadItems(shown, runStarts),
-    [shown, runStarts],
+    () =>
+      threadItems(shown, runStarts, {
+        entries: attribution.senders,
+        viewerSub: names.viewerSub,
+      }),
+    [shown, runStarts, attribution.senders, names.viewerSub],
   );
+  const workingFor = names.otherName(attribution.turnSender) ?? undefined;
   const userRuns = useMemo(() => userRunsOf(items), [items]);
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
@@ -971,7 +984,7 @@ export function ChatView() {
                         return (
                           <ThreadDivider
                             key={item.key}
-                            label={dividerLabel(item, now)}
+                            label={dividerLabel(item, now, names.nameOf)}
                           />
                         );
                       }
@@ -997,6 +1010,7 @@ export function ChatView() {
                                 k === members.length - 1 ? actions : undefined
                               }
                               isLast={item.index + k === shown.length - 1}
+                              workingFor={workingFor}
                               showModel={runStarts.length > 0}
                               {...timeProps(m.at, now)}
                               hasPendingPermission={hasPendingPermission}

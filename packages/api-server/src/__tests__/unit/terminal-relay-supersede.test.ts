@@ -45,6 +45,7 @@ async function replica(bus: RedisBus) {
       surface: "ui",
       attached: () => {},
       editor: null,
+      email: null,
       opened: () => {},
     });
   });
@@ -150,6 +151,7 @@ describe("terminal relay during a wake", () => {
         surface: "ui",
         attached: () => {},
         editor: null,
+        email: null,
         opened: () => {},
       }),
     );
@@ -212,6 +214,7 @@ describe("terminal relay wake", () => {
         surface: "ui",
         attached: () => {},
         editor: null,
+        email: null,
         opened: () => {},
       }),
     );
@@ -276,6 +279,7 @@ async function firstClose(
       surface: "ui",
       attached: () => {},
       editor: null,
+      email: null,
       opened: () => {},
     }),
   );

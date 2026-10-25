@@ -1105,6 +1105,8 @@ export const attentionRecords = pgTable(
     activityAt: timestamp("activity_at", { withTimezone: true }),
     seenAt: timestamp("seen_at", { withTimezone: true }),
     working: boolean("working").notNull().default(false),
+    startedBySub: text("started_by_sub"),
+    startedByEmail: text("started_by_email"),
     capturedAt: timestamp("captured_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

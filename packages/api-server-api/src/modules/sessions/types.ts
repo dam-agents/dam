@@ -1,4 +1,4 @@
-import type { SessionRepository } from "agent-runtime-api";
+import type { Sender, SessionRepository } from "agent-runtime-api";
 import { z } from "zod";
 
 export const SessionType = {
@@ -71,6 +71,7 @@ export interface SessionView {
   settings?: Record<string, string>;
   follows?: "chat" | "channel" | "scheduled" | null;
   repositories?: SessionRepository[];
+  startedBy?: Sender;
 }
 
 export {

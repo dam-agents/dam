@@ -27,6 +27,7 @@ export interface EgressRuleView {
   pathPattern: string;
   verdict: RuleVerdict;
   decidedBy: string;
+  decidedByEmail?: string;
   decidedAt: string;
   source: EgressRuleSource;
 }

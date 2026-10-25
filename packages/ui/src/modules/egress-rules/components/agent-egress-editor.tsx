@@ -495,9 +495,9 @@ function RuleRow({
           {sourceLabel}
         </Badge>
       )}
-      {decidedByYou && group === "own" && (
+      {group === "own" && (decidedByYou || rule.decidedByEmail) && (
         <span className="hidden shrink-0 text-xs text-muted-foreground @lg:block">
-          by you
+          by {decidedByYou ? "you" : rule.decidedByEmail}
         </span>
       )}
       <RemoveButton

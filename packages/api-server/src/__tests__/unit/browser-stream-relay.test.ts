@@ -268,6 +268,7 @@ describe("browser stream relay", () => {
         surface: "web",
         attached: () => {},
         editor: null,
+        email: null,
         opened: () => {},
       }),
     );
@@ -326,6 +327,7 @@ describe("browser stream relay", () => {
         surface: "web",
         attached: () => {},
         editor: null,
+        email: null,
         opened: () => {},
       }),
     );
@@ -423,6 +425,7 @@ describe("browser stream relay", () => {
         surface: "web",
         attached: () => {},
         editor: null,
+        email: null,
         opened: () => {},
       }),
     );

@@ -80,7 +80,25 @@ The relay opens the runtime's chat socket for an editor with a flag that makes i
 
 An editor answers a tool call in the chat as the owner does, Allow always included.
 The chat's network access and proposed rule cards are answered through the approvals procedures above.
-The record of an approval names the person who answered it, owner or editor, and so does the Egress Rule an answer writes; the audit record of an editor's verdict also names the owner.
+The record of an approval names the person who answered it, owner or editor, and so does the Egress Rule an answer writes, or a person writes by hand; the audit record of an editor's verdict also names the owner.
+
+### Who did what
+
+The owner and the editors work in the same Sessions, so a Session records who did what in it.
+The chat relay writes the person signed in on the socket into every prompt, queue edit and rewrite as its **Sender**, and into every answer to a tool call approval as who answered; an answer given on Home carries who gave it the same way.
+It replaces whatever the client wrote there, because only the relay knows who is signed in.
+The runtime keeps, in the Session's metadata, each Sender with the time its prompt started and its prompt id, the **Session Starter**, and each tool call's verdict with who gave it, keyed by the harness's own tool call id (see [sessions](sessions.md)).
+A Sender is the user id, which decides "You", and the email at the time, which is what the UI shows, so a person removed later is still named.
+Only a person is a Sender: a prompt the platform makes has none, and a scheduled or channel Session has no Session Starter.
+Attribution never depends on the Agent being shared now, so a Session an editor wrote to still names them after they leave.
+
+The chat marks a change of Sender with a divider that names the email, or "You": the first message a person sent gets one only when that person is not the viewer, so a Session only one person wrote to looks as it always did.
+A divider that falls on a day divider joins it into one line, and messages the Agent took as one batch are split where the Sender changes.
+While a turn runs, "Working for" names its Sender beside the working indicator, unless the turn is the viewer's own or has no Sender.
+A queued prompt names its Sender when it is not the viewer, and editing it makes the editor its Sender.
+The line under a tool call names who allowed or denied it when that is someone else, and the line now outlives a reload for everyone.
+Session lists name the Session Starter after the time when it is not the viewer: Activity and All sessions read it from the attention record ([home feed](home-feed.md)), an Agent's own list from the Agent.
+The Egress Rules list names who wrote a rule by email, or "you".
 
 Each replica remembers the sockets editors hold open, per Agent.
 A change to the Editor List or a delete of the Agent asks every replica, over the bus, to check those editors again, and a socket whose editor no longer stands as one is closed with "access revoked".
@@ -124,7 +142,8 @@ The Agents context's own records of a change name the editor as the actor.
 - A new host an Environment asks for, and a spend limit that stops the Agent, file approvals on the owner's Home only.
 - An editor's turns count toward the owner's own spend limits.
 - An editor can delete any session of the Agent, the owner's included.
-- Turns and sessions do not yet show which person sent or started them.
+- A Sender with no email, the owner on an API key, is named by the owner's email to editors.
+- Who allowed a single network access request once is in the audit record only.
 - The owner is not told when an editor changes something; the audit trail names the editor.
 - When the owner's account is gone, a notice names a former user, so there is nobody to ask.
 - Matching depends on the identity provider marking emails verified.

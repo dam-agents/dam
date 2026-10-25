@@ -31,7 +31,7 @@ Waking every Agent to render a list would be absurd — it would defeat hibernat
 ## The record and its boundary
 
 One row per session, filed under the owner who should see it.
-The row carries enough to render a feed card and to decide whether it is unread: when the session was last active, when it was last seen, whether it was working at capture time, how it was started, which harness ran it, and the thread key that names the Slack channel or Telegram chat it came from.
+The row carries enough to render a feed card and to decide whether it is unread: when the session was last active, when it was last seen, whether it was working at capture time, how it was started, who started it (its Session Starter, see [agent editors](agent-editors.md#who-did-what)), which harness ran it, and the thread key that names the Slack channel or Telegram chat it came from.
 The card resolves that key to a name on the client, from the channel list every Agent already carries and the Telegram chats of the Agents on the feed, so the record stores no channel names that could go stale.
 
 The boundary matters more than the contents.
@@ -70,7 +70,7 @@ The order is only a list of ids: it never decides that an Agent exists, and an i
 The Sessions of each Agent are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
 A Session row shows a blue dot while it is unread, and an approval dot in its place while an approval waits on the user.
 
-The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's avatar and name and its time.
+The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's avatar and name and its time, and after the time the email of whoever started the Session when that is not the viewer.
 Its filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
 The filter is kept in the browser, so it survives a reload but does not follow the user to another device; both layouts share it.
 The two sections scroll together, each header staying at the top while its section is in view.

@@ -65,6 +65,7 @@ export function createActOnAgent(deps: {
         scopes: deps.user.scopes,
         agentIds: [agentId],
         actingEditor: deps.user.sub,
+        actingEditorEmail: editorEmail,
       }),
     };
   };

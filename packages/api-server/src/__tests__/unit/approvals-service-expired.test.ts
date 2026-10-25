@@ -83,6 +83,7 @@ function makeService(seed: PendingApprovalRow) {
     isAgentOwnedBy: async () => true,
     ownerSub: "owner-1",
     actor: "owner-1",
+    actorEmail: null,
     agentBinding: "*",
   });
   return { rows, service, inserts };

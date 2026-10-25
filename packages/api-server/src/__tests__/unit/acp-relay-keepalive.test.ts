@@ -42,6 +42,7 @@ async function attach(presence: SessionPresence, autoPong = true) {
       surface: "ui",
       attached: () => {},
       editor: null,
+      email: null,
       opened: () => {},
     });
   });

@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
-import type { PendingRestart, Session } from "agent-runtime-api";
+import type { PendingRestart, Sender, Session } from "agent-runtime-api";
 import {
+  buildPlatformSenderRecordedNotification,
+  buildPlatformTurnStartedNotification,
+  buildPlatformVerdictRecordedNotification,
+  stampedSenderOf,
   buildPlatformQueueChangedNotification,
   buildPlatformSessionResetNotification,
   buildPlatformRunEndedNotification,
@@ -29,6 +33,7 @@ import {
   type PromptBlock,
   type PlatformContinuedFrom,
   type PlatformTurnEndedParams,
+  type JsonRpcResponse,
   type PlatformRewriteFromParams,
   type PlatformUpdateQueuedParams,
   type PlatformUndeliveredPrompt,
@@ -115,6 +120,7 @@ import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
 import { platformOf, withPlatform } from "../../domain/platform-meta.js";
+import { verdictOf, withoutAnsweredBy } from "../../domain/attribution.js";
 
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
@@ -249,6 +255,8 @@ export interface ReportableTurn {
   truncated: boolean;
 }
 
+type RewriteRequest = PlatformRewriteFromParams & { sender?: Sender };
+
 interface OutboundMapping {
   channel: ClientChannel | null;
   originalId: JsonRpcId | null;
@@ -279,6 +287,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let harnessSteers = false;
   const openToolCalls = new Map<string, Set<string>>();
   const generating = new Set<string>();
+  const turnSenders = new Map<string, Sender>();
   let sessionForkSupported = false;
   const ownRequests = new Map<number, (frame: unknown) => void>();
   let initializeAnswer: { result?: unknown; error?: unknown } | null = null;
@@ -420,6 +429,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       promptId,
       queuedAt,
       frame,
+      sender,
     }) => {
       autonomousTurns.end(sessionId);
       finishHeldRun(sessionId);
@@ -431,6 +441,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         queuedAt === undefined ? channel : null,
         echoId,
       );
+      announceTurnStart(sessionId, sender);
+      if (sender !== undefined) recordSender(sessionId, echoId, sender);
       deps.activeTurns.record(
         sessionId,
         deps.sessionMetadata?.get(sessionId)?.unstored === true
@@ -448,21 +460,33 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       !generating.has(sessionId) && !(openToolCalls.get(sessionId)?.size ?? 0),
     steer: (entry) => steerIntoTurn(entry),
     onSteered: (
-      { sessionId, typed, channel, promptId, outboundId, originalId, queuedAt },
+      {
+        sessionId,
+        typed,
+        channel,
+        promptId,
+        outboundId,
+        originalId,
+        queuedAt,
+        sender,
+      },
       turnEnded,
     ) => {
       outboundIdToClient.delete(outboundId);
+      const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
         typed,
         queuedAt === undefined ? channel : null,
-        promptId ?? randomUUID(),
+        echoId,
         { steered: true },
       );
+      if (sender !== undefined) recordSender(sessionId, echoId, sender);
       if (turnEnded) answerSteered({ channel, originalId }, null);
     },
     onQueueChanged: (sessionId) => announceQueue(sessionId),
     onTurnEnded: (sessionId) => {
+      turnSenders.delete(sessionId);
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
       if (!harnessActivity.isBusy(sessionId))
@@ -470,6 +494,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
+      turnSenders.delete(sessionId);
       if (harnessGone)
         deps.onTurnOutcome?.(sessionId, {
           stopReason: null,
@@ -590,6 +615,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     runStartsOf(sessionId) {
       return deps.sessionMetadata?.runStartsOf(sessionId) ?? [];
+    },
+    attributionOf(sessionId) {
+      return {
+        senders: deps.sessionMetadata?.sendersOf(sessionId) ?? [],
+        verdicts: deps.sessionMetadata?.verdictsOf(sessionId) ?? [],
+      };
+    },
+    turnSenderOf(sessionId) {
+      return turnSenders.get(sessionId);
     },
     continuedFromOf(sessionId) {
       return deps.continuedFrom.readFor(sessionId);
@@ -1173,6 +1207,47 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
+  function announceTurnStart(sessionId: string, sender?: Sender): void {
+    if (sender === undefined) turnSenders.delete(sessionId);
+    else turnSenders.set(sessionId, sender);
+    const line = JSON.stringify(
+      buildPlatformTurnStartedNotification({
+        sessionId,
+        ...(sender !== undefined && { sender }),
+      }),
+    );
+    for (const channel of engagedViewersOf(sessionId)) channel.send(line);
+  }
+
+  function recordSender(
+    sessionId: string,
+    promptId: string,
+    sender: Sender,
+  ): void {
+    const entry = { at: new Date().toISOString(), promptId, sender };
+    deps.sessionMetadata?.recordSender(sessionId, entry);
+    const line = JSON.stringify(
+      buildPlatformSenderRecordedNotification({ sessionId, entry }),
+    );
+    for (const channel of engagedViewersOf(sessionId)) channel.send(line);
+  }
+
+  function recordVerdict(
+    answered: { sessionId: string | null; line: string },
+    frame: JsonRpcResponse,
+  ): void {
+    const by = stampedSenderOf(frame.result, "answeredBy");
+    if (by === null || answered.sessionId === null) return;
+    const verdict = verdictOf(answered.line, frame.result, by);
+    if (verdict === null) return;
+    const sessionId = answered.sessionId;
+    deps.sessionMetadata?.recordVerdict(sessionId, verdict);
+    const line = JSON.stringify(
+      buildPlatformVerdictRecordedNotification({ sessionId, verdict }),
+    );
+    for (const channel of engagedViewersOf(sessionId)) channel.send(line);
+  }
+
   function announceRunStart(sessionId: string, at: string): void {
     const line = JSON.stringify(
       buildPlatformRunStartedNotification({ sessionId, at }),
@@ -1202,6 +1277,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function updateQueuedPrompt(
     sessionId: string,
     { promptId, prompt }: PlatformUpdateQueuedParams,
+    sender: Sender | null,
   ): boolean {
     return promptScheduler.update(sessionId, promptId, (entry) => {
       const source = isNonNullObject(entry.source) ? entry.source : {};
@@ -1217,6 +1293,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         ),
         typed: prompt,
         blocks: queueableBlocks(prompt),
+        sender: sender ?? entry.sender,
       };
     });
   }
@@ -1362,7 +1439,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function rewriteFrom(
     channel: ClientChannel,
     id: unknown,
-    params: PlatformRewriteFromParams,
+    params: RewriteRequest,
   ): void {
     const fail = (message: string, code?: string): void =>
       sendToChannel(
@@ -1481,7 +1558,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function forkForRewrite(
     channel: ClientChannel,
     id: unknown,
-    params: PlatformRewriteFromParams,
+    params: RewriteRequest,
     cut: Exclude<RewriteCut, { kind: "missing" } | { kind: "absent" }>,
     history: string[] | null,
     fail: (message: string, code?: string) => void,
@@ -1540,10 +1617,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             deps.continuedFrom.copy(oldId, newId, !fresh);
             if (params.mode === "rewind") {
               deps.sessionMetadata?.adopt(newId, oldId, meta);
+              deps.sessionMetadata?.copyAttribution(newId, oldId, {
+                starter: true,
+              });
               retireSession(oldId);
               tearDownSession(oldId);
             } else {
               deps.sessionMetadata?.set(newId, meta);
+              deps.sessionMetadata?.copyAttribution(newId, oldId, {
+                starter: false,
+              });
             }
             sendToChannel(
               channel,
@@ -1559,6 +1642,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 newId,
                 params.prompt,
                 params.promptId,
+                params.sender,
               );
           },
           adjustLines,
@@ -1570,7 +1654,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function cutInPlace(
     channel: ClientChannel,
     id: unknown,
-    params: PlatformRewriteFromParams,
+    params: RewriteRequest,
     cut: { kind: "after"; entry: string; batch: string },
     history: string[] | null,
     sessionCut: SessionCutProvider,
@@ -1602,7 +1686,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           JSON.stringify({ jsonrpc: "2.0", id, result: { sessionId: sid } }),
         );
         if (params.prompt !== undefined && params.promptId !== undefined)
-          submitRewrittenPrompt(channel, sid, params.prompt, params.promptId);
+          submitRewrittenPrompt(
+            channel,
+            sid,
+            params.prompt,
+            params.promptId,
+            params.sender,
+          );
       });
     };
     closeInHarness(sid, (closed) => {
@@ -1704,6 +1794,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionId: string,
     prompt: PromptBlock[],
     promptId: string,
+    sender: Sender | undefined,
   ): void {
     const outboundId = nextOutboundId++;
     const source = {
@@ -1734,6 +1825,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       blocks: queueableBlocks(prompt),
       editable: false,
       steerable: true,
+      ...(sender !== undefined && { sender }),
     });
     if (fate === "refused") return;
     if (
@@ -2200,7 +2292,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isResponse(frame)) {
-      if (pendingRequests.answer(frame)) lease.maybeRecycle();
+      const answered = pendingRequests.answer(withoutAnsweredBy(frame));
+      if (answered === null) return;
+      recordVerdict(answered, frame);
+      lease.maybeRecycle();
       return;
     }
 
@@ -2216,7 +2311,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           (frame as { params?: unknown }).params,
         );
         const updated =
-          parsed.success && updateQueuedPrompt(paramsSid, parsed.data);
+          parsed.success &&
+          updateQueuedPrompt(
+            paramsSid,
+            parsed.data,
+            stampedSenderOf((frame as { params?: unknown }).params, "sender"),
+          );
         answerQueueEdit(channel, frame.id, updated);
         return;
       }
@@ -2337,7 +2437,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const parsed = platformRewriteFromParamsSchema.safeParse(
           (frame as { params?: unknown }).params,
         );
-        if (parsed.success) rewriteFrom(channel, frame.id, parsed.data);
+        const sender = stampedSenderOf(
+          (frame as { params?: unknown }).params,
+          "sender",
+        );
+        if (parsed.success)
+          rewriteFrom(channel, frame.id, {
+            ...parsed.data,
+            ...(sender !== null && { sender }),
+          });
         else
           sendToChannel(
             channel,
@@ -2504,6 +2612,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata?.set(promptSessionId, { ...meta, title });
 
         syncSettings(promptSessionId);
+        const sender = stampedSenderOf(
+          (frame as { params?: unknown }).params,
+          "sender",
+        );
         const fate = submitPrompt(rewritten, {
           sessionId: promptSessionId,
           channel,
@@ -2521,6 +2633,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             (isMachineSession(promptSessionId) ||
               surface === SCHEDULE_SURFACE ||
               surface === MESSAGE_SURFACE),
+          ...(sender !== null && { sender }),
         });
         if (fate === "refused") return;
         if (

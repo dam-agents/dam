@@ -1,3 +1,4 @@
+import type { Sender } from "agent-runtime-api";
 import type {
   AgentAccess,
   PromptBlock,
@@ -74,9 +75,11 @@ export interface RetryPayload {
 
 export interface VerdictPart {
   kind: "verdict";
+  toolCallId?: string;
   label: string;
   subject: string;
   allowed: boolean;
+  by?: Sender;
 }
 
 export type MessagePart =

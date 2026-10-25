@@ -185,6 +185,7 @@ interface UpgradeTarget {
 }
 export interface RelayActor {
   sub: string;
+  email: string | null;
   surface: string;
   editor: RelayEditor | null;
   attached: () => void;
@@ -286,6 +287,7 @@ export function relayRoute(
     );
     relay.handleUpgrade(req, socket, head, agentId, {
       sub: admitted.user.sub,
+      email: admitted.user.email ?? null,
       surface: admitted.surface,
       editor: admitted.editor,
       attached: admitted.attached,

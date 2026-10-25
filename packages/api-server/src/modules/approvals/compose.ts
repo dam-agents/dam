@@ -49,6 +49,7 @@ interface ComposeApprovalsServiceDeps {
   db: Db;
   ownerSub: string;
   actor: string;
+  actorEmail: string | null;
   agentBinding: readonly string[] | "*";
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
@@ -66,6 +67,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
     actor: deps.actor,
+    actorEmail: deps.actorEmail,
     agentBinding: deps.agentBinding,
   });
   return { service };

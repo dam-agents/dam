@@ -43,6 +43,7 @@ import {
   sessionSpendTitle,
 } from "../../spend/lib/amounts-label.js";
 import { KitUpdateSessionTag } from "../../starter-kits/components/kit-update-session-tag.js";
+import { useSenderNames } from "../hooks/use-sender-names.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
@@ -112,6 +113,7 @@ export function SessionRow({
   className,
 }: Props) {
   const mainRef = useRef<HTMLButtonElement>(null);
+  const startedBy = useSenderNames(s.agentId).otherName(s.startedBy);
   const metaId = useId();
   const afterMenu = useRef<(() => void) | null>(null);
 
@@ -290,6 +292,12 @@ export function SessionRow({
               <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
                 {timeAgo(s.updatedAt ?? s.createdAt)}
               </span>
+              {startedBy !== null && (
+                <span data-testid="session-started-by">
+                  {" · "}
+                  {startedBy}
+                </span>
+              )}
               {runTime && (
                 <span data-testid="session-run-time">
                   {" · "}

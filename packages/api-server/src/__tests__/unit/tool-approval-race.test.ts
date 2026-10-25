@@ -118,6 +118,7 @@ function setup() {
     isAgentOwnedBy: async () => true,
     ownerSub: "owner-1",
     actor: "owner-1",
+    actorEmail: null,
     agentBinding: "*",
   });
   const asked = (options: AcpPermissionOption[] = OPTIONS) =>

@@ -6,8 +6,10 @@ import {
   platformQueueMetaSchema,
   platformReplayTurnMetaSchema,
   platformRunStartsMetaSchema,
+  platformSendersMetaSchema,
   platformSupersededMetaSchema,
   platformUndeliveredMetaSchema,
+  platformVerdictsMetaSchema,
   SessionMode,
   SessionType,
 } from "api-server-api";
@@ -389,6 +391,8 @@ export function useAcpConnection(
               runStarts?: unknown;
               queue?: unknown;
               continuedFrom?: unknown;
+              senders?: unknown;
+              verdicts?: unknown;
             };
           };
         } | null
@@ -409,6 +413,12 @@ export function useAcpConnection(
         : [];
       const queue = platformQueueMetaSchema.safeParse(
         platformMeta?.queue ?? [],
+      );
+      const senders = platformSendersMetaSchema.safeParse(
+        platformMeta?.senders ?? [],
+      );
+      const verdicts = platformVerdictsMetaSchema.safeParse(
+        platformMeta?.verdicts ?? [],
       );
       const continuedFrom = platformContinuedFromSchema.safeParse(
         platformMeta?.continuedFrom,
@@ -473,6 +483,14 @@ export function useAcpConnection(
             ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
         useStore.getState().setQueuedPrompts(queue.success ? queue.data : []);
+        useStore.getState().setAttribution({
+          senders: senders.success ? senders.data : [],
+          verdicts: verdicts.success ? verdicts.data : [],
+          turnSender:
+            turn.success && turn.data.inFlight
+              ? (turn.data.sender ?? null)
+              : null,
+        });
         useStore
           .getState()
           .setContinuedFrom(continuedFrom.success ? continuedFrom.data : null);
