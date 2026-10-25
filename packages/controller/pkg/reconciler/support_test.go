@@ -98,7 +98,7 @@ var testConfig = &config.Config{
 	ReleaseName:       "platform",
 	HarnessServerPort: 4001,
 	ExtAuthzPort:      4002,
-	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4",
+	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0",
 	EnvoyPort:         10000,
 	IstioTrustDomain:  "cluster.local",
 	IstioWaypointName: "apiserver-waypoint",

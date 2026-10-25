@@ -936,9 +936,6 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        # 2.41.0 is under the 7-day age floor until 2026-10-20; taken early
-        # because it fixes the next (GHSA-vcvr-r3jv-pc5j), handlebars, shell-quote
-        # and proxy-addr criticals of 2.40.0. Drop this comment after that date.
         tag: "2.41.0"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.38.0"
@@ -982,7 +979,11 @@ keycloak:
     repository: quay.io/dam-agents/keycloak
     tag: "" # @ci-pin keycloak-image-tag
     pullPolicy: IfNotPresent
-  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.5
+  # Named by the tool release and the Keycloak line it supports, not by the
+  # mutable latest-26.5.5 it duplicates byte for byte: the newest tag adorsys
+  # publishes, frozen since 2026-05-22, so its 644 base-OS findings wait on an
+  # upstream rebuild.
+  configCliImage: quay.io/adorsys/keycloak-config-cli:6.5.1-26.5.5
   port: 8080
 
   # -- Additional Keycloak server features. The chart always enables a required
@@ -1956,8 +1957,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.39.4 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4
+  # envoyproxy/envoy:distroless-v1.40.0 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
   # its gateway passes through untouched. The api-server trusts them too
