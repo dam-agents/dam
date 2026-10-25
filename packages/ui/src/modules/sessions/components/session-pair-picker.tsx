@@ -105,6 +105,7 @@ export function SessionPairPicker(props: Props) {
   const carried = props.pending ? [] : props.carried;
   const routed = props.pending ? false : (props.routed ?? false);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
   const picked = useStore((s) => s.nextSessionPair[agentId] ?? null);
@@ -324,7 +325,7 @@ export function SessionPairPicker(props: Props) {
                 current={pair}
                 onPick={chooseProfile}
                 onCustom={() => setCustom(true)}
-                onManage={() => navigateToSandboxHome(agentId, "providers")}
+                onManage={() => navigateToSettings("providers")}
               />
               {capability?.platformSubagentSettings === true && (
                 <PlatformSubagentSlot
@@ -332,10 +333,10 @@ export function SessionPairPicker(props: Props) {
                   value={profileOfSlot(pair, profiles)?.id ?? null}
                   onPick={(profile) => {
                     if (!pair) return;
+                    /* UNIT_BOUNDARY_DESCRIPTION: the slot's profile is not the
+                     * profile this pick holds, so a save must not offer to
+                     * update it. */
                     const next = withSlot(pair, profile);
-                    setFromProfile(
-                      profile ? { id: profile.id, name: profile.name } : null,
-                    );
                     choose(next, {
                       platformSubagentProfileId: profile?.id ?? null,
                     });

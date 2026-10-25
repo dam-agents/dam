@@ -44,10 +44,12 @@ export function ProfileSection() {
         `${profile.usage.schedules} schedule${profile.usage.schedules === 1 ? "" : "s"}`,
     ].filter(Boolean);
     if (usage.length > 0) {
+      /* UNIT_BOUNDARY_DESCRIPTION: nothing to confirm, so the dialog says what
+       * stands in the way and offers no Delete the server would refuse. */
       void showConfirm(
         `It is used by ${usage.join(", ")}. Move them to another profile first.`,
-        `Delete “${profile.name}”?`,
-        { kind: "destructive", confirmLabel: "Delete" },
+        `“${profile.name}” cannot be deleted`,
+        { confirmLabel: "Close" },
       );
       return;
     }

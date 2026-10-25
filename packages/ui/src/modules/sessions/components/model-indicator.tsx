@@ -1,3 +1,4 @@
+import { ChevronLeft } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import {
   aliasForProviderType,
@@ -77,6 +78,7 @@ export function ModelIndicator({
   onNewSession,
 }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   /* UNIT_BOUNDARY_DESCRIPTION: the picker opens on the profiles, the same view a
    * new chat shows, so one place teaches the other. */
   const [custom, setCustom] = useState(false);
@@ -88,6 +90,10 @@ export function ModelIndicator({
     name: string;
   } | null>(null);
   const { data: profiles = [] } = useProfiles(agentId);
+  /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so it offers only
+   * the profiles that run on it, and the slot's options and its current value
+   * read the same list. */
+  const sessionProfiles = profiles.filter((p) => p.harness === harness);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { data: catalog } = useHarnessCatalog();
   const capability = carried.find((h) => h.name === harness);
@@ -255,13 +261,13 @@ export function ModelIndicator({
               )}
             </section>
           )}
-          {routed && !custom && profiles.length > 0 ? (
+          {routed && !custom && sessionProfiles.length > 0 ? (
             <div className="flex flex-col gap-1">
               <ProfileList
                 /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so it
                  * offers only the profiles that run on it; another harness needs a
                  * new session, which the profile list cannot show. */
-                profiles={profiles.filter((p) => p.harness === harness)}
+                profiles={sessionProfiles}
                 current={{
                   harness,
                   provider,
@@ -269,8 +275,15 @@ export function ModelIndicator({
                   ...(settings && { settings }),
                 }}
                 onPick={(profile) => {
+                  /* UNIT_BOUNDARY_DESCRIPTION: a pick applies the model and the
+                   * settings the profile holds, and saves those same values with
+                   * the reference, so the next chat starts on what this one got.
+                   * Only a chat session names a profile; a channel or scheduled
+                   * session keeps its own on the row or the spec. */
                   setFromProfile({ id: profile.id, name: profile.name });
                   onChoose(profile.model);
+                  if (Object.keys(profile.settings).length > 0)
+                    onConfigure(profile.settings);
                   rememberSessionPair(
                     agentId,
                     {
@@ -281,19 +294,19 @@ export function ModelIndicator({
                         settings: profile.settings,
                       }),
                     },
-                    kind ?? "chat",
+                    "chat",
                     undefined,
-                    { profileId: profile.id },
+                    kind === "chat" ? { profileId: profile.id } : undefined,
                   );
                 }}
                 onCustom={() => setCustom(true)}
-                onManage={() => navigateToSandboxHome(agentId, "providers")}
+                onManage={() => navigateToSettings("providers")}
               />
               {capability?.platformSubagentSettings === true && (
                 <PlatformSubagentSlot
-                  profiles={profiles.filter((p) => p.harness === harness)}
+                  profiles={sessionProfiles}
                   value={
-                    profiles.find(
+                    sessionProfiles.find(
                       (p) =>
                         p.harness === settings["platformSubagent.harness"] &&
                         p.model === settings["platformSubagent.model"],
@@ -322,6 +335,16 @@ export function ModelIndicator({
               aria-label="Models for this session"
               className="-mx-1 flex max-h-72 flex-col gap-2 overflow-y-auto"
             >
+              {sessionProfiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCustom(false)}
+                  className="flex items-center gap-1 rounded px-1 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <ChevronLeft size={14} aria-hidden />
+                  Use a profile
+                </button>
+              )}
               <SessionModelList
                 agentId={agentId}
                 groups={groups}

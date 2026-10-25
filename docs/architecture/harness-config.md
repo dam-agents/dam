@@ -42,9 +42,9 @@ A session may also pick the settings its harness manifest lists under `sessionSe
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
 An agent remembers three default pairs, one per **default kind**: **chat**, which preselects the next session, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on.
 A channel or scheduled default that is not saved is **the same as chat**: those runs take the chat default, whatever it is at the time.
-Only **Set as default** on a running session, the default pickers on the agent's Providers page, or the first model picked for a session, new or old, on an agent with no default model saves a pair as a remembered default; starting a session saves nothing else.
-The first model picked saves the chat default; **Set as default** saves the default of the session's own kind (a Slack thread's sets the channel default, and a sub-agent session offers none), and names it.
-The Providers page shows one section per kind, each with the session picker's harness, model, settings and Subagents block; a channel or scheduled section starts on **Same as chat**, which shows the inherited values, and switching it off saves a default of its own.
+A pick in a chat saves the chat default, and a chat's profile pick saves the reference instead of its values.
+The Providers page shows the profile of the chat, channel and scheduled defaults, a channel or scheduled one starting on the same profile as chat.
+A default may name a profile, which the api-server resolves into the pair the runtime is sent, so an edit of that profile reaches every run that follows it.
 Each section marks a default that is not set or whose provider the agent no longer holds, and so does the Providers entry of the agent's navigation.
 Detaching a provider lists the defaults and schedules that run on it before it goes.
 With none saved, the chat default is the agent's own harness with no provider and no model: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
