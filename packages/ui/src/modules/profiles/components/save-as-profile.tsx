@@ -55,7 +55,10 @@ export function SaveAsProfile({
       harness: pair.harness,
       providerTemplate,
       model: pair.model ?? "",
-      ...(Object.keys(settings).length > 0 && { settings }),
+      /* UNIT_BOUNDARY_DESCRIPTION: an update sends the settings even when there
+       * are none, so the profile takes exactly the pick's values instead of
+       * keeping the ones it had. */
+      ...(profile || Object.keys(settings).length > 0 ? { settings } : {}),
     };
     if (profile) {
       update.mutate(

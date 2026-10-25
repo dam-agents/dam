@@ -287,7 +287,9 @@ export function ModelIndicator({
                    * cleared rather than left from the previous pick. */
                   onConfigure({
                     ...Object.fromEntries(
-                      Object.keys(settings).map((id) => [id, ""]),
+                      Object.keys(settings)
+                        .filter((id) => !id.startsWith("platformSubagent."))
+                        .map((id) => [id, ""]),
                     ),
                     ...profile.settings,
                   });
