@@ -182,6 +182,9 @@ export function SessionPairPicker(props: Props) {
     return fit.granted.length === 0 && fit.addable.length === 0;
   };
   const capability = carried.find((h) => h.name === harness);
+  /* UNIT_BOUNDARY_DESCRIPTION: a profile pick may move the primary harness, so
+   * the subagent rule is resolved against the harness the pick lands on. */
+  const capabilityOf = (name: string) => carried.find((h) => h.name === name);
   const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
   const defaults = settingDefaults(
     capability,
@@ -226,8 +229,8 @@ export function SessionPairPicker(props: Props) {
         : (withSubagent(
             { harness: profile.harness, provider: null, model: profile.model },
             slot,
-            capability,
-            groups.flatMap((g) => g.models.map((m) => ({ name: m.name }))),
+            capabilityOf(profile.harness),
+            [],
           ).settings ?? {})),
     };
     choose(
