@@ -22,6 +22,7 @@ interface CreateScheduleInput {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  profile?: string;
   sessionTitle?: string;
 }
 
@@ -54,6 +55,7 @@ export interface UpdateCronScheduleInput {
   harness?: string | null;
   model?: string | null;
   settings?: Record<string, string> | null;
+  profile?: string | null;
   sessionTitle: string | null;
 }
 
@@ -87,6 +89,7 @@ interface UpdateScheduleInput {
   harness?: string | null;
   model?: string | null;
   settings?: Record<string, string> | null;
+  profile?: string | null;
   sessionTitle: string | null;
 }
 
@@ -114,6 +117,7 @@ export interface CreateOnceScheduleInput {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  profile?: string;
   sessionTitle?: string;
 }
 
@@ -134,9 +138,14 @@ export interface UpdateOnceScheduleInput {
   task: string;
   timezone: string;
   at: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the form changed it,
+   * so an untouched field leaves the stored one — and a profile the schedule
+   * names — alone. A one-time schedule clears a choice by leaving it out, which
+   * its own update contract already says. */
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  profile?: string | null;
   sessionTitle?: string;
 }
 

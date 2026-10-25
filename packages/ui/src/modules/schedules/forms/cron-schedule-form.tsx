@@ -27,6 +27,7 @@ export interface ScheduleChoicesPayload {
   harness?: string | null;
   model?: string | null;
   settings?: Record<string, string> | null;
+  profile?: string | null;
 }
 import {
   cronFormDefaults,
@@ -120,6 +121,7 @@ export function CronScheduleForm({
       precheck: v.precheck.trim() || null,
       harness: v.harness.trim() || null,
       model: v.model.trim() || null,
+      profile: v.profile || null,
       settings: Object.keys(settings).length > 0 ? settings : null,
       sessionTitle: v.sessionTitle.trim() || null,
       sessionMode: v.sessionMode,
@@ -141,7 +143,20 @@ export function CronScheduleForm({
     );
     const harness = v.harness.trim() || null;
     const model = v.model.trim() || null;
+    const profile = v.profile || null;
+    const loadedProfile = loaded.profile || null;
     return {
+      ...(profile !== loadedProfile && {
+        profile,
+        /* UNIT_BOUNDARY_DESCRIPTION: leaving a profile for a schedule of its
+         * own carries the values it was running on, since the form shows them
+         * and the stored spec holds none. */
+        ...(profile === null && {
+          harness,
+          model,
+          settings: Object.keys(settings).length > 0 ? settings : null,
+        }),
+      }),
       ...(harness !== (loaded.harness.trim() || null) && { harness }),
       ...(model !== (loaded.model.trim() || null) && { model }),
       ...(!sameSettings(settings, loadedSettings) && {

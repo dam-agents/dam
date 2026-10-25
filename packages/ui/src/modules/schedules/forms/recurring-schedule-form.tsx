@@ -88,6 +88,21 @@ export function RecurringScheduleForm({
           /* UNIT_BOUNDARY_DESCRIPTION: choices travel only when the user
            * changed them, so a profile edited after the form opened is not
            * detached by the values the form was loaded with. */
+          ...(dirtyFields.profile
+            ? {
+                profile: v.profile || null,
+                /* UNIT_BOUNDARY_DESCRIPTION: leaving a profile for a schedule
+                 * of its own carries the values it was running on, since the
+                 * form shows them and the stored spec holds none. */
+                ...(v.profile
+                  ? {}
+                  : {
+                      harness: harness || null,
+                      model: model || null,
+                      settings: hasSettings ? settings : null,
+                    }),
+              }
+            : {}),
           ...(dirtyFields.harness ? { harness: harness || null } : {}),
           ...(dirtyFields.model ? { model: model || null } : {}),
           ...(dirtyFields.settings
@@ -103,6 +118,7 @@ export function RecurringScheduleForm({
           agentId,
           ...common,
           ...(precheck ? { precheck } : {}),
+          ...(v.profile ? { profile: v.profile } : {}),
           ...(harness ? { harness } : {}),
           ...(model ? { model } : {}),
           ...(hasSettings ? { settings } : {}),

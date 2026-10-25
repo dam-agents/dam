@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   defaultProfileId,
+  newestFirst,
   newestProfileId,
 } from "../../modules/profiles/lib/default-profile.js";
 import { ChannelProfileLine } from "../../modules/sandboxes/components/channels/channel-profile-line.js";
@@ -71,10 +72,12 @@ describe("what a new channel starts on", () => {
     expect(
       defaultProfileId({
         profiles,
-        newestProfileId: newestProfileId([
-          { profileId: "p1", createdAt: "2026-10-01T00:00:00Z" },
-          { profileId: "p2", createdAt: "2026-10-24T00:00:00Z" },
-        ]),
+        newestProfileId: newestProfileId(
+          newestFirst([
+            { profileId: "p1", createdAt: "2026-10-01T00:00:00Z" },
+            { profileId: "p2", createdAt: "2026-10-24T00:00:00Z" },
+          ]),
+        ),
         chatProfileId: "p1",
       }),
     ).toBe("p2");
@@ -83,10 +86,12 @@ describe("what a new channel starts on", () => {
   /** TEST_SCENARIO: a channel that names nothing is passed over, so a legacy row does not decide what a new one runs on. */
   it("skips a newer channel that has no profile", () => {
     expect(
-      newestProfileId([
-        { profileId: "p1", createdAt: "2026-10-01T00:00:00Z" },
-        { profileId: null, createdAt: "2026-10-24T00:00:00Z" },
-      ]),
+      newestProfileId(
+        newestFirst([
+          { profileId: "p1", createdAt: "2026-10-01T00:00:00Z" },
+          { profileId: null, createdAt: "2026-10-24T00:00:00Z" },
+        ]),
+      ),
     ).toBe("p1");
   });
 

@@ -22,6 +22,9 @@ import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { useProfiles } from "../../profiles/api/queries.js";
+import { ProfilePicker } from "../../profiles/components/profile-picker.js";
+import { useProfileAttach } from "../../profiles/hooks/use-profile-attach.js";
 import {
   useHarnessCatalog,
   useHarnessCatalogModels,
@@ -506,13 +509,15 @@ interface ChoicesControl {
   harness: string;
   model: string;
   settings: Record<string, string>;
+  profile: string;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the same three choices a session picks.
- * "Scheduled default" is the empty choice and says what that default is now,
- * and whether it is the chat default, set on the Providers page. On
- * a runtime without the Model Router the old single model field stands.
+ * UNIT_BOUNDARY_DESCRIPTION: what a schedule runs on (D92): one profile of the
+ * owner's, preselected from the agent's newest schedule, with "Custom
+ * selection" for a schedule that carries its own harness, model and settings —
+ * which is also what a schedule written before profiles keeps showing until
+ * someone picks one.
  */
 export function ScheduleChoicesField<T extends ChoicesControl>({
   agentId,
@@ -521,6 +526,70 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
 }: {
   agentId: string;
   control: Control<T>;
+  migrationNote: string | null;
+}) {
+  const typed = control as unknown as Control<ChoicesControl>;
+  const { data: profiles = [] } = useProfiles(agentId);
+  const { attach, manage } = useProfileAttach(agentId);
+  const { field: profileField } = useController({
+    control: typed,
+    name: "profile",
+  });
+  if (profiles.length === 0)
+    return (
+      <CustomChoicesField
+        agentId={agentId}
+        control={typed}
+        migrationNote={migrationNote}
+      />
+    );
+  return (
+    <div className="flex flex-col gap-4">
+      <FormField
+        label="Profile"
+        hint="What this schedule runs on. Editing the profile changes every schedule that names it; Custom selection gives this one its own."
+      >
+        <ProfilePicker
+          label="Profile"
+          showLabel={false}
+          profiles={profiles}
+          value={profileField.value || null}
+          placeholder="Custom selection"
+          custom={{
+            label: "Custom selection",
+            description: "A harness, model and settings for this schedule only",
+          }}
+          onPick={(profile) => profileField.onChange(profile.id)}
+          onCustom={() => profileField.onChange("")}
+          onAttach={(profile) => void attach(profile)}
+          onManage={manage}
+          testId="schedule-profile"
+        />
+      </FormField>
+      {!profileField.value && (
+        <CustomChoicesField
+          agentId={agentId}
+          control={typed}
+          migrationNote={migrationNote}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the same three choices a session picks, for a
+ * schedule that carries them instead of naming a profile. "Scheduled default"
+ * is the empty choice and says what that default is now. On a runtime without
+ * the Model Router the old single model field stands.
+ */
+function CustomChoicesField({
+  agentId,
+  control,
+  migrationNote,
+}: {
+  agentId: string;
+  control: Control<ChoicesControl>;
   migrationNote: string | null;
 }) {
   const typed = control as unknown as Control<ChoicesControl>;

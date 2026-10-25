@@ -11,6 +11,7 @@ import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import { useDeleteSchedule } from "../api/mutations.js";
+import { useSchedulePresetProfile } from "../hooks/use-schedule-preset-profile.js";
 import {
   ScheduleChoicesField,
   ScheduleSessionTitleField,
@@ -24,6 +25,7 @@ type DialogValues = FieldValues & {
   harness: string;
   model: string;
   settings: Record<string, string>;
+  profile: string;
 };
 
 interface DeleteCopy {
@@ -76,6 +78,15 @@ export function ScheduleDialog<T extends DialogValues>({
   const { errors, isDirty } = formState;
   const deleteSchedule = useDeleteSchedule();
   const showConfirm = useStore((state) => state.showConfirm);
+
+  const preset = useSchedulePresetProfile(agentId, !existing);
+  /* UNIT_BOUNDARY_DESCRIPTION: a new schedule starts on a profile (D92), written
+   * once the lists are here; the write is not a change the user made, so it
+   * never makes an untouched form look edited. */
+  useEffect(() => {
+    if (preset === null || fields.getValues().profile) return;
+    fields.setValue("profile", preset, { shouldDirty: false });
+  }, [preset, fields]);
 
   const unsaved = isDirty || !!draft?.name || !!draft?.task;
   const close = useGuardedClose(unsaved, onClose);

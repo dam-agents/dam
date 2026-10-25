@@ -59,6 +59,7 @@ export function kitScheduleFormValues(
     harness: "",
     model: "",
     settings: {},
+    profile: "",
     sessionTitle: "",
   };
 }

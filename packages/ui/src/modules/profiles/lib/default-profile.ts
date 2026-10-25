@@ -26,17 +26,21 @@ export function defaultProfileId({
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the profile the newest of the agent's channels or schedules names; a row without one is passed over, since a legacy row says nothing about what a new one should run on. */
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the profile the newest of the agent's channels or
+ * schedules names, from rows ordered newest first; a row without one is passed
+ * over, since a legacy row says nothing about what a new one should run on.
+ */
 export function newestProfileId(
-  rows: readonly {
-    profileId?: string | null;
-    createdAt?: Date | string;
-  }[],
+  rowsNewestFirst: readonly { profileId?: string | null }[],
 ): string | null {
-  const at = (row: { createdAt?: Date | string }) =>
-    row.createdAt ? +new Date(row.createdAt) : 0;
-  return (
-    [...rows].sort((a, b) => at(b) - at(a)).find((row) => row.profileId)
-      ?.profileId ?? null
-  );
+  return rowsNewestFirst.find((row) => row.profileId)?.profileId ?? null;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: channel rows as the bind dialog reads them — newest first, since their list arrives in no particular order. */
+export function newestFirst<T extends { createdAt?: string }>(
+  rows: readonly T[],
+): T[] {
+  const at = (row: T) => (row.createdAt ? +new Date(row.createdAt) : 0);
+  return [...rows].sort((a, b) => at(b) - at(a));
 }

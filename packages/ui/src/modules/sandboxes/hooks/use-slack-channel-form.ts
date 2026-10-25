@@ -11,6 +11,7 @@ import { useBindSharingConfirm } from "../../agents/hooks/use-bind-sharing-confi
 import { useProfiles } from "../../profiles/api/queries.js";
 import {
   defaultProfileId,
+  newestFirst,
   newestProfileId,
 } from "../../profiles/lib/default-profile.js";
 import { useSessionDefaults } from "../../sessions/api/session-pair.js";
@@ -65,7 +66,7 @@ export function useSlackChannelForm(
       ? null
       : defaultProfileId({
           profiles,
-          newestProfileId: newestProfileId(agent.channels),
+          newestProfileId: newestProfileId(newestFirst(agent.channels)),
           chatProfileId,
         });
 

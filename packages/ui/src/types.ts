@@ -224,6 +224,10 @@ export interface Schedule {
   harness: string | null;
   model: string | null;
   settings: Record<string, string> | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the profile a schedule runs on (D92); null is a
+   * schedule that carries its own harness, model and settings. */
+  profile: string | null;
+  profileIssue?: string | null;
   migrationNote: string | null;
   sessionTitle: string | null;
   timezone: string | null;

@@ -17,6 +17,7 @@ export const onceFormSchema = z
     harness: z.string(),
     model: z.string(),
     settings: z.record(z.string(), z.string()),
+    profile: z.string(),
     sessionTitle: z
       .string()
       .trim()
@@ -51,6 +52,7 @@ export function onceFormDefaults(existing?: Schedule): OnceFormValues {
     harness: existing?.harness ?? "",
     model: existing?.model ?? "",
     settings: existing?.settings ?? {},
+    profile: existing?.profile ?? "",
     sessionTitle: existing?.sessionTitle ?? "",
   };
 }

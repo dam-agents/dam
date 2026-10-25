@@ -25,6 +25,7 @@ export const scheduleFormSchema = z
     harness: z.string(),
     model: z.string(),
     settings: z.record(z.string(), z.string()),
+    profile: z.string(),
     sessionTitle: z
       .string()
       .trim()
@@ -168,6 +169,7 @@ export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
     harness: existing?.harness ?? "",
     model: existing?.model ?? "",
     settings: existing?.settings ?? {},
+    profile: existing?.profile ?? "",
     sessionTitle: existing?.sessionTitle ?? "",
     timezone: existing?.timezone ?? detectTimezone(),
     sessionMode: existing?.sessionMode ?? "fresh",

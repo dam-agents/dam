@@ -24,6 +24,14 @@ vi.mock("@/components/ui/tooltip", () => ({
   HintTooltip: ({ children }: { children: ReactNode }) => children,
 }));
 
+vi.mock("../../modules/profiles/api/queries.js", () => ({
+  useProfiles: () => ({ data: [] }),
+}));
+
+vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
+  useProfileAttach: () => ({ attach: async () => true, manage: () => {} }),
+}));
+
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
   useHarnessConfigStatus: () => ({
     data: {
@@ -109,11 +117,12 @@ interface Choices {
   harness: string;
   model: string;
   settings: Record<string, string>;
+  profile: string;
 }
 
 function Field() {
   const { control } = useForm<Choices>({
-    defaultValues: { harness: "", model: "", settings: {} },
+    defaultValues: { harness: "", model: "", settings: {}, profile: "" },
   });
   return createElement(ScheduleChoicesField<Choices>, {
     agentId: "agent",

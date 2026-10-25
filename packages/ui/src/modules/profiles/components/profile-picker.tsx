@@ -23,6 +23,7 @@ export function ProfilePicker({
   profiles,
   value,
   placeholder,
+  showLabel = true,
   custom,
   onPick,
   onCustom,
@@ -35,6 +36,7 @@ export function ProfilePicker({
   profiles: readonly ProfileWithUsage[];
   value: string | null;
   placeholder: string;
+  showLabel?: boolean;
   custom?: { label: string; description?: string } | undefined;
   onPick: (profile: ProfileWithUsage) => void;
   onCustom?: (() => void) | undefined;
@@ -57,7 +59,9 @@ export function ProfilePicker({
           className="flex max-w-full items-center gap-1.5 rounded px-1.5 py-0.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
         >
           <span className="truncate">
-            <span className="text-muted-foreground">{label}: </span>
+            {showLabel && (
+              <span className="text-muted-foreground">{label}: </span>
+            )}
             <span
               className={cn(
                 "text-foreground",

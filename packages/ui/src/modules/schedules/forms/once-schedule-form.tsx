@@ -51,7 +51,7 @@ export function OnceScheduleForm({
     resolver: zodResolver(onceFormSchema),
     defaultValues: { ...onceFormDefaults(existing), ...draft },
   });
-  const { errors } = form.formState;
+  const { errors, dirtyFields } = form.formState;
   const when = form.watch("when");
 
   const onValid = (v: OnceFormValues) => {
@@ -70,23 +70,52 @@ export function OnceScheduleForm({
     const settings = Object.fromEntries(
       Object.entries(v.settings).filter(([, value]) => value !== ""),
     );
-    const fields = {
-      name: v.name,
-      task: v.task,
-      timezone: v.timezone,
+    /* UNIT_BOUNDARY_DESCRIPTION: choices travel only when the user changed
+     * them, so a profile edited after the form opened is not detached by the
+     * values the form was loaded with. */
+    const name = { name: v.name, task: v.task, timezone: v.timezone };
+    const custom = {
       ...(v.harness ? { harness: v.harness } : {}),
       ...(v.model ? { model: v.model } : {}),
       ...(Object.keys(settings).length > 0 ? { settings } : {}),
-      ...(v.sessionTitle ? { sessionTitle: v.sessionTitle } : {}),
     };
+    const title = v.sessionTitle ? { sessionTitle: v.sessionTitle } : {};
     if (existing) {
       updateOnce.mutate(
-        { id: existing.id, ...fields, at: `${v.date}T${v.time}` },
+        {
+          id: existing.id,
+          ...name,
+          ...title,
+          at: `${v.date}T${v.time}`,
+          ...(dirtyFields.profile
+            ? {
+                profile: v.profile || null,
+                /* UNIT_BOUNDARY_DESCRIPTION: leaving a profile for a schedule
+                 * of its own carries the values it was running on, since the
+                 * form shows them and the stored spec holds none. */
+                ...(v.profile ? {} : custom),
+              }
+            : {}),
+          ...(dirtyFields.harness && v.harness ? { harness: v.harness } : {}),
+          ...(dirtyFields.model && v.model ? { model: v.model } : {}),
+          ...(dirtyFields.settings && Object.keys(settings).length > 0
+            ? { settings }
+            : {}),
+        },
         { onSuccess },
       );
     } else {
       createOnce.mutate(
-        { agentId, ...fields, ...(at ? { at } : {}) },
+        {
+          agentId,
+          ...name,
+          ...title,
+          ...(at ? { at } : {}),
+          ...(v.profile ? { profile: v.profile } : {}),
+          ...(v.harness ? { harness: v.harness } : {}),
+          ...(v.model ? { model: v.model } : {}),
+          ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        },
         { onSuccess },
       );
     }
