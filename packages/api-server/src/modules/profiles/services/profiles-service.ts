@@ -282,8 +282,9 @@ export function createProfilesService(
         model: input.model ?? current.model,
       });
       validateSettings(input.settings);
+      let written: ProfileRow | null = null;
       try {
-        await repo.update(owner, input.id, {
+        written = await repo.update(owner, input.id, {
           ...(input.name !== undefined && { name: input.name }),
           ...(input.harness !== undefined && { harness: input.harness }),
           ...(input.providerTemplate !== undefined && {
@@ -316,13 +317,22 @@ export function createProfilesService(
         rejected.length > 0 &&
         rejected.length === referencing.agents.length
       ) {
-        await repo.update(owner, input.id, {
-          name: current.name,
-          harness: current.harness,
-          providerTemplate: current.providerTemplate,
-          model: current.model,
-          settings: current.settings,
-        });
+        /* UNIT_BOUNDARY_DESCRIPTION: the revert is a compare-and-set against the
+         * version this call wrote, so an edit that landed while the fan-out ran
+         * stays — undoing it would throw away a newer intent. */
+        const writtenAt = written?.updatedAt ?? current.updatedAt;
+        await repo.update(
+          owner,
+          input.id,
+          {
+            name: current.name,
+            harness: current.harness,
+            providerTemplate: current.providerTemplate,
+            model: current.model,
+            settings: current.settings,
+          },
+          { expect: writtenAt, at: current.updatedAt },
+        );
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `no agent can run this profile: ${rejected[0]!.reason}`,

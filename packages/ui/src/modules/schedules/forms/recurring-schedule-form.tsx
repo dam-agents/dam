@@ -66,7 +66,6 @@ export function RecurringScheduleForm({
       name: v.name,
       rrule: buildRRuleParts(v).body,
       timezone: v.timezone,
-      quietHours: v.quietHours,
       task: v.task,
       sessionMode: v.sessionMode,
     };
@@ -84,6 +83,10 @@ export function RecurringScheduleForm({
         {
           id: existing.id,
           ...common,
+          /* UNIT_BOUNDARY_DESCRIPTION: quiet hours travel only when the user
+           * changed them, as every other choice does — an untouched list leaves
+           * the stored one alone, and one the user emptied clears it. */
+          ...(dirtyFields.quietHours ? { quietHours: v.quietHours } : {}),
           precheck: precheck || null,
           /* UNIT_BOUNDARY_DESCRIPTION: choices travel only when the user
            * changed them, so a profile edited after the form opened is not
@@ -117,6 +120,7 @@ export function RecurringScheduleForm({
         {
           agentId,
           ...common,
+          ...(v.quietHours.length > 0 ? { quietHours: v.quietHours } : {}),
           ...(precheck ? { precheck } : {}),
           ...(v.profile ? { profile: v.profile } : {}),
           ...(harness ? { harness } : {}),

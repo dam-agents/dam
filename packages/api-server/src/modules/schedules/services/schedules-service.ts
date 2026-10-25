@@ -647,7 +647,7 @@ export function createSchedulesService(deps: {
     async updateRRule(input: ScheduleUpdateRRuleInput) {
       asBadRequest(() => validateTimezone(input.timezone));
       asBadRequest(() =>
-        validateRRule(input.rrule, input.timezone, input.quietHours),
+        validateRRule(input.rrule, input.timezone, input.quietHours ?? []),
       );
       const current = await deps.repo.get(input.id, deps.owner);
       const stored = await deps.repo.getRaw(input.id, deps.owner);
@@ -670,12 +670,16 @@ export function createSchedulesService(deps: {
         type: "rrule",
         rrule: input.rrule,
         timezone: input.timezone,
-        /* UNIT_BOUNDARY_DESCRIPTION: an empty list is no quiet hours at all, so
-         * a form that sends one for a schedule that never had any leaves the
-         * stored spec untouched (QA: a no-change save added `quietHours: []`). */
-        ...(input.quietHours.length > 0 && { quietHours: input.quietHours }),
         task: input.task,
       };
+      /* UNIT_BOUNDARY_DESCRIPTION: quiet hours follow the rule every other
+       * choice does — omitted keeps them, null or an empty list clears them, a
+       * list sets them — so a no-change save writes nothing and a form that
+       * removed them leaves none stored. */
+      if (input.quietHours === null || input.quietHours?.length === 0)
+        delete spec.quietHours;
+      else if (input.quietHours !== undefined)
+        spec.quietHours = input.quietHours;
       if (input.sessionMode) spec.sessionMode = input.sessionMode;
       else delete spec.sessionMode;
       if (input.precheck) spec.precheck = input.precheck;

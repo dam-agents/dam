@@ -15,7 +15,7 @@ interface CreateScheduleInput {
   name: string;
   rrule: string;
   timezone: string;
-  quietHours: { startTime: string; endTime: string; enabled: boolean }[];
+  quietHours?: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck?: string;
@@ -31,7 +31,10 @@ export function useCreateSchedule() {
     mutationFn: (input: CreateScheduleInput) =>
       api.schedules.createRRule.mutate({
         ...input,
-        quietHours: input.quietHours.length > 0 ? input.quietHours : undefined,
+        quietHours:
+          input.quietHours && input.quietHours.length > 0
+            ? input.quietHours
+            : undefined,
         sessionMode:
           input.sessionMode === "fresh" ? undefined : input.sessionMode,
       }),
@@ -79,7 +82,9 @@ interface UpdateScheduleInput {
   name: string;
   rrule: string;
   timezone: string;
-  quietHours: { startTime: string; endTime: string; enabled: boolean }[];
+  /* UNIT_BOUNDARY_DESCRIPTION: a list travels only when a form changed it; an
+   * empty list clears the stored one, and an absent one leaves it. */
+  quietHours?: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
