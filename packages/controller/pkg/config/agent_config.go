@@ -106,13 +106,12 @@ type VMRunnerRollout struct {
 	IdleWait       Duration `json:"idleWait,omitempty"`
 }
 
-type AgentTemplateDefaults struct {
+type HarnessTemplateDefaults struct {
 	StorageSize string                       `json:"storageSize,omitempty"`
 	Resources   *corev1.ResourceRequirements `json:"resources,omitempty"`
 
-	Mounts       []Mount       `json:"mounts,omitempty"`
-	Env          []EnvVar      `json:"env,omitempty"`
-	SkillSources []SkillSource `json:"skillSources,omitempty"`
+	Mounts []Mount  `json:"mounts,omitempty"`
+	Env    []EnvVar `json:"env,omitempty"`
 
 	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
 }
@@ -126,10 +125,4 @@ type Mount struct {
 type EnvVar struct {
 	Name  string `json:"name"`
 	Value string `json:"value,omitempty"`
-}
-
-type SkillSource struct {
-	Name   string `json:"name"`
-	GitURL string `json:"gitUrl"`
-	Path   string `json:"path,omitempty"`
 }

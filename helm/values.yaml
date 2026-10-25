@@ -417,7 +417,7 @@ virtualization:
     machineCPUs: 4
     # true = runners may give the node's virtualization extensions to the
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
-    # or controller.agent.templateDefaults.nestedVirtualization for all),
+    # or controller.agent.harnessTemplateDefaults.nestedVirtualization for all),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own
     # install. Every other machine boots without them. A runner
     # nests only where the node's KVM allows it, which is the kernel default
@@ -1858,8 +1858,8 @@ controller:
 
   # -- Agent configuration. Three layers, applied at reconcile time:
   #   1. `base`             — chart-only policy, never overridable by an agent.
-  #   2. `templateDefaults` — chart-wide fallbacks for fields a template
-  #                           can override (template wins when set).
+  #   2. `harnessTemplateDefaults` — chart-wide fallbacks for fields a
+  #                           harness template can override (template wins).
   #   3. harnessTemplates.*   — per-template values (further down).
   # Use the literal string `$HOME` in mount paths; the chart substitutes
   # it at render time with the fixed agent home (/home/agent).
@@ -1874,9 +1874,10 @@ controller:
       # ignores its own hibernationTimeout; "0s" disables hibernation.
       vmIdleTimeout: "5m"
 
-    templateDefaults:
-      # (agentHome is retired: the agent home is fixed at /home/agent; a value
-      # still set here is ignored with a startup warning.)
+    harnessTemplateDefaults:
+      # (agentHome is gone: the agent home is fixed at /home/agent. The
+      # controller decodes this block strictly, so a key it does not declare —
+      # agentHome included — stops it at startup instead of being ignored.)
 
       storageSize: "10Gi"
       # The resource limits every Agent's spec is stamped with at create.
@@ -1908,12 +1909,9 @@ controller:
       # reaper: at the threshold fraction of the agent's memory ceiling (default
       # 0.93) it SIGKILLs the largest tool process spawned under the harness,
       # so the harness survives instead of the whole agent being OOM-killed.
-      # The ceiling is the pod's cgroup limit for a container, and the machine's
-      # own memory on the vm Backend, which has no cgroup limit; a container
-      # without a limit is left unwatched rather than measured against the node
-      # it shares. Set `MEM_REAPER=off` to disable.
+      # The ceiling is the machine's own memory, which the runner grants from
+      # its owner's pool. Set `MEM_REAPER=off` to disable.
       env: []
-      skillSources: []
       # true = every vm agent asks for nested virtualization, as if its Agent
       # set spec.backend.vm.nestedVirtualization. It is only an ask: a machine
       # nests only when `virtualization.runner.nestedVirtualization` lets the
@@ -1930,7 +1928,7 @@ controller:
     # defaults (1 CPU / 2Gi), so an upgrade never shrinks an existing
     # sandbox out from under its workload — a workload that used 1–2Gi
     # would otherwise OOM on its next wake. Operators who overrode the old
-    # `templateDefaults.resources.limits` should mirror that override here
+    # `harnessTemplateDefaults.resources.limits` should mirror that override here
     # before upgrading.
     legacyAgentSize:
       cpu: "1"
@@ -2038,7 +2036,7 @@ controller:
 
 # -- Agent templates, keyed by template name. Override values files merge
 # per entry; set an entry to `null` to drop it. Fields named identically to
-# `controller.agent.templateDefaults.*` override the chart-wide default for
+# `controller.agent.harnessTemplateDefaults.*` override the chart-wide default for
 # agents created from this template.
 # The rendered image ref (`repository:tag`, tag defaulting to the chart
 # appVersion) is the template's version identity: existing agents are offered

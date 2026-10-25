@@ -22,8 +22,8 @@ func TestAgentBase_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "1h0m0s", out.VMIdleTimeout.AsDuration().String())
 }
 
-func TestAgentTemplateDefaults_JSONRoundTrip(t *testing.T) {
-	in := AgentTemplateDefaults{
+func TestHarnessTemplateDefaults_JSONRoundTrip(t *testing.T) {
+	in := HarnessTemplateDefaults{
 		StorageSize: "10Gi",
 		Mounts: []Mount{
 			{Path: "$HOME", Persist: true},
@@ -36,7 +36,7 @@ func TestAgentTemplateDefaults_JSONRoundTrip(t *testing.T) {
 	data, err := json.Marshal(in)
 	require.NoError(t, err)
 
-	var out AgentTemplateDefaults
+	var out HarnessTemplateDefaults
 	require.NoError(t, json.Unmarshal(data, &out))
 	assert.Equal(t, "10Gi", out.StorageSize)
 	require.Len(t, out.Mounts, 2)
