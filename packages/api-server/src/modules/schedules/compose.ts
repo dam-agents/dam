@@ -189,6 +189,18 @@ export function composeSchedulesForOwner(opts: ComposeSchedulesForOwnerOpts): {
         : {}),
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
       ownedProfile: (profileId) => boot.profiles.owned(owner, profileId),
+      profileIssue: async (profileId, agentId) => {
+        const resolved = await boot.profiles.resolveStored({
+          profileId,
+          agentId,
+          owner,
+        });
+        if (resolved === null) return "its profile is gone";
+        if (resolved.unavailable !== null) return resolved.unavailable.detail;
+        if (resolved.grantableProvider !== null)
+          return "the provider it runs on is not attached to this agent";
+        return null;
+      },
     }),
     isOwnedSchedule: async (scheduleId) =>
       (await boot.repo.get(scheduleId, owner)) !== null,
