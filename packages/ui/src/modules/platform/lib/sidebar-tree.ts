@@ -56,6 +56,16 @@ export function toggleExpanded(
   );
 }
 
+export function openWithPage(
+  toggled: ReadonlyMap<string, boolean>,
+  agentId: string,
+): ReadonlyMap<string, boolean> {
+  if (toggled.get(agentId) !== false) return toggled;
+  const next = new Map(toggled);
+  next.delete(agentId);
+  return next;
+}
+
 export function offFeedPins(
   pins: ReadonlySet<string>,
   inFeed: ReadonlySet<string>,
