@@ -156,7 +156,16 @@ export function ScheduleCard({
             {profileName ? (
               <>
                 <span aria-hidden>·</span>
-                <span className="truncate">Runs on {profileName}</span>
+                <span
+                  className={cn(
+                    "truncate",
+                    schedule.profileIssue && "text-warning",
+                  )}
+                  title={schedule.profileIssue ?? undefined}
+                >
+                  Runs on {profileName}
+                  {schedule.profileIssue ? " · won't run" : ""}
+                </span>
               </>
             ) : (
               (schedule.harness || schedule.model) && (
