@@ -38,7 +38,7 @@ const view = (patch: Partial<SecretRequestView>): SecretRequestView => ({
   connectionName: "github",
   templateId: "github-pat",
   templateName: "GitHub",
-  authKind: "bearer",
+  authKind: "header",
   destinations: [],
   unexpectedHosts: [],
   customDestination: false,

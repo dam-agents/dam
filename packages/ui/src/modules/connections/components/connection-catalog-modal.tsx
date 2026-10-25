@@ -158,7 +158,7 @@ export function ConnectionCatalogModal({
     const providerId = group.provider.id;
     const isMcp = providerId === MCP_PROVIDER_ID;
     if (!isMcp && group.templates.length === 0) return;
-    if (!(await confirmShare())) return;
+    if (!(await confirmShare({ name: group.provider.title }))) return;
     createShareConfirmed.current = true;
     setPane(isMcp ? { kind: "create-mcp" } : { kind: "create", providerId });
   };
