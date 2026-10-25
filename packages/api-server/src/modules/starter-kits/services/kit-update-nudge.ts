@@ -2,10 +2,14 @@ import type { Session } from "agent-runtime-api";
 import type { SessionMessageEventPayload } from "agent-runtime-api";
 import { isKitUpdateSession } from "api-server-api";
 import type { KitUpdatePending } from "api-server-api";
+import { hasA2uiBlock } from "api-server-api/chat-forms";
+
+import { lastTurnReply } from "../domain/turn-reply.js";
 
 import type { KitUpdateMarks } from "./kit-updates.js";
 
 const SESSION_READ_TIMEOUT_MS = 10_000;
+const REPLY_TAIL_FRAMES = 2_000;
 
 export interface KitUpdateNudge {
   turnEnded(agentId: string, sessionId: string): Promise<void>;
@@ -25,9 +29,11 @@ function nudgeText(targetCommit: string): string {
  * who does not know it needs their word. This reminds the agent once per
  * update: when the turn that carries the update ends, the update is still
  * pending and it has not been reminded yet, it sends one notice into that same
- * Session. The mark goes down before the notice, so a crash between the two
- * costs the reminder rather than repeating it, and a second turn end never
- * reminds again. A Session the update did not open, an update already reported
+ * Session. A turn whose reply carries a chat form waits on the user's answer,
+ * and a notice would supersede the form and lock it, so that turn end is
+ * skipped and a later one reminds. The mark goes down before the notice, so
+ * a crash between the two costs the reminder rather than repeating it, and a
+ * second turn end never reminds again. A Session the update did not open, an update already reported
  * or cancelled, and a Session the agent no longer lists are all left alone.
  */
 export function createKitUpdateNudge(deps: {
@@ -37,6 +43,12 @@ export function createKitUpdateNudge(deps: {
     agentId: string,
     signal: AbortSignal,
   ) => Promise<{ sessions: Session[] }>;
+  history: (
+    agentId: string,
+    sessionId: string,
+    tail: number,
+    signal: AbortSignal,
+  ) => Promise<string[]>;
   send: (
     agentId: string,
     payload: SessionMessageEventPayload,
@@ -55,6 +67,13 @@ export function createKitUpdateNudge(deps: {
       );
       const session = sessions.find((s) => s.sessionId === sessionId);
       if (!session || !isKitUpdateSession(session, pending)) return;
+      const frames = await deps.history(
+        agentId,
+        sessionId,
+        REPLY_TAIL_FRAMES,
+        AbortSignal.timeout(SESSION_READ_TIMEOUT_MS),
+      );
+      if (hasA2uiBlock(lastTurnReply(frames))) return;
 
       const marked = await deps.marks.nudge(
         agentId,
