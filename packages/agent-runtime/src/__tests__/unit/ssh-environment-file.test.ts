@@ -4,7 +4,7 @@ import {
   SSHD_MAX_ENV_ENTRIES,
 } from "../../modules/ssh.js";
 
-// TEST_OVERVIEW: `~/.ssh/environment` is what gives an SSH session the agent pod's environment. sshd reads it into the login shell and dies with "child_set_env: too many env vars" past 1000 entries, so the file must stay under that limit and keep the entries that matter (credentials, proxy, PATH) when it has to drop some.
+// TEST_OVERVIEW: `~/.ssh/environment` is what gives an SSH session the machine's environment. sshd reads it into the login shell and dies with "child_set_env: too many env vars" past 1000 entries, so the file must stay under that limit and keep the entries that matter (credentials, proxy, PATH) when it has to drop some.
 
 const keys = (body: string) =>
   body

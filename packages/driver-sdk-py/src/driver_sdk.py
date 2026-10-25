@@ -13,7 +13,7 @@ have to be baked too). The Python twin of ``/usr/local/lib/driver-sdk.mjs``:
 - ``list_images`` / ``list_connections`` / ``budget`` read what a spawn can use.
 - ``s`` is shorthand for result schemas.
 
-Self-configures from ``PLATFORM_MCP_URL`` (set on every agent pod); there is no
+Self-configures from ``PLATFORM_MCP_URL`` (set on every agent's machine); there is no
 token, the mesh proves identity. Progress goes to stderr so the script's own
 stdout stays clean.
 """
@@ -68,7 +68,7 @@ def _config() -> str:
     mcp_url = os.environ.get("PLATFORM_MCP_URL")
     if not mcp_url:
         raise RuntimeError(
-            "PLATFORM_MCP_URL is not set — the driver SDK only runs inside a platform agent pod."
+            "PLATFORM_MCP_URL is not set — the driver SDK only runs inside a platform agent's machine."
         )
     m = re.match(r"^(https?://[^/]+)/api/agents/([^/]+)/mcp$", mcp_url)
     if not m:

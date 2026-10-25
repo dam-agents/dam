@@ -61,7 +61,7 @@ export function createResourceAlertsService(deps: {
 
   async function evaluateOom(ownerSub: string): Promise<void> {
     const affected = (await deps.listOwnerAgents(ownerSub)).filter(
-      (a) => a.agentPodNotReadyReason === RUNNER_OOM_REASON,
+      (a) => a.machineNotReadyReason === RUNNER_OOM_REASON,
     );
     const at = now();
     const mark = await advance(
@@ -120,7 +120,7 @@ export function createResourceAlertsService(deps: {
     agentChanged(agent) {
       if (!agent.owner) return;
       if (
-        agent.agentPodNotReadyReason === RUNNER_OOM_REASON ||
+        agent.machineNotReadyReason === RUNNER_OOM_REASON ||
         openOom.has(agent.owner)
       )
         scheduleOom(agent.owner);

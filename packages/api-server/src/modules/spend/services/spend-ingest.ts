@@ -49,7 +49,7 @@ const REFERENCE_DAYS = 7;
 const PROXY_COST_TOLERANCE = 0.05;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the stamp comes from the agent's pod, so a
+ * UNIT_BOUNDARY_DESCRIPTION: the stamp comes from the agent's machine, so a
  * Session counts only when the calling agent reported it to the Session
  * directory; any other stamp, or a failed check, counts as no Session. The
  * split is for display only, so the check never loses a call's spend.
