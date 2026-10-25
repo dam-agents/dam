@@ -5,7 +5,6 @@ import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
 
-import type { SharedChannel } from "../../sandboxes/lib/shared-channels.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { CatalogSatellitesPane } from "../../satellites/components/catalog-satellites-pane.js";
 import { fetchConnection, useAppConnections } from "../api/queries.js";
@@ -20,6 +19,8 @@ import {
   catalogTabCounts,
   filterGroupsByAccepts,
 } from "../lib/catalog-providers.js";
+import type { ConnectionAudience } from "../lib/connection-audience.js";
+import type { NamedConnection } from "../lib/connection-label.js";
 import {
   grantBlockedReason,
   grantRivalry,
@@ -32,9 +33,9 @@ import {
   CatalogProviderCard,
   type SandboxGrantControls,
 } from "./catalog-provider-card.js";
+import { ConnectionAudienceNotice } from "./connection-audience-notice.js";
+import { ConnectionAudienceSentence } from "./connection-audience-sentence.js";
 import { ConnectionMaintenanceDialog } from "./connection-update-credential-dialog.js";
-import { SharedChannelsNotice } from "./shared-channels-notice.js";
-import { SharedChannelsPhrase } from "./shared-channels-phrase.js";
 
 const NO_CONNECTIONS: ConnectionView[] = [];
 const MCP_PROVIDER_ID = "mcp-server";
@@ -44,16 +45,15 @@ type Pane =
   | { kind: "create"; providerId: string }
   | { kind: "create-mcp" };
 
-export interface ChannelSharing {
-  channels: readonly SharedChannel[] | null;
-  confirm: () => Promise<boolean>;
-  dismissed: boolean;
+export interface ConnectionSharing {
+  notice: ConnectionAudience | null;
+  confirm: (connection?: NamedConnection) => Promise<boolean>;
 }
 
 interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
-  sharing?: ChannelSharing;
+  sharing?: ConnectionSharing;
   satelliteGrant?: (satellite: SatelliteView) => RowGrantControls;
   oauthReturnView?: string;
   onGoToChannels?: () => void;
@@ -151,7 +151,8 @@ export function ConnectionCatalogModal({
       sandbox.onToggleGrant(id, false);
   };
 
-  const confirmShare = async () => !sharing || (await sharing.confirm());
+  const confirmShare = async (connection?: NamedConnection) =>
+    !sharing || (await sharing.confirm(connection));
 
   const openNew = async (group: CatalogProviderGroup) => {
     const providerId = group.provider.id;
@@ -166,7 +167,8 @@ export function ConnectionCatalogModal({
     ...sandbox,
     onToggleGrant: (id: string, on: boolean) =>
       void (async () => {
-        if (on && !(await confirmShare())) return;
+        const connection = connectionsQ.data?.find((c) => c.id === id);
+        if (on && !(await confirmShare(connection))) return;
         sandbox.onToggleGrant(id, on);
       })(),
   };
@@ -179,20 +181,24 @@ export function ConnectionCatalogModal({
         ...controls,
         onToggle: (on) =>
           void (async () => {
-            if (on && !(await confirmShare())) return;
+            if (on && !(await confirmShare(satellite))) return;
             controls.onToggle(on);
           })(),
       };
     });
 
   const grantCreated = async (id: string) => {
-    if (sandbox && !createShareConfirmed.current && !(await confirmShare())) {
+    const created = sandbox && (await fetchConnection(id).catch(() => null));
+    if (
+      sandbox &&
+      !createShareConfirmed.current &&
+      !(await confirmShare(created ?? undefined))
+    ) {
       emitToast({ kind: "success", message: "Connection created." });
       onClose();
       return;
     }
     if (sandbox) {
-      const created = await fetchConnection(id).catch(() => null);
       const rivalry = created && grantRivalry(created, grantedConnections);
       if (rivalry) {
         emitToast({ kind: "warning", message: grantSkippedMessage(rivalry) });
@@ -246,12 +252,13 @@ export function ConnectionCatalogModal({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {pane.kind === "browse" && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-              {sharing?.dismissed && !!sharing.channels?.length && (
-                <SharedChannelsNotice>
-                  This agent is bound to{" "}
-                  <SharedChannelsPhrase channels={sharing.channels} />. Anyone
-                  there can use the connections you add here, with your access.
-                </SharedChannelsNotice>
+              {sharing?.notice && (
+                <ConnectionAudienceNotice>
+                  <ConnectionAudienceSentence
+                    audience={sharing.notice}
+                    uses="the connections you add here"
+                  />
+                </ConnectionAudienceNotice>
               )}
               {narrowed?.length === 0 && !loadingCatalog && (
                 <p className="text-sm text-muted-foreground">

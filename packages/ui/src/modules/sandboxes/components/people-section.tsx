@@ -13,8 +13,10 @@ import {
   useLeaveAgent,
   useSetAgentEditors,
 } from "../../agents/api/mutations.js";
+import { ConnectionNamesTooltip } from "../../agents/components/connection-names-tooltip.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
-import { EDITORS_WARNING } from "../../agents/lib/agent-editors.js";
+import { useActingConnectionNames } from "../../agents/hooks/use-acting-connection-names.js";
+import { editorsWarning } from "../../agents/lib/agent-editors.js";
 import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.js";
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
 
@@ -47,6 +49,7 @@ function OwnerPeople({
   editors: string[];
 }) {
   const ownEmail = signedInEmail();
+  const warning = editorsWarning(useActingConnectionNames(agentId) ?? []);
   return (
     <section className="mb-8 flex flex-col gap-4" data-testid="agent-people">
       <div className="flex flex-col gap-2">
@@ -59,9 +62,18 @@ function OwnerPeople({
         <SectionLabel>Editors</SectionLabel>
         <EditorListForm agentId={agentId} saved={editors} />
       </div>
-      <Callout tone="warning" size="sm" role="note" className="text-xs">
-        {EDITORS_WARNING}
-      </Callout>
+      <ConnectionNamesTooltip connections={warning.connections}>
+        <Callout
+          tone="warning"
+          size="sm"
+          role="note"
+          className="text-xs"
+          tabIndex={warning.connections?.more ? 0 : undefined}
+          data-testid="agent-editors-warning"
+        >
+          {warning.text}
+        </Callout>
+      </ConnectionNamesTooltip>
     </section>
   );
 }

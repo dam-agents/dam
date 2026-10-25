@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { getBrand } from "../../../brand.js";
 import { trpc } from "../../../trpc.js";
 import { ConnectionIcon } from "../components/connection-icon.js";
+import { SecretRequestAudience } from "../components/secret-request-audience.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import {
   credentialCheckDetails,
@@ -206,6 +207,7 @@ function SecretForm({
         agents never see it.
       </p>
       <Summary view={view} />
+      <SecretRequestAudience view={view} />
       {view.customDestination && view.unexpectedHosts.length === 0 && (
         <p className="mt-4 text-sm text-muted-foreground">
           This connection type sends the secret to any host the command names.
