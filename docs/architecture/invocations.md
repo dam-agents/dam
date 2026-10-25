@@ -199,7 +199,7 @@ Script spawns are never pushed — the SDK polls, and an extra turn per child wo
 A runtime too old to know the kind drops it at dispatch; await_subagents still works.
 
 **The model is told when not to use it, and must say why it does.** Most harnesses carry their own in-sandbox subagents, which start in seconds and cost nothing extra.
-spawn_subagent's description opens by steering the model there when its harness has one, and names what only a platform sub-agent gives: another harness, its own setup, more disk or a microVM, isolation from the Driver's workspace, heavy parallel work, a schema-checked result.
+spawn_subagent's description opens by steering the model there when its harness has one, and names what only a platform sub-agent gives: another harness, its own setup, more disk, isolation from the Driver's workspace, heavy parallel work, a schema-checked result.
 The call must name one or more of these as `needs`, and the server refuses a need the request does not bear out — another harness that is the Driver's own, a setup with no seed, install, env or skills, more disk with none asked, a schema-checked result from a script — so a stated need is one the model acted on; the three it cannot check pass as stated.
 Every harness gets the delegation skill from the base image, and the base image's instructions repeat the rule in two sentences.
 The SDK's spawn route has no `needs`: a script is a deliberate choice already.
