@@ -85,16 +85,12 @@ export function CronScheduleForm({
     resolver: zodResolver(cronFormSchema),
     defaultValues: cronFormDefaults(existing),
   });
-  const { errors, isDirty, dirtyFields } = formState;
+  const { errors, isDirty } = formState;
   const close = useGuardedClose(isDirty, onClose);
   useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
   const cron = watch("cron").trim();
   const runs = errors.cron ? [] : nextCronRuns(cron, new Date(), PREVIEW_RUNS);
 
-  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the user changed it,
-   * so a profile edited after the form opened is not detached by the values the
-   * form was loaded with; Save and Convert both read the draft, so both obey
-   * one rule. */
   const draftOf = (v: CronFormValues): Schedule => {
     const settings = Object.fromEntries(
       Object.entries(v.settings).filter(([, value]) => value !== ""),
@@ -115,19 +111,25 @@ export function CronScheduleForm({
 
   /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the user changed it,
    * so a profile edited after the form opened is not detached by the values the
-   * form was loaded with; Save and Convert read the same payload. */
+   * form was loaded with. The comparison is against the schedule the form was
+   * opened with, never against the form's own dirty state: Convert unmounts and
+   * remounts this form with the draft, which would forget every change. */
+  const loaded = cronFormDefaults(existing);
+  const loadedSettings = Object.fromEntries(
+    Object.entries(loaded.settings).filter(([, value]) => value !== ""),
+  );
   const changedChoices = (v: CronFormValues) => {
     const settings = Object.fromEntries(
       Object.entries(v.settings).filter(([, value]) => value !== ""),
     );
+    const harness = v.harness.trim() || null;
+    const model = v.model.trim() || null;
     return {
-      ...(dirtyFields.harness ? { harness: v.harness.trim() || null } : {}),
-      ...(dirtyFields.model ? { model: v.model.trim() || null } : {}),
-      ...(dirtyFields.settings
-        ? {
-            settings: Object.keys(settings).length > 0 ? settings : null,
-          }
-        : {}),
+      ...(harness !== (loaded.harness.trim() || null) && { harness }),
+      ...(model !== (loaded.model.trim() || null) && { model }),
+      ...(JSON.stringify(settings) !== JSON.stringify(loadedSettings) && {
+        settings: Object.keys(settings).length > 0 ? settings : null,
+      }),
     };
   };
 
