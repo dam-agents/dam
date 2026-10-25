@@ -106,6 +106,11 @@ export function ProfileChoices({
     <ul className="flex flex-col">
       {profiles.map((profile) => {
         const unavailable = profile.availability?.available === false;
+        /* UNIT_BOUNDARY_DESCRIPTION: a profile whose provider the owner holds and
+         * the agent does not is one pick away from running, so the row offers the
+         * repair and the pick makes it — the same one click, whether or not the
+         * profile reads as available (QA D3). */
+        const attachable = profile.availability?.attachable === true;
         const selected =
           profile.id === selectedId ||
           (current !== null && sameAsProfile(current, profile));
@@ -117,7 +122,7 @@ export function ProfileChoices({
               aria-disabled={unavailable ? true : undefined}
               disabled={unavailable}
               title={profile.availability?.reason ?? profileDetail(profile)}
-              onClick={() => onPick(profile)}
+              onClick={() => (attachable ? onAttach(profile) : onPick(profile))}
               className={cn(
                 "flex w-full min-w-0 flex-col rounded px-2 py-1 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-60",
                 selected && "font-medium text-foreground",
@@ -127,22 +132,18 @@ export function ProfileChoices({
               <span className="truncate text-xs text-muted-foreground">
                 {unavailable
                   ? (profile.availability?.reason ?? profileDetail(profile))
-                  : profileDetail(profile)}
+                  : attachable
+                    ? "Connect its provider to run it here"
+                    : profileDetail(profile)}
               </span>
             </button>
-            {unavailable && (
+            {(unavailable || attachable) && (
               <button
                 type="button"
-                onClick={() =>
-                  profile.availability?.attachable === true
-                    ? onAttach(profile)
-                    : onManage()
-                }
+                onClick={() => (attachable ? onAttach(profile) : onManage())}
                 className="self-start px-2 pb-1 text-xs text-accent underline-offset-2 hover:underline"
               >
-                {profile.availability?.attachable === true
-                  ? "Connect this provider"
-                  : "Configure providers"}
+                {attachable ? "Connect this provider" : "Configure providers"}
               </button>
             )}
           </li>

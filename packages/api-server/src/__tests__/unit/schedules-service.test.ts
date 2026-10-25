@@ -137,12 +137,13 @@ describe("updateRRule on a cron schedule", () => {
       precheck: "check.sh",
     });
 
+    /* UNIT_BOUNDARY_DESCRIPTION: a schedule that had no quiet hours keeps none
+     * stored, rather than gaining an empty list from the form's save. */
     expect(getSavedSpec()).toEqual({
       version: "1",
       type: "rrule",
       rrule: RRULE,
       timezone: "UTC",
-      quietHours: [],
       task: "do the thing",
       precheck: "check.sh",
       enabled: false,
@@ -778,6 +779,42 @@ describe("a schedule's profile", () => {
     expect(created?.profile).toBe("profile-1");
     expect(created?.model).toBeUndefined();
     expect(created?.harness).toBeUndefined();
+  });
+});
+
+describe("a schedule's profile at save", () => {
+  /** TEST_SCENARIO: a profile that cannot run on the agent is refused at save
+   * with its reason, rather than stored to refuse every fire (QA D4). */
+  it("refuses a profile that cannot run on the agent", async () => {
+    const service = createSchedulesService({
+      repo: {
+        async get() {
+          return null;
+        },
+        async create() {
+          throw new Error("must not be stored");
+        },
+      } as unknown as SchedulesRepository,
+      runner: { async sync() {} } as unknown as SchedulerRunner,
+      owner: OWNER,
+      agentBinding: "*",
+      ownedProfile: async () => true,
+      profileIssue: async () =>
+        "the provider it runs on is not attached to this agent",
+    });
+    await expect(
+      service.createRRule({
+        name: "daily",
+        agentId: "agent-1",
+        rrule: RRULE,
+        timezone: TIMEZONE,
+        task: "do the thing",
+        profile: "profile-1",
+      }),
+    ).rejects.toMatchObject({
+      message:
+        "that profile cannot run: the provider it runs on is not attached to this agent",
+    });
   });
 });
 

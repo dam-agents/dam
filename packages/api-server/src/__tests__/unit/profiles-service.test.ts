@@ -182,10 +182,13 @@ describe("profiles service — the seeded Default", () => {
     ]);
   });
 
-  it("writes the marker without a profile when the deployment has no shared provider", async () => {
+  it("claims no marker when the deployment has no shared provider", async () => {
     const fake = fakeRepo({ rows: [] });
     await service(fake, { seededProvider: null }).list();
-    expect(fake.calls.seeds).toEqual([null]);
+    /* UNIT_BOUNDARY_DESCRIPTION: an install that serves no seeded provider
+     * writes nothing and claims nothing, so a later shared provider still
+     * seeds Default. */
+    expect(fake.calls.seeds).toEqual([]);
     expect(fake.calls.inserts).toEqual([]);
   });
 
@@ -320,6 +323,35 @@ describe("profiles service — validation", () => {
     );
     expect(err.code).toBe("BAD_REQUEST");
     expect(err.message).toBe("unknown harness unknown");
+  });
+
+  /** TEST_SCENARIO: a profile holds the settings its harness keeps for a
+   * session, and never the platform sub-agent slot, whose reference is the
+   * agent's. */
+  it("refuses a platform sub-agent setting in a profile", async () => {
+    const fake = fakeRepo({ rows: [] });
+    const err = await refusal(() =>
+      service(fake).create({
+        ...valid,
+        settings: { "platformSubagent.harness": "codex" },
+      }),
+    );
+    expect(err.code).toBe("BAD_REQUEST");
+    expect(err.message).toContain(
+      "platform sub-agent slot belongs to the agent",
+    );
+    expect(fake.calls.inserts).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: a blank setting value is refused, so a profile cannot store
+   * an empty choice. */
+  it("refuses a blank setting value", async () => {
+    const fake = fakeRepo({ rows: [] });
+    const err = await refusal(() =>
+      service(fake).create({ ...valid, settings: { effort: "  " } }),
+    );
+    expect(err.code).toBe("BAD_REQUEST");
+    expect(err.message).toBe("effort needs a value");
   });
 
   it("refuses a provider that is not a preset", async () => {
@@ -489,6 +521,38 @@ describe("profiles service — the fan-out of an edit", () => {
         reason: "this agent does not carry claude-code",
       },
     ]);
+  });
+
+  /** TEST_SCENARIO: an edit no referencing agent can take is put back, so no
+   * new chat is left failing against a profile nothing can run. */
+  it("puts the previous values back when every agent rejects the edit", async () => {
+    const before = row({ id: "p1", seed: null, ...valid });
+    const fake = fakeRepo({
+      rows: [before],
+      usage: {
+        agents: [{ id: "agent-1", slots: ["chat"] }],
+        channels: [],
+        schedules: [],
+      },
+    });
+    const err = await refusal(() =>
+      createProfilesService({
+        repo: fake.repo,
+        owner: "owner-1",
+        catalog,
+        seededProvider: shared,
+        fanOut: {
+          republishDefaults: async () => ({
+            published: false,
+            reason: "Unsupported session setting: effort=ultra-mega",
+          }),
+        },
+      }).update({ id: "p1", settings: { effort: "ultra-mega" } }),
+    );
+    expect(err.code).toBe("BAD_REQUEST");
+    expect(err.message).toContain("no agent can run this profile");
+    const kept = fake.rows.find((r) => r.id === "p1");
+    expect(kept?.settings).toEqual(before.settings);
   });
 
   it("fans out to nobody when nothing points at the profile", async () => {

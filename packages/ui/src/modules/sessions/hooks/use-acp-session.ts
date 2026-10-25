@@ -328,6 +328,9 @@ export function useAcpSession(
       settings: Record<string, string>,
       follows: DefaultKind | null = null,
       afterNextDefaults = false,
+      /* UNIT_BOUNDARY_DESCRIPTION: called once the session took the settings, so
+       * the caller can save the same choice as the chat default (D90). */
+      onConfigured?: () => void,
     ) => {
       const sid = useStore.getState().sessionId;
       if (!sid || !selectedAgent) return;
@@ -343,6 +346,7 @@ export function useAcpSession(
         await queryClient.invalidateQueries({
           queryKey: acpSessionsKeys.agent(selectedAgent),
         });
+        onConfigured?.();
       } catch (err) {
         emitToast({
           kind: "error",

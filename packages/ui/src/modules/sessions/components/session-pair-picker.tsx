@@ -67,6 +67,7 @@ import {
 } from "../lib/session-settings.js";
 import {
   primaryPickSettings,
+  primaryProfileOf,
   subagentProfileOf,
   withSubagent,
 } from "../lib/subagent-choice.js";
@@ -419,6 +420,10 @@ export function SessionPairPicker(props: Props) {
                   if (pair)
                     choose(withSubagent(pair, null), {
                       platformSubagentProfileId: null,
+                      /* UNIT_BOUNDARY_DESCRIPTION: clearing the slot changes
+                       * nothing the primary runs, so its reference stays (QA
+                       * D2). */
+                      profileId: primaryProfileOf(pair, profiles)?.id ?? null,
                     });
                 }}
                 onPick={(profile) => {
@@ -435,7 +440,14 @@ export function SessionPairPicker(props: Props) {
                         g.models.map((m) => ({ name: m.name })),
                       ),
                     ),
-                    { platformSubagentProfileId: profile.id },
+                    {
+                      platformSubagentProfileId: profile.id,
+                      /* UNIT_BOUNDARY_DESCRIPTION: a subagent pick is written
+                       * onto the same pair, so the primary keeps the profile it
+                       * was on — otherwise every later edit of that profile
+                       * stops reaching this agent (QA D2). */
+                      profileId: primaryProfileOf(pair, profiles)?.id ?? null,
+                    },
                   );
                 }}
                 onAttach={(profile) => attachAndPick(profile, true)}

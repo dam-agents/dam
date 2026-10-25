@@ -173,6 +173,35 @@ async function main() {
     JSON.stringify(seeded),
   );
 
+  /* UNIT_BOUNDARY_DESCRIPTION: an install that serves no shared provider claims
+   * no marker, so the same owner seeds Default once the provider is configured
+   * (QA D7). */
+  const noProviderOwner = unique("owner");
+  const noProvider = createProfilesService({
+    repo,
+    owner: noProviderOwner,
+    catalog,
+    seededProvider: null,
+  });
+  const beforeProvider = await noProvider.list();
+  const afterProvider = await createProfilesService({
+    repo,
+    owner: noProviderOwner,
+    catalog,
+    seededProvider: {
+      providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      model: MODEL,
+    },
+  }).list();
+  check(
+    "a list without a shared provider claims no marker, so Default still arrives later",
+    beforeProvider.length === 0 && afterProvider.some((p) => p.seeded),
+    JSON.stringify({
+      before: beforeProvider.map((p) => p.name),
+      after: afterProvider.map((p) => p.name),
+    }),
+  );
+
   const renamed = await service.update({ id: seeded.id, name: "Cheap" });
   const afterRename = await service.list();
   check(
