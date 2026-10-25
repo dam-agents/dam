@@ -128,6 +128,10 @@ spec:
               value: {{ dict "runner" $runner "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
+            # Cluster-scoped, so an install with its own (several share a cluster)
+            # names its own; the controller mints gateway leaves from it.
+            - name: ENVOY_MITM_CA_ISSUER
+              value: {{ .Values.controller.envoyMitm.caIssuerName | quote }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR
             # overrides them for one user. Enforced at the 0→1 scale-up.
             - name: DEFAULT_USER_CPU_BUDGET

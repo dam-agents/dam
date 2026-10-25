@@ -2011,16 +2011,20 @@ controller:
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart
   # provisions a self-signed CA via cert-manager and a CA ClusterIssuer
-  # (`platform-mitm-ca-issuer`) that the controller uses to mint per-agent leaf
+  # (`platform-mitm-ca-issuer` by default) that the controller uses to mint per-agent leaf
   # certs for Envoy to terminate the agent's TLS and inject credential headers.
   # Requires cert-manager to be installed in the cluster (platform's cluster:install
   # task does this).
   envoyMitm:
     enabled: true
     # -- Name of the bootstrap cluster issuer. Cluster-scoped, so consider
-    # collisions with other charts. The CA issuer is always
-    # `platform-mitm-ca-issuer`, the name the controller mints leaves from.
+    # collisions with other charts. The CA issuer is named by `caIssuerName`,
+    # which the controller reads as ENVOY_MITM_CA_ISSUER.
     bootstrapIssuerName: platform-selfsigned-bootstrap
+    # -- Name of the CA cluster issuer the controller mints gateway leaves
+    # from. Cluster-scoped: an install sharing a cluster with another names its
+    # own.
+    caIssuerName: platform-mitm-ca-issuer
     # -- Where the CA Secret lives. Must equal cert-manager's
     # --cluster-resource-namespace flag (default `cert-manager`).
     caSecretNamespace: cert-manager
