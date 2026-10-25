@@ -229,6 +229,8 @@ func TestTheHostRunnerGetsOneUsageSecretNamingNoOwner(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	// TEST_SCENARIO: one Mac runs one host runner per install, so the port is the install's, and the URL the api-server reads names it.
+	r.config.VM.Runner.HostPort = 4611
 	ctx := context.Background()
 	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
 		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
@@ -253,7 +255,7 @@ func TestTheHostRunnerGetsOneUsageSecretNamingNoOwner(t *testing.T) {
 	assert.Equal(t, "true", usage.Labels[vmRunnerUsageLabel])
 	_, owned := usage.Labels[envoyOwnerLabel]
 	assert.False(t, owned, "one Secret serves every owner, so it names none")
-	assert.Equal(t, fmt.Sprintf("https://192.168.5.2:%d", vmRunnerPort), string(usage.Data["url"]))
+	assert.Equal(t, "https://192.168.5.2:4611", string(usage.Data["url"]), "the URL names the host runner's own port, not the runner pod's")
 	assert.Equal(t, vmrunner.MintUsageCapability(string(token.Data["token"])), string(usage.Data["capability"]))
 }
 

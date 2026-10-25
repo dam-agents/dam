@@ -1,9 +1,32 @@
 import type { AgentAccess } from "api-server-api";
 
+import { type ConnectionList, connectionList } from "./owner-connections.js";
+
 export const EDITORS_TOOLTIP_MAX = 5;
 
-export const EDITORS_WARNING =
-  "Editors can use and delete every session with this agent, yours included. They can read and change its files and environment variables, change its set-up, including its spend limits, and approve actions it takes with your connections. Their use counts toward your own spend limits.";
+const EDITORS_CAN =
+  "Editors can use and delete every session with this agent, yours included. They can read and change its files and environment variables, change its set-up, including its spend limits, and approve actions it takes with your connections";
+
+const EDITORS_SPEND = "Their use counts toward your own spend limits.";
+
+export const EDITORS_WARNING = `${EDITORS_CAN}. ${EDITORS_SPEND}`;
+
+export interface EditorsWarning {
+  text: string;
+  connections: ConnectionList | null;
+}
+
+export function editorsWarning(
+  connectionNames: readonly string[],
+): EditorsWarning {
+  if (connectionNames.length === 0)
+    return { text: EDITORS_WARNING, connections: null };
+  const connections = connectionList(connectionNames);
+  return {
+    text: `${EDITORS_CAN}: ${connections.list}. ${EDITORS_SPEND}`,
+    connections,
+  };
+}
 
 const editorCount = (count: number) =>
   `${count} editor${count === 1 ? "" : "s"}`;

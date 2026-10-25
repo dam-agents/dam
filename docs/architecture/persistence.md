@@ -228,12 +228,11 @@ The home holds:
 
 The disk survives hibernation — a stopped machine keeps it — and goes with the Agent on delete.
 What does not survive is the root outside `HOME` once an image of another root generation replaces it, OS-level changes and packages installed at runtime with it ([vm storage](vm-storage.md)).
-`$HOME/.cache` is deliberately kept off the home: the base-image entrypoint redirects it to `/tmp/agent-cache` so churn-heavy tool caches don't load the disk, npm's cache with it.
-The redirect is best-effort: a failed swap costs speed, not the boot.
+`$HOME/.cache` stays in the home and on the machine's disk: it was kept off the home only while a pod served as the agent's root, where it went to the pod's local `/tmp` and npm's cache with it.
 
 **Caches outlive their tools.** A cache of a tool the image dropped stays on the disk until the home is full.
 A full home keeps agent-runtime up, unsaved state in memory; the chat says so.
-The entrypoint discards at boot the caches no shipped tool reads — Go's module cache, pnpm store layouts the shipped pnpm does not name (aube names its own), npm's once redirected — moved aside and deleted in the background.
+The entrypoint discards at boot the caches no shipped tool reads — Go's module cache, and pnpm store layouts the shipped pnpm does not name (aube names its own) — moved aside and deleted in the background.
 Toolchains the agent installed for itself are never touched.
 
 ### The machine image cache

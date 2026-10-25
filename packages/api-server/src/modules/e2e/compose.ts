@@ -9,6 +9,11 @@ export function composeE2eModule(deps: {
   namespace: string;
   slack?: SlackE2eControl;
   slackInstalls?: SlackInstallE2eControl;
+  linkSlackUser?: (
+    slackUserId: string,
+    keycloakSub: string,
+    teamId: string,
+  ) => Promise<void>;
 }): {
   service: E2eService;
 } {

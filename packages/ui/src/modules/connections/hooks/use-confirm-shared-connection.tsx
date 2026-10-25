@@ -1,49 +1,65 @@
 import { useCallback } from "react";
 
+import { ConnectionAudienceSentence } from "../components/connection-audience-sentence.js";
 import {
-  type SharedChannel,
-  sharedChannelsTitle,
-} from "../../sandboxes/lib/shared-channels.js";
-import { SharedChannelsPhrase } from "../components/shared-channels-phrase.js";
-import { useDismissibleConfirm } from "./use-dismissible-confirm.js";
+  type AudienceKind,
+  audiencesToWarn,
+  type ConnectionAudience,
+  noticeAudience,
+  sharedConnectionTitle,
+} from "../lib/connection-audience.js";
+import {
+  connectionLabel,
+  type NamedConnection,
+} from "../lib/connection-label.js";
+import { useDismissibleConfirms } from "./use-dismissible-confirm.js";
 
-const DISMISSED_STORAGE_KEY = "platform-shared-connection-confirm-dismissed";
+const DISMISSED_STORAGE_KEY: Record<AudienceKind, string> = {
+  channels: "platform-shared-connection-confirm-dismissed",
+  editors: "platform-editors-connection-confirm-dismissed",
+};
 
 export interface SharedConnectionConfirm {
-  dismissed: boolean;
-  confirm: () => Promise<boolean>;
+  notice: ConnectionAudience | null;
+  confirm: (connection?: NamedConnection) => Promise<boolean>;
 }
 
 export function useConfirmSharedConnection(
-  channels: readonly SharedChannel[] | null,
+  audience: ConnectionAudience,
 ): SharedConnectionConfirm {
-  const { dismissed, confirm: confirmDismissible } = useDismissibleConfirm(
-    DISMISSED_STORAGE_KEY,
+  const { dismissed, confirm: confirmDismissible } = useDismissibleConfirms();
+  const confirm = useCallback(
+    async (connection?: NamedConnection) => {
+      const shown = audiencesToWarn(audience, (kind) =>
+        dismissed(DISMISSED_STORAGE_KEY[kind]),
+      );
+      if (shown.length === 0) return true;
+      return confirmDismissible(
+        {
+          title: sharedConnectionTitle(audience),
+          body: (
+            <ConnectionAudienceSentence
+              audience={audience}
+              uses={
+                connection ? (
+                  <strong className="font-semibold text-foreground">
+                    {connectionLabel(connection)}
+                  </strong>
+                ) : (
+                  "the connections you add"
+                )
+              }
+            />
+          ),
+          confirmLabel: "Add connection",
+        },
+        shown.map((kind) => DISMISSED_STORAGE_KEY[kind]),
+      );
+    },
+    [audience, dismissed, confirmDismissible],
   );
-  const confirm = useCallback(async () => {
-    if (channels === null)
-      return confirmDismissible({
-        title: "This connection may be shared with a Slack or Telegram chat",
-        body: (
-          <>
-            If this agent is bound to a Slack channel or a group chat, anyone
-            there can ask it to use the connections you add, with your access.
-          </>
-        ),
-        confirmLabel: "Add connection",
-      });
-    if (channels.length === 0) return true;
-    return confirmDismissible({
-      title: `This connection will be shared with ${sharedChannelsTitle(channels)}`,
-      body: (
-        <>
-          This agent is bound to <SharedChannelsPhrase channels={channels} />.
-          Anyone there can ask it to use the connections you add, with your
-          access.
-        </>
-      ),
-      confirmLabel: "Add connection",
-    });
-  }, [channels, confirmDismissible]);
-  return { dismissed, confirm };
+  const notice = noticeAudience(audience, (kind) =>
+    dismissed(DISMISSED_STORAGE_KEY[kind]),
+  );
+  return { notice, confirm };
 }

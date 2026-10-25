@@ -291,6 +291,24 @@ export const agentsRouter = t.router({
             message:
               "No Slack workspace is connected yet — an operator connects one under Settings → Slack workspaces",
           });
+        case "SlackAccountUnlinked":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Link your Slack account first: run the app's login command in Slack, then try again. Or run its bind command in the channel itself",
+          });
+        case "NotChannelMember":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "You can connect only a channel you and the bot are both in. Join the channel, or invite the bot to it, then try again",
+          });
+        case "MembershipUnchecked":
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message:
+              "Slack could not be asked whether you are in that channel. Try again",
+          });
       }
     }),
 

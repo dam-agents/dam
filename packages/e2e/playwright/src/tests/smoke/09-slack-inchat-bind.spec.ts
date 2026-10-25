@@ -4,6 +4,7 @@ import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName } from "../../lib/fixtures.js";
+import { connectSlackAsMember } from "../../lib/slack.js";
 
 const inchatChannelId = "C-E2E-INCHAT";
 const freshChannelId = "C-E2E-INCHAT-FRESH";
@@ -16,7 +17,7 @@ test("in-chat bind/unbind slash-command behavior", async () => {
   const agentId = await waitForAgentRunning(api, agentName);
 
   await test.step("owner binds a channel (starts the gateway)", async () => {
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: inchatChannelId,
     });

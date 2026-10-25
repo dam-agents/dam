@@ -17,8 +17,15 @@ vi.mock("../../modules/agents/hooks/use-order-drag.js", () => ({
   useOrderDrag: () => ({ dragProps: {}, indicator: null }),
 }));
 
-const { EDITORS_WARNING, editorsTooltip, ownerLine, peopleSummary } =
-  await import("../../modules/agents/lib/agent-editors.js");
+const {
+  EDITORS_WARNING,
+  editorsTooltip,
+  editorsWarning,
+  ownerLine,
+  peopleSummary,
+} = await import("../../modules/agents/lib/agent-editors.js");
+const { actingConnectionNames } =
+  await import("../../modules/agents/lib/owner-connections.js");
 const { TooltipProvider } = await import("../../components/ui/tooltip.js");
 const { SidebarAgentRow } =
   await import("../../modules/agents/components/sidebar-agent-row.js");
@@ -128,5 +135,44 @@ describe("the owner's warning in People", () => {
       /approve actions it takes with your connections/,
     );
     expect(EDITORS_WARNING).toMatch(/counts toward your own spend limits/);
+  });
+});
+
+describe("the connections the warning in People names", () => {
+  // TEST_SCENARIO: AC-6 — an agent with GitHub acting as tomkis, Google Drive acting as an email, and Linear names each, with its account when known, and leaves out the model provider.
+  it("names each connection as its account", () => {
+    const names = actingConnectionNames([
+      { name: "GitHub", templateId: "github", accountLabel: "tomkis" },
+      {
+        name: "Google Drive",
+        templateId: "google-drive",
+        accountLabel: "tomas@example.com",
+      },
+      { name: "Anthropic", templateId: "anthropic" },
+      { name: "Linear", templateId: "linear" },
+    ]);
+    const warning = editorsWarning(names);
+    expect(warning.text).toContain(
+      "approve actions it takes with your connections: GitHub as tomkis, Google Drive as tomas@example.com, Linear. Their use counts toward your own spend limits.",
+    );
+    expect(warning.connections?.more).toBe(0);
+  });
+
+  // TEST_SCENARIO: AC-6 — more than three connections show three and count the rest; the tooltip lists them all.
+  it("shows more than three in a tooltip", () => {
+    const names = ["GitHub as tomkis", "Slack", "Linear", "Notion", "Jira"];
+    const warning = editorsWarning(names);
+    expect(warning.text).toContain(
+      "with your connections: GitHub as tomkis, Slack, Linear and 2 more.",
+    );
+    expect(warning.connections).toMatchObject({ names, more: 2 });
+  });
+
+  // TEST_SCENARIO: AC-7 — an agent with no connections but model providers keeps today's warning word for word.
+  it("keeps today's warning without connections", () => {
+    expect(editorsWarning([])).toEqual({
+      text: EDITORS_WARNING,
+      connections: null,
+    });
   });
 });

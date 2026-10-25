@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#MISE description="Show the installs on the cluster: names, namespaces, addresses, runners"
+#MISE raw=true
+#USAGE flag "--name <name>" help="Only this install"
+#USAGE flag "--all" help="Every install on the cluster"
+set -eo pipefail
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+
+# An install is a `platform*` Helm release in a namespace of its own, so the
+# release list is the install list: nothing else records one. Its port is in the
+# cluster's one Traefik config, one entrypoint per install, which is also what
+# the installs read to find a free port.
+ONLY="$CLUSTER_RELEASE"
+[ "${usage_all:-false}" != true ] || ONLY=""
+PORTS="$(kubectl -n kube-system get helmchartconfig traefik -o jsonpath='{.spec.valuesContent}' 2>/dev/null |
+  yq -r '.ports // {} | to_entries[] | .key + "=" + (.value.exposedPort | tostring)' 2>/dev/null || true)"
+export ONLY PORTS
+helm list -A -o json 2>/dev/null | python3 -c '
+import json, os, sys
+try:
+    releases = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+only = os.environ.get("ONLY", "")
+ports = dict(l.split("=", 1) for l in os.environ.get("PORTS", "").splitlines() if "=" in l)
+rows = []
+for r in releases:
+    if not r["name"].startswith("platform") or (only and r["name"] != only):
+        continue
+    name = "" if r["name"] == "platform" else r["name"][len("platform-"):]
+    port = ports.get(r["name"], "?")
+    rows.append((r["namespace"], r["name"], name or "(default)",
+                 "http://localhost:%s" % port, r["status"], r["updated"][:19]))
+if not rows:
+    print("no matching install; --all lists every install on the cluster")
+else:
+    print("%-24s %-24s %-12s %-28s %-12s %s" % ("NAMESPACE", "RELEASE", "NAME", "ADDRESS", "STATUS", "UPDATED"))
+    for ns, rel, name, address, status, updated in sorted(rows):
+        print("%-24s %-24s %-12s %-28s %-12s %s" % (ns, rel, name, address, status, updated))
+'
+
+echo ""
+echo "=== Runners ==="
+kubectl get deploy,ds -A -l app.kubernetes.io/component=vm-runner -o custom-columns='KIND:.kind,NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.readyReplicas' 2>/dev/null ||
+  echo "no runner workloads"
+# On a Mac each install runs its own host runner, in a directory and on a port
+# of its own; `instance` records the VM it serves.
+. "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+for d in "$HOST_RUNNER_BASE" "$HOST_RUNNER_BASE"/*/; do
+  [ -f "$d/instance" ] || continue
+  name="$(basename "${d%/}")"
+  [ "${d%/}" != "$HOST_RUNNER_BASE" ] || name="default"
+  port="$(cat "$d/port" 2>/dev/null || echo 4600)"
+  pid="$(cat "$d/runner.pid" 2>/dev/null || true)"
+  if [ -n "$pid" ] && ps -p "$pid" -o command= 2>/dev/null | grep -q "^$HOST_RUNNER_BASE/vm-runner "; then
+    echo "host runner $name: running on 127.0.0.1:$port, serving VM $(cat "$d/instance") (log: ${d%/}/runner.log)"
+  else
+    echo "host runner $name: not running; 'mise run cluster:install -- --name $name' starts it"
+  fi
+done

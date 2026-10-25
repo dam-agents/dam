@@ -29,6 +29,22 @@ export interface ReadInstallationOpts {
   apiBaseUrl: string;
 }
 
+export interface DescribeInstallationTokenOpts extends ReadInstallationOpts {
+  accessToken: string;
+}
+
+export interface GitHubAppTokenOwner {
+  appSlug?: string;
+  accountLogin?: string;
+  repositories?: string[];
+  repositoriesTruncated?: boolean;
+}
+
+export interface RevokeInstallationTokenOpts {
+  apiBaseUrl: string;
+  accessToken: string;
+}
+
 export interface GitHubAppInstallationInfo {
   permissions: Record<string, string>;
   repositories: { id: number; name: string }[];
@@ -68,6 +84,10 @@ export interface GitHubAppEngine {
   readInstallation(
     opts: ReadInstallationOpts,
   ): Promise<GitHubAppInstallationInfo>;
+  describeInstallationToken(
+    opts: DescribeInstallationTokenOpts,
+  ): Promise<GitHubAppTokenOwner>;
+  revokeInstallationToken(opts: RevokeInstallationTokenOpts): Promise<void>;
   scopeUserToken(opts: ScopeUserTokenOpts): Promise<GitHubUserTokenSet>;
   readUserInstallations(
     opts: ReadUserInstallationsOpts,
@@ -91,12 +111,14 @@ interface InstallationTokenResponse {
 }
 
 interface InstallationResponse {
+  app_slug?: string;
   permissions?: Record<string, string>;
   repository_selection?: string;
   account?: { login?: string };
 }
 
 interface InstallationRepositoriesResponse {
+  total_count?: number;
   repositories?: { id?: number; name?: string }[];
 }
 
@@ -339,6 +361,73 @@ export function createGitHubAppEngine(
     }
   }
 
+  async function readJson<T>(
+    url: string,
+    authorization: string,
+  ): Promise<T | undefined> {
+    try {
+      const res = await fetchImpl(url, {
+        headers: githubHeaders(authorization),
+      });
+      if (!res.ok) {
+        await res.body?.cancel();
+        return undefined;
+      }
+      return (await res.json()) as T;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function describeInstallationToken({
+    id,
+    appId,
+    installationId,
+    privateKeyPem,
+    apiBaseUrl,
+    accessToken,
+  }: DescribeInstallationTokenOpts): Promise<GitHubAppTokenOwner> {
+    const base = apiBaseUrl.replace(/\/+$/, "");
+    const [installation, listed] = await Promise.all([
+      readJson<InstallationResponse>(
+        `${base}/app/installations/${encodeURIComponent(installationId)}`,
+        `Bearer ${signAppJwt(id, appId, privateKeyPem)}`,
+      ),
+      readJson<InstallationRepositoriesResponse>(
+        `${base}/installation/repositories?per_page=${REPOS_PER_PAGE}`,
+        `Bearer ${accessToken}`,
+      ),
+    ]);
+    const repositories = listed?.repositories?.flatMap((repo) =>
+      repo.name ? [repo.name] : [],
+    );
+    return {
+      ...(installation?.app_slug ? { appSlug: installation.app_slug } : {}),
+      ...(installation?.account?.login
+        ? { accountLogin: installation.account.login }
+        : {}),
+      ...(repositories ? { repositories } : {}),
+      ...(repositories &&
+      typeof listed?.total_count === "number" &&
+      listed.total_count > repositories.length
+        ? { repositoriesTruncated: true }
+        : {}),
+    };
+  }
+
+  async function revokeInstallationToken({
+    apiBaseUrl,
+    accessToken,
+  }: RevokeInstallationTokenOpts): Promise<void> {
+    try {
+      const res = await fetchImpl(
+        `${apiBaseUrl.replace(/\/+$/, "")}/installation/token`,
+        { method: "DELETE", headers: githubHeaders(`Bearer ${accessToken}`) },
+      );
+      await res.body?.cancel();
+    } catch {}
+  }
+
   function githubHeaders(authorization: string): Record<string, string> {
     return {
       Authorization: authorization,
@@ -504,6 +593,8 @@ export function createGitHubAppEngine(
 
   return {
     mintInstallationToken,
+    describeInstallationToken,
+    revokeInstallationToken,
     scopeUserToken,
     readUserInstallations,
 

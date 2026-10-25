@@ -25,3 +25,11 @@ export function useSlackBindFlow(flowId: string | null) {
     retry: false,
   });
 }
+
+export function useSlackChannelChoices() {
+  return useQuery({
+    ...trpc.channels.slackChannelChoices.queryOptions(),
+    staleTime: 0,
+    gcTime: 0,
+  });
+}

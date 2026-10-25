@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-24
+Last verified: 2026-10-25
 
 ## Session inside the machine
 
@@ -67,6 +67,7 @@ Otherwise — a fork, a harness without the provider, or a message that started 
 User messages with nothing between them are one **batch**, which the agent took as one message: the chat shows them under one header and rewrites them as one, editing their texts joined by a blank line and sending the result as one message.
 The runtime finds that entry in the harness's own history, through the session-history provider, by the message's id or, for a message sent live, by its text; a message that history does not hold is refused rather than cut somewhere else, and only for the first message does an empty Session stand in.
 The copy's history is loaded before anything else and the edited message is its first new prompt.
+To the platform tools a fork is a session of its own, with its own session reference; a rewind keeps the original's reference, so a check-back the original scheduled still lands in it ([schedules](schedules.md)).
 A rewritten follow-up chat keeps its copy, and the cut compares user messages with the `<continued-from>` block removed; a copy cut at the start carries the block again in its first prompt.
 A rewind by copy gives the copy the original's place, title and creation time and then deletes the original like any deleted Session, so the conversation keeps going under a new id; a fork leaves the original as it was and lists the copy as a new conversation.
 Files the agent changed stay changed.

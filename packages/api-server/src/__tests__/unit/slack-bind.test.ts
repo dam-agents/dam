@@ -1,10 +1,10 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
-import type { ConnectSlackResult } from "api-server-api";
 import { configureLogger } from "../../core/logger.js";
 import {
   executeSlackBind,
   type SlackBindingPort,
+  type SlackConnectResult,
 } from "../../modules/agents/services/agents-service.js";
 import { createFlowStore } from "../../modules/channels/infrastructure/bind-flow-store.js";
 import type { SlackPendingBind } from "../../modules/channels/infrastructure/slack-flows.js";
@@ -18,7 +18,7 @@ async function harness(opts?: {
   boundTo?: string | null;
   boundIn?: string;
   connectOk?: boolean;
-  connectError?: ConnectSlackResult & { ok: false };
+  connectError?: SlackConnectResult & { ok: false };
   postError?: string;
 }) {
   const store = createFlowStore<SlackPendingBind>({
@@ -45,7 +45,7 @@ async function harness(opts?: {
       ? [{ agentId: opts.boundTo, teamId: opts.boundIn ?? "T-HERE" }]
       : [],
   );
-  const connectShared = vi.fn(async (): Promise<ConnectSlackResult> => {
+  const connectShared = vi.fn(async (): Promise<SlackConnectResult> => {
     if (opts?.connectError) return opts.connectError;
     return opts?.connectOk === false
       ? { ok: false, error: { type: "ChannelAlreadyBound" } }

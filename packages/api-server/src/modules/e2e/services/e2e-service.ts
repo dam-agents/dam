@@ -32,6 +32,7 @@ export interface SlackE2eControl {
     channels: { id: string; name: string; botIsMember: boolean }[],
     teamId?: string,
   ): void;
+  addChannelMember(channelId: string, userId: string, teamId?: string): void;
   fireMention(event: SlackFireMentionInput): Promise<void>;
   fireMessage(event: SlackFireMessageInput): Promise<void>;
   fireCommand(command: SlackFireCommandInput): Promise<string>;
@@ -45,6 +46,11 @@ export function createE2eService(deps: {
   namespace: string;
   slack?: SlackE2eControl;
   slackInstalls?: SlackInstallE2eControl;
+  linkSlackUser?: (
+    slackUserId: string,
+    keycloakSub: string,
+    teamId: string,
+  ) => Promise<void>;
 }): E2eService {
   function requireInstalls(): SlackInstallE2eControl {
     if (!deps.slackInstalls) {
@@ -147,6 +153,21 @@ export function createE2eService(deps: {
     },
     slackSetChannels: async (input) => {
       requireSlack().setChannels(input.channels);
+      return { ok: true };
+    },
+    slackAddMember: async (keycloakSub, input) => {
+      const slack = requireSlack();
+      const teamId = input.teamId ?? "";
+      if (input.linkToCaller) {
+        if (!deps.linkSlackUser)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "slack identity linking is not available on this deployment",
+          });
+        await deps.linkSlackUser(input.slackUserId, keycloakSub, teamId);
+      }
+      slack.addChannelMember(input.channelId, input.slackUserId, teamId);
       return { ok: true };
     },
     slackEnableTokenRotation: async () => {
