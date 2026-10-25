@@ -22,7 +22,6 @@ import { providerHarnesses } from "../../sessions/lib/session-pair-options.js";
 import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
-import { SessionDefaultsSection } from "./session-defaults-section.js";
 
 export function SandboxProvidersSection({
   agentId,
@@ -114,7 +113,6 @@ export function SandboxProvidersSection({
           </AddRow>
         </Card>
       )}
-      <SessionDefaultsSection agentId={agentId} />
     </div>
   );
 }

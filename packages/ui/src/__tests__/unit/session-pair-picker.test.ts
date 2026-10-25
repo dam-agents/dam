@@ -143,7 +143,7 @@ vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
 }));
 
 vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
-  useProviderUsage: () => () => ({ kinds: [], schedules: [] }),
+  useProviderUsage: () => () => ({ kinds: [], schedules: [], profiles: [] }),
 }));
 
 vi.mock("../../modules/home/hooks/use-default-model-notices.js", () => ({

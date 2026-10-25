@@ -304,7 +304,11 @@ export function SessionPairPicker(props: Props) {
     return void showConfirm(
       <DetachProviderMessage
         name={name}
-        usage={provider ? usage(provider) : { kinds: [], schedules: [] }}
+        usage={
+          provider
+            ? usage(provider)
+            : { kinds: [], schedules: [], profiles: [] }
+        }
       />,
       `Disconnect ${name} from this agent?`,
       { kind: "destructive", confirmLabel: "Disconnect" },

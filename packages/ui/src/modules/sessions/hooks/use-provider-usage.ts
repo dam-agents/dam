@@ -5,6 +5,7 @@ import {
   type SessionPair,
 } from "api-server-api";
 
+import { useProfiles } from "../../profiles/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { useSessionDefaults } from "../api/session-pair.js";
 import type { ProviderConnectionRef } from "../lib/session-pair-options.js";
@@ -14,6 +15,9 @@ const KINDS: readonly DefaultKind[] = ["chat", "channel", "scheduled"];
 export interface ProviderUsage {
   kinds: DefaultKind[];
   schedules: string[];
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's profiles that name this provider and
+   * are in use somewhere, so detaching it says which of them stop running. */
+  profiles: string[];
 }
 
 const aliasOf = (model: string | null | undefined) =>
@@ -31,6 +35,7 @@ export function useProviderUsage(
 ): (provider: ProviderConnectionRef) => ProviderUsage {
   const { data: saved } = useSessionDefaults(agentId);
   const { data: schedules = [] } = useSchedules(agentId);
+  const { data: profiles = [] } = useProfiles();
   return (provider) => {
     const alias = aliasForProviderType(provider.type);
     const runsOn = (pair: SessionPair | null | undefined) =>
@@ -46,6 +51,16 @@ export function useProviderUsage(
           s.model ? aliasOf(s.model) === alias : kinds.includes("scheduled"),
         )
         .map((s) => s.name),
+      profiles: profiles
+        .filter(
+          (profile) =>
+            profile.providerTemplate === provider.templateId &&
+            profile.usage.agents +
+              profile.usage.channels +
+              profile.usage.schedules >
+              0,
+        )
+        .map((profile) => profile.name),
     };
   };
 }
