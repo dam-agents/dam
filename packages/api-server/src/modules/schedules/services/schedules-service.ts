@@ -155,7 +155,10 @@ function applyProfileTransition(
     const value = given[key];
     if (value === undefined || value === null) return false;
     if (key === "settings")
-      return JSON.stringify(value) !== JSON.stringify(resolved?.settings ?? {});
+      return !sameSettings(
+        value as Record<string, string>,
+        resolved?.settings ?? {},
+      );
     return value !== resolved?.[key];
   };
   if (!differs("harness") && !differs("model") && !differs("settings")) {
