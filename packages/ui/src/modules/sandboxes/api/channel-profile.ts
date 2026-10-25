@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
+import { trpc } from "../../../trpc.js";
 import { agentsKeys } from "../../agents/api/queries.js";
 import { telegramChatsQueryOptions } from "../../telegram/api/queries.js";
 
@@ -20,11 +21,13 @@ export function useSetChannelProfile(agentId: string) {
     }) => api.channels.setProfile.mutate({ agentId, ...input }),
     /* UNIT_BOUNDARY_DESCRIPTION: a Slack row reads the agent's channel list and
      * a Telegram row its bound chats, and a chat's profile lives on the binding
-     * row, so both are refetched rather than one. */
+     * row, so both are refetched rather than one; the owner's profiles are
+     * refetched too, since what a channel runs on is part of a profile's usage. */
     meta: {
       invalidates: [
         agentsKeys.listWithChannels(),
         telegramChatsQueryOptions(agentId).queryKey,
+        trpc.profiles.list.queryKey(),
       ],
     },
   });
