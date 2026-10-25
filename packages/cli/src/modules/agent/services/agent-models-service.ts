@@ -1,6 +1,7 @@
 import type {
   ConnectionView,
   DefaultKind,
+  ProfileView,
   HarnessConfigStatus,
   SessionDefaults,
   SessionPair,
@@ -41,7 +42,9 @@ export interface AgentModelsService {
     agentId: string,
     kind: DefaultKind,
     pair: SessionPair,
+    references?: { profileId?: string | null },
   ): Promise<ModelsResult<void>>;
+  profiles(): Promise<ModelsResult<readonly ProfileView[]>>;
   clearDefault(
     agentId: string,
     kind: Exclude<DefaultKind, "chat">,
@@ -77,14 +80,16 @@ export function createAgentModelsService(deps: {
           ...change,
         });
       }),
-    rememberDefault: (agentId, kind, pair) =>
+    rememberDefault: (agentId, kind, pair, references) =>
       trpcCall(async () => {
         await deps.trpc.harnessConfig.rememberSessionPair.mutate({
           agentId,
           kind,
           ...pair,
+          ...(references !== undefined && { profileId: references.profileId }),
         });
       }),
+    profiles: () => trpcCall(() => deps.trpc.profiles.list.query()),
     clearDefault: (agentId, kind) =>
       trpcCall(async () => {
         await deps.trpc.harnessConfig.clearSessionDefault.mutate({

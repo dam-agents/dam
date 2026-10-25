@@ -126,6 +126,11 @@ function applyProfileTransition(
     model?: string | null;
     settings?: Record<string, string> | null;
   },
+  resolved?: {
+    harness?: string;
+    model?: string;
+    settings?: Record<string, string>;
+  },
 ): void {
   const inlineGiven =
     input.harness !== undefined ||
@@ -142,7 +147,16 @@ function applyProfileTransition(
     delete spec.settings;
     return;
   }
-  if (inlineGiven) delete spec.profile;
+  if (inlineGiven) {
+    delete spec.profile;
+    if (resolved === undefined) return;
+    if (spec.harness === undefined && resolved.harness !== undefined)
+      spec.harness = resolved.harness;
+    if (spec.model === undefined && resolved.model !== undefined)
+      spec.model = resolved.model;
+    if (spec.settings === undefined && resolved.settings !== undefined)
+      spec.settings = resolved.settings;
+  }
 }
 
 function mergedChoices(
@@ -475,7 +489,7 @@ export function createSchedulesService(deps: {
         ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
-      applyProfileTransition(spec, input);
+      applyProfileTransition(spec, input, current.spec);
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (!updated) return null;
@@ -520,7 +534,7 @@ export function createSchedulesService(deps: {
       else if (input.settings !== undefined) delete spec.settings;
       if (input.model !== undefined || input.harness !== undefined)
         delete spec.migrationNote;
-      applyProfileTransition(spec, input);
+      applyProfileTransition(spec, input, current.spec);
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);
@@ -580,7 +594,7 @@ export function createSchedulesService(deps: {
       else if (input.settings !== undefined) delete spec.settings;
       if (input.model !== undefined || input.harness !== undefined)
         delete spec.migrationNote;
-      applyProfileTransition(spec, input);
+      applyProfileTransition(spec, input, current.spec);
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);

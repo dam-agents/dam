@@ -64,6 +64,7 @@ function makeDeps(
     runner,
     owner: OWNER,
     agentBinding: "*",
+    ownedProfile: async () => true,
     ...(validateSessionChoices ? { validateSessionChoices } : {}),
   });
   return { service, getSavedSpec: () => savedSpec, getCleared: () => cleared };
@@ -660,5 +661,103 @@ describe("toggle", () => {
       false,
       true,
     ]);
+  });
+});
+
+describe("a schedule's profile", () => {
+  const profiled = (): Schedule => ({
+    ...makeCurrent(),
+    spec: {
+      ...makeCurrent().spec,
+      profile: "profile-1",
+      harness: "claude-code",
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    },
+  });
+
+  it("keeps the reference when an update names no choice", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, task: "another thing" });
+    expect(getSavedSpec()?.profile).toBe("profile-1");
+    expect(getSavedSpec()?.model).toBe(
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    );
+  });
+
+  it("replaces the reference when a profile is named", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, profile: "profile-2" });
+    expect(getSavedSpec()?.profile).toBe("profile-2");
+    expect(getSavedSpec()?.harness).toBeUndefined();
+    expect(getSavedSpec()?.model).toBeUndefined();
+  });
+
+  it("detaches to the values it ran on when an inline flag is sent", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, model: "cb/other-model" });
+    const saved = getSavedSpec();
+    expect(saved?.profile).toBeUndefined();
+    expect(saved?.harness).toBe("claude-code");
+    expect(saved?.model).toBe("cb/other-model");
+  });
+
+  it("clears the reference on an explicit null and keeps the values", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, profile: null });
+    expect(getSavedSpec()?.profile).toBeUndefined();
+    expect(getSavedSpec()?.model).toBe(
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    );
+  });
+
+  it("refuses a profile its owner does not hold", async () => {
+    const { service } = makeDeps(profiled());
+    const scoped = createSchedulesService({
+      repo: {
+        async get() {
+          return profiled();
+        },
+      } as unknown as SchedulesRepository,
+      runner: { async sync() {} } as unknown as SchedulerRunner,
+      owner: OWNER,
+      agentBinding: "*",
+      ownedProfile: async (id) => id === "profile-1",
+    });
+    await expect(
+      scoped.updateRRule({ ...baseUpdate, profile: "profile-other" }),
+    ).rejects.toMatchObject({ message: "unknown profile" });
+    void service;
+  });
+
+  it("records the profile a create names, and no inline values", async () => {
+    let created: ScheduleSpec | undefined;
+    const service = createSchedulesService({
+      repo: {
+        async create(input: { spec: ScheduleSpec }) {
+          created = input.spec;
+          return { ...makeCurrent(), spec: input.spec };
+        },
+        async get() {
+          return null;
+        },
+      } as unknown as SchedulesRepository,
+      runner: { async sync() {} } as unknown as SchedulerRunner,
+      owner: OWNER,
+      agentBinding: "*",
+      ownedProfile: async () => true,
+    });
+    await service.createRRule({
+      name: "daily",
+      agentId: "agent-1",
+      rrule: RRULE,
+      timezone: TIMEZONE,
+      task: "do the thing",
+      profile: "profile-1",
+      harness: "claude-code",
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    });
+    expect(created?.profile).toBe("profile-1");
+    expect(created?.model).toBeUndefined();
+    expect(created?.harness).toBeUndefined();
   });
 });

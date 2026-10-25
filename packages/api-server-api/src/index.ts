@@ -66,6 +66,7 @@ export type {
 export type {
   HarnessConfigChange,
   SessionPairReferences,
+  RepublishDefaultsResult,
   HarnessConfigStatus,
   DefaultKind,
   SessionDefaults,
@@ -532,6 +533,7 @@ export type {
   ProfileUpdateInput,
   ProfileUnavailableReason,
   ProfileSlot,
+  ProfileUpdateResult,
 } from "./modules/profiles/types.js";
 export {
   profileSchema,
@@ -545,6 +547,7 @@ export {
   profileModelSchema,
   profileSettingsSchema,
   profileSlotSchema,
+  profileUpdateResultSchema,
 } from "./modules/profiles/schemas.js";
 
 export type {

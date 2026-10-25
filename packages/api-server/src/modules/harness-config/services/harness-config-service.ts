@@ -19,6 +19,7 @@ import type {
   HarnessConfigService,
   HarnessConfigSnapshotPatch,
   ProviderPresetType,
+  RepublishDefaultsResult,
   SessionPair,
 } from "api-server-api";
 import { z } from "zod";
@@ -168,6 +169,38 @@ export function createHarnessConfigService(deps: {
         false,
       );
       return pair ?? null;
+    },
+
+    async republishDefaults(agentId): Promise<RepublishDefaultsResult> {
+      await requireOwned(agentId);
+      const references = await deps.pairRepo.readReferences(agentId);
+      if (
+        references.sessionProfile === null &&
+        references.platformSubagentProfile === null
+      )
+        return { published: true };
+      /* UNIT_BOUNDARY_DESCRIPTION: a profile edit is a claim about every agent
+       * that points at it, so each is checked before it is sent anything: an
+       * agent that cannot run the new pair keeps the one it holds, and says
+       * why, rather than being handed a pair its next turn would fail on. */
+      const pair = await deps.pairRepo.read(agentId, "chat");
+      if (pair === null)
+        return {
+          published: false,
+          reason: "the profile cannot run on this agent",
+        };
+      try {
+        await validDefaultPair(agentId, pair);
+      } catch (err) {
+        return {
+          published: false,
+          reason:
+            err instanceof Error ? err.message : "the profile cannot run here",
+        };
+      }
+      await deps.publishDefaults(agentId);
+      notifyDefaultChanged(agentId);
+      return { published: true };
     },
 
     async clearSessionDefault(agentId, kind) {

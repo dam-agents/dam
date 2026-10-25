@@ -11,6 +11,7 @@ import { describeScheduleError } from "../domain/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { profileOrExit } from "./profile-ref.js";
 import {
   buildPresetFromFlags,
   formatWeekdays,
@@ -30,6 +31,7 @@ import type {
 interface UpdateOpts {
   at?: string;
   harness?: string;
+  profile?: string;
   harnessDefault?: boolean;
   model?: string;
   modelDefault?: boolean;
@@ -54,6 +56,10 @@ export function buildUpdateCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createScheduleService: (host: string) => ScheduleService;
+  findProfile: (
+    host: string,
+    ref: string,
+  ) => Promise<{ id: string; name: string } | null>;
 }): Command {
   return new Command("update")
     .description(
@@ -65,6 +71,10 @@ export function buildUpdateCommand(deps: {
     .option(
       "--at <YYYY-MM-DD HH:MM>",
       "one-time schedules only: new local time to run at",
+    )
+    .option(
+      "--profile <name-or-id>",
+      "run it on one of your profiles, by name or id (replaces --harness, --model and --setting)",
     )
     .option(
       "--harness <name>",
@@ -157,7 +167,13 @@ export function buildUpdateCommand(deps: {
       exitOnServiceError(current, host, describeScheduleError);
       const view = current.value;
       if (view.type === "once") {
-        await updateOnce(svc, host, view, opts);
+        await updateOnce(
+          svc,
+          host,
+          view,
+          opts,
+          await profileOrExit(deps, host, opts.profile),
+        );
       }
       if (opts.at !== undefined) {
         process.stderr.write(
@@ -216,6 +232,7 @@ export function buildUpdateCommand(deps: {
       }
 
       const sessionMode = opts.sessionMode ?? view.sessionMode;
+      const profileId = await profileOrExit(deps, host, opts.profile);
       const result = await svc.updateRRule({
         id,
         name: opts.name ?? view.name,
@@ -225,7 +242,7 @@ export function buildUpdateCommand(deps: {
         task: opts.task ?? view.task ?? "",
         ...(sessionMode ? { sessionMode } : {}),
         precheck: opts.precheckNone ? null : (opts.precheck ?? view.precheck),
-        ...choicesOrExit(opts, view, true),
+        ...choicesOrExit(opts, view, true, profileId),
       });
       exitOnServiceError(result, host, describeScheduleError);
 
@@ -245,6 +262,7 @@ async function updateOnce(
   host: string,
   view: ScheduleView,
   opts: UpdateOpts,
+  profileId: string | null,
 ): Promise<never> {
   const conflicting = recurringFlagsGiven(opts);
   if (conflicting.length > 0) {
@@ -270,7 +288,7 @@ async function updateOnce(
     task: opts.task ?? view.task ?? "",
     at,
     timezone,
-    ...choicesOrExit(opts, view, false),
+    ...choicesOrExit(opts, view, false, profileId),
   });
   exitOnServiceError(result, host, describeScheduleError);
   if (opts.json) {
@@ -285,6 +303,7 @@ async function updateOnce(
 
 function choicesGiven(opts: UpdateOpts): boolean {
   return (
+    opts.profile !== undefined ||
     opts.harness !== undefined ||
     opts.harnessDefault === true ||
     opts.model !== undefined ||
@@ -310,21 +329,31 @@ interface PresentChoices {
   model?: string;
   settings?: Record<string, string>;
 }
+interface ProfiledChoices {
+  profile: string;
+}
 function choicesOrExit(
   opts: UpdateOpts,
   view: ScheduleView,
   nullable: true,
-): NullableChoices;
+  profileId: string | null,
+): NullableChoices | ProfiledChoices;
 function choicesOrExit(
   opts: UpdateOpts,
   view: ScheduleView,
   nullable: false,
-): PresentChoices;
+  profileId: string | null,
+): PresentChoices | ProfiledChoices;
 function choicesOrExit(
   opts: UpdateOpts,
   view: ScheduleView,
   nullable: boolean,
-): NullableChoices {
+  profileId: string | null,
+): NullableChoices | ProfiledChoices {
+  /* UNIT_BOUNDARY_DESCRIPTION: naming a profile replaces the inline values; an
+   * inline flag detaches by sending the values the schedule runs on now, so a
+   * detach keeps what was running instead of dropping it. */
+  if (profileId !== null) return { profile: profileId };
   let given: Record<string, string> | undefined;
   try {
     given = parseSettingFlags(opts.setting);

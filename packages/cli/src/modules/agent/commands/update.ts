@@ -47,6 +47,7 @@ interface UpdateOpts extends AvatarOpts {
   removeProvider: string[];
   harness?: string;
   model?: string;
+  profile?: string;
   setting: string[];
   settingsDefault?: boolean;
   kind: DefaultKind;
@@ -117,6 +118,10 @@ export function buildUpdateCommand(deps: {
       [] as string[],
     )
     .option(
+      "--profile <name-or-id>",
+      "run the chat default on one of your profiles, by name or id (see `dam profile list`)",
+    )
+    .option(
       "--harness <name>",
       "harness the default starts sessions on, one the agent carries",
     )
@@ -176,6 +181,12 @@ export function buildUpdateCommand(deps: {
         opts.settingsDefault === true;
       const providersGiven =
         opts.provider.length > 0 || opts.removeProvider.length > 0;
+      if (opts.profile !== undefined && opts.kind !== "chat")
+        invalid("only the chat default can name a profile");
+      if (opts.profile !== undefined && pairGiven)
+        invalid(
+          "--profile names a profile instead of a harness, model or setting; pass one or the other",
+        );
       const identityGiven =
         opts.name !== undefined ||
         opts.avatar !== undefined ||
@@ -189,9 +200,15 @@ export function buildUpdateCommand(deps: {
         );
       if (settings && opts.settingsDefault)
         invalid("pass --setting or --settings-default, not both");
-      if (!pairGiven && !providersGiven && !opts.sameAsChat && !identityGiven)
+      if (
+        !pairGiven &&
+        !providersGiven &&
+        !opts.sameAsChat &&
+        !identityGiven &&
+        opts.profile === undefined
+      )
         invalid(
-          "nothing to change: pass --name, --avatar, --avatar-file, --avatar-default, --provider, --remove-provider, --harness, --model, --setting or --same-as-chat",
+          "nothing to change: pass --name, --avatar, --avatar-file, --avatar-default, --provider, --remove-provider, --profile, --harness, --model, --setting or --same-as-chat",
         );
 
       const host = await resolveActiveHost(deps, opts.server);
@@ -229,7 +246,34 @@ export function buildUpdateCommand(deps: {
         exitOnServiceError(updated, host);
       }
 
-      if (opts.sameAsChat && opts.kind !== "chat") {
+      if (opts.profile !== undefined) {
+        const all = await svc.profiles();
+        exitOnServiceError(all, host);
+        const profile = all.value.find(
+          (p) => p.id === opts.profile || p.name === opts.profile,
+        );
+        if (!profile)
+          invalid(
+            `unknown profile: ${opts.profile}\nhint: run \`dam profile list\` to see names and ids`,
+          );
+        /* UNIT_BOUNDARY_DESCRIPTION: the server resolves the reference and keeps
+         * only the id, so the values sent here are what the profile says now,
+         * never a copy the CLI decided. */
+        const set = await svc.rememberDefault(
+          agent.id,
+          "chat",
+          {
+            harness: profile.harness,
+            provider: null,
+            model: profile.model,
+            ...(Object.keys(profile.settings).length > 0 && {
+              settings: profile.settings,
+            }),
+          },
+          { profileId: profile.id },
+        );
+        exitOnServiceError(set, host);
+      } else if (opts.sameAsChat && opts.kind !== "chat") {
         const cleared = await svc.clearDefault(agent.id, opts.kind);
         exitOnServiceError(cleared, host);
       } else if (pairGiven) {

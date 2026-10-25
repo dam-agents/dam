@@ -2,6 +2,7 @@ import type { SessionSettings } from "agent-runtime-api";
 import type { z } from "zod";
 import type {
   profileCreateInputSchema,
+  profileUpdateResultSchema,
   profileSlotSchema,
   profileUpdateInputSchema,
   profileUsageCountsSchema,
@@ -33,11 +34,13 @@ export type ProfileUsageCounts = z.infer<typeof profileUsageCountsSchema>;
 
 export type ProfileWithUsage = z.infer<typeof profileViewSchema>;
 
+export type ProfileUpdateResult = z.infer<typeof profileUpdateResultSchema>;
+
 export interface ProfilesService {
   list(): Promise<ProfileWithUsage[]>;
   usage(id: string): Promise<ProfileUsage>;
   create(input: ProfileCreateInput): Promise<ProfileWithUsage>;
-  update(input: ProfileUpdateInput): Promise<ProfileWithUsage>;
+  update(input: ProfileUpdateInput): Promise<ProfileUpdateResult>;
   delete(id: string): Promise<void>;
 }
 

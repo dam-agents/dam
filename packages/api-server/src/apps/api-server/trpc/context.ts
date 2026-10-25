@@ -1,4 +1,8 @@
-import type { ApiContext, UserIdentity } from "api-server-api";
+import type {
+  ApiContext,
+  RepublishDefaultsResult,
+  UserIdentity,
+} from "api-server-api";
 import { ChannelType } from "api-server-api";
 import {
   composeAgentsModule,
@@ -165,6 +169,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
     });
+    /* UNIT_BOUNDARY_DESCRIPTION: the fan-out an edited profile needs lives in
+     * the harness-config module, which is composed after the agents module this
+     * one feeds; the setter is filled below, before any request runs. */
+    let republishDefaults:
+      ((agentId: string) => Promise<RepublishDefaultsResult>) | undefined;
     const {
       profiles,
       resolver: profileResolver,
@@ -176,6 +185,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       catalog: harnesses,
       sharedProvider: config.curveBenderDeployment !== null,
       subPseudonymizer,
+      fanOut: {
+        republishDefaults: async (agentId) =>
+          republishDefaults ? republishDefaults(agentId) : { published: true },
+      },
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -386,6 +399,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
     });
+    republishDefaults = (agentId) => harnessConfig.republishDefaults(agentId);
     const listOwnedAgents = async (): Promise<
       { id: string; name: string | null }[]
     > => {

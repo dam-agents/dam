@@ -111,9 +111,11 @@ function fakeRepo(opts: {
     },
     update: async (_owner, id, profile) => {
       calls.updates.push({ id, profile });
-      const current = rows.find((r) => r.id === id);
-      if (!current) return null;
-      return { ...current, ...profile, updatedAt: new Date() };
+      const at = rows.findIndex((r) => r.id === id);
+      if (at === -1) return null;
+      const updated = { ...rows[at]!, ...profile, updatedAt: new Date() };
+      rows[at] = updated;
+      return updated;
     },
     deleteIfUnused: async (_owner, id) => {
       calls.deleted.push(id);
@@ -432,5 +434,73 @@ describe("profiles service — binding a new agent's default", () => {
       grantedConnectionIds: ["conn-1"],
     });
     expect(fake.calls.order[0]).toBe("seed");
+  });
+});
+
+describe("profiles service — the fan-out of an edit", () => {
+  const valid = {
+    name: "Review",
+    harness: "claude-code",
+    providerTemplate: "curve-bender-deployment",
+    model: shared.model,
+  };
+
+  it("reports the agents that cannot take the edited profile", async () => {
+    const fake = fakeRepo({
+      rows: [row({ id: "p1", seed: null, ...valid })],
+      usage: {
+        agents: [
+          { id: "agent-1", slots: ["chat"] },
+          { id: "agent-2", slots: ["platformSubagent"] },
+        ],
+        channels: [],
+        schedules: [],
+      },
+    });
+    const republished: string[] = [];
+    const edited = await createProfilesService({
+      repo: fake.repo,
+      owner: "owner-1",
+      catalog,
+      seededProvider: shared,
+      fanOut: {
+        republishDefaults: async (agentId) => {
+          republished.push(agentId);
+          return agentId === "agent-2"
+            ? {
+                published: false,
+                reason: "this agent does not carry claude-code",
+              }
+            : { published: true };
+        },
+      },
+    }).update({ id: "p1", name: "Reviewed" });
+    expect(republished).toEqual(["agent-1", "agent-2"]);
+    expect(edited.profile.name).toBe("Reviewed");
+    expect(edited.rejected).toEqual([
+      {
+        agentId: "agent-2",
+        reason: "this agent does not carry claude-code",
+      },
+    ]);
+  });
+
+  it("fans out to nobody when nothing points at the profile", async () => {
+    const fake = fakeRepo({ rows: [row({ id: "p1", seed: null, ...valid })] });
+    let called = 0;
+    const edited = await createProfilesService({
+      repo: fake.repo,
+      owner: "owner-1",
+      catalog,
+      seededProvider: shared,
+      fanOut: {
+        republishDefaults: async () => {
+          called += 1;
+          return { published: true };
+        },
+      },
+    }).update({ id: "p1", name: "Reviewed" });
+    expect(called).toBe(0);
+    expect(edited.rejected).toEqual([]);
   });
 });

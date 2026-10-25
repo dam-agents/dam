@@ -37,6 +37,7 @@ function toView(sched: Schedule) {
     precheck: sched.spec.precheck ?? null,
     harness: sched.spec.harness ?? null,
     model: sched.spec.model ?? null,
+    profile: sched.spec.profile ?? null,
     settings: sched.spec.settings ?? null,
     migrationNote: sched.spec.migrationNote ?? null,
     sessionTitle: sched.spec.sessionTitle ?? null,

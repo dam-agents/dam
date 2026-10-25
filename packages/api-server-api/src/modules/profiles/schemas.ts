@@ -70,3 +70,11 @@ export const profileSchema = z.object({
 export const profileViewSchema = profileSchema.extend({
   usage: profileUsageCountsSchema,
 });
+
+/* UNIT_BOUNDARY_DESCRIPTION: an edit reports the agents that still point at the
+ * profile but cannot run what it now says, so the editor can name them instead
+ * of leaving them silently on their previous pair. */
+export const profileUpdateResultSchema = z.object({
+  profile: profileViewSchema,
+  rejected: z.array(z.object({ agentId: z.string(), reason: z.string() })),
+});

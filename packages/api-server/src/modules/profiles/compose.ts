@@ -10,6 +10,7 @@ import { createProfilesRepository } from "./infrastructure/profiles-repository.j
 import {
   createProfilesService,
   type BindDefaultAgentProfile,
+  type ProfileFanOut,
   type SeededProvider,
 } from "./services/profiles-service.js";
 import { createProfileResolver } from "./services/profile-resolution.js";
@@ -32,6 +33,8 @@ export function composeProfilesForOwner(deps: {
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   sharedProvider: boolean;
   subPseudonymizer: SubPseudonymizer;
+  /* UNIT_BOUNDARY_DESCRIPTION: filled in once the harness-config module of the same request exists; profiles are composed first because an Agent needs its binder. */
+  fanOut?: ProfileFanOut;
 }): {
   profiles: ReturnType<typeof createProfilesService>;
   resolver: ReturnType<typeof createProfileResolver>;
@@ -44,6 +47,7 @@ export function composeProfilesForOwner(deps: {
     ...(deps.agentBinding !== undefined && {
       agentBinding: deps.agentBinding,
     }),
+    ...(deps.fanOut !== undefined && { fanOut: deps.fanOut }),
     catalog: deps.catalog,
     seededProvider: seededProvider(deps.sharedProvider),
   });

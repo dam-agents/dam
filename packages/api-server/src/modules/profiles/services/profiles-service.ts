@@ -1,5 +1,6 @@
 import { isUniqueViolation } from "../../../core/db-errors.js";
 import { TRPCError } from "@trpc/server";
+import type { RepublishDefaultsResult } from "api-server-api";
 import {
   aliasForProviderType,
   harnessFits,
@@ -25,6 +26,11 @@ export interface SeededProvider {
   model: string;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: what an edit has to tell the agents that point at the profile; the request composes it once the harness-config module exists. */
+export interface ProfileFanOut {
+  republishDefaults(agentId: string): Promise<RepublishDefaultsResult>;
+}
+
 export interface ProfilesServiceDeps {
   repo: ProfilesRepository;
   owner: string;
@@ -32,6 +38,7 @@ export interface ProfilesServiceDeps {
   agentBinding?: readonly string[] | "*";
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   seededProvider: SeededProvider | null;
+  fanOut?: ProfileFanOut;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on, so the owner's seeded profile is what its first chat runs on instead of waiting for the first-hello conversion. A restored Agent passes the same way: its profile references were cleared with the deletion, and a row that names neither shape is unbound. */
@@ -99,6 +106,22 @@ export function createProfilesService(
       throw new TRPCError({ code: "NOT_FOUND", message: "profile not found" });
     const usage = await repo.usage(owner, id, binding());
     return withUsage(row, usage);
+  }
+
+  async function rejectedAgents(
+    profileId: string,
+  ): Promise<{ agentId: string; reason: string }[]> {
+    if (deps.fanOut === undefined) return [];
+    const usage = await repo.usage(owner, profileId);
+    const results = await Promise.all(
+      usage.agents.map(async (agent) => {
+        const result = await deps.fanOut!.republishDefaults(agent.id);
+        return result.published
+          ? null
+          : { agentId: agent.id, reason: result.reason };
+      }),
+    );
+    return results.flatMap((r) => (r === null ? [] : [r]));
   }
 
   async function ensureDefault(): Promise<void> {
@@ -201,7 +224,12 @@ export function createProfilesService(
           throw duplicateName(input.name ?? current.name);
         throw err;
       }
-      return view(input.id);
+      /* UNIT_BOUNDARY_DESCRIPTION: a profile edit reaches the agents that point
+       * at it, and each one either takes the new pair or keeps its previous one
+       * with the reason, which the editor shows instead of failing the edit. */
+      const edited = await view(input.id);
+      const rejected = await rejectedAgents(input.id);
+      return { profile: edited, rejected };
     },
 
     async bindDefaultAgentProfile(input) {

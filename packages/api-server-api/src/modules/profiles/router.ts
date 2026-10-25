@@ -7,6 +7,7 @@ import {
   profileCreateInputSchema,
   profileIdInputSchema,
   profileUpdateInputSchema,
+  profileUpdateResultSchema,
   profileUsageSchema,
   profileViewSchema,
 } from "./schemas.js";
@@ -28,7 +29,7 @@ export const profilesRouter = t.router({
 
   update: manageAgentsProcedure
     .input(profileUpdateInputSchema)
-    .output(profileViewSchema)
+    .output(profileUpdateResultSchema)
     .mutation(({ ctx, input }) => ctx.profiles.update(input)),
 
   delete: manageAgentsProcedure

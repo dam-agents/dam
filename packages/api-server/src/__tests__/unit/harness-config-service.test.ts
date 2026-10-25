@@ -24,12 +24,15 @@ function makeService(opts?: {
   capabilities?: unknown;
   snapshot?: HarnessConfigSnapshot | null;
   granted?: GrantedProvider[];
+  resolved?: SessionPair;
+  unavailable?: { reason: "no-provider"; detail: string };
 }) {
   const calls = {
     queues: [] as QueueCall[],
     enqueues: [] as string[],
     merges: [] as MergeCall[],
     pairs: [] as SessionPair[],
+    references: [] as unknown[],
     locked: 0,
     retired: [] as {
       agentId: string;
@@ -40,7 +43,24 @@ function makeService(opts?: {
   let holdingLock = false;
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
-    profiles: { resolveStored: async () => null },
+    profiles: {
+      resolveStored: async () =>
+        opts?.resolved === undefined
+          ? null
+          : {
+              profile: {
+                id: "profile-1",
+                name: "Default",
+                harness: opts.resolved.harness,
+                providerTemplate: "curve-bender-deployment",
+                model: String(opts.resolved.model),
+                settings: {},
+              },
+              pair: opts.resolved,
+              grantableProvider: null,
+              unavailable: opts.unavailable ?? null,
+            },
+    },
     surface: "ui",
     eventQueue: {
       queue: async (agentId, change, tx) => {
@@ -81,8 +101,9 @@ function makeService(opts?: {
         platformSubagentProfile: null,
       }),
       readSaved: async () => ({ chat: null, channel: null, scheduled: null }),
-      write: async (_agentId, _kind, pair) => {
+      write: async (_agentId, _kind, pair, references) => {
         calls.pairs.push(pair);
+        calls.references.push(references ?? {});
       },
       clear: async () => {},
       grantedProviders: async () => opts?.granted ?? [],
@@ -437,5 +458,82 @@ describe("sessionModelChoices", () => {
       sessionModelChoices(capabilities, [{ value: "claude/haiku-x" }]),
     ).toEqual(["claude/haiku-x"]);
     expect(sessionModelChoices(capabilities, null)).toEqual(["sonnet"]);
+  });
+});
+
+describe("rememberSessionPair naming a profile", () => {
+  const resolvedPair = {
+    harness: "claude-code",
+    provider: "conn-1",
+    model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  };
+
+  it("writes the reference and the pair it resolves to", async () => {
+    const { service, calls } = makeService({
+      granted: [{ id: "conn-1", type: "openai" }],
+      capabilities: {
+        modelRouter: true,
+        defaultHarness: "codex",
+        harnesses: [
+          {
+            name: "codex",
+            harnessConfig: true,
+            sessionModel: true,
+            sessionSettings: [],
+          },
+        ],
+      },
+      resolved: {
+        harness: "codex",
+        provider: "conn-1",
+        model: "openai/gpt-6.1-sol",
+      },
+    });
+    const pair = {
+      harness: "codex",
+      provider: "conn-1",
+      model: "openai/gpt-6.1-sol",
+    };
+    await service.rememberSessionPair("agent-1", "chat", pair, {
+      profileId: "profile-1",
+    });
+    expect(calls.pairs).toEqual([pair]);
+    expect(calls.references).toEqual([{ profileId: "profile-1" }]);
+  });
+
+  it("refuses a profile that cannot run on the agent", async () => {
+    const { service, calls } = makeService({
+      resolved: {
+        harness: "codex",
+        provider: "conn-1",
+        model: "openai/gpt-6.1-sol",
+      },
+      unavailable: {
+        reason: "no-provider",
+        detail: "CurveBender (shared) is not connected",
+      },
+    });
+    await expect(
+      service.rememberSessionPair("agent-1", "chat", resolvedPair, {
+        profileId: "profile-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "CurveBender (shared) is not connected",
+    });
+    expect(calls.pairs).toEqual([]);
+  });
+
+  it("refuses a profile named for a kind that keeps its own", async () => {
+    const { service } = makeService({});
+    await expect(
+      service.rememberSessionPair("agent-1", "scheduled", resolvedPair, {
+        profileId: "profile-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "only the chat default can name a profile; a channel and a schedule keep their own",
+    });
   });
 });

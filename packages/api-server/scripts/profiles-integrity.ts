@@ -14,6 +14,9 @@ import {
 import { createSubPseudonymizer } from "../src/core/sub-pseudonymizer.js";
 import { createProfilesRepository } from "../src/modules/profiles/infrastructure/profiles-repository.js";
 import { createProfilesService } from "../src/modules/profiles/services/profiles-service.js";
+import { createProfileResolver } from "../src/modules/profiles/services/profile-resolution.js";
+import { createSessionPairRepo } from "../src/modules/harness-config/infrastructure/session-pair-repo.js";
+import { createSchedulesRepository } from "../src/modules/schedules/infrastructure/schedules-repository.js";
 import {
   markAgentDeleted,
   upsertAgent,
@@ -66,6 +69,7 @@ function serviceFor(owner: string) {
   const repo = createProfilesRepository(db, pseudo);
   return {
     repo,
+    resolver: createProfileResolver({ repo }),
     service: createProfilesService({
       repo,
       owner,
@@ -170,7 +174,7 @@ async function main() {
   const afterRename = await service.list();
   check(
     "a renamed seed stays the seeded one and is not seeded again",
-    renamed.seeded === true &&
+    renamed.profile.seeded === true &&
       afterRename.length === 1 &&
       afterRename[0]!.name === "Cheap",
     JSON.stringify(afterRename.map((p) => [p.name, p.seeded])),
@@ -286,6 +290,112 @@ async function main() {
       seededFirst.filter((p) => p.seeded).length === 1,
     JSON.stringify({ namedDefault, seededFirst: seededFirst.map((p) => [p.name, p.seeded]) }),
   );
+
+  process.stdout.write("\nresolving a stored reference\n");
+  const seamProfile = await service.create({
+    name: "Seam",
+    harness: "claude-code",
+    providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    model: MODEL,
+  });
+  await db.execute(
+    sql`INSERT INTO connection_grants (connection_id, agent_id) VALUES (${provider}, ${boundAgent}) ON CONFLICT DO NOTHING`,
+  );
+  const resolver = createProfileResolver({ repo });
+  const pairRepo = createSessionPairRepo(db, resolver);
+  await db.execute(
+    sql`UPDATE agents SET session_profile = ${seamProfile.id}, session_pair = NULL WHERE id = ${boundAgent}`,
+  );
+  const resolvedDefaults = await pairRepo.readSaved(boundAgent);
+  check(
+    "the repository returns the pair a stored reference resolves to",
+    resolvedDefaults.chat?.model === MODEL &&
+      resolvedDefaults.chat?.harness === "claude-code",
+    JSON.stringify(resolvedDefaults.chat),
+  );
+  const wrote = await pairRepo.writeIfEmpty(boundAgent, {
+    harness: "claude-code",
+    provider,
+    model: MODEL,
+  });
+  const stillProfile = await pairRepo.readReferences(boundAgent);
+  check(
+    "the one-time conversion leaves an Agent on its profile alone",
+    !wrote && stillProfile.sessionProfile === seamProfile.id,
+    JSON.stringify({ wrote, stillProfile }),
+  );
+  await pairRepo.write(boundAgent, "chat", {
+    harness: "claude-code",
+    provider,
+    model: MODEL,
+  });
+  const afterPick = await pairRepo.readReferences(boundAgent);
+  const afterPickPair = await pairRepo.read(boundAgent, "chat");
+  check(
+    "a custom chat pick detaches the Agent from its profile",
+    afterPick.sessionProfile === null && afterPickPair?.model === MODEL,
+    JSON.stringify({ afterPick, afterPickPair }),
+  );
+
+  await db.execute(
+    sql`UPDATE agents SET session_profile = ${seamProfile.id}, session_pair = NULL WHERE id = ${boundAgent}`,
+  );
+  const scheduleWithProfile = await insertSchedule(
+    owner,
+    boundAgent,
+    seamProfile.id,
+  );
+  const scheduleRepo = createSchedulesRepository(db, resolver);
+  const readSchedule = await scheduleRepo.get(scheduleWithProfile, owner);
+  check(
+    "a schedule's stored profile is read as the pair it stands for",
+    readSchedule?.spec.harness === "claude-code" &&
+      readSchedule?.spec.model === MODEL,
+    JSON.stringify(readSchedule?.spec),
+  );
+  await db.execute(
+    sql`UPDATE schedules SET spec = spec - 'profile' WHERE id = ${scheduleWithProfile}`,
+  );
+
+  process.stdout.write("\na restored Agent\n");
+  const restoreOwner = unique("owner");
+  const restore = serviceFor(restoreOwner);
+  const restoreConnection = await insertConnection(
+    restoreOwner,
+    "curve-bender-deployment",
+  );
+  const restoreAgent = await insertAgent(restoreOwner);
+  await db.execute(
+    sql`INSERT INTO connection_grants (connection_id, agent_id) VALUES (${restoreConnection}, ${restoreAgent}) ON CONFLICT DO NOTHING`,
+  );
+  await markAgentDeleted(db)(restoreAgent);
+  await registerAgent({ id: restoreAgent, ownerSub: restoreOwner });
+  const restored = await createSessionPairRepo(db, restore.resolver).readReferences(
+    restoreAgent,
+  );
+  await restore.service.bindDefaultAgentProfile({
+    agentId: restoreAgent,
+    harness: "claude-code",
+    grantedConnectionIds: [restoreConnection],
+  });
+  const afterRestore = await createSessionPairRepo(
+    db,
+    restore.resolver,
+  ).readReferences(restoreAgent);
+  check(
+    "a restored Agent with neither shape is bound to the seeded Default",
+    restored.sessionProfile === null && afterRestore.sessionProfile !== null,
+    JSON.stringify({ restored, afterRestore }),
+  );
+  await db.execute(
+    sql`DELETE FROM connection_grants WHERE agent_id = ${restoreAgent}`,
+  );
+  await db.execute(
+    sql`DELETE FROM agents WHERE owner_sub = ${pseudo.hashSub(restoreOwner)}`,
+  );
+  await db.execute(sql`DELETE FROM connections WHERE owner = ${restoreOwner}`);
+  await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${restoreOwner}`);
+  await db.execute(sql`DELETE FROM profiles WHERE owner = ${restoreOwner}`);
 
   process.stdout.write("\nunbinding\n");
   await db.execute(
