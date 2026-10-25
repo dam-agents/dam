@@ -8,6 +8,8 @@ import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { SharedBadge } from "../../agents/components/shared-badge.js";
+import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
+import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { isSharedAgent, ownerLine } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 
@@ -52,18 +54,38 @@ export function SandboxHomeHeader({
   description,
   pictogram,
   actions,
+  agent,
+  showUpdate = false,
 }: {
   title: string;
   description?: string;
   pictogram?: ReactNode;
   actions?: ReactNode;
+  agent?: AgentView;
+  /* UNIT_BOUNDARY_DESCRIPTION: without the new sidebar there is no row menu to
+   * carry the image update, so the page header keeps it (S2); with it, the row
+   * menu is the one place an Agent moves. */
+  showUpdate?: boolean;
 }) {
+  const { updateOne, updatingId } = useUpdateSandbox();
   return (
     <PageHeader
       title={title}
       description={description}
       pictogram={pictogram}
-      actions={actions}
+      actions={
+        <>
+          {showUpdate && agent && (
+            <UpdateAvailableAction
+              agent={agent}
+              pending={updatingId === agent.id}
+              busy={updatingId !== null}
+              onUpdate={() => void updateOne(agent)}
+            />
+          )}
+          {actions}
+        </>
+      }
     />
   );
 }

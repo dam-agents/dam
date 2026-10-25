@@ -24,6 +24,7 @@ import {
 } from "../../environments/api/queries.js";
 import { EnvironmentsSection } from "../../environments/components/environments-section.js";
 import { environmentsShown } from "../../environments/lib/environments-tab.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
@@ -87,6 +88,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
   const openAgentSession = useStore((s) => s.openAgentSession);
 
   const display = useResolvedAgentDisplay(agent);
+  const newLayout = useNewLayout();
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
@@ -115,6 +117,8 @@ function AgentHome({ agent }: { agent: AgentView }) {
 
   const header: SectionHeaderSlot = (actions) => (
     <SandboxHomeHeader
+      agent={agent}
+      showUpdate={!newLayout}
       title={sectionEntry?.title ?? ""}
       description={sectionEntry?.description}
       pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
