@@ -10,21 +10,27 @@ import { SectionLabel } from "@/components/ui/section-label";
  */
 export function SectionHeading({
   label,
+  count,
   addLabel,
   onAdd,
+  addDisabled = false,
   description,
   children,
 }: {
   label: string;
+  count?: number;
   addLabel?: string;
   onAdd?: () => void;
+  addDisabled?: boolean;
   description?: string;
   children?: React.ReactNode;
 }) {
   return (
     <div className="mb-3">
       <div className="flex items-center gap-2">
-        <SectionLabel className="min-w-0 flex-1">{label}</SectionLabel>
+        <SectionLabel className="min-w-0 flex-1">
+          {count === undefined ? label : `${label} (${count})`}
+        </SectionLabel>
         {onAdd && addLabel && (
           <Button
             variant="ghost"
@@ -32,6 +38,7 @@ export function SectionHeading({
             aria-label={addLabel}
             tooltip={addLabel}
             data-testid={`section-add-${label.toLowerCase().replace(/\s+/g, "-")}`}
+            disabled={addDisabled}
             onClick={onAdd}
           >
             <Add size={16} />

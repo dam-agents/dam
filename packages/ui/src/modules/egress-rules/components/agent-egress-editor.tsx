@@ -117,7 +117,7 @@ export function AgentEgressEditor({
     <>
       {header()}
       {compact ? (
-        <SectionHeading label={`Network access (${rules.length})`}>
+        <SectionHeading label="Network access" count={rules.length}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

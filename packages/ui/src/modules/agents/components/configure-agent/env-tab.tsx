@@ -134,9 +134,11 @@ export function EnvTab({
 
       {panelHeading && (
         <SectionHeading
-          label={`${panelHeading} (${envVars.length + shownInherited.length})`}
+          label={panelHeading}
+          count={envVars.length + shownInherited.length}
           addLabel="Create variable"
           onAdd={() => setEditing("new")}
+          addDisabled={saving}
         />
       )}
 
