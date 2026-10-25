@@ -34,7 +34,11 @@ export interface KitUpdateMarks {
   ): Promise<void>;
   end(agentId: string, stamp: SeedStamp | null): Promise<void>;
   skip(agentId: string, commit: string): Promise<void>;
-  nudge(agentId: string, pending: KitUpdatePending): Promise<void>;
+  nudge(
+    agentId: string,
+    expected: KitUpdatePending,
+    at: string,
+  ): Promise<boolean>;
 }
 
 export interface KitUpdatesDeps {

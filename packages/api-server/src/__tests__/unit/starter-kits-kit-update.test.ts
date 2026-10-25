@@ -62,7 +62,7 @@ function harness(current: Agent) {
         marks.ended = stamp;
       },
       skip: async () => {},
-      nudge: async () => {},
+      nudge: async () => false,
     },
     agents: { list: async () => [current], get: async () => current },
     schedules: { list: async () => [] },
@@ -129,7 +129,7 @@ describe("kit update", () => {
           ended = stamp;
         },
         skip: async () => {},
-        nudge: async () => {},
+        nudge: async () => false,
       },
     });
     await expect(reporter.report("agent-1", "user-1", OLD)).rejects.toThrow();

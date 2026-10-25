@@ -1,6 +1,6 @@
 import type { Session } from "agent-runtime-api";
 import type { SessionMessageEventPayload } from "agent-runtime-api";
-import { SessionType } from "api-server-api";
+import { isKitUpdateSession } from "api-server-api";
 import type { KitUpdatePending } from "api-server-api";
 
 import type { KitUpdateMarks } from "./kit-updates.js";
@@ -17,14 +17,6 @@ function nudgeText(targetCommit: string): string {
     `If the checkout contains ${targetCommit} (git merge-base --is-ancestor ${targetCommit} HEAD), call report_kit_updated with commit ${targetCommit} now.`,
     "If you are waiting on the user for something, say what for and stop.",
   ].join(" ");
-}
-
-function isUpdateSession(session: Session, pending: KitUpdatePending): boolean {
-  return (
-    session.initialization === true &&
-    session.type === SessionType.Regular &&
-    Date.parse(session.createdAt) >= Date.parse(pending.startedAt)
-  );
 }
 
 /**
@@ -62,12 +54,14 @@ export function createKitUpdateNudge(deps: {
         AbortSignal.timeout(SESSION_READ_TIMEOUT_MS),
       );
       const session = sessions.find((s) => s.sessionId === sessionId);
-      if (!session || !isUpdateSession(session, pending)) return;
+      if (!session || !isKitUpdateSession(session, pending)) return;
 
-      await deps.marks.nudge(agentId, {
-        ...pending,
-        nudgedAt: now().toISOString(),
-      });
+      const marked = await deps.marks.nudge(
+        agentId,
+        pending,
+        now().toISOString(),
+      );
+      if (!marked) return;
       await deps.send(agentId, {
         sessionId,
         text: nudgeText(pending.targetCommit),

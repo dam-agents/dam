@@ -1,7 +1,6 @@
-import type { KitUpdatePending } from "api-server-api";
+import { isKitUpdateSession, type KitUpdatePending } from "api-server-api";
 
 import { useAgentSessionQuery } from "../../sessions/api/queries.js";
-import { isKitUpdateSession } from "../lib/kit-update-session.js";
 
 const RECENT_CHATS = 5;
 

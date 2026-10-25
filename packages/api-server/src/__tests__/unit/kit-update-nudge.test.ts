@@ -36,14 +36,16 @@ function session(sessionId: string, overrides: Partial<Session> = {}): Session {
 function harness(opts: {
   pending: KitUpdatePending | null;
   sessions: Session[];
+  markLands?: boolean;
 }) {
-  const marked: KitUpdatePending[] = [];
+  const marked: { pending: KitUpdatePending; at: string }[] = [];
   const sent: { agentId: string; text: string; notice?: boolean }[] = [];
   const nudge = createKitUpdateNudge({
     pending: async () => opts.pending,
     marks: {
-      nudge: async (_agentId, next) => {
-        marked.push(next);
+      nudge: async (_agentId, expected, at) => {
+        marked.push({ pending: expected, at });
+        return opts.markLands ?? true;
       },
     },
     listSessions: async () => ({ sessions: opts.sessions }),
@@ -69,12 +71,26 @@ describe("kit update nudge", () => {
 
     await h.nudge.turnEnded("agent-1", "s-update");
 
-    expect(h.marked).toEqual([{ ...pending(), nudgedAt: NUDGED_AT }]);
+    expect(h.marked).toEqual([{ pending: pending(), at: NUDGED_AT }]);
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0]?.agentId).toBe("agent-1");
     expect(h.sent[0]?.notice).toBe(true);
     expect(h.sent[0]?.text).toContain("report_kit_updated");
     expect(h.sent[0]?.text).toContain(NEW);
+  });
+
+  // TEST_SCENARIO: the agent reports the update while the reminder is still reading its sessions. The mark then loses its compare-and-set, and the notice must not go out into a session whose update is already done.
+  it("sends nothing when the mark loses to a report", async () => {
+    const h = harness({
+      pending: pending(),
+      sessions: [session("s-update")],
+      markLands: false,
+    });
+
+    await h.nudge.turnEnded("agent-1", "s-update");
+
+    expect(h.marked).toHaveLength(1);
+    expect(h.sent).toEqual([]);
   });
 
   // TEST_SCENARIO: the agent reported or cancelled the update, so no turn end has anything to remind it of.

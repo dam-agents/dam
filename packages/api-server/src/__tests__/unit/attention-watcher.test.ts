@@ -380,6 +380,7 @@ describe("createSessionWatcher", () => {
     const signals: AbortSignal[] = [];
     const watcher = createSessionWatcher({
       listAgents: async () => agents,
+      onTurnEnded: () => {},
       runtimeFeaturesFor: async () => new Map(),
       sessions: {
         watchAgent: () => {
