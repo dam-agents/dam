@@ -7,14 +7,14 @@ Those pages own the mechanics; this one states, for each thing an agent does in 
 A change to Slack behavior updates all three in the same PR.
 It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.
 
-- [0.   Ways to slack](#0-ways-to-slack)
-- [1.   Usage modes](#1-usage-modes)
-- [2.   Reach: bot vs. owner's account](#2-reach-bot-vs-owners-account)
-- [3.   Who decides what](#3-who-decides-what)
-- [4.   "It looks broken"](#4-it-looks-broken)
-- [5.   Reach the owner may not expect](#5-reach-the-owner-may-not-expect)
-- [6.   Settings that change behavior](#6-settings-that-change-behavior)
-- [7.   Several workspaces](#7-several-workspaces)
+- [0. Ways to slack](#0-ways-to-slack)
+- [1. Usage modes](#1-usage-modes)
+- [2. Reach: bot vs. owner's account](#2-reach-bot-vs-owners-account)
+- [3. Who decides what](#3-who-decides-what)
+- [4. "It looks broken"](#4-it-looks-broken)
+- [5. Reach the owner may not expect](#5-reach-the-owner-may-not-expect)
+- [6. Settings that change behavior](#6-settings-that-change-behavior)
+- [7. Several workspaces](#7-several-workspaces)
 
 "Decided by": **Platform** = code guarantees it.
 **Agent** = the model's judgement, steered by the prompt.
