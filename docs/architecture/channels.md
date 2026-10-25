@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -24,6 +24,7 @@ Bindings are **many-to-many**: an Agent may hold several at once — the same wo
 What a binding cannot be is doubled: one Agent connects to one conversation once.
 Agent delete releases all of that Agent's; a disconnect names the one to release.
 A binding **is** its (Agent, workspace, conversation) triple — a conversation id names one conversation only inside the Slack workspace it belongs to, so the workspace is part of what a binding is — and nothing moves one: reaching an Agent from somewhere else is a connect there and a release here, each its own deliberate act.
+A binding also names the **profile** its turns run on, set on its row and chosen in the bind dialog when the binding is made; a binding made before profiles names none and follows the Agent's defaults until its row names one ([channel turns](channel-turns.md)).
 No surface offers a compound that could release a binding and then fail to replace it.
 A Slack "conversation" is any surface the bot is party to: a public/private **channel**, a **group DM**, or a **1:1 DM**.
 The binding key is the conversation id in every case, so DMs and group DMs reuse the channel binding mechanics wholesale.

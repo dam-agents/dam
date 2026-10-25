@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-24
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -21,7 +21,7 @@ A web terminal starts from a row of harness buttons on the agent's General page:
 The empty chat's Browser Terminal card opens a web terminal on the pair the session picker holds.
 With the JanUI experiment on, the empty chat shows the General page's harness buttons in a Web terminal row instead of that card.
 A harness that only providers the owner holds but has not attached accept opens the attach dialog, then opens on the provider attached; a harness no provider the owner holds accepts is grayed, and its tooltip names the harness and says why.
-The attach dialog, from the old runtime's picker or a harness button, lists only the owner's unattached providers the harness accepts and the agent can take, leaving out one of a kind the agent already holds, each as the agent's Providers page shows it, with the harnesses it runs.
+The attach dialog, from the old runtime's picker or a harness button, lists only the owner's unattached providers the harness accepts and the agent can take, leaving out one of a kind the agent already holds, each as the agent's Models section shows it, with the harnesses it runs.
 Its rows start switched off, except the provider the owner clicked in the picker; nothing is attached until at least one is on and the owner confirms.
 An agent holds one provider of a kind, so switching a row on locks the other rows of its kind.
 The UI names a provider by its Settings name, such as Bob Shell, not the connection's own name.
@@ -33,24 +33,24 @@ Opened then, it shows a loader until the list arrives, and a session started mea
 Until the harness catalog arrives, the picker label is a loader, never a raw harness name.
 A session the UI starts holds the pair it sent until the agent lists the session, so the composer names that pair from the first moment.
 Every model picker reads its list from the running agent, never from the stored snapshot: while the agent sleeps, the picker gives way to a "Start agent to edit" button, then "Agent is starting…" once woken, and lists the models when the agent answers.
-This holds for the session picker, the Providers page default, the schedule form and the platform sub-agent model; nothing wakes the agent on its own.
+This holds for the session picker, the schedule form and the platform sub-agent model; nothing wakes the agent on its own.
 In an existing session, the picker keeps its harness and, on a routed runtime, offers every granted provider's models: another harness needs a new session, which the picker links to, and context moves over only through a file the agent saves.
 
 ## Session settings
 
 A session may also pick the settings its harness manifest lists under `sessionSettings`: mode, effort, thinking level, prompt cache or approvals, each a catalog option.
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
-An agent remembers three default pairs, one per **default kind**: **chat**, which preselects the next session, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on.
-A channel or scheduled default that is not saved is **the same as chat**: those runs take the chat default, whatever it is at the time.
-A pick in a chat saves the chat default, and a chat's profile pick saves the reference instead of its values.
-The Providers page shows the profile of the chat, channel and scheduled defaults, a channel or scheduled one starting on the same profile as chat.
-A default may name a profile, which the api-server resolves into the pair the runtime is sent, so an edit of that profile reaches every run that follows it.
-Each section marks a default that is not set or whose provider the agent no longer holds, and so does the Providers entry of the agent's navigation.
-Detaching a provider lists the defaults and schedules that run on it before it goes.
+An agent remembers one **chat default**, which preselects the next session, and two **legacy** pairs, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on, kept for rows written before profiles.
+A pick in a chat saves the chat default, a profile pick saves the reference and not its values, and the subagent slot a reference of its own.
+**An owner's profiles** hold a harness, a provider template, a model and session settings; they are edited from a chat's model picker, listed in Settings › Providers, and named by the chat default, `channels.profile_id` and `schedules.spec.profile`.
+The api-server resolves a reference into the pair the runtime is sent, so an edit reaches every run following it while a session that picked keeps its own.
+A channel or schedule naming none follows its kind's legacy pair; picking a profile grants its provider on the agent.
+Home marks a default that is not set or whose provider the agent no longer holds, and so does the agent's Models tile.
+Detaching a provider lists the defaults, channels and schedules that run on it before it goes.
 With none saved, the chat default is the agent's own harness with no provider and no model: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
 A saved pair with no model is a default that is **not set**; the platform never picks a provider or model for the person.
-On a routed runtime a default is saved only with a model: the Providers page shows "Not set" and offers no unset choice, a harness picked there waits for its model, and the picker of a new session or of a session with no model reads "Choose a model" until a send resolves one.
-In the JanUI experiment the new session's picker neither attaches nor disconnects a provider: its model list ends with a Connect more providers row that opens the agent's Providers page.
+On a routed runtime a default is saved only with a model: a chat's picker offers no unset choice, a harness picked there waits for its model, and the picker of a new session or of a session with no model reads "Choose a model" until a send resolves one.
+In the JanUI experiment the new session's picker neither attaches nor disconnects a provider: its model list ends with a Connect more providers row that opens the agent's Models section.
 On a routed runtime (`modelRouter` on hello) the saved model is a qualified name and its provider follows from it; a bare name, a provider the agent does not hold, or a model missing from the harness's last reported list is refused.
 A run nobody picks for stays on the harness asked for, on the saved model and the provider it names; no saved model, or a model on a provider the agent no longer holds, fails the run as having no default model, with the reason, and no fitting provider fails it rather than moving it to another harness.
 **Conversion of an old default.** An agent from before per-session defaults has no saved pair, nor has a new agent before its first `hello`, and once it runs the Model Router the api-server converts its default once, while nothing is saved, so a model the person picked is never rewritten.

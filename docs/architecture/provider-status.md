@@ -1,6 +1,6 @@
 # Provider status
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -99,7 +99,7 @@ The card names the provider of the session:
 - the fault is on the platform's side: the platform cannot reach model providers, and neither the provider nor the setup is the cause;
 - the card saw an outage that has ended: the provider works again, and the user can retry now.
 
-The card's actions are Retry, where the message can be sent again; Switch provider, which opens the agent's Providers section; the provider's own status page, while the provider is degraded and has one; and Raw error, which shows the original error text.
+The card's actions are Retry, where the message can be sent again; Switch provider, which opens the agent's Models section; the provider's own status page, while the provider is degraded and has one; and Raw error, which shows the original error text.
 Claude Code writes its own copy of the error as reply text before the turn fails; a reply that holds nothing but that copy is the failure itself, so the chat shows the card in its place and the copy only under Raw error.
 Retry then sends the same prompt again as a new message, and the failed exchange stays above it.
 A reply that streamed other text before it failed keeps its text, and its card says that the response was interrupted and has no Retry.
@@ -133,7 +133,7 @@ The owners told are the owners of two kinds of agents, and the message says for 
 An agent with a failed call to the template since the outage started is affected because its calls failed.
 An agent that runs unattended is affected by each kind of its work that fires on the template, also without a failed call: a daily schedule that fires after the outage started, or a channel agent that nobody wrote to yet, will fail too.
 An agent runs unattended by the rule of the [default-model notices](home-feed.md#default-model-notices): an enabled schedule, a bound Slack Channel or a bound Telegram chat; sub-agents are left out.
-A schedule fires on its own harness and model or else on the agent's scheduled default, and a channel turn on the agent's channel default; both fall back to the chat default ([harness configuration](harness-config.md)).
+A schedule fires on the profile it names or else on the agent's scheduled default, and a channel turn on the channel's profile or, for a channel bound before profiles, on the channel and chat defaults ([harness configuration](harness-config.md)).
 So one agent's schedule and its channel can run on different providers.
 Work that would not fire at all, because no default model is set or no granted provider fits, does not count, and a one-time schedule that continues its session keeps that session's choices, so it is never named.
 These are resolved only once the outage has lasted the delay.

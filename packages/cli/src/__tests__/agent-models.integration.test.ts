@@ -139,7 +139,7 @@ describe("dam agent get / update / models (integration)", () => {
             { name: "codex", harnessConfig: true, sessionModel: true },
           ],
         }),
-        sessionDefaults: async () => defaults,
+        sessionDefaults: async () => ({ ...defaults, chatProfileId: null }),
         rememberSessionPair: async (
           _agentId: string,
           kind: DefaultKind,

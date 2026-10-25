@@ -180,12 +180,13 @@ How the title reaches the session list belongs to [platform topology](platform-t
 
 A schedule, recurring or [one-time](#one-time-schedules), carries the same choices as a session: the **harness** its sessions run on, their **model** as a qualified name (`<alias>/<model id>`, [harness configuration](harness-config.md#the-model-router)) and the harness's per-session **settings** (an effort level, a reasoning mode), which include the session's platform sub-agent settings ([session settings](harness-config.md#session-settings)).
 A schedule's choices live on its sessions alone.
-A schedule may instead name a **profile**: one named harness, model and settings the agent's owner holds, kept on the schedule and resolved when the schedule is read, so an edit of the profile reaches every later fire.
+A new schedule names a **profile** rather than its own choices: one harness, model and settings the agent's owner holds, kept on the schedule and resolved when the schedule is read, so an edit of the profile reaches every later fire.
+Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else the owner's seeded Default, and offers Custom selection for a schedule with a reason of its own.
 A schedule names a profile or its own values, never both: a value that differs from the profile's detaches it, and a choice the user left untouched keeps it.
 A profile that cannot run on the agent fails the fire with its reason, and the run is never reported as following the agent's default.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.
 The schedule tools tell the agent that the owner sets that default and that a schedule names choices of its own only for a reason the task gives.
-The scheduled section of the agent's Providers page lists every schedule that names a harness, model or settings of its own, except a one-time task that continues its session, and moves one or all of them to the scheduled default by clearing those choices; moving all asks first, listing each change.
+A schedule row names the profile it runs on, or its own choices where it carries them.
 With no default model saved, a fire fails with that reason on its first attempt, with no retry, and Run Now refuses with it.
 On a runtime that takes no model per session, a fire drops a schedule model that names the agent's own model setting (the copy the upgrade made) and runs as before; one that names another model is refused.
 

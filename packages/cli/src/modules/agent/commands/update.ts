@@ -139,14 +139,14 @@ export function buildUpdateCommand(deps: {
     .addOption(
       new Option(
         "--kind <kind>",
-        "which default to change: chat (also `dam run`), channel (Slack and Telegram) or scheduled",
+        "which default to change: chat (also `dam run`), or the legacy channel (Slack and Telegram) or scheduled default, which rows bound before profiles still follow",
       )
         .choices(["chat", "channel", "scheduled"])
         .default("chat"),
     )
     .option(
       "--same-as-chat",
-      "with --kind channel or scheduled: drop that default, so it follows the chat default again",
+      "with --kind channel or scheduled: drop that legacy default, so it follows the chat default again",
     )
     .option(
       "--server <url>",
