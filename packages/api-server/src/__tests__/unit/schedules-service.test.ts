@@ -941,6 +941,23 @@ describe("a profile schedule saved from a form", () => {
     expect(getSavedSpec()?.harness).toBeUndefined();
   });
 
+  /** TEST_SCENARIO: a detach carries over only the keys the caller said nothing
+   * about; a key it cleared stays cleared, rather than being refilled from the
+   * profile behind the user's back. */
+  it("does not refill a choice the caller cleared while detaching", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({
+      ...baseUpdate,
+      ...resolved,
+      harness: "codex",
+      model: null,
+    });
+    const saved = getSavedSpec();
+    expect(saved?.profile).toBeUndefined();
+    expect(saved?.harness).toBe("codex");
+    expect(saved?.model).toBeUndefined();
+  });
+
   it("detaches on a value that differs, keeping what the profile gave", async () => {
     const { service, getSavedSpec } = makeDeps(profiled());
     await service.updateRRule({

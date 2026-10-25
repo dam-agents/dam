@@ -164,9 +164,13 @@ function applyProfileTransition(
     delete spec.settings;
     return;
   }
+  /* UNIT_BOUNDARY_DESCRIPTION: only a key the caller said nothing about is
+   * carried over from the profile. A key the caller cleared stays cleared, and
+   * the final choices are validated by the caller exactly as a picked one is,
+   * so a detach never refills what someone removed. */
   delete spec.profile;
   for (const key of ["harness", "model", "settings"] as const)
-    if (spec[key] === undefined && resolved?.[key] !== undefined)
+    if (input[key] === undefined && resolved?.[key] !== undefined)
       Object.assign(spec, { [key]: resolved[key] });
 }
 
@@ -522,6 +526,16 @@ export function createSchedulesService(deps: {
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       applyProfileTransition(spec, input, current.spec);
+      if (current.spec.profile !== undefined && spec.profile === undefined)
+        await ensureSessionChoices(
+          current.agentId,
+          {
+            ...(spec.harness && { harness: spec.harness }),
+            ...(spec.model && { model: spec.model }),
+            ...(spec.settings && { settings: spec.settings }),
+          },
+          undefined,
+        );
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (!updated) return null;
@@ -568,6 +582,18 @@ export function createSchedulesService(deps: {
       if (input.model !== undefined || input.harness !== undefined)
         delete spec.migrationNote;
       applyProfileTransition(spec, input, current.spec);
+      /* UNIT_BOUNDARY_DESCRIPTION: a detach leaves choices the caller kept, and
+       * they are validated here as the stored ones, never only as sent. */
+      if (current.spec.profile !== undefined && spec.profile === undefined)
+        await ensureSessionChoices(
+          current.agentId,
+          {
+            ...(spec.harness && { harness: spec.harness }),
+            ...(spec.model && { model: spec.model }),
+            ...(spec.settings && { settings: spec.settings }),
+          },
+          undefined,
+        );
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);
@@ -628,6 +654,18 @@ export function createSchedulesService(deps: {
       if (input.model !== undefined || input.harness !== undefined)
         delete spec.migrationNote;
       applyProfileTransition(spec, input, current.spec);
+      /* UNIT_BOUNDARY_DESCRIPTION: a detach leaves choices the caller kept, and
+       * they are validated here as the stored ones, never only as sent. */
+      if (current.spec.profile !== undefined && spec.profile === undefined)
+        await ensureSessionChoices(
+          current.agentId,
+          {
+            ...(spec.harness && { harness: spec.harness }),
+            ...(spec.model && { model: spec.model }),
+            ...(spec.settings && { settings: spec.settings }),
+          },
+          undefined,
+        );
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);

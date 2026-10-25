@@ -21,6 +21,13 @@ import {
   PREVIEW_RUNS,
 } from "../lib/cron-conversion.js";
 import { cronToText } from "../lib/schedule-format.js";
+
+/** UNIT_BOUNDARY_DESCRIPTION: the choices a form changed, as the update input takes them; a choice the user left alone is absent, so the stored one stands. */
+export interface ScheduleChoicesPayload {
+  harness?: string | null;
+  model?: string | null;
+  settings?: Record<string, string> | null;
+}
 import {
   cronFormDefaults,
   cronFormSchema,
@@ -38,7 +45,11 @@ interface Props {
   existing: Schedule;
   onClose: () => void;
   onDirtyChange?: (dirty: boolean) => void;
-  onConvert: (draft: Schedule, conversion: ExactCronConversion) => void;
+  onConvert: (
+    draft: Schedule,
+    conversion: ExactCronConversion,
+    choices: ScheduleChoicesPayload,
+  ) => void;
 }
 
 const RUN_FORMAT: Intl.DateTimeFormatOptions = {
@@ -80,6 +91,10 @@ export function CronScheduleForm({
   const cron = watch("cron").trim();
   const runs = errors.cron ? [] : nextCronRuns(cron, new Date(), PREVIEW_RUNS);
 
+  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the user changed it,
+   * so a profile edited after the form opened is not detached by the values the
+   * form was loaded with; Save and Convert both read the draft, so both obey
+   * one rule. */
   const draftOf = (v: CronFormValues): Schedule => {
     const settings = Object.fromEntries(
       Object.entries(v.settings).filter(([, value]) => value !== ""),
@@ -98,6 +113,24 @@ export function CronScheduleForm({
     };
   };
 
+  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the user changed it,
+   * so a profile edited after the form opened is not detached by the values the
+   * form was loaded with; Save and Convert read the same payload. */
+  const changedChoices = (v: CronFormValues) => {
+    const settings = Object.fromEntries(
+      Object.entries(v.settings).filter(([, value]) => value !== ""),
+    );
+    return {
+      ...(dirtyFields.harness ? { harness: v.harness.trim() || null } : {}),
+      ...(dirtyFields.model ? { model: v.model.trim() || null } : {}),
+      ...(dirtyFields.settings
+        ? {
+            settings: Object.keys(settings).length > 0 ? settings : null,
+          }
+        : {}),
+    };
+  };
+
   const handleConvert = async () => {
     if (!(await trigger())) return;
     const draft = draftOf(getValues());
@@ -106,7 +139,7 @@ export function CronScheduleForm({
       setConvertProblem(conversion.reason);
       return;
     }
-    onConvert(draft, conversion);
+    onConvert(draft, conversion, changedChoices(getValues()));
   };
 
   const handleDelete = async () => {
@@ -130,9 +163,7 @@ export function CronScheduleForm({
         task: draft.task ?? "",
         sessionMode: v.sessionMode,
         precheck: draft.precheck,
-        ...(dirtyFields.harness ? { harness: draft.harness } : {}),
-        ...(dirtyFields.model ? { model: draft.model } : {}),
-        ...(dirtyFields.settings ? { settings: draft.settings } : {}),
+        ...changedChoices(v),
         sessionTitle: draft.sessionTitle,
       },
       {
