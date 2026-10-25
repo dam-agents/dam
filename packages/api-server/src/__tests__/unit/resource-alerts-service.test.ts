@@ -40,7 +40,7 @@ function agent(name: string, reason?: string): InfraAgent {
     id: name,
     name,
     owner: "kc|a",
-    ...(reason ? { agentPodNotReadyReason: reason } : {}),
+    ...(reason ? { machineNotReadyReason: reason } : {}),
   } as InfraAgent;
 }
 

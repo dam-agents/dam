@@ -70,10 +70,12 @@ export function composeSessionWatcher(deps: {
   runtimeFeaturesFor: (
     agentIds: string[],
   ) => Promise<Map<string, RuntimeFeatures>>;
+  onTurnEnded: (agentId: string, sessionId: string) => void;
   log: (message: string) => void;
 }): SessionWatcher {
   return createSessionWatcher({
     listAgents: deps.listAgents,
+    onTurnEnded: deps.onTurnEnded,
     runtimeFeaturesFor: deps.runtimeFeaturesFor,
     sessions: createSessionWatchClient(deps.namespace, deps.log),
     repo: createAttentionRepository(deps.db),

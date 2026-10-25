@@ -115,7 +115,7 @@ export function createAgentWake(deps: {
           if (
             infra.overBudget ||
             (!infra.hibernated &&
-              REFUSED_START_REASONS.has(infra.agentPodNotReadyReason ?? ""))
+              REFUSED_START_REASONS.has(infra.machineNotReadyReason ?? ""))
           ) {
             const graceOver =
               Date.now() - startedAt >= REFUSAL_FAIL_FAST_GRACE_MS;
@@ -165,7 +165,7 @@ export function createAgentWake(deps: {
             durationMs,
             cause: wakeFailureReasonToken(failure),
             hibernated: infra?.hibernated,
-            agentPodNotReadyReason: infra?.agentPodNotReadyReason,
+            machineNotReadyReason: infra?.machineNotReadyReason,
             gatewayPodReady: infra?.gatewayPodReady,
             gatewayPodNotReadyReason: infra?.gatewayPodNotReadyReason,
             reconciledReason: infra?.reconciledReason,

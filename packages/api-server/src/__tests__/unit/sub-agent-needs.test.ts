@@ -50,10 +50,16 @@ describe("unmetNeed", () => {
     ).toBeNull();
   });
 
-  test("more-resources needs resources, cpu or memory", () => {
-    expect(unmetNeed(["more-resources"], base, null)).toMatch(/more-resources/);
+  test("more-resources needs a disk of its own", () => {
+    expect(unmetNeed(["more-resources"], base, null)).toBe(
+      "more-resources without resources.storage",
+    );
     expect(
-      unmetNeed(["more-resources"], { ...base, resources: { cpu: "4" } }, null),
+      unmetNeed(
+        ["more-resources"],
+        { ...base, resources: { storage: "40Gi" } },
+        null,
+      ),
     ).toBeNull();
   });
 

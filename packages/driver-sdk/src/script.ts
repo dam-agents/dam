@@ -18,8 +18,6 @@ export interface SpawnScriptOptions extends Setup {
   script: string;
   connections?: string[];
   label?: string;
-  memory?: string;
-  cpu?: string;
   ttlMs?: number;
   pollMs?: number;
   timeoutMs?: number;
@@ -151,8 +149,6 @@ export async function spawnScript(
     image,
     connections = [],
     label,
-    memory,
-    cpu,
     ttlMs,
     pollMs = 5000,
     timeoutMs = (ttlMs ?? 60 * 60 * 1000) + 5 * 60 * 1000,
@@ -175,8 +171,6 @@ export async function spawnScript(
   if (image) body.image = image;
   if (label !== undefined) body.label = label;
   if (ttlMs !== undefined) body.ttlMs = ttlMs;
-  if (memory !== undefined) body.memory = memory;
-  if (cpu !== undefined) body.cpu = cpu;
   if (seed) body.seed = seed;
   if (install) body.install = install;
   if (env) body.env = env;

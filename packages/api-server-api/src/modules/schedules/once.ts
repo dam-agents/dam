@@ -27,13 +27,6 @@ export function onceState(
   }
 }
 
-export function isOnceFinished(
-  status: ScheduleStatus | null | undefined,
-): boolean {
-  const state = onceState(status);
-  return state !== "pending" && state !== "delivering";
-}
-
 export interface LocalDateTime {
   date: string;
   time: string;

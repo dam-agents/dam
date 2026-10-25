@@ -130,7 +130,7 @@ test("draws the right toolbar from its own flag", async ({ page }) => {
   await expectRailOnScreen();
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and, with the Unified right toolbar experiment on, the right rail has its tiles from Artifacts down to Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and, with the Unified right toolbar experiment on, the right rail has its tiles from Artifacts down to Approvals. Clicking an Agent's row opens the Agent's chat on its new-session page and opens its Session list, whose New session row, not the Agent's, is then the current page, and a second click on the row closes the list and stays on that page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list from its chevron wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
@@ -148,12 +148,12 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
 
   const node = agentNode(page, AGENTS[0]);
   const row = node.getByTestId("sidebar-agent-row");
+  const toggle = node.getByTestId("sidebar-agent-toggle");
   await row.click();
-  await expect(row).toHaveAttribute("aria-expanded", "true");
-  await node.getByTestId("sidebar-new-session-row").click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentIds.get(AGENTS[0])!)}`),
   );
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect(
     node.locator(
       '[data-testid="sidebar-new-session-row"][aria-current="page"]',
@@ -165,18 +165,21 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   await cli.focus();
   await page.keyboard.press("Enter");
   await expect(cli).toHaveAttribute("aria-expanded", "true");
+  const url = page.url();
   await row.click();
-  await expect(row).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(node.getByTestId("sidebar-new-session-row")).toHaveCount(0);
+  expect(page.url()).toBe(url);
 
   const woken = agentNode(page, AGENTS[1]);
-  await woken.getByTestId("sidebar-agent-row").click();
+  await woken.getByTestId("sidebar-agent-row").hover();
+  await woken.getByTestId("sidebar-agent-toggle").click();
 
   const home = tree.getByTestId("sidebar-home-row");
   await home.click();
   await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   await expect(home).toHaveAttribute("aria-current", "page");
-  await expect(woken.getByTestId("sidebar-agent-row")).toHaveAttribute(
+  await expect(woken.getByTestId("sidebar-agent-toggle")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
@@ -367,7 +370,10 @@ test("pins a Session above every Agent", async ({ page }) => {
 
   const agentRow = node.getByTestId("sidebar-agent-row");
   await agentRow.click();
-  await expect(agentRow).toHaveAttribute("aria-expanded", "false");
+  await expect(node.getByTestId("sidebar-agent-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
   await inPinned.hover();
   await inPinned.getByTestId("session-menu-button").focus();
   await page.keyboard.press("Enter");

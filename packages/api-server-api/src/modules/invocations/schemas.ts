@@ -38,37 +38,20 @@ const spawnTargetShape = {
     .optional(),
   ...agentSetupShape,
   seed: agentSetupSeedSchema.optional(),
-  memory: z
-    .string()
-    .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '4Gi'")
-    .optional(),
-  cpu: z
-    .string()
-    .regex(/^\d+(\.\d+)?m?$/, "cpu must look like '2', '0.5' or '500m'")
-    .optional(),
 };
 
 interface SpawnTargetFields {
   harness?: unknown;
   image?: unknown;
-  resources?: unknown;
-  cpu?: unknown;
-  memory?: unknown;
 }
 
 function refineSpawnTarget<S extends z.ZodType<SpawnTargetFields>>(
   schema: S,
 ): S {
-  return schema
-    .refine((d) => d.harness !== undefined || d.image !== undefined, {
-      message: "pass a harness, or an image",
-    })
-    .refine(
-      (d) =>
-        d.resources === undefined ||
-        (d.cpu === undefined && d.memory === undefined),
-      { message: "pass cpu and memory inside resources, not beside it" },
-    );
+  return schema.refine(
+    (d) => d.harness !== undefined || d.image !== undefined,
+    { message: "pass a harness, or an image" },
+  );
 }
 
 export const spawnInvocationRequestSchema = refineSpawnTarget(

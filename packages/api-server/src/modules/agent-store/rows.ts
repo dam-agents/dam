@@ -62,6 +62,7 @@ export interface KitRecord {
   defaultModel: string | null;
   pendingCommit: string | null;
   pendingStartedAt: Date | null;
+  pendingNudgedAt: Date | null;
   skippedCommit: string | null;
   updatedAt: Date;
 }
@@ -416,9 +417,11 @@ export function rowsFromResource(
   const seed = parseJson<{ url?: string; branch?: string; commit?: string }>(
     annotations[ANN_STARTER_KIT_SEED],
   );
-  const pending = parseJson<{ targetCommit?: string; startedAt?: string }>(
-    annotations[ANN_KIT_UPDATE_PENDING],
-  );
+  const pending = parseJson<{
+    targetCommit?: string;
+    startedAt?: string;
+    nudgedAt?: string;
+  }>(annotations[ANN_KIT_UPDATE_PENDING]);
   const commit = (value: string | undefined): string | null => {
     const lowered = value?.toLowerCase() ?? null;
     if (lowered !== null && lowered !== value)
@@ -445,6 +448,7 @@ export function rowsFromResource(
     defaultModel: nullable(annotations[ANN_STARTER_KIT_DEFAULT_MODEL]),
     pendingCommit: pendingComplete ? commit(pending?.targetCommit) : null,
     pendingStartedAt: pendingComplete ? parseTime(pending?.startedAt) : null,
+    pendingNudgedAt: pendingComplete ? parseTime(pending?.nudgedAt) : null,
     skippedCommit: commit(annotations[ANN_KIT_UPDATE_SKIPPED]),
     updatedAt: new Date(switchedAt),
   };
@@ -641,6 +645,9 @@ export function resourceFromRows(
       annotations[ANN_KIT_UPDATE_PENDING] = JSON.stringify({
         targetCommit: kit.pendingCommit,
         startedAt: kit.pendingStartedAt.toISOString(),
+        ...(kit.pendingNudgedAt !== null && {
+          nudgedAt: kit.pendingNudgedAt.toISOString(),
+        }),
       });
     put(ANN_KIT_UPDATE_SKIPPED, kit.skippedCommit ?? undefined);
   }

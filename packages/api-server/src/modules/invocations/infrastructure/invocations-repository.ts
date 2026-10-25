@@ -28,8 +28,6 @@ export interface InvocationSpec {
   templateId: string | null;
   image: string | null;
   connections: string[];
-  cpu: string | null;
-  memory: string | null;
   ttlMs: number | null;
 }
 
@@ -121,8 +119,6 @@ export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     templateId: r.templateId,
     image: r.image,
     connections: r.connections,
-    cpu: r.cpu,
-    memory: r.memory,
     ttlMs: r.ttlMs,
     resultSchema: r.resultSchema,
     result: r.result,
@@ -156,8 +152,6 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         templateId: input.templateId,
         image: input.image,
         connections: input.connections,
-        cpu: input.cpu,
-        memory: input.memory,
         ttlMs: input.ttlMs,
         resultSchema: input.resultSchema,
         status: "running",

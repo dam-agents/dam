@@ -100,7 +100,7 @@ describe("starter kits: git ref resolver", () => {
     });
   });
 
-  // TEST_SCENARIO: an enterprise host refuses an anonymous ref advertisement, so the resolver must authenticate the very read that pins a kit to a commit — otherwise an enterprise kit resolves to nothing and is withdrawn on every refresh. Git over HTTPS takes the install's token as basic auth, the same way the platform's enterprise connections hand one to git in an agent pod.
+  // TEST_SCENARIO: an enterprise host refuses an anonymous ref advertisement, so the resolver must authenticate the very read that pins a kit to a commit — otherwise an enterprise kit resolves to nothing and is withdrawn on every refresh. Git over HTTPS takes the install's token as basic auth, the same way the platform's enterprise connections hand one to git on an agent's machine.
   it("authenticates the ref advertisement on the enterprise host", async () => {
     const seen: { url: string; headers: Record<string, string> }[] = [];
     const resolver = createGitRefResolver(

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql, type Db, type DbTx } from "db";
+import { and, eq, isNotNull, isNull, sql, type Db, type DbTx } from "db";
 import {
   controlAgentKitState,
   controlAgentL7Hosts,
@@ -208,6 +208,7 @@ export function createControlAgentsRepository(
           const pending = value === null ? undefined : JSON.parse(value);
           putKit("pendingCommit", pending?.targetCommit?.toLowerCase() ?? null);
           putKit("pendingStartedAt", timeOf(pending?.startedAt));
+          putKit("pendingNudgedAt", timeOf(pending?.nudgedAt));
           break;
         }
         case RECLAIMED_AT_KEY:
@@ -687,6 +688,27 @@ export function createControlAgentsRepository(
       await db.transaction(async (tx) => {
         await applyAnnotations(tx, id, annotations, new Date());
       });
+    },
+
+    async nudgeKitUpdate(id, expectedCommit, at) {
+      const nudgedAt = new Date(at);
+      if (Number.isNaN(nudgedAt.getTime())) return false;
+      const nudged = await db
+        .update(controlAgentKitState)
+        .set({ pendingNudgedAt: nudgedAt, updatedAt: nudgedAt })
+        .where(
+          and(
+            eq(controlAgentKitState.agentId, id),
+            eq(
+              controlAgentKitState.pendingCommit,
+              expectedCommit.toLowerCase(),
+            ),
+            isNull(controlAgentKitState.pendingNudgedAt),
+            isNotNull(controlAgentKitState.pendingStartedAt),
+          ),
+        )
+        .returning({ agentId: controlAgentKitState.agentId });
+      return nudged.length > 0;
     },
 
     async setInvocationPin(id) {

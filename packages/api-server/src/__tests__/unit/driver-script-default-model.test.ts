@@ -49,7 +49,6 @@ function makeOps(
       telemetryEnv: () => [],
     },
     budgetsFor: () => ({}) as never,
-    defaultLimits: { cpu: "1", memory: "1Gi" },
     defaultModel:
       opts.defaultModel ??
       (async (driverId, harness) => {

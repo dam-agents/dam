@@ -52,7 +52,7 @@ describe("classifyWakeFailure", () => {
     },
     {
       name: "ImagePullFailure → agent-start-failed",
-      snapshot: { ...base, agentPodNotReadyReason: "ImagePullFailure" },
+      snapshot: { ...base, machineNotReadyReason: "ImagePullFailure" },
       expected: {
         kind: "agent-start-failed",
         terminationReason: "ImagePullFailure",
@@ -60,7 +60,7 @@ describe("classifyWakeFailure", () => {
     },
     {
       name: "OutOfMemory → agent-start-failed",
-      snapshot: { ...base, agentPodNotReadyReason: "OutOfMemory" },
+      snapshot: { ...base, machineNotReadyReason: "OutOfMemory" },
       expected: {
         kind: "agent-start-failed",
         terminationReason: "OutOfMemory",
@@ -68,7 +68,7 @@ describe("classifyWakeFailure", () => {
     },
     {
       name: "HomeVolumeFull → agent-start-failed",
-      snapshot: { ...base, agentPodNotReadyReason: "HomeVolumeFull" },
+      snapshot: { ...base, machineNotReadyReason: "HomeVolumeFull" },
       expected: {
         kind: "agent-start-failed",
         terminationReason: "HomeVolumeFull",
@@ -76,7 +76,7 @@ describe("classifyWakeFailure", () => {
     },
     {
       name: "ContainerTerminated → agent-start-failed",
-      snapshot: { ...base, agentPodNotReadyReason: "ContainerTerminated" },
+      snapshot: { ...base, machineNotReadyReason: "ContainerTerminated" },
       expected: {
         kind: "agent-start-failed",
         terminationReason: "ContainerTerminated",
@@ -84,7 +84,7 @@ describe("classifyWakeFailure", () => {
     },
     {
       name: "MachineBootFailed → agent-start-failed (a vm agent's guest never came up)",
-      snapshot: { ...base, agentPodNotReadyReason: "MachineBootFailed" },
+      snapshot: { ...base, machineNotReadyReason: "MachineBootFailed" },
       expected: {
         kind: "agent-start-failed",
         terminationReason: "MachineBootFailed",
@@ -94,7 +94,7 @@ describe("classifyWakeFailure", () => {
       name: "MachineImageCacheUnreachable → agent-start-failed (the node's cache, not the image)",
       snapshot: {
         ...base,
-        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+        machineNotReadyReason: "MachineImageCacheUnreachable",
       },
       expected: {
         kind: "agent-start-failed",
@@ -115,19 +115,19 @@ describe("classifyWakeFailure", () => {
     },
     {
       name: "AwaitingAllocation → progressing (the node has not granted the runner its memory yet; it starts on its own)",
-      snapshot: { ...base, agentPodNotReadyReason: "AwaitingAllocation" },
+      snapshot: { ...base, machineNotReadyReason: "AwaitingAllocation" },
       expected: { kind: "agent-not-ready" },
     },
     {
       name: "AwaitingWarmUp → progressing (the machines a restart is bringing back hold the pool until they have warmed)",
-      snapshot: { ...base, agentPodNotReadyReason: "AwaitingWarmUp" },
+      snapshot: { ...base, machineNotReadyReason: "AwaitingWarmUp" },
       expected: { kind: "agent-not-ready" },
     },
     {
       name: "MachineAwaitingAllocation → progressing (the runner's own spelling of the same wait)",
       snapshot: {
         ...base,
-        agentPodNotReadyReason: "MachineAwaitingAllocation",
+        machineNotReadyReason: "MachineAwaitingAllocation",
       },
       expected: { kind: "agent-not-ready" },
     },
@@ -135,7 +135,7 @@ describe("classifyWakeFailure", () => {
       name: "MachineAllocationUnreadable → agent-start-failed (the node never reported the grant; the hold ended naming the problem)",
       snapshot: {
         ...base,
-        agentPodNotReadyReason: "MachineAllocationUnreadable",
+        machineNotReadyReason: "MachineAllocationUnreadable",
       },
       expected: {
         kind: "agent-start-failed",
@@ -144,16 +144,16 @@ describe("classifyWakeFailure", () => {
     },
     {
       name: "MachineNotReady → progressing (a machine that is still booting)",
-      snapshot: { ...base, agentPodNotReadyReason: "MachineNotReady" },
+      snapshot: { ...base, machineNotReadyReason: "MachineNotReady" },
       expected: { kind: "agent-not-ready" },
     },
     {
       name: "plain PodNotReady → progressing (slow pull, attach, probes)",
-      snapshot: { ...base, agentPodNotReadyReason: "PodNotReady" },
+      snapshot: { ...base, machineNotReadyReason: "PodNotReady" },
       expected: { kind: "agent-not-ready" },
     },
     {
-      name: "agent pod fine, gateway False → gateway-not-ready",
+      name: "machine fine, gateway False → gateway-not-ready",
       snapshot: { ...base, gatewayPodReady: false },
       expected: { kind: "gateway-not-ready" },
     },
@@ -205,7 +205,7 @@ describe("classifyWakeFailure", () => {
       classifyWakeFailure({
         ...base,
         error: "boom",
-        agentPodNotReadyReason: "ImagePullFailure",
+        machineNotReadyReason: "ImagePullFailure",
       }).kind,
     ).toBe("reconcile-error");
   });

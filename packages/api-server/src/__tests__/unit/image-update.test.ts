@@ -490,7 +490,7 @@ describe("image update tick", () => {
         spec: { name: "a", image: DEFAULT_IMAGE },
         imageUpdateFrom: OLD_DEFAULT_IMAGE,
         specStart: "failed",
-        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+        machineNotReadyReason: "MachineImageCacheUnreachable",
       }),
     ]);
     await m.tick();
@@ -514,7 +514,7 @@ describe("image update tick", () => {
         spec: { name: "a", image },
         imageUpdateFrom: OLD_DEFAULT_IMAGE,
         specStart: "failed",
-        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+        machineNotReadyReason: "MachineImageCacheUnreachable",
       });
     let live = heldTo("repo:next");
     const m = update([live], { live: () => live });
@@ -540,7 +540,7 @@ describe("image update tick", () => {
         spec: { name: "a", image: DEFAULT_IMAGE },
         imageUpdateFrom: OLD_DEFAULT_IMAGE,
         specStart: "failed",
-        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+        machineNotReadyReason: "MachineImageCacheUnreachable",
       });
     const listed = [held()];
     let live = listed[0]!;
@@ -550,7 +550,7 @@ describe("image update tick", () => {
       ...held(),
       specStart: "ready",
       readySince: new Date(Date.now() - 1000),
-      agentPodNotReadyReason: undefined,
+      machineNotReadyReason: undefined,
     };
     listed[0] = live;
     await m.tick();
@@ -573,7 +573,7 @@ describe("image update tick", () => {
         spec: { name: "a", image: DEFAULT_IMAGE },
         imageUpdateFrom: OLD_DEFAULT_IMAGE,
         specStart: "failed",
-        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+        machineNotReadyReason: "MachineImageCacheUnreachable",
       });
     const listed = [held()];
     let live = listed[0]!;
@@ -605,7 +605,7 @@ describe("image update tick", () => {
         spec: { name: "a", image: DEFAULT_IMAGE },
         imageUpdateFrom: OLD_DEFAULT_IMAGE,
         specStart: "failed",
-        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+        machineNotReadyReason: "MachineImageCacheUnreachable",
       });
     const listed = [held()];
     let live = listed[0]!;
@@ -633,7 +633,7 @@ describe("image update tick", () => {
         spec: { name: "a", image: DEFAULT_IMAGE },
         imageUpdateFrom: OLD_DEFAULT_IMAGE,
         specStart: "failed",
-        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+        machineNotReadyReason: "MachineImageCacheUnreachable",
       });
     const listed = [held()];
     let live = listed[0]!;
@@ -673,7 +673,7 @@ describe("parseInfraAgent", () => {
       status,
     });
   const last = { "agent-platform.ai/last-activity": "2026-10-12T10:00:00Z" };
-  const agentPod = (reason: string, observedGeneration = 3) => ({
+  const machineCond = (reason: string, observedGeneration = 3) => ({
     type: "AgentPodReady",
     status: "False",
     reason,
@@ -712,7 +712,7 @@ describe("parseInfraAgent", () => {
     expect(parse({}, ready(3)).specStart).toBe("ready");
     expect(parse({}, ready(2)).specStart).toBeUndefined();
     expect(
-      parse({}, { conditions: [agentPod("ImagePullFailure", 2)] }).specStart,
+      parse({}, { conditions: [machineCond("ImagePullFailure", 2)] }).specStart,
     ).toBeUndefined();
   });
 
@@ -726,7 +726,7 @@ describe("parseInfraAgent", () => {
     (reason) => {
       const startFailed = (observedGeneration: number) => ({
         conditions: [
-          agentPod("ContainerTerminated"),
+          machineCond("ContainerTerminated"),
           { type: "StartFailed", status: "True", reason, observedGeneration },
         ],
       });
@@ -772,7 +772,7 @@ describe("parseInfraAgent", () => {
   it.each(["ImagePullFailure", "MachineImageUnavailable", "MachineBootFailed"])(
     "reads %s as a failed start",
     (reason) => {
-      expect(parse({}, { conditions: [agentPod(reason)] }).specStart).toBe(
+      expect(parse({}, { conditions: [machineCond(reason)] }).specStart).toBe(
         "failed",
       );
     },
@@ -784,7 +784,7 @@ describe("parseInfraAgent", () => {
   // TEST_SCENARIO: the image update job decides on the reason.
   it("reads a refusal by the node's image cache as a failed start", () => {
     expect(
-      parse({}, { conditions: [agentPod("MachineImageCacheUnreachable")] })
+      parse({}, { conditions: [machineCond("MachineImageCacheUnreachable")] })
         .specStart,
     ).toBe("failed");
   });
@@ -799,7 +799,7 @@ describe("parseInfraAgent", () => {
     "does not read %s as a failed start",
     (reason) => {
       expect(
-        parse({}, { conditions: [agentPod(reason)], agentPodRestarts: 3 })
+        parse({}, { conditions: [machineCond(reason)], agentPodRestarts: 3 })
           .specStart,
       ).toBeUndefined();
     },

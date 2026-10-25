@@ -12,17 +12,12 @@ export interface ImageInfo {
   image: string;
   description?: string;
   harness?: string;
-  size?: { cpu: string; memory: string };
 }
 
 export interface ConnectionInfo {
   id: string;
   name: string;
   hosts: string[];
-}
-
-export interface Budget {
-  defaultWorkerSize: { cpu: string; memory: string };
 }
 
 export async function listImages(): Promise<ImageInfo[]> {
@@ -32,10 +27,6 @@ export async function listImages(): Promise<ImageInfo[]> {
 export async function listConnections(): Promise<ConnectionInfo[]> {
   return (await req<{ connections: ConnectionInfo[] }>("GET", "/connections"))
     .connections;
-}
-
-export async function budget(): Promise<Budget> {
-  return req<Budget>("GET", "/budget");
 }
 
 export class InvocationFailed extends Error {
@@ -59,8 +50,6 @@ export interface SpawnOptions extends Setup {
   prompt: string;
   schema: SchemaSpec;
   label?: string;
-  memory?: string;
-  cpu?: string;
   model?: string;
   mode?: string;
   configOptions?: Record<string, string>;
@@ -77,8 +66,6 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     prompt,
     schema,
     label,
-    memory,
-    cpu,
     model,
     mode,
     configOptions,
@@ -113,8 +100,6 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   if (image) body.image = image;
   if (label !== undefined) body.label = label;
   if (ttlMs !== undefined) body.ttlMs = ttlMs;
-  if (memory !== undefined) body.memory = memory;
-  if (cpu !== undefined) body.cpu = cpu;
   if (seed) body.seed = seed;
   if (install) body.install = install;
   if (env) body.env = env;

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a crash-looping gateway leaves the agent pod ready, so the agent still reads as running; only gatewayFailure tells the user their egress is down. It must carry hard gateway failures and stay quiet while the gateway is merely starting, rolling or hibernated.
+// TEST_OVERVIEW: a crash-looping gateway leaves the agent's machine ready, so the agent still reads as running; only gatewayFailure tells the user their egress is down. It must carry hard gateway failures and stay quiet while the gateway is merely starting, rolling or hibernated.
 import type { RuntimeFeatures } from "agent-runtime-api";
 import { toAgentView } from "api-server-api";
 import { describe, expect, it } from "vitest";

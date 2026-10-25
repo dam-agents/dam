@@ -19,12 +19,12 @@ export interface WakeConditionsSnapshot {
   error?: string;
   reconciledReason?: string;
   podTerminationReason?: string;
-  agentPodNotReadyReason?: string;
+  machineNotReadyReason?: string;
   gatewayPodReady?: boolean;
   gatewayPodNotReadyReason?: string;
 }
 
-export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
+export const MACHINE_FAILURE_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.OutOfMemory,
   TerminationCode.HomeVolumeFull,
   TerminationCode.ImagePullFailure,
@@ -41,7 +41,7 @@ export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
 ]);
 
 export const GATEWAY_FAILURE_REASONS = new Set([
-  ...POD_FAILURE_REASONS,
+  ...MACHINE_FAILURE_REASONS,
   "StuckOnSupersededRevision",
 ]);
 // UNIT_BOUNDARY_DESCRIPTION: the refusals of a vm machine's start that this wake will not outgrow: the owner's VM storage is full, the image cannot be pulled or unpacked, the runner cannot reach the node's image cache, the guest did not boot, the node holding the owner's runner is gone, or a node that has gone a minute without reporting what it granted the runner has had that published as the start's own diagnosis. A wake fails on one at once rather than at its timeout, the cache refusal and the named diagnosis with them: no wait of this wake's brings the machine up, and a node that starts reporting is met by the controller's retry and the next wake, not by this one's. An unschedulable runner is left out, because a node can free up or be added while the wake waits, and so is a grant still inside its first minute, which reads AwaitingAllocation. A pull or boot still in progress reads MachineNotReady, so it never matches.
@@ -79,15 +79,15 @@ export function classifyWakeFailure(
     };
   }
   if (
-    s.agentPodNotReadyReason !== undefined &&
-    POD_FAILURE_REASONS.has(s.agentPodNotReadyReason)
+    s.machineNotReadyReason !== undefined &&
+    MACHINE_FAILURE_REASONS.has(s.machineNotReadyReason)
   ) {
     return {
       kind: "agent-start-failed",
-      terminationReason: s.agentPodNotReadyReason,
+      terminationReason: s.machineNotReadyReason,
     };
   }
-  if (s.agentPodNotReadyReason !== undefined) {
+  if (s.machineNotReadyReason !== undefined) {
     return { kind: "agent-not-ready" };
   }
   if (s.gatewayPodReady === false) {
