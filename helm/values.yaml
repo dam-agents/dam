@@ -1875,8 +1875,9 @@ controller:
       vmIdleTimeout: "5m"
 
     harnessTemplateDefaults:
-      # (agentHome is retired: the agent home is fixed at /home/agent; a value
-      # still set here is ignored with a startup warning.)
+      # (agentHome is gone: the agent home is fixed at /home/agent. The
+      # controller decodes this block strictly, so a key it does not declare —
+      # agentHome included — stops it at startup instead of being ignored.)
 
       storageSize: "10Gi"
       # The resource limits every Agent's spec is stamped with at create.
@@ -1908,12 +1909,9 @@ controller:
       # reaper: at the threshold fraction of the agent's memory ceiling (default
       # 0.93) it SIGKILLs the largest tool process spawned under the harness,
       # so the harness survives instead of the whole agent being OOM-killed.
-      # The ceiling is the pod's cgroup limit for a container, and the machine's
-      # own memory on the vm Backend, which has no cgroup limit; a container
-      # without a limit is left unwatched rather than measured against the node
-      # it shares. Set `MEM_REAPER=off` to disable.
+      # The ceiling is the machine's own memory, which the runner grants from
+      # its owner's pool. Set `MEM_REAPER=off` to disable.
       env: []
-      skillSources: []
       # true = every vm agent asks for nested virtualization, as if its Agent
       # set spec.backend.vm.nestedVirtualization. It is only an ask: a machine
       # nests only when `virtualization.runner.nestedVirtualization` lets the
