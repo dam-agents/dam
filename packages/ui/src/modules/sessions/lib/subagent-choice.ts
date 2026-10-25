@@ -92,6 +92,39 @@ export function withSubagent(
     : { ...pair, settings: undefined };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the settings a primary profile pick saves. The
+ * profile's own settings win, the slot the session already names keeps its keys,
+ * and that slot is re-applied through the rule for the harness the pick lands
+ * on: `models` is that harness's own listing when the pick stays where it was,
+ * so a native model the harness keeps and lists survives the pick instead of
+ * silently falling back to the agent's pick.
+ */
+export function primaryPickSettings(input: {
+  profile: ProfileWithUsage;
+  slot: ProfileWithUsage | null;
+  capability: HarnessCapability | undefined;
+  models?: readonly { name: string }[];
+  kept?: Record<string, string>;
+}): Record<string, string> {
+  return {
+    ...input.kept,
+    ...input.profile.settings,
+    ...(input.slot === null
+      ? {}
+      : (withSubagent(
+          {
+            harness: input.profile.harness,
+            provider: null,
+            model: input.profile.model,
+          },
+          input.slot,
+          input.capability,
+          input.models,
+        ).settings ?? {})),
+  };
+}
+
 /** UNIT_BOUNDARY_DESCRIPTION: which profile the subagent slot names, found by the harness and model it holds; a slot with no harness is the agent's pick. */
 export function subagentProfileOf(
   pair: SessionPair | null,

@@ -65,7 +65,11 @@ import {
   settingDefaults,
   settingsForModel,
 } from "../lib/session-settings.js";
-import { subagentProfileOf, withSubagent } from "../lib/subagent-choice.js";
+import {
+  primaryPickSettings,
+  subagentProfileOf,
+  withSubagent,
+} from "../lib/subagent-choice.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { DetachProviderMessage } from "./detach-provider-message.js";
 import { SessionModelList } from "./session-model-list.js";
@@ -229,20 +233,22 @@ export function SessionPairPicker(props: Props) {
       ),
     );
     /* UNIT_BOUNDARY_DESCRIPTION: the subagent choice survives a primary pick,
-     * re-applied through the rule so its native and slot keys stay in step. */
+     * re-applied through the rule so its native and slot keys stay in step. A
+     * pick that stays on this harness uses the listing already loaded, so a
+     * native model the harness keeps and lists is not dropped; a pick that
+     * changes harness passes none, since that harness's listing has not loaded
+     * and another harness falls back to the agent's pick, the rule's safe side. */
     const slot = subagentProfileOf(pair, profiles);
-    const next = {
-      ...kept,
-      ...profile.settings,
-      ...(slot === null
-        ? {}
-        : (withSubagent(
-            { harness: profile.harness, provider: null, model: profile.model },
-            slot,
-            capabilityOf(profile.harness),
-            [],
-          ).settings ?? {})),
-    };
+    const next = primaryPickSettings({
+      profile,
+      slot,
+      capability: capabilityOf(profile.harness),
+      kept,
+      models:
+        profile.harness === pair?.harness
+          ? groups.flatMap((g) => g.models.map((m) => ({ name: m.name })))
+          : [],
+    });
     choose(
       {
         harness: profile.harness,
@@ -290,10 +296,9 @@ export function SessionPairPicker(props: Props) {
        * for the native subagent, which is the rule's safe side. */
       if (forSubagent) {
         if (pair)
-          choose(
-            withSubagent(pair, profile, capabilityOf(profile.harness), []),
-            { platformSubagentProfileId: profile.id },
-          );
+          choose(withSubagent(pair, profile, capabilityOf(pair.harness), []), {
+            platformSubagentProfileId: profile.id,
+          });
         return;
       }
       chooseProfile(profile, connection.id);

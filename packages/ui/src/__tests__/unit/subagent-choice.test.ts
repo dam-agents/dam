@@ -4,6 +4,7 @@ import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
+  primaryPickSettings,
   subagentChoice,
   subagentSettings,
 } from "../../modules/sessions/lib/subagent-choice.js";
@@ -118,5 +119,46 @@ describe("the subagent profile's contribution", () => {
       "platformSubagent.harness": "",
       "platformSubagent.model": "",
     });
+  });
+
+  /** TEST_SCENARIO: a primary pick that stays on the harness whose model list is
+   * loaded re-applies the slot with that list, so a cross-harness subagent model
+   * the primary harness keeps and lists survives the pick instead of silently
+   * falling back to the agent's pick. */
+  it("keeps a native model the primary harness lists when the primary is picked", () => {
+    const slot = profile({
+      harness: "codex",
+      model: "ibm/aws/claude-opus-4-8",
+    });
+    const settings = primaryPickSettings({
+      profile: profile({ id: "p2", settings: {} }),
+      slot,
+      capability: capability(),
+      models: [{ name: "ibm/aws/claude-opus-4-8" }],
+    });
+    expect(settings).toMatchObject({
+      "platformSubagent.harness": "codex",
+      "platformSubagent.model": "ibm/aws/claude-opus-4-8",
+      subagentModel: "ibm/aws/claude-opus-4-8",
+    });
+  });
+
+  /** TEST_SCENARIO: the same pick without the list — the harness changed under
+   * the pick — keeps the slot and lets the agent pick the native one. */
+  it("falls back to the agent's pick when no list is passed", () => {
+    const slot = profile({
+      harness: "codex",
+      model: "ibm/aws/claude-opus-4-8",
+    });
+    const settings = primaryPickSettings({
+      profile: profile({ id: "p2", settings: {} }),
+      slot,
+      capability: capability(),
+      models: [],
+    });
+    expect(settings).toMatchObject({
+      "platformSubagent.harness": "codex",
+    });
+    expect(settings.subagentModel).toBeUndefined();
   });
 });
