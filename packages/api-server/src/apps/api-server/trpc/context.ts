@@ -168,6 +168,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { profiles } = composeProfilesForOwner({
       db,
       owner: user.sub,
+      agentBinding: user.agentIds,
       catalog: harnesses,
       sharedProvider: config.curveBenderDeployment !== null,
       subPseudonymizer,

@@ -28,6 +28,8 @@ export interface SeededProvider {
 export interface ProfilesServiceDeps {
   repo: ProfilesRepository;
   owner: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: a key limited to some agents sees usage of those agents only. */
+  agentBinding?: readonly string[] | "*";
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   seededProvider: SeededProvider | null;
 }
@@ -36,6 +38,10 @@ export function createProfilesService(
   deps: ProfilesServiceDeps,
 ): ProfilesService {
   const { repo, owner, catalog } = deps;
+  const binding = () =>
+    deps.agentBinding === undefined || deps.agentBinding === "*"
+      ? undefined
+      : deps.agentBinding;
 
   function validate(profile: {
     harness: string;
@@ -76,7 +82,7 @@ export function createProfilesService(
     const row = await repo.get(owner, id);
     if (!row)
       throw new TRPCError({ code: "NOT_FOUND", message: "profile not found" });
-    const usage = await repo.usage(owner, id);
+    const usage = await repo.usage(owner, id, binding());
     return withUsage(row, usage);
   }
 
@@ -101,7 +107,7 @@ export function createProfilesService(
       await ensureDefault();
       const [rows, counts] = await Promise.all([
         repo.list(owner),
-        repo.usageCounts(owner),
+        repo.usageCounts(owner, binding()),
       ]);
       return rows.map((row) => {
         const countsFor = counts.get(row.id) ?? {
@@ -130,7 +136,7 @@ export function createProfilesService(
           code: "NOT_FOUND",
           message: "profile not found",
         });
-      return repo.usage(owner, id);
+      return repo.usage(owner, id, binding());
     },
 
     async create(input: ProfileCreateInput) {
@@ -184,7 +190,7 @@ export function createProfilesService(
     },
 
     async delete(id: string) {
-      const outcome = await repo.deleteIfUnused(owner, id);
+      const outcome = await repo.deleteIfUnused(owner, id, binding());
       if (outcome.outcome === "missing")
         throw new TRPCError({
           code: "NOT_FOUND",

@@ -27,6 +27,7 @@ export function seededProvider(shared: boolean): SeededProvider | null {
 export function composeProfilesForOwner(deps: {
   db: Db;
   owner: string;
+  agentBinding?: readonly string[] | "*";
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   sharedProvider: boolean;
   subPseudonymizer: SubPseudonymizer;
@@ -39,6 +40,9 @@ export function composeProfilesForOwner(deps: {
     profiles: createProfilesService({
       repo,
       owner: deps.owner,
+      ...(deps.agentBinding !== undefined && {
+        agentBinding: deps.agentBinding,
+      }),
       catalog: deps.catalog,
       seededProvider: seededProvider(deps.sharedProvider),
     }),

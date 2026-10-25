@@ -69,9 +69,22 @@ export interface ProfilesRepository {
     profile: Partial<ProfileWrite>,
   ): Promise<ProfileRow | null>;
   /** UNIT_BOUNDARY_DESCRIPTION: one transaction holds the profile row, so an assignment made while the delete runs is either seen by the usage recheck or refused by the vanished row. */
-  deleteIfUnused(owner: string, id: string): Promise<DeleteOutcome>;
-  usage(owner: string, id: string): Promise<ProfileUsage>;
-  usageCounts(owner: string): Promise<Map<string, ProfileUsageCounts>>;
+  deleteIfUnused(
+    owner: string,
+    id: string,
+    binding?: readonly string[],
+  ): Promise<DeleteOutcome>;
+  /* UNIT_BOUNDARY_DESCRIPTION: a key limited to some agents sees usage of those
+   * agents only, the way the owner-scoped schedule list narrows its rows. */
+  usage(
+    owner: string,
+    id: string,
+    binding?: readonly string[],
+  ): Promise<ProfileUsage>;
+  usageCounts(
+    owner: string,
+    binding?: readonly string[],
+  ): Promise<Map<string, ProfileUsageCounts>>;
   /** UNIT_BOUNDARY_DESCRIPTION: the owner's seed marker and the seeded profile commit together, so a failed seed leaves no marker and the next list retries it. */
   seed(owner: string, profile: ProfileWrite | null): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: the owner's provider Connections, which a profile's template resolves against. */
@@ -129,11 +142,22 @@ export function createProfilesRepository(
    * store does; the other records keep the raw one. */
   const agentOwner = (owner: string) => pseudo.hashSub(owner);
 
+  const boundTo = (binding?: readonly string[]) =>
+    binding === undefined
+      ? undefined
+      : binding.length === 0
+        ? []
+        : [...binding];
+
   async function usageOf(
     executor: Db | DbTx,
     owner: string,
     id: string,
+    binding?: readonly string[],
   ): Promise<ProfileUsage> {
+    const agentIds = boundTo(binding);
+    if (agentIds !== undefined && agentIds.length === 0)
+      return { agents: [], channels: [], schedules: [] };
     const [agentRows, channelRows, scheduleRows] = await Promise.all([
       executor
         .select({
@@ -149,6 +173,7 @@ export function createProfilesRepository(
               eq(agents.sessionProfile, id),
               eq(agents.platformSubagentProfile, id),
             ),
+            ...(agentIds === undefined ? [] : [inArray(agents.id, agentIds)]),
           ),
         ),
       executor
@@ -160,7 +185,15 @@ export function createProfilesRepository(
             ),
         })
         .from(channels)
-        .where(and(eq(channels.owner, owner), eq(channels.profileId, id))),
+        .where(
+          and(
+            eq(channels.owner, owner),
+            eq(channels.profileId, id),
+            ...(agentIds === undefined
+              ? []
+              : [inArray(channels.agentId, agentIds)]),
+          ),
+        ),
       executor
         .select({
           id: schedules.id,
@@ -172,6 +205,9 @@ export function createProfilesRepository(
           and(
             eq(schedules.owner, owner),
             sql`${schedules.spec}->>'profile' = ${id}`,
+            ...(agentIds === undefined
+              ? []
+              : [inArray(schedules.agentId, agentIds)]),
           ),
         ),
     ]);
@@ -229,7 +265,7 @@ export function createProfilesRepository(
       return rows[0] ? rowToProfile(rows[0]) : null;
     },
 
-    async deleteIfUnused(owner, id) {
+    async deleteIfUnused(owner, id, binding) {
       return db.transaction(async (tx: DbTx) => {
         const held = await tx
           .select({ id: profiles.id })
@@ -237,7 +273,7 @@ export function createProfilesRepository(
           .where(and(eq(profiles.owner, owner), eq(profiles.id, id)))
           .for("update");
         if (held.length === 0) return { outcome: "missing" };
-        const usage = await usageOf(tx, owner, id);
+        const usage = await usageOf(tx, owner, id, binding);
         if (
           usage.agents.length + usage.channels.length + usage.schedules.length >
           0
@@ -250,9 +286,11 @@ export function createProfilesRepository(
       });
     },
 
-    usage: (owner, id) => usageOf(db, owner, id),
+    usage: (owner, id, binding) => usageOf(db, owner, id, binding),
 
-    async usageCounts(owner) {
+    async usageCounts(owner, binding) {
+      const agentIds = boundTo(binding);
+      if (agentIds !== undefined && agentIds.length === 0) return new Map();
       const counts = new Map<string, ProfileUsageCounts>();
       const add = (id: string | null, kind: keyof ProfileUsageCounts) => {
         if (id === null) return;
@@ -277,12 +315,21 @@ export function createProfilesRepository(
                 isNotNull(agents.sessionProfile),
                 isNotNull(agents.platformSubagentProfile),
               ),
+              ...(agentIds === undefined ? [] : [inArray(agents.id, agentIds)]),
             ),
           ),
         db
           .select({ id: channels.profileId })
           .from(channels)
-          .where(and(eq(channels.owner, owner), isNotNull(channels.profileId))),
+          .where(
+            and(
+              eq(channels.owner, owner),
+              isNotNull(channels.profileId),
+              ...(agentIds === undefined
+                ? []
+                : [inArray(channels.agentId, agentIds)]),
+            ),
+          ),
         db
           .select({ id: sql<string | null>`${schedules.spec}->>'profile'` })
           .from(schedules)
@@ -290,12 +337,17 @@ export function createProfilesRepository(
             and(
               eq(schedules.owner, owner),
               sql`${schedules.spec}->>'profile' is not null`,
+              ...(agentIds === undefined
+                ? []
+                : [inArray(schedules.agentId, agentIds)]),
             ),
           ),
       ]);
+      /* UNIT_BOUNDARY_DESCRIPTION: an agent that names the same profile in both
+       * of its slots is one agent using it, not two. */
       for (const row of agentRows) {
         add(row.chat, "agents");
-        add(row.platform, "agents");
+        if (row.platform !== row.chat) add(row.platform, "agents");
       }
       for (const row of channelRows) add(row.id, "channels");
       for (const row of scheduleRows) add(row.id, "schedules");

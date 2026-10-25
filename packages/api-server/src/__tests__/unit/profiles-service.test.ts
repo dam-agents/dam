@@ -123,11 +123,17 @@ function fakeRepo(opts: {
 
 function service(
   fake: Fake,
-  opts: { seededProvider?: SeededProvider | null } = {},
+  opts: {
+    seededProvider?: SeededProvider | null;
+    agentBinding?: readonly string[] | "*";
+  } = {},
 ) {
   return createProfilesService({
     repo: fake.repo,
     owner: "owner-1",
+    ...(opts.agentBinding !== undefined && {
+      agentBinding: opts.agentBinding,
+    }),
     catalog,
     seededProvider:
       opts.seededProvider === undefined ? shared : opts.seededProvider,
@@ -225,6 +231,46 @@ describe("profiles service — list and usage", () => {
       "that profile is in use by 1 agent, 1 channel, 2 schedules",
     );
     expect(fake.calls.deleted).toEqual(["profile-1"]);
+  });
+
+  it("asks for usage narrowed to the agents a limited key may see", async () => {
+    const seen: (readonly string[] | undefined)[] = [];
+    const fake = fakeRepo({ rows: [row()] });
+    const service = createProfilesService({
+      repo: {
+        ...fake.repo,
+        usageCounts: async (_owner, binding) => {
+          seen.push(binding);
+          return new Map();
+        },
+      },
+      owner: "owner-1",
+      agentBinding: ["agent-1"],
+      catalog,
+      seededProvider: shared,
+    });
+    await service.list();
+    expect(seen).toEqual([["agent-1"]]);
+  });
+
+  it("reads every agent of the owner with an unrestricted key", async () => {
+    const seen: (readonly string[] | undefined)[] = [];
+    const fake = fakeRepo({ rows: [row()] });
+    const service = createProfilesService({
+      repo: {
+        ...fake.repo,
+        usageCounts: async (_owner, binding) => {
+          seen.push(binding);
+          return new Map();
+        },
+      },
+      owner: "owner-1",
+      agentBinding: "*",
+      catalog,
+      seededProvider: shared,
+    });
+    await service.list();
+    expect(seen).toEqual([undefined]);
   });
 
   it("refuses a delete of a profile this owner does not have", async () => {
