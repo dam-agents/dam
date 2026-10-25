@@ -24,15 +24,24 @@ const profileBodySchema = z.object({
   settings: profileSettingsSchema.optional(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: a write made from an agent names it, so an Agent
+ * Editor's change lands in the owner's set — the only set that agent's
+ * references resolve against. */
 export const profileCreateInputSchema = profileBodySchema.extend({
   name: profileNameSchema,
+  agentId: z.string().min(1).optional(),
 });
 
-export const profileUpdateInputSchema = profileBodySchema
-  .partial()
-  .extend({ id: z.string().min(1), name: profileNameSchema.optional() });
+export const profileUpdateInputSchema = profileBodySchema.partial().extend({
+  id: z.string().min(1),
+  name: profileNameSchema.optional(),
+  agentId: z.string().min(1).optional(),
+});
 
-export const profileIdInputSchema = z.object({ id: z.string().min(1) });
+export const profileIdInputSchema = z.object({
+  id: z.string().min(1),
+  agentId: z.string().min(1).optional(),
+});
 
 export const profileSlotSchema = z.enum(["chat", "platformSubagent"]);
 

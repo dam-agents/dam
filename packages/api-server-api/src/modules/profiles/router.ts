@@ -1,5 +1,7 @@
 import { t } from "../../trpc.js";
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
@@ -17,6 +19,10 @@ import {
 export const profilesRouter = t.router({
   list: readAgentProcedure
     .input(profileListInputSchema)
+    /* UNIT_BOUNDARY_DESCRIPTION: the profiles one agent can reference are its
+     * owner's, so a call that names an agent runs in the owner's context and an
+     * Agent Editor reads the owner's profiles, never their own. */
+    .use(agentPermission("view", (input) => agentTarget(input?.agentId)))
     .output(profileViewSchema.array())
     .query(({ ctx, input }) => {
       /* UNIT_BOUNDARY_DESCRIPTION: a key bound to some agents may not read what
@@ -28,20 +34,24 @@ export const profilesRouter = t.router({
 
   usage: readAgentProcedure
     .input(profileIdInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .output(profileUsageSchema)
     .query(({ ctx, input }) => ctx.profiles.usage(input.id)),
 
   create: manageAgentsProcedure
     .input(profileCreateInputSchema)
+    .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
     .output(profileViewSchema)
     .mutation(({ ctx, input }) => ctx.profiles.create(input)),
 
   update: manageAgentsProcedure
     .input(profileUpdateInputSchema)
+    .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
     .output(profileUpdateResultSchema)
     .mutation(({ ctx, input }) => ctx.profiles.update(input)),
 
   delete: manageAgentsProcedure
     .input(profileIdInputSchema)
+    .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) => ctx.profiles.delete(input.id)),
 });
