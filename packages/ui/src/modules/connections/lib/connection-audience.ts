@@ -40,7 +40,7 @@ export function noticeAudience(
 ): ConnectionAudience | null {
   const audience = {
     editors: dismissed("editors") ? editors : [],
-    channels: dismissed("channels") ? (channels ?? []) : [],
+    channels: dismissed("channels") ? channels : [],
   };
   return hasAudience(audience) ? audience : null;
 }

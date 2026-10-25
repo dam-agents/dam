@@ -103,7 +103,7 @@ export function ConnectionsSection({
           testId="connections-editors-notice"
         >
           <ConnectionAudienceSentence
-            audience={{ editors, channels: sharedChannels ?? [] }}
+            audience={{ editors, channels: sharedChannels }}
             uses="these connections"
           />
         </ConnectionAudienceNotice>

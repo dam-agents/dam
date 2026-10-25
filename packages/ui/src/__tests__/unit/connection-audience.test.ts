@@ -114,6 +114,25 @@ describe("the notice in the catalog", () => {
   });
 });
 
+describe("an audience whose channels are not known yet", () => {
+  // TEST_SCENARIO: while the channels load, or after their query failed, a notice names the editors and says anyone in a bound channel can too, rather than claiming there are no channels.
+  it("names the editors and the channel case", () => {
+    expect(sentence({ editors: [ALICE], channels: null })).toBe(
+      "Editor alice@example.com can ask this agent to use these connections, with your access. If it is bound to a Slack channel or a group chat, anyone there can too.",
+    );
+  });
+
+  // TEST_SCENARIO: the catalog notice keeps channels it does not know yet as unknown, once both warnings are off.
+  it("keeps unknown channels unknown in the catalog notice", () => {
+    expect(
+      noticeAudience(
+        { editors: [ALICE], channels: null },
+        only("editors", "channels"),
+      ),
+    ).toEqual({ editors: [ALICE], channels: null });
+  });
+});
+
 describe("the notice on the Connections page", () => {
   // TEST_SCENARIO: AC-5 — a Shared Agent with two editors names both.
   it("names every editor", () => {

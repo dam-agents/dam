@@ -36,7 +36,7 @@ function SharedAgentNotice({ agentId }: { agentId: string }) {
       testId={`secret-request-audience-${agentId}`}
     >
       <ConnectionAudienceSentence
-        audience={{ editors: agent.access.editors, channels: channels ?? [] }}
+        audience={{ editors: agent.access.editors, channels }}
         uses="this connection"
         agentName={agent.name}
       />
