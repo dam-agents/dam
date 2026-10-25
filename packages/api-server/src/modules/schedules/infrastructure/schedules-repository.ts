@@ -12,6 +12,7 @@ import {
   type DbTx,
   schedules as schedulesTable,
 } from "db";
+import type { StoredProfileResolver } from "../../profiles/index.js";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
 import type {
@@ -103,6 +104,17 @@ interface InternalRow {
   precheckFailedCount: number;
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: a schedule whose profile cannot run carries no
+ * harness or model of its own, which the fire path already reports as the
+ * scheduled run having nothing to run on. */
+function withoutChoices(spec: Schedule["spec"]): Schedule["spec"] {
+  const next = { ...spec };
+  delete next.harness;
+  delete next.model;
+  delete next.settings;
+  return next;
+}
+
 function rowToSchedule(row: InternalRow): Schedule {
   const spec = scheduleSpecSchema.parse(row.spec);
   spec.enabled = row.enabled;
@@ -130,7 +142,35 @@ function rowToSchedule(row: InternalRow): Schedule {
   };
 }
 
-export function createSchedulesRepository(db: Db): SchedulesRepository {
+export function createSchedulesRepository(
+  db: Db,
+  profiles?: StoredProfileResolver,
+): SchedulesRepository {
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile is read as the
+   * pair it resolves to, so the fire payload, the panel and the CLI all see the
+   * values the profile holds now, and a profile that cannot run here yields no
+   * harness or model rather than another one picked in its place. */
+  async function effective(row: InternalRow): Promise<Schedule> {
+    const schedule = rowToSchedule(row);
+    const profileId = schedule.spec.profile;
+    if (profileId === undefined || profiles === undefined) return schedule;
+    const resolved = await profiles.resolveStored({
+      profileId,
+      agentId: schedule.agentId,
+    });
+    if (!resolved || resolved.unavailable !== null)
+      return { ...schedule, spec: withoutChoices(schedule.spec) };
+    return {
+      ...schedule,
+      spec: {
+        ...schedule.spec,
+        harness: resolved.pair.harness,
+        ...(resolved.pair.model !== null && { model: resolved.pair.model }),
+        ...(resolved.pair.settings && { settings: resolved.pair.settings }),
+      },
+    };
+  }
+
   return {
     async listForOwner(owner, opts): Promise<Schedule[]> {
       const agentIds = opts?.agentIds;
@@ -152,7 +192,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
             ? DEFAULT_LIMIT
             : Math.min(Math.max(1, Math.trunc(opts.limit)), MAX_LIMIT),
         )) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return Promise.all(rows.map(effective));
     },
 
     async list(agentId, owner): Promise<Schedule[]> {
@@ -166,7 +206,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           ),
         )
         .orderBy(asc(schedulesTable.createdAt))) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return Promise.all(rows.map(effective));
     },
 
     async get(id, owner): Promise<Schedule | null> {
@@ -176,7 +216,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .where(
           and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)),
         )) as InternalRow[];
-      return rows[0] ? rowToSchedule(rows[0]) : null;
+      return rows[0] ? effective(rows[0]) : null;
     },
 
     async getById(id): Promise<Schedule | null> {
@@ -184,7 +224,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .select()
         .from(schedulesTable)
         .where(eq(schedulesTable.id, id))) as InternalRow[];
-      return rows[0] ? rowToSchedule(rows[0]) : null;
+      return rows[0] ? effective(rows[0]) : null;
     },
 
     async getOwnerById(id): Promise<string | null> {
@@ -200,7 +240,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .select()
         .from(schedulesTable)
         .where(eq(schedulesTable.enabled, true))) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return Promise.all(rows.map(effective));
     },
 
     async listEnabledByAgents(agentIds): Promise<Schedule[]> {
@@ -214,7 +254,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
             inArray(schedulesTable.agentId, [...agentIds]),
           ),
         )) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return Promise.all(rows.map(effective));
     },
 
     async create(input): Promise<Schedule> {

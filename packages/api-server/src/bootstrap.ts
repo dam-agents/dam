@@ -933,9 +933,8 @@ export async function bootstrap() {
   /* UNIT_BOUNDARY_DESCRIPTION: one resolver for the whole process, because a
    * stored reference is resolved on behalf of the row that holds it, not of a
    * caller: the agent, channel and schedule paths all read through it. */
-  const profileResolver = createProfileResolver({
-    repo: createProfilesRepository(db, subPseudonymizer),
-  });
+  const profilesRepository = createProfilesRepository(db, subPseudonymizer);
+  const profileResolver = createProfileResolver({ repo: profilesRepository });
 
   const firePair = composeFirePair({
     db,
@@ -1905,6 +1904,11 @@ export async function bootstrap() {
   });
   const schedulesBoot = composeSchedulesAtBoot({
     db,
+    profiles: {
+      resolveStored: profileResolver.resolveStored,
+      owned: async (owner, profileId) =>
+        (await profilesRepository.get(owner, profileId)) !== null,
+    },
     firePair,
     agentOnceLimits: {
       maxOpen: config.onceScheduleAgentMaxOpen,

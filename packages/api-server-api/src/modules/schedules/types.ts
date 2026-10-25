@@ -23,6 +23,10 @@ export interface ScheduleSpecCron {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule stores the profile it runs on, or its
+   * own values; the pair is resolved at read so every fire and every view sees
+   * values. */
+  profile?: string;
   migrationNote?: string;
   sessionTitle?: string;
   enabled: boolean;
@@ -41,6 +45,10 @@ export interface ScheduleSpecRRule {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule stores the profile it runs on, or its
+   * own values; the pair is resolved at read so every fire and every view sees
+   * values. */
+  profile?: string;
   migrationNote?: string;
   sessionTitle?: string;
   enabled: boolean;
@@ -64,6 +72,10 @@ export interface ScheduleSpecOnce {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule stores the profile it runs on, or its
+   * own values; the pair is resolved at read so every fire and every view sees
+   * values. */
+  profile?: string;
   migrationNote?: string;
   sessionTitle?: string;
   task?: string;

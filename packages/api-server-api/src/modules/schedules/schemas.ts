@@ -44,6 +44,7 @@ export const scheduleCreateCronInputSchema = z.object({
   harness: scheduleHarnessSchema.optional(),
   model: scheduleModelSchema.optional(),
   settings: scheduleSettingsSchema.optional(),
+  profile: z.string().min(1).optional(),
   sessionTitle: sessionTitleSchema.optional(),
 });
 
@@ -57,6 +58,7 @@ export const scheduleUpdateCronInputSchema = z.object({
   harness: scheduleHarnessSchema.nullable().optional(),
   model: scheduleModelSchema.nullable().optional(),
   settings: scheduleSettingsSchema.nullable().optional(),
+  profile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
@@ -72,6 +74,7 @@ export const scheduleCreateRRuleInputSchema = z.object({
   harness: scheduleHarnessSchema.optional(),
   model: scheduleModelSchema.optional(),
   settings: scheduleSettingsSchema.optional(),
+  profile: z.string().min(1).optional(),
   sessionTitle: sessionTitleSchema.optional(),
 });
 
@@ -87,6 +90,7 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   harness: scheduleHarnessSchema.nullable().optional(),
   model: scheduleModelSchema.nullable().optional(),
   settings: scheduleSettingsSchema.nullable().optional(),
+  profile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
@@ -107,6 +111,7 @@ export const scheduleCreateOnceInputSchema = z
     harness: scheduleHarnessSchema.optional(),
     model: z.string().min(1).optional(),
     settings: scheduleSettingsSchema.optional(),
+    profile: z.string().min(1).optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();
@@ -121,6 +126,7 @@ export const scheduleUpdateOnceInputSchema = z
     harness: scheduleHarnessSchema.optional(),
     model: z.string().min(1).optional(),
     settings: scheduleSettingsSchema.optional(),
+    profile: z.string().min(1).optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();

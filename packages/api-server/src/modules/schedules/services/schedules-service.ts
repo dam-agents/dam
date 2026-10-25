@@ -89,7 +89,14 @@ function choicesOf(input: {
   harness?: string | null;
   model?: string | null;
   settings?: Record<string, string> | null;
-}): { harness?: string; model?: string; settings?: Record<string, string> } {
+  profile?: string | null;
+}): {
+  harness?: string;
+  model?: string;
+  settings?: Record<string, string>;
+  profile?: string;
+} {
+  if (input.profile) return { profile: input.profile };
   return {
     ...(input.harness ? { harness: input.harness } : {}),
     ...(input.model ? { model: input.model } : {}),
@@ -102,6 +109,42 @@ function choicesOf(input: {
  * changes (undefined keeps, null clears), so the choices validated are the
  * ones the stored schedule ends up with, never the changed fields alone.
  */
+/* UNIT_BOUNDARY_DESCRIPTION: a schedule stores a profile or its own values,
+ * never both. Naming one clears the inline fields; sending an inline field
+ * detaches from the profile; an explicit null clears the reference and leaves
+ * the inline fields as they are; omission changes nothing. */
+function applyProfileTransition(
+  spec: {
+    profile?: string;
+    harness?: string;
+    model?: string;
+    settings?: Record<string, string>;
+  },
+  input: {
+    profile?: string | null;
+    harness?: string | null;
+    model?: string | null;
+    settings?: Record<string, string> | null;
+  },
+): void {
+  const inlineGiven =
+    input.harness !== undefined ||
+    input.model !== undefined ||
+    input.settings !== undefined;
+  if (input.profile === null) {
+    delete spec.profile;
+    return;
+  }
+  if (input.profile !== undefined) {
+    spec.profile = input.profile;
+    delete spec.harness;
+    delete spec.model;
+    delete spec.settings;
+    return;
+  }
+  if (inlineGiven) delete spec.profile;
+}
+
 function mergedChoices(
   input: {
     harness?: string | null;
@@ -153,6 +196,7 @@ export function createSchedulesService(deps: {
       settings?: Record<string, string>;
     },
   ) => Promise<string | undefined>;
+  ownedProfile?: (profileId: string) => Promise<boolean>;
   now?: () => Date;
 }): SchedulesService {
   const now = deps.now ?? (() => new Date());
@@ -170,6 +214,16 @@ export function createSchedulesService(deps: {
    * saved to fail later. A task that continues its session keeps that
    * session's choices.
    */
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule may only name a profile its owner
+   * holds. Whether that profile can run on the agent right now is the fire's
+   * question, reported as a failing run, exactly as a custom pair on a provider
+   * the agent lost behaves. */
+  async function ensureProfileOwned(profile: string | null | undefined) {
+    if (!profile) return;
+    if (deps.ownedProfile === undefined || !(await deps.ownedProfile(profile)))
+      throw badRequest("unknown profile");
+  }
+
   async function ensureSessionChoices(
     agentId: string,
     choices: {
@@ -227,7 +281,9 @@ export function createSchedulesService(deps: {
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
       asBadRequest(() => validateCron(input.cron));
       await ensureAgent(input.agentId);
-      await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
+      await ensureProfileOwned(input.profile);
+      if (!input.profile)
+        await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "cron",
@@ -278,7 +334,9 @@ export function createSchedulesService(deps: {
         validateRRule(input.rrule, input.timezone, input.quietHours ?? []),
       );
       await ensureAgent(input.agentId);
-      await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
+      await ensureProfileOwned(input.profile);
+      if (!input.profile)
+        await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "rrule",
@@ -417,6 +475,7 @@ export function createSchedulesService(deps: {
         ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
+      applyProfileTransition(spec, input);
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (!updated) return null;
@@ -436,8 +495,9 @@ export function createSchedulesService(deps: {
       if (!current) return null;
       if (current.spec.type !== "cron")
         throw badRequest("only a cron schedule is edited with updateCron");
+      await ensureProfileOwned(input.profile);
       const merged = mergedChoices(input, current.spec);
-      if (choicesChanged(merged, current.spec))
+      if (input.profile === undefined && choicesChanged(merged, current.spec))
         await ensureSessionChoices(
           current.agentId,
           choicesOf(merged),
@@ -460,6 +520,7 @@ export function createSchedulesService(deps: {
       else if (input.settings !== undefined) delete spec.settings;
       if (input.model !== undefined || input.harness !== undefined)
         delete spec.migrationNote;
+      applyProfileTransition(spec, input);
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);
@@ -487,8 +548,9 @@ export function createSchedulesService(deps: {
       if (!current) return null;
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
+      await ensureProfileOwned(input.profile);
       const merged = mergedChoices(input, current.spec);
-      if (choicesChanged(merged, current.spec))
+      if (input.profile === undefined && choicesChanged(merged, current.spec))
         await ensureSessionChoices(
           current.agentId,
           choicesOf(merged),
@@ -518,6 +580,7 @@ export function createSchedulesService(deps: {
       else if (input.settings !== undefined) delete spec.settings;
       if (input.model !== undefined || input.harness !== undefined)
         delete spec.migrationNote;
+      applyProfileTransition(spec, input);
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);
