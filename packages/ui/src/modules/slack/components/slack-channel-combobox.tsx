@@ -49,7 +49,9 @@ export function SlackChannelCombobox({
   const [highlight, setHighlight] = useState(0);
   const [refusal, setRefusal] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const listId = useId();
+  const optionId = (i: number) => `${listId}-opt-${i}`;
   const options = useMemo(() => optionsFor(channels, query), [channels, query]);
 
   useEffect(() => {
@@ -60,6 +62,13 @@ export function SlackChannelCombobox({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
+
+  useEffect(() => {
+    if (open)
+      listRef.current
+        ?.querySelector('[data-highlighted="true"]')
+        ?.scrollIntoView({ block: "nearest" });
+  }, [highlight, open]);
 
   const notShared = (id: string) =>
     `You and ${bot} aren't both in ${id}. Invite ${bot} to it, then refresh.`;
@@ -85,7 +94,7 @@ export function SlackChannelCombobox({
       setHighlight((h) => Math.max(h - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      choose(options[highlight]);
+      if (open) choose(options[highlight]);
     } else if (e.key === "Escape" && open) {
       e.preventDefault();
       setOpen(false);
@@ -112,6 +121,11 @@ export function SlackChannelCombobox({
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
+          aria-activedescendant={
+            open && options[highlight]?.kind === "channel"
+              ? optionId(highlight)
+              : undefined
+          }
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent text-sm outline-hidden placeholder:text-placeholder"
           data-testid="slack-channel-search"
@@ -121,6 +135,7 @@ export function SlackChannelCombobox({
       {open && (
         <div className="absolute z-popover mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md">
           <ul
+            ref={listRef}
             id={listId}
             role="listbox"
             aria-multiselectable
@@ -147,7 +162,10 @@ export function SlackChannelCombobox({
                   aria-selected={selected.includes(option.channel.id)}
                 >
                   <button
+                    id={optionId(i)}
                     type="button"
+                    tabIndex={-1}
+                    data-highlighted={i === highlight}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => choose(option)}
                     onMouseEnter={() => setHighlight(i)}
