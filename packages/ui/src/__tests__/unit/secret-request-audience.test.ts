@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // TEST_OVERVIEW: The owner who opens a secret-entry link reads, before they save, who else can ask the agent to use the connection with their access. When the agent that asked, or an agent a replaced secret is granted to, is a Shared Agent, the page names its Agent Editors and the channels it is bound to. An agent with no editors adds nothing to the page.
 import type { SecretRequestView } from "api-server-api";
 import { createElement } from "react";
@@ -49,10 +50,13 @@ const view = (patch: Partial<SecretRequestView>): SecretRequestView => ({
   ...patch,
 });
 
+const textOf = (html: string) =>
+  new DOMParser().parseFromString(html, "text/html").body.textContent ?? "";
+
 const text = (v: SecretRequestView) =>
-  renderToStaticMarkup(createElement(SecretRequestAudience, { view: v }))
-    .replace(/<[^>]+>/g, "")
-    .trim();
+  textOf(
+    renderToStaticMarkup(createElement(SecretRequestAudience, { view: v })),
+  ).trim();
 
 describe("the secret page of a Shared Agent", () => {
   // TEST_SCENARIO: AC-9 — an editor asked a Shared Agent bound to #team-x for a new secret; the owner's page names the editor and the channel.

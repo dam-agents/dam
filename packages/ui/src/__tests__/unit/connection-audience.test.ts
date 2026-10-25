@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // TEST_OVERVIEW: Every time an owner gives a Shared Agent a connection, they see who else can ask the agent to use it with their access: the Agent Editors by email, and everyone in the channels the agent is bound to. One dialog names both; the editor warning and the channel warning each have their own "Don't show again", and once one is turned off the catalog shows a notice in its place. A connection is named as the account it acts as when that is known. An agent with no editors and no channels shows nothing new.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -24,10 +25,15 @@ const only =
   (kind: AudienceKind) =>
     kinds.includes(kind);
 
+const textOf = (html: string) =>
+  new DOMParser().parseFromString(html, "text/html").body.textContent ?? "";
+
 const sentence = (audience: ConnectionAudience, uses = "these connections") =>
-  renderToStaticMarkup(
-    createElement(ConnectionAudienceSentence, { audience, uses }),
-  ).replace(/<[^>]+>/g, "");
+  textOf(
+    renderToStaticMarkup(
+      createElement(ConnectionAudienceSentence, { audience, uses }),
+    ),
+  );
 
 describe("naming a connection", () => {
   // TEST_SCENARIO: a connection that knows its account reads "GitHub as tomkis"; one that does not reads by its name alone.
