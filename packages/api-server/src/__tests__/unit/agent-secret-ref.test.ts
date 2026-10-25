@@ -58,6 +58,7 @@ function setup() {
   const updateSpec = vi.fn(async () => existing);
   const agents = createAgentsService({
     owner: "owner-1",
+    actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
       list: async () => [],
       create: persist,
@@ -89,6 +90,9 @@ function setup() {
     resolveSlackWorkspace: async () => ({ kind: "unknown" }),
     findSlackBindings: async () => [],
     onboardingChecklists: { readMany: async () => new Map() },
+    editors: unused<AgentsDeps["editors"]>(),
+    editorEmail: null,
+    resolveUserEmail: async () => null,
   });
   return { agents, persist, updateSpec };
 }

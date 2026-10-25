@@ -2,6 +2,7 @@ import {
   sessionModeSchema,
   sessionTypeSchema,
   sessionMatchesQuery,
+  type Sender,
   type Session,
   type SessionMode,
   type SessionType,
@@ -40,6 +41,7 @@ export interface SessionMetaLike {
   runStartedAt?: string;
   runTotalMs?: number;
   runCount?: number;
+  starter?: Sender;
 }
 
 export interface SessionListPredicates {
@@ -88,6 +90,7 @@ function fromEntry(
     ...(entry.meta.model !== undefined && { model: entry.meta.model }),
     ...(entry.meta.settings !== undefined && { settings: entry.meta.settings }),
     ...(entry.meta.follows !== undefined && { follows: entry.meta.follows }),
+    ...(entry.starter !== undefined && { startedBy: entry.starter }),
   };
 }
 

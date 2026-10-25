@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useAppConnections } from "../../connections/api/queries.js";
+import { useAgentPageConnections } from "../../connections/api/queries.js";
 import { SESSION_CATEGORY_LABELS } from "../../sessions/lib/session-category.js";
 import {
   agentLabel,
@@ -66,7 +66,7 @@ export function MeasuredBreakdownCards({
   breakdown,
   showPlanUse,
 }: Props) {
-  const { data: connections = [] } = useAppConnections();
+  const { data: connections = [] } = useAgentPageConnections(agentId ?? null);
   const payerNameOf = agentNameOf(breakdown.byAgent);
   const subAgentSpend = breakdown.byCallingAgent.some(
     (row) => row.agentId !== agentId && row.costMicros > 0,

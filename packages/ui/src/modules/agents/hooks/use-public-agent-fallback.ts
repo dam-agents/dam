@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { publicAgentPath, routeToPath } from "../../platform/lib/routes.js";
-import { agentFallback } from "../lib/deleted-agent.js";
+import { AGENT_DELETED_NOTICE, agentFallback } from "../lib/deleted-agent.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Sends a signed-in visitor who cannot read an agent
@@ -21,7 +21,8 @@ import { agentFallback } from "../lib/deleted-agent.js";
  * instead. Otherwise deleting your own agent would throw you out of the app
  * onto its public page, and a tab left open on an agent deleted elsewhere
  * would wait on it forever. Home also replaces the entry, for the same Back
- * reason.
+ * reason. An Agent Editor who lost access, or left, goes home the same way,
+ * told so by name, never sent to the owner's public page.
  *
  * The redirect marks itself with `from=app`, so the page, which cannot tell who
  * is asking, still knows this visitor is signed in and words itself for them.
@@ -33,10 +34,13 @@ export function usePublicAgentFallback(
   agentId: string | null,
   inaccessible: boolean,
 ): boolean {
-  const deleted = useStore((s) =>
-    agentId ? s.deletedAgents.has(agentId) : false,
+  const departure = useStore((s) =>
+    agentId ? s.departedAgents.get(agentId) : undefined,
   );
-  const fallback = agentFallback(agentId !== null && inaccessible, deleted);
+  const fallback = agentFallback(
+    agentId !== null && inaccessible,
+    departure !== undefined,
+  );
 
   useEffect(() => {
     if (fallback === "public" && agentId !== null)
@@ -44,9 +48,9 @@ export function usePublicAgentFallback(
     if (fallback === "home") {
       history.replaceState(null, "", routeToPath({ view: "home" }));
       useStore.getState().hydrateRoute();
-      emitToast({ kind: "info", message: "This agent was deleted." });
+      emitToast({ kind: "info", message: departure ?? AGENT_DELETED_NOTICE });
     }
-  }, [fallback, agentId]);
+  }, [fallback, agentId, departure]);
 
   return fallback !== null;
 }

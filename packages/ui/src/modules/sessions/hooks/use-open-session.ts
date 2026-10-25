@@ -2,6 +2,8 @@ import type { SessionMode } from "api-server-api";
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
+import { cachedAgent } from "../../agents/api/queries.js";
+import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { setSessionSeen } from "../api/queries.js";
 
 export function useOpenSession() {
@@ -13,7 +15,8 @@ export function useOpenSession() {
 
   return useCallback(
     (agentId: string, sessionId: string, mode?: SessionMode | null) => {
-      setSessionSeen(agentId, sessionId);
+      const agent = cachedAgent(agentId);
+      if (!agent || isOwnAgent(agent)) setSessionSeen(agentId, sessionId);
       if (agentId === openAgentId) {
         requestChat({ kind: "open", sessionId, mode: mode ?? null });
         return;

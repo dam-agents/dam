@@ -12,6 +12,7 @@ import { appRouter as runtimeRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext } from "agent-runtime-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BIN_PATH } from "./run-dam.js";
+import { ownedAgents } from "./owned-agents.js";
 
 describe("dam file get --stdout (integration)", () => {
   const file = randomBytes(3_000_000);
@@ -23,9 +24,10 @@ describe("dam file get --stdout (integration)", () => {
     home = await mkdtemp(join(tmpdir(), "dam-file-get-"));
     const apiContext = {
       user: { sub: "fixture-user", scopes: ALL_SCOPES, agentIds: "*" },
+      actOnAgent: async () => ({ ok: true, ctx: apiContext }),
       terms: { isAccepted: async () => true },
       invocationsQuery: { listTargets: async () => [] },
-      agents: {
+      agents: ownedAgents({
         get: async (): Promise<Agent> => ({
           id: "agent-0000000000000001",
           name: "demo",
@@ -43,7 +45,7 @@ describe("dam file get --stdout (integration)", () => {
           workspaceFailures: [],
           channels: [],
         }),
-      },
+      }),
     } as unknown as ApiContext;
     const runtimeContext = {
       files: {

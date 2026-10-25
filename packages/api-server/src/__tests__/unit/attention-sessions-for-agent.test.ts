@@ -7,6 +7,7 @@ import { markTermsProven } from "api-server-api/trpc";
 import type { AttentionRecordRow } from "../../modules/attention/domain/types.js";
 import type { AttentionRepository } from "../../modules/attention/infrastructure/attention-repository.js";
 import { createAttentionService } from "../../modules/attention/services/attention-service.js";
+import { callerContext } from "../helpers/caller-context.js";
 
 const row = (
   agentId: string,
@@ -92,7 +93,7 @@ type User = ApiContext["user"];
 
 function caller(user: User) {
   const attention = { sessionsForAgent: vi.fn(async () => []) };
-  const ctx = { attention, user } as unknown as ApiContext;
+  const ctx = callerContext({ attention, user });
   markTermsProven(ctx);
   return { caller: appRouter.createCaller(ctx), attention };
 }

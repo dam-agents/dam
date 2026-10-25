@@ -16,6 +16,7 @@ vi.mock("../modules/shared/prompt.js", async (importOriginal) => ({
 }));
 
 import { runDam } from "./run-dam.js";
+import { ownedAgents } from "./owned-agents.js";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import {
@@ -81,7 +82,7 @@ async function startFixture(
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const ctx = new Proxy(
     {
-      agents: { list: async () => AGENTS },
+      agents: ownedAgents({ list: async () => AGENTS }),
       connections: {
         listAndReconcileConnections: async () => [CONNECTION],
         getAgentConnections: async (agentId: string) => ({
@@ -99,6 +100,7 @@ async function startFixture(
       invocationsQuery: { listTargets: async () => [] },
       terms: { isAccepted: async () => true },
       user: FIXTURE_USER,
+      actOnAgent: async () => ({ ok: true, ctx }),
     } as Record<string, unknown>,
     {
       get(target, prop) {

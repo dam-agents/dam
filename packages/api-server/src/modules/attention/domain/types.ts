@@ -17,6 +17,8 @@ export interface AttentionRecordRow {
   activityAt: Date | null;
   seenAt: Date | null;
   working: boolean;
+  startedBySub?: string | null;
+  startedByEmail?: string | null;
 }
 
 export interface DismissalRow {
@@ -50,6 +52,8 @@ export function sameRecord(
     stored.threadTs === next.threadTs &&
     stored.harness === next.harness &&
     stored.working === next.working &&
+    (stored.startedBySub ?? null) === (next.startedBySub ?? null) &&
+    (stored.startedByEmail ?? null) === (next.startedByEmail ?? null) &&
     sameTime(stored.createdAt, next.createdAt) &&
     sameTime(stored.activityAt, next.activityAt) &&
     sameTime(stored.seenAt, next.seenAt)

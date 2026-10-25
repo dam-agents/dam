@@ -2,28 +2,28 @@ import { liveEventSchema } from "api-server-api";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import type { LiveEventsBus } from "../services/live-events-service.js";
 
-const channelOf = (ownerSub: string) => `events:owner:${ownerSub}`;
+const channelOf = (audience: string) => `events:owner:${audience}`;
 
 export function createRedisLiveEventsBus(
   bus: RedisBus,
   log: (message: string) => void,
 ): LiveEventsBus {
   return {
-    publish(ownerSub, event) {
-      void bus.publish(channelOf(ownerSub), JSON.stringify(event));
+    publish(audience, event) {
+      void bus.publish(channelOf(audience), JSON.stringify(event));
     },
-    subscribe(ownerSub, listener) {
-      const unsubscribe = bus.subscribe(channelOf(ownerSub), (payload) => {
+    subscribe(audience, listener) {
+      const unsubscribe = bus.subscribe(channelOf(audience), (payload) => {
         let raw: unknown;
         try {
           raw = JSON.parse(payload);
         } catch {
-          log(`dropped non-JSON frame on ${channelOf(ownerSub)}`);
+          log(`dropped non-JSON frame on ${channelOf(audience)}`);
           return;
         }
         const parsed = liveEventSchema.safeParse(raw);
         if (!parsed.success) {
-          log(`dropped unknown live event on ${channelOf(ownerSub)}`);
+          log(`dropped unknown live event on ${channelOf(audience)}`);
           return;
         }
         listener(parsed.data);

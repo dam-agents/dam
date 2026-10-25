@@ -68,6 +68,8 @@ function world(opts: { allowed?: boolean } = {}) {
     wrapperFrameSender: { send: async () => {} },
     isAgentOwnedBy: async () => true,
     ownerSub: "owner-1",
+    actor: "owner-1",
+    actorEmail: null,
     agentBinding: "*",
   });
   return { proposals, approvals, written };

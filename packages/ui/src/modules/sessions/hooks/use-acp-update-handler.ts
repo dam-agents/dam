@@ -44,6 +44,24 @@ export function useAcpUpdateHandler(
         useStore.getState().addRunStart(update.at);
       }
 
+      if (kind === "platform_sender_recorded") {
+        useStore.getState().addSender(update.entry);
+        return;
+      }
+
+      if (kind === "platform_turn_started") {
+        useStore.getState().setTurnSender(update.sender ?? null);
+        return;
+      }
+
+      if (kind === "platform_verdict_recorded") {
+        useStore.getState().addVerdict(update.verdict);
+        return;
+      }
+
+      if (kind === "platform_turn_ended")
+        useStore.getState().setTurnSender(null);
+
       if (kind === "platform_session_reset") {
         if (!inFlight) onSessionReset(sessionId);
         return;

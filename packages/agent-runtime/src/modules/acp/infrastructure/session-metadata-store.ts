@@ -1,5 +1,16 @@
 import { z } from "zod";
-import { sessionDefaultKind, sessionSettingsSchema } from "agent-runtime-api";
+import {
+  senderSchema,
+  sessionDefaultKind,
+  sessionSettingsSchema,
+  type Sender,
+} from "agent-runtime-api";
+import {
+  platformSenderEntrySchema,
+  platformVerdictSchema,
+  type PlatformSenderEntry,
+  type PlatformVerdict,
+} from "api-server-api";
 import type { DocumentStoreBackend } from "../../../core/document-store.js";
 
 export const platformSessionMetaSchema = z.object({
@@ -31,9 +42,14 @@ const sessionMetaEntrySchema = z.object({
   runCount: z.number().optional(),
   runStarts: z.array(z.string()).optional(),
   unstored: z.boolean().optional(),
+  senders: z.array(platformSenderEntrySchema).optional().catch(undefined),
+  starter: senderSchema.optional().catch(undefined),
+  verdicts: z.array(platformVerdictSchema).optional().catch(undefined),
 });
 
 const RUN_STARTS_CAP = 500;
+const SENDERS_CAP = 500;
+const VERDICTS_CAP = 500;
 
 const sessionMetadataStateSchema = z
   .object({
@@ -61,6 +77,15 @@ export interface SessionMetadataStore {
   startRun(sessionId: string): string | null;
   finishRun(sessionId: string): void;
   runStartsOf(sessionId: string): string[];
+  recordSender(sessionId: string, entry: PlatformSenderEntry): void;
+  sendersOf(sessionId: string): PlatformSenderEntry[];
+  recordVerdict(sessionId: string, verdict: PlatformVerdict): void;
+  verdictsOf(sessionId: string): PlatformVerdict[];
+  copyAttribution(
+    sessionId: string,
+    fromSessionId: string,
+    opts: { starter: boolean },
+  ): void;
   markUnstored(sessionId: string): void;
   markStored(sessionId: string): void;
   all(): Record<string, SessionMetaEntry>;
@@ -217,6 +242,67 @@ export function createSessionMetadataStore(
     },
     runStartsOf(sessionId) {
       return [...(store.read().sessions[sessionId]?.runStarts ?? [])];
+    },
+    recordSender(sessionId, entry) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing) return;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            ...existing,
+            senders: [...(existing.senders ?? []), entry].slice(-SENDERS_CAP),
+            starter: existing.starter ?? entry.sender,
+          },
+        },
+      });
+    },
+    sendersOf(sessionId) {
+      return [...(store.read().sessions[sessionId]?.senders ?? [])];
+    },
+    recordVerdict(sessionId, verdict) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing) return;
+      const others = (existing.verdicts ?? []).filter(
+        (v) => v.toolCallId !== verdict.toolCallId,
+      );
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            ...existing,
+            verdicts: [...others, verdict].slice(-VERDICTS_CAP),
+          },
+        },
+      });
+    },
+    verdictsOf(sessionId) {
+      return [...(store.read().sessions[sessionId]?.verdicts ?? [])];
+    },
+    copyAttribution(sessionId, fromSessionId, opts) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      const from = sessions[fromSessionId];
+      if (!existing || !from) return;
+      const starter: Sender | undefined = opts.starter
+        ? from.starter
+        : existing.starter;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            ...existing,
+            ...(from.senders !== undefined && { senders: from.senders }),
+            ...(from.verdicts !== undefined && { verdicts: from.verdicts }),
+            ...(starter !== undefined && { starter }),
+          },
+        },
+      });
     },
     markUnstored(sessionId) {
       const { sessions, tombstones } = store.read();

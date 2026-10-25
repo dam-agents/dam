@@ -10,6 +10,7 @@ vi.mock("../../store.js", () => ({
     select({ drafts: {}, pendingPermissions: [] }),
 }));
 vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgent: () => null,
   useAgentsList: () => [],
 }));
 

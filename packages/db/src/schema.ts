@@ -482,6 +482,21 @@ export const environmentAccessLists = pgTable("environment_access_lists", {
     .notNull(),
 });
 
+export const agentEditors = pgTable(
+  "agent_editors",
+  {
+    agentId: text("agent_id").notNull(),
+    email: text("email").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.agentId, table.email] }),
+    index("agent_editors_email_idx").on(table.email),
+  ],
+);
+
 export const agentChatFormPreferences = pgTable("agent_chat_form_preferences", {
   agentId: text("agent_id").primaryKey(),
   preferences: jsonb("preferences").notNull(),
@@ -1090,6 +1105,8 @@ export const attentionRecords = pgTable(
     activityAt: timestamp("activity_at", { withTimezone: true }),
     seenAt: timestamp("seen_at", { withTimezone: true }),
     working: boolean("working").notNull().default(false),
+    startedBySub: text("started_by_sub"),
+    startedByEmail: text("started_by_email"),
     capturedAt: timestamp("captured_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

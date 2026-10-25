@@ -39,6 +39,10 @@ const NO_REFS: SkillRef[] = [];
 const NO_LOCAL: LocalSkill[] = [];
 const NO_PUBLISHES: SkillPublishRecord[] = [];
 
+function setsInput(agentId: string | null) {
+  return agentId ? { agentId } : undefined;
+}
+
 function scanInput(sourceId: string, agentId: string | null) {
   return agentId ? { sourceId, agentId } : { sourceId };
 }
@@ -192,7 +196,7 @@ export function useSkillsSurface(
   const standaloneSnapshot = stateQuery.data?.standaloneSnapshot;
 
   const setsQuery = useQuery({
-    ...trpc.skills.sets.list.queryOptions(),
+    ...trpc.skills.sets.list.queryOptions(setsInput(agentId)),
     retry: false,
     staleTime: SCAN_STALE_MS,
     gcTime: SCAN_GC_MS,
@@ -347,26 +351,34 @@ export function useSkillsSurface(
         `Failed to save ${input.name}`,
       );
       if (result === ACTION_FAILED) return false;
-      queryClient.setQueryData(trpc.skills.sets.list.queryKey(), (prev) =>
-        [...(prev ?? []), result].sort((a, b) => a.name.localeCompare(b.name)),
+      queryClient.setQueryData(
+        trpc.skills.sets.list.queryKey(setsInput(agentId)),
+        (prev) =>
+          [...(prev ?? []), result].sort((a, b) =>
+            a.name.localeCompare(b.name),
+          ),
       );
       emitToast({ kind: "success", message: `Saved skill set ${result.name}` });
       return true;
     },
-    [],
+    [agentId],
   );
 
-  const deleteSet = useCallback(async (id: string) => {
-    const result = await runAction(
-      () => api.skills.sets.delete.mutate({ id }),
-      "Failed to delete skill set",
-    );
-    if (result === ACTION_FAILED) return false;
-    queryClient.setQueryData(trpc.skills.sets.list.queryKey(), (prev) =>
-      (prev ?? []).filter((s) => s.id !== id),
-    );
-    return true;
-  }, []);
+  const deleteSet = useCallback(
+    async (id: string) => {
+      const result = await runAction(
+        () => api.skills.sets.delete.mutate({ id }),
+        "Failed to delete skill set",
+      );
+      if (result === ACTION_FAILED) return false;
+      queryClient.setQueryData(
+        trpc.skills.sets.list.queryKey(setsInput(agentId)),
+        (prev) => (prev ?? []).filter((s) => s.id !== id),
+      );
+      return true;
+    },
+    [agentId],
+  );
 
   const applySets = useCallback(
     async (setIds: string[]) => {

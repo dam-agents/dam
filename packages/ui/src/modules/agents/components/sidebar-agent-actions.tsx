@@ -64,6 +64,26 @@ export function SidebarAgentActions({
   );
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the same New session and Configure agent icons for a Shared Agent's row, which never offers to add the agent to a messenger: only the owner binds channels.
+export function SidebarSessionActions({
+  onNewSession,
+  onConfigure,
+}: {
+  onNewSession: () => void;
+  onConfigure: () => void;
+}) {
+  return (
+    <>
+      <RowIconButton label="New session" onClick={onNewSession}>
+        <AddComment size={14} />
+      </RowIconButton>
+      <RowIconButton label="Configure agent" onClick={onConfigure}>
+        <Tools size={14} />
+      </RowIconButton>
+    </>
+  );
+}
+
 function RowIconButton({
   label,
   onClick,

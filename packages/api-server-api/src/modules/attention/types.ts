@@ -1,3 +1,4 @@
+import type { Sender } from "agent-runtime-api";
 import type { DefaultKind } from "../harness-config/types.js";
 import type { SessionMode, SessionType } from "../sessions/types.js";
 
@@ -65,6 +66,7 @@ export interface AttentionItem {
   activityAt: string | null;
   seenAt: string | null;
   working: boolean;
+  startedBy?: Sender;
 }
 
 export interface DismissedEntry {

@@ -1263,10 +1263,11 @@ applyWSSHandler({
 });
 
 acpWss.on("connection", (ws, req: http.IncomingMessage) => {
-  const passive =
-    new URL(req.url ?? "", "http://localhost").searchParams.get("passive") ===
-    "1";
-  acpRuntime.attach(createWebSocketChannel(ws), { viewer: !passive });
+  const query = new URL(req.url ?? "", "http://localhost").searchParams;
+  acpRuntime.attach(createWebSocketChannel(ws), {
+    viewer: query.get("passive") !== "1",
+    marksSeen: query.get("seen") !== "0",
+  });
 });
 
 server.on("upgrade", (req, socket, head) => {

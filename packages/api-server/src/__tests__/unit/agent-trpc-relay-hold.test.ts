@@ -72,6 +72,9 @@ async function harness(
       sub: "u",
       surface: "web",
       attached: () => {},
+      editor: null,
+      email: null,
+      opened: () => {},
     }),
   );
   await new Promise<void>((r) => server.listen(0, r));

@@ -81,7 +81,7 @@ export function createImageUpdate(deps: {
   async function migrate(id: string, templateImage: string): Promise<boolean> {
     let read: InfraAgent | null = null;
     const result = await executeTemplateUpgrade({
-      owner: undefined,
+      actor: undefined,
       actorKind: "system",
       getAgent: async (agentId) => {
         const live = await deps.getAgent(agentId);

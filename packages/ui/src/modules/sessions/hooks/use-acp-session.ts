@@ -49,7 +49,7 @@ import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
 import { rewrittenThread } from "../lib/rewrite-messages.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
-import type { RewriteMode } from "../store/sessions.js";
+import { NO_ATTRIBUTION, type RewriteMode } from "../store/sessions.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
@@ -179,6 +179,7 @@ export function useAcpSession(
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
     useStore.getState().setRunStarts([]);
+    useStore.getState().setAttribution(NO_ATTRIBUTION);
     useStore.getState().setContinuedFrom(null);
     useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages, selectedAgent]);
@@ -192,6 +193,7 @@ export function useAcpSession(
       setMessages([]);
       useStore.getState().setRewriting(null);
       useStore.getState().setRunStarts([]);
+      useStore.getState().setAttribution(NO_ATTRIBUTION);
       useStore.getState().setContinuedFrom(null);
       useStore.getState().setSessionError(null);
       setSessionId(sid);

@@ -252,6 +252,7 @@ export const agentConnections = z.object({
       connectionId: z.string(),
       grantedAt: z.string(),
       preferred: z.boolean(),
+      connection: connectionView.optional(),
     }),
   ),
 });
