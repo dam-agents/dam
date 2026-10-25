@@ -222,6 +222,12 @@ flowchart LR
   The keyboard stays inside the preview, and a change of side panel tab or of the docked item ends full page.
   The button or Escape takes it back; Escape while a dialog, menu or tooltip is open closes only that, and the Escape that leaves full page closes nothing else.
   Deleting the artifact a preview is showing closes that preview.
+- In a chat, the preview of an HTML, JSX or markdown artifact can **quote elements** into the composer.
+  The user turns on pick mode from the top bar, then clicks an element or drags a rectangle around several.
+  The composer gets the artifact's internal reference, the version shown, and each picked element's path and a short markup snippet, so the Agent can find the spot in the source; nothing is sent.
+  The frame's opaque origin keeps the app out of its document, so the renderer adds a platform-owned picker to the in-app preview, and only there: a share page has no composer and gets none.
+  The app takes a pick only while pick mode is on, only from its own frame, and within fixed size caps; a page that fakes a pick can at most fill the composer, where the user reads it before sending.
+  A terminal Session has no composer, so it offers no quoting.
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.

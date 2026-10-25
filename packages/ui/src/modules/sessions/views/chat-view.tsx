@@ -176,6 +176,7 @@ import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import { useQuoteInComposer } from "../hooks/use-quote-in-composer.js";
 import { useSenderNames } from "../hooks/use-sender-names.js";
 import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
 import {
@@ -341,6 +342,16 @@ export function ChatView() {
     sendPrompt,
   };
   const sendArtifactPrompt = useChatArtifactPrompt(promptGate);
+  const quoteInComposer = useQuoteInComposer({
+    agentId: selectedAgent,
+    sessionId,
+    composerShown: !(
+      sessionMode === SessionMode.Terminal &&
+      selectedAgent &&
+      sessionId
+    ),
+    textareaRef,
+  });
 
   const { openFileHandler } = useFileTree(selectedAgent);
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
@@ -826,6 +837,7 @@ export function ChatView() {
         key={shownDock.id}
         agentId={selectedAgent}
         onSendPrompt={sendArtifactPrompt}
+        onQuote={quoteInComposer}
       />
     ) : shownDock?.kind === "changes" ? (
       <DockedChangesPanel

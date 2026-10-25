@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import {
+  type ArtifactPickHandlers,
+  useArtifactPick,
+} from "../hooks/use-artifact-pick.js";
 import { useArtifactPrompt } from "../hooks/use-artifact-prompt.js";
 import { useArtifactRequest } from "../hooks/use-artifact-request.js";
 
@@ -14,6 +18,7 @@ export function DeferredFrame({
   deferMs = MODAL_ANIMATION_MS,
   onSendPrompt,
   agentApiArtifactId,
+  pick,
 }: {
   html: string;
   title: string;
@@ -21,12 +26,14 @@ export function DeferredFrame({
   deferMs?: number;
   onSendPrompt?: (prompt: string) => Promise<void>;
   agentApiArtifactId?: string;
+  pick?: ArtifactPickHandlers;
 }) {
   const [mounted, setMounted] = useState(deferMs === 0);
   const [loaded, setLoaded] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   useArtifactPrompt(frameRef, onSendPrompt);
   useArtifactRequest(frameRef, agentApiArtifactId);
+  useArtifactPick(frameRef, pick);
   useEffect(() => {
     if (deferMs === 0) return;
     const timer = setTimeout(() => setMounted(true), deferMs);

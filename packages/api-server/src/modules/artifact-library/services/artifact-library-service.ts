@@ -371,6 +371,7 @@ export function createArtifactLibraryService(
         {
           title: row.title,
           fileName: ref.fileName,
+          picker: true,
           ...(row.interactive ? { bridge: "owner" as const } : {}),
         },
       );
