@@ -380,6 +380,19 @@ export {
   type ArtifactResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
+  ARTIFACT_PICK_START_TYPE,
+  ARTIFACT_PICK_STOP_TYPE,
+  ARTIFACT_PICK_TYPE,
+  ARTIFACT_PICK_CANCEL_TYPE,
+  ARTIFACT_PICK_MAX_ELEMENTS,
+  ARTIFACT_PICK_SELECTOR_MAX_LENGTH,
+  ARTIFACT_PICK_SNIPPET_MAX_LENGTH,
+  artifactPickedElementSchema,
+  artifactPickMessageSchema,
+  type ArtifactPickedElement,
+  type ArtifactPickMessage,
+} from "./modules/artifact-library/pick.js";
+export {
   artifactKindSchema,
   artifactVisibilitySchema,
   artifactSharingInputSchema,

@@ -10,6 +10,7 @@ import {
   ARTIFACT_BRIDGE_SHIM,
   ARTIFACT_SHARED_BRIDGE_SHIM,
 } from "./bridge-shim.js";
+import { ARTIFACT_PICKER_SHIM } from "./picker-shim.js";
 import { escapeHtml } from "../../../core/escape-html.js";
 
 function jsStringLiteral(s: string): string {
@@ -358,7 +359,7 @@ function renderCodeInner(
 </html>`;
 }
 
-export function renderTextKindInner(
+function renderKindInner(
   kind: Exclude<ArtifactKind, "binary">,
   source: string,
   opts: { title: string; fileName: string; bridge?: ArtifactBridge },
@@ -367,6 +368,28 @@ export function renderTextKindInner(
   if (kind === "jsx") return renderJsxInner(source, opts.title);
   if (kind === "markdown") return renderMarkdownInner(source, opts.title);
   return renderCodeInner(source, opts.fileName, opts.title);
+}
+
+function withPicker(page: string): string {
+  const head = page.match(/<head(\s[^>]*)?>/i);
+  if (!head || head.index === undefined)
+    return `${page}${ARTIFACT_PICKER_SHIM}`;
+  const at = head.index + head[0].length;
+  return `${page.slice(0, at)}${ARTIFACT_PICKER_SHIM}${page.slice(at)}`;
+}
+
+export function renderTextKindInner(
+  kind: Exclude<ArtifactKind, "binary">,
+  source: string,
+  opts: {
+    title: string;
+    fileName: string;
+    bridge?: ArtifactBridge;
+    picker?: boolean;
+  },
+): string {
+  const page = renderKindInner(kind, source, opts);
+  return opts.picker ? withPicker(page) : page;
 }
 
 export function renderImageInner(rawUrl: string, title: string): string {

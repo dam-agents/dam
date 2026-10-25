@@ -1,4 +1,5 @@
-import { ArrowLeft, Close, Save } from "@carbon/icons-react";
+import { ArrowLeft, Close, Save, Select_01 } from "@carbon/icons-react";
+import type { ArtifactPickedElement } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { useFullPage } from "../hooks/use-full-page.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { canUseArtifactBridge } from "../lib/artifact-bridge.js";
+import { artifactPickQuote } from "../lib/artifact-pick.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { ArtifactVisibilityButton } from "./artifact-badges.js";
@@ -32,9 +34,10 @@ import { VersionSwitcher } from "./version-switcher.js";
 interface Props {
   agentId: string | null;
   onSendPrompt?: (prompt: string) => Promise<void>;
+  onQuote?: (text: string) => void;
 }
 
-export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
+export function DockedArtifactPanel({ agentId, onSendPrompt, onQuote }: Props) {
   const openArtifactId = useStore((s) =>
     s.dock?.kind === "artifact" ? s.dock.id : null,
   );
@@ -99,6 +102,18 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
   );
   const startSession = useStartArtifactSession(artifact);
 
+  const [picking, setPicking] = useState(false);
+  const stopPicking = useCallback(() => setPicking(false), []);
+  const quotePick = useCallback(
+    (elements: ArtifactPickedElement[]) => {
+      setPicking(false);
+      if (!artifact || shownVersion === undefined || !onQuote) return;
+      onQuote(artifactPickQuote(artifact, shownVersion, elements));
+    },
+    [artifact, shownVersion, onQuote],
+  );
+  const canPick = !!onQuote && showFrame;
+
   const bridgeOpen = canUseArtifactBridge(
     artifact,
     enabled,
@@ -115,6 +130,11 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
         deferMs={0}
         onSendPrompt={bridgeOpen ? onSendPrompt : undefined}
         agentApiArtifactId={bridgeOpen ? artifact.id : undefined}
+        pick={
+          canPick
+            ? { active: picking, onPick: quotePick, onCancel: stopPicking }
+            : undefined
+        }
       />
     ) : null;
   const frameFallback = (
@@ -186,8 +206,26 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
                 versions={versions}
                 current={shownVersion}
                 total={total}
-                onChange={(v) => setPinnedVersion(v === latest ? null : v)}
+                onChange={(v) => {
+                  setPicking(false);
+                  setPinnedVersion(v === latest ? null : v);
+                }}
               />
+            )}
+            {canPick && preview.data && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(picking && "bg-muted text-foreground")}
+                aria-pressed={picking}
+                aria-label="Select elements to quote"
+                tooltip={
+                  picking ? "Stop selecting (Esc)" : "Select elements to quote"
+                }
+                onClick={() => setPicking((p) => !p)}
+              >
+                <Select_01 size={16} />
+              </Button>
             )}
             {artifact && (
               <ArtifactBarActions

@@ -21,6 +21,7 @@ Icons come from `@carbon/icons-react`.
 | Create agent from a starter kit                             | `DataEnrichmentAdd`                                      |
 | Starter kits destination, a starter kit                     | `Gift`                                                   |
 | External link, open in new tab                              | `Launch` (only for a link that leaves the app)           |
+| Select elements in an artifact preview to quote             | `Select_01`                                              |
 | Back                                                        | `ArrowLeft`                                              |
 | Restart agent                                               | `Restart`                                                |
 | Retry, update, reload                                       | `Renew`                                                  |

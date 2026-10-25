@@ -120,6 +120,7 @@ export interface SessionsSlice {
   clearNextSessionPair: (agentId: string) => void;
   setSessionError: (e: SessionError | null) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
+  appendDraft: (key: string, text: string) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
   continueInNewSessionDraft: (agentId: string, invocationId: string) => void;
   dropDraftContinuation: (agentId: string) => void;
@@ -303,8 +304,9 @@ export const createSessionsSlice: StateCreator<
         return true;
       }),
     appendNewSessionDraft: (agentId, text) =>
+      get().appendDraft(draftKey(agentId, null), text),
+    appendDraft: (key, text) =>
       updateDrafts((drafts) => {
-        const key = draftKey(agentId, null);
         const current = drafts[key] ?? EMPTY_DRAFT;
         drafts[key] = {
           ...current,
