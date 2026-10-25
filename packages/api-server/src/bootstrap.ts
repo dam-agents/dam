@@ -284,6 +284,7 @@ import {
   createGitRefResolver,
   createKitUpstream,
   createKitUpdateNudge,
+  createTurnReplyReader,
   createKitUpdateReporter,
   createLinkedKits,
   createResolvedCatalogRepository,
@@ -1347,6 +1348,7 @@ export async function bootstrap() {
     marks: createKitUpdateMarks(agentsRepo),
     listSessions: (agentId, signal) =>
       sessionWatch.listSessions(agentId, signal),
+    lastReply: createTurnReplyReader(config.namespace),
     send: (agentId, payload) =>
       runtimeDelivery.sessionMessages.send(agentId, payload),
   });
