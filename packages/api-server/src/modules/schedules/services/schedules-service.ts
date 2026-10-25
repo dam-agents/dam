@@ -174,6 +174,20 @@ function applyProfileTransition(
       Object.assign(spec, { [key]: resolved[key] });
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: two settings records are the same when their content
+ * is, whatever order the keys arrived in, so editing a value and changing it back
+ * never reads as a change. */
+function sameSettings(
+  a: Readonly<Record<string, string>>,
+  b: Readonly<Record<string, string>>,
+): boolean {
+  const entries = (value: Readonly<Record<string, string>>) =>
+    JSON.stringify(
+      Object.entries(value).sort(([x], [y]) => x.localeCompare(y)),
+    );
+  return entries(a) === entries(b);
+}
+
 /* UNIT_BOUNDARY_DESCRIPTION: a write starts from the stored spec, never from the
  * resolved one, or a profile schedule would be saved with a frozen copy of the
  * values beside the reference. The resolved read is still what validates and

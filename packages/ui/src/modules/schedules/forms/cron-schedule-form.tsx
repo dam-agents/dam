@@ -56,6 +56,18 @@ interface Props {
   ) => void;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: two settings records are the same when their content is, whatever order the keys arrived in. */
+function sameSettings(
+  a: Readonly<Record<string, string>>,
+  b: Readonly<Record<string, string>>,
+): boolean {
+  const entries = (value: Readonly<Record<string, string>>) =>
+    JSON.stringify(
+      Object.entries(value).sort(([x], [y]) => x.localeCompare(y)),
+    );
+  return entries(a) === entries(b);
+}
+
 const RUN_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: "short",
   month: "short",
@@ -132,7 +144,7 @@ export function CronScheduleForm({
     return {
       ...(harness !== (loaded.harness.trim() || null) && { harness }),
       ...(model !== (loaded.model.trim() || null) && { model }),
-      ...(JSON.stringify(settings) !== JSON.stringify(loadedSettings) && {
+      ...(!sameSettings(settings, loadedSettings) && {
         settings: Object.keys(settings).length > 0 ? settings : null,
       }),
     };
