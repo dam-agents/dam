@@ -58,7 +58,10 @@
           { "username": "{{user:outsider.username}}", "password": "{{user:outsider.password}}", "firstName": "Outsider" }
         ]
       },
-      "controller": { "gatewayUpstreamExtraCAs": "{{gateway_ca}}" }
+      "controller": { "gatewayUpstreamExtraCAs": "{{gateway_ca}}" },
+      "virtualization": {
+        "runner": { "resources": { "limits": { "memory": "4Gi" } } },
+        "imageCache": { "hostPath": "/var/lib/platform-vm-images" } }
     },
     "overlays": [
       { "when": "mock_image", "values": { "harnessTemplates": { "mock": {
