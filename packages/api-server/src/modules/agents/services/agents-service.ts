@@ -21,7 +21,6 @@ import {
   type BindTelegramChatResult,
   type BindSlackChannelResult,
   type ConnectSlackResult,
-  type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
   type AgentBackgroundWork,
   type RuntimeFleetAgent,
@@ -48,7 +47,6 @@ import {
 import {
   ANN_AGENT_KIND,
   ANN_KB_SHARE_ROOTS,
-  ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   ANN_STARTER_KIT,

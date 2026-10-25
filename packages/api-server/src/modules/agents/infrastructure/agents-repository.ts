@@ -27,20 +27,9 @@ import {
 } from "./agent-mappers.js";
 import {
   pollUntilReady,
-  REFUSAL_FAIL_FAST_GRACE_MS,
   PAUSE_SETTLE_POLL_MS,
   PAUSE_SETTLE_TIMEOUT_MS,
-  WAKE_POLL_INITIAL_MS,
-  WAKE_POLL_MAX_MS,
-  WAKE_TIMEOUT_MS,
 } from "./poll-until-ready.js";
-import {
-  AgentWakeTimeoutError,
-  classifyWakeFailure,
-  REFUSED_START_REASONS,
-  wakeFailureReasonToken,
-} from "../domain/wake-failure.js";
-import { AgentStoppedError } from "../domain/agent-stopped.js";
 import { createAgentWake } from "./agent-wake.js";
 import { getLogger } from "../../../core/logger.js";
 
@@ -142,8 +131,6 @@ export function createAgentsRepository(
   k8s: K8sClient,
   cache: AgentStateCache,
 ): AgentsRepository {
-  const inflight = new Map<string, Promise<void>>();
-
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
 
   const patchUnlessDisabled = async (

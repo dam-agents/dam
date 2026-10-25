@@ -3,10 +3,7 @@ import {
   HARNESS_HOME_PROVIDERS,
   preferredModelOf,
 } from "api-server-api";
-import type {
-  CatalogEntry,
-  CatalogProvider,
-} from "../../model-catalog/index.js";
+import type { CatalogProvider } from "../../model-catalog/index.js";
 import {
   forHarness,
   renderName,
