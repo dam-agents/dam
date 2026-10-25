@@ -4,6 +4,10 @@ export type { AgentActing, ApiContext, UserIdentity } from "./context.js";
 export { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
 
 export { ChannelType, type EnvVar } from "./modules/shared.js";
+export type {
+  ChannelsService,
+  SetChannelProfileResult,
+} from "./modules/channels/types.js";
 
 export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
 export type { LiveEventsService } from "./modules/events/types.js";

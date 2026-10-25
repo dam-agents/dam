@@ -274,6 +274,8 @@ export interface TelegramChatView {
   conversationId: string;
   title: string;
   direct: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: the profile this chat's turns run on (D91); null is a chat bound before profiles. */
+  profileId: string | null;
 }
 
 export type ListTelegramChatsResult =

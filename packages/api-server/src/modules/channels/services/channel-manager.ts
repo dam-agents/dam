@@ -67,7 +67,7 @@ export interface ChannelManager {
   listConversations(
     instanceName: string,
     channelType: ChannelType,
-  ): Promise<{ id: string; title: string }[]>;
+  ): Promise<{ id: string; title: string; profileId?: string | null }[]>;
   postMessage(
     instanceName: string,
     channelType: ChannelType,
@@ -198,7 +198,13 @@ const okOrErrorSchema = z.union([
   z.object({ error: z.string() }),
 ]);
 const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
-  listConversations: z.array(z.object({ id: z.string(), title: z.string() })),
+  listConversations: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      profileId: z.string().nullish(),
+    }),
+  ),
   postMessage: sendResultSchema,
   reply: sendResultSchema,
   react: okOrErrorSchema,

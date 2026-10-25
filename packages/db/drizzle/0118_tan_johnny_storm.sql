@@ -1,0 +1,2 @@
+ALTER TABLE "telegram_conversations" ADD COLUMN "profile_id" text;--> statement-breakpoint
+ALTER TABLE "telegram_conversations" ADD CONSTRAINT "telegram_conversations_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE restrict ON UPDATE no action;

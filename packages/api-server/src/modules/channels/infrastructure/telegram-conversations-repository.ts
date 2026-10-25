@@ -56,13 +56,24 @@ export function unbindConversation(db: Db) {
   };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the chats bound to an agent, each with the profile
+ * its turns run on (D91), so the row that picks one reads the binding's own
+ * column and not a Slack channel's. */
 export function listConversationsByAgent(db: Db) {
-  return async (agentId: string): Promise<string[]> => {
+  return async (
+    agentId: string,
+  ): Promise<{ conversationId: string; profileId: string | null }[]> => {
     const rows = await db
-      .select({ conversationId: telegramConversations.conversationId })
+      .select({
+        conversationId: telegramConversations.conversationId,
+        profileId: telegramConversations.profileId,
+      })
       .from(telegramConversations)
       .where(eq(telegramConversations.agentId, agentId));
-    return rows.map((r) => r.conversationId);
+    return rows.map((r) => ({
+      conversationId: r.conversationId,
+      profileId: r.profileId ?? null,
+    }));
   };
 }
 

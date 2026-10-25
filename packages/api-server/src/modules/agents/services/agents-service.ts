@@ -145,7 +145,9 @@ export interface TelegramBindingPort {
     conversationId: string,
     text: string,
   ): Promise<{ ok: true } | { error: string }>;
-  listConversations(agentId: string): Promise<{ id: string; title: string }[]>;
+  listConversations(
+    agentId: string,
+  ): Promise<{ id: string; title: string; profileId?: string | null }[]>;
   unbind(conversationId: string): Promise<void>;
 }
 
@@ -1759,6 +1761,7 @@ export function createAgentsService(deps: {
           conversationId: c.id,
           title: c.title,
           direct: isTelegramDirectConversation(c.id),
+          profileId: c.profileId ?? null,
         })),
       });
     },

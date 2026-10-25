@@ -502,15 +502,59 @@ async function main() {
     db,
     resolver: channelService.resolver,
   });
+  const slackWithProfile = await channelPair(channelAgent, {
+    type: "slack",
+    slackChannelId: "C-1",
+  });
+  const slackWithout = await channelPair(channelAgent, {
+    type: "slack",
+    slackChannelId: "C-2",
+  });
+  /* UNIT_BOUNDARY_DESCRIPTION: a Telegram binding lives on its own table, so a
+   * chat with a profile must decide on it there and a chat without one must read
+   * as no profile rather than as a broken reference. */
+  await db.execute(
+    sql`INSERT INTO telegram_conversations (conversation_id, agent_id, authorized_by, profile_id)
+        VALUES ('telegram:7', ${channelAgent}, ${channelOwner}, ${channelProfile.id}),
+               ('telegram:8', ${channelAgent}, ${channelOwner}, NULL)`,
+  );
+  const telegramWithProfile = await channelPair(channelAgent, {
+    type: "telegram",
+    conversationId: "telegram:7",
+  });
+  const telegramWithout = await channelPair(channelAgent, {
+    type: "telegram",
+    conversationId: "telegram:8",
+  });
   check(
     "a channel with a profile turns on it, and one without yields none",
-    (await channelPair(channelAgent, { type: "slack", slackChannelId: "C-1" }))
-      ?.model === MODEL &&
-      (await channelPair(channelAgent, {
-        type: "slack",
-        slackChannelId: "C-2",
-      })) === null,
+    slackWithProfile.kind === "profile" &&
+      slackWithProfile.pair.model === MODEL &&
+      slackWithout.kind === "none" &&
+      telegramWithProfile.kind === "profile" &&
+      telegramWithProfile.pair.model === MODEL &&
+      telegramWithout.kind === "none",
     "resolver",
+  );
+  /* UNIT_BOUNDARY_DESCRIPTION: a profile whose provider the agent lost is a
+   * refusal with its reason, never the agent's default. */
+  await db.execute(
+    sql`DELETE FROM connection_grants WHERE connection_id = ${channelConnection}`,
+  );
+  const refused = await channelPair(channelAgent, {
+    type: "slack",
+    slackChannelId: "C-1",
+  });
+  check(
+    "a profile that cannot run on the agent is a refusal, not a fallback",
+    refused.kind === "unavailable" && refused.detail.length > 0,
+    "resolver",
+  );
+  await db.execute(
+    sql`INSERT INTO connection_grants (connection_id, agent_id) VALUES (${channelConnection}, ${channelAgent}) ON CONFLICT DO NOTHING`,
+  );
+  await db.execute(
+    sql`DELETE FROM telegram_conversations WHERE agent_id = ${channelAgent}`,
   );
   await db.execute(sql`DELETE FROM channels WHERE owner = ${channelOwner}`);
   await db.execute(sql`DELETE FROM agents WHERE owner_sub = ${pseudo.hashSub(channelOwner)}`);

@@ -140,6 +140,13 @@ export const telegramConversations = pgTable(
     agentId: text("agent_id").notNull(),
     authorizedBy: text("authorized_by").notNull(),
     ambient: boolean("ambient").notNull().default(false),
+    /* UNIT_BOUNDARY_DESCRIPTION: the profile a chat's turns run on (D91), kept
+     * on the binding as a Slack channel keeps it on its own row; null is a chat
+     * bound before profiles, which follows the agent's default as it always
+     * did. */
+    profileId: text("profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

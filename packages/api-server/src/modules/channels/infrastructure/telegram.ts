@@ -82,7 +82,9 @@ export interface TelegramConversationsPort {
     agentId: string,
     authorizedBy: string,
   ): Promise<"bound" | "conflict">;
-  listByAgent(agentId: string): Promise<string[]>;
+  listByAgent(
+    agentId: string,
+  ): Promise<{ conversationId: string; profileId: string | null }[]>;
   unbind(conversationId: string): Promise<void>;
   setAmbient(conversationId: string, ambient: boolean): Promise<void>;
 }
@@ -96,6 +98,9 @@ export interface TelegramOwnerChatsPort {
 export interface ChannelConversation {
   id: string;
   title: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the profile the chat's turns run on (D91); a
+   * worker from before it answers none. */
+  profileId?: string | null;
 }
 
 export interface TelegramWorker extends ChannelWorker {
@@ -973,12 +978,12 @@ export function createTelegramWorker(deps: {
     async listConversations(agentId: string) {
       if (!bot) return [];
       const adapter = bot.adapter;
-      const conversationIds = await deps.conversations.listByAgent(agentId);
+      const bound = await deps.conversations.listByAgent(agentId);
       return Promise.all(
-        conversationIds.map(async (conversationId) => {
+        bound.map(async ({ conversationId, profileId }) => {
           const { chatId } = adapter.decodeThreadId(conversationId);
           const title = await fetchTelegramChatTitle(botToken, chatId);
-          return { id: conversationId, title };
+          return { id: conversationId, title, profileId };
         }),
       );
     },
