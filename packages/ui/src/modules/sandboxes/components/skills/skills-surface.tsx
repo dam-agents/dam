@@ -14,6 +14,7 @@ import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AgentDisabledNotice } from "./agent-disabled-notice.js";
+import { HiddenSourcesList } from "./hidden-sources-list.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
@@ -30,12 +31,16 @@ export function SkillsSurface({
   agentDisabled = false,
   readOnly,
   comingUp,
+  managesLibrary,
+  canPublish,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
   agentDisabled?: boolean;
   readOnly: boolean;
   comingUp?: boolean;
+  managesLibrary: boolean;
+  canPublish: boolean;
 }) {
   const isError = agentState === "error";
   const rightToolbar = useUnifiedRightToolbar();
@@ -122,8 +127,12 @@ export function SkillsSurface({
             comingUp={!!comingUp}
             disabledNotice={disabledNotice}
             onStart={() => agentId && wakeAgent.wake(agentId)}
-            onAddSource={openAddSource}
-            onRemove={(src) => void removeSourceWithConfirm(src)}
+            onAddSource={managesLibrary ? openAddSource : undefined}
+            onRemove={
+              managesLibrary
+                ? (src) => void removeSourceWithConfirm(src)
+                : undefined
+            }
             onManageConnections={manageConnections}
           />
         )
@@ -147,21 +156,23 @@ export function SkillsSurface({
                 ) : undefined
               }
               actions={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!anyInstalled || !previewReady}
-                  tooltip={
-                    !previewReady
-                      ? "Still reading your sources…"
-                      : anyInstalled
-                        ? undefined
-                        : "Turn on at least one skill from a source to save a set"
-                  }
-                  onClick={() => setOpenModal({ kind: "save-set" })}
-                >
-                  <Save size={16} /> Save as skill set…
-                </Button>
+                managesLibrary && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!anyInstalled || !previewReady}
+                    tooltip={
+                      !previewReady
+                        ? "Still reading your sources…"
+                        : anyInstalled
+                          ? undefined
+                          : "Turn on at least one skill from a source to save a set"
+                    }
+                    onClick={() => setOpenModal({ kind: "save-set" })}
+                  >
+                    <Save size={16} /> Save as skill set…
+                  </Button>
+                )
               }
             />
           </div>
@@ -173,7 +184,11 @@ export function SkillsSurface({
                 readOnly={false}
                 publishes={publishes}
                 canPublish={publishableSources.length > 0}
-                onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
+                onPublish={
+                  canPublish
+                    ? (skill) => setOpenModal({ kind: "publish", skill })
+                    : undefined
+                }
                 onDownload={(skill) => void downloadStandalone(skill)}
                 onDelete={(skill, pub) =>
                   void deleteStandaloneWithConfirm(skill, pub)
@@ -204,12 +219,15 @@ export function SkillsSurface({
               readOnly={false}
               surface={surface}
               derived={derived}
-              onAddSource={() =>
-                setOpenModal({
-                  kind: "add-source",
-                  mode: "github",
-                  files: [],
-                })
+              onAddSource={
+                managesLibrary
+                  ? () =>
+                      setOpenModal({
+                        kind: "add-source",
+                        mode: "github",
+                        files: [],
+                      })
+                  : undefined
               }
               onOpenSkill={(source, skill) =>
                 setOpenModal({ kind: "render", source, skill })
@@ -218,9 +236,19 @@ export function SkillsSurface({
               onToggleAll={(src, on, scope) =>
                 void toggleAllWithConfirm(src, on, scope)
               }
-              onRemove={(src) => void removeSourceWithConfirm(src)}
+              onRemove={
+                managesLibrary
+                  ? (src) => void removeSourceWithConfirm(src)
+                  : undefined
+              }
               onManageConnections={manageConnections}
             />
+            {!managesLibrary && (
+              <HiddenSourcesList
+                sources={surface.hiddenSources}
+                onShow={(id) => surface.setSourceHidden(id, false)}
+              />
+            )}
 
             {}
             {/* UNIT_BOUNDARY_DESCRIPTION: with the experiment on, the platform's own skills are one list with one whole-row target each; every other shell keeps the two named groups and the name-only target it had. */}
@@ -278,7 +306,11 @@ export function SkillsSurface({
         agentId={agentId}
         surface={surface}
         derived={derived}
-        onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
+        onPublish={
+          canPublish
+            ? (skill) => setOpenModal({ kind: "publish", skill })
+            : undefined
+        }
         onDeleteLocal={(skill, pub) =>
           void deleteStandaloneWithConfirm(skill, pub)
         }

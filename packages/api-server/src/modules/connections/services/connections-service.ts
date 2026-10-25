@@ -1378,14 +1378,22 @@ export function createConnectionsService(deps: {
     },
 
     async getAgentConnections(agentId: string): Promise<AgentConnections> {
-      const grants = await deps.repo.listAgentGrants(agentId);
+      const [grants, library] = await Promise.all([
+        deps.repo.listAgentGrants(agentId),
+        service.listConnections(),
+      ]);
+      const views = new Map(library.map((view) => [view.id, view]));
       return {
         agentId,
-        connections: grants.map((g) => ({
-          connectionId: g.connectionId,
-          grantedAt: g.grantedAt.toISOString(),
-          preferred: g.preferred,
-        })),
+        connections: grants.map((g) => {
+          const view = views.get(g.connectionId);
+          return {
+            connectionId: g.connectionId,
+            grantedAt: g.grantedAt.toISOString(),
+            preferred: g.preferred,
+            ...(view ? { connection: view } : {}),
+          };
+        }),
       };
     },
 

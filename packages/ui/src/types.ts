@@ -1,4 +1,9 @@
-import type { PromptBlock, ProviderPresetType } from "api-server-api";
+import type { Sender } from "agent-runtime-api";
+import type {
+  AgentAccess,
+  PromptBlock,
+  ProviderPresetType,
+} from "api-server-api";
 import type {
   AgentKind,
   EnvVar,
@@ -70,9 +75,11 @@ export interface RetryPayload {
 
 export interface VerdictPart {
   kind: "verdict";
+  toolCallId?: string;
   label: string;
   subject: string;
   allowed: boolean;
+  by?: Sender;
 }
 
 export type MessagePart =
@@ -195,6 +202,7 @@ export interface AgentView {
   spawnedBy: string | null;
   environmentOf: string | null;
   kind?: AgentKind;
+  access: AgentAccess;
 }
 
 interface QuietWindowView {

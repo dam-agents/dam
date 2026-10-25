@@ -21,6 +21,12 @@ export type PresenceHold =
   | { when: "none" }
   | { when: "connect" | "open"; port: Pick<SessionPresence, "acquire"> };
 
+export type ClientFrameGate = (
+  client: WebSocket,
+  data: Buffer,
+  isBinary: boolean,
+) => Buffer | null;
+
 export interface ActivityTick {
   everyMs: number;
   tick: (agentId: string) => void;
@@ -52,6 +58,10 @@ export interface WakeGatedRelayOptions {
     isBinary: boolean,
   ) => boolean;
   onClientForwarded?: (agentId: string) => void;
+  clientFrameGate?: (
+    agentId: string,
+    actor: RelayActor,
+  ) => ClientFrameGate | null;
   activity: ActivityTick | null;
   onWoken?: (agentId: string) => void;
   closeOnWakeFailure?: (err: unknown, agentId: string) => string;
@@ -74,8 +84,8 @@ export interface WakeGatedRelayOptions {
  *
  * The relays differ only in what they pass here: the upstream path, whether a
  * hibernated agent nobody asked to wake is refused, whether client traffic
- * stamps activity, how an upstream close reaches the client, and what a
- * session hold attaches to.
+ * stamps activity, how an upstream close reaches the client, what a session
+ * hold attaches to, and which client frames an Agent Editor may send.
  */
 export function createWakeGatedRelay(
   options: WakeGatedRelayOptions,
@@ -91,6 +101,7 @@ export function createWakeGatedRelay(
     onClient,
     onClientFrame,
     onClientForwarded,
+    clientFrameGate,
     activity,
     onWoken,
     closeOnWakeFailure,
@@ -123,7 +134,9 @@ export function createWakeGatedRelay(
         } catch {}
       });
       keepAlive(client);
+      actor.opened(client);
       onClient?.(client, agentId, req);
+      const gate = clientFrameGate?.(agentId, actor) ?? null;
 
       const holdAtConnect = match(holdPresence)
         .with({ when: "connect" }, (hold) => hold.port)
@@ -153,13 +166,15 @@ export function createWakeGatedRelay(
       const buffer = (d: Buffer, b: boolean) => {
         if (overflow) return;
         if (onClientFrame?.(client, d, b)) return;
-        pendingBytes += d.byteLength;
+        const passed = gate ? gate(client, d, b) : d;
+        if (passed === null) return;
+        pendingBytes += passed.byteLength;
         if (pendingBytes > bufferMaxBytes) {
           overflow = true;
           closeWs(client, 1013, "buffer full");
           return;
         }
-        pending.push([d, b]);
+        pending.push([passed, b]);
       };
       client.on("message", buffer);
 
@@ -200,9 +215,11 @@ export function createWakeGatedRelay(
         client.off("message", buffer);
         for (const [d, b] of pending) us.send(d, { binary: b });
         pending.length = 0;
-        client.on("message", (d, isBinary) => {
+        client.on("message", (d: Buffer, isBinary) => {
           if (us.readyState !== WebSocket.OPEN) return;
-          us.send(d, { binary: isBinary });
+          const passed = gate ? gate(client, d, isBinary) : d;
+          if (passed === null) return;
+          us.send(passed, { binary: isBinary });
           onClientForwarded?.(agentId);
         });
         us.on("message", (d, isBinary) => {

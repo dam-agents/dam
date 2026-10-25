@@ -31,7 +31,7 @@ import { Select } from "@/components/ui/select";
 
 import { getUser } from "../../../auth.js";
 import { useStore } from "../../../store.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import { useAgentPageConnections } from "../../connections/api/queries.js";
 import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import {
@@ -93,7 +93,7 @@ export function AgentEgressEditor({
   const [query, setQuery] = useState("");
   const [presetOpen, setPresetOpen] = useState(false);
   const groups = useMemo(() => groupRules(rules, query), [rules, query]);
-  const { data: connections } = useAppConnections();
+  const { data: connections } = useAgentPageConnections(agentId);
   const connectionNames = useMemo(
     () => new Map((connections ?? []).map((c) => [c.id, c.name])),
     [connections],
@@ -529,9 +529,9 @@ function RuleRow({
           {sourceLabel}
         </Badge>
       )}
-      {decidedByYou && group === "own" && (
+      {group === "own" && (decidedByYou || rule.decidedByEmail) && (
         <span className="hidden shrink-0 text-xs text-muted-foreground @lg:block">
-          by you
+          by {decidedByYou ? "you" : rule.decidedByEmail}
         </span>
       )}
       <RemoveButton

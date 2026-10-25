@@ -57,6 +57,7 @@ interface BaseProps {
   arriving?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
+  workingFor?: string;
   pendingNotice?: ReactNode;
   onRetry: OnRetry;
   onFileClick: (path: string) => void;
@@ -134,6 +135,7 @@ export const ChatMessage = memo(function ChatMessage({
   timeLabel,
   timeTitle,
   hasPendingPermission,
+  workingFor,
   pendingNotice,
   onRetry,
   onFileClick,
@@ -267,7 +269,16 @@ export const ChatMessage = memo(function ChatMessage({
               )}
             >
               <WorkingDots size="md" className="text-accent" />
-              {working && <span className="sr-only">Working</span>}
+              {working && workingFor !== undefined ? (
+                <span
+                  data-testid="working-for"
+                  className="ml-2 text-xs text-muted-foreground"
+                >
+                  Working for {workingFor}
+                </span>
+              ) : (
+                working && <span className="sr-only">Working</span>
+              )}
             </span>
           )}
           {isAssistant && streaming && parts.length === 0 && pendingNotice}

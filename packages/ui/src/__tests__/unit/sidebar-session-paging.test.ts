@@ -62,6 +62,7 @@ vi.mock(
   }),
 );
 vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgent: () => null,
   useAgentRunState: () => "running",
 }));
 vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({

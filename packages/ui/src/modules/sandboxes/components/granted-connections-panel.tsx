@@ -26,6 +26,7 @@ interface Props {
   leading?: React.ReactNode;
   extraGroups?: React.ReactNode;
   addRowHidden?: boolean;
+  readOnly?: boolean;
 }
 
 export function GrantedConnectionsPanel({
@@ -41,13 +42,14 @@ export function GrantedConnectionsPanel({
   leading,
   extraGroups,
   addRowHidden = false,
+  readOnly = false,
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
   return (
     <>
       <GrantRivalryCallout granted={granted} className="mb-3" />
-      {grants && onPreferConnection && (
+      {grants && onPreferConnection && !readOnly && (
         <DefaultAccountsCallout
           granted={granted}
           grants={grants}
@@ -61,11 +63,12 @@ export function GrantedConnectionsPanel({
         label={title}
         isEmpty={groups.length === 0 && !extraGroups}
         empty="No connections added to this agent yet."
-        onNew={onOpenCatalog}
+        onNew={readOnly ? undefined : onOpenCatalog}
         newLabel="Add connection"
         newTestId="open-connection-catalog"
         addRow={
-          addRowHidden ? undefined : (
+          !readOnly &&
+          !addRowHidden && (
             <AddRow onClick={onOpenCatalog} testId="open-connection-catalog">
               <Add size={16} className="shrink-0" />
               <div className="min-w-0 flex-1">
@@ -87,13 +90,17 @@ export function GrantedConnectionsPanel({
             group={group}
             templateById={templateById}
             showCount
-            grant={(c) => ({
-              granted: true,
-              onToggle: (on) => onToggleGrant(c.id, on),
-              actionHidden: true,
-            })}
-            onManage={onOpenCatalog}
-            maintenance={maintenance.rowActions}
+            grant={
+              readOnly
+                ? undefined
+                : (c) => ({
+                    granted: true,
+                    onToggle: (on) => onToggleGrant(c.id, on),
+                    actionHidden: true,
+                  })
+            }
+            onManage={readOnly ? undefined : onOpenCatalog}
+            maintenance={readOnly ? undefined : maintenance.rowActions}
           />
         ))}
       </ListSection>

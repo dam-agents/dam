@@ -4,9 +4,11 @@ import { SectionHeading } from "@/components/ui/section-heading";
 
 import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
-import { useAgentConnections } from "../../agents/api/queries.js";
+import { useAgent, useAgentConnections } from "../../agents/api/queries.js";
+import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
+import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
 import { useSetPreferredConnection } from "../../connections/api/mutations.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import { useAgentPageConnections } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
 import { useConfirmSharedConnection } from "../../connections/hooks/use-confirm-shared-connection.js";
@@ -34,7 +36,9 @@ export function ConnectionsSection({
   onGoToChannels,
   panelHeading,
 }: Props) {
-  const connectionsQ = useAppConnections();
+  const connectionsQ = useAgentPageConnections(agentId);
+  const access = useAgent(agentId)?.access;
+  const managesConnections = !access || holds(access, "connections");
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
   const setPreferred = useSetPreferredConnection();
@@ -80,6 +84,16 @@ export function ConnectionsSection({
   return (
     <>
       {header()}
+      {access && !managesConnections && (
+        <OwnerOnlyNotice
+          title="Only the owner changes connections."
+          testId="connections-owner-only"
+          className="mb-6"
+        >
+          This agent acts as {ownerName(access)} through them. Ask them to add
+          one, remove one, or re-authenticate an expired one.
+        </OwnerOnlyNotice>
+      )}
       {leading}
       {panelHeading && (
         <SectionHeading
@@ -89,6 +103,7 @@ export function ConnectionsSection({
         />
       )}
       <GrantedConnectionsPanel
+        readOnly={!managesConnections}
         groups={groups}
         granted={granted}
         templateById={templateById}
@@ -101,6 +116,7 @@ export function ConnectionsSection({
         preferPending={setPreferred.isPending}
         addRowHidden={panelHeading !== undefined}
         extraGroups={
+          managesConnections &&
           satellites.granted.length > 0 && (
             <SatellitesGroup
               satellites={satellites.granted}
@@ -113,7 +129,7 @@ export function ConnectionsSection({
           )
         }
       />
-      {catalogOpen && (
+      {catalogOpen && managesConnections && (
         <ConnectionCatalogModal
           onGoToChannels={() => {
             setCatalogOpen(false);

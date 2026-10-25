@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 
 import { useRetryWorkspace } from "../api/mutations.js";
-import { useAgentsList } from "../api/queries.js";
+import { useAgent } from "../api/queries.js";
 import {
   workspaceRetryNote,
   workspaceStepLabel,
@@ -12,9 +12,8 @@ export function WorkspaceFailureNotice({
 }: {
   agentId: string | null;
 }) {
-  const agents = useAgentsList();
+  const agent = useAgent(agentId);
   const retry = useRetryWorkspace();
-  const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
   if (!agent || agent.workspaceFailures.length === 0) return null;
   return (
     <>

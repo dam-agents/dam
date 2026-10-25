@@ -77,7 +77,7 @@ The local cluster serves `*.env.localhost` over plain HTTP.
 **The gate.** The api-server reads the Environment and endpoint from the host name, before any other route, and relays HTTP and WebSocket to the Environment's runtime, which forwards to that endpoint's port on the Environment's own loopback and nowhere else.
 The api-server names the declared ports on every request, so a port the Environment did not declare is refused, and so are the runtime's own ports.
 
-- **Who may open it.** The owner keeps a list of people per agent, by email, which every Environment of that agent inherits; the owner is always in, and an empty list means only the owner.
+- **Who may open it.** The owner keeps a list of people per agent, by email, which every Environment of that agent inherits; the owner and the agent's [Agent Editors](agent-editors.md) are always in, and an empty list means only them.
   The Owning Agent can narrow the list for one Environment (`access`), never widen it: an email off the owner's list is refused, and the agent cannot read the owner's list.
   A visitor matches by the email their identity provider verified, compared trimmed and lowercased; an account without one matches nobody's list.
 - **The share host is the front door.** An address without a session gives the browser a sign-in secret in a cookie of its own and sends a page load to `/e/<address>` on the [share host](artifact-library.md#the-share-host--trust-boundary), with the secret's hash.

@@ -1,4 +1,6 @@
 export {
+  composeAgentEditors,
+  composeEditorStanding,
   composeAgentsModule,
   composePublicAgentPage,
   attachProviderToBareAgents,

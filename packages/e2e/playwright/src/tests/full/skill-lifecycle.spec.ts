@@ -60,7 +60,7 @@ async function forceSnapshot(api: ApiClient, agentId: string): Promise<void> {
   const env = ((await api.agents.get.query({ id: agentId })).env ?? []).filter(
     (e) => e.name !== tickEnv,
   );
-  await api.agents.update.mutate({
+  await api.agents.setEnv.mutate({
     id: agentId,
     env: [...env, { name: tickEnv, value }],
   });

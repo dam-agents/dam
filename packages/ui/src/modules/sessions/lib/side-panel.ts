@@ -105,6 +105,7 @@ export type ConfigurationTab = Extract<
 
 const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
   setup: "agent",
+  people: "agent",
   providers: "services",
   connections: "services",
   network: "services",

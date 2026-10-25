@@ -7,7 +7,7 @@ import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { documentTitle } from "./lib/document-title.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
-import { useAgentsList } from "./modules/agents/api/queries.js";
+import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
@@ -34,7 +34,7 @@ import {
   AppSidePanelButtons,
   AppSidePanelHost,
 } from "./modules/sessions/components/app-side-panel.js";
-import { ChatView } from "./modules/sessions/views/chat-view.js";
+import { ChatRoute } from "./modules/sessions/views/chat-route.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { useStarterKit } from "./modules/starter-kits/api/queries.js";
@@ -56,7 +56,7 @@ function useDocumentTitle() {
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const kitCatalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
-  const agent = useAgentsList().find((a) => a.id === agentId);
+  const agent = useAgent(agentId);
   const session = useAgentSession(agentId, sessionId).data;
   const kit = useStarterKit(kitCatalog, kitId).data;
   const title = documentTitle(
@@ -203,7 +203,7 @@ function MainApp() {
             tabIndex={-1}
             className="relative z-content has-[[data-full-page]]:z-overlay flex-1 min-w-0 outline-none"
           >
-            <ChatView />
+            <ChatRoute />
           </main>
         </div>
         {kitBrowserOpen && <BrowseKitsModal />}

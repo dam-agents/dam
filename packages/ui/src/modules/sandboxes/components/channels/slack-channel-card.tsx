@@ -27,9 +27,11 @@ type ModalTarget = SlackChannel | "new" | null;
 export function SlackChannelCard({
   agent,
   withWhisper = false,
+  readOnly = false,
 }: {
   agent: AgentView | undefined;
   withWhisper?: boolean;
+  readOnly?: boolean;
 }) {
   const slackChannels = findSlackChannels(agent);
   const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
@@ -51,24 +53,29 @@ export function SlackChannelCard({
             />
           </span>
         }
-        onNew={() => setModalTarget("new")}
+        onNew={readOnly ? undefined : () => setModalTarget("new")}
         newDisabled={!agent}
         newTestId="slack-connect"
         newLabel="Add Slack channel"
         isEmpty={!agent || slackChannels.length === 0}
         empty="No channels connected yet. Mentions of the bot in a connected channel drive this agent."
         addRow={
-          <AddRow onClick={() => setModalTarget("new")} testId="slack-connect">
-            <Add size={16} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium text-foreground">
-                Add Slack channel
-              </p>
-              <p className="truncate text-sm text-muted-foreground">
-                Mentions of the bot in a connected channel drive this agent.
-              </p>
-            </div>
-          </AddRow>
+          !readOnly && (
+            <AddRow
+              onClick={() => setModalTarget("new")}
+              testId="slack-connect"
+            >
+              <Add size={16} className="shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-md font-medium text-foreground">
+                  Add Slack channel
+                </p>
+                <p className="truncate text-sm text-muted-foreground">
+                  Mentions of the bot in a connected channel drive this agent.
+                </p>
+              </div>
+            </AddRow>
+          )
         }
       >
         {/* UNIT_BOUNDARY_DESCRIPTION: in a panel the whisper switch is one row of the Slack card, since a whisper is a way into this agent's Slack conversations, not a messenger of its own. */}
@@ -83,6 +90,7 @@ export function SlackChannelCard({
               key={channel.slackChannelId}
               agentId={agent.id}
               channel={channel}
+              readOnly={readOnly}
               onEdit={() => setModalTarget(channel)}
             />
           ))}
@@ -101,10 +109,12 @@ export function SlackChannelCard({
 function SlackChannelRow({
   agentId,
   channel,
+  readOnly,
   onEdit,
 }: {
   agentId: string;
   channel: SlackChannel;
+  readOnly: boolean;
   onEdit: () => void;
 }) {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -158,16 +168,18 @@ function SlackChannelRow({
         actionsLabel={`Slack channel ${label} actions`}
         menuTestId="slack-channel-menu"
         actions={
-          <>
-            <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
-            <DropdownMenuItem
-              tone="danger"
-              disabled={disconnectSlack.isPending}
-              onSelect={() => void handleDisconnect()}
-            >
-              Disconnect
-            </DropdownMenuItem>
-          </>
+          !readOnly && (
+            <>
+              <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
+              <DropdownMenuItem
+                tone="danger"
+                disabled={disconnectSlack.isPending}
+                onSelect={() => void handleDisconnect()}
+              >
+                Disconnect
+              </DropdownMenuItem>
+            </>
+          )
         }
       />
       {channel.loopGuard && <SlackLoopGuardNotice drops={channel.loopGuard} />}

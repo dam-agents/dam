@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { useAgents } from "../../agents/api/queries.js";
+import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 import { type SharedChannel, sharedChannels } from "../lib/shared-channels.js";
 import { findSlackChannels } from "../lib/slack-channels.js";
@@ -15,7 +15,7 @@ export function useSharedChannels(
   return useMemo(() => {
     if (!agents.data) return null;
     if (telegramReady && !chats) return null;
-    const agent = agents.data.list.find((a) => a.id === agentId);
+    const agent = findAgent(agents.data, agentId) ?? undefined;
     return sharedChannels(findSlackChannels(agent), chats ?? []);
   }, [agents.data, telegramReady, chats, agentId]);
 }

@@ -15,6 +15,7 @@ import {
 } from "api-server-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDam } from "./run-dam.js";
+import { ownedAgents } from "./owned-agents.js";
 
 const AGENT_ID = "agent-0000000000000001";
 const IMAGE_ID = "a".repeat(64);
@@ -67,9 +68,10 @@ describe("dam agent identity: name and avatar (integration)", () => {
 
     const apiContext = {
       user: { sub: "fixture-user", scopes: ALL_SCOPES, agentIds: "*" },
+      actOnAgent: async () => ({ ok: true, ctx: apiContext }),
       terms: { isAccepted: async () => true },
       invocationsQuery: { listTargets: async () => [] },
-      agents: {
+      agents: ownedAgents({
         get: async () => agent(),
         list: async () => [agent()],
         create: async (input: AgentCreateInput) => {
@@ -92,7 +94,7 @@ describe("dam agent identity: name and avatar (integration)", () => {
           else if (input.avatar !== undefined) stored.avatar = input.avatar;
           return agent();
         },
-      },
+      }),
       templates: {
         list: async () => [
           { id: "default", name: "Default", spec: { image: "agent:latest" } },

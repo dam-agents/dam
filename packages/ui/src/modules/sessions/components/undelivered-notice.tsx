@@ -1,8 +1,9 @@
 import { Warning } from "@carbon/icons-react";
 
 import type { Attachment, Message } from "../../../types.js";
-import { describeSendError } from "../../acp/errors.js";
+import { describeSendError, isSpendRefusal } from "../../acp/errors.js";
 import type { SendPromptOptions } from "../hooks/use-acp-prompt.js";
+import { useSpendRefusalViewer } from "../hooks/use-spend-refusal-viewer.js";
 import { UndeliveredActionsMenu } from "./undelivered-actions-menu.js";
 
 export type OnRetry = (
@@ -43,7 +44,9 @@ export function UndeliveredNotice({
   onRetry: OnRetry;
   onDelete: (id: string) => void;
 }) {
-  const described = describeSendError(message.error?.message ?? "");
+  const raw = message.error?.message ?? "";
+  const viewer = useSpendRefusalViewer(isSpendRefusal(raw));
+  const described = describeSendError(raw, viewer);
   return (
     <div
       data-testid="undelivered-marker"

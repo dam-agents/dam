@@ -58,7 +58,8 @@ vi.mock("../../modules/agents/api/harness-config.js", () => ({
 }));
 
 vi.mock("../../modules/agents/api/queries.js", () => ({
-  useAgents: () => ({ data: { list: [] }, isPending: false }),
+  useAgents: () => ({ data: { list: [], shared: [] }, isPending: false }),
+  useAgent: () => null,
   useIsAgentOperable: () => state.operable,
 }));
 

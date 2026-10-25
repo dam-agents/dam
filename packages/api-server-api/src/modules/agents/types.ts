@@ -1,6 +1,7 @@
 import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
+import type { AgentPermission } from "./permissions.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
 import type {
   KitUpdatePending,
@@ -10,7 +11,7 @@ import type {
 import type {
   agentCreateInputSchema,
   agentKindSchema,
-  agentUpdateInputSchema,
+  agentPatchSchema,
 } from "./schemas.js";
 
 export { ChannelType };
@@ -189,7 +190,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   noDefaultProvider?: boolean;
   environmentOf?: string;
 };
-export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
+export type AgentUpdateInput = z.infer<typeof agentPatchSchema>;
 
 export interface BackgroundWorkItemView {
   id: string;
@@ -291,8 +292,40 @@ export interface RuntimeFleet {
   outdated: RuntimeFleetAgent[];
 }
 
+export type AgentAccess =
+  | { role: "owner"; editors: string[]; permissions: AgentPermission[] }
+  | {
+      role: "editor";
+      ownerEmail: string | null;
+      editors: string[];
+      permissions: AgentPermission[];
+    };
+
+export interface AgentWithAccess {
+  agent: Agent;
+  access: AgentAccess;
+}
+
+export type AgentListScope = "mine" | "all";
+
+export type SetAgentEditorsError =
+  { type: "AgentNotFound" } | { type: "OwnEmail" };
+
+export type SetAgentEditorsResult =
+  { ok: true; value: string[] } | { ok: false; error: SetAgentEditorsError };
+
+export type LeaveAgentError =
+  { type: "AgentNotFound" } | { type: "NotAnEditor" };
+
+export type LeaveAgentResult =
+  { ok: true; value: { name: string } } | { ok: false; error: LeaveAgentError };
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
+  listWithAccess: (scope: AgentListScope) => Promise<AgentWithAccess[]>;
+  getWithAccess: (id: string) => Promise<AgentWithAccess | null>;
+  setEditors: (id: string, editors: string[]) => Promise<SetAgentEditorsResult>;
+  leave: (id: string) => Promise<LeaveAgentResult>;
   runtimeFleet: (agentIds?: readonly string[]) => Promise<RuntimeFleet>;
   get: (id: string) => Promise<Agent | null>;
   backgroundWork: (id: string) => Promise<AgentBackgroundWork | null>;

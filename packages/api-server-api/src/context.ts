@@ -1,4 +1,8 @@
 import type { AgentsService } from "./modules/agents/types.js";
+import type {
+  AgentPermission,
+  AgentTarget,
+} from "./modules/agents/permissions.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
 import type {
@@ -61,7 +65,14 @@ export interface UserIdentity {
   agentIds: readonly string[] | "*";
   keyId?: string;
   isOperator?: boolean;
+  email?: string;
+  emailVerified?: boolean;
+  actingEditor?: string;
+  actingEditorEmail?: string;
 }
+
+export type AgentActing =
+  { ok: true; ctx: ApiContext } | { ok: false; error: "Forbidden" };
 
 export interface ApiContext {
   templates: TemplatesService;
@@ -108,4 +119,9 @@ export interface ApiContext {
   e2eEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;
+  actOnAgent: (
+    target: AgentTarget,
+    permission: AgentPermission,
+    call: { path: string; mutation: boolean },
+  ) => Promise<AgentActing>;
 }

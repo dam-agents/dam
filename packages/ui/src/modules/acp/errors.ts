@@ -90,29 +90,67 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   ],
 ];
 
-function describeSpendRefusal(raw: string): SendErrorDescription | null {
-  if (!/spend quota exceeded/i.test(raw)) return null;
-  const reset = localResetTime(nextUtcMidnight());
-  return /platform operator/i.test(raw)
-    ? {
-        title: "Spend ceiling reached:",
-        message: `You reached the daily spend ceiling that your operator set, so paid model calls stop. Ask your operator for a higher ceiling, or wait until ${reset} your time.`,
-        hint: `Details: ${raw}`,
-      }
-    : {
-        title: "Spend limit reached:",
-        message: `This agent reached a daily spend limit, so its model calls stop. Continue it on Home, or wait until ${reset} your time.`,
-        hint: `Details: ${raw}`,
-      };
+export type SpendRefusalViewer =
+  | { role: "owner" }
+  | { role: "editor"; owner: string; agentLimitReached: boolean };
+
+const OWNER_VIEWER: SpendRefusalViewer = { role: "owner" };
+
+export function isSpendRefusal(raw: string): boolean {
+  return /spend quota exceeded/i.test(raw);
 }
 
-export function describeSendError(raw: string): SendErrorDescription {
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a chat says when a spend limit stops a
+ * model call. Only the owner continues an Agent past a limit, on Home, so an
+ * Agent Editor reads whom to ask instead. The refusal does not say which
+ * limit stopped the call; the caller works out whether it was the Agent's
+ * own limit, which an editor may also ask the owner to raise.
+ */
+function describeSpendRefusal(
+  raw: string,
+  viewer: SpendRefusalViewer,
+): SendErrorDescription | null {
+  if (!isSpendRefusal(raw)) return null;
+  const reset = localResetTime(nextUtcMidnight());
+  const hint = `Details: ${raw}`;
+  if (/platform operator/i.test(raw))
+    return {
+      title: "Spend ceiling reached:",
+      message:
+        viewer.role === "owner"
+          ? `You reached the daily spend ceiling that your operator set, so paid model calls stop. Ask your operator for a higher ceiling, or wait until ${reset} your time.`
+          : `${viewer.owner} reached the daily spend ceiling that the operator set, so paid model calls stop. Wait until ${reset} your time.`,
+      hint,
+    };
+  const stopped =
+    "This agent reached a daily spend limit, so its model calls stop.";
+  if (viewer.role === "owner")
+    return {
+      title: "Spend limit reached:",
+      message: `${stopped} Continue it on Home, or wait until ${reset} your time.`,
+      hint,
+    };
+  const ask = viewer.agentLimitReached
+    ? `Ask ${viewer.owner} to continue or raise this agent's spend limit`
+    : `Ask ${viewer.owner} to continue`;
+  return {
+    title: "Spend limit reached:",
+    message: `${stopped} ${ask}, or wait until ${reset} your time.`,
+    hint,
+  };
+}
+
+export function describeSendError(
+  raw: string,
+  viewer: SpendRefusalViewer = OWNER_VIEWER,
+): SendErrorDescription {
   if (
     raw === QUEUE_FULL_DESCRIPTION.message ||
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
-  const spendRefusal = describeSpendRefusal(raw);
+  const spendRefusal = describeSpendRefusal(raw, viewer);
   if (spendRefusal) return spendRefusal;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;

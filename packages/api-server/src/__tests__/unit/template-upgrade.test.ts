@@ -54,7 +54,7 @@ function harness(opts?: {
       agent ? { ...agent, spec: { ...agent.spec, ...patch } } : null,
   );
   const run = executeTemplateUpgrade({
-    owner: OWNER,
+    actor: OWNER,
     getAgent: async () => agent,
     readTemplateSpec: async () =>
       opts?.templateImage === null
@@ -173,7 +173,7 @@ describe("template upgrade flow", () => {
           }),
         );
         const run = executeTemplateUpgrade({
-          owner: OWNER,
+          actor: OWNER,
           getAgent: async () => agent,
           readTemplateSpec: templates.readSpec,
           patchSpec,

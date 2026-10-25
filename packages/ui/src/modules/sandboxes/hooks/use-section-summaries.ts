@@ -18,8 +18,9 @@ import {
   useSkillsState,
 } from "../../agents/api/skills.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
+import { peopleSummary } from "../../agents/lib/agent-editors.js";
 import {
-  useAppConnections,
+  useAgentPageConnections,
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
@@ -75,7 +76,9 @@ export function useSectionSummaries(agent: AgentView | null): {
   summaries: SectionSummaries;
   warnings: SectionWarnings;
 } {
-  const { data: apps = [], isSuccess: appsLoaded } = useAppConnections();
+  const { data: apps = [], isSuccess: appsLoaded } = useAgentPageConnections(
+    agent?.id ?? null,
+  );
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
   const { data: satellites = NO_SATELLITES } = useSatellites();
   const agentId = agent?.id;
@@ -254,6 +257,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   return {
     summaries: {
       setup,
+      ...(agent && { people: peopleSummary(agent.access) }),
       "chat-forms": chatFormsSummary,
       providers: providersSummary,
       connections,

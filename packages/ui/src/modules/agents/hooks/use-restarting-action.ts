@@ -1,18 +1,18 @@
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
-import { useAgentsList } from "../api/queries.js";
+import { findAgent, useAgents } from "../api/queries.js";
 
 type AgentPowerMutate = (variables: { id: string }) => Promise<unknown>;
 
 export function useRestartingAction(mutate: AgentPowerMutate) {
-  const agents = useAgentsList();
+  const { data } = useAgents();
   const setRestarting = useStore((s) => s.setRestartingAgent);
   const clearRestarting = useStore((s) => s.clearRestartingAgent);
 
   return useCallback(
     (id: string) => {
-      const agent = agents.find((a) => a.id === id);
+      const agent = findAgent(data, id);
       setRestarting(id, {
         seenNonRunning: agent?.state !== "running",
         clickedAt: Date.now(),
@@ -20,6 +20,6 @@ export function useRestartingAction(mutate: AgentPowerMutate) {
       });
       mutate({ id }).catch(() => clearRestarting(id));
     },
-    [agents, setRestarting, clearRestarting, mutate],
+    [data, setRestarting, clearRestarting, mutate],
   );
 }

@@ -7,5 +7,8 @@ export function useRootDriver(
   const { data, isPending } = useAgents();
   if (agentId === null) return null;
   if (isPending) return undefined;
-  return rootDriverOf(agentId, data?.list ?? []);
+  return rootDriverOf(agentId, [
+    ...(data?.list ?? []),
+    ...(data?.shared ?? []),
+  ]);
 }
