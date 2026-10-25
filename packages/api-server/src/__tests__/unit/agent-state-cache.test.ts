@@ -178,7 +178,7 @@ describe("agent state cache", () => {
   // TEST_SCENARIO: Owner scoping survives the move off the server-side label selector.
   it("filters a synced listing by owner", async () => {
     const objects = [agent("a1", "kc|one"), agent("a2", "kc|two")];
-    const { cache, fire } = cacheOver(objects, fakeK8s(objects).client);
+    const { cache } = cacheOver(objects, fakeK8s(objects).client);
     await settled(null);
 
     expect((await cache.list("kc|one")).map((o) => o.metadata?.name)).toEqual([
@@ -221,7 +221,7 @@ describe("agent state cache", () => {
   // TEST_SCENARIO: A read racing shutdown must not be answered from the stopped informer's frozen view.
   it("reads live again once stopped", async () => {
     const { client } = fakeK8s([agent("fresh")]);
-    const { cache, fire } = cacheOver([agent("stale")], client);
+    const { cache } = cacheOver([agent("stale")], client);
     await settled(null);
     expect(await cache.get("stale")).not.toBeNull();
 

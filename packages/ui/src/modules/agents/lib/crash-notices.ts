@@ -23,7 +23,7 @@ type WatchedAgent = Pick<
 
 const RESTART_CAUSES: Record<string, string> = {
   OutOfMemory:
-    "ran out of memory and restarted — give it a larger size in its settings",
+    "ran out of memory and restarted — ask an operator to raise its memory budget",
   HomeVolumeFull:
     "ran out of storage and restarted — ask it to delete files it no longer needs, or request more storage",
   GuestStoppedAnswering: "stopped responding and restarted",

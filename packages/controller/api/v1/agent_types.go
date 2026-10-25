@@ -206,7 +206,7 @@ const (
 	// authoritative "can I route to this agent?" signal (supersedes the
 	// earlier agent-pod-only live check).
 	ConditionReady = "Ready"
-	// ConditionAgentPodReady mirrors the agent pod's observed Ready condition.
+	// ConditionAgentPodReady mirrors the agent machine's observed Ready condition.
 	ConditionAgentPodReady = "AgentPodReady"
 	// ConditionGatewayPodReady mirrors the paired gateway pod's observed Ready
 	// condition. The agent cannot make credentialed egress without it, so it is

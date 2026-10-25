@@ -1,11 +1,5 @@
 import { z } from "zod";
 import { ChannelType } from "api-server-api";
-import type {
-  SlackConversationRef,
-  SlackLabelledConversation,
-  SlackWorkspace,
-} from "../infrastructure/slack-gateway.js";
-import type { SlackConversationStanding } from "./slack-workspace-probe.js";
 
 export interface ChannelAttachment {
   filename: string;

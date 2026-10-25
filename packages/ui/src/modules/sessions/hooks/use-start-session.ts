@@ -8,12 +8,14 @@ export function useStartSession() {
   );
   const requestChat = useStore((s) => s.requestChat);
   const selectAgent = useStore((s) => s.selectAgent);
+  const markNewSession = useStore((s) => s.markNewSession);
 
   return useCallback(
     (agentId: string) => {
+      markNewSession(agentId);
       if (agentId === openAgentId) requestChat({ kind: "new" });
       else selectAgent(agentId);
     },
-    [openAgentId, requestChat, selectAgent],
+    [openAgentId, requestChat, selectAgent, markNewSession],
   );
 }

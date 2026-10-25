@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Resvg } from "@resvg/resvg-js";
 import {
   AVATAR_CHARACTERS,
   type Avatar,
   avatarSvg,
 } from "api-server-api/avatar/svg";
+import sharp from "sharp";
 import { match } from "ts-pattern";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
@@ -115,11 +115,13 @@ export function createImgbbAgentIcons({
   ): Promise<string | null> => {
     const png = await match(avatar)
       .with({ kind: "character" }, async ({ character }) =>
-        new Resvg(avatarSvg(character), {
-          fitTo: { mode: "width", value: ICON_PX },
-        })
-          .render()
-          .asPng(),
+        sharp(Buffer.from(avatarSvg(character)))
+          .resize(ICON_PX, ICON_PX, {
+            fit: "contain",
+            background: { r: 0, g: 0, b: 0, alpha: 0 },
+          })
+          .png()
+          .toBuffer(),
       )
       .with({ kind: "image" }, ({ id }) => loadImage(id))
       .exhaustive();

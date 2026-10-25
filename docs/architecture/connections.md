@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -308,12 +308,12 @@ Every harness reaches the endpoint through the [Model Router](harness-config.md#
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
 GPT models cache on their own.
 
-### App preset: CurveBender custom key
+### App preset: CurveBender (own key)
 
 A second LiteLLM proxy, fronting open models hosted on RITS rather than Claude and GPT.
 An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
-This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender custom key` so it cannot be confused with the deployment's own.
+This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender (own key)` so it cannot be confused with the deployment's own.
 
 Work runs on DeepSeek V4.1 Flash, which the Connection's work slots pin; Claude Code's non-reasoning permission classifier is the router's call, from the session provider's preferred classifier ([harness configuration](harness-config.md#the-model-router)), since a routed provider's env never reaches the harness.
 The endpoint's model list names models but does not describe them, so the Connection supplies the deployment's window to the catalog, which Claude Code's per-model map and Pi read: 1,048,576 tokens, the `max_model_len` its own RITS router reports, which a live 270k-token prompt confirmed.
@@ -333,7 +333,7 @@ The composer never waits for a provider: an agent holding none takes this Connec
 Until the agent's and the owner's provider lists are read, the composer waits, and says so when the read fails, so a send never plans on lists it has not read; a failed refetch over lists already read leaves it open.
 With nothing to attach, a prompt the composer lets through goes out as it is, as to an agent whose harness brings its own model; it never returns to the composer.
 The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, it follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
-It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
+It is named `CurveBender (shared)` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.
 Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
 The Connection allows CurveBender's host on every path and scopes only the key, because an egress rule matches by host and path glob, not by a credential's scope.

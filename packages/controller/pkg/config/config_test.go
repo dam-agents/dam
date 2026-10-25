@@ -166,7 +166,7 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{"runtimeClasName": "kata"}`,
+		"AGENT_BASE":            `{"runtimeClasName": "gvisor"}`,
 	})
 	_, err := LoadFromEnv()
 	require.Error(t, err)

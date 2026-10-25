@@ -44,7 +44,7 @@ export interface RetryUnreachableOptions {
  * UNIT_BOUNDARY_DESCRIPTION: Runs one step against a service again while that
  * service cannot be reached yet: a boot step against a backing service
  * (Postgres, the object store), which on a fresh install starts beside the
- * api-server, or a proxied request to an agent pod the mesh does not route to
+ * api-server, or a proxied request to an agent's machine the mesh does not route to
  * yet. In the mesh a service that is not listening yet resets the connection.
  * Only connection-level failures are retried (the caller can narrow them), and
  * only within the budget; the delay doubles up to maxDelayMs. Any other error,

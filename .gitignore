@@ -5,9 +5,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Vite
-packages/ui/.vite/
-
 # Image tars
 *.tar
 
@@ -39,22 +36,11 @@ context/
 .claude/worktrees/
 .context/
 
-# Playwright
-.playwright-mcp
-
 # Claude
 .claude/*.lock
 
-# plugins
-docs/superpowers/
-
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
+# Python
 __pycache__/
 
-# go build ./cmd/<name> drops its binary in the package directory
-/packages/controller/vm-runner
-/packages/controller/vm-image-cache
+# go build drops the binary in the package directory
 /packages/controller/controller

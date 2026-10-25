@@ -13,7 +13,7 @@ import {
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import { getLogger } from "./core/logger.js";
-import { durationToMinutesStrict, goDurationMs } from "./duration.js";
+import { durationToMinutesStrict } from "./duration.js";
 
 const DEFAULT_DELIVERY_CONCURRENCY = 256;
 

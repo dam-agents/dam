@@ -100,7 +100,7 @@ DAM is Apache 2.0 licensed and deploys to Kubernetes using Helm.
 helm install platform oci://quay.io/dam-agents/charts/platform
 ```
 
-The chart includes Keycloak, Postgres, Redis, and optional telemetry.
+The chart includes Keycloak, Postgres, Valkey (a Redis-compatible cache), and optional telemetry.
 DAM requires an Istio ambient mesh.
 
 - [Deployment configuration](helm/values.yaml)

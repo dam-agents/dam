@@ -1,9 +1,6 @@
 import { and, eq, sql, type Db, connections as connectionsTable } from "db";
 import type { Connection, ConnectionAuthConfig } from "api-server-api";
-import type {
-  OAuthEngine,
-  OAuthProvider,
-} from "../infrastructure/oauth-engine.js";
+import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import {

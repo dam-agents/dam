@@ -40,7 +40,6 @@ describe("browser procedures", () => {
         selectTab: async () => err(error),
         newTab: async () => err(error),
         closeTab: async () => err(error),
-        setTestingMode: async () => err(error),
         watch: () => err(error),
       });
     for (const [error, code] of [
@@ -62,9 +61,6 @@ describe("browser procedures", () => {
         code,
       });
       await expect(
-        call.browser.setTestingMode({ on: false }),
-      ).rejects.toMatchObject({ code });
-      await expect(
         (async () => {
           for await (const _ of await call.browser.watch()) break;
         })(),
@@ -72,12 +68,11 @@ describe("browser procedures", () => {
     }
   });
 
-  // TEST_SCENARIO: watching yields the browser's state as the service reports it, and each toolbar action, tab bar action and the testing mode switch reach the service as themselves, with the tab they name; a panel from before tabs names none, and a new tab answers with its target id.
+  // TEST_SCENARIO: watching yields the browser's state as the service reports it, and each toolbar action and tab bar action reaches the service as itself, with the tab it names; a panel from before tabs names none, and a new tab answers with its target id.
   it("streams state and runs each toolbar action", async () => {
     const acted: [BrowserAction, string | undefined][] = [];
     const tabbed: string[] = [];
     const navigated: [string, string | undefined][] = [];
-    const modes: boolean[] = [];
     const call = caller({
       watch: () =>
         ok(
@@ -105,10 +100,6 @@ describe("browser procedures", () => {
         navigated.push([url, tab]);
         return ok(undefined);
       },
-      setTestingMode: async (on) => {
-        modes.push(on);
-        return ok(undefined);
-      },
     });
     const seen: BrowserSnapshot[] = [];
     for await (const s of await call.browser.watch()) seen.push(s);
@@ -120,7 +111,6 @@ describe("browser procedures", () => {
     await call.browser.forward({});
     await call.browser.restart();
     await call.browser.clearData();
-    await call.browser.setTestingMode({ on: false });
     expect(acted).toEqual([
       ["reload", undefined],
       ["stop", "T2"],
@@ -142,7 +132,6 @@ describe("browser procedures", () => {
     await expect(call.browser.selectTab({ tab: "" })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });
-    expect(modes).toEqual([false]);
     await expect(call.browser.navigate({ url: "" })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });

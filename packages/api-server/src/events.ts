@@ -8,7 +8,6 @@ import type {
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
-import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 export type TurnOutcome = "success" | "failure";
 

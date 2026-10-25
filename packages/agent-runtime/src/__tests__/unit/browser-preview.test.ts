@@ -1,9 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import {
   TabGoneError,
@@ -21,7 +18,6 @@ import {
   killablePreviewPids,
   createBrowserPreview,
   previewUrl,
-  readTestingMode,
   type BrowserPreview,
 } from "../../modules/browser-preview.js";
 
@@ -211,12 +207,6 @@ async function until(check: () => boolean, ms = 3_000) {
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function launchModeFile() {
-  const dir = mkdtempSync(join(tmpdir(), "browser-launch-"));
-  closers.push(() => rmSync(dir, { recursive: true, force: true }));
-  return join(dir, "platform", "browser-launch");
-}
-
 function preview(
   fake: ReturnType<typeof fakeBrowser>,
   extra: Partial<Parameters<typeof createBrowserPreview>[0]> = {},
@@ -226,7 +216,6 @@ function preview(
     watch: fake.watch,
     profileDir: "/tmp/x",
     socketDir: "/tmp/y",
-    launchModeFile: launchModeFile(),
     available: () => true,
     offered: () => true,
     stopBrowser: async () => {},
@@ -325,10 +314,6 @@ describe("browser preview", () => {
         () => browser.closeTab("T1"),
       ])
         expect(await tabStep()).toEqual({ ok: false, error: { kind } });
-      expect(await browser.setTestingMode(false)).toEqual({
-        ok: false,
-        error: { kind },
-      });
       const connect = await displayHost(browser);
       const { ws } = await connect();
       const code = await new Promise<number>((r) => ws.once("close", r));
@@ -606,64 +591,6 @@ describe("recovery", () => {
     await until(() => panel.states().at(-1) === "ready");
     expect(stops).toBe(1);
     expect(panel.states().slice(-2)).toEqual(["starting", "ready"]);
-  });
-});
-
-describe("browser testing mode", () => {
-  // TEST_SCENARIO: an agent that never touched the switch launches its browser as it always did, in testing mode, and the panel is told so. Choosing the mode it is already in changes nothing and restarts nothing.
-  it("starts in testing mode and leaves it alone when chosen again", async () => {
-    const fake = fakeBrowser();
-    const file = launchModeFile();
-    const browser = preview(fake, { launchModeFile: file });
-    closers.push(() => browser.close());
-    const panel = watching(browser);
-    await until(() => panel.states().includes("ready"));
-    expect(panel.snapshots.at(-1)?.testingMode).toBe(true);
-    expect((await browser.setTestingMode(true)).ok).toBe(true);
-    expect(fake.calls.filter(isLaunch)).toHaveLength(1);
-    expect(readTestingMode(file)).toBe(true);
-  });
-
-  // TEST_SCENARIO: turning testing mode off saves the choice where the image's launcher reads it on every launch — the agent's own launches too — and relaunches the browser on the same profile so it applies at once, back on the page the panel showed. The panels keep watching through it and see the new mode. A runtime that starts again, as after a restart of the agent, reads the same choice instead of falling back to testing mode.
-  it("saves the choice and relaunches on the same page", async () => {
-    const fake = fakeBrowser();
-    const file = launchModeFile();
-    let stops = 0;
-    const browser = preview(fake, {
-      launchModeFile: file,
-      stopBrowser: async () => {
-        stops++;
-        fake.browser.alive = false;
-        fake.browser.url = "about:blank";
-      },
-    });
-    closers.push(() => browser.close());
-    const panel = watching(browser);
-    await until(() => panel.states().includes("ready"));
-    await browser.navigate("https://example.com/game");
-    await until(() => panel.page()?.url === "https://example.com/game");
-
-    expect((await browser.setTestingMode(false)).ok).toBe(true);
-    expect(readFileSync(file, "utf8").trim()).toBe("standard");
-    await until(() => fake.calls.filter(isLaunch).length === 2);
-    await until(() => panel.states().at(-1) === "ready");
-    await until(() => panel.page()?.url === "https://example.com/game");
-    expect(stops).toBe(1);
-    expect(panel.snapshots.at(-1)?.testingMode).toBe(false);
-    expect(fake.calls.at(-1)).toEqual([
-      "page",
-      "navigate",
-      "https://example.com/game",
-    ]);
-
-    const restarted = preview(fakeBrowser(), { launchModeFile: file });
-    closers.push(() => restarted.close());
-    const again = watching(restarted);
-    await until(() => again.snapshots.length > 0);
-    expect(again.snapshots[0]?.testingMode).toBe(false);
-
-    expect((await browser.setTestingMode(true)).ok).toBe(true);
-    expect(readTestingMode(file)).toBe(true);
   });
 });
 

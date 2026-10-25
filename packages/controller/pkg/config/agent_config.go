@@ -73,7 +73,7 @@ type VMRunnerSpec struct {
 	ReleaseHostPath string `json:"releaseHostPath,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `enforce`.
 	Seccomp string `json:"seccomp,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: the PriorityClass every runner pod runs under, rendered by the chart above the pods of agents and above the platform's own control plane, which the chart leaves at no class. A node under memory pressure evicts, and a full node preempts, the lowest priority first, and a runner going down takes every machine of its owner with it — a whole owner's agents for one pod — where an agent pod going down costs one agent. Empty leaves runner pods at the cluster default.
+	// UNIT_BOUNDARY_DESCRIPTION: the PriorityClass every runner pod runs under, rendered by the chart above the pods of agents and above the platform's own control plane, which the chart leaves at no class. A node under memory pressure evicts, and a full node preempts, the lowest priority first, and a runner going down takes every machine of its owner with it — a whole owner's agents for one pod — where one agent's machine going down costs one agent. Empty leaves runner pods at the cluster default.
 	PriorityClassName string `json:"priorityClassName,omitempty"`
 }
 

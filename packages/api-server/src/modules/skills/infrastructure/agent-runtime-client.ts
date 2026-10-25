@@ -1,9 +1,5 @@
 import { TRPCClientError } from "@trpc/client";
-import type {
-  AppRouter,
-  SourceFetchMode,
-  SourcePathReason,
-} from "agent-runtime-api";
+import type { SourceFetchMode, SourcePathReason } from "agent-runtime-api";
 import { SOURCE_PATH_REASONS } from "agent-runtime-api";
 import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
 import { agentServiceClient } from "../../../core/agent-service-client.js";

@@ -21,7 +21,6 @@ export const browserSnapshotSchema = z.object({
   state: browserStateSchema,
   message: z.string().nullable(),
   page: pageStateSchema.nullable(),
-  testingMode: z.boolean().optional(),
   tabs: z.array(tabStateSchema).optional(),
   activeTab: z.string().nullable().optional(),
 });
@@ -35,10 +34,6 @@ export const browserTabInputSchema = z.object({
 export const browserActionInputSchema = z
   .object({ tab: tabIdSchema.optional() })
   .optional();
-
-export const browserTestingModeInputSchema = z.object({
-  on: z.boolean(),
-});
 
 export const browserNavigateInputSchema = z.object({
   url: z.string().min(1).max(8192),

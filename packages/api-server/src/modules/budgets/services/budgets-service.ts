@@ -1,6 +1,5 @@
 import type { BudgetReserved, BudgetsService } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
-import { parseMemoryBytes } from "../../../core/quantities.js";
 import {
   storageRefusal,
   vmUsageView,

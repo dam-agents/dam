@@ -24,7 +24,6 @@ import type {
 } from "../services/worker-contract.js";
 import {
   AcpSessionLoadError,
-  AcpTurnAbandonedError,
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";

@@ -46,7 +46,6 @@ export interface CreateAgentInput {
   gitRepo?: { url: string; ref?: string };
   importEntries?: BundleEntry[];
   importRawBundle?: File;
-  size?: { cpu?: string; memory?: string };
 }
 
 export function useCreateAgent() {

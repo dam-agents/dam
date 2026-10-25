@@ -6,14 +6,18 @@ packages:
   - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
-  # qs 6.16.1 (2026-10-14) fixes CVE-2026-110816, reached through express's
-  # body-parser. Drop this once it ages past the floor (2026-10-21).
-  - "qs@6.16.1"
-  # undici 8.12.2 and 7.30.1 (2026-10-15) are the first releases that fix
-  # CVE-2026-109383, CVE-2026-109829, CVE-2026-109869 and CVE-2026-87018.
-  # Drop this once they age past the floor (2026-10-22).
-  - "undici@8.12.2"
-  - "undici@7.30.1"
+  # body-parser 2.4.0 (2026-10-22) fixes CVE-2026-111181, which reaches us
+  # through express under @slack/bolt. Drop this once it ages past the floor
+  # (2026-10-29).
+  - "body-parser@2.4.0"
+  # fast-uri 3.1.9 (2026-10-19) fixes CVE-2026-110095, -110180, -110306 and
+  # -110725, reached through ajv. Drop this once it ages past the floor
+  # (2026-10-26).
+  - "fast-uri@3.1.9"
+  # happy-dom 21.0.4 (2026-10-20) is the complete fix for CVE-2026-33943, the
+  # import-alias escape that 21.0.3 only partly closes. Drop this once it ages
+  # past the floor (2026-10-27).
+  - "happy-dom@21.0.4"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while

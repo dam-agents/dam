@@ -10,11 +10,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSwitchItem,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
@@ -52,9 +48,6 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const [noticeSeen, setNoticeSeen] = useState(() =>
     readPersistedFlag(SIGN_IN_NOTICE_KEY, false),
   );
-
-  const launchUnsupported =
-    stream.connection === "live" && stream.testingMode === undefined;
 
   const shownUrl = stream.page.url === "about:blank" ? "" : stream.page.url;
   useEffect(() => {
@@ -178,22 +171,6 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <DropdownMenuItem tone="danger" onSelect={() => void clearData()}>
             Clear browser data
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuSwitchItem
-            checked={stream.testingMode ?? true}
-            disabled={launchUnsupported || stream.connection !== "live"}
-            onCheckedChange={stream.setTestingMode}
-            data-testid="browser-testing-mode"
-          >
-            <span className="flex min-w-0 max-w-64 flex-col gap-0.5 whitespace-normal">
-              <span>Browser testing mode</span>
-              <span className="text-2xs text-muted-foreground">
-                {launchUnsupported
-                  ? "This agent's image cannot change how its browser starts."
-                  : "On, pages can tell the browser is automated, and some sites then block sign-ins or show bot checks. Turn it off when a site refuses you. The agent keeps control either way. Switching restarts the browser and keeps sign-ins and the open page."}
-              </span>
-            </span>
-          </DropdownMenuSwitchItem>
         </RowActionsMenu>
         <SidePanelCloseButton corner="-mr-3" />
         {stream.page.loading && (
@@ -217,7 +194,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         <Callout
           tone="info"
           size="sm"
-          className="m-3 mb-0 flex items-start gap-3 text-xs"
+          className="flex items-start gap-3 rounded-none border-x-0 border-t-0 text-xs"
         >
           <span className="flex-1">
             Sign-ins made here are stored in this agent, and the agent can use

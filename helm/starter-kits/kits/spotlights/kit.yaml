@@ -18,8 +18,6 @@ defaultModel: claude-opus-5
 # and GPT models through one gateway.
 providers: [ibm-litellm]
 resources:
-  cpu: "2"
-  memory: 4Gi
   storage: 10Gi
   note: >-
     A run clones the target repository and drives claude and codex as

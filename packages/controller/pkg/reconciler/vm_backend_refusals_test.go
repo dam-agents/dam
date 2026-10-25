@@ -95,9 +95,9 @@ func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *te
 		require.NoError(t, err)
 		live, err := FromCacheObject[apiv1.Agent](published)
 		require.NoError(t, err)
-		agentPod := apimeta.FindStatusCondition(live.Status.Conditions, apiv1.ConditionAgentPodReady)
-		require.NotNil(t, agentPod)
-		assert.Equal(t, tc.published, agentPod.Reason)
+		machineCond := apimeta.FindStatusCondition(live.Status.Conditions, apiv1.ConditionAgentPodReady)
+		require.NotNil(t, machineCond)
+		assert.Equal(t, tc.published, machineCond.Reason)
 		hibernated := 0
 		for _, peer := range []string{"idle-peer", "other-peer"} {
 			u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, peer, metav1.GetOptions{})

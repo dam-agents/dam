@@ -11,9 +11,9 @@ function notReady(reason?: string): InfraAgent {
     ready: false,
     hibernated: false,
     overBudget: false,
-    agentPodReady: false,
+    machineReady: false,
     gatewayPodReady: true,
-    agentPodNotReadyReason: reason,
+    machineNotReadyReason: reason,
   } as InfraAgent;
 }
 

@@ -64,7 +64,7 @@ import {
   limitRequestBody,
   MAX_AGENT_REQUEST_BODY_BYTES,
 } from "../../core/request-body-bounds.js";
-import { agentsInstallSettings, type Config } from "../../config.js";
+import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type {
   RuntimeMutator,
@@ -160,10 +160,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     spendStatusFor,
   } = deps;
 
-  const defaultLimits = {
-    cpu: config.agentDefaultCpuLimit,
-    memory: config.agentDefaultMemoryLimit,
-  };
   const publishLimits = {
     perFileMaxBytes: config.kbSharePerFileMaxBytes,
     totalMaxBytes: config.kbShareTotalMaxBytes,
@@ -258,7 +254,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
           (await agentsRepo.list(owner)).map((a) => a.id),
         isSlackUnlinked: async () => false,
       }).budgets,
-    defaultLimits,
     scriptOutputs: deps.scriptOutputs,
   };
 
