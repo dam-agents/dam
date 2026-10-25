@@ -205,10 +205,14 @@ export function SessionPairPicker(props: Props) {
     if (routed)
       rememberSessionPair(agentId, chosenPair, "chat", undefined, references);
   };
-  const chooseProfile = (profile: ProfileWithUsage) => {
-    const connection = providers.granted.find(
-      (p) => p.templateId === profile.providerTemplate,
-    );
+  const chooseProfile = (
+    profile: ProfileWithUsage,
+    grantedConnectionId?: string,
+  ) => {
+    const connection =
+      providers.granted.find(
+        (p) => p.templateId === profile.providerTemplate,
+      ) ?? providers.owned.find((p) => p.id === grantedConnectionId);
     setFromProfile({ id: profile.id, name: profile.name });
     /* UNIT_BOUNDARY_DESCRIPTION: the profile owns the session's own settings;
      * the platform sub-agent slot keeps its reference and its keys, so a pick
@@ -286,17 +290,7 @@ export function SessionPairPicker(props: Props) {
           );
         return;
       }
-      choose(
-        {
-          harness: profile.harness,
-          provider: connection.id,
-          model: profile.model,
-          ...(Object.keys(profile.settings).length > 0 && {
-            settings: profile.settings,
-          }),
-        },
-        { profileId: profile.id },
-      );
+      chooseProfile(profile, connection.id);
     });
   };
   const confirmDisconnect = (name: string, id: string) => {
@@ -420,7 +414,7 @@ export function SessionPairPicker(props: Props) {
                     withSubagent(
                       pair,
                       profile,
-                      capability,
+                      capabilityOf(pair.harness),
                       groups.flatMap((g) =>
                         g.models.map((m) => ({ name: m.name })),
                       ),
