@@ -1,5 +1,5 @@
 ---
-id:
+id: 124
 title: One gateway pod per owner serves all of that owner's vm Agents
 status: accepted
 supersedes:
@@ -8,7 +8,7 @@ tags: [gateway, envoy, vm, wake, latency, mesh, networkpolicy]
 summary: Each owner gets one long-lived gateway pod beside their VM runner, reached by each vm Agent through its own Service address and port, where a per-agent listener carries that agent's credentials, egress checks, spend meter and resolver; per-agent gateway pods, and the gateway's part in hibernation, go away.
 ---
 
-# ADR-NNN: One gateway pod per owner serves all of that owner's vm Agents
+# ADR-124: One gateway pod per owner serves all of that owner's vm Agents
 
 **Date:** 2026-10-17 **Status:** Accepted **Owner:** @JanPokorny
 
