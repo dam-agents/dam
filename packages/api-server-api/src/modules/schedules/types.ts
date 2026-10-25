@@ -106,6 +106,8 @@ export interface Schedule {
   name: string;
   agentId: string;
   spec: ScheduleSpec;
+  /** UNIT_BOUNDARY_DESCRIPTION: why the profile this schedule names cannot run on its agent, so a fire refuses with that reason instead of running another model. */
+  profileIssue?: string;
   status?: ScheduleStatus;
 }
 

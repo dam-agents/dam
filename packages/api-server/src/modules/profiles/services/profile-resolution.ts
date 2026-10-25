@@ -40,10 +40,16 @@ export interface ProfileResolver {
     owner: string;
     agentId?: string;
   }): Promise<ResolvedProfile | null>;
-  /** UNIT_BOUNDARY_DESCRIPTION: a reference already stored on an agent row was written by its owner through an owner-scoped write, so resolving it needs only the id and the agent's grants; the row is the authority, not a caller's claim. */
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a reference already stored on a row is resolved
+   * by that row's authority, so a read passes no owner. A write passes the
+   * caller's owner and the profile must be theirs, or another owner's profile
+   * could be attached to this agent and moved by its owner's edits.
+   */
   resolveStored(input: {
     profileId: string;
     agentId: string;
+    owner?: string;
   }): Promise<ResolvedProfile | null>;
 }
 
@@ -89,9 +95,10 @@ export function createProfileResolver(
       };
     },
 
-    async resolveStored({ profileId, agentId }) {
+    async resolveStored({ profileId, agentId, owner }) {
       const profile = await deps.repo.getById(profileId);
       if (!profile) return null;
+      if (owner !== undefined && profile.owner !== owner) return null;
       const provider = await resolveProvider(
         deps.repo,
         profile.owner,

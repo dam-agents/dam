@@ -223,10 +223,42 @@ export function createHarnessConfigService(deps: {
        * to, so the value written is validated exactly as a picked one, and the
        * runtime is sent values either way. A reference that cannot run here is
        * refused at save rather than left to fail every later run. */
+      const subagentProfileId = references?.platformSubagentProfileId ?? null;
+      if (subagentProfileId !== null) {
+        /* UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot names a profile
+         * of the caller's own, and only its harness and model are taken from it
+         * (D93); its mode and settings belong to the harness that runs it. */
+        const slot = await deps.profiles.resolveStored({
+          profileId: subagentProfileId,
+          agentId,
+          owner: deps.ownerSub,
+        });
+        if (!slot)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "profile not found",
+          });
+        if (slot.unavailable)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: slot.unavailable.detail,
+          });
+        pair = {
+          ...pair,
+          settings: {
+            ...(pair.settings ?? {}),
+            "platformSubagent.harness": slot.pair.harness,
+            ...(slot.pair.model !== null && {
+              "platformSubagent.model": slot.pair.model,
+            }),
+          },
+        };
+      }
       if (profileId !== null) {
         const resolved = await deps.profiles.resolveStored({
           profileId,
           agentId,
+          owner: deps.ownerSub,
         });
         if (!resolved)
           throw new TRPCError({

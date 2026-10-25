@@ -46,18 +46,23 @@ export function composeScheduleModule(
     const profiles = await opts.buildTrpc(host).profiles.list.query();
     return profiles.find((p) => p.id === ref || p.name === ref) ?? null;
   };
+  const profileName = async (host: string, id: string) =>
+    (await opts.buildTrpc(host).profiles.list.query()).find((p) => p.id === id)
+      ?.name ?? null;
   const agentScoped = {
     compatService: opts.compatService,
     configService: opts.configService,
     createAgentService: opts.createAgentService,
     createScheduleService: createService,
     findProfile,
+    profileName,
   };
   const idScoped = {
     compatService: opts.compatService,
     configService: opts.configService,
     createScheduleService: createService,
     findProfile,
+    profileName,
   };
 
   const parent = new Command("schedule").description(

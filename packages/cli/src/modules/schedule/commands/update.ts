@@ -60,6 +60,7 @@ export function buildUpdateCommand(deps: {
     host: string,
     ref: string,
   ) => Promise<{ id: string; name: string } | null>;
+  profileName: (host: string, id: string) => Promise<string | null>;
 }): Command {
   return new Command("update")
     .description(
@@ -173,6 +174,10 @@ export function buildUpdateCommand(deps: {
           view,
           opts,
           await profileOrExit(deps, host, opts.profile),
+          async (): Promise<void> => {
+            const id = await profileOrExit(deps, host, opts.profile);
+            await noteDetach(deps, host, view, opts, id);
+          },
         );
       }
       if (opts.at !== undefined) {
@@ -233,6 +238,7 @@ export function buildUpdateCommand(deps: {
 
       const sessionMode = opts.sessionMode ?? view.sessionMode;
       const profileId = await profileOrExit(deps, host, opts.profile);
+      await noteDetach(deps, host, view, opts, profileId);
       const result = await svc.updateRRule({
         id,
         name: opts.name ?? view.name,
@@ -263,6 +269,7 @@ async function updateOnce(
   view: ScheduleView,
   opts: UpdateOpts,
   profileId: string | null,
+  noteDetachOf: () => Promise<void>,
 ): Promise<never> {
   const conflicting = recurringFlagsGiven(opts);
   if (conflicting.length > 0) {
@@ -271,6 +278,7 @@ async function updateOnce(
     );
     process.exit(EXIT_INVALID_INPUT);
   }
+  await noteDetachOf();
   const timezone = opts.timezone ?? view.timezone ?? detectTimezone();
   let at: string;
   try {
@@ -299,6 +307,33 @@ async function updateOnce(
     );
   }
   process.exit(EXIT_SUCCESS);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: an inline flag on a schedule that names a profile
+ * detaches it, and a detach nobody asked for is worth one line: the schedule
+ * keeps running on the values it had, under its own name now.
+ */
+async function noteDetach(
+  deps: {
+    profileName: (host: string, id: string) => Promise<string | null>;
+  },
+  host: string,
+  view: ScheduleView,
+  opts: UpdateOpts,
+  profileId: string | null,
+): Promise<void> {
+  if (view.profile === null || profileId !== null) return;
+  const inline =
+    opts.harness !== undefined ||
+    opts.harnessDefault === true ||
+    opts.model !== undefined ||
+    opts.modelDefault === true ||
+    opts.setting.length > 0 ||
+    opts.settingsDefault === true;
+  if (!inline) return;
+  const name = (await deps.profileName(host, view.profile)) ?? view.profile;
+  process.stderr.write(`note: detached from profile ${name}\n`);
 }
 
 function choicesGiven(opts: UpdateOpts): boolean {

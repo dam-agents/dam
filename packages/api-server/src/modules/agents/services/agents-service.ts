@@ -561,7 +561,6 @@ export function createAgentsService(deps: {
     bindDefaultAgentProfile(input: {
       agentId: string;
       harness: string;
-      grantedConnectionIds: readonly string[];
     }): Promise<void>;
   };
   grantProvisioner?: {
@@ -1293,8 +1292,6 @@ export function createAgentsService(deps: {
           .bindDefaultAgentProfile({
             agentId: infra.id,
             harness: spec.harness,
-            grantedConnectionIds:
-              (spec.grantedConnectionIds as string[] | undefined) ?? [],
           })
           .catch((err: unknown) => {
             getLogger().warn(

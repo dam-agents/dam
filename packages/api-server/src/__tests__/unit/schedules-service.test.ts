@@ -47,6 +47,19 @@ function makeDeps(
     async get(id: string) {
       return id === current.id ? current : null;
     },
+    /** UNIT_BOUNDARY_DESCRIPTION: what the row stores, which for a profile
+     * schedule is the reference alone. */
+    async getRaw(id: string) {
+      if (id !== current.id) return null;
+      if (current.spec.profile === undefined) return current;
+      const {
+        harness: _harness,
+        model: _model,
+        settings: _settings,
+        ...spec
+      } = current.spec;
+      return { ...current, spec } as Schedule;
+    },
     async updateName() {
       return current;
     },
@@ -615,6 +628,9 @@ describe("toggle", () => {
       async get() {
         return stored;
       },
+      async getRaw() {
+        return stored;
+      },
       async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
         stored = { ...stored, spec };
         return stored;
@@ -675,13 +691,14 @@ describe("a schedule's profile", () => {
     },
   });
 
-  it("keeps the reference when an update names no choice", async () => {
+  it("keeps the reference alone when an update names no choice", async () => {
     const { service, getSavedSpec } = makeDeps(profiled());
     await service.updateRRule({ ...baseUpdate, task: "another thing" });
     expect(getSavedSpec()?.profile).toBe("profile-1");
-    expect(getSavedSpec()?.model).toBe(
-      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-    );
+    /* UNIT_BOUNDARY_DESCRIPTION: the resolved values must not be frozen beside
+     * the reference, or a later edit of the profile would never reach it. */
+    expect(getSavedSpec()?.model).toBeUndefined();
+    expect(getSavedSpec()?.harness).toBeUndefined();
   });
 
   it("replaces the reference when a profile is named", async () => {
@@ -701,13 +718,12 @@ describe("a schedule's profile", () => {
     expect(saved?.model).toBe("cb/other-model");
   });
 
-  it("clears the reference on an explicit null and keeps the values", async () => {
+  it("clears the reference on an explicit null, leaving it on the agent's default", async () => {
     const { service, getSavedSpec } = makeDeps(profiled());
     await service.updateRRule({ ...baseUpdate, profile: null });
     expect(getSavedSpec()?.profile).toBeUndefined();
-    expect(getSavedSpec()?.model).toBe(
-      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-    );
+    expect(getSavedSpec()?.model).toBeUndefined();
+    expect(getSavedSpec()?.harness).toBeUndefined();
   });
 
   it("refuses a profile its owner does not hold", async () => {
@@ -715,6 +731,9 @@ describe("a schedule's profile", () => {
     const scoped = createSchedulesService({
       repo: {
         async get() {
+          return profiled();
+        },
+        async getRaw() {
           return profiled();
         },
       } as unknown as SchedulesRepository,
@@ -759,5 +778,115 @@ describe("a schedule's profile", () => {
     expect(created?.profile).toBe("profile-1");
     expect(created?.model).toBeUndefined();
     expect(created?.harness).toBeUndefined();
+  });
+});
+
+describe("a schedule's profile ownership on every write", () => {
+  const owned = new Set(["profile-1"]);
+  function scoped(repoOverrides: Partial<SchedulesRepository> = {}) {
+    return createSchedulesService({
+      repo: {
+        async get() {
+          return null;
+        },
+        async getRaw() {
+          return null;
+        },
+        async create(input: { spec: ScheduleSpec }) {
+          return { ...makeCurrent(), spec: input.spec };
+        },
+        async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
+          return { ...makeCurrent(), spec };
+        },
+        async updateName() {
+          return null;
+        },
+        async clearPrecheckStatus() {},
+        ...repoOverrides,
+      } as unknown as SchedulesRepository,
+      runner: {
+        async sync() {},
+        async cancel() {},
+      } as unknown as SchedulerRunner,
+      owner: OWNER,
+      agentBinding: "*",
+      ownedProfile: async (id) => owned.has(id),
+    });
+  }
+  const once = {
+    name: "one",
+    agentId: "agent-1",
+    at: "2026-10-26T09:00",
+    timezone: TIMEZONE,
+    task: "do it",
+  };
+
+  it("refuses another owner's profile on a cron create", async () => {
+    await expect(
+      scoped().createCron({
+        name: "daily",
+        agentId: "agent-1",
+        cron: "0 3 * * *",
+        task: "do it",
+        profile: "profile-other",
+      }),
+    ).rejects.toMatchObject({ message: "unknown profile" });
+  });
+
+  it("refuses another owner's profile on a one-time create", async () => {
+    await expect(
+      scoped().createOnce({ ...once, profile: "profile-other" }),
+    ).rejects.toMatchObject({ message: "unknown profile" });
+  });
+
+  it("refuses another owner's profile on a one-time update", async () => {
+    await expect(
+      scoped({
+        async get() {
+          return {
+            ...makeCurrent(),
+            spec: {
+              ...makeCurrent().spec,
+              type: "once",
+              at: "2026-10-26T09:00:00.000Z",
+            },
+          } as Schedule;
+        },
+        async getRaw() {
+          return {
+            ...makeCurrent(),
+            spec: {
+              ...makeCurrent().spec,
+              type: "once",
+              at: "2026-10-26T09:00:00.000Z",
+            },
+          } as Schedule;
+        },
+      }).updateOnce({ ...once, id: SCHEDULE_ID, profile: "profile-other" }),
+    ).rejects.toMatchObject({ message: "unknown profile" });
+  });
+
+  it("clears the profile when a schedule is moved to the agent's default", async () => {
+    let saved: ScheduleSpec | undefined;
+    const service = scoped({
+      async get() {
+        return {
+          ...makeCurrent(),
+          spec: { ...makeCurrent().spec, profile: "profile-1" },
+        } as Schedule;
+      },
+      async getRaw() {
+        return {
+          ...makeCurrent(),
+          spec: { ...makeCurrent().spec, profile: "profile-1" },
+        } as Schedule;
+      },
+      async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
+        saved = spec;
+        return { ...makeCurrent(), spec };
+      },
+    });
+    await service.clearSessionChoices(SCHEDULE_ID);
+    expect(saved?.profile).toBeUndefined();
   });
 });

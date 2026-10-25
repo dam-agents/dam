@@ -113,6 +113,23 @@ function choicesOf(input: {
  * never both. Naming one clears the inline fields; sending an inline field
  * detaches from the profile; an explicit null clears the reference and leaves
  * the inline fields as they are; omission changes nothing. */
+/* UNIT_BOUNDARY_DESCRIPTION: a write starts from the stored spec, never from the
+ * resolved one, or a profile schedule would be saved with a frozen copy of the
+ * values beside the reference. The resolved read is still what validates and
+ * what a detach copies. */
+function storedCurrentSpec(
+  stored: Schedule | null,
+  current: Schedule,
+): Extract<ScheduleSpec, { type: "once" }> {
+  return stored?.spec.type === "once"
+    ? stored.spec
+    : (current.spec as Extract<ScheduleSpec, { type: "once" }>);
+}
+
+function requireStored(stored: Schedule | null, current: Schedule): Schedule {
+  return stored ?? current;
+}
+
 function applyProfileTransition(
   spec: {
     profile?: string;
@@ -406,7 +423,9 @@ export function createSchedulesService(deps: {
       asBadRequest(() => validateTimezone(input.timezone));
       const at = resolveMoment(input.at, input.timezone, now());
       await ensureAgent(input.agentId);
-      await ensureSessionChoices(input.agentId, choicesOf(input), origin);
+      await ensureProfileOwned(input.profile);
+      if (!input.profile)
+        await ensureSessionChoices(input.agentId, choicesOf(input), origin);
       if (input.sessionTitle && origin?.mode === "continue")
         throw badRequest(
           "a task that continues its session keeps that session's title; drop the session title or run it fresh",
@@ -457,13 +476,15 @@ export function createSchedulesService(deps: {
     async updateOnce(input: ScheduleUpdateOnceInput) {
       asBadRequest(() => validateTimezone(input.timezone));
       const current = await deps.repo.get(input.id, deps.owner);
+      const stored = await deps.repo.getRaw(input.id, deps.owner);
       if (!current) return null;
       if (current.spec.type !== "once")
         throw badRequest("not a one-time schedule");
       if (current.status?.lastRun)
         throw badRequest("a one-time schedule cannot be edited once it fired");
+      await ensureProfileOwned(input.profile);
       const at = resolveMoment(input.at, input.timezone, now());
-      if (choicesChanged(input, current.spec))
+      if (input.profile === undefined && choicesChanged(input, current.spec))
         await ensureSessionChoices(
           current.agentId,
           choicesOf(input),
@@ -480,7 +501,7 @@ export function createSchedulesService(deps: {
         migrationNote: _previousNote,
         sessionTitle: _previousTitle,
         ...unchanged
-      } = current.spec;
+      } = storedCurrentSpec(stored, current);
       const spec: ScheduleSpec = {
         ...unchanged,
         at: at.toISOString(),
@@ -506,6 +527,7 @@ export function createSchedulesService(deps: {
     async updateCron(input: ScheduleUpdateCronInput) {
       asBadRequest(() => validateCron(input.cron));
       const current = await deps.repo.get(input.id, deps.owner);
+      const stored = await deps.repo.getRaw(input.id, deps.owner);
       if (!current) return null;
       if (current.spec.type !== "cron")
         throw badRequest("only a cron schedule is edited with updateCron");
@@ -518,7 +540,7 @@ export function createSchedulesService(deps: {
           undefined,
         );
       const spec: ScheduleSpec = {
-        ...current.spec,
+        ...(stored?.spec.type === "cron" ? stored.spec : current.spec),
         cron: input.cron,
         task: input.task,
       };
@@ -559,6 +581,7 @@ export function createSchedulesService(deps: {
         validateRRule(input.rrule, input.timezone, input.quietHours),
       );
       const current = await deps.repo.get(input.id, deps.owner);
+      const stored = await deps.repo.getRaw(input.id, deps.owner);
       if (!current) return null;
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
@@ -570,10 +593,9 @@ export function createSchedulesService(deps: {
           choicesOf(merged),
           undefined,
         );
+      const base = stored?.spec ?? current.spec;
       const { cron: _cron, ...unchanged } =
-        current.spec.type === "cron"
-          ? current.spec
-          : { ...current.spec, cron: undefined };
+        base.type === "cron" ? base : { ...base, cron: undefined };
       const spec: ScheduleSpec = {
         ...unchanged,
         type: "rrule",
@@ -636,11 +658,12 @@ export function createSchedulesService(deps: {
 
     async toggle(id, enabled) {
       const current = await deps.repo.get(id, deps.owner);
+      const stored = await deps.repo.getRaw(id, deps.owner);
       if (!current) return null;
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule cannot be paused; delete it");
       const next = await deps.repo.updateSpec(id, deps.owner, {
-        ...current.spec,
+        ...requireStored(stored, current).spec,
         enabled: enabled ?? !current.spec.enabled,
       });
       if (!next) return null;
@@ -681,9 +704,10 @@ export function createSchedulesService(deps: {
         harness: _harness,
         model: _model,
         settings: _settings,
+        profile: _profile,
         migrationNote: _note,
         ...spec
-      } = current.spec;
+      } = requireStored(await deps.repo.getRaw(id, deps.owner), current).spec;
       const next = await deps.repo.updateSpec(id, deps.owner, spec);
       if (!next) return null;
       emit({

@@ -397,6 +397,66 @@ async function main() {
   await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${restoreOwner}`);
   await db.execute(sql`DELETE FROM profiles WHERE owner = ${restoreOwner}`);
 
+  process.stdout.write("\nownership at the write\n");
+  const ownProfile = (await service.list())[0]!;
+  const foreign = await resolver.resolveStored({
+    profileId: ownProfile.id,
+    agentId: boundAgent,
+    owner: unique("someone-else"),
+  });
+  check(
+    "resolving with another owner's subject refuses the profile",
+    foreign === null,
+    JSON.stringify(foreign?.profile.name),
+  );
+  const own = await resolver.resolveStored({
+    profileId: ownProfile.id,
+    agentId: boundAgent,
+    owner,
+  });
+  check(
+    "resolving with the profile's own owner answers",
+    own !== null,
+    "refused",
+  );
+  const slotOwner = unique("owner");
+  const slotService = serviceFor(slotOwner);
+  const slotAgent = await insertAgent(slotOwner);
+  const slotConnection = await insertConnection(slotOwner, "curve-bender-deployment");
+  await db.execute(
+    sql`INSERT INTO connection_grants (connection_id, agent_id) VALUES (${slotConnection}, ${slotAgent}) ON CONFLICT DO NOTHING`,
+  );
+  const slotProfile = await slotService.service.create({
+    name: "Sub agents",
+    harness: "claude-code",
+    providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    model: MODEL,
+  });
+  /* UNIT_BOUNDARY_DESCRIPTION: the slot is written here directly, as the checked write would, so the read is what this proves. */
+  const slotRepo = createSessionPairRepo(db, slotService.resolver);
+  /* UNIT_BOUNDARY_DESCRIPTION: the slot augments a chat default; a slot alone
+   * leaves the Agent with none, which every reader already reports. */
+  await db.execute(
+    sql`UPDATE agents SET platform_subagent_profile = ${slotProfile.id},
+        session_pair = ${JSON.stringify({
+          harness: "claude-code",
+          provider: slotConnection,
+          model: MODEL,
+        })}::jsonb
+        WHERE id = ${slotAgent}`,
+  );
+  const slotRead = await slotRepo.readSaved(slotAgent);
+  check(
+    "the platform sub-agent slot resolves into harness and model",
+    slotRead.chat?.settings?.["platformSubagent.harness"] === "claude-code" &&
+      slotRead.chat?.settings?.["platformSubagent.model"] === MODEL,
+    JSON.stringify(slotRead.chat?.settings),
+  );
+  await db.execute(sql`DELETE FROM agents WHERE owner_sub = ${pseudo.hashSub(slotOwner)}`);
+  await db.execute(sql`DELETE FROM connections WHERE owner = ${slotOwner}`);
+  await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${slotOwner}`);
+  await db.execute(sql`DELETE FROM profiles WHERE owner = ${slotOwner}`);
+
   process.stdout.write("\nunbinding\n");
   await db.execute(
     sql`UPDATE schedules SET spec = spec - 'profile' WHERE id = ${schedule}`,

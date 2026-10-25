@@ -70,11 +70,6 @@ export interface ProfilesRepository {
     agentId: string,
     profileId: string,
   ): Promise<void>;
-  holdsTemplate(
-    owner: string,
-    connectionIds: readonly string[],
-    templateId: string,
-  ): Promise<boolean>;
   insert(owner: string, profile: ProfileWrite): Promise<ProfileRow>;
   update(
     owner: string,
@@ -417,22 +412,6 @@ export function createProfilesRepository(
             isNull(agents.sessionPair),
           ),
         );
-    },
-
-    async holdsTemplate(owner, connectionIds, templateId) {
-      if (connectionIds.length === 0) return false;
-      const rows = await db
-        .select({ id: connections.id })
-        .from(connections)
-        .where(
-          and(
-            eq(connections.owner, owner),
-            inArray(connections.id, [...connectionIds]),
-            eq(connections.templateId, templateId),
-          ),
-        )
-        .limit(1);
-      return rows.length > 0;
     },
 
     async ownerConnections(owner) {

@@ -381,6 +381,8 @@ import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
   createProfileResolver,
   createProfilesRepository,
+  createProfilesService,
+  seededProvider,
 } from "./modules/profiles/index.js";
 import {
   composeSatellitesModule,
@@ -1252,9 +1254,24 @@ export async function bootstrap() {
   usageMetrics.start();
   const seedSources = parseSeedSources(config.skillSourcesSeed);
 
+  /* UNIT_BOUNDARY_DESCRIPTION: an Agent restored from the registry has no chat
+   * default of its own — a deletion cleared its references — so the boot pass
+   * binds the owner's seeded Default exactly as a create does. */
+  const bindRestoredAgent = async (agentId: string): Promise<void> => {
+    const agent = await agentsRepo.get(agentId);
+    const harness = agent?.spec.harness;
+    if (!agent?.owner || typeof harness !== "string") return;
+    await createProfilesService({
+      repo: profilesRepository,
+      owner: agent.owner,
+      catalog: harnessCatalog,
+      seededProvider: seededProvider(config.curveBenderDeployment !== null),
+    }).bindDefaultAgentProfile({ agentId, harness });
+  };
   const usage = composeUsageModule({
     db,
     subPseudonymizer,
+    onAgentRowUpserted: bindRestoredAgent,
     activityTrackingEnabled: config.activityTrackingEnabled,
     inspectorRole: config.keycloakInspectorRole ?? "",
     listK8sAgents: async () => {

@@ -92,6 +92,8 @@ function makeDeps(opts?: {
   onceResult?: string;
   agentDisabled?: boolean;
   enabled?: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: a schedule as the repository hands it back, for a shape the parameters cannot express. */
+  schedule?: Schedule;
   firePair?: FirePair;
   ensureDefault?: (agentId: string) => Promise<AgentActivityStamp | null>;
   defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
@@ -127,6 +129,8 @@ function makeDeps(opts?: {
 
   const repo = {
     async getById(id: string) {
+      if (id === SCHEDULE_ID && opts?.schedule !== undefined)
+        return opts.schedule;
       if (id === SCHEDULE_ID && opts?.once)
         return opts.onceResult
           ? {
@@ -329,6 +333,31 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     ).rejects.toThrow(/no model provider/);
     expect(events).toEqual([]);
     expect(stampedResults[0]?.result).toMatch(/no model provider granted/);
+  });
+
+  /** TEST_SCENARIO: A schedule that names a profile which cannot run on its
+   * agent fails with that reason; it never runs the agent's default and is
+   * never recorded as following one. */
+  it("fails a fire whose profile cannot run, without falling back", async () => {
+    let fired = 0;
+    const { runner, events } = makeDeps({
+      firePair: async () => {
+        fired += 1;
+        return { harness: "claude-code", provider: "conn-1", model: "m" };
+      },
+      schedule: {
+        ...makeSchedule(),
+        spec: { ...makeSchedule().spec, profile: "profile-1" },
+        profileIssue: "CurveBender (shared) is not connected",
+      },
+    });
+    await expect(
+      runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
+    ).rejects.toThrow(
+      /profile cannot run: CurveBender \(shared\) is not connected/,
+    );
+    expect(fired).toBe(0);
+    expect(events).toEqual([]);
   });
 
   /** TEST_SCENARIO: The agent has no default model. A retry cannot change

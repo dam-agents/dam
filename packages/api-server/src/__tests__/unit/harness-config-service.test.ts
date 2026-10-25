@@ -25,6 +25,7 @@ function makeService(opts?: {
   snapshot?: HarnessConfigSnapshot | null;
   granted?: GrantedProvider[];
   resolved?: SessionPair;
+  profileOwner?: string;
   unavailable?: { reason: "no-provider"; detail: string };
 }) {
   const calls = {
@@ -44,22 +45,24 @@ function makeService(opts?: {
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
     profiles: {
-      resolveStored: async () =>
-        opts?.resolved === undefined
+      resolveStored: async ({ owner }) =>
+        owner !== undefined && owner !== (opts?.profileOwner ?? "owner-1")
           ? null
-          : {
-              profile: {
-                id: "profile-1",
-                name: "Default",
-                harness: opts.resolved.harness,
-                providerTemplate: "curve-bender-deployment",
-                model: String(opts.resolved.model),
-                settings: {},
+          : opts?.resolved === undefined
+            ? null
+            : {
+                profile: {
+                  id: "profile-1",
+                  name: "Default",
+                  harness: opts.resolved.harness,
+                  providerTemplate: "curve-bender-deployment",
+                  model: String(opts.resolved.model),
+                  settings: {},
+                },
+                pair: opts.resolved,
+                grantableProvider: null,
+                unavailable: opts.unavailable ?? null,
               },
-              pair: opts.resolved,
-              grantableProvider: null,
-              unavailable: opts.unavailable ?? null,
-            },
     },
     surface: "ui",
     eventQueue: {
@@ -534,6 +537,78 @@ describe("rememberSessionPair naming a profile", () => {
       code: "BAD_REQUEST",
       message:
         "only the chat default can name a profile; a channel and a schedule keep their own",
+    });
+  });
+});
+
+describe("ownership of a profile a caller names", () => {
+  const codexPair = {
+    harness: "codex",
+    provider: "conn-1",
+    model: "openai/gpt-6.1-sol",
+  };
+  const carrying = {
+    modelRouter: true,
+    defaultHarness: "codex",
+    harnesses: [
+      {
+        name: "codex",
+        harnessConfig: true,
+        sessionModel: true,
+        sessionSettings: [],
+        platformSubagentSettings: true,
+      },
+    ],
+  };
+
+  it("refuses another owner's profile in the chat slot", async () => {
+    const { service, calls } = makeService({
+      capabilities: carrying,
+      granted: [{ id: "conn-1", type: "openai" }],
+      resolved: codexPair,
+      profileOwner: "owner-2",
+    });
+    await expect(
+      service.rememberSessionPair("agent-1", "chat", codexPair, {
+        profileId: "profile-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "profile not found",
+    });
+    expect(calls.pairs).toEqual([]);
+  });
+
+  it("refuses another owner's profile in the platform sub-agent slot", async () => {
+    const { service, calls } = makeService({
+      capabilities: carrying,
+      granted: [{ id: "conn-1", type: "openai" }],
+      resolved: codexPair,
+      profileOwner: "owner-2",
+    });
+    await expect(
+      service.rememberSessionPair("agent-1", "chat", codexPair, {
+        platformSubagentProfileId: "profile-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "profile not found",
+    });
+    expect(calls.pairs).toEqual([]);
+  });
+
+  it("takes only the harness and model of the slot's profile", async () => {
+    const { service, calls } = makeService({
+      capabilities: carrying,
+      granted: [{ id: "conn-1", type: "openai" }],
+      resolved: codexPair,
+    });
+    await service.rememberSessionPair("agent-1", "chat", codexPair, {
+      platformSubagentProfileId: "profile-1",
+    });
+    expect(calls.pairs[0]?.settings).toEqual({
+      "platformSubagent.harness": "codex",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
     });
   });
 });

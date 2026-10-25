@@ -39,6 +39,8 @@ export interface SchedulesRepository {
     opts?: { limit?: number; agentIds?: readonly string[] },
   ): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the stored spec, unresolved, for the write that edits it — reading the resolved one and writing it back would freeze a profile's values beside its reference. */
+  getRaw(id: string, owner: string): Promise<Schedule | null>;
   getById(id: string): Promise<Schedule | null>;
   getOwnerById(id: string): Promise<string | null>;
   listAllEnabled(): Promise<Schedule[]>;
@@ -159,7 +161,13 @@ export function createSchedulesRepository(
       agentId: schedule.agentId,
     });
     if (!resolved || resolved.unavailable !== null)
-      return { ...schedule, spec: withoutChoices(schedule.spec) };
+      return {
+        ...schedule,
+        spec: withoutChoices(schedule.spec),
+        profileIssue:
+          resolved?.unavailable?.detail ??
+          "its profile cannot run on this agent",
+      };
     return {
       ...schedule,
       spec: {
@@ -207,6 +215,16 @@ export function createSchedulesRepository(
         )
         .orderBy(asc(schedulesTable.createdAt))) as InternalRow[];
       return Promise.all(rows.map(effective));
+    },
+
+    async getRaw(id, owner): Promise<Schedule | null> {
+      const rows = (await db
+        .select()
+        .from(schedulesTable)
+        .where(
+          and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)),
+        )) as InternalRow[];
+      return rows[0] ? rowToSchedule(rows[0]) : null;
     },
 
     async get(id, owner): Promise<Schedule | null> {

@@ -126,7 +126,7 @@ export const scheduleUpdateOnceInputSchema = z
     harness: scheduleHarnessSchema.optional(),
     model: z.string().min(1).optional(),
     settings: scheduleSettingsSchema.optional(),
-    profile: z.string().min(1).optional(),
+    profile: z.string().min(1).nullable().optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();

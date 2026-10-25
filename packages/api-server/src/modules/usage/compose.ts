@@ -52,6 +52,8 @@ export interface UsageModuleDeps {
     Array<{ metadata?: { name?: string }; spec?: unknown }>
   >;
   agentSizing: AgentSizing;
+  /** UNIT_BOUNDARY_DESCRIPTION: called for each Agent the boot pass writes, which is where a restored one reappears. */
+  onAgentRowUpserted?: (agentId: string) => Promise<void>;
 }
 
 type AppEnv = {
@@ -117,6 +119,15 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
       for (const a of await deps.listK8sAgents()) {
         await upsertAgentRow({ id: a.id, ownerSub: a.owner });
         await fillKitFacts(a);
+        /* UNIT_BOUNDARY_DESCRIPTION: this boot pass is where a deleted Agent
+         * comes back as a row again; its references were cleared with the
+         * deletion, so it is bound to the seeded Default here, as a new one is
+         * at create. */
+        await deps.onAgentRowUpserted?.(a.id).catch((err: unknown) => {
+          process.stderr.write(
+            `[usage/bootstrap-agents] binding ${a.id} failed: ${err}\n`,
+          );
+        });
       }
     })().catch((err) => {
       process.stderr.write(

@@ -45,7 +45,6 @@ export interface ProfilesServiceDeps {
 export interface BindDefaultAgentProfileInput {
   agentId: string;
   harness: string;
-  grantedConnectionIds: readonly string[];
 }
 
 export type BindDefaultAgentProfile = (
@@ -112,16 +111,30 @@ export function createProfilesService(
     profileId: string,
   ): Promise<{ agentId: string; reason: string }[]> {
     if (deps.fanOut === undefined) return [];
+    /* UNIT_BOUNDARY_DESCRIPTION: one agent failing to republish must not lose
+     * the others, and the edit has already committed, so a throw is reported as
+     * that agent's rejection rather than failing the whole request. */
     const usage = await repo.usage(owner, profileId);
-    const results = await Promise.all(
-      usage.agents.map(async (agent) => {
-        const result = await deps.fanOut!.republishDefaults(agent.id);
-        return result.published
-          ? null
-          : { agentId: agent.id, reason: result.reason };
-      }),
+    const results = await Promise.allSettled(
+      usage.agents.map((agent) =>
+        deps.fanOut!.republishDefaults(agent.id).then(
+          (result) => ({ agentId: agent.id, result }),
+          (err: unknown) => ({
+            agentId: agent.id,
+            result: {
+              published: false as const,
+              reason: err instanceof Error ? err.message : String(err),
+            },
+          }),
+        ),
+      ),
     );
-    return results.flatMap((r) => (r === null ? [] : [r]));
+    return results.flatMap((settled) => {
+      if (settled.status === "rejected")
+        return [{ agentId: "unknown", reason: String(settled.reason) }];
+      const { agentId, result } = settled.value;
+      return result.published ? [] : [{ agentId, reason: result.reason }];
+    });
   }
 
   async function ensureDefault(): Promise<void> {
@@ -226,9 +239,13 @@ export function createProfilesService(
       }
       /* UNIT_BOUNDARY_DESCRIPTION: a profile edit reaches the agents that point
        * at it, and each one either takes the new pair or keeps its previous one
-       * with the reason, which the editor shows instead of failing the edit. */
+       * with the reason, which the editor shows instead of failing the edit. A
+       * rename changes nothing they run, so it reaches nobody. */
+      const renamed = Object.keys(input).every(
+        (key) => key === "id" || key === "name",
+      );
       const edited = await view(input.id);
-      const rejected = await rejectedAgents(input.id);
+      const rejected = renamed ? [] : await rejectedAgents(input.id);
       return { profile: edited, rejected };
     },
 
@@ -237,11 +254,9 @@ export function createProfilesService(
       const seeded = await repo.seeded(owner);
       if (!seeded || seeded.harness !== input.harness) return;
       if (
-        !(await repo.holdsTemplate(
-          owner,
-          input.grantedConnectionIds,
-          seeded.providerTemplate,
-        ))
+        !(await repo.agentConnections(owner, input.agentId)).some(
+          (connection) => connection.templateId === seeded.providerTemplate,
+        )
       )
         return;
       await repo.bindChatProfile(owner, input.agentId, seeded.id);

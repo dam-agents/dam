@@ -73,13 +73,38 @@ export function createSessionPairRepo(
     stored: SessionPair | null,
     references: SessionPairReferences,
   ): Promise<SessionPair | null> {
-    if (references.sessionProfile === null) return stored;
-    if (profiles === undefined) return null;
-    const resolved = await profiles.resolveStored({
-      profileId: references.sessionProfile,
-      agentId,
-    });
-    return resolved?.unavailable === null ? resolved.pair : null;
+    if (profiles === undefined)
+      return references.sessionProfile === null ? stored : null;
+    let pair = stored;
+    if (references.sessionProfile !== null) {
+      const resolved = await profiles.resolveStored({
+        profileId: references.sessionProfile,
+        agentId,
+      });
+      pair = resolved?.unavailable === null ? resolved.pair : null;
+    }
+    /* UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot is its own
+     * reference (D93) and contributes only a harness and a model; a slot that is
+     * set beats an inline platformSubagent.* value, and a slot that cannot run
+     * leaves the pair as it is, since the spawn refuses it with its reason. */
+    if (references.platformSubagentProfile !== null) {
+      const slot = await profiles.resolveStored({
+        profileId: references.platformSubagentProfile,
+        agentId,
+      });
+      if (slot && slot.unavailable === null && pair !== null)
+        pair = {
+          ...pair,
+          settings: {
+            ...(pair.settings ?? {}),
+            "platformSubagent.harness": slot.pair.harness,
+            ...(slot.pair.model !== null && {
+              "platformSubagent.model": slot.pair.model,
+            }),
+          },
+        };
+    }
+    return pair;
   }
 
   async function readSaved(

@@ -75,7 +75,7 @@ interface Fake {
 function fakeRepo(opts: {
   rows?: ProfileRow[];
   seeded?: ProfileRow | null;
-  holds?: boolean;
+  granted?: { id: string; name: string; templateId: string }[];
   usage?: ProfileUsage;
   deleteOutcome?: DeleteOutcome;
   counts?: Map<string, { agents: number; channels: number; schedules: number }>;
@@ -97,7 +97,6 @@ function fakeRepo(opts: {
     bindChatProfile: async (_owner, agentId, profileId) => {
       calls.binds.push({ agentId, profileId });
     },
-    holdsTemplate: async () => opts.holds ?? true,
     insert: async (_owner, profile) => {
       calls.inserts.push(profile);
       calls.order.push("insert");
@@ -128,7 +127,14 @@ function fakeRepo(opts: {
       calls.order.push("seed");
     },
     ownerConnections: async () => [],
-    agentConnections: async () => [],
+    agentConnections: async () =>
+      opts.granted ?? [
+        {
+          id: "conn-1",
+          name: "CurveBender (shared)",
+          templateId: "curve-bender-deployment",
+        },
+      ],
   };
   return { repo, calls, rows };
 }
@@ -389,7 +395,6 @@ describe("profiles service — binding a new agent's default", () => {
     await service(fake).bindDefaultAgentProfile({
       agentId: "agent-1",
       harness: "claude-code",
-      grantedConnectionIds: ["conn-1"],
     });
     expect(fake.calls.binds).toEqual([
       { agentId: "agent-1", profileId: "profile-1" },
@@ -401,17 +406,15 @@ describe("profiles service — binding a new agent's default", () => {
     await service(fake).bindDefaultAgentProfile({
       agentId: "agent-1",
       harness: "bob",
-      grantedConnectionIds: ["conn-1"],
     });
     expect(fake.calls.binds).toEqual([]);
   });
 
   it("binds nothing when the agent was not granted the profile's provider", async () => {
-    const fake = fakeRepo({ seeded: row(), holds: false });
+    const fake = fakeRepo({ seeded: row(), granted: [] });
     await service(fake).bindDefaultAgentProfile({
       agentId: "agent-1",
       harness: "claude-code",
-      grantedConnectionIds: ["conn-1"],
     });
     expect(fake.calls.binds).toEqual([]);
   });
@@ -421,7 +424,6 @@ describe("profiles service — binding a new agent's default", () => {
     await service(fake).bindDefaultAgentProfile({
       agentId: "agent-1",
       harness: "claude-code",
-      grantedConnectionIds: ["conn-1"],
     });
     expect(fake.calls.binds).toEqual([]);
   });
@@ -431,7 +433,6 @@ describe("profiles service — binding a new agent's default", () => {
     await service(fake).bindDefaultAgentProfile({
       agentId: "agent-1",
       harness: "claude-code",
-      grantedConnectionIds: ["conn-1"],
     });
     expect(fake.calls.order[0]).toBe("seed");
   });
@@ -474,9 +475,14 @@ describe("profiles service — the fan-out of an edit", () => {
             : { published: true };
         },
       },
-    }).update({ id: "p1", name: "Reviewed" });
+    }).update({
+      id: "p1",
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030",
+    });
     expect(republished).toEqual(["agent-1", "agent-2"]);
-    expect(edited.profile.name).toBe("Reviewed");
+    expect(edited.profile.model).toBe(
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030",
+    );
     expect(edited.rejected).toEqual([
       {
         agentId: "agent-2",
@@ -499,8 +505,39 @@ describe("profiles service — the fan-out of an edit", () => {
           return { published: true };
         },
       },
-    }).update({ id: "p1", name: "Reviewed" });
+    }).update({
+      id: "p1",
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030",
+    });
     expect(called).toBe(0);
     expect(edited.rejected).toEqual([]);
+  });
+});
+
+describe("profiles service — a rename", () => {
+  it("reaches no agent, since nothing they run changes", async () => {
+    const fake = fakeRepo({
+      rows: [row({ id: "p1", seed: null, name: "Review" })],
+      usage: {
+        agents: [{ id: "agent-1", slots: ["chat"] }],
+        channels: [],
+        schedules: [],
+      },
+    });
+    let called = 0;
+    const edited = await createProfilesService({
+      repo: fake.repo,
+      owner: "owner-1",
+      catalog,
+      seededProvider: shared,
+      fanOut: {
+        republishDefaults: async () => {
+          called += 1;
+          return { published: true };
+        },
+      },
+    }).update({ id: "p1", name: "Reviewed" });
+    expect(called).toBe(0);
+    expect(edited.profile.name).toBe("Reviewed");
   });
 });

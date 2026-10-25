@@ -275,7 +275,7 @@ describe("the default profile a new agent starts on", () => {
 
   /** TEST_SCENARIO: A create names the harness and the grants it holds, so the
    * owner's seeded profile is bound only where it actually fits the agent. */
-  it("hands the binder the harness and the grants the agent got", async () => {
+  it("hands the binder the agent and its harness", async () => {
     const { caller, bindDefaultAgentProfile } = setup([provider], templates);
     const created = await caller.agents.create({
       ...byTemplate,
@@ -284,7 +284,6 @@ describe("the default profile a new agent starts on", () => {
     expect(bindDefaultAgentProfile).toHaveBeenCalledWith({
       agentId: created.id,
       harness: "claude-code",
-      grantedConnectionIds: [provider.id],
     });
   });
 
@@ -348,7 +347,7 @@ describe("the default profile a new agent starts on", () => {
 
   /** TEST_SCENARIO: A create names the harness and the grants it holds, so the
    * owner's seeded profile is bound only where it actually fits the agent. */
-  it("hands the binder the harness and the grants the agent got", async () => {
+  it("hands the binder the agent and its harness", async () => {
     const { caller, bindDefaultAgentProfile } = setup([provider], templates);
     const created = await caller.agents.create({
       ...byTemplate,
@@ -357,7 +356,6 @@ describe("the default profile a new agent starts on", () => {
     expect(bindDefaultAgentProfile).toHaveBeenCalledWith({
       agentId: created.id,
       harness: "claude-code",
-      grantedConnectionIds: [provider.id],
     });
   });
 
