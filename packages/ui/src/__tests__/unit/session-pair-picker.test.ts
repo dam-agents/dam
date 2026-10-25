@@ -163,6 +163,16 @@ vi.mock("../../modules/schedules/api/mutations.js", () => ({
   useClearScheduleChoices: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+let profilesState: readonly unknown[] = [];
+vi.mock("../../modules/profiles/api/queries.js", () => ({
+  useProfiles: () => ({ data: profilesState }),
+  profileDetail: () => "",
+}));
+
+vi.mock("../../modules/profiles/components/save-as-profile.js", () => ({
+  SaveAsProfile: () => null,
+}));
+
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
     data: state.catalogLoaded && {
@@ -234,6 +244,74 @@ function renderPicker() {
     }),
   );
 }
+
+describe("the profile view a routed picker opens on", () => {
+  beforeEach(() => {
+    state.loading = false;
+    state.fetching = false;
+    state.operable = true;
+    state.owned = [];
+    state.catalogLoaded = true;
+    state.chosen = null;
+    state.catalog = routedCatalog;
+  });
+
+  /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on the
+   * list, each row naming the model and provider it stands for, and the full
+   * picker one row away. An unavailable profile is crossed out with its reason
+   * rather than hidden. */
+  it("lists the profiles, then Custom, and crosses out the unavailable one", () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "anthropic",
+        model: "anthropic/claude-sonnet-5-5",
+        settings: {},
+        seeded: false,
+        createdAt: "",
+        updatedAt: "",
+        usage: { agents: 1, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null },
+      },
+      {
+        id: "p2",
+        name: "Local only",
+        harness: "pi",
+        providerTemplate: "curve-bender-deployment",
+        model: "cb/local",
+        settings: {},
+        seeded: false,
+        createdAt: "",
+        updatedAt: "",
+        usage: { agents: 0, channels: 0, schedules: 0 },
+        availability: {
+          available: false,
+          reason: "CurveBender (shared) is not connected",
+        },
+      },
+    ];
+    try {
+      const html = renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+      expect(html).toContain("Fast review");
+      expect(html).toContain("Manage profiles");
+      expect(html).toContain("Custom");
+      expect(html).toContain("line-through");
+      expect(html).toContain("CurveBender (shared) is not connected");
+    } finally {
+      profilesState = [];
+    }
+  });
+});
 
 describe("session pair model choices", () => {
   beforeEach(() => {

@@ -67,9 +67,22 @@ export const profileSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: asked for one agent, a profile also says whether it
+ * can run there and why not, so a picker can cross it out instead of offering a
+ * choice the run would refuse. */
+export const profileAvailabilitySchema = z.object({
+  available: z.boolean(),
+  reason: z.string().nullable(),
+});
+
 export const profileViewSchema = profileSchema.extend({
   usage: profileUsageCountsSchema,
+  availability: profileAvailabilitySchema.nullable(),
 });
+
+export const profileListInputSchema = z
+  .object({ agentId: z.string().min(1).optional() })
+  .optional();
 
 /* UNIT_BOUNDARY_DESCRIPTION: an edit reports the agents that still point at the
  * profile but cannot run what it now says, so the editor can name them instead

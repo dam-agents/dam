@@ -534,6 +534,8 @@ export type {
   ProfileUnavailableReason,
   ProfileSlot,
   ProfileUpdateResult,
+  ProfileAvailability,
+  ProfileListInput,
 } from "./modules/profiles/types.js";
 export {
   profileSchema,
@@ -548,6 +550,8 @@ export {
   profileSettingsSchema,
   profileSlotSchema,
   profileUpdateResultSchema,
+  profileAvailabilitySchema,
+  profileListInputSchema,
 } from "./modules/profiles/schemas.js";
 
 export type {

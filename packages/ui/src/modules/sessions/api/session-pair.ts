@@ -375,6 +375,10 @@ export function rememberSessionPair(
   pair: SessionPair,
   kind: DefaultKind = "chat",
   onSaved?: () => void,
+  references?: {
+    profileId?: string | null;
+    platformSubagentProfileId?: string | null;
+  },
 ): void {
   const key = trpc.harnessConfig.sessionPair.queryKey(
     sessionPairInput(agentId, kind),
@@ -383,7 +387,17 @@ export function rememberSessionPair(
   const resolved = pair.provider !== null;
   if (resolved) queryClient.setQueryData<SessionPair | null>(key, pair);
   void api.harnessConfig.rememberSessionPair
-    .mutate({ agentId, kind, ...pair })
+    .mutate({
+      agentId,
+      kind,
+      ...pair,
+      ...(references?.profileId !== undefined && {
+        profileId: references.profileId,
+      }),
+      ...(references?.platformSubagentProfileId !== undefined && {
+        platformSubagentProfileId: references.platformSubagentProfileId,
+      }),
+    })
     .then(() => onSaved?.())
     .catch((err: unknown) => {
       if (resolved)

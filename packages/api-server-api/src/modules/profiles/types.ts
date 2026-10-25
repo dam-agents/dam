@@ -1,7 +1,9 @@
 import type { SessionSettings } from "agent-runtime-api";
 import type { z } from "zod";
 import type {
+  profileAvailabilitySchema,
   profileCreateInputSchema,
+  profileListInputSchema,
   profileUpdateResultSchema,
   profileSlotSchema,
   profileUpdateInputSchema,
@@ -32,12 +34,14 @@ export type ProfileUsage = z.infer<typeof profileUsageSchema>;
 
 export type ProfileUsageCounts = z.infer<typeof profileUsageCountsSchema>;
 
+export type ProfileAvailability = z.infer<typeof profileAvailabilitySchema>;
 export type ProfileWithUsage = z.infer<typeof profileViewSchema>;
+export type ProfileListInput = z.infer<typeof profileListInputSchema>;
 
 export type ProfileUpdateResult = z.infer<typeof profileUpdateResultSchema>;
 
 export interface ProfilesService {
-  list(): Promise<ProfileWithUsage[]>;
+  list(input?: ProfileListInput): Promise<ProfileWithUsage[]>;
   usage(id: string): Promise<ProfileUsage>;
   create(input: ProfileCreateInput): Promise<ProfileWithUsage>;
   update(input: ProfileUpdateInput): Promise<ProfileUpdateResult>;

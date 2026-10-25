@@ -39,6 +39,13 @@ export interface ProfilesServiceDeps {
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   seededProvider: SeededProvider | null;
   fanOut?: ProfileFanOut;
+  /* UNIT_BOUNDARY_DESCRIPTION: what a picker needs to cross a profile out for
+   * one agent; absent where nothing asks for one agent, as the CLI does. */
+  resolveStored?: (input: {
+    profileId: string;
+    agentId: string;
+    owner?: string;
+  }) => Promise<{ unavailable: { detail: string } | null } | null>;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on, so the owner's seeded profile is what its first chat runs on instead of waiting for the first-hello conversion. A restored Agent passes the same way: its profile references were cleared with the deletion, and a row that names neither shape is unbound. */
@@ -104,7 +111,9 @@ export function createProfilesService(
     if (!row)
       throw new TRPCError({ code: "NOT_FOUND", message: "profile not found" });
     const usage = await repo.usage(owner, id, binding());
-    return withUsage(row, usage);
+    /* UNIT_BOUNDARY_DESCRIPTION: a write answers with no availability, since it
+     * is not asking about one agent; the list does, and a picker reads it. */
+    return { ...withUsage(row, usage), availability: null };
   }
 
   async function rejectedAgents(
@@ -154,31 +163,51 @@ export function createProfilesService(
   }
 
   return {
-    async list() {
+    async list(input) {
       await ensureDefault();
+      const agentId = input?.agentId;
       const [rows, counts] = await Promise.all([
         repo.list(owner),
         repo.usageCounts(owner, binding()),
       ]);
-      return rows.map((row) => {
-        const countsFor = counts.get(row.id) ?? {
-          agents: 0,
-          channels: 0,
-          schedules: 0,
-        };
-        return {
-          id: row.id,
-          name: row.name,
-          harness: row.harness,
-          providerTemplate: row.providerTemplate,
-          model: row.model,
-          settings: row.settings,
-          seeded: row.seed === SEEDED_DEFAULT,
-          createdAt: row.createdAt.toISOString(),
-          updatedAt: row.updatedAt.toISOString(),
-          usage: countsFor,
-        };
-      });
+      return Promise.all(
+        rows.map(async (row) => {
+          const availability =
+            agentId === undefined || deps.resolveStored === undefined
+              ? null
+              : await deps
+                  .resolveStored({ profileId: row.id, agentId })
+                  .then((resolved) =>
+                    resolved === null
+                      ? {
+                          available: false,
+                          reason: "this profile is not available here",
+                        }
+                      : {
+                          available: resolved.unavailable === null,
+                          reason: resolved.unavailable?.detail ?? null,
+                        },
+                  );
+          const countsFor = counts.get(row.id) ?? {
+            agents: 0,
+            channels: 0,
+            schedules: 0,
+          };
+          return {
+            id: row.id,
+            name: row.name,
+            harness: row.harness,
+            providerTemplate: row.providerTemplate,
+            model: row.model,
+            settings: row.settings,
+            seeded: row.seed === SEEDED_DEFAULT,
+            createdAt: row.createdAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+            usage: countsFor,
+            availability,
+          };
+        }),
+      );
     },
 
     async usage(id: string) {
@@ -278,7 +307,10 @@ export function createProfilesService(
   };
 }
 
-function withUsage(row: ProfileRow, usage: ProfileUsage): ProfileWithUsage {
+function withUsage(
+  row: ProfileRow,
+  usage: ProfileUsage,
+): Omit<ProfileWithUsage, "availability"> {
   return {
     id: row.id,
     name: row.name,

@@ -6,6 +6,7 @@ import {
 import {
   profileCreateInputSchema,
   profileIdInputSchema,
+  profileListInputSchema,
   profileUpdateInputSchema,
   profileUpdateResultSchema,
   profileUsageSchema,
@@ -14,8 +15,9 @@ import {
 
 export const profilesRouter = t.router({
   list: readAgentProcedure
+    .input(profileListInputSchema)
     .output(profileViewSchema.array())
-    .query(({ ctx }) => ctx.profiles.list()),
+    .query(({ ctx, input }) => ctx.profiles.list(input)),
 
   usage: readAgentProcedure
     .input(profileIdInputSchema)

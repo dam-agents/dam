@@ -41,6 +41,7 @@ export function composeProfilesForOwner(deps: {
   bindDefaultAgentProfile: BindDefaultAgentProfile;
 } {
   const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
+  const resolver = createProfileResolver({ repo });
   const profiles = createProfilesService({
     repo,
     owner: deps.owner,
@@ -50,10 +51,11 @@ export function composeProfilesForOwner(deps: {
     ...(deps.fanOut !== undefined && { fanOut: deps.fanOut }),
     catalog: deps.catalog,
     seededProvider: seededProvider(deps.sharedProvider),
+    resolveStored: (input) => resolver.resolveStored(input),
   });
   return {
     profiles,
-    resolver: createProfileResolver({ repo }),
+    resolver,
     bindDefaultAgentProfile: profiles.bindDefaultAgentProfile,
   };
 }
