@@ -327,6 +327,10 @@ export function ModelIndicator({
                   /* UNIT_BOUNDARY_DESCRIPTION: the session takes exactly what
                    * the profile holds, so a setting the profile does not name is
                    * cleared rather than left from the previous pick. */
+                  /* UNIT_BOUNDARY_DESCRIPTION: the profile's own settings
+                   * replace the session's, and the subagent choice it did not
+                   * name is carried over through the same rule, so a primary
+                   * pick never clears the subagent one. */
                   onConfigure({
                     ...Object.fromEntries(
                       Object.keys(settings)
@@ -334,6 +338,17 @@ export function ModelIndicator({
                         .map((id) => [id, ""]),
                     ),
                     ...profile.settings,
+                    ...withSubagentSettings(
+                      subagentProfileOf(
+                        {
+                          harness,
+                          provider,
+                          model,
+                          ...(settings && { settings }),
+                        },
+                        profiles,
+                      ),
+                    ),
                   });
                   rememberSessionPair(
                     agentId,
@@ -368,7 +383,9 @@ export function ModelIndicator({
                       model,
                       ...(settings && { settings }),
                     },
-                    sessionProfiles,
+                    /* UNIT_BOUNDARY_DESCRIPTION: the section offers every
+                     * profile, so the selection is looked up in the same list. */
+                    profiles,
                   )?.id ?? null
                 }
                 onAgentPicks={() => onConfigure(withSubagentSettings(null))}

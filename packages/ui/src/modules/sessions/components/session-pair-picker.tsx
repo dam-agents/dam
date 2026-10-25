@@ -215,7 +215,21 @@ export function SessionPairPicker(props: Props) {
         id.startsWith("platformSubagent."),
       ),
     );
-    const next = { ...kept, ...profile.settings };
+    /* UNIT_BOUNDARY_DESCRIPTION: the subagent choice survives a primary pick,
+     * re-applied through the rule so its native and slot keys stay in step. */
+    const slot = subagentProfileOf(pair, profiles);
+    const next = {
+      ...kept,
+      ...profile.settings,
+      ...(slot === null
+        ? {}
+        : (withSubagent(
+            { harness: profile.harness, provider: null, model: profile.model },
+            slot,
+            capability,
+            groups.flatMap((g) => g.models.map((m) => ({ name: m.name }))),
+          ).settings ?? {})),
+    };
     choose(
       {
         harness: profile.harness,

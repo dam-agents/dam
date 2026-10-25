@@ -27,9 +27,14 @@ export function subagentChoice(
   agentModels: readonly { name: string }[],
 ): SubagentChoice {
   const catalogue = capability?.harnessConfigCatalog;
+  /* UNIT_BOUNDARY_DESCRIPTION: a harness that does not keep these settings in a
+   * session refuses them, so the rule only writes the ones its manifest lists. */
+  const keeps = (id: string) =>
+    capability?.sessionSettings?.includes(id) === true;
   const runnable =
-    profile.harness === primary.harness ||
-    agentModels.some((model) => model.name === profile.model);
+    keeps(SUBAGENT_MODEL_SETTING) &&
+    (profile.harness === primary.harness ||
+      agentModels.some((model) => model.name === profile.model));
   const effortOption = catalogue?.options.find(
     (option) => option.id === "subagentEffort",
   );
@@ -40,6 +45,7 @@ export function subagentChoice(
       ? {
           model: profile.model,
           ...(effort !== undefined &&
+            keeps("subagentEffort") &&
             effortOption?.choices.some((choice) => choice.value === effort) && {
               effort,
             }),
