@@ -68,8 +68,6 @@ export interface DelegationNode {
   templateId: string | null;
   image: string | null;
   connections: string[];
-  cpu: string | null;
-  memory: string | null;
   requestedModel: string | null;
   createdAt: string;
   completedAt: string | null;

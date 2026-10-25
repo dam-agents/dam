@@ -30,8 +30,6 @@ function row(patch: Partial<InvocationRow> = {}): InvocationRow {
     templateId: null,
     image: null,
     connections: [],
-    cpu: null,
-    memory: null,
     ttlMs: null,
     resultSchema: { type: "integer" },
     result: 42,

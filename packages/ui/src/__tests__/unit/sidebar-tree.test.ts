@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: JanUI's sidebar is one tree of Agents. An Agent row opens and closes its Session list (the open Agent opens on its own, and only that one),  a "New session" row leads an open list with no Sessions and a "New agent" row leads a tree with no Agents, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, a pin the bounded feed does not hold is looked up by its id, a closed Agent shows a pending approval before unread, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
+// TEST_OVERVIEW: JanUI's sidebar is one tree of Agents. An Agent row opens and closes its Session list (the open Agent opens on its own, and only that one, and opening its page from its row reopens a list the user closed),  a "New session" row leads an open list with no Sessions and a "New agent" row leads a tree with no Agents, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, a pin the bounded feed does not hold is looked up by its id, a closed Agent shows a pending approval before unread, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
 import { Add, AddAlt } from "@carbon/icons-react";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { createElement } from "react";
@@ -15,6 +15,7 @@ import {
   awaitsApproval,
   isExpanded,
   offFeedPins,
+  openWithPage,
   sessionContext,
   splitPinned,
   toggleExpanded,
@@ -31,13 +32,14 @@ describe("sidebar tree", () => {
     expect(isExpanded(two, "b", null)).toBe(true);
   });
 
-  // TEST_SCENARIO: the Agent open in the page opens on its own, and moving to another Agent closes it again unless the user opened it; the user can still close the open Agent. Visiting many Agents keeps one list open, not all of them.
+  // TEST_SCENARIO: the Agent open in the page opens on its own, and moving to another Agent closes it again unless the user opened it; the user can still close the open Agent, and opening its page from its row opens the list again. Visiting many Agents keeps one list open, not all of them.
   it("opens only the Agent open in the page by itself", () => {
     const none = new Map<string, boolean>();
     expect(isExpanded(none, "a", "a")).toBe(true);
     expect(isExpanded(none, "a", "b")).toBe(false);
     const closed = toggleExpanded(none, "a", "a");
     expect(isExpanded(closed, "a", "a")).toBe(false);
+    expect(isExpanded(openWithPage(closed, "a"), "a", "a")).toBe(true);
   });
 
   // TEST_SCENARIO: a pin the bounded attention feed does not hold, for example an old Session far down its Agent's list, becomes one lookup of that Session by id; pins the feed holds need none, and a pin of an Agent that is not listed is not looked up.

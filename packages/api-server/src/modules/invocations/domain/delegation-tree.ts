@@ -14,8 +14,6 @@ export interface DelegationRecord {
   templateId: string | null;
   image: string | null;
   connections: string[];
-  cpu: string | null;
-  memory: string | null;
   harnessConfig: InvocationHarnessConfig | null;
   status: InvocationStatus;
   errorReason: string | null;
@@ -42,8 +40,6 @@ function toNode(
     templateId: row.templateId,
     image: row.image,
     connections: row.connections,
-    cpu: row.cpu,
-    memory: row.memory,
     requestedModel: row.harnessConfig?.model ?? null,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,

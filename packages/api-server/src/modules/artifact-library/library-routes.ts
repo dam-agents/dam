@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { UserIdentity } from "api-server-api";
 
 import { securityLog } from "../../core/security-log.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";

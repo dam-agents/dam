@@ -1,8 +1,6 @@
 // TEST_OVERVIEW: while a Kit Update is pending, the initialization chat opened at or after its start is the update's session; the onboarding chat before it and any chat once the update ends are not.
-import { SessionType } from "api-server-api";
+import { isKitUpdateSession, SessionType } from "api-server-api";
 import { describe, expect, test } from "vitest";
-
-import { isKitUpdateSession } from "../../modules/starter-kits/lib/kit-update-session.js";
 
 const PENDING = {
   targetCommit: "b".repeat(40),

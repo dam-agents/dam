@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -188,7 +188,7 @@ This is the common case nothing else catches — nothing failed, so nothing is a
 One owner decides both, which is what stops the two paths drifting into two different ideas of what "answered" means.
 The notice tells the agent to post the answer *as* the answer rather than as a correction — nobody saw a failure, so apologising for a delay they never noticed explains the platform instead of replying to them.
 After an abandoned turn the notice says the opposite, because there the failure copy is already on screen above the agent's own post.
-If the Agent restarted out of memory since the turn began, the notice names that cause and the memory setting.
+If the Agent restarted out of memory since the turn began, the notice names that cause and that only a platform operator can raise the owner's memory budget.
 Both paths nudge at most **once**: an agent still silent afterwards is left alone, because a second notice only repeats the first, and a nudge never authors anything itself — what reaches the channel is the agent's own post, or nothing.
 A nudge waiting on its turn holds only what it needs to post — the thread and what the turn has disposed so far — never the message's downloaded images or files, since a watch can outlast the turn by hours.
 A replica standing down cancels every watch and waits, for a bounded time, for any nudge already running — one still waiting to wake the agent stands down on its own, one already prompting it finishes — and logs whether they drained or how many were abandoned at the limit.

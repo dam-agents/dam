@@ -159,14 +159,6 @@
     "resources": {
       "type": "object",
       "properties": {
-        "cpu": {
-          "type": "string",
-          "pattern": "^\\d+(\\.\\d+)?m?$"
-        },
-        "memory": {
-          "type": "string",
-          "pattern": "^\\d+(Mi|Gi)$"
-        },
         "storage": {
           "type": "string",
           "pattern": "^\\d+(Mi|Gi)$"

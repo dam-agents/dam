@@ -1,5 +1,5 @@
 [tools]
-"npm:@earendil-works/pi-coding-agent" = "1.1.0"
+"npm:@earendil-works/pi-coding-agent" = "1.3.0"
 "npm:pi-acp" = "0.0.34"
 # Offline pi installs no settings package, so pi-platform loads this one.
 # aube refuses it by default for its few weekly downloads; 1.0.2 was reviewed.

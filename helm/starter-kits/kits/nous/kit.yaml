@@ -15,13 +15,10 @@ image:
   harness: claude-code
   providers: [ibm-litellm, curve-bender, anthropic]
 resources:
-  cpu: "2"
-  memory: 4Gi
   storage: 10Gi
   note: >-
     A campaign clones, builds and runs the target system, with a git worktree
-    per arm and its own Python environment — more CPU, memory and disk than a
-    chat agent.
+    per arm and its own Python environment — more disk than a chat agent.
 connections:
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories and publish results.

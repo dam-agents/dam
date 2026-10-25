@@ -194,7 +194,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         <Callout
           tone="info"
           size="sm"
-          className="m-3 mb-0 flex items-start gap-3 text-xs"
+          className="flex items-start gap-3 rounded-none border-x-0 border-t-0 text-xs"
         >
           <span className="flex-1">
             Sign-ins made here are stored in this agent, and the agent can use

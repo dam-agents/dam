@@ -197,6 +197,7 @@ import {
   createAttentionCleanupHook,
   listAttentionAgentIds,
 } from "./modules/attention/index.js";
+import { createSessionWatchClient } from "./modules/attention/infrastructure/session-watch-client.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
@@ -284,6 +285,7 @@ import {
   createGitHosts,
   createGitRefResolver,
   createKitUpstream,
+  createKitUpdateNudge,
   createKitUpdateReporter,
   createLinkedKits,
   createResolvedCatalogRepository,
@@ -392,7 +394,6 @@ import {
   createOutcomeDelivery,
   createOutcomeWakeRetry,
 } from "./modules/satellites/index.js";
-import { createApprovalsRepository } from "./modules/approvals/infrastructure/approvals-repository.js";
 
 export async function bootstrap() {
   const config = loadConfig();
@@ -1370,11 +1371,32 @@ export async function bootstrap() {
     });
   convertDefault = (agentId) => defaultConverter.convert(agentId);
 
+  const sessionWatch = createSessionWatchClient(config.namespace, (m) =>
+    getLogger().warn(`[attention] ${m}`),
+  );
+  const kitUpdateNudge = createKitUpdateNudge({
+    pending: async (agentId) =>
+      (await agentsRepo.get(agentId))?.kitUpdatePending ?? null,
+    marks: createKitUpdateMarks(agentsRepo),
+    listSessions: (agentId, signal) =>
+      sessionWatch.listSessions(agentId, signal),
+    send: (agentId, payload) =>
+      runtimeDelivery.sessionMessages.send(agentId, payload),
+  });
   const sessionWatcher = composeSessionWatcher({
     db,
     namespace: config.namespace,
     listAgents: () => agentsRepo.list(),
     runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
+    onTurnEnded: (agentId, sessionId) => {
+      void kitUpdateNudge
+        .turnEnded(agentId, sessionId)
+        .catch((err: unknown) => {
+          getLogger().warn(
+            `[kit-update] no reminder for ${agentId}: ${formatError(err)}`,
+          );
+        });
+    },
     log: (m) => getLogger().warn(`[attention] ${m}`),
   });
 
@@ -2060,9 +2082,6 @@ export async function bootstrap() {
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
     }).artifactLibrary;
-  const artifactLibraryForSystem = (owner: string) =>
-    artifactLibraryFor(owner, "system");
-
   const environments = composeEnvironments({
     db,
     agentsFor: (owner) => harnessAgentsServiceFor(owner),

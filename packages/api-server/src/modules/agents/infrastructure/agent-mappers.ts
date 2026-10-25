@@ -8,7 +8,7 @@ import {
 import {
   GATEWAY_FAILURE_REASONS,
   NODE_FAULT_REASONS,
-  POD_FAILURE_REASONS,
+  MACHINE_FAILURE_REASONS,
 } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
 import type {
@@ -43,7 +43,7 @@ import {
   INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
   RECLAIMED_AT_KEY,
-  AGENT_POD_REASON_MACHINE_STOPPING,
+  MACHINE_STOPPING_REASON,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
   DISABLED_KEY,
@@ -138,14 +138,14 @@ export interface InfraAgent {
   podRestartReason?: string;
   signalVersion?: number;
   statusVersion?: number;
-  agentPodNotReadyReason?: string;
-  agentPodReady?: boolean;
+  machineNotReadyReason?: string;
+  machineReady?: boolean;
   gatewayPodReady?: boolean;
   gatewayPodNotReadyReason?: string;
   gatewayFailure?: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the start failures only a new image causes: it cannot be pulled or unpacked, or the machine cannot boot it. A full home volume, memory and runner placement fail on any image. A container exit on AgentPodReady is left out: that condition does not say which pod exited, and the pod a roll replaces exits on SIGTERM at the new generation. The controller's StartFailed condition says it of the current pod or machine instead.
+// UNIT_BOUNDARY_DESCRIPTION: the start failures only a new image causes: it cannot be pulled or unpacked, or the machine cannot boot it. A full home volume, memory and runner placement fail on any image. A container exit on AgentPodReady is left out: that condition does not say which workload exited, and the workload a roll replaces exits on SIGTERM at the new generation. The controller's StartFailed condition says it of the current pod or machine instead.
 // UNIT_BOUNDARY_DESCRIPTION: besides those, a machine's start is also a failed start when the node it runs on cannot serve it, which NODE_FAULT_REASONS names. That case is still a failed start of this spec, so the Agent reads as one, but the image is not what failed: the image update job holds the upgrade on it instead of moving the Agent back.
 const IMAGE_START_FAILURES = new Set([
   "ImagePullFailure",
@@ -155,7 +155,7 @@ const IMAGE_START_FAILURES = new Set([
 ]);
 
 const TERMINAL_MACHINE_REASONS = new Set(
-  [...POD_FAILURE_REASONS].filter((r) => r.startsWith("Machine")),
+  [...MACHINE_FAILURE_REASONS].filter((r) => r.startsWith("Machine")),
 );
 
 export function computeAgentState(
@@ -167,13 +167,13 @@ export function computeAgentState(
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
   if (infra.overBudget) return "over_budget";
-  if (infra.agentPodNotReadyReason === AGENT_POD_REASON_MACHINE_STOPPING)
+  if (infra.machineNotReadyReason === MACHINE_STOPPING_REASON)
     return "hibernating";
-  if (infra.agentPodReady === true && infra.gatewayPodReady === false)
+  if (infra.machineReady === true && infra.gatewayPodReady === false)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (
-    infra.agentPodNotReadyReason &&
-    TERMINAL_MACHINE_REASONS.has(infra.agentPodNotReadyReason)
+    infra.machineNotReadyReason &&
+    TERMINAL_MACHINE_REASONS.has(infra.machineNotReadyReason)
   )
     return "error";
   return "starting";
@@ -227,7 +227,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ? reconciled.message || undefined
       : undefined;
 
-  const agentPod = status.conditions?.find((c) => c.type === "AgentPodReady");
+  const machineCond = status.conditions?.find(
+    (c) => c.type === "AgentPodReady",
+  );
   const restarts = status.agentPodRestarts;
   const gatewayPod = status.conditions?.find(
     (c) => c.type === "GatewayPodReady",
@@ -264,10 +266,10 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ? undefined
       : (startFailed?.status === "True" &&
             startFailed.observedGeneration === generation) ||
-          (agentPod?.status === "False" &&
-            agentPod.observedGeneration === generation &&
-            (IMAGE_START_FAILURES.has(agentPod.reason ?? "") ||
-              NODE_FAULT_REASONS.has(agentPod.reason ?? "")))
+          (machineCond?.status === "False" &&
+            machineCond.observedGeneration === generation &&
+            (IMAGE_START_FAILURES.has(machineCond.reason ?? "") ||
+              NODE_FAULT_REASONS.has(machineCond.reason ?? "")))
         ? "failed"
         : ready?.status === "True" && ready.observedGeneration === generation
           ? "ready"
@@ -346,23 +348,23 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     reconciledReason:
       reconciled?.status === "False" ? reconciled.reason : undefined,
     podTerminationReason:
-      agentPod?.status === "False" &&
-      agentPod.message &&
-      agentPod.reason &&
-      POD_FAILURE_REASONS.has(agentPod.reason)
-        ? agentPod.message
+      machineCond?.status === "False" &&
+      machineCond.message &&
+      machineCond.reason &&
+      MACHINE_FAILURE_REASONS.has(machineCond.reason)
+        ? machineCond.message
         : undefined,
     podTerminationCode:
-      agentPod?.status === "False" &&
-      agentPod.reason &&
-      POD_FAILURE_REASONS.has(agentPod.reason)
-        ? agentPod.reason
+      machineCond?.status === "False" &&
+      machineCond.reason &&
+      MACHINE_FAILURE_REASONS.has(machineCond.reason)
+        ? machineCond.reason
         : undefined,
     notReadyMessage:
-      agentPod?.status === "False" &&
-      agentPod.message &&
-      !POD_FAILURE_REASONS.has(agentPod.reason ?? "")
-        ? agentPod.message
+      machineCond?.status === "False" &&
+      machineCond.message &&
+      !MACHINE_FAILURE_REASONS.has(machineCond.reason ?? "")
+        ? machineCond.message
         : undefined,
     startFailure:
       startFailed?.status === "True" &&
@@ -383,9 +385,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       statusVersion: status.statusVersion,
     }),
     podRestartReason: status.agentPodRestartReason || undefined,
-    agentPodNotReadyReason:
-      agentPod?.status === "False" ? agentPod.reason : undefined,
-    agentPodReady: agentPod ? agentPod.status === "True" : undefined,
+    machineNotReadyReason:
+      machineCond?.status === "False" ? machineCond.reason : undefined,
+    machineReady: machineCond ? machineCond.status === "True" : undefined,
     gatewayPodReady: gatewayPod ? gatewayPod.status === "True" : undefined,
     gatewayPodNotReadyReason:
       gatewayPod?.status === "False" ? gatewayPod.reason : undefined,

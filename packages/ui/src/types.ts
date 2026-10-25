@@ -125,7 +125,6 @@ export interface TemplateView {
   releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
-  size?: { cpu?: string; memory?: string };
 }
 
 export interface OnboardingStep {
@@ -171,7 +170,6 @@ export interface AgentView {
   overBudget: boolean;
   overBudgetMessage?: string;
   reclaimed?: { at: string; for: "memory" | "compute" };
-  size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
   podTerminationCode?: string;
   notReadyMessage?: string;

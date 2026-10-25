@@ -1,7 +1,6 @@
 import {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
-  type AttentionDismissal,
   type AttentionItem,
   type AttentionList,
   type AttentionService,

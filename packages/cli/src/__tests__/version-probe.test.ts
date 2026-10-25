@@ -144,9 +144,7 @@ describe("HttpVersionProbe", () => {
 
   it("aborts with timeout error when fetch never resolves", async () => {
     vi.useRealTimers();
-    stubFetch(
-      (_url) => new Promise<Response>((_, reject) => {}) as Promise<Response>,
-    );
+    stubFetch((_url) => new Promise<Response>(() => {}) as Promise<Response>);
 
     globalThis.fetch = vi.fn(
       async (_input, init?: RequestInit) =>

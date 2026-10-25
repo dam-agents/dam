@@ -48,7 +48,7 @@ describe("spawn", () => {
       seed: { url: "https://github.example/acme/tool" },
       install: { command: "make" },
       env: [{ name: "A", value: "1" }],
-      resources: { cpu: "2", memory: "4Gi" },
+      resources: { storage: "20Gi" },
       pollMs: 0,
     });
 
@@ -62,7 +62,7 @@ describe("spawn", () => {
         seed: { url: "https://github.example/acme/tool" },
         install: { command: "make" },
         env: [{ name: "A", value: "1" }],
-        resources: { cpu: "2", memory: "4Gi" },
+        resources: { storage: "20Gi" },
       },
     });
   });

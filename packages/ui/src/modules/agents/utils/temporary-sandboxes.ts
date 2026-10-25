@@ -1,22 +1,15 @@
 import type { AgentView } from "../../../types.js";
-import { parseCpuMilli, parseMemoryMi } from "../../sandboxes/lib/quantity.js";
-
-export interface TemporaryDraw {
-  count: number;
-  cpuMilli: number;
-  memoryMi: number;
-}
 
 export interface TemporarySandboxSplit {
   visible: AgentView[];
-  drawByDriver: Map<string, TemporaryDraw>;
+  temporaryCountByDriver: Map<string, number>;
 }
 
 export function splitTemporarySandboxes(
   agents: AgentView[],
 ): TemporarySandboxSplit {
   const visible: AgentView[] = [];
-  const drawByDriver = new Map<string, TemporaryDraw>();
+  const temporaryCountByDriver = new Map<string, number>();
 
   for (const agent of agents) {
     if (agent.spawnedBy === null) {
@@ -29,30 +22,10 @@ export function splitTemporarySandboxes(
       agent.state !== "preparing_workspace"
     )
       continue;
-    const draw = drawByDriver.get(agent.spawnedBy) ?? {
-      count: 0,
-      cpuMilli: 0,
-      memoryMi: 0,
-    };
-    draw.count += 1;
-    draw.cpuMilli += parseCpuMilli(agent.size.cpu) ?? 0;
-    draw.memoryMi += parseMemoryMi(agent.size.memory) ?? 0;
-    drawByDriver.set(agent.spawnedBy, draw);
-  }
-  return { visible, drawByDriver };
-}
-
-export function formatTemporaryDraw(draw: TemporaryDraw): string {
-  const parts: string[] = [];
-  if (draw.cpuMilli > 0) {
-    const cores = draw.cpuMilli / 1000;
-    parts.push(
-      `${Number.isInteger(cores) ? cores : cores.toFixed(1)} core${cores === 1 ? "" : "s"}`,
+    temporaryCountByDriver.set(
+      agent.spawnedBy,
+      (temporaryCountByDriver.get(agent.spawnedBy) ?? 0) + 1,
     );
   }
-  if (draw.memoryMi > 0) {
-    const gi = draw.memoryMi / 1024;
-    parts.push(`${Number.isInteger(gi) ? gi : gi.toFixed(1)} Gi`);
-  }
-  return parts.length > 0 ? `using ${parts.join(", ")}` : "";
+  return { visible, temporaryCountByDriver };
 }

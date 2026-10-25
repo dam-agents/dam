@@ -3,10 +3,10 @@
 -- channel's turns and a schedule point at instead of storing a copy.
 -- Additive and referenced by nothing yet: the agent and channel columns are
 -- nullable, so every existing row keeps running on the pair it already holds.
--- The XOR check states the one invariant every reader relies on — a chat
--- default is a profile reference or an inline pair, never both — and the
--- restrictive foreign keys make a delete of a referenced profile impossible
--- rather than a check-then-act race.
+-- The XOR check states the invariant every reader relies on — a chat default is
+-- a profile reference or an inline pair, never both — and the restrictive
+-- foreign keys make deleting a referenced profile impossible rather than a
+-- check-then-act race.
 CREATE TABLE "profile_seeds" (
 	"owner" text PRIMARY KEY NOT NULL,
 	"seeded_at" timestamp with time zone DEFAULT now() NOT NULL

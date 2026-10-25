@@ -26,8 +26,6 @@ function runningRow(id: string): InvocationRow {
     templateId: null,
     image: null,
     connections: [],
-    cpu: null,
-    memory: null,
     ttlMs: null,
     createdAt: new Date(),
     owner: "owner-1",

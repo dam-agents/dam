@@ -312,6 +312,7 @@ export {
   seedStampSchema,
   kitUpdatePendingSchema,
 } from "./modules/starter-kits/schemas.js";
+export { isKitUpdateSession } from "./modules/starter-kits/kit-update-session.js";
 export { requirementAccepts } from "./modules/starter-kits/types.js";
 export { resolveKitSchedulePrecheck } from "./modules/starter-kits/types.js";
 export type {
