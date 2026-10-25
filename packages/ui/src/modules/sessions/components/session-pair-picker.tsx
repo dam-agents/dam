@@ -205,14 +205,21 @@ export function SessionPairPicker(props: Props) {
       (p) => p.templateId === profile.providerTemplate,
     );
     setFromProfile({ id: profile.id, name: profile.name });
+    /* UNIT_BOUNDARY_DESCRIPTION: the profile owns the session's own settings;
+     * the platform sub-agent slot keeps its reference and its keys, so a pick
+     * does not clear a choice the profile has no opinion about. */
+    const kept = Object.fromEntries(
+      Object.entries(pair?.settings ?? {}).filter(([id]) =>
+        id.startsWith("platformSubagent."),
+      ),
+    );
+    const next = { ...kept, ...profile.settings };
     choose(
       {
         harness: profile.harness,
         provider: connection?.id ?? null,
         model: profile.model,
-        ...(Object.keys(profile.settings).length > 0 && {
-          settings: profile.settings,
-        }),
+        ...(Object.keys(next).length > 0 && { settings: next }),
       },
       { profileId: profile.id },
     );
