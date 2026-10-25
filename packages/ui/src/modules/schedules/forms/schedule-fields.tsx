@@ -25,6 +25,7 @@ import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { ProfilePicker } from "../../profiles/components/profile-picker.js";
 import { useProfileAttach } from "../../profiles/hooks/use-profile-attach.js";
+import { saveChannelProfile } from "../../sandboxes/lib/channel-profile-save.js";
 import {
   useHarnessCatalog,
   useHarnessCatalogModels,
@@ -565,9 +566,11 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
            * so the schedule the user is making runs on it — the attach alone
            * would leave the form on Custom selection. */
           onAttach={(profile) =>
-            void attach(profile).then(
-              (ok) => ok && profileField.onChange(profile.id),
-            )
+            void saveChannelProfile({
+              profile,
+              attach,
+              save: (id) => profileField.onChange(id),
+            })
           }
           onManage={manage}
           testId="schedule-profile"
