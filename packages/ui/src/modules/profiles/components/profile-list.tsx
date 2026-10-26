@@ -11,7 +11,8 @@ export interface ProfileSlot {
   selectedId: string | null;
   /** UNIT_BOUNDARY_DESCRIPTION: the values the slot holds when no profile matches them, shown on its Custom selection row; null while a profile or the agent picks. */
   custom: ReactNode | null;
-  onPick: (profile: ProfileWithUsage) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: `connectionId` is the provider a pick just granted, which the agent's grant list does not show yet. */
+  onPick: (profile: ProfileWithUsage, connectionId?: string) => void;
   onCustom: () => void;
 }
 
@@ -45,7 +46,7 @@ export function ModelConfiguration({
         selectedId={slot.selectedId}
         onPick={slot.onPick}
         onAttach={(profile) =>
-          void attach(profile).then((ok) => ok && slot.onPick(profile))
+          void attach(profile).then((id) => id && slot.onPick(profile, id))
         }
         onManage={manage}
       />

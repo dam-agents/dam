@@ -8,7 +8,7 @@ import {
   useProviderConnections,
 } from "../../sessions/api/session-pair.js";
 
-/** UNIT_BOUNDARY_DESCRIPTION: the repair a profile the agent cannot run offers: grant the owner's Connection of its provider (plan §c), or open the page that connects one. */
+/** UNIT_BOUNDARY_DESCRIPTION: the repair a profile the agent cannot run offers: grant the owner's Connection of its provider (plan §c), or open the page that connects one. `attach` answers the Connection it granted, so the pick that follows names it rather than read a grant list from before the grant. */
 export function useProfileAttach(agentId: string | null) {
   const { owned } = useProviderConnections(agentId);
   const { grant } = useGrantProvider(agentId);
@@ -17,20 +17,19 @@ export function useProfileAttach(agentId: string | null) {
 
   return {
     manage,
-    attach: async (profile: ProfileWithUsage): Promise<boolean> => {
+    attach: async (profile: ProfileWithUsage): Promise<string | null> => {
       const connection = owned.find(
         (p) => p.templateId === profile.providerTemplate,
       );
       if (!connection) {
         manage();
-        return false;
+        return null;
       }
-      const ok = await grant(connection.id);
-      if (ok)
-        await queryClient.invalidateQueries({
-          queryKey: trpc.profiles.list.queryKey(),
-        });
-      return ok;
+      if (!(await grant(connection.id))) return null;
+      await queryClient.invalidateQueries({
+        queryKey: trpc.profiles.list.queryKey(),
+      });
+      return connection.id;
     },
   };
 }

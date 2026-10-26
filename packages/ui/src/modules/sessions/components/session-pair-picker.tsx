@@ -362,7 +362,7 @@ export function SessionPairPicker(props: Props) {
                     primary || !pair ? null : (
                       <PairSummary harness={pair.harness} label={label ?? ""} />
                     ),
-                  onPick: (profile) => {
+                  onPick: (profile, connectionId) => {
                     setFromProfile(profile);
                     choose(
                       {
@@ -373,9 +373,11 @@ export function SessionPairPicker(props: Props) {
                           profile.harness === pair?.harness ? models : [],
                         ),
                         provider:
+                          connectionId ??
                           providers.granted.find(
                             (p) => p.templateId === profile.providerTemplate,
-                          )?.id ?? null,
+                          )?.id ??
+                          null,
                       },
                       { profileId: profile.id },
                     );

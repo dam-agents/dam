@@ -80,7 +80,7 @@ export function ProfilePicker({
           selectedId={value}
           onPick={pick}
           onAttach={(profile) =>
-            void attach(profile).then((ok) => ok && pick(profile))
+            void attach(profile).then((id) => id && pick(profile))
           }
           onManage={manage}
         />

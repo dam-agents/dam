@@ -35,7 +35,10 @@ vi.mock("../../modules/profiles/api/queries.js", () => ({
 }));
 
 vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
-  useProfileAttach: () => ({ attach: async () => true, manage: () => {} }),
+  useProfileAttach: () => ({
+    attach: async () => "conn-attached",
+    manage: () => {},
+  }),
 }));
 
 vi.mock("../../modules/agents/hooks/use-operable-state.js", () => ({

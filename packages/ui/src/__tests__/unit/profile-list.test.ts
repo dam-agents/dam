@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from "vitest";
 import { ProfileChoices } from "../../modules/profiles/components/profile-list.js";
 
 vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
-  useProfileAttach: () => ({ attach: async () => true, manage: () => {} }),
+  useProfileAttach: () => ({
+    attach: async () => "conn-attached",
+    manage: () => {},
+  }),
 }));
 
 const profile = (

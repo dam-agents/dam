@@ -190,7 +190,10 @@ vi.mock("../../modules/profiles/lib/profile-detail.js", () => ({
 }));
 
 vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
-  useProfileAttach: () => ({ attach: async () => true, manage: () => {} }),
+  useProfileAttach: () => ({
+    attach: async () => "conn-oai",
+    manage: () => {},
+  }),
 }));
 
 vi.mock("../../modules/profiles/api/mutations.js", () => ({
@@ -1210,6 +1213,59 @@ describe("a model from a provider the agent is not connected to", () => {
     } finally {
       act(() => root.unmount());
       state.catalog = routedCatalog;
+    }
+  });
+});
+
+describe("a profile whose provider a pick connects", () => {
+  /** TEST_SCENARIO: the profile's provider is the owner's but not the
+   * agent's; the pick grants it, and the new chat starts on that provider and
+   * the profile's model, not on another provider with no model, though the
+   * agent's grant list read before the grant does not show it yet. */
+  it("starts the new chat on the provider the pick just granted", async () => {
+    profilesState = [
+      {
+        id: "p-oai",
+        name: "OpenAI review",
+        harness: "pi",
+        providerTemplate: "openai",
+        model: "openai/gpt-5.5",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 0, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: true },
+      },
+    ];
+    state.chosenModel.mockReset();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+      const row = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("OpenAI review"),
+      )!;
+      await act(async () => row.click());
+      expect(state.chosenModel).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({
+          harness: "pi",
+          provider: "conn-oai",
+          model: "openai/gpt-5.5",
+        }),
+      );
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
     }
   });
 });
