@@ -37,31 +37,32 @@ export function Sidebar() {
   const { width, resizing, resize, endResize } = useSidebarWidth();
 
   return (
-    <>
-      <nav
-        className={cn(
-          "hidden md:flex flex-col h-full px-2 bg-card border-r border-border shrink-0",
-          !resizing && "transition-[width]",
-        )}
-        style={{ width: expanded ? width : SIDEBAR_COLLAPSED_W }}
-        data-testid="app-sidebar"
-      >
-        <SidebarHeader
-          expanded={expanded}
-          onToggle={() => {
-            if (crowded) setOpenedWhileCrowded(!expanded);
-            setExpanded(!expanded);
-          }}
-          onHome={home.navigate}
-        />
-        {expanded ? (
-          <SidebarContent stickyHeaderClassName="bg-card" />
-        ) : (
-          <CollapsedRail />
-        )}
-      </nav>
+    <nav
+      className={cn(
+        "hidden md:flex flex-col h-full px-2 bg-card border-r border-border shrink-0 relative",
+        !resizing && "transition-[width]",
+      )}
+      style={{ width: expanded ? width : SIDEBAR_COLLAPSED_W }}
+      data-testid="app-sidebar"
+    >
+      <SidebarHeader
+        expanded={expanded}
+        onToggle={() => {
+          if (crowded) setOpenedWhileCrowded(!expanded);
+          setExpanded(!expanded);
+        }}
+        onHome={home.navigate}
+      />
+      {expanded ? (
+        <SidebarContent stickyHeaderClassName="bg-card" />
+      ) : (
+        <CollapsedRail />
+      )}
       {expanded && (
-        <div className="hidden md:flex" data-testid="app-sidebar-resize">
+        <div
+          className="absolute inset-y-0 -right-1 hidden w-1 md:flex"
+          data-testid="app-sidebar-resize"
+        >
           <ResizeHandle
             side="left"
             label="Resize sidebar"
@@ -71,7 +72,7 @@ export function Sidebar() {
           />
         </div>
       )}
-    </>
+    </nav>
   );
 }
 
