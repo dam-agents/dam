@@ -123,11 +123,8 @@ OUTER_GATEWAY_CA=/etc/platform/ca/ca.crt
 APP_PORT=4444
 BACKCHANNEL="${usage_backchannel:-false}"
 # An Environment is an install of its own, on its own cluster, whose addresses
-# its endpoints name: a name would only fight them.
-if [ "$CLUSTER_TARGET" = environment ] && [ -n "$CLUSTER_INSTALL" ]; then
-  echo "FATAL: --name is for the installs on this host's cluster; an Environment's install is the Environment's (pass --environment <name> alone)." >&2
-  exit 1
-fi
+# its endpoints name: the resolver (.mise/lib/cluster.sh) gives it the default
+# install's name and refuses one, so nothing below sees a name here.
 if [ "$CLUSTER_TARGET" = environment ]; then
   ENV_VALUES="$(env_describe | env_chart_values)" || { echo "FATAL: cannot install into Environment $CLUSTER_ENVIRONMENT; see above" >&2; exit 1; }
   while IFS='=' read -r key value; do
@@ -220,9 +217,11 @@ kvm_usable() { python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 
 # On a Mac the VM runner runs on the Mac itself, on its own hypervisor, rather
 # than as pods in the k3s VM on a hypervisor nested inside it: a nested guest
 # boots several times slower, and only M3 and later nest at all.
-# PLATFORM_NESTED_VIRT=1 keeps the pods.
+# PLATFORM_NESTED_VIRT=1 keeps the pods. Only a lima cluster has one: a host
+# cluster runs its runners in the cluster, and an Environment's node cannot
+# reach this Mac's loopback, so its install leaves the host runner alone.
 HOST_RUNNER=""
-if [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
+if [ "$CLUSTER_TARGET" = lima ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
   . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
   HOST_RUNNER=1
   export VM_HOST_RUNNER=1
@@ -1271,7 +1270,7 @@ fi
 # the staging started at step 1d, beside the chart install, and the two rarely
 # end together. The staging's own span is the "vm images staging" pair.
 [ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images waited"
-[ -z "$HOST_RUNNER" ] || SKIP_IMAGE_BUILD="${RUNNER_IMAGE_BUILT:-}" mise run cluster:host-runner
+[ -z "$HOST_RUNNER" ] || SKIP_IMAGE_BUILD="${RUNNER_IMAGE_BUILT:-}" mise run cluster:host-runner -- ${CLUSTER_INSTALL:+--name=$CLUSTER_INSTALL}
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
 # long-lived monitor connection is closed, topology stuck Unknown, and it does not

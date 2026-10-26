@@ -2,4 +2,10 @@
 #MISE description="Redeploy only the chart, for values, template or secret changes; extra args go to cluster:install"
 #MISE raw=true
 # No image rebuild, no image load, no pod restart.
-exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install "$@"
+# The args go on as they came: the resolver below consumes the leading
+# --environment/--name, and the install has to see them itself to act on the
+# same target and install.
+args=("$@")
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+cluster_require_install || exit 1
+exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 CLUSTER_ANNOUNCED=1 mise run cluster:install "${args[@]}"

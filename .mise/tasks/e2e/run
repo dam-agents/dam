@@ -2,7 +2,7 @@
 #MISE alias="e2e"
 #MISE description="Run Playwright e2e: spin up fresh test cluster, run the smoke suite, tear down"
 #MISE raw=true
-#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default" }
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 #USAGE flag "--headed" help="Run Playwright headed"
 #USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/"
 set -eo pipefail
