@@ -24,10 +24,16 @@ interface Props {
   onSelect: () => void;
   onOpenPeople: () => void;
   actions: ReactNode;
+  actionCount: 3 | 4;
   filter: ReactNode;
   filtered: boolean;
   children?: ReactNode;
 }
+
+const ACTIONS_PADDING = {
+  3: { shown: "pr-[86px]", hover: "group-hover/agent:pr-[86px]" },
+  4: { shown: "pr-[112px]", hover: "group-hover/agent:pr-[112px]" },
+} as const;
 
 const HOVER_REVEAL =
   "transition-opacity group-hover/agent:opacity-100 group-focus-within/agent:opacity-100 group-has-[[data-state=open]]/agent:opacity-100";
@@ -46,6 +52,7 @@ export function SidebarAgentRow({
   onSelect,
   onOpenPeople,
   actions,
+  actionCount,
   filter,
   filtered,
   children,
@@ -77,8 +84,8 @@ export function SidebarAgentRow({
           className={cn(
             "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
             selected
-              ? "pr-[86px]"
-              : ["group-hover/agent:pr-[86px]", filtered && "pr-[34px]"],
+              ? ACTIONS_PADDING[actionCount].shown
+              : [ACTIONS_PADDING[actionCount].hover, filtered && "pr-[34px]"],
             open
               ? "text-foreground"
               : mood !== "awake"

@@ -27,7 +27,10 @@ import { useAgents, useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../hooks/use-sidebar-order-actions.js";
-import { SidebarAgentActions } from "./sidebar-agent-actions.js";
+import {
+  hasChannelActions,
+  SidebarAgentActions,
+} from "./sidebar-agent-actions.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 export function SidebarAgents({
@@ -109,6 +112,7 @@ export function SidebarAgents({
             stopPropagation
           />
         }
+        actionCount={hasChannelActions(available) ? 4 : 3}
         actions={
           <SidebarAgentActions
             channels={available}
