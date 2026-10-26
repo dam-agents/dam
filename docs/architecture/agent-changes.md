@@ -25,8 +25,9 @@ Every worktree git knows for a found repository is listed under it, also one out
 
 For each Change Set the runtime reports the size of its change against its **base** — the merge-base with the repository's default branch, the same diff a pull request shows — the commits ahead of that base, and whether anything is still uncommitted.
 Untracked files are part of the change.
-It also links the open pull request of the branch.
-The lookup goes through the agent's own GitHub connection, so the credential gateway decides it like any call the agent makes: an agent with no GitHub connection gets no link.
+It also links the open pull request of the branch, with where it stands: a draft, waiting for review, approved, changes requested, merged or closed, and whether it has merge conflicts.
+The lookup asks GitHub's GraphQL API, and goes through the agent's own GitHub connection, so the credential gateway decides it like any call the agent makes: an agent with no GitHub connection gets no link.
+GitHub matches a head branch by its name alone, so a pull request from a fork's branch of the same name is not taken for the branch's own.
 Lookups are cached for a short time, because every refresh would otherwise ask GitHub again.
 
 A diff compares a Change Set to its base or to its last commit (the uncommitted part only).
@@ -64,9 +65,14 @@ A pushed branch is looked up on the remote it tracks.
 That record is per Session and survives the panel being closed and the machine restarting; it is bounded per Session and in total.
 The open pull request of a recorded branch is attached to the record when the panel finds it, when the Session's tool calls settle, and right after a push; a pushed branch is looked up on the remote it tracks, whatever its worktree has checked out since.
 A link once found is kept, so a Session still links its pull request after it is merged.
+Its state is not frozen with it: while someone watches the sessions list, the runtime reads the state of the pull requests the list showed again once a minute, in one query, and a change tells the list to read again.
+A merged pull request is not read again: nothing changes it any more.
 
 The sessions list carries this record as badges of the repositories a Session has a pull request in, each with its number, wherever the clone is — `/tmp` included.
 A repository the Session only committed in shows no badge: the tools an agent runs commit in repositories of their own too, so a badge without a pull request tells the user nothing.
 Two badges of one repository add their branch, or the worktree's directory when the branch is the same, so they are told apart without hovering.
+A badge's color follows its pull request's state, the way Claude Code colors its pull request indicator: gray for a draft, yellow while review is pending, green once approved, red for changes requested, purple once merged.
+A closed pull request is red as on GitHub, with its number struck through so it is not read as changes requested, and merge conflicts show in orange over the review color.
+The badge's tooltip names the state, so the color is not the only signal.
 The panel uses it to open on the Change Set the Session committed in last, and to group the list: *changed in this Session* first, then other repositories with changes, then clean ones.
 When the agent goes on to commit in another Change Set, the panel stays where the user is and marks the other one with a new-changes dot.

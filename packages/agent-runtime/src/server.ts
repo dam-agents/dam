@@ -64,6 +64,7 @@ import {
   composeChanges,
   createGitTraceReader,
   gitTraceEnv,
+  PULL_REQUEST_TTL_MS,
   sessionEnvVarsOf,
 } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
@@ -792,6 +793,7 @@ const ptyLog = (sid: string, msg: string) =>
 const PTY_LIVENESS_SWEEP_MS = 1_000;
 const ptyLiveness = new Set<string>();
 let ptyLivenessTimer: NodeJS.Timeout | undefined;
+let pullRequestTimer: NodeJS.Timeout | undefined;
 
 function sweepPtyLiveness(): void {
   let changed = false;
@@ -811,16 +813,24 @@ function sweepPtyLiveness(): void {
 }
 
 sessionChanges.watch(() => runtimeChannel.sessionDirectory.report());
+changes.onPullRequestsChanged(() => sessionChanges.announce());
 
 sessionChanges.onDemand({
   start: () => {
     if (ptyLivenessTimer) return;
     ptyLivenessTimer = setInterval(sweepPtyLiveness, PTY_LIVENESS_SWEEP_MS);
     ptyLivenessTimer.unref?.();
+    pullRequestTimer = setInterval(
+      changes.refreshPullRequests,
+      PULL_REQUEST_TTL_MS,
+    );
+    pullRequestTimer.unref?.();
   },
   stop: () => {
     if (ptyLivenessTimer) clearInterval(ptyLivenessTimer);
+    if (pullRequestTimer) clearInterval(pullRequestTimer);
     ptyLivenessTimer = undefined;
+    pullRequestTimer = undefined;
     ptyLiveness.clear();
   },
 });

@@ -4,6 +4,7 @@ import {
   type ChangeSet,
   type ChangesNotice,
   type ChangesService,
+  type PullRequestLink,
   type SessionRepository,
 } from "agent-runtime-api";
 
@@ -31,6 +32,8 @@ import {
 const SNAPSHOT_REUSE_MS = 1_000;
 const NOTICE_INTERVAL_MS = 2_000;
 const SESSION_PULL_REQUEST_CHECK_MS = 30_000;
+const SHOWN_PULL_REQUESTS_MAX = 100;
+const PULL_REQUEST_STATES_PER_QUERY = 50;
 
 interface ChangeSetEntry {
   changeSet: Omit<ChangeSet, "sessionEditedAt">;
@@ -52,6 +55,8 @@ export interface ChangesRuntime extends ChangesService {
   onGitCommand(command: GitCommand): Promise<void>;
   onToolCallSettled(sessionId: string): void;
   repositoriesOf(sessionId: string): SessionRepository[];
+  refreshPullRequests(): void;
+  onPullRequestsChanged(listener: () => void): () => void;
 }
 
 export function createChangesService(deps: {
@@ -109,6 +114,49 @@ export function createChangesService(deps: {
       if (pullRequest)
         deps.touched.linkPullRequest(touched.path, branch, pullRequest);
     }
+  }
+
+  const pullRequestListeners = new Set<() => void>();
+  const shownPullRequests = new Map<string, PullRequestLink>();
+  let refreshingStates = false;
+
+  function show(link: PullRequestLink): boolean {
+    const known = shownPullRequests.delete(link.url);
+    shownPullRequests.set(link.url, link);
+    if (shownPullRequests.size > SHOWN_PULL_REQUESTS_MAX)
+      shownPullRequests.delete(shownPullRequests.keys().next().value!);
+    return !known;
+  }
+
+  async function refreshStates(): Promise<void> {
+    if (refreshingStates) return;
+    refreshingStates = true;
+    try {
+      const open = [...shownPullRequests.values()].filter(
+        ({ state }) => state !== "merged",
+      );
+      let changed = false;
+      for (let i = 0; i < open.length; i += PULL_REQUEST_STATES_PER_QUERY) {
+        const fresh = await deps.pullRequests.states(
+          open.slice(i, i + PULL_REQUEST_STATES_PER_QUERY),
+        );
+        for (const link of fresh) {
+          shownPullRequests.set(link.url, link);
+          if (deps.touched.updatePullRequest(link)) changed = true;
+        }
+      }
+      if (changed) for (const listener of pullRequestListeners) listener();
+    } finally {
+      refreshingStates = false;
+    }
+  }
+
+  function refreshPullRequests(): void {
+    void refreshStates().catch((error: unknown) =>
+      deps.log(
+        `refreshing the pull requests' states failed: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
   }
 
   async function discover(extraPaths: readonly string[]): Promise<Snapshot> {
@@ -354,7 +402,20 @@ export function createChangesService(deps: {
     },
 
     repositoriesOf(sessionId) {
-      return deps.touched.repositoriesOf(sessionId);
+      const repositories = deps.touched.repositoriesOf(sessionId);
+      let unseen = false;
+      for (const { pullRequest } of repositories)
+        if (pullRequest && show(pullRequest) && !pullRequest.state)
+          unseen = true;
+      if (unseen) refreshPullRequests();
+      return repositories;
+    },
+
+    refreshPullRequests,
+
+    onPullRequestsChanged(listener) {
+      pullRequestListeners.add(listener);
+      return () => pullRequestListeners.delete(listener);
     },
   };
 }
