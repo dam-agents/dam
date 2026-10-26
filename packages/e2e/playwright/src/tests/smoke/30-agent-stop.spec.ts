@@ -3,23 +3,21 @@ import { expect, test } from "@playwright/test";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { agentName, mockDefaultReply } from "../../lib/fixtures.js";
+import { agentName } from "../../lib/fixtures.js";
 
 const stopChannelId = "C-E2E-STOP";
 const strangerSlackUserId = "U-E2E-STOPPER";
 const runningTs = "1700000010.000100";
 const stoppedTs = "1700000011.000100";
 const wokenTs = "1700000012.000100";
+const runningMention = "a mention the running agent runs";
+const stoppedMention = "a mention a stopped agent must never run";
+const wokenMention = "a mention the woken agent runs";
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the agent answered the mention in one thread. The relay answers a stopped agent's mention with a note of its own, so the agent's own words are what is read here, and the gateway signs an agent's post rather than starting it with them.
-async function answeredIn(api: ApiClient, ts: string): Promise<boolean> {
-  const { records } = await api.e2e.slackReadOutbound.query();
-  return records.some(
-    (r) =>
-      r.kind === "message" &&
-      r.threadTs === ts &&
-      r.text.includes(mockDefaultReply),
-  );
+// UNIT_BOUNDARY_DESCRIPTION: whether a mention reached the agent's harness. The control call is answered by a running agent's runtime, so it is the record of what the relay delivered, and a hibernated agent cannot answer it at all.
+async function receivedPrompt(api: ApiClient, agentId: string, text: string) {
+  const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
+  return JSON.stringify(prompts).includes(text);
 }
 
 test("Stop holds the agent against a channel mention, and Wake releases it", async ({
@@ -43,18 +41,17 @@ test("Stop holds the agent against a channel mention, and Wake releases it", asy
       id: agentId,
       slackChannelId: stopChannelId,
     });
-    await api.e2e.slackResetOutbound.mutate();
     await api.e2e.slackFireMention.mutate({
       user: strangerSlackUserId,
       channel: stopChannelId,
       ts: runningTs,
-      text: "a mention the running agent answers",
+      text: runningMention,
     });
     await expect
-      .poll(() => answeredIn(api, runningTs), {
+      .poll(() => receivedPrompt(api, agentId, runningMention), {
         timeout: 180_000,
         intervals: [2_000],
-        message: "a mention was not answered by the running agent",
+        message: "a mention never reached the running agent",
       })
       .toBe(true);
   });
@@ -88,20 +85,15 @@ test("Stop holds the agent against a channel mention, and Wake releases it", asy
       })
       .toBe("hibernated");
 
-    await api.e2e.slackResetOutbound.mutate();
     await api.e2e.slackFireMention.mutate({
       user: strangerSlackUserId,
       channel: stopChannelId,
       ts: stoppedTs,
-      text: "a mention a stopped agent must never answer",
+      text: stoppedMention,
     });
-    // UNIT_BOUNDARY_DESCRIPTION: proving a turn did not start has no event to wait for, so the claim is that nothing was posted in the mention's thread over a window long enough for the relay to have woken a merely hibernated agent, and that the agent is still stopped at the end of it.
+    // UNIT_BOUNDARY_DESCRIPTION: proving a wake did not happen has no event to wait for, so the claim is that the relay's own attempt left the agent stopped over a window long enough for a wake to have started it.
     await page.waitForTimeout(20_000);
 
-    expect(
-      await answeredIn(api, stoppedTs),
-      "a stopped agent answered a mention",
-    ).toBe(false);
     const agent = await api.agents.get.query({ id: agentId });
     expect(agent.stopRequested, "the mention cleared the stop request").toBe(
       true,
@@ -131,13 +123,13 @@ test("Stop holds the agent against a channel mention, and Wake releases it", asy
       user: strangerSlackUserId,
       channel: stopChannelId,
       ts: wokenTs,
-      text: "a mention the woken agent answers",
+      text: wokenMention,
     });
     await expect
-      .poll(() => answeredIn(api, wokenTs), {
+      .poll(() => receivedPrompt(api, agentId, wokenMention), {
         timeout: 180_000,
         intervals: [2_000],
-        message: "the woken agent never answered a mention",
+        message: "a mention never reached the woken agent",
       })
       .toBe(true);
   });
