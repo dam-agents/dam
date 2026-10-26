@@ -99,7 +99,6 @@ type RouterModel = {
 };
 
 export default async function register(pi: ExtensionAPI): Promise<void> {
-  if (env("PI_PLATFORM_REPORT_ERRORS") === "1") reportProviderErrors(pi);
   const state = loadState();
   const platformModel = env("PLATFORM_MODEL");
   if (platformModel) state.settings.defaultModel = platformModel;
@@ -502,26 +501,6 @@ function splitMixedDelta(line: string): string {
     choices: keeping((f) => !REASONING_FIELDS.includes(f)),
   };
   return `data: ${JSON.stringify(reasoning)}\n\ndata: ${JSON.stringify(content)}`;
-}
-
-function reportProviderErrors(pi: ExtensionAPI): void {
-  let lastError: string | undefined;
-  pi.on("message_end", (event) => {
-    const message = event.message as {
-      role?: string;
-      stopReason?: string;
-      errorMessage?: string;
-    };
-    if (message.role !== "assistant") return;
-    lastError =
-      message.stopReason === "error" ? message.errorMessage : undefined;
-  });
-  pi.on("agent_before_settle", (event, ctx) => {
-    const error = lastError;
-    lastError = undefined;
-    if (event.outcome === "error" && error)
-      ctx.ui.notify(`Model request failed: ${error}`, "error");
-  });
 }
 
 function clearBedrockDefaults(state: ConfigState): boolean {

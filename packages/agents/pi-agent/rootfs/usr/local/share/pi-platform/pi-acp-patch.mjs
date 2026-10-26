@@ -5,11 +5,13 @@ const PATCHED_VERSION = "0.0.34";
 const UPSTREAM_GAPS =
   "pi-acp keeps concurrent sessions apart (https://github.com/svkozak/pi-acp/issues/152), " +
   "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72), " +
-  "reports a reply cut at the output limit as max_tokens " +
+  "reports a reply cut at the output limit as max_tokens, " +
+  "fails a turn whose model request failed (https://github.com/svkozak/pi-acp/issues/135), " +
+  "writes no retry notice into the reply " +
   "and hands each pi the session ref its session/new or session/load carries";
 const HELPERS = `globalThis[Symbol.for("platform.pi-acp-patch")]`;
 const SESSION_REF_HEADER = "x-platform-session-ref";
-const stopReasons = new WeakMap();
+const endings = new WeakMap();
 const sessionRefs = new Map();
 const lastRepliesOfTurns = new WeakMap();
 
@@ -51,12 +53,34 @@ function cutAtOutputLimit(piStopReason) {
   return piStopReason === "length";
 }
 
-function recordStopReason(session, piStopReason) {
-  stopReasons.set(session, piStopReason);
+function recordEnding(session, message) {
+  endings.set(session, {
+    stopReason: message?.stopReason,
+    errorMessage: message?.errorMessage,
+  });
 }
 
 function turnStopReason(session) {
-  return cutAtOutputLimit(stopReasons.get(session)) ? "max_tokens" : "end_turn";
+  return cutAtOutputLimit(endings.get(session)?.stopReason)
+    ? "max_tokens"
+    : "end_turn";
+}
+
+function modelRequestError(session) {
+  const ending = endings.get(session);
+  if (ending?.stopReason !== "error") return undefined;
+  return new Error(
+    ending.errorMessage
+      ? `Model request failed: ${ending.errorMessage}`
+      : "Model request failed.",
+  );
+}
+
+function endTurn(session) {
+  if (session.cancelRequested) return session.pendingTurn?.resolve("cancelled");
+  const error = modelRequestError(session);
+  if (error) session.pendingTurn?.reject(error);
+  else session.pendingTurn?.resolve(turnStopReason(session));
 }
 
 function lastRepliesOf(messages) {
@@ -158,7 +182,7 @@ const edits = [
     find: '      case "turn_end": {\n        break;\n      }\n',
     replace:
       '      case "turn_end": {\n' +
-      `        ${HELPERS}.recordStopReason(this, ev.message?.stopReason);\n` +
+      `        ${HELPERS}.recordEnding(this, ev.message);\n` +
       "        break;\n" +
       "      }\n",
     count: 1,
@@ -168,12 +192,33 @@ const edits = [
     replace:
       "  startTurn(t) {\n" +
       "    this.cancelRequested = false;\n" +
-      `    ${HELPERS}.recordStopReason(this, undefined);\n`,
+      `    ${HELPERS}.recordEnding(this, undefined);\n`,
     count: 1,
   },
   {
-    find: '    const reason = this.cancelRequested ? "cancelled" : "end_turn";\n',
-    replace: `    const reason = this.cancelRequested ? "cancelled" : ${HELPERS}.turnStopReason(this);\n`,
+    find:
+      '    const reason = this.cancelRequested ? "cancelled" : "end_turn";\n' +
+      "    this.pendingTurn?.resolve(reason);\n",
+    replace: `    ${HELPERS}.endTurn(this);\n`,
+    count: 1,
+  },
+  {
+    find:
+      '      case "auto_retry_start": {\n' +
+      "        this.emit({\n" +
+      '          sessionUpdate: "agent_message_chunk",\n' +
+      '          content: { type: "text", text: formatAutoRetryMessage(ev) }\n' +
+      "        });\n" +
+      "        break;\n" +
+      "      }\n" +
+      '      case "auto_retry_end": {\n' +
+      "        this.emit({\n" +
+      '          sessionUpdate: "agent_message_chunk",\n' +
+      '          content: { type: "text", text: "Retry finished, resuming." }\n' +
+      "        });\n" +
+      "        break;\n" +
+      "      }\n",
+    replace: "",
     count: 1,
   },
   {
@@ -243,8 +288,8 @@ dropOwnImport();
 globalThis[Symbol.for("platform.pi-acp-patch")] = {
   exited,
   settleTurnsOnExit,
-  recordStopReason,
-  turnStopReason,
+  recordEnding,
+  endTurn,
   cutReply,
   replayMeta,
   piEnv,

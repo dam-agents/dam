@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 
 const PATCHED_VERSION = "2.1.1";
-const UPSTREAM_GAP =
+const UPSTREAM_GAPS =
   "agentclientprotocol/codex-acp#663 is closed: codex-acp skips title generation on a provider " +
-  "other than OpenAI's own (#595), names the session from session/new (#338) or carries a switch";
+  "other than OpenAI's own (#595), names the session from session/new (#338) or carries a switch; " +
+  "and codex-acp fails a turn whose model request failed, with the error in data.details " +
+  "and no error text in the reply (https://github.com/agentclientprotocol/codex-acp/issues/647)";
 
 function dropOwnImport() {
   const rest = (process.env.NODE_OPTIONS ?? "")
@@ -20,14 +22,38 @@ function dropOwnImport() {
  * model it hard-codes (gpt-5.6-luna), with Codex's whole base prompt and
  * tool schemas behind it. That thread names no parent and no platform
  * session, so the Model Router cannot send it to the session's provider or
- * book it to the session. The edit makes every title generator born with a
- * title already, so no such thread starts; codex-acp still publishes the
- * first prompt as the session's title.
+ * book it to the session. The first edit makes every title generator born
+ * with a title already, so no such thread starts; codex-acp still publishes
+ * the first prompt as the session's title. codex-acp also writes the final
+ * error of a failed turn into the reply and ends the turn as a normal one,
+ * unless the client speaks JetBrains' AIR extension, which the platform does
+ * not. The second edit fails such a turn instead, with the error in
+ * data.details, the only field the chat reads, and no reply text, so the
+ * chat shows its failed-message card with Retry and a channel turn posts its
+ * failure reply.
  */
 const edits = [
   {
     find: "  generated = false;\n  inFlight = null;\n  renameEchoResolve = null;\n",
     replace: "  generated = true;\n  inFlight = null;\n  renameEchoResolve = null;\n",
+    count: 1,
+  },
+  {
+    find:
+      '    if (error62 === "usageLimitExceeded") {\n' +
+      "      this.failure = RequestError.internalError(\n" +
+      "        this.createTurnErrorData(params.error)\n" +
+      "      );\n" +
+      "    }\n" +
+      "    return createAgentTextMessageChunk(`${readableServiceErrorMessage(params.error.message)}\n" +
+      "\n" +
+      "`);\n",
+    replace:
+      "    this.failure = RequestError.internalError({\n" +
+      "      ...this.createTurnErrorData(params.error),\n" +
+      "      details: `Model request failed: ${readableServiceErrorMessage(params.error.message)}`\n" +
+      "    });\n" +
+      "    return null;\n",
     count: 1,
   },
 ];
@@ -61,7 +87,7 @@ registerHooks({
     }
     if (typeof result === "object") return result;
     process.stderr.write(
-      `codex-acp-patch: not applied: ${result}; drop the patch once ${UPSTREAM_GAP}\n`,
+      `codex-acp-patch: not applied: ${result}; drop the patch once ${UPSTREAM_GAPS}\n`,
     );
     return loaded;
   },

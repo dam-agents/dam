@@ -123,9 +123,12 @@ Sourced from pi-mono [`env-api-keys.ts`](https://github.com/badlogic/pi-mono/blo
 #### Provider errors in the chat
 
 pi-acp ends a turn whose model request failed as a clean, empty `end_turn` and drops Pi's error (upstream [svkozak/pi-acp#135](https://github.com/svkozak/pi-acp/issues/135)), so a refused model, an expired key or a throttled request would read as silence.
-pi-acp does forward extension notifications into the chat, so `pi-dynamic-providers` reports a run that ends in error as `Model request failed: <error>` through one — after Pi's own retries, so a call that recovers stays quiet.
-Only chat sessions get it (`harness-chat` sets `PI_PLATFORM_REPORT_ERRORS=1`); the terminal shows Pi's own error.
-Drop that handler once pi-acp propagates the error itself.
+The [pi-acp patch](#pi-acp-patch) fails such a turn with `Model request failed: <error>`, after Pi's own retries, so a call that recovers stays a normal reply.
+The chat then shows its failed-message card, and Slack and Telegram post their failure reply, as for Claude Code.
+The prefix matters: the ACP library reads a thrown message as JSON when it can, and a provider error such as `503 status code (no body)` then still matches the chat's outage pattern (`failed: 503`).
+Pi retries a 5xx, a 429, an overloaded provider, a timeout or a lost connection 3 times, after 2, 4 and 8 seconds, and pi-acp writes each retry into the reply as text.
+The patch drops those lines too: the card offers Retry only for a reply with no text, and during a known outage the chat's status line already says that the agent keeps trying.
+The terminal shows Pi's own error and retry lines.
 
 #### Other providers (env vars from pi-mono; Platform integration not validated end-to-end)
 
@@ -241,10 +244,11 @@ The agent-runtime runs every session of an Agent through one pi-acp, so a schedu
 Stop did not help: pi-acp had already forgotten the session.
 
 pi-acp also ends every turn with `end_turn`, even when the reply stopped at the output limit, and the replay of a reopened chat carries no stop reason, so the chat cannot mark a cut reply.
+It ends a turn whose model request failed the same way, and writes each of Pi's retries into the reply ([Provider errors in the chat](#provider-errors-in-the-chat)).
 
 Until upstream fixes these, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads.
 `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it.
-It patches eight things:
+It patches ten things:
 
 - `session/new` and `session/load` no longer close other sessions.
 - pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
@@ -254,13 +258,16 @@ It patches eight things:
   The platform pins the Pi version, so the user cannot act on that notice.
 - A turn whose last reply stopped at the output limit (Pi's `length`) ends with `max_tokens`.
 - On `session/load`, the replayed text of such a reply carries `_meta.platform.stopReason: "max_tokens"`, so a reopened chat still marks the cut.
+- A turn whose last model request failed (Pi's `error`) fails with `Model request failed: <Pi's error>`.
+- pi-acp writes no `Retrying (attempt n/3, …)` or `Retry finished, resuming.` text into the reply.
 - Each session's pi starts with `PLATFORM_SESSION_REF` set to the session ref of its `session/new` or `session/load` (see [MCP servers](#mcp-servers)).
   pi-acp advertises no MCP capabilities, so without this a Pi session calls the platform tools anonymously.
 
 The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly.
 Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the machine's log.
-**To remove it** once a pi-acp release fixes #152 and #72, reports `max_tokens` and hands pi the session ref (or takes HTTP MCP servers): bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
-A release that fixes only some of the four lets you drop just their edits.
+**To remove it** once a pi-acp release fixes #152, #72 and #135, reports `max_tokens`, writes no retry lines and hands pi the session ref (or takes HTTP MCP servers): bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
+A release that fixes only some of the six lets you drop just their edits.
+A release that fixes #135 but still writes retry lines keeps the edit that drops them.
 That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
 
 ## Session cost

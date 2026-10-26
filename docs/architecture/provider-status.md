@@ -1,6 +1,6 @@
 # Provider status
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -103,12 +103,12 @@ The card's actions are Retry, where the message can be sent again; Switch provid
 Claude Code writes its own copy of the error as reply text before the turn fails; a reply that holds nothing but that copy is the failure itself, so the chat shows the card in its place and the copy only under Raw error.
 Retry then sends the same prompt again as a new message, and the failed exchange stays above it.
 A reply that streamed other text before it failed keeps its text, and its card says that the response was interrupted and has no Retry.
-Pi ends such a turn like a normal one, with the error in its reply, so it gets no card; the status line and the banner still name the outage.
+Pi and Codex write nothing into the reply while they retry, and fail the turn with the error, so their card shows alone, with Retry.
 The card lives only in the open chat: a reload or a reconnect rebuilds the chat from the transcript, which holds the harness's text and no card.
 
 **The status line.** While the provider of the open session is degraded, a line at the end of the chat, above the message box, says so: while a turn runs, that the provider is not responding and the agent keeps trying; otherwise, since when the provider has had problems and that messages may fail.
 While the fault is on the platform's side, the line says that the platform cannot reach model providers, also when the session's provider is not known.
-The line also shows before a turn fails, so a user who waits on a turn that the harness retries learns the cause early; it shows on Pi too, which ends a failed turn with no error.
+The line also shows before a turn fails, so a user who waits on a turn that the harness retries learns the cause early.
 The session's provider is the one the session names, else the agent's default pair, else the template that all of the agent's provider Connections use.
 
 **The Providers badge.** In Settings › Providers, one pill on each row says whether the provider is configured, and, once it is, what its key is doing: verifying, connected, rejected, or unverified.
