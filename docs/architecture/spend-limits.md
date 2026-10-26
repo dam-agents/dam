@@ -265,8 +265,8 @@ A call on a Bob Connection gets the same text inside a JSON error object, becaus
 Paths that are not metered, such as model lists and token counting, are never refused.
 Every refusal carries the `x-platform-refusal` header, so the [Model Router](harness-config.md#the-model-router) passes it to the harness unchanged and does not explain it as a provider error.
 
-**Recorded refusal.** Codex ends a refused turn like a normal one, so the platform cannot see the refusal in the turn.
-So the gate counts each refusal in the day's rollup, under an unknown model, because the gate does not read the request body.
+**Recorded refusal.** The gate counts each refusal in the day's rollup itself, because it sees every refused call, whatever harness or turn made it.
+It counts the refusal under an unknown model, because the gate does not read the request body.
 
 ## Continue
 

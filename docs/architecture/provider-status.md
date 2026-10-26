@@ -103,7 +103,7 @@ The card's actions are Retry, where the message can be sent again; Switch provid
 Claude Code writes its own copy of the error as reply text before the turn fails; a reply that holds nothing but that copy is the failure itself, so the chat shows the card in its place and the copy only under Raw error.
 Retry then sends the same prompt again as a new message, and the failed exchange stays above it.
 A reply that streamed other text before it failed keeps its text, and its card says that the response was interrupted and has no Retry.
-Pi writes nothing into the reply while it retries, and fails the turn with its error, so its card shows alone, with Retry.
+Pi and Codex write nothing into the reply while they retry, and fail the turn with the error, so their card shows alone, with Retry.
 The card lives only in the open chat: a reload or a reconnect rebuilds the chat from the transcript, which holds the harness's text and no card.
 
 **The status line.** While the provider of the open session is degraded, a line at the end of the chat, above the message box, says so: while a turn runs, that the provider is not responding and the agent keeps trying; otherwise, since when the provider has had problems and that messages may fail.

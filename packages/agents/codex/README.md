@@ -140,15 +140,27 @@ codex-acp 2.1.1 names a new chat session after its first turn: it starts an ephe
 That turn carries Codex's whole base prompt and tool schemas, about as many input tokens as the session's own first call, and the thread names no parent and no platform session, so the [Model Router](../../../docs/architecture/harness-config.md#the-model-router) cannot send it to the session's provider or book it to the session: the bare model name lands on whichever granted provider lists it, the agent's default one first.
 Nothing in codex-acp 2.1.1 turns the generator off or names another model; [agentclientprotocol/codex-acp#663](https://github.com/agentclientprotocol/codex-acp/issues/663) asks for that upstream, where [#595](https://github.com/agentclientprotocol/codex-acp/pull/595) skips it on a provider other than OpenAI's own, which the platform's `openai-platform` provider is, and [#338](https://github.com/agentclientprotocol/codex-acp/pull/338) lets the client name the session at creation.
 
-Until upstream does, [`codex-acp-patch.mjs`](rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs) edits codex-acp's bundle in memory as it loads.
-`harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so Codex and its tools do not inherit it.
-It patches one thing: every title generator is born with a title already, so no ephemeral thread starts.
-The session's title is what it was before the generator would have run: the platform derives one from the first prompt, and Codex's thread preview reaches it through the session listing.
-A terminal is not affected: Codex's own TUI names its thread, on the session's model behind a custom provider, and the terminal's calls carry the platform's session id.
+codex-acp 2.1.1 also ends a failed turn like a normal one (upstream [agentclientprotocol/codex-acp#647](https://github.com/agentclientprotocol/codex-acp/issues/647)).
+When a model request still fails after Codex's retry, codex-acp writes the error into the reply as text and answers `session/prompt` with `end_turn`; only a `usageLimitExceeded` error fails the turn.
+A client that speaks JetBrains' AIR extension gets the failure in `_meta`, but AIR also changes how codex-acp renders tool calls, permissions, modes and plans, so the platform does not speak it.
+So the chat showed the error as a reply, with no failed-message card and no Retry, and a Slack or Telegram turn got no reply.
 
-The hook patches only codex-acp 2.1.1 and only when the edit matches the bundle exactly.
+Until upstream fixes these, [`codex-acp-patch.mjs`](rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs) edits codex-acp's bundle in memory as it loads.
+`harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so Codex and its tools do not inherit it.
+It patches two things:
+
+- Every title generator is born with a title already, so no ephemeral thread starts.
+  The session's title is what it was before the generator would have run: the platform derives one from the first prompt, and Codex's thread preview reaches it through the session listing.
+  A terminal is not affected: Codex's own TUI names its thread, on the session's model behind a custom provider, and the terminal's calls carry the platform's session id.
+- A final error of the current turn fails the turn with JSON-RPC `-32603`, whose `data` holds codex-acp's own fields and `details: "Model request failed: <error>"`, and writes no reply text.
+  The chat reads only `data.details`, and offers Retry only for a reply with no text.
+  An error that Codex retries reaches the chat as a `session_info_update`, never as text, so it does not change; the terminal does not go through codex-acp.
+
+The hook patches only codex-acp 2.1.1 and only when every edit matches the bundle exactly.
 Otherwise it loads codex-acp unchanged and prints `codex-acp-patch: not applied …` to the machine's log.
-**To remove it** once a codex-acp release closes #663, by #595, #338 or a switch of its own: bump `npm:@agentclientprotocol/codex-acp` in [`image.toml`](image.toml), delete `codex-acp-patch.mjs` and its check ([`check/codex-acp-patch`](../.mise/tasks/check/codex-acp-patch)), drop the `NODE_OPTIONS` line from `harness-chat`, and with #338 send the session's title on `session/new`.
+**To remove it** once a codex-acp release closes #663, by #595, #338 or a switch of its own, and fails a turn whose model request failed with the error in `data.details` and no reply text: bump `npm:@agentclientprotocol/codex-acp` in [`image.toml`](image.toml), delete `codex-acp-patch.mjs` and its check ([`check/codex-acp-patch`](../.mise/tasks/check/codex-acp-patch)), drop the `NODE_OPTIONS` line from `harness-chat`, and with #338 send the session's title on `session/new`.
+A release that fixes only one of the two lets you drop just its edit.
+#647 as proposed keeps the error text in the reply and puts the error in `data.message`, so a release with only that fix keeps the second edit.
 
 ## Usage
 
