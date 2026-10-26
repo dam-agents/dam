@@ -39,9 +39,20 @@ describe("buildCreateAgentInput", () => {
     ).toEqual({
       name: "swift-otter",
       templateId: "claude-code",
+      harness: "claude-code",
       egressPreset: "trusted",
       appConnectionIds: ["conn-123"],
     });
+  });
+
+  // TEST_SCENARIO: the harness catalogue is built from the release's shared image, so a retired template id is what names the harness; the form sends that name too and a custom template sends none.
+  it("names the harness a retired template id stands for, and only that", () => {
+    expect(
+      buildCreateAgentInput({ ...complete, templateId: "pi-agent" }),
+    ).toMatchObject({ templateId: "pi-agent", harness: "pi" });
+    expect(
+      buildCreateAgentInput({ ...complete, templateId: "acme-internal" }),
+    ).not.toHaveProperty("harness");
   });
 
   it("carries the chosen egress preset through", () => {
@@ -141,6 +152,7 @@ describe("buildCodingAgentSetupInput", () => {
       hibernationTimeoutMin: 60,
       templateId: "claude-code",
       appConnectionIds: ["conn-granted", "conn-provider"],
+      harness: "claude-code",
     });
   });
 

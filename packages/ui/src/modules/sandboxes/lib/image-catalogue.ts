@@ -1,4 +1,5 @@
 import type { TemplateView } from "../../../types.js";
+import { SHARED_IMAGE_TEMPLATE_ID } from "../../templates/lib/harness-templates.js";
 
 const KINDED_HARNESS_TEMPLATE_ID = "claude-code";
 
@@ -7,7 +8,11 @@ interface Catalogue {
 }
 
 export function imageCatalogue(templates: TemplateView[]): Catalogue {
-  return { harnesses: templates.filter((t) => t.category === "harness") };
+  return {
+    harnesses: templates.filter(
+      (t) => t.category === "harness" && t.id !== SHARED_IMAGE_TEMPLATE_ID,
+    ),
+  };
 }
 
 export function defaultHarnessId(harnesses: TemplateView[]): string | null {

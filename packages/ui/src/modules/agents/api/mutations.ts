@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import type { AgentConnections } from "api-server-api";
+import type { AgentConnections, HarnessFamily } from "api-server-api";
 
 import { getErrorMessage } from "@/lib/errors";
 
@@ -32,6 +32,7 @@ const invalidatesAgentsAndBudget = {
 export interface CreateAgentInput {
   name: string;
   templateId?: string;
+  harness?: HarnessFamily;
   image?: string;
   description?: string;
   env?: EnvVar[];

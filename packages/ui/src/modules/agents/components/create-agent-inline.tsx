@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import type { AgentView } from "../../../types.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
+import { imageCatalogue } from "../../sandboxes/lib/image-catalogue.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { usePrefilledSandboxName } from "../hooks/use-default-sandbox-name.js";
@@ -28,6 +29,10 @@ interface Props {
 
 export function CreateAgentInline({ onCreated }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
+  const harnesses = useMemo(
+    () => imageCatalogue(templates).harnesses,
+    [templates],
+  );
   const vmRuntime = useVmRuntime();
   const createAgent = useCreateAgent();
   const [name, setName] = useState("");
@@ -37,7 +42,7 @@ export function CreateAgentInline({ onCreated }: Props) {
 
   const selectedTemplateId =
     templateId ??
-    (templates.find((t) => !t.experimental) ?? templates[0])?.id ??
+    (harnesses.find((t) => !t.experimental) ?? harnesses[0])?.id ??
     null;
 
   const draft: CreateAgentDraft = {
@@ -72,10 +77,10 @@ export function CreateAgentInline({ onCreated }: Props) {
       <FormField label="Harness" labelInset>
         <Select
           value={selectedTemplateId ?? ""}
-          disabled={isLoading || templates.length === 0}
+          disabled={isLoading || harnesses.length === 0}
           onChange={(event) => setTemplateId(event.target.value)}
         >
-          {templates.map((template) => (
+          {harnesses.map((template) => (
             <option key={template.id} value={template.id}>
               {template.name}
               {template.experimental ? " (experimental)" : ""}

@@ -566,6 +566,30 @@ describe("starter kits: apply", () => {
     expect(h.calls.created[1]).not.toHaveProperty("harness");
   });
 
+  /** TEST_SCENARIO: the restored 0.2.23 form picks the harness among the ones
+   * a kit accepts and sends it, because the shared image every template now
+   * resolves to names none; the pick beats the kit's first harness. */
+  it("starts a kit on the harness the form picked", async () => {
+    const h = makeHarness({
+      ...LOADED,
+      kit: kit({ harnesses: ["claude-code", "pi"], connections: [] }),
+    });
+    await h.service.apply({
+      catalog: "platform",
+      kitId: "code-reviewer",
+      name: "r",
+      templateId: "default",
+      harness: "pi",
+      connectionIds: [],
+      skipSchedules: [],
+      scheduleOverrides: [],
+    });
+    expect(h.calls.created[0]).toMatchObject({
+      templateId: "default",
+      harness: "pi",
+    });
+  });
+
   it("passes the kit's declared size and disk to create, image or harness", async () => {
     const own = makeHarness({
       ...LOADED,

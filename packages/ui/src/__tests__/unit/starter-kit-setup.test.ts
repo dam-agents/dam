@@ -157,6 +157,7 @@ describe("buildStarterKitApplyInput", () => {
       kitId: "code-reviewer",
       name: "reviewer",
       templateId: "claude-code",
+      harness: "claude-code",
       connectionIds: ["c-gh", "c-llm"],
       slackChannelId: "C123",
       skipSchedules: ["benchmark"],

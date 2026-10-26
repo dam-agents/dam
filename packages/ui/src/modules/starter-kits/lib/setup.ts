@@ -19,6 +19,7 @@ import {
   CRON_TIMEZONE,
   cronToText,
 } from "../../schedules/lib/schedule-format.js";
+import { harnessForTemplateId } from "../../templates/lib/harness-templates.js";
 
 export interface StarterKitSetupDraft {
   name: string;
@@ -104,12 +105,18 @@ export function buildStarterKitApplyInput(
     );
   }
   const slackChannelId = draft.slackChannelId.trim();
+  const harness = harnessForTemplateId(draft.templateId);
   return {
     catalog: kit.catalog,
     kitId: kit.id,
     name: draft.name.trim(),
     connectionIds: draftConnectionIds(draft),
-    ...(kit.image ? {} : { templateId: draft.templateId ?? undefined }),
+    ...(kit.image
+      ? {}
+      : {
+          templateId: draft.templateId ?? undefined,
+          ...(harness ? { harness } : {}),
+        }),
     ...(slackChannelId ? { slackChannelId } : {}),
     skipSchedules: draft.skippedSchedules,
     scheduleOverrides: draft.scheduleOverrides.filter(

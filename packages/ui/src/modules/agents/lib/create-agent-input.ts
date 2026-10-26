@@ -4,6 +4,7 @@ import {
   type RegistryCredential,
   registryFilledCount,
 } from "../../sandboxes/components/registry-credential-section.js";
+import { harnessForTemplateId } from "../../templates/lib/harness-templates.js";
 import type { CreateAgentInput } from "../api/mutations.js";
 
 export interface CreateAgentDraft {
@@ -28,9 +29,11 @@ export function buildCreateAgentInput(
   if (!isCreateAgentDraftComplete(draft)) {
     throw new Error("cannot build create-agent input from an incomplete draft");
   }
+  const harness = harnessForTemplateId(draft.templateId);
   return {
     name: draft.name.trim(),
     templateId: draft.templateId!,
+    ...(harness ? { harness } : {}),
     egressPreset: draft.egressPreset,
     ...(draft.vm ? { vm: true } : {}),
     appConnectionIds: [draft.providerRef!.id],
@@ -83,9 +86,11 @@ export function buildCodingAgentSetupInput(
   }
   const image = draft.customImage.trim();
   const credential = draft.registryCredential;
+  const harness = harnessForTemplateId(draft.templateId);
   return {
     name: draft.name.trim(),
     egressPreset: "trusted",
+    ...(harness && !image ? { harness } : {}),
     ...(draft.vm ? { vm: true } : {}),
     ...(draft.hibernationTimeoutMin === null
       ? {}
