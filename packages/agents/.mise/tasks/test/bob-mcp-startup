@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+//MISE description="Test (with the real Bob, when BOB_CLI names its dist/bob.js) that bob acp answers session/new at once while a stdio MCP server of mcp.json never gets ready, keeps the session's own platform tools on the first turn, and that Bob without the patch still waits for that server"
+//MISE sources=["bob/rootfs/usr/local/lib/bob-acp-patch.mjs", "bob/rootfs/usr/local/lib/bob-preload-lib.mjs", "bob/image.toml", "test-lib/acp-client.mjs", ".mise/tasks/test/bob-mcp-startup"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { acpClient, allowPermission, chatStream, fakePlatformMcp } from "../../../test-lib/acp-client.mjs";
+
+// TEST_OVERVIEW: The real `bob acp` runs against a fake Model Router and a fake platform MCP server, with a home whose mcp.json holds one stdio server that reads its stdin and never answers initialize. With bob-acp-patch.mjs preloaded, Bob answers session/new well before the MCP SDK's 60 s initialize timeout, and the platform entry the session carried is connected by the time the first turn runs. Without the patch, Bob's own startup waits for the never-ready server, which is the behavior the patch exists for. Skipped when BOB_CLI names no Bob, since the repository does not vendor it.
+
+const bob = process.env.BOB_CLI;
+if (!bob) {
+  console.log("bob-mcp-startup: skipped, set BOB_CLI=<path to Bob's dist/bob.js> to run against the real Bob");
+  process.exit(0);
+}
+const patch = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/bob-acp-patch.mjs", import.meta.url));
+const HEADER = "x-platform-session-ref";
+const MODEL = "ibm/aws/claude-sonnet-4-6";
+const QUICK_MS = 30_000;
+const BLOCKED_MS = 50_000;
+const home = mkdtempSync(join(tmpdir(), "bob-mcp-startup-"));
+const work = join(home, "work");
+mkdirSync(work);
+
+const router = createServer(async (req, res) => {
+  const path = new URL(req.url, "http://127.0.0.1").pathname.replace(/^\/inference/, "");
+  if (req.method === "GET" && path === "/v1/model/info") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ data: [{ model_name: MODEL, litellm_params: { model: MODEL }, model_info: { id: MODEL, mode: "chat", exposed: true, max_input_tokens: 200000, max_tokens: 8192, input_cost_per_token: 3e-6, output_cost_per_token: 15e-6 } }] }));
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  if (path !== "/v1/chat/completions") {
+    res.writeHead(404, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ error: { message: `no route ${path}` } }));
+  }
+  const body = JSON.parse(Buffer.concat(chunks).toString());
+  const messages = body.messages ?? [];
+  const text = (m) => (typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? ""));
+  const asked = messages.some((m) => m?.role === "user" && text(m).includes("WHOAMI"));
+  const answered = messages.some((m) => m?.role === "tool");
+  const whoami = (body.tools ?? []).find((t) => /whoami/i.test(t?.function?.name ?? ""));
+  const reply = asked && whoami && !answered
+    ? chatStream(body.model, { tool: { name: whoami.function.name, arguments: {} } })
+    : chatStream(body.model, { text: answered ? "done" : "ok" });
+  res.writeHead(200, { "content-type": reply.contentType });
+  res.end(reply.body);
+});
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+
+const platform = await fakePlatformMcp({
+  tools: [{ name: "whoami", description: "Says which session is calling.", inputSchema: { type: "object", properties: {}, additionalProperties: false } }],
+  callResult: (_params, headers) => `ref=${headers[HEADER] ?? "none"}`,
+});
+
+mkdirSync(join(home, ".bob/settings"), { recursive: true });
+writeFileSync(
+  join(home, ".bob/settings/settings.json"),
+  JSON.stringify({ session: { model: MODEL, defaultMode: "agent" }, approval: { outsideWorkspaceAllowed: true }, bobShell: { autoUpdate: false }, telemetry: { enabled: false, excludePayload: true } }, null, 2),
+);
+writeFileSync(
+  join(home, ".bob/settings/mcp.json"),
+  JSON.stringify({ mcpServers: { "never-ready": { command: process.execPath, args: ["-e", "process.stdin.resume()"] } } }, null, 2),
+);
+const sessionEntry = (ref) => [{ type: "http", name: "platform-outbound", url: platform.url, headers: [{ name: HEADER, value: ref }] }];
+const stderr = [];
+const start = async (withPatch) => {
+  const c = acpClient("node", [bob, "acp", "--trust", "--accept-license", "--auto-approve"], {
+    env: {
+      PATH: process.env.PATH,
+      HOME: home,
+      BOB_GATEWAY_URL: `http://127.0.0.1:${router.address().port}`,
+      BOB_API_KEY: "platform:conn:router",
+      BOBSHELL_API_KEY: "platform:conn:router",
+      BOB_LOG_LEVEL: "warn",
+      NO_PROXY: "127.0.0.1,localhost",
+      ...(withPatch && { NODE_OPTIONS: `--import=${patch}` }),
+    },
+    cwd: work,
+    name: "bob",
+    onRequest: allowPermission,
+    log: (line) => stderr.push(line),
+  });
+  await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } }, clientInfo: { name: "dam-test", version: "0" } }, 120_000);
+  return c;
+};
+const timed = async (c, method, params) => {
+  const started = Date.now();
+  const result = await c.request(method, params, 120_000);
+  return { result, ms: Date.now() - started };
+};
+
+try {
+  const first = await start(true);
+  try {
+    // TEST_SCENARIO: A new chat on an agent whose mcp.json holds a server that never gets ready. Bob answers session/new without waiting for it, and the first turn already reaches the platform tools over the entry the session carried, so backgrounding the file's servers costs the session nothing of its own.
+    const opened = await timed(first, "session/new", { cwd: work, mcpServers: sessionEntry("ref-a") });
+    assert.ok(opened.ms < QUICK_MS, `session/new took ${opened.ms}ms: Bob waited for the never-ready server`);
+    const { sessionId } = opened.result;
+    const from = platform.calls.length;
+    const turn = await first.request("session/prompt", { sessionId, prompt: [{ type: "text", text: "WHOAMI: call the whoami tool, then reply done." }] }, 240_000);
+    assert.equal(turn.stopReason, "end_turn");
+    assert.deepEqual(
+      platform.calls.slice(from).filter((c) => c.method === "tools/call").map((c) => c.headers[HEADER] ?? null),
+      ["ref-a"],
+    );
+  } finally {
+    await first.close();
+  }
+
+  assert.deepEqual(stderr.filter((line) => line.includes("bob-acp-patch: not applied")), [], "the patch did not apply to this Bob");
+
+  // TEST_SCENARIO: Without the patch, Bob's own ACP startup waits for every server of mcp.json, so session/new answers only after the never-ready server's initialize times out. When this fails, Bob starts those servers in the background on its own, and the patch, its line in harness-chat, and these tests can go.
+  const control = await start(false);
+  try {
+    const opened = await timed(control, "session/new", { cwd: work, mcpServers: sessionEntry("ref-c") });
+    assert.ok(
+      opened.ms >= BLOCKED_MS,
+      `Bob answered session/new in ${opened.ms}ms without the patch: it no longer waits for the servers of mcp.json, see packages/agents/bob/README.md, "MCP startup"`,
+    );
+  } finally {
+    await control.close();
+  }
+  console.log("bob acp opens sessions at once with the patch despite a never-ready MCP server, and still waits for it without the patch");
+} finally {
+  router.close();
+  platform.close();
+  await new Promise((r) => setTimeout(r, 1500));
+  try {
+    rmSync(home, { recursive: true, force: true });
+  } catch {}
+}

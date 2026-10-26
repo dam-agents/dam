@@ -248,6 +248,11 @@ export interface ReportableTurn {
   truncated: boolean;
 }
 
+interface OrphanedLoad {
+  outboundId: number;
+  lateTimer: ReturnType<typeof setTimeout> | null;
+}
+
 interface OutboundMapping {
   channel: ClientChannel | null;
   originalId: JsonRpcId | null;
@@ -774,15 +779,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const rehydratingSessions = new Set<string>();
   const rehydrateTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const rehydrateLoadIds = new Map<string, number>();
-  const orphanedHarnessLoads = new Map<string, number>();
+  const orphanedHarnessLoads = new Map<string, OrphanedLoad>();
 
   function orphanLoad(sessionId: string, outboundId: number): void {
-    orphanedHarnessLoads.set(sessionId, outboundId);
+    const previous = orphanedHarnessLoads.get(sessionId)?.lateTimer;
+    if (previous) clearTimeout(previous);
     deps.log?.(
       `harness left session/load for ${sessionId} unanswered; ` +
-        `suppressing its frames and recycling the harness`,
+        `suppressing its frames and recycling the harness unless it ` +
+        `answers within ${harnessLoadTimeoutMs}ms`,
     );
-    lease.requestRecycle();
+    const orphan: OrphanedLoad = {
+      outboundId,
+      lateTimer: setTimeout(() => {
+        orphan.lateTimer = null;
+        deps.log?.(`harness still owes session/load for ${sessionId}`);
+        lease.requestRecycle();
+      }, harnessLoadTimeoutMs),
+    };
+    orphanedHarnessLoads.set(sessionId, orphan);
   }
 
   function settleOrphanedLoad(
@@ -790,10 +805,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     outboundId: number,
   ): boolean {
     if (sessionId === null) return false;
-    if (orphanedHarnessLoads.get(sessionId) !== outboundId) return false;
+    const orphan = orphanedHarnessLoads.get(sessionId);
+    if (orphan?.outboundId !== outboundId) return false;
+    if (orphan.lateTimer) clearTimeout(orphan.lateTimer);
     orphanedHarnessLoads.delete(sessionId);
     deps.log?.(`orphaned session/load for ${sessionId} answered late; dropped`);
-    if (orphanedHarnessLoads.size === 0) lease.cancelRecycleRequest();
+    if ([...orphanedHarnessLoads.values()].every((o) => o.lateTimer !== null))
+      lease.cancelRecycleRequest();
+    bootstrap.harnessLoadFreed(sessionId);
     return true;
   }
 
@@ -1039,6 +1058,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const t of rehydrateTimers.values()) clearTimeout(t);
     rehydrateTimers.clear();
     rehydrateLoadIds.clear();
+    for (const { lateTimer } of orphanedHarnessLoads.values())
+      if (lateTimer) clearTimeout(lateTimer);
     orphanedHarnessLoads.clear();
     harnessGone = teardownCause(reason);
     if (!shuttingDown)
@@ -2442,7 +2463,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (
         (method === "session/prompt" || settingSessionId !== null) &&
         paramsSid &&
-        harnessColdSessions.has(paramsSid) &&
         orphanedHarnessLoads.has(paramsSid)
       ) {
         sendToChannel(
@@ -2454,7 +2474,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               error: {
                 code: -32000,
                 message:
-                  "the harness is not answering; it is being restarted — try again",
+                  "the harness is still loading this session; try again shortly",
               },
             }),
           ),

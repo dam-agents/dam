@@ -118,10 +118,11 @@ try {
     });
     return readFileSync(join(home, "bob-args"), "utf8").trim().split(" ");
   };
-  assert.deepEqual(launch({}), ["--import=/preload/bob-mcp-file.mjs"]);
+  assert.deepEqual(launch({}), ["--import=/preload/bob-mcp-file.mjs", "--import=/preload/bob-acp-patch.mjs"]);
   assert.deepEqual(launch({ PLATFORM_MODEL: "m-1", PLATFORM_MODEL_ROUTER_URL: "http://127.0.0.1:1" }), [
     "--import=/preload/bob-loopback-direct.mjs",
     "--import=/preload/bob-mcp-file.mjs",
+    "--import=/preload/bob-acp-patch.mjs",
     "--import=/preload/bob-settings-file.mjs",
   ]);
   const terminal = readFileSync(join(rootfs, "usr/local/bin/harness-terminal"), "utf8");

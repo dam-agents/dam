@@ -28,6 +28,7 @@ interface BootstrapState {
   adjustLines?: (lines: string[]) => string[];
   deadline: ReturnType<typeof setTimeout>;
   harnessLoadId: number | null;
+  harnessLoadDeferred: boolean;
 }
 
 export interface SessionBootstrap {
@@ -55,6 +56,7 @@ export interface SessionBootstrap {
     adjustLines?: (lines: string[]) => string[],
   ): void;
   onLoadResponse(sessionId: string, frame: unknown): void;
+  harnessLoadFreed(sessionId: string): void;
   has(sessionId: string): boolean;
   dropChannel(channel: ClientChannel): void;
   clear(): void;
@@ -103,7 +105,9 @@ export interface SessionBootstrapDeps {
  * suppresses the session's frames until it settles. A later request may
  * refill from the provider, which needs no harness, but never sends a second
  * harness load for the same session: two overlapping loads produce frames
- * nothing can attribute. A client's session/resume never reaches the harness
+ * nothing can attribute. A fill parked behind such an orphan sends its own
+ * harness load once the orphan answers, since the harness is then free to
+ * load the session again. A client's session/resume never reaches the harness
  * at all: the runtime answers it here, which hides harnesses that cannot
  * resume. requestPage serves older transcript ranges for a load that carries a
  * replayBefore cursor; the cursor names one transcript generation, so a cursor
@@ -244,10 +248,12 @@ export function createSessionBootstrap(
   function startHarnessLoad(sessionId: string, state: BootstrapState): void {
     if (deps.harnessLoadOrphaned(sessionId)) {
       deps.log(
-        `not loading ${sessionId} from the harness: an earlier load is still unanswered`,
+        `not loading ${sessionId} from the harness yet: an earlier load is still unanswered`,
       );
+      state.harnessLoadDeferred = true;
       return;
     }
+    state.harnessLoadDeferred = false;
     const outboundId = deps.openLoadRoute(sessionId);
     state.harnessLoadId = outboundId;
     const loadFrame = {
@@ -333,6 +339,7 @@ export function createSessionBootstrap(
       fills: fill === undefined ? [] : [fill],
       adjustLines,
       harnessLoadId: null,
+      harnessLoadDeferred: false,
       deadline: setTimeout(
         () => expireFill(sessionId, state),
         deps.loadTimeoutMs,
@@ -457,6 +464,11 @@ export function createSessionBootstrap(
           waiter.loadToken,
         );
       }
+    },
+
+    harnessLoadFreed(sessionId) {
+      const state = bootstrapBySession.get(sessionId);
+      if (state?.harnessLoadDeferred) startHarnessLoad(sessionId, state);
     },
 
     has(sessionId) {
