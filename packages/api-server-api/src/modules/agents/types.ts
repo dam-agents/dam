@@ -325,6 +325,7 @@ export interface AgentsService {
     id: string,
     kind: WorkspaceMutationKind,
   ) => Promise<Agent | null>;
+  stop: (id: string) => Promise<Agent | null>;
   sleep: (id: string) => Promise<Agent | null>;
   setDisabled: (
     id: string,

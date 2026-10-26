@@ -1728,7 +1728,6 @@ export async function bootstrap() {
     uiBaseUrl: config.uiBaseUrl,
     delayMs: config.outageAlertDelayMinutes * 60_000,
   });
-  const outageAlertsSaga = outageAlerts.startSaga();
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
     async (event, input) => {
@@ -2380,7 +2379,6 @@ export async function bootstrap() {
     spend.lastKnownNameSaga.unsubscribe();
     spend.connectionLimitsSaga.unsubscribe();
     providerStatusSaga.unsubscribe();
-    outageAlertsSaga.unsubscribe();
     defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();
