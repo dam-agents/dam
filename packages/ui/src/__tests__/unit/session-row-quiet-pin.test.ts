@@ -21,6 +21,14 @@ function render(
   quietPin: boolean,
   mode = SessionMode.Chat,
   extra: { repositoryBadges?: boolean } = {},
+  repositories: unknown[] = [
+    {
+      name: "dam",
+      path: "/work/dam",
+      branch: "fix/one",
+      pullRequest: { number: 7, url: "https://github.com/acme/dam/pull/7" },
+    },
+  ],
 ) {
   return renderToStaticMarkup(
     createElement(SessionRow, {
@@ -31,7 +39,7 @@ function render(
         type: SessionType.Regular,
         title: "Recent",
         createdAt: "2026-10-20T00:00:00Z",
-        repositories: [{ name: "dam", path: "/work/dam", branch: "main" }],
+        repositories,
       } as never,
       ...extra,
       active: false,
@@ -72,5 +80,16 @@ it("drops the repository line only when asked", () => {
   expect(render(false)).toContain("Repositories this session touched");
   expect(
     render(false, SessionMode.Chat, { repositoryBadges: false }),
+  ).not.toContain("Repositories this session touched");
+});
+
+// TEST_SCENARIO: a Session lists every repository it committed in, and the tools it runs commit in caches and plugins too; the row badges only those with a pull request, so a Session with none draws no repository line.
+it("badges only the repositories with a pull request", () => {
+  const withPullRequest = render(false);
+  expect(withPullRequest).toContain("Repositories this session touched");
+  expect(withPullRequest).toContain("#7");
+  const cache = { name: "cache", path: "/tmp/cache", branch: "main" };
+  expect(
+    render(false, SessionMode.Chat, {}, [{ ...cache, pullRequest: null }]),
   ).not.toContain("Repositories this session touched");
 });

@@ -577,6 +577,62 @@ describe("session pushes", { timeout: 30_000 }, () => {
   });
 
   /**
+   * TEST_SCENARIO: A session pulls in a repository it does nothing else in,
+   * by a merge and by a rebase, as the tools an agent runs pull their caches.
+   * The pull and the merge or rebase it starts link no repository.
+   */
+  it("should not link a repository a session only pulled in", async () => {
+    const { repo, remote } = await repositoryWithRemote();
+    const clone = path.join(home, "work", "cache");
+    await git(tmp, "clone", "--quiet", "--branch", "main", remote, clone);
+    await git(repo, "push", "--quiet", "origin", "feat/push:main");
+    const env = { CLAUDE_CODE_SESSION_ID: "s1" };
+
+    await traced(env, clone, "pull", "--quiet", "--no-rebase");
+    await git(repo, "commit", "--quiet", "--allow-empty", "-m", "more");
+    await git(repo, "push", "--quiet", "origin", "feat/push:main");
+    await git(clone, "commit", "--quiet", "--allow-empty", "-m", "local");
+    await traced(env, clone, "pull", "--quiet", "--rebase");
+
+    expect(
+      (await git(clone, "log", "--format=%s", "-3")).trim().split("\n"),
+    ).toEqual(["local", "more", "change"]);
+    expect(service.repositoriesOf("s1")).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A session pushes a branch with an open pull request from
+   * a clone outside the scanned roots, as an agent working in /tmp does. The
+   * push links that clone and its pull request to the session.
+   */
+  it("should link the pull request a session pushed from outside the roots", async () => {
+    const { repo, remote } = await repositoryWithRemote();
+    const clone = path.join(elsewhere, "tmp.xyz");
+    await fs.mkdir(elsewhere, { recursive: true });
+    await git(repo, "push", "--quiet", "origin", "feat/push");
+    await git(tmp, "clone", "--quiet", "--branch", "feat/push", remote, clone);
+    await git(clone, "commit", "--quiet", "--allow-empty", "-m", "more");
+    service = serviceFor([path.join(home, "work"), home], findsFeature);
+
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      clone,
+      "push",
+      "--quiet",
+      "origin",
+      "feat/push",
+    );
+
+    expect(service.repositoriesOf("s1")).toEqual([
+      expect.objectContaining({
+        path: clone,
+        branch: "feat/push",
+        pullRequest: link,
+      }),
+    ]);
+  });
+
+  /**
    * TEST_SCENARIO: Two sessions work in two worktrees of one repository.
    * Each push goes to the session that ran it, in the worktree it ran in.
    */

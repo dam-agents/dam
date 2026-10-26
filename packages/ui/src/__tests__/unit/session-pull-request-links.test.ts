@@ -2,6 +2,7 @@ import type { SessionRepository } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 
 import {
+  badgeRepositories,
   pullRequestLinks,
   repositoryBadgeLabels,
 } from "../../modules/changes/lib/pull-request-links.js";
@@ -92,5 +93,22 @@ describe("session repository badge labels", () => {
         repository("/work/dam", { branch: null }),
       ]),
     ).toEqual(["dam · 1", "dam · 2", "dam · dam"]);
+  });
+});
+
+describe("session repository badges", () => {
+  // TEST_SCENARIO: a Session badges the repositories it has a pull request in, in their order, and none it only committed in; a Session the list has no repositories for badges none.
+  it("badges only the repositories with a pull request", () => {
+    const withPullRequest = repository("/work/dam", { pullRequest: pr(1) });
+    const outsideHome = repository("/tmp/clone", { pullRequest: pr(2) });
+
+    expect(
+      badgeRepositories([
+        repository("/home/agent/.cache/plugin"),
+        withPullRequest,
+        outsideHome,
+      ]),
+    ).toEqual([withPullRequest, outsideHome]);
+    expect(badgeRepositories(undefined)).toEqual([]);
   });
 });
