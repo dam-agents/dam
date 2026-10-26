@@ -395,6 +395,7 @@ function ShadowWarnings({
 }: {
   warnings: { envName: string; shadowedSource: string }[];
 }) {
+  if (warnings.length === 0) return null;
   return (
     <Callout
       tone="warning"
