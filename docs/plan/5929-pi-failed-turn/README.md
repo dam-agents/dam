@@ -1,4 +1,4 @@
-# A failed Pi model call fails the turn
+# A failed Pi or Codex model call fails the turn
 
 > Working plan — temporary, committed on the feature branch.
 > Deleted once the feature ships.
@@ -18,6 +18,9 @@ After this change, a failed model call on Pi fails the turn, as it does on Claud
 The web chat shows its failed-message card with Retry, and Slack and Telegram get their failure reply.
 The error shows once, on the card.
 A request that succeeds within Pi's own retries stays a normal reply.
+
+Codex has the same defect: codex-acp (Codex's bridge to the platform) writes the final error of a failed turn into the reply as text and ends the turn as a normal reply (upstream [agentclientprotocol/codex-acp#647](https://github.com/agentclientprotocol/codex-acp/issues/647)).
+After this change, a failed model call on Codex fails the turn too, with the same card and the same failure replies.
 
 ## Acceptance criteria
 
@@ -45,6 +48,12 @@ Given an agent on the Pi harness with an Anthropic Connection, bound to a Telegr
 When a person writes to the agent in that chat
 Then within five minutes the chat gets a reply that says the message failed
 
+### AC-5 — Codex behaves the same
+
+Given an agent on the Codex harness, and the banner names an outage of its provider
+When the owner sends a message in the agent's chat, a person mentions the agent in its Slack channel, or a person writes to it in its Telegram chat
+Then AC-1 to AC-4 hold for that agent, with its provider in place of Anthropic, and no error text shows as a reply above the card
+
 ## Approach
 
 Read these first:
@@ -52,13 +61,15 @@ Read these first:
 - [`packages/agents/pi-agent/README.md`](../../../packages/agents/pi-agent/README.md), sections **Provider errors in the chat** and **pi-acp patch**: what the patch changes in pi-acp today, and how it stays safe across pi-acp versions.
 - [provider-status](../../architecture/provider-status.md), **The failed turn** and **The status line**: the card, its Retry rule, and the line that names an outage while a turn runs.
 - [channel-turns](../../architecture/channel-turns.md): the failure reply of an addressed Slack or Telegram turn.
+- [`packages/agents/codex/README.md`](../../../packages/agents/codex/README.md), section **codex-acp patch**: the in-memory patch of codex-acp, built like the Pi one.
 
 ### Where the fix goes
 
-The whole fix is in the Pi image.
+The whole fix is in the agent image, in the two in-memory patches of the harnesses' ACP bridges.
 [`pi-acp-patch.mjs`](../../../packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) already edits pi-acp 0.0.34 in memory as it loads; since #4459 it ends a reply cut at the output limit with `max_tokens`.
 The same patch now fails a turn whose last model request failed.
-The agent-runtime, the api-server and the UI need no change: they already handle a failed turn from Claude Code, and the facts below show that a failed Pi turn takes the same paths.
+[`codex-acp-patch.mjs`](../../../packages/agents/codex/rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs) already edits codex-acp 2.1.1 to turn off its title generator; it now also fails a turn whose model request failed (sub-issue 02).
+The agent-runtime, the api-server and the UI need no change: they already handle a failed turn from Claude Code, and the facts below show that a failed Pi or Codex turn takes the same paths.
 
 ### How pi-acp ends a turn (0.0.34)
 
@@ -95,6 +106,26 @@ With the retry lines, AC-1 would fail.
 Claude Code also retries without writing into the reply, and during a known outage the chat's status line already says that the provider is not responding and the agent keeps trying.
 The cost: when no outage is known, a throttled or briefly failing call shows only the working dots and the "Working for" timer during Pi's retries, for about 14 seconds.
 
+### How codex-acp ends a turn (2.1.1)
+
+- Codex's app-server sends an `error` notification for each failed model request, with `willRetry`, and ends the turn with `turn/completed`, whose status is `failed` when the turn failed.
+  The image lets Codex retry once (`request_max_retries` and `stream_max_retries` in [`config.toml`](../../../packages/agents/codex/rootfs/etc/codex/config.toml)).
+- A retried error (`willRetry: true`) reaches the client as a `session_info_update` with the error in `_meta`, not as reply text, so Codex writes no retry lines.
+- A final error (`willRetry: false`) of the current turn goes through `createErrorEvent`.
+  For a client without JetBrains' AIR extension, which the platform is, it writes the error's readable message into the reply as an `agent_message_chunk`.
+  Only `usageLimitExceeded` also fails `session/prompt`, with `RequestError.internalError({ message, codexErrorInfo, additionalDetails })`; every other error ends the turn with `end_turn`.
+- With AIR, codex-acp reports the failure in `_meta.jetbrains.air.sessionFailure`, still with `end_turn`; opting in also changes how codex-acp renders tool calls, permissions, modes and plans, so the platform does not.
+- The chat reads only `data.details` of a JSON-RPC error (`jsonRpcErrorDetails`), so codex-acp's own `data.message` would show only "The agent couldn't process this message."
+- Upstream [#647](https://github.com/agentclientprotocol/codex-acp/issues/647) proposes to fail `session/prompt` for every final error as for `usageLimitExceeded`, but to keep the text in the reply.
+
+### What the Codex patch does after this change
+
+One new edit in `createErrorEvent`, for a client without AIR: a final error of the current turn always fails the turn with `RequestError.internalError`, whose `data` keeps codex-acp's fields and adds `details: "Model request failed: <readable message>"`, and writes no reply text.
+The readable message is the text that the reply shows today.
+So the card shows alone, with Retry, and its Raw error holds the text.
+An error that Codex retries, an error of another turn, and the AIR path do not change.
+A release that fixes #647 as proposed still writes the text and still has no `details`, so the edit stays until both change.
+
 ### How the failure reaches each surface
 
 - **Web chat, the tab that sent the message.** The reply has no text, so `use-acp-prompt.ts` marks the user's message as failed (`failUserMessage`) and drops the empty reply.
@@ -103,13 +134,16 @@ The cost: when no outage is known, a throttled or briefly failing call shows onl
 - **Web chat, another open tab.** The runtime's `platform_turn_ended` frame carries the error, and the projection puts it on the reply; that tab shows the card with no Retry, as it does for Claude Code today.
 - **Slack and Telegram.** `acp.sendPrompt` rejects, and the worker posts the failure reply of `turn-failure-copy.ts`: "Something went wrong while relaying this message — try again."
   Text output never reaches these channels, so the retry lines never mattered there.
-  When #5921 lands, that reply names the outage, for Pi too, with no extra code.
+  When #5921 lands, that reply names the outage, for Pi and Codex too, with no extra code.
 
 ### Side effects
 
 - A spend refusal or an expired key on Pi now gets the chat's own spend-limit or key message, in place of reply text.
 - A scheduled run, a sub-agent call or a CLI run on Pi whose last model call failed now ends as failed, as on Claude Code.
 - The terminal (`pi` in a shell) never had the workaround and does not change.
+- On Codex, a spend refusal, a refused model or an expired key now fails the turn too, and a scheduled run, a sub-agent call or a CLI run whose model call failed ends as failed.
+  The Codex terminal (its TUI) does not go through codex-acp and does not change.
+- No harness then ends a refused turn like a normal one, so the **Recorded refusal** paragraph of [spend-limits](../../architecture/spend-limits.md) changes its reason; the gate still counts every refusal itself.
 
 ### The decisions
 
@@ -117,11 +151,15 @@ The user made these decisions while the plan was discussed:
 
 1. **The retry lines go.** The patch drops pi-acp's retry lines, in place of a chat rule that ignores Pi's text or a new status for retries.
    Retry feedback in the chat, if wanted later, is a feature for every harness.
+2. **Codex is fixed in the same PR**, as sub-issue 02, decided after sub-issue 01 was implemented, because the cause, the acceptance criteria and the docs are the same.
+   The fix is an edit of the codex-acp patch, in place of opting into JetBrains' AIR extension or a chat rule that reads Codex's error text: AIR changes how codex-acp renders everything else, and a chat rule does nothing for Slack and Telegram.
 
 ## Conventions & glossary
 
 - **pi-acp**: Pi's ACP bridge, pinned at 0.0.34 in [`image.toml`](../../../packages/agents/pi-agent/image.toml); the agent-runtime talks ACP to it.
 - **The patch**: [`pi-acp-patch.mjs`](../../../packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs), loaded by `harness-chat` with `--import`; each edit is an exact `find`/`replace` with an expected match `count`, and the patch applies only when every edit matches.
+- **codex-acp**: Codex's ACP bridge, pinned at 2.1.1 in [`image.toml`](../../../packages/agents/codex/image.toml); the repository does not vendor it, so reading its bundle needs `npm pack @agentclientprotocol/codex-acp@2.1.1`.
+- **The Codex patch**: [`codex-acp-patch.mjs`](../../../packages/agents/codex/rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs), built like the Pi one.
 - **Failed turn**: a `session/prompt` that ends with a JSON-RPC error, not a stop reason.
 - **Engineering skills**: the change is plain ESM JavaScript in the image and one TypeScript Pi extension; no server-side or UI TypeScript changes.
   Apply `/typescript-engineering` only if the slice ends up touching `packages/agent-runtime` or `packages/api-server`, which this plan does not expect.
@@ -129,7 +167,8 @@ The user made these decisions while the plan was discussed:
   Run `mise run check:comment-types`.
 - **Tests**: add no new tests.
   The existing Pi image tests run the real Pi through the patched pi-acp and fail when an edit does not match the bundle.
-- **Docs**: the slice updates the pi-agent README and [provider-status](../../architecture/provider-status.md) in the same commit, with one sentence per line and a new `Last verified:` date.
+  The `codex-acp-patch` test checks the Codex patch against the real bundle only when `CODEX_ACP` names it, so run it with that set.
+- **Docs**: each slice updates its harness's README, [provider-status](../../architecture/provider-status.md) and [spend-limits](../../architecture/spend-limits.md) in the same commit, with one sentence per line and a new `Last verified:` date.
 
 ## Whole-feature smoke test
 
@@ -151,10 +190,19 @@ Use a Pi agent with an Anthropic Connection, connected to a Slack channel and, i
 7. **Reload:** reload the chat once and note what it shows for the failed exchange.
    A card lost on reload is a known limit (#3761).
    If the failed message shows twice, file an issue for it: it is not part of this fix, because every harness takes that path when a turn fails with no reply text.
+8. **AC-5:** repeat steps 1 to 6 with a Codex agent, and block the host of its provider in place of Anthropic's.
+   The card names that provider, Raw error holds `Model request failed: …`, and no reply text shows above the card.
 
 Remove every rule you added before you finish.
 
 ## Delivery
 
-The feature is one sub-issue, and so one atomic commit.
+The feature is two sub-issues, one atomic commit each, in this order:
+
+| #   | Sub-issue                                                                                | Done |
+| --- | ---------------------------------------------------------------------------------------- | ---- |
+| 01  | [A Pi turn fails when its last model call failed](./01-pi-turn-fails-on-model-error.md)  | [ ]  |
+| 02  | [A Codex turn fails when its model call failed](./02-codex-turn-fails-on-model-error.md) | [ ]  |
+
+02 does not need 01's code, but it edits the same paragraphs of provider-status and spend-limits, so it comes second.
 The whole feature lands as a single PR for https://github.com/dam-agents/dam/issues/5929.
