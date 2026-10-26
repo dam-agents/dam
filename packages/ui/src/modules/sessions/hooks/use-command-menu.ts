@@ -42,7 +42,7 @@ export interface CommandMenu {
  * once the caret leaves that token. While it is open it takes ↑/↓, Enter, Tab
  * and Esc before the input does; when it is closed, every key reaches the
  * input's own handling (send, newline, prompt history). Esc closes it for
- * the text typed so far, and typing more opens it again.
+ * the text typed so far; typing more, or a new command, opens it again.
  */
 export function useCommandMenu(input: {
   commands: readonly SkillCommand[];
@@ -67,6 +67,7 @@ export function useCommandMenu(input: {
     [commands, query],
   );
   const key = trigger ? `${trigger.start}:${trigger.query}` : "";
+  if (key === "" && dismissed !== null) setDismissed(null);
   const open =
     focused && trigger !== null && options.length > 0 && dismissed !== key;
   const highlight =

@@ -190,6 +190,16 @@ describe("the command list of the chat input", () => {
     expect(onSend).toHaveBeenCalledWith("/gri", undefined);
   });
 
+  // TEST_SCENARIO: Esc closes the list only for that command: once the prompt is sent, a new `/gri` opens it again.
+  it("opens again for the next command after Escape", () => {
+    render("claude-code");
+    type("/gri");
+    press("Escape");
+    press("Enter");
+    type("/gri");
+    expect(optionNames()).toEqual(["/grill-me"]);
+  });
+
   // TEST_SCENARIO: a click on an option picks it.
   it("picks an option on click", () => {
     render("claude-code");
