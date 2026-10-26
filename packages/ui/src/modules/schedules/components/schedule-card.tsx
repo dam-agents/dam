@@ -143,7 +143,9 @@ export function ScheduleCard({
               </WarningAlt>
             )}
           </p>
-          <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
+          {/* UNIT_BOUNDARY_DESCRIPTION: the line wraps rather than squeezing, so
+           * a warning cannot shrink the cadence to one glyph (QA). */}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
             {alert && (
               <>
                 <span className={cn("truncate", alert.urgent && "text-danger")}>
