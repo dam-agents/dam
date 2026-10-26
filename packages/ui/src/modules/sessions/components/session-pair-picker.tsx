@@ -183,7 +183,9 @@ export function SessionPairPicker(props: Props) {
     harness,
   );
   const groups = routed
-    ? modelGroups(catalogModels.data, catalogModels.granted)
+    ? modelGroups(catalogModels.data, catalogModels.granted).filter(
+        (g) => !catalog || offered.granted.some((p) => p.id === g.connectionId),
+      )
     : [];
   const confirmDisconnect = (name: string, id: string) => {
     const provider = providers.granted.find((p) => p.id === id);
