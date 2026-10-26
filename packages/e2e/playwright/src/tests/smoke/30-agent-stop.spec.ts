@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { agentName } from "../../lib/fixtures.js";
+import { agentName, mockDefaultReply } from "../../lib/fixtures.js";
 
 const stopChannelId = "C-E2E-STOP";
 const strangerSlackUserId = "U-E2E-STOPPER";
@@ -11,10 +11,15 @@ const runningTs = "1700000010.000100";
 const stoppedTs = "1700000011.000100";
 const wokenTs = "1700000012.000100";
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the mention in one thread was answered. The e2e Slack gateway records what the agent posts, and an ephemeral is not a reply, so any message in the thread is the answer.
+// UNIT_BOUNDARY_DESCRIPTION: whether the agent answered the mention in one thread. The relay answers a stopped agent's mention with a note of its own, so the agent's own words are what is read here, and the gateway signs an agent's post rather than starting it with them.
 async function answeredIn(api: ApiClient, ts: string): Promise<boolean> {
   const { records } = await api.e2e.slackReadOutbound.query();
-  return records.some((r) => r.kind === "message" && r.threadTs === ts);
+  return records.some(
+    (r) =>
+      r.kind === "message" &&
+      r.threadTs === ts &&
+      r.text.includes(mockDefaultReply),
+  );
 }
 
 test("Stop holds the agent against a channel mention, and Wake releases it", async ({
