@@ -37,7 +37,10 @@ import {
   waitAgentState,
   writeHomeFile,
 } from "../../lib/backend.js";
-import { harnessName } from "../../lib/fixtures.js";
+import {
+  agentName as chainAgentName,
+  harnessName,
+} from "../../lib/fixtures.js";
 import { requestRuntimeMigration, retainedVolumes } from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
@@ -119,17 +122,24 @@ test("a container agent holds a HOME file and a session", async ({ page }) => {
     .toBeGreaterThan(0);
 });
 
-// TEST_SCENARIO: the operator asks for the move by annotating the Agent, the one trigger there is. The page offers none: the row carries no Migrate control, since a move is not the owner's to start. The request switches nothing at once. The row badges the move with its phase as the controller carries it out, and it is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, and the machine is running.
+// TEST_SCENARIO: the operator asks for the move by annotating the Agent, the one trigger there is. The page offers none: the row carries no Migrate control, since a move is not the owner's to start. The request switches nothing at once. The row badges the move with its phase as the controller carries it out, and it is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, and the machine is running. The chain's e2e-agent is a vm Agent in this lane and the restored UI reads the new runtime as the rare case, so its row carries the "New runtime" badge, which renders only once the install answer has arrived — the evidence that the page read its runtime at all.
 test("migrates to the vm Backend on an operator's request", async ({
   page,
 }) => {
   test.setTimeout(300_000);
   await page.goto(baseUrl);
+  const chainAgent = (await api.agents.list.query()).find(
+    (a) => a.name === chainAgentName,
+  );
+  expect(
+    chainAgent?.vm,
+    `the vm lane's UI-created ${chainAgentName} is a vm agent`,
+  ).toBe(true);
+  await expect(
+    agentRow(page, chainAgentName).getByText("New runtime", { exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
   const row = agentRow(page, agentName);
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await expect(row.getByText("Old runtime", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
   await expect(
     row.getByRole("button", { name: "Migrate", exact: true }),
   ).toHaveCount(0);
