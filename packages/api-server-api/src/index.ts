@@ -203,6 +203,11 @@ export {
 } from "./modules/agents/view.js";
 export { editorEmailOf } from "./modules/agents/editor-email.js";
 export {
+  agentPageUrl,
+  SANDBOX_SECTIONS,
+  type SandboxSection,
+} from "./modules/agents/agent-page.js";
+export {
   AGENT_PERMISSIONS,
   type AgentPermission,
   type AgentTarget,

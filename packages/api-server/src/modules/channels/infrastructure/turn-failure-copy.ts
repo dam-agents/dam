@@ -1,3 +1,4 @@
+import { agentPageUrl } from "api-server-api";
 import { AcpTurnAbandonedError } from "../../../core/acp-client.js";
 import { ChannelProfileRefusedError } from "./channel-profile.js";
 import type { NoDefaultModelError } from "../../harness-config/index.js";
@@ -43,7 +44,7 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
     return {
       reason: "profile-unavailable",
       copy: ({ uiBaseUrl, agentId }) =>
-        `This channel runs on the profile “${err.profileName}”, which this agent can't use: ${err.detail}. Its owner can pick another profile on the channel's row at ${uiBaseUrl}/sandboxes/${agentId}/automations`,
+        `This channel runs on the profile “${err.profileName}”, which this agent can't use: ${err.detail}. Its owner can pick another profile on the channel's row at ${agentPageUrl(uiBaseUrl, agentId, "channels")}`,
     };
   return {
     reason: "acp-error",
@@ -83,5 +84,5 @@ function noDefaultModelUserCopy(
 ): string {
   return err.pending
     ? "This agent is still setting up its default model after an update. Try again in a minute."
-    : `This agent has no default model, so it can't answer here yet. Its owner can set one at ${uiBaseUrl}/sandboxes/${agentId}/providers`;
+    : `This agent has no default model, so it can't answer here yet. Its owner can set one at ${agentPageUrl(uiBaseUrl, agentId, "providers")}`;
 }
