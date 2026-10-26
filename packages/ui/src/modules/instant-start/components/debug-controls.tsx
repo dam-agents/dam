@@ -42,7 +42,7 @@ export function InstantStartDebugControls() {
   const on = "border-primary/40 bg-primary/10 text-primary";
 
   return (
-    <div className="fixed top-3 right-3 z-50 flex items-center gap-1.5 opacity-40 transition-opacity hover:opacity-100">
+    <div className="fixed bottom-3 right-3 z-50 flex items-center gap-1.5 opacity-40 transition-opacity hover:opacity-100">
       <button
         type="button"
         onClick={() => apply("landing")}

@@ -9,7 +9,7 @@ export function MockToggle() {
   };
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-wrap items-center justify-end gap-2">
+    <div className="fixed bottom-4 right-4 z-[9999] flex flex-wrap items-center justify-end gap-2">
       <button
         type="button"
         onClick={toggle}
