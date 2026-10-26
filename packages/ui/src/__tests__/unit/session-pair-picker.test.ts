@@ -99,7 +99,9 @@ const state = vi.hoisted(() => ({
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
     select({
-      nextSessionPair: state.chosen ? { agent: state.chosen } : {},
+      nextSessionPair: state.chosen
+        ? { agent: state.chosen, "agent-b": state.chosen }
+        : {},
       setNextSessionPair: state.chosenModel,
       navigateToSandboxHome: vi.fn(),
       showConfirm: state.showConfirm,
@@ -1325,6 +1327,66 @@ describe("a harness picked without a model", () => {
       expect(state.remember).not.toHaveBeenCalled();
     } finally {
       act(() => root.unmount());
+    }
+  });
+});
+
+describe("the profile a new chat's pick came from", () => {
+  /** TEST_SCENARIO: a profile picked for one agent's next chat makes the Save
+   * row Update that profile; once the picker shows another agent, whose pick
+   * never came from it, the row saves a new profile instead of writing that
+   * agent's pick into the first one. */
+  it("does not carry the picked profile to another agent", async () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "curve-bender",
+        model: "cb/rits/zai-org/glm-5-3",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 0, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+    ];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = (agentId: string) =>
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId,
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+    const click = (text: string) =>
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find((b) => b.textContent?.includes(text))!
+          .click(),
+      );
+    try {
+      render("agent");
+      click("Fast review");
+      click("Custom selection");
+      expect(container.textContent).toContain("Update “Fast review”");
+      render("agent-b");
+      expect(container.textContent).toContain("Save as a profile");
+      expect(container.textContent).not.toContain("Update “Fast review”");
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+      state.chosen = null;
     }
   });
 });

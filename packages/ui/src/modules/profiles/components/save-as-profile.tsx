@@ -138,3 +138,21 @@ export function useSaveAsProfile({
     ),
   };
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the profile a pick came from, so Update writes
+ * back to it, held for one scope: an agent's next session, or one session. A
+ * picker stays mounted when its agent or session changes, so a pick made in
+ * another scope never carries over and never offers to overwrite that profile.
+ */
+export function usePickedProfile(scope: string) {
+  const [origin, setOrigin] = useState<{
+    scope: string;
+    profile: { id: string; name: string };
+  } | null>(null);
+  return [
+    origin?.scope === scope ? origin.profile : null,
+    (profile: { id: string; name: string }) =>
+      setOrigin({ scope, profile: { id: profile.id, name: profile.name } }),
+  ] as const;
+}

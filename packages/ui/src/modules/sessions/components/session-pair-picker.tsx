@@ -25,7 +25,10 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { ModelConfiguration } from "../../profiles/components/profile-list.js";
-import { useSaveAsProfile } from "../../profiles/components/save-as-profile.js";
+import {
+  usePickedProfile,
+  useSaveAsProfile,
+} from "../../profiles/components/save-as-profile.js";
 import {
   rememberSessionPair,
   useGrantProvider,
@@ -129,10 +132,7 @@ export function SessionPairPicker(props: Props) {
   const [view, setView] = useState<"profiles" | "custom" | "subagent">(
     firstView,
   );
-  const [fromProfile, setFromProfile] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
+  const [fromProfile, setFromProfile] = usePickedProfile(agentId ?? "");
   const { data: profiles = [] } = useProfiles(agentId);
   const manageProviders = newLayout;
   const setPair = useStore((s) => s.setNextSessionPair);

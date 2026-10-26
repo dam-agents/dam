@@ -21,7 +21,10 @@ import {
 import { useStore } from "../../../store.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { ModelConfiguration } from "../../profiles/components/profile-list.js";
-import { useSaveAsProfile } from "../../profiles/components/save-as-profile.js";
+import {
+  usePickedProfile,
+  useSaveAsProfile,
+} from "../../profiles/components/save-as-profile.js";
 import {
   useGrantProvider,
   useHarnessCatalog,
@@ -138,15 +141,9 @@ export function ModelIndicator({
   const [view, setView] = useState<"profiles" | "custom" | "subagent">(
     "profiles",
   );
-  /* UNIT_BOUNDARY_DESCRIPTION: the profile this session's pick came from, so Update writes back to it; another session's pick never carries over. */
-  const [origin, setOrigin] = useState<{
-    sessionId: string | null;
-    profile: { id: string; name: string };
-  } | null>(null);
-  const fromProfile =
-    origin && origin.sessionId === sessionId ? origin.profile : null;
-  const setFromProfile = (profile: { id: string; name: string }) =>
-    setOrigin({ sessionId, profile });
+  const [fromProfile, setFromProfile] = usePickedProfile(
+    `${agentId}/${sessionId ?? ""}`,
+  );
   const { data: profiles = [] } = useProfiles(agentId);
   /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so its primary model is offered only the profiles that run on it. */
   const sessionProfiles = profiles.filter((p) => p.harness === harness);

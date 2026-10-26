@@ -1,10 +1,9 @@
+import { CheckmarkFilled, ErrorFilled, Misuse } from "@carbon/icons-react";
 import type { HarnessFamily, ProviderKeyCheck } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
-import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip } from "@/components/ui/tooltip";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -88,9 +87,9 @@ export function ProviderRow({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a provider row's small icon and name, with the
- * harnesses it runs in their tooltip; a button that opens the provider where
- * the row offers that, else a focusable span so the tooltip still opens.
+ * UNIT_BOUNDARY_DESCRIPTION: a provider row's small icon, its name, and the
+ * harnesses it runs as small muted icons after the name, each named for a
+ * screen reader; a button that opens the provider where the row offers that.
  */
 export function ProviderHead({
   type,
@@ -113,54 +112,36 @@ export function ProviderHead({
       <span className="min-w-0 truncate text-sm font-medium text-foreground">
         {name}
       </span>
+      {harnesses && (
+        <HarnessIcons
+          harnesses={harnesses}
+          size="xs"
+          className="shrink-0 gap-1 text-muted-foreground opacity-70"
+        />
+      )}
     </>
   );
   const className =
     "flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
-  return (
-    <Tooltip content={<HarnessSupport harnesses={harnesses} />}>
-      {onOpen ? (
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-label={label}
-          className={className}
-        >
-          {head}
-        </button>
-      ) : (
-        <span tabIndex={0} className={className}>
-          {head}
-        </span>
-      )}
-    </Tooltip>
-  );
-}
-
-/** UNIT_BOUNDARY_DESCRIPTION: which harnesses a provider runs, as the tooltip of its row; a missing catalog says so rather than inventing compatibility. */
-export function HarnessSupport({
-  harnesses,
-}: {
-  harnesses: readonly string[] | undefined;
-}) {
-  return (
-    <span className="flex flex-wrap items-center gap-2 text-xs">
-      Supports:
-      {harnesses?.length ? (
-        <HarnessIcons harnesses={harnesses} size="sm" className="flex-wrap" />
-      ) : (
-        <span>{harnesses ? "None" : "Compatibility unavailable"}</span>
-      )}
-    </span>
+  return onOpen ? (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={label}
+      className={className}
+    >
+      {head}
+    </button>
+  ) : (
+    <span className={className}>{head}</span>
   );
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the one pill that says where a provider row
- * stands: whether it is configured, and, once it is, whether its key is being
- * verified, rejected by the provider, or working. A provider that could not
- * answer or whose template is having an outage keeps a yellow pill, with the
- * reason in its tooltip, since neither says the key is bad.
+ * UNIT_BOUNDARY_DESCRIPTION: the one icon that says where a provider row
+ * stands, its state as its accessible name: not configured, the key being
+ * verified, working, or, configured and in trouble (rejected, unverified, or
+ * its template having an outage), with the reason in its title.
  */
 function ConnectionBadge({
   connected,
@@ -175,46 +156,39 @@ function ConnectionBadge({
   checking: boolean;
   reason: string | null;
 }) {
-  const pill = "shrink-0 gap-1.5";
-  if (!connected)
-    return (
-      <Badge variant="muted" className={pill}>
-        Not configured
-      </Badge>
-    );
-  if (checking)
-    return (
-      <Badge variant="warning" className={pill}>
-        <Spinner size={12} className="shrink-0" />
-        Configured · Verifying
-      </Badge>
-    );
-  if (keyCheck?.result === "refused")
-    return (
-      <Badge variant="danger" className={pill} title={reason ?? undefined}>
-        Configured · Key rejected
-      </Badge>
-    );
-  if (degraded)
-    return (
-      <Badge
-        variant="warning"
-        className={pill}
-        data-testid="provider-degraded-badge"
-      >
-        Configured · Degraded
-      </Badge>
-    );
-  if (keyCheck?.result === "unverified")
-    return (
-      <Badge variant="warning" className={pill} title={reason ?? undefined}>
-        Configured · Unverified
-      </Badge>
-    );
+  const [state, Icon, tone] = !connected
+    ? (["Not configured", ErrorFilled, "text-muted-foreground"] as const)
+    : checking
+      ? (["Configured · Verifying", null, ""] as const)
+      : keyCheck?.result === "refused"
+        ? (["Configured · Key rejected", Misuse, "text-danger"] as const)
+        : degraded
+          ? (["Configured · Degraded", Misuse, "text-danger"] as const)
+          : keyCheck?.result === "unverified"
+            ? (["Configured · Unverified", Misuse, "text-danger"] as const)
+            : ([
+                "Configured · Connected",
+                CheckmarkFilled,
+                "text-success",
+              ] as const);
   return (
-    <Badge variant="success" className={pill}>
-      Configured · Connected
-    </Badge>
+    <span
+      role="img"
+      aria-label={state}
+      title={reason ?? state}
+      data-testid={
+        degraded && connected && !checking
+          ? "provider-degraded-badge"
+          : undefined
+      }
+      className={cn("flex shrink-0", tone)}
+    >
+      {Icon ? (
+        <Icon size={16} aria-hidden />
+      ) : (
+        <Spinner size={14} className="text-muted-foreground" />
+      )}
+    </span>
   );
 }
 
