@@ -53,12 +53,16 @@ export function ServicesPanel({
           onGoToChannels={onGoToChannels}
         />
       </section>
-      <AgentEgressEditor agentId={agent.id} header={() => null} compact />
-      <EnvTab
-        agent={agent}
-        header={() => null}
-        panelHeading="Environment variables"
-      />
+      <section>
+        <AgentEgressEditor agentId={agent.id} header={() => null} compact />
+      </section>
+      <section>
+        <EnvTab
+          agent={agent}
+          header={() => null}
+          panelHeading="Environment variables"
+        />
+      </section>
     </div>
   );
 }

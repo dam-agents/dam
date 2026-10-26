@@ -162,6 +162,7 @@ export function AgentEgressEditor({
         </div>
       )}
       <ListSection
+        className={compact ? "mb-0" : undefined}
         loading={isLoading}
         error={isError && "Couldn't load the rules."}
         isEmpty={rules.length === 0}

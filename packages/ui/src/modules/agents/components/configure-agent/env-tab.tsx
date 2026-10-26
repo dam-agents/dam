@@ -143,6 +143,7 @@ export function EnvTab({
       )}
 
       <ListSection
+        className={panelHeading ? "mb-0" : undefined}
         isEmpty={
           panelHeading
             ? envVars.length === 0 && shownInherited.length === 0
