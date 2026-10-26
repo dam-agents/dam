@@ -70,14 +70,15 @@ export function SandboxHomeView() {
   const features = useFeatures();
   const rightToolbar =
     features.isSuccess && features.data?.["unified-right-toolbar"] === true;
-  // UNIT_BOUNDARY_DESCRIPTION: with the experiment on this page has no surface of its own, so a deep link or a bookmark replaces itself with the chat and opens the panel that holds the section; every knob keeps its home there.
+  const agentsQuery = useAgents();
+  const agent = agentId ? findAgent(agentsQuery.data, agentId) : null;
+  // UNIT_BOUNDARY_DESCRIPTION: with the experiment on this page has no surface of its own, so a deep link or a bookmark replaces itself with the chat and opens the panel that holds the section; every knob keeps its home there. A reader who may not use the Agent's Sessions keeps this page, since the chat route sends them straight back here and the two would loop.
   useEffect(() => {
     const tab = configRedirectTab(rightToolbar, section);
     if (!agentId || tab === null) return;
+    if (agent !== null && !holds(agent.access, "sessions")) return;
     openConfigTab(agentId, tab);
-  }, [rightToolbar, agentId, section, openConfigTab]);
-  const agentsQuery = useAgents();
-  const agent = agentId ? findAgent(agentsQuery.data, agentId) : null;
+  }, [rightToolbar, agentId, section, openConfigTab, agent]);
 
   const agentInaccessible = useIsAgentInaccessible(agentId);
   usePublicAgentFallback(agentId, agentInaccessible);

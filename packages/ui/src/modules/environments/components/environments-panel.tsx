@@ -56,7 +56,7 @@ export function EnvironmentsPanel({
       >
         {rightToolbar && (
           <div className="border-b border-border px-4 py-3">
-            <AccessListEditor agentId={agentId} />
+            <AccessListEditor key={agentId} agentId={agentId} />
           </div>
         )}
         {environments.isPending ? (

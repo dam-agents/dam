@@ -3,13 +3,16 @@ import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "./connections-section.js";
+import { ConnectionAddressingSection } from "./setup/setup-sections.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Services panel of the unified toolbar: the
- * connections the Agent holds, its network rules and its environment variables,
- * each as the section its configuration page already renders, in that order,
- * always open, with the one add button that belongs to it on its heading and no
- * copy under it. The providers and the spending are the Models panel's.
+ * connections the Agent holds and how its credentials are injected into them,
+ * its network rules and its environment variables, each as the section its
+ * configuration page already renders, in that order, always open, with the one
+ * add button that belongs to it on its heading and no copy under it. The
+ * providers, the harness settings they carry and the spending are the Models
+ * panel's.
  */
 export function ServicesPanel({
   agent,
@@ -35,6 +38,7 @@ export function ServicesPanel({
           onGoToChannels={onGoToChannels}
         />
       </section>
+      <ConnectionAddressingSection agent={agent} />
       <section>
         <AgentEgressEditor agentId={agent.id} header={() => null} compact />
       </section>

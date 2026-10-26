@@ -10,6 +10,7 @@ import { cn } from "./lib/utils.js";
 import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
+import { holds } from "./modules/agents/lib/agent-permissions.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import { useFeatures } from "./modules/features/api/queries.js";
@@ -155,6 +156,11 @@ function MainApp() {
     if (flags.isSuccess)
       setUnifiedToolbar(flags.data?.["unified-right-toolbar"] === true);
   }, [flags.isSuccess, flags.data, setUnifiedToolbar]);
+  const selectedAgent = useStore((s) => s.selectedAgent);
+  const selected = useAgent(selectedAgent);
+  const setChatBarred = useStore((s) => s.setChatBarred);
+  const barred = selected !== null && !holds(selected.access, "sessions");
+  useEffect(() => setChatBarred(barred), [barred, setChatBarred]);
   useEffect(() => {
     if (newLayout) document.documentElement.dataset.layout = "new";
     else delete document.documentElement.dataset.layout;

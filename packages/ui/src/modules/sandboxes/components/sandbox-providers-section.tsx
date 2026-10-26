@@ -96,6 +96,7 @@ export function SandboxProvidersSection({
                 provider={p}
                 checked={attached}
                 disabled={pending || !managesProviders}
+                showSpend={attached && root === null}
                 onCheckedChange={onCheckedChange}
               />
             );

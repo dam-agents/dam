@@ -4,6 +4,7 @@ import { SectionHeading } from "@/components/ui/section-heading";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { AgentModelSettingsSection } from "../../sandboxes/components/agent-config-sections.js";
 import { SandboxChannelsSection } from "../../sandboxes/components/sandbox-channels-section.js";
 import { SandboxProvidersSection } from "../../sandboxes/components/sandbox-providers-section.js";
 import { SandboxSkillsSection } from "../../sandboxes/components/sandbox-skills-section.js";
@@ -37,11 +38,13 @@ export function isConfigPanelTab(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: an Agent's configuration, in the chat's side
- * panel, from the sections its configuration page already renders. The panel
- * supplies the heading and the scrolling, so each section keeps one
- * implementation and one set of forms whether it is opened from the page or
- * from the conversation, and every way out of it leads back to the
- * conversation rather than to the configuration page.
+ * panel, as four tiles by subject: Models holds the providers it runs on, the
+ * settings their harnesses carry and what it spends, Services what it can reach,
+ * Skills what it loads, and Automations the schedules and the channels. The
+ * panel supplies the heading and the scrolling, so each section keeps one
+ * implementation and one set of forms whether it is opened from the page or from
+ * the conversation, and every way out of it leads back to the conversation
+ * rather than to the configuration page.
  */
 export function ConfigSidePanel({
   tab,
@@ -80,6 +83,9 @@ export function ConfigSidePanel({
               <div className="mt-10">
                 <SectionHeading label="Spending" />
                 <SpendingPanel agentId={agentId} />
+              </div>
+              <div className="mt-8">
+                <AgentModelSettingsSection agentId={agentId} />
               </div>
             </>
           ))

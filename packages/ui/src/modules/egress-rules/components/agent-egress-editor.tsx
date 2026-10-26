@@ -186,8 +186,9 @@ export function AgentEgressEditor({
           </p>
         )}
         {groups.map((g) => {
-          // UNIT_BOUNDARY_DESCRIPTION: a search shows every matching rule, so the groups only fold while the reader is not searching, and both start folded: the connections' rules repeat what the Connections section already lists.
-          const collapsible = !query.trim();
+          // UNIT_BOUNDARY_DESCRIPTION: only the groups whose rules come from somewhere else fold — a connection's rules repeat what the Connections section already lists, and a preset's are a hundred lines of someone else's defaults — while the reader's own rules and a kit's stay open; a search shows every match.
+          const collapsible =
+            !query.trim() && (g.key === "connection" || g.key === "preset");
           const open = !collapsible || (openGroups[g.key] ?? false);
           return (
             <ListGroup

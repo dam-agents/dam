@@ -15,12 +15,14 @@ export function ProviderSpendRow({
   provider,
   checked,
   disabled,
+  showSpend,
   onCheckedChange,
 }: {
   agentId: string;
   provider: ProviderConnectionRef;
   checked: boolean;
   disabled?: boolean;
+  showSpend: boolean;
   onCheckedChange: (on: boolean) => void;
 }) {
   return (
@@ -33,7 +35,7 @@ export function ProviderSpendRow({
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
         {provider.name}
       </span>
-      {provider.templateId && (
+      {showSpend && provider.templateId && (
         <ProviderSpendBadge
           agentId={agentId}
           connectionId={provider.id}

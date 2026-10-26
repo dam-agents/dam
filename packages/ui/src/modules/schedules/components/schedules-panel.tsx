@@ -51,13 +51,18 @@ export function SchedulesPanel({
     if (!focusId || schedulesQuery.data === undefined) return;
     setExpandedId(focusId);
     if (past.some((s) => s.id === focusId)) setPastOpen(true);
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-schedule-id="${CSS.escape(focusId)}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-    });
+  }, [focusId, schedulesQuery.data, past]);
+
+  // UNIT_BOUNDARY_DESCRIPTION: the release waits for the row itself, since expanding it and opening its Past group are renders of their own; a card that is not on screen yet keeps the focus, so the scroll happens once the list has drawn it.
+  useEffect(() => {
+    if (!focusId) return;
+    const row = document.querySelector(
+      `[data-schedule-id="${CSS.escape(focusId)}"]`,
+    );
+    if (row === null) return;
+    row.scrollIntoView({ block: "nearest" });
     onFocusApplied?.();
-  }, [focusId, schedulesQuery.data, past, onFocusApplied]);
+  }, [focusId, expandedId, pastOpen, onFocusApplied]);
 
   const closeForm = () => setForm(null);
 
