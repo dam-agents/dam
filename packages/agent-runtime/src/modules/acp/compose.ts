@@ -40,6 +40,7 @@ import {
 } from "./infrastructure/session-metadata-store.js";
 import {
   createAcpRuntime,
+  hasSessionCapability,
   sessionListAnswer,
   type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
@@ -499,6 +500,12 @@ export function composeAcp(opts: ComposeAcpOptions): {
           subAgentSessions.record(sessionId, subAgentIds),
         ...(ownHistory ? { historyProvider: ownHistory } : {}),
         ...(ownCut ? { sessionCut: ownCut } : {}),
+        ...(harness?.initialize && {
+          harnessForks: hasSessionCapability(
+            { result: harness.initialize },
+            "fork",
+          ),
+        }),
         ...(ownPins
           ? { terminalSessionPins: terminalSessionPinsOf([ownPins]) }
           : {}),
