@@ -1,10 +1,19 @@
-import { Add, Checkmark, WarningAlt } from "@carbon/icons-react";
+import {
+  Add,
+  Checkmark,
+  OverflowMenuHorizontal,
+  WarningAlt,
+} from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import { credentialCopyFor } from "../forms/field-copy.js";
@@ -50,8 +59,7 @@ export function ConnectionRowActions({
         {inlineFix && (
           <Button
             variant="outline"
-            size="sm"
-            className="shrink-0"
+            className="h-8 shrink-0 px-3 text-sm font-normal"
             disabled={maintenance?.busy}
             onClick={inlineFix.run}
             data-testid={`catalog-fix-${connection.id}`}
@@ -63,55 +71,64 @@ export function ConnectionRowActions({
           <RowGrantAction rowId={connection.id} grant={grant} />
         )}
       </div>
-      <RowActionsMenu
-        label={`Actions for ${connection.name}`}
-        testId={`catalog-menu-${connection.id}`}
-      >
-        {maintenance?.onReauthenticate && (
-          <DropdownMenuItem
-            disabled={maintenance.busy}
-            onSelect={maintenance.onReauthenticate}
-            data-testid={`catalog-reauth-${connection.id}`}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Actions for ${connection.name}`}
+            data-testid={`catalog-menu-${connection.id}`}
           >
-            {reauthLabel}
-          </DropdownMenuItem>
-        )}
-        {maintenance?.onEditScope && (
-          <DropdownMenuItem
-            onSelect={maintenance.onEditScope}
-            data-testid={`catalog-edit-scope-${connection.id}`}
-          >
-            Edit repositories &amp; permissions
-          </DropdownMenuItem>
-        )}
-        {maintenance?.onUpdateCredential && (
-          <DropdownMenuItem
-            onSelect={maintenance.onUpdateCredential}
-            data-testid={`catalog-update-credential-${connection.id}`}
-          >
-            {updateLabel}
-          </DropdownMenuItem>
-        )}
-        {grant?.granted && (
-          <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
-            Remove from this agent
-          </DropdownMenuItem>
-        )}
-        {onManage && (
-          <DropdownMenuItem onSelect={onManage}>
-            Manage connections
-          </DropdownMenuItem>
-        )}
-        {onDelete && (
-          <DropdownMenuItem
-            tone="danger"
-            disabled={deleting}
-            onSelect={onDelete}
-          >
-            Delete this connection
-          </DropdownMenuItem>
-        )}
-      </RowActionsMenu>
+            <OverflowMenuHorizontal size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          {maintenance?.onReauthenticate && (
+            <DropdownMenuItem
+              disabled={maintenance.busy}
+              onSelect={maintenance.onReauthenticate}
+              data-testid={`catalog-reauth-${connection.id}`}
+            >
+              {reauthLabel}
+            </DropdownMenuItem>
+          )}
+          {maintenance?.onEditScope && (
+            <DropdownMenuItem
+              onSelect={maintenance.onEditScope}
+              data-testid={`catalog-edit-scope-${connection.id}`}
+            >
+              Edit repositories &amp; permissions
+            </DropdownMenuItem>
+          )}
+          {maintenance?.onUpdateCredential && (
+            <DropdownMenuItem
+              onSelect={maintenance.onUpdateCredential}
+              data-testid={`catalog-update-credential-${connection.id}`}
+            >
+              {updateLabel}
+            </DropdownMenuItem>
+          )}
+          {grant?.granted && (
+            <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
+              Remove from this agent
+            </DropdownMenuItem>
+          )}
+          {onManage && (
+            <DropdownMenuItem onSelect={onManage}>
+              Manage connections
+            </DropdownMenuItem>
+          )}
+          {onDelete && (
+            <DropdownMenuItem
+              tone="danger"
+              disabled={deleting}
+              onSelect={onDelete}
+            >
+              Delete this connection
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 }
@@ -152,8 +169,7 @@ export function RowGrantAction({
   return (
     <Button
       variant="outline"
-      size="sm"
-      className="shrink-0"
+      className="h-8 shrink-0 px-3 text-sm font-normal"
       onClick={() => grant.onToggle(true)}
       data-testid={`catalog-add-${rowId}`}
     >

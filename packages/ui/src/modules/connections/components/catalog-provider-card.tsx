@@ -4,7 +4,7 @@ import type { ConnectionView } from "api-server-api";
 
 import { SlackAccountExplainer } from "@/components/channel-connection-explainer";
 import { Button } from "@/components/ui/button";
-import { CARD_SURFACE } from "@/components/ui/card";
+import { PanelCard } from "@/components/ui/panel-card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import type { RowMaintenanceActions } from "./catalog-connection-row.js";
@@ -56,32 +56,24 @@ export function CatalogProviderCard({
   );
 
   return (
-    <section
-      data-testid={`catalog-provider-${provider.id}`}
-      className={CARD_SURFACE}
-    >
-      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
+    <PanelCard
+      testId={`catalog-provider-${provider.id}`}
+      title={provider.title}
+      icon={
         <ConnectionIcon
           iconSlug={provider.iconSlug}
           alt=""
           size={16}
           className="shrink-0 text-foreground/80"
         />
-        <h3 className="min-w-0 truncate text-md font-semibold text-foreground">
-          {provider.title}
-        </h3>
-        {provider.id === "slack" ? (
-          <SlackAccountExplainer
-            forAgent={sandbox !== undefined}
-            onGoToChannels={onGoToChannels}
-          />
-        ) : undefined}
-        {connections.length > 0 && newButton && (
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {newButton}
-          </div>
-        )}
-      </header>
+      }
+      titleAccessory={
+        provider.id === "slack" ? (
+          <SlackAccountExplainer onGoToChannels={onGoToChannels} />
+        ) : undefined
+      }
+      headerRight={connections.length > 0 && newButton}
+    >
       {connections.length > 0 ? (
         <div className="flex flex-col gap-3 p-4">
           {connections.map((c) => (
@@ -110,6 +102,6 @@ export function CatalogProviderCard({
           {newButton}
         </div>
       )}
-    </section>
+    </PanelCard>
   );
 }

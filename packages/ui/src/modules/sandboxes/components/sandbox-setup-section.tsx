@@ -1,93 +1,157 @@
+import { Controller } from "react-hook-form";
+
+import { FormField } from "@/components/form-field";
+import { Callout } from "@/components/ui/callout";
+import { Input } from "@/components/ui/input";
+import { Inset } from "@/components/ui/inset";
+import { READ_ONLY_FIELD } from "@/components/ui/read-only-field";
+import { SectionLabel } from "@/components/ui/section-label";
+
 import { useStore } from "../../../store.js";
-import type { AgentView } from "../../../types.js";
-import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
-import { useUpdateAgent } from "../../agents/api/mutations.js";
-import { confirmHibernationChange } from "../lib/hibernation.js";
-import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
-import { HarnessSettingsSections } from "./harness-settings-sections.js";
-import { SleepAfterIdleField } from "./lifecycle-field.js";
+import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
+import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
+import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
+import { ProviderSelect } from "../../providers/components/provider-select.js";
+import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
+import { LifecycleField } from "./lifecycle-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
+import { ConnectionAddressingSetupSection } from "./setup/setup-sections.js";
 
-export function SandboxSetupSection({ agent }: { agent: AgentView }) {
+type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;
+
+interface Props {
+  f: SandboxSettingsForm;
+}
+
+export function SandboxSetupSection({ f }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const { data: harnessStatus } = useHarnessConfigStatus(agent.id);
-  const carriedHarnesses = harnessStatus?.harnesses ?? null;
-  const updateSleep = useUpdateAgent();
-  const updateSize = useUpdateAgent();
-  const pendingSize = updateSize.isPending
-    ? updateSize.variables.size
-    : undefined;
+  const { agent } = f;
+  if (!agent) return null;
 
-  const hibernationTimeoutMin =
-    (updateSleep.isPending
-      ? updateSleep.variables.hibernationTimeoutMin
-      : undefined) ?? agent.hibernationTimeoutMin;
-  const sizeCpuMilli =
-    parseCpuMilli(pendingSize?.cpu ?? agent.size.cpu) ?? 1000;
-  const sizeMemoryMi =
-    parseMemoryMi(pendingSize?.memory ?? agent.size.memory) ?? 1024;
-  const sizeRestartsAgent = !(agent.state === "hibernated" || agent.overBudget);
+  const confirmSwitch = () =>
+    showConfirm(
+      <p>
+        This will change the model provider used by{" "}
+        <strong>{agent.name}</strong>. Switching between different model
+        families (for example, Claude → OpenAI) may cause the agent to stop
+        working and can interrupt tasks in progress. The switch applies when you
+        save.
+      </p>,
+      "Switch this agent's provider?",
+      { confirmLabel: "Switch provider" },
+    );
 
   return (
     <>
-      {!agent.vm && (
-        <section className="mb-8">
-          <SleepAfterIdleField
-            value={hibernationTimeoutMin}
-            onChange={async (next) => {
-              if (
-                await confirmHibernationChange(
-                  agent.hibernationTimeoutMin,
-                  next,
-                  showConfirm,
-                )
-              )
-                updateSleep.mutate({
-                  id: agent.id,
-                  hibernationTimeoutMin: next,
-                });
-            }}
-          />
-        </section>
-      )}
+      <section className="mb-8">
+        <FormField label="Name" error={f.errors.name?.message}>
+          <Input disabled={f.saving} {...f.register("name")} />
+        </FormField>
+      </section>
 
-      {!agent.vm && (
-        <SandboxSizeSection
-          sizeCpuMilli={sizeCpuMilli}
-          sizeMemoryMi={sizeMemoryMi}
-          onChange={async (next) => {
-            if (
-              sizeRestartsAgent &&
-              !(await showConfirm(
-                "Changing the size restarts the agent — in-flight work is interrupted.",
-                "Restart agent?",
-                { confirmLabel: "Resize and restart" },
-              ))
-            )
-              return;
-            updateSize.mutate({
-              id: agent.id,
-              size: {
-                cpu: `${next.sizeCpuMilli}m`,
-                memory: `${next.sizeMemoryMi}Mi`,
-              },
-            });
-          }}
-          currentSize={sizeRestartsAgent ? agent.size : undefined}
+      <section className="mb-8">
+        <FormField
+          label="Image"
+          hint={
+            agent.templateId ? (
+              <span className="truncate font-mono">{agent.image}</span>
+            ) : undefined
+          }
+        >
+          <div className={READ_ONLY_FIELD}>
+            <span className={`truncate ${agent.templateId ? "" : "font-mono"}`}>
+              {f.templateName ?? agent.image}
+            </span>
+          </div>
+        </FormField>
+      </section>
+
+      <section className="mb-8">
+        <SectionLabel spaced>Provider</SectionLabel>
+        <Inset>
+          <ProviderSelect
+            selected={f.selectedProvider}
+            onSelect={f.selectProvider}
+            confirmSwitch={confirmSwitch}
+            disabled={f.saving}
+            required={f.formReady}
+          />
+        </Inset>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Changing the provider swaps this agent's model credential. A
+          cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
+          break the agent and may need a restart.
+        </p>
+      </section>
+
+      <section className="mb-8">
+        <SectionLabel spaced>Lifecycle</SectionLabel>
+        <Inset>
+          <Controller
+            control={f.control}
+            name="hibernationTimeoutMin"
+            render={({ field }) => (
+              <LifecycleField
+                value={field.value}
+                onChange={field.onChange}
+                sizeMi={{ cpuMilli: f.sizeCpuMilli, memoryMi: f.sizeMemoryMi }}
+                error={f.errors.hibernationTimeoutMin?.message}
+                disabled={f.saving}
+              />
+            )}
+          />
+        </Inset>
+      </section>
+
+      <SandboxSizeSection
+        sizeCpuMilli={f.sizeCpuMilli}
+        sizeMemoryMi={f.sizeMemoryMi}
+        onChange={f.setSize}
+        disabled={f.saving}
+        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
+      />
+
+      {f.addressingOffered && (
+        <ConnectionAddressingSetupSection
+          value={f.requireConnectionAddress}
+          onChange={f.setRequireConnectionAddress}
+          disabled={f.saving}
         />
       )}
 
-      {!carriedHarnesses ? (
-        <SandboxModelSettings agentId={agent.id} />
-      ) : (
-        !carriedHarnesses.some((h) => h.sessionSettings) && (
-          <HarnessSettingsSections
+      <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+
+      <KnowledgeSection agent={agent} />
+
+      <section className="mb-8">
+        <SectionLabel spaced>Network access</SectionLabel>
+        <Callout inset>
+          <AgentEgressEditor
             agentId={agent.id}
-            harnesses={carriedHarnesses}
+            currentPreset={f.currentPreset}
+            staged={f.egressStaged}
           />
-        )
-      )}
+        </Callout>
+      </section>
+
+      <section className="mb-8">
+        <SectionLabel spaced>Environment</SectionLabel>
+        <Callout inset>
+          <Controller
+            control={f.control}
+            name="envVars"
+            render={({ field }) => (
+              <EnvTab
+                inherited={f.inheritedEnvs}
+                envVars={field.value}
+                setEnvVars={field.onChange}
+                saving={f.saving}
+              />
+            )}
+          />
+        </Callout>
+      </section>
     </>
   );
 }

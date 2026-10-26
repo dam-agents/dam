@@ -3,7 +3,7 @@ import { getBrand } from "../../brand.js";
 export function startupTips(sandbox: string): readonly string[] {
   const { name, short } = getBrand();
   return [
-    "Idle agents sleep to save resources, then wake the instant you or a schedule ping them.",
+    "Idle agents hibernate to save resources, then wake the instant you or a schedule ping them.",
     "Your workspace survives between runs. Pick up exactly where the agent left off.",
     `Open a local terminal with the ${name} CLI: \`${short} chat ${sandbox}\``,
     "Approvals are enforced outside the sandbox, so a compromised agent cannot approve itself.",
@@ -14,6 +14,7 @@ export function startupTips(sandbox: string): readonly string[] {
     "Bring your local CLAUDE.md, .claude/, and skills straight into a cloud sandbox.",
     "You do not have to wait your turn. Type while the agent works and your message queues.",
     "File paths the agent writes in chat are clickable. They open the file beside the conversation.",
+    "Set the hibernation timeout to 0 to stop an agent sleeping, for background work with no open session.",
     "Drop a .md file on the Skills page to turn it into a skill.",
     "Drop a whole folder into Files to upload it. node_modules and .venv are skipped for you.",
     "Publish a skill you wrote here as a pull request, then track it to get later updates back.",
@@ -28,7 +29,7 @@ export function startupTips(sandbox: string): readonly string[] {
     "Network egress is deny-by-default. Connections allowlist only the hosts your agent needs.",
     "Point a knowledge base at your docs and ask it questions in chat.",
     "Artifact previews open beside the chat, so you can read the result and keep talking.",
-    "Choose “Set expiration” on an artifact and it is deleted permanently on that date, public or private.",
+    "Set “Delete after…” on an artifact and it is deleted permanently on that date, public or private.",
     "Ask an agent to publish its work as an artifact, then share the link with colleagues.",
     "An artifact keeps every version. Step back through its history in the preview.",
     "See what an agent costs. Settings › Usage breaks spend down by model and by day.",

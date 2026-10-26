@@ -1,25 +1,22 @@
-import { AddComment, Bot, Locked } from "@carbon/icons-react";
-import { type DelegationNode, delegationTitle } from "api-server-api";
+import { Bot, Close, Locked } from "@carbon/icons-react";
+import type { DelegationNode } from "api-server-api";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
-import { framesToMessages } from "../../acp/frames-to-messages.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
-import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
-import { useTurnSpend } from "../../spend/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import {
   useDelegationTranscript,
   useDelegationTree,
   useInvocationTurns,
 } from "../api/queries.js";
-import { useContinueInNewChat } from "../hooks/use-continue-in-new-chat.js";
-import { delegationState } from "../lib/delegation-state.js";
+import { delegationState, firstLine } from "../lib/delegation-state.js";
+import { framesToMessages } from "../lib/frames-to-messages.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -34,7 +31,7 @@ interface Props {
 const noop = () => {};
 
 export function DockedDelegationPanel({ driverAgentId, id }: Props) {
-  const setDock = useStore((s) => s.setDock);
+  const close = useStore((s) => s.setOpenDelegation);
   const agents = useAgentsList();
   const ids = useMemo(() => [id], [id]);
   const {
@@ -60,12 +57,19 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
           className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={node?.prompt}
         >
-          {node ? delegationTitle(node) : id}
+          {node ? firstLine(node.prompt) : id}
         </span>
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />
         )}
-        <SidePanelCloseButton corner="-mr-4" onClose={() => setDock(null)} />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Close"
+          onClick={() => close(null)}
+        >
+          <Close size={16} />
+        </Button>
       </div>
       {node ? (
         <PanelBody
@@ -79,7 +83,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
         <Notice text="This delegation is no longer recorded." />
       ) : (
         <div className="flex flex-1 items-center justify-center">
-          <Spinner size={18} />
+          <Spinner size={16} />
         </div>
       )}
     </div>
@@ -101,11 +105,9 @@ function PanelBody({
     driverAgentId,
     ids,
     telemetryEnabled,
-    [node],
+    node.status === "running",
   );
   const turn = telemetry?.available ? telemetry.turns[node.id] : undefined;
-  const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
-  const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
   const finished = node.status !== "running";
   const transcript = useDelegationTranscript(
     driverAgentId,
@@ -117,7 +119,6 @@ function PanelBody({
     [transcript.data],
   );
   const owners = useDelegationOwners(messages);
-  const continueInNewChat = useContinueInNewChat(driverAgentId, node.id);
 
   return (
     <>
@@ -128,7 +129,6 @@ function PanelBody({
             agentId={driverAgentId}
             invocationId={node.id}
             turn={turn}
-            spend={turnSpend?.get(turn.turnId)}
             className="w-full"
           />
         )}
@@ -140,7 +140,7 @@ function PanelBody({
           <Notice text="This conversation was not captured." />
         ) : transcript.isPending ? (
           <div className="flex justify-center py-6">
-            <Spinner size={18} />
+            <Spinner size={16} />
           </div>
         ) : transcript.isError ? (
           <Notice text="This conversation is no longer kept." />
@@ -168,13 +168,7 @@ function PanelBody({
       {finished && (
         <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           <Locked size={14} aria-hidden />
-          <span className="min-w-0 flex-1">
-            Read-only. The agent was released when it reported.
-          </span>
-          <Button variant="outline" size="xs" onClick={continueInNewChat}>
-            <AddComment size={14} />
-            Continue in new chat
-          </Button>
+          Read-only. The agent was released when it reported.
         </div>
       )}
     </>

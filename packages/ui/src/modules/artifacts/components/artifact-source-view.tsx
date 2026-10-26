@@ -1,7 +1,6 @@
 import type { LibraryArtifact } from "api-server-api";
 
 import { HighlightedCode } from "@/components/highlighted-code";
-import { PanelMessage } from "@/components/ui/empty-state";
 
 import { CodeEditor } from "../../files/components/code-editor.js";
 import type { useArtifactContent } from "../api/queries.js";
@@ -23,14 +22,16 @@ export function ArtifactSourceView({
   onDraftChange?: (next: string) => void;
   onSave?: () => void;
 }) {
-  if (isLoading) return <PanelMessage>Loading preview…</PanelMessage>;
+  if (isLoading) return <Note text="Loading preview…" />;
   if (!content || content.tooLarge) {
     return (
-      <PanelMessage>
-        {content?.tooLarge
-          ? "Too large to preview — download instead."
-          : "No preview available."}
-      </PanelMessage>
+      <Note
+        text={
+          content?.tooLarge
+            ? "Too large to preview — download instead."
+            : "No preview available."
+        }
+      />
     );
   }
   if (editMode && onDraftChange && onSave) {
@@ -55,7 +56,13 @@ export function ArtifactSourceView({
     );
   }
   if (content.binary) {
-    return <PanelMessage>Binary file — download to view.</PanelMessage>;
+    return <Note text="Binary file — download to view." />;
   }
   return <HighlightedCode code={content.content} path={content.fileName} />;
+}
+
+function Note({ text }: { text: string }) {
+  return (
+    <p className="py-6 text-center text-sm text-muted-foreground">{text}</p>
+  );
 }

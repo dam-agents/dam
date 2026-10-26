@@ -9,12 +9,14 @@ import {
   type DismissalTarget,
   dismissalTarget,
   isDismissedItem,
+  sessionDismissedAt,
 } from "../lib/dismissals.js";
 import type { FeedItem } from "../lib/feed-item.js";
 
 interface Dismissals {
   isDismissed: (item: FeedItem) => boolean;
   dismiss: (items: readonly FeedItem[]) => void;
+  dismissedAt: (agentId: string, sessionId: string) => number | null;
 }
 
 export function useDismissals(): Dismissals {
@@ -38,6 +40,12 @@ export function useDismissals(): Dismissals {
     [byKey],
   );
 
+  const dismissedAt = useCallback(
+    (agentId: string, sessionId: string) =>
+      sessionDismissedAt(byKey, agentId, sessionId),
+    [byKey],
+  );
+
   const dismiss = useCallback(
     (items: readonly FeedItem[]) => {
       const targets = items
@@ -48,5 +56,5 @@ export function useDismissals(): Dismissals {
     [dismissItems],
   );
 
-  return { isDismissed, dismiss };
+  return { isDismissed, dismiss, dismissedAt };
 }

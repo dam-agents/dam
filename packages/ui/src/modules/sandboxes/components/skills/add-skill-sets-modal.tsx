@@ -1,18 +1,17 @@
+import { TrashCan } from "@carbon/icons-react";
 import type { SkillSet } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import {
-  DialogActions,
   DialogBody,
+  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { RemoveButton } from "@/components/ui/remove-button";
 import { useToggleSet } from "@/hooks/use-toggle-set";
-
-import type { SkillIdentity } from "../../lib/skill-identity.js";
 
 interface SetPreview {
   set: SkillSet;
@@ -88,7 +87,7 @@ function SetRow({
           <Button
             variant="link"
             size="inline"
-            tone="danger"
+            className="text-danger"
             disabled={deleting}
             onClick={onDelete}
           >
@@ -104,11 +103,16 @@ function SetRow({
           </Button>
         </span>
       ) : (
-        <RemoveButton
-          label={`Delete ${set.name}`}
-          tooltip="Delete"
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`Delete ${set.name}`}
+          tooltip="Delete set"
+          className="shrink-0 text-muted-foreground"
           onClick={() => setConfirming(true)}
-        />
+        >
+          <TrashCan size={16} />
+        </Button>
       )}
     </div>
   );
@@ -119,7 +123,7 @@ export function AddSkillSetsModal({
   loadFailed,
   available,
   installedKeys,
-  resolveSetEntry,
+  unreadableSources,
   ready,
   applying,
   onApply,
@@ -130,9 +134,7 @@ export function AddSkillSetsModal({
   loadFailed: boolean;
   available: ReadonlySet<string>;
   installedKeys: ReadonlySet<string>;
-  resolveSetEntry: (
-    entry: SkillIdentity,
-  ) => { key: string; unreadable: boolean } | null;
+  unreadableSources: ReadonlySet<string>;
   ready: boolean;
   applying: boolean;
   onApply: (setIds: string[]) => Promise<boolean>;
@@ -149,10 +151,10 @@ export function AddSkillSetsModal({
         let unavailable = 0;
         let unreadable = 0;
         for (const entry of set.skills) {
-          const resolved = resolveSetEntry(entry);
-          if (resolved && available.has(resolved.key)) {
-            if (!installedKeys.has(resolved.key)) adds.push(resolved.key);
-          } else if (resolved?.unreadable) {
+          const key = skillKey(entry);
+          if (available.has(key)) {
+            if (!installedKeys.has(key)) adds.push(key);
+          } else if (unreadableSources.has(entry.source)) {
             unreadable += 1;
           } else {
             unavailable += 1;
@@ -160,7 +162,7 @@ export function AddSkillSetsModal({
         }
         return { set, adds, unavailable, unreadable };
       }),
-    [sets, available, installedKeys, resolveSetEntry],
+    [sets, available, installedKeys, unreadableSources],
   );
 
   const unionAdds = useMemo(() => {
@@ -183,12 +185,12 @@ export function AddSkillSetsModal({
   };
 
   return (
-    <Modal onClose={applying ? undefined : onClose}>
+    <Modal>
       <DialogHeader
-        closeDisabled={applying}
         title="Add skill sets"
         subtitle="Pick any number. Their skills turn on alongside what you already have — overlap is fine, and nothing gets turned off."
         onClose={onClose}
+        divided={false}
       />
 
       <DialogBody flush>
@@ -218,24 +220,24 @@ export function AddSkillSetsModal({
         )}
       </DialogBody>
 
-      <DialogActions
-        leading={
-          <span className="text-sm text-muted-foreground">
-            {picked.size === 0
-              ? "No sets selected"
-              : !ready
-                ? `${picked.size} set${picked.size === 1 ? "" : "s"} selected`
-                : `${picked.size} set${picked.size === 1 ? "" : "s"} · turns on ${unionAdds} new skill${unionAdds === 1 ? "" : "s"}`}
-          </span>
-        }
-        onCancel={onClose}
-        cancelDisabled={applying}
-        label="Add skills"
-        pendingLabel="Adding…"
-        pending={applying}
-        disabled={picked.size === 0}
-        onSubmit={() => void submit()}
-      />
+      <DialogFooter divided>
+        <span className="flex-1 text-sm text-muted-foreground">
+          {picked.size === 0
+            ? "No sets selected"
+            : !ready
+              ? `${picked.size} set${picked.size === 1 ? "" : "s"} selected`
+              : `${picked.size} set${picked.size === 1 ? "" : "s"} · turns on ${unionAdds} new skill${unionAdds === 1 ? "" : "s"}`}
+        </span>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          disabled={picked.size === 0 || applying}
+          onClick={() => void submit()}
+        >
+          {applying ? "Adding…" : "Add skills"}
+        </Button>
+      </DialogFooter>
     </Modal>
   );
 }

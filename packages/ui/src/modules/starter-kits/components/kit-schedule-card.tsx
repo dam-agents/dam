@@ -1,4 +1,4 @@
-import { Time, TrashCan, Undo } from "@carbon/icons-react";
+import { Close, Information, Time, Undo } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type {
   StarterKitSchedule,
@@ -33,8 +33,6 @@ import {
   overrideFromForm,
 } from "../lib/kit-schedule-form.js";
 import { kitScheduleCadence } from "../lib/setup.js";
-import { ClampedText } from "./clamped-text.js";
-import { KitScheduleInstructions } from "./kit-schedule-instructions.js";
 
 interface Props {
   schedule: StarterKitSchedule;
@@ -114,7 +112,7 @@ export function KitScheduleCard({
               {schedule.name}
             </span>
             <Badge variant="kit" size="sm">
-              Starter kit
+              Starter Kit
             </Badge>
             {values.precheck.trim() !== "" && (
               <Badge variant="muted" size="sm">
@@ -127,12 +125,6 @@ export function KitScheduleCard({
               </Badge>
             )}
           </div>
-          {schedule.description && (
-            <ClampedText
-              text={schedule.description}
-              className="mt-0.5 text-sm text-foreground/80"
-            />
-          )}
           <p className="mt-0.5 text-sm text-muted-foreground">
             {keepsDeclared
               ? kitScheduleCadence(schedule)
@@ -149,23 +141,25 @@ export function KitScheduleCard({
         />
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="sm"
           aria-label={
             skipped ? `Add back ${schedule.name}` : `Skip ${schedule.name}`
           }
-          tooltip={skipped ? "Add back" : "Skip"}
+          title={skipped ? "Add back" : "Skip this schedule"}
           onClick={onToggleSkipped}
         >
-          {skipped ? <Undo size={16} /> : <TrashCan size={16} />}
+          {skipped ? <Undo size={16} /> : <Close size={16} />}
         </Button>
       </div>
 
       {!skipped && (
         <>
-          <KitScheduleInstructions
-            scheduleName={schedule.name}
-            task={schedule.task}
-          />
+          <div className="border-t border-kit-rule px-4 py-3">
+            <div className="flex items-start gap-2.5 rounded-lg bg-kit-tint px-3 py-2.5">
+              <Information size={16} className="mt-0.5 shrink-0 text-kit" />
+              <p className="text-sm text-foreground/80">{schedule.task}</p>
+            </div>
+          </div>
 
           <div className="border-t border-kit-rule px-4 py-2">
             <DisclosureToggle
@@ -208,8 +202,8 @@ export function KitScheduleCard({
             />
             <SchedulePrecheckField
               layout="rows"
-              registration={register("precheck")}
-              error={errors.precheck?.message}
+              register={register}
+              errors={errors}
             />
             <div className="px-4 py-3">
               <QuietHoursEditor

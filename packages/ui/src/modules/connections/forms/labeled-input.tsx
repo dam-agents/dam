@@ -16,7 +16,6 @@ export function LabeledInput({
   help,
   error,
   autoFocus,
-  disabled,
 }: {
   label: string;
   testId?: string;
@@ -29,10 +28,9 @@ export function LabeledInput({
   help?: ReactNode;
   error?: string;
   autoFocus?: boolean;
-  disabled?: boolean;
 }) {
   return (
-    <FormField label={label} hint={help} error={error}>
+    <FormField label={label} hint={help} error={error} disableInset>
       {multiline ? (
         <Textarea
           variant={error ? "invalid" : "monospace"}
@@ -44,7 +42,6 @@ export function LabeledInput({
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
           autoFocus={autoFocus}
-          disabled={disabled}
         />
       ) : (
         <Input
@@ -56,7 +53,6 @@ export function LabeledInput({
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
           autoFocus={autoFocus}
-          disabled={disabled}
         />
       )}
     </FormField>

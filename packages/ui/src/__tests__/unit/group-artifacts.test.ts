@@ -53,8 +53,12 @@ describe("groupArtifactsByFolder", () => {
     expect(groups[2]?.artifacts.map((a) => a.id)).toEqual(["a2"]);
   });
 
-  test("omits an empty Ungrouped", () => {
+  test("omits an empty Ungrouped unless includeEmptyUngrouped", () => {
     expect(groupArtifactsByFolder([], [folder("f1")])).toHaveLength(1);
+    const withEmpty = groupArtifactsByFolder([], [folder("f1")], {
+      includeEmptyUngrouped: true,
+    });
+    expect(withEmpty.map((g) => g.key)).toEqual(["f1", UNGROUPED_KEY]);
   });
 
   test("never drops an artifact whose folder is missing from the folders list", () => {

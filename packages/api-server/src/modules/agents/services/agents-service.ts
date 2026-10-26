@@ -1537,6 +1537,28 @@ export function createAgentsService(deps: {
       return project((await deps.repo.get(id)) ?? infra);
     },
 
+    async stop(id) {
+      if (!(await ownsOrDeny(id, "agent.stop"))) return null;
+      const current = await deps.repo.get(id, deps.owner);
+      if (!current) return null;
+      if ((current.runtimeMigrationHold ?? "none") !== "none")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "This agent is moving to the new runtime and is not running; it can be stopped once the move ends",
+        });
+      const infra = await deps.repo.requestStop(id);
+      if (!infra) return null;
+      securityLog("info", "agent.stop", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      return project(infra);
+    },
+
     async sleep(id) {
       if (!(await ownsOrDeny(id, "agent.sleep"))) return null;
       const current = await deps.repo.get(id, deps.owner);

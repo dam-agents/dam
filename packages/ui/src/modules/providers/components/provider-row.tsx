@@ -1,195 +1,100 @@
-import type { HarnessFamily, ProviderKeyCheck } from "api-server-api";
-import type { ReactNode } from "react";
+import { OverflowMenuVertical } from "@carbon/icons-react";
 
-import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
-import { Card, CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
-import { Spinner } from "@/components/ui/spinner";
-import { formatTimestamp } from "@/lib/format-time";
-import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-import type { ProviderPresetType } from "../../../types.js";
-import { providerName } from "../lib/provider-rows.js";
+import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 import { CardIcon } from "./card-icon.js";
 
 interface Props {
   type: ProviderPresetType;
-  templateId?: string;
-  name?: string;
-  harnesses?: readonly HarnessFamily[];
+  description: string;
   connected: boolean;
-  degraded?: boolean;
-  keyCheck?: ProviderKeyCheck | null;
-  checking?: boolean;
-  balance?: ReactNode;
-  onOpen?: () => void;
-  connectedAction?: string;
-  footer?: ReactNode;
+  onConnect: () => void;
+  onEditKey: () => void;
+  onRemoveKey: () => void;
 }
 
 export function ProviderRow({
   type,
-  templateId,
-  name: givenName,
-  harnesses,
+  description,
   connected,
-  degraded = false,
-  keyCheck,
-  checking,
-  balance,
-  onOpen,
-  connectedAction = "Edit",
-  footer,
+  onConnect,
+  onEditKey,
+  onRemoveKey,
 }: Props) {
-  const name = givenName ?? providerName(type);
-  const problem =
-    connected && keyCheck && keyCheck.result !== "ok" ? keyCheck : null;
-  const problemText = problem
-    ? `${
-        problem.result === "refused"
-          ? "Key rejected"
-          : "Could not verify the key"
-      } on ${formatTimestamp(problem.checkedAt)} (${problem.detail})`
-    : null;
-  const body = (
-    <>
-      <CardIcon provider={type} templateId={templateId} />
-      <div className="min-w-0 flex-1">
-        <div className="flex h-8 items-center gap-2">
-          <p
-            className="truncate text-base font-medium text-foreground"
-            title={name}
-          >
-            {name}
-          </p>
-          <ConnectionBadge
-            connected={connected}
-            degraded={degraded}
-            keyCheck={keyCheck}
-            checking={!!checking}
-            reason={problemText}
-          />
-        </div>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-xs text-muted-foreground">Supports:</span>
-            {harnesses?.length ? (
-              <HarnessIcons
-                harnesses={harnesses}
-                size="sm"
-                focusable={!onOpen}
-                className="text-muted-foreground opacity-70"
-              />
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                {harnesses ? "None" : "Compatibility unavailable"}
-              </span>
-            )}
-          </div>
-          <div className="min-w-0 text-right">{balance}</div>
-        </div>
-      </div>
-    </>
-  );
-  const layout = "flex w-full items-start gap-3 p-4";
-  const label = connected
-    ? `${connectedAction} ${name}${problemText ? `, ${problemText}` : ""}`
-    : `Connect ${name}`;
+  const name = PROVIDERS[type].displayName;
 
-  if (footer) {
+  if (!connected) {
     return (
-      <Card className="overflow-hidden">
-        {onOpen ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            aria-label={label}
-            className={cn(layout, ROW_HEAD_BUTTON)}
-          >
-            {body}
-          </button>
-        ) : (
-          <div className={layout}>{body}</div>
-        )}
-        <div className="mx-4 border-t border-border py-3">{footer}</div>
-      </Card>
+      <CardButton
+        onClick={onConnect}
+        className="flex w-full items-start gap-3 p-4"
+      >
+        <CardIcon provider={type} />
+        <ProviderText name={name} description={description} />
+        <span className="shrink-0 text-sm font-normal text-muted-foreground">
+          Connect
+        </span>
+      </CardButton>
     );
   }
-  return onOpen ? (
-    <CardButton onClick={onOpen} aria-label={label} className={layout}>
-      {body}
-    </CardButton>
-  ) : (
-    <div className={cn(CARD_SURFACE, layout)}>{body}</div>
-  );
-}
 
-const ROW_HEAD_BUTTON = `text-left ${CARD_HOVER} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the one pill that says where a provider row
- * stands: whether it is configured, and, once it is, whether its key is being
- * verified, rejected by the provider, or working. A provider that could not
- * answer or whose template is having an outage keeps a yellow pill, with the
- * reason in its tooltip, since neither says the key is bad.
- */
-function ConnectionBadge({
-  connected,
-  degraded,
-  keyCheck,
-  checking,
-  reason,
-}: {
-  connected: boolean;
-  degraded: boolean;
-  keyCheck: ProviderKeyCheck | null | undefined;
-  checking: boolean;
-  reason: string | null;
-}) {
-  const pill = "ml-auto shrink-0 gap-1.5";
-  if (!connected)
-    return (
-      <Badge variant="muted" className={pill}>
-        Not configured
-      </Badge>
-    );
-  if (checking)
-    return (
-      <Badge variant="warning" className={pill}>
-        <Spinner size={12} className="shrink-0" />
-        Configured · Verifying
-      </Badge>
-    );
-  if (keyCheck?.result === "refused")
-    return (
-      <Badge variant="danger" className={pill} title={reason ?? undefined}>
-        Configured · Key rejected
-      </Badge>
-    );
-  if (degraded)
-    return (
-      <Badge
-        variant="warning"
-        className={pill}
-        data-testid="provider-degraded-badge"
-      >
-        Configured · Degraded
-      </Badge>
-    );
-  if (keyCheck?.result === "unverified")
-    return (
-      <Badge variant="warning" className={pill} title={reason ?? undefined}>
-        Configured · Unverified
-      </Badge>
-    );
   return (
-    <Badge variant="success" className={pill}>
-      Configured · Connected
-    </Badge>
+    <Card className="flex items-center gap-1 pr-2 transition-colors">
+      <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
+        <CardIcon provider={type} />
+        <ProviderText name={name} description={description} connected />
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Actions for ${name}`}
+          >
+            <OverflowMenuVertical size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem onSelect={onEditKey}>Edit key</DropdownMenuItem>
+          <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
+            Remove key
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </Card>
   );
 }
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
-  return <Card className="h-[92px] animate-pulse" />;
+  return <Card className="h-[76px] animate-pulse" />;
 };
+
+function ProviderText({
+  name,
+  description,
+  connected = false,
+}: {
+  name: string;
+  description: string;
+  connected?: boolean;
+}) {
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-2">
+        <p className="text-base font-medium text-foreground">{name}</p>
+        {connected && <Badge variant="success">Connected</Badge>}
+      </div>
+      <p className="text-sm text-muted-foreground">{description}</p>
+    </div>
+  );
+}

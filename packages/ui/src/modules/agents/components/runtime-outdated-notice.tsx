@@ -1,18 +1,30 @@
-import { useAgentUpdateAction } from "../hooks/use-update-sandbox.js";
-import { AgentOutdatedNotice } from "./agent-outdated-notice.js";
+import { useAgentsList } from "../api/queries.js";
+import { useUpdateSandbox } from "../hooks/use-update-sandbox.js";
+import { UpdateAvailableAction } from "./update-available-action.js";
 
 export function RuntimeOutdatedNotice({ agentId }: { agentId: string | null }) {
-  const { agent, update, updateOne, pending } = useAgentUpdateAction(agentId);
-  if (!agent || !update) return null;
+  const agents = useAgentsList();
+  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
+  const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
+  const update = agent?.templateUpdate ?? null;
 
   return (
-    <AgentOutdatedNotice
-      agent={agent}
-      onUpdate={() => void updateOne(agent)}
-      pending={pending}
+    <div
+      role="status"
+      className="flex items-center gap-2 border-b border-border/50 px-4 py-2 text-xs text-muted-foreground"
     >
-      This agent’s version is too old for live updates, so the session list and
-      files can take a few seconds to update.
-    </AgentOutdatedNotice>
+      <span className="flex-1">
+        Live updates need a newer agent runtime — showing polled data.
+        {update ? "" : " No runtime update is available yet."}
+      </span>
+      {agent && update && (
+        <UpdateAvailableAction
+          agent={agent}
+          onUpdate={() => void updateOne(agent)}
+          pending={updatingId === agent.id}
+          busy={updatingAll}
+        />
+      )}
+    </div>
   );
 }

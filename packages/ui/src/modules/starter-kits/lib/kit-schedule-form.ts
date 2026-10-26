@@ -11,9 +11,12 @@ import {
 
 import {
   buildRRuleParts,
-  presetFormValues,
   type ScheduleFormValues,
 } from "../../schedules/forms/schedule-form-schema.js";
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
 
 function presetFor(
   schedule: StarterKitSchedule,
@@ -53,13 +56,22 @@ export function kitScheduleFormValues(
     task: schedule.task,
     timezone,
     sessionMode: override?.sessionMode ?? schedule.sessionMode ?? "fresh",
-    ...presetFormValues(preset),
+    kind: preset.kind,
+    interval:
+      preset.kind === "minutely" || preset.kind === "hourly"
+        ? String(preset.interval)
+        : "30",
+    time:
+      preset.kind === "daily"
+        ? `${pad(preset.hour)}:${pad(preset.minute)}`
+        : "09:00",
+    days: preset.kind === "custom" ? [...ALL_DAYS] : preset.days,
+    customRRule:
+      preset.kind === "custom"
+        ? preset.rrule
+        : "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30",
     quietHours: override?.quietHours ?? [],
     precheck: declaredPrecheck(schedule, override),
-    harness: "",
-    model: "",
-    settings: {},
-    sessionTitle: "",
   };
 }
 

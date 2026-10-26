@@ -332,7 +332,7 @@ describe("slack reply / react tools", () => {
       elements: [
         {
           type: "mrkdwn",
-          text: ":robot_face: <http://ui/a/agent-1?s=sess-42|Sent by an agent>",
+          text: "<http://ui/a/agent-1?s=sess-42|Powered by DAM>",
         },
       ],
     });
@@ -349,10 +349,7 @@ describe("slack reply / react tools", () => {
     expect(posts.mock.calls[0]![0].blocks).toContainEqual({
       type: "context",
       elements: [
-        {
-          type: "mrkdwn",
-          text: ":robot_face: <http://ui/a/agent-1|Sent by an agent>",
-        },
+        { type: "mrkdwn", text: "<http://ui/a/agent-1|Powered by DAM>" },
       ],
     });
   });

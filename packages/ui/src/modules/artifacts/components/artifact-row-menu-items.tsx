@@ -1,19 +1,5 @@
-import {
-  AddComment,
-  Calendar,
-  Download,
-  Edit,
-  FolderMoveTo,
-  RequestQuote,
-  Share,
-  TrashCan,
-} from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 
-import {
-  ContextMenuItem,
-  ContextMenuSeparator,
-} from "@/components/ui/context-menu";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -25,11 +11,6 @@ import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js"
 import { isEditableArtifact } from "../lib/editable.js";
 import { downloadArtifact } from "../lib/transfer.js";
 
-const MENU_PARTS = {
-  dropdown: { Item: DropdownMenuItem, Separator: DropdownMenuSeparator },
-  context: { Item: ContextMenuItem, Separator: ContextMenuSeparator },
-};
-
 export function ArtifactRowMenuItems({
   artifact,
   onEdit,
@@ -37,7 +18,6 @@ export function ArtifactRowMenuItems({
   onMove,
   onShare,
   onSetRetention,
-  menu = "dropdown",
 }: {
   artifact: LibraryArtifact;
   onEdit: (artifact: LibraryArtifact) => void;
@@ -45,14 +25,10 @@ export function ArtifactRowMenuItems({
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
   onSetRetention: (artifact: LibraryArtifact) => void;
-  menu?: keyof typeof MENU_PARTS;
 }) {
-  const { Item, Separator } = MENU_PARTS[menu];
   const showConfirm = useStore((s) => s.showConfirm);
-  const openArtifactId = useStore((s) =>
-    s.dock?.kind === "artifact" ? s.dock.id : null,
-  );
-  const setDock = useStore((s) => s.setDock);
+  const openArtifactId = useStore((s) => s.openArtifactId);
+  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const { mutate: deleteArtifact } = useDeleteArtifact();
   const startSession = useStartArtifactSession(artifact);
 
@@ -64,49 +40,41 @@ export function ArtifactRowMenuItems({
     );
     if (!confirmed) return;
 
-    if (openArtifactId === artifact.id) setDock(null);
+    if (openArtifactId === artifact.id) setOpenArtifactId(null);
     deleteArtifact({ id: artifact.id });
   };
 
   return (
     <>
       {isEditableArtifact(artifact) && (
-        <Item onSelect={() => onEdit(artifact)}>
-          <RequestQuote size={14} />
+        <DropdownMenuItem onSelect={() => onEdit(artifact)}>
           Edit
-        </Item>
+        </DropdownMenuItem>
       )}
-      <Item onSelect={() => onRename(artifact)}>
-        <Edit size={14} />
+      <DropdownMenuItem onSelect={() => onRename(artifact)}>
         Rename
-      </Item>
-      <Item onSelect={() => onMove(artifact)}>
-        <FolderMoveTo size={14} />
-        Move
-      </Item>
-      <Item onSelect={() => onShare(artifact)}>
-        <Share size={14} />
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => onMove(artifact)}>
+        Move to folder…
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => onShare(artifact)}>
         Share
-      </Item>
-      <Item onSelect={() => void downloadArtifact(artifact.id)}>
-        <Download size={14} />
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => void downloadArtifact(artifact.id)}>
         Download
-      </Item>
+      </DropdownMenuItem>
       {startSession.available && (
-        <Item onSelect={startSession.start}>
-          <AddComment size={14} />
-          Discuss with agent
-        </Item>
+        <DropdownMenuItem onSelect={() => void startSession.start()}>
+          Start a new session
+        </DropdownMenuItem>
       )}
-      <Separator />
-      <Item onSelect={() => onSetRetention(artifact)}>
-        <Calendar size={14} />
-        Set expiration
-      </Item>
-      <Item tone="danger" onSelect={() => void confirmAndDelete()}>
-        <TrashCan size={14} />
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => onSetRetention(artifact)}>
+        Delete after…
+      </DropdownMenuItem>
+      <DropdownMenuItem tone="danger" onSelect={() => void confirmAndDelete()}>
         Delete artifact
-      </Item>
+      </DropdownMenuItem>
     </>
   );
 }

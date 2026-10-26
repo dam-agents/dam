@@ -1,10 +1,9 @@
-import { Edit, Upload } from "@carbon/icons-react";
+import { Edit, TrashCan, Upload } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
 import { DialogActions, DialogBody } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RemoveButton } from "@/components/ui/remove-button";
 import { cn } from "@/lib/utils";
 
 import type {
@@ -93,10 +92,10 @@ export function UploadSkillsTab({
           }}
         />
 
-        {notice && <p className="text-sm text-danger">{notice}</p>}
-        {topError && <p className="text-sm text-danger">{topError}</p>}
+        {notice && <p className="text-sm text-destructive">{notice}</p>}
+        {topError && <p className="text-sm text-destructive">{topError}</p>}
         {hasDuplicate && (
-          <p className="text-sm text-danger">
+          <p className="text-sm text-destructive">
             Two staged skills resolve to the same skill id — rename one before
             adding.
           </p>
@@ -124,6 +123,7 @@ export function UploadSkillsTab({
       </DialogBody>
 
       <DialogActions
+        divided
         onCancel={onClose}
         label={submitLabel}
         pendingLabel="Adding…"
@@ -158,7 +158,7 @@ function StagedSkillRow({
     <div
       className={cn(
         "flex items-center gap-3 rounded-lg border px-4 py-3",
-        conflict || unsluggable ? "border-danger" : "border-border",
+        conflict || unsluggable ? "border-destructive" : "border-border",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -175,7 +175,7 @@ function StagedSkillRow({
           />
         ) : (
           <>
-            <p className="truncate text-md font-medium text-foreground">
+            <p className="truncate text-[15px] font-medium text-foreground">
               {skill.name || "Untitled skill"}
             </p>
             <p className="truncate text-sm text-muted-foreground">
@@ -184,12 +184,12 @@ function StagedSkillRow({
           </>
         )}
         {conflict && (
-          <p className="mt-1 text-xs text-danger">
+          <p className="mt-1 text-xs text-destructive">
             This agent already has a skill with this name.
           </p>
         )}
         {!conflict && unsluggable && (
-          <p className="mt-1 text-xs text-danger">
+          <p className="mt-1 text-xs text-destructive">
             Name needs at least one letter or number.
           </p>
         )}
@@ -204,7 +204,16 @@ function StagedSkillRow({
       >
         <Edit size={16} />
       </Button>
-      <RemoveButton label="Remove skill" onClick={onRemove} />
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label="Remove skill"
+        tooltip="Remove skill"
+        onClick={onRemove}
+        className="shrink-0 text-muted-foreground"
+      >
+        <TrashCan size={16} />
+      </Button>
     </div>
   );
 }

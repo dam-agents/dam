@@ -36,20 +36,13 @@ function applySystemTheme(): void {
 export async function renderPublicAgentPage(agentId: string): Promise<void> {
   applySystemTheme();
   const brand = getBrand();
-  const search = new URLSearchParams(window.location.search);
-  const sessionId = search.get("s");
-  const fromApp = search.get("from") === "app";
+  const sessionId = new URLSearchParams(window.location.search).get("s");
   const root = createRoot(document.getElementById("root")!);
 
   const paint = (state: PublicAgentPageState, openPath: string) =>
     root.render(
       <StrictMode>
-        <PublicAgentView
-          state={state}
-          brand={brand}
-          openPath={openPath}
-          fromApp={fromApp}
-        />
+        <PublicAgentView state={state} brand={brand} openPath={openPath} />
       </StrictMode>,
     );
 

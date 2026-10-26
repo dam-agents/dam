@@ -2,9 +2,7 @@ import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedParams,
-  PlatformQueueChangedParams,
   PlatformRunStartedParams,
-  PlatformSessionResetParams,
   PlatformTurnEndedParams,
 } from "api-server-api";
 
@@ -16,18 +14,12 @@ export type AcpUpdate =
     } & PlatformPromptAcceptedParams)
   | ({ sessionUpdate: "platform_prompt_started" } & PlatformPromptStartedParams)
   | ({ sessionUpdate: "platform_run_started" } & PlatformRunStartedParams)
-  | ({ sessionUpdate: "platform_queue_changed" } & PlatformQueueChangedParams)
-  | ({ sessionUpdate: "platform_session_reset" } & PlatformSessionResetParams)
   | { sessionUpdate: "platform_clipped_replay"; older?: string };
 
 export interface FrameMeta {
   replayFor?: string;
   at?: string;
   telemetryPromptId?: string;
-  model?: string;
-  turnId?: string;
-  stopReason?: string;
-  block?: number;
 }
 
 export type UpdateHandler = (

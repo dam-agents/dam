@@ -1,20 +1,19 @@
 import { create } from "zustand";
 
-import { type A2uiSlice, createA2uiSlice } from "./modules/a2ui/store.js";
 import { type AgentsSlice, createAgentsSlice } from "./modules/agents/store.js";
 import {
   type ArtifactsSlice,
   createArtifactsSlice,
 } from "./modules/artifacts/store.js";
 import {
-  type BrowserSlice,
-  createBrowserSlice,
-} from "./modules/browser/store.js";
-import {
   createFeaturesSlice,
   type FeaturesSlice,
 } from "./modules/features/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
+import {
+  createInvocationsSlice,
+  type InvocationsSlice,
+} from "./modules/invocations/store.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -32,10 +31,6 @@ import {
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
 import {
-  createProcessesSlice,
-  type ProcessesSlice,
-} from "./modules/processes/store.js";
-import {
   claimDraftsFor,
   flushDraftsOnHide,
   onForeignDraftChange,
@@ -49,14 +44,8 @@ import {
   createSessionsSlice,
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
-import {
-  createSidePanelSlice,
-  type SidePanelSlice,
-} from "./modules/sessions/store/side-panel.js";
-import { createSpendSlice, type SpendSlice } from "./modules/spend/store.js";
 
 export type PlatformStore = DialogSlice &
-  A2uiSlice &
   ThemeSlice &
   NavigationSlice &
   SidebarSlice &
@@ -64,16 +53,12 @@ export type PlatformStore = DialogSlice &
   SessionsSlice &
   FilesSlice &
   ArtifactsSlice &
-  BrowserSlice &
+  InvocationsSlice &
   FeaturesSlice &
-  PermissionsSlice &
-  ProcessesSlice &
-  SidePanelSlice &
-  SpendSlice;
+  PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
-  ...createA2uiSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
   ...createSidebarSlice(...a),
@@ -81,12 +66,9 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createSessionsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
-  ...createBrowserSlice(...a),
+  ...createInvocationsSlice(...a),
   ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
-  ...createProcessesSlice(...a),
-  ...createSidePanelSlice(...a),
-  ...createSpendSlice(...a),
 }));
 
 let draftSyncStarted = false;

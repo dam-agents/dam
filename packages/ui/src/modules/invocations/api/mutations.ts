@@ -7,7 +7,7 @@ export function useStopDelegation() {
     ...trpc.invocations.stop.mutationOptions(),
     meta: {
       invalidates: [trpc.invocations.pathKey(), trpc.agents.pathKey()],
-      errorToast: "Couldn't stop the temporary agent",
+      errorToast: "Failed to stop the temporary agent",
     },
   });
 }

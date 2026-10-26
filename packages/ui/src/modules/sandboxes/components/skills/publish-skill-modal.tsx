@@ -3,7 +3,6 @@ import type { LocalSkill, SkillSource } from "api-server-api";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -11,6 +10,7 @@ import {
   Modal,
 } from "@/components/modal";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { orgRepo } from "@/lib/git-source";
@@ -61,36 +61,40 @@ export function PublishSkillModal({
   });
 
   return (
-    <Modal onClose={isSubmitting ? undefined : onClose}>
+    <Modal>
       <DialogHeader
-        title={`Publish ${skill.name} as a pull request`}
+        title={`Publishing ${skill.name} as a pull request`}
         onClose={onClose}
       />
 
-      <form className="contents" onSubmit={onSubmit}>
+      <form onSubmit={onSubmit}>
         <DialogBody className="flex flex-col gap-5">
-          <FormField label="Publish to">
-            <Select {...register("sourceId")}>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Publish to</SectionLabel>
+            <Select size="sm" {...register("sourceId")}>
               {sources.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({orgRepo(s.gitUrl)})
                 </option>
               ))}
             </Select>
-          </FormField>
-          <FormField label="Pull request title">
-            <Input autoFocus {...register("title")} />
-          </FormField>
-          <FormField label="Description">
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Pull request title</SectionLabel>
+            <Input size="sm" {...register("title")} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Description</SectionLabel>
             <Textarea
               className="min-h-[96px] resize-y text-sm"
               rows={4}
               {...register("body")}
             />
-          </FormField>
+          </div>
         </DialogBody>
 
         <DialogActions
+          divided
           onCancel={onClose}
           label="Publish"
           pendingLabel="Publishing…"

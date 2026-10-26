@@ -41,3 +41,11 @@ export function useCurrentPreset(agentId: string | null) {
       : skipToken,
   });
 }
+
+export function useTrustedHosts() {
+  return useQuery({
+    queryKey: [...egressRulesKeys.all, "trusted-hosts"] as const,
+    queryFn: () => api.egressRules.trustedHosts.query(),
+    staleTime: 5 * 60_000,
+  });
+}

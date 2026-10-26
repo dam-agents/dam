@@ -1,6 +1,5 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 import type {
-  AgentBackgroundWork,
   BackgroundWorkItemView,
   SessionBackgroundWork,
 } from "api-server-api";
@@ -17,9 +16,9 @@ const backgroundWorkKeys = {
   agent: (agentId: string | null) => ["background-work", agentId] as const,
 };
 
-function useBackgroundWorkQuery(
+export function useAgentBackgroundWork(
   agentId: string | null,
-): AgentBackgroundWork | undefined {
+): readonly SessionBackgroundWork[] {
   const awake = useAgentRunState(agentId) === "running";
   const { data } = useQuery({
     queryKey: backgroundWorkKeys.agent(agentId),
@@ -30,13 +29,7 @@ function useBackgroundWorkQuery(
     refetchInterval: agentId && awake ? BACKGROUND_WORK_POLL_MS : false,
     retry: false,
   });
-  return awake ? data : undefined;
-}
-
-export function useAgentBackgroundWork(
-  agentId: string | null,
-): readonly SessionBackgroundWork[] {
-  return useBackgroundWorkQuery(agentId)?.sessions ?? NO_SESSIONS;
+  return awake ? (data?.sessions ?? NO_SESSIONS) : NO_SESSIONS;
 }
 
 export function useSessionBackgroundWork(
@@ -46,14 +39,4 @@ export function useSessionBackgroundWork(
   const sessions = useAgentBackgroundWork(agentId);
   if (!sessionId) return NO_WORK;
   return sessions.find((s) => s.sessionId === sessionId)?.items ?? NO_WORK;
-}
-
-export function useKeptWorkCount(agentId: string | null): number {
-  const work = useBackgroundWorkQuery(agentId);
-  if (!work) return 0;
-  const keptTasks = work.sessions.reduce(
-    (sum, session) => sum + session.items.length,
-    0,
-  );
-  return keptTasks + work.keptProcesses + work.openLinks;
 }

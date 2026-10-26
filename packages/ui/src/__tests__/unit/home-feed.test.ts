@@ -3,20 +3,17 @@ import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
-  channelTypeOfSession,
+  applyActivityFilters,
+  channelTypeFor,
   defaultActivityFilters,
   isFiltered,
 } from "../../modules/home/lib/activity-filter.js";
-import {
-  filterActivitySessions,
-  toActivitySessions,
-} from "../../modules/home/lib/activity-sessions.js";
 import {
   type FeedItem,
   sortFeedItems,
 } from "../../modules/home/lib/feed-item.js";
 
-// TEST_OVERVIEW: the activity ordering and filtering rules, kept pure so they can be pinned here. The session filter in the sidebar Agents header filters sessions by the channel they arrived through and by their state, so both halves are covered.
+// TEST_OVERVIEW: the activity feed's ordering and filtering rules, kept pure so they can be pinned here. The panel filters by the channel an item arrived through and by its state, so both halves are covered.
 
 function session(overrides: Partial<AttentionItem> = {}): AttentionItem {
   return {
@@ -87,74 +84,85 @@ describe("sortFeedItems", () => {
 });
 
 describe("the activity filters", () => {
-  const unreadSession = (
-    sessionId: string,
-    activityAt: string,
-    type: SessionType = SessionType.Regular,
-  ) => session({ sessionId, type, activityAt, seenAt: "2026-08-19T07:00:00Z" });
-  const running = new Set(["a-1"]);
-  const items = toActivitySessions(
-    [
-      session({
-        sessionId: "run",
-        working: true,
-        activityAt: "2026-08-19T11:00:00Z",
-        seenAt: "2026-08-19T11:30:00Z",
-      }),
-      unreadSession("chat", "2026-08-19T10:00:00Z"),
-      unreadSession("sched", "2026-08-19T09:00:00Z", SessionType.ScheduleCron),
-      unreadSession("slack", "2026-08-19T08:00:00Z", SessionType.ChannelSlack),
-      session({
-        sessionId: "seen",
-        activityAt: "2026-08-19T07:00:00Z",
-        seenAt: "2026-08-19T07:30:00Z",
-      }),
-    ],
-    running,
-    new Set(["a-1:seen"]),
-  );
-  const ids = (list: readonly { session: AttentionItem }[]) =>
-    list.map((i) => i.session.sessionId).sort();
+  const items: FeedItem[] = [
+    {
+      kind: "approval",
+      id: "ap",
+      agentId: "a-1",
+      at: "2026-08-19T12:00:00Z",
+      approval: { id: "ap" } as never,
+    },
+    {
+      kind: "in-progress",
+      id: "run",
+      agentId: "a-1",
+      at: "2026-08-19T11:00:00Z",
+      session: session({ sessionId: "run", working: true }),
+    },
+    unread("chat", "2026-08-19T10:00:00Z"),
+    unread("sched", "2026-08-19T09:00:00Z", SessionType.ScheduleCron),
+    unread("slack", "2026-08-19T08:00:00Z", SessionType.ChannelSlack),
+  ];
 
-  // TEST_SCENARIO: a session is filed by how it arrived — a schedule fire, a Slack thread, or a plain chat — because that is what a user filters on.
-  it("files each session under the channel it arrived through", () => {
+  // TEST_SCENARIO: an item is filed by how it arrived — a schedule fire, a Slack thread, or a plain chat — because that is what a user filters on.
+  it("files each item under the channel it arrived through", () => {
     const byId = Object.fromEntries(
-      items.map((item) => [
-        item.session.sessionId,
-        channelTypeOfSession(item.session),
-      ]),
+      items.map((item) => [item.id, channelTypeFor(item)]),
     );
     expect(byId["sched"]).toBe("schedule");
     expect(byId["slack"]).toBe("slack");
     expect(byId["chat"]).toBe("chat");
+    expect(byId["ap"]).toBe("chat");
   });
 
   // TEST_SCENARIO: unchecking a type hides only that type, and the default set hides nothing.
   it("keeps only the checked channel types", () => {
     const base = defaultActivityFilters();
     expect(isFiltered(base)).toBe(false);
-    expect(filterActivitySessions(items, base)).toHaveLength(items.length);
+    expect(applyActivityFilters(items, base)).toHaveLength(items.length);
 
     const onlySchedule = {
       ...base,
       channelTypes: new Set(["schedule" as const]),
     };
     expect(isFiltered(onlySchedule)).toBe(true);
-    expect(ids(filterActivitySessions(items, onlySchedule))).toEqual(["sched"]);
+    expect(applyActivityFilters(items, onlySchedule).map((i) => i.id)).toEqual([
+      "sched",
+    ]);
   });
 
-  // TEST_SCENARIO: the state filter is separate from the type filter, and every state keeps different sessions. "Needs attention" keeps the sessions with an approval waiting on the user, read or not. "Unread" keeps only sessions with activity newer than the seen watermark, so a session the user already read is not in the unread pile, and no two states may resolve to the same list, which is how a filter stops meaning anything.
-  it("gives each state its own sessions", () => {
+  // TEST_SCENARIO: the state filter is separate from the type filter, so "in progress" means running whatever channel it came from.
+  it("narrows by state independently of type", () => {
     const base = defaultActivityFilters();
-    const byState = (
-      state: "any" | "needs-attention" | "in-progress" | "unread",
-    ) => ids(filterActivitySessions(items, { ...base, state }));
+    const running = applyActivityFilters(items, {
+      ...base,
+      state: "in-progress",
+    });
+    expect(running.map((i) => i.id)).toEqual(["run"]);
 
-    expect(byState("needs-attention")).toEqual(["seen"]);
+    const unreadOnly = applyActivityFilters(items, {
+      ...base,
+      state: "unread",
+    });
+    expect(unreadOnly.map((i) => i.id).sort()).toEqual([
+      "chat",
+      "sched",
+      "slack",
+    ]);
+  });
+
+  // TEST_SCENARIO: every state names the kinds it keeps, and each names different ones. An approval is what is waiting on the user, so it answers "needs attention" rather than arriving in the unread pile alongside messages nobody has to act on — and no two states may resolve to the same list, which is how a filter stops meaning anything.
+  it("gives each state its own items", () => {
+    const base = defaultActivityFilters();
+    const byState = (state: "any" | "attention" | "in-progress" | "unread") =>
+      applyActivityFilters(items, { ...base, state })
+        .map((i) => i.id)
+        .sort();
+
+    expect(byState("attention")).toEqual(["ap"]);
     expect(byState("in-progress")).toEqual(["run"]);
     expect(byState("unread")).toEqual(["chat", "sched", "slack"]);
     expect(byState("any")).toHaveLength(items.length);
-    expect(byState("unread")).not.toEqual(byState("in-progress"));
-    expect(byState("needs-attention")).not.toEqual(byState("unread"));
+    expect(byState("attention")).not.toEqual(byState("in-progress"));
   });
 });

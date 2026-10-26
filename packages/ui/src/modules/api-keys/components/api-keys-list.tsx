@@ -1,80 +1,92 @@
-import { Add } from "@carbon/icons-react";
-import { KeystoresExternal } from "@carbon/pictograms-react";
+import type { ApiKeyView } from "api-server-api";
 import { useState } from "react";
 
-import { AddRow, ListSection } from "@/components/ui/list-section";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
-import { useStore } from "../../../store.js";
 import { useRevokeApiKey } from "../api/mutations.js";
 import { useApiKeys } from "../api/queries.js";
 import { ApiKeyRow } from "./api-key-row.js";
+import { ConfirmRevokeDialog } from "./confirm-revoke-dialog.js";
 import { CreateApiKeyDialog } from "./create-api-key-dialog/index.js";
+
+type RevokeTarget = Pick<ApiKeyView, "id" | "name">;
 
 export function ApiKeysList() {
   const { data: keys, isLoading, isError } = useApiKeys();
   const revokeApiKey = useRevokeApiKey();
-  const showConfirm = useStore((s) => s.showConfirm);
   const [createOpen, setCreateOpen] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
 
-  async function revoke(id: string, name: string) {
-    const ok = await showConfirm(
-      <>
-        <p className="mb-2">
-          The key <span className="font-semibold text-foreground">{name}</span>{" "}
-          stops working immediately for every CLI and integration that uses it.
-        </p>
-        <p>This cannot be undone. To restore access, create a new key.</p>
-      </>,
-      "Revoke API key?",
-      { kind: "destructive", confirmLabel: "Revoke key" },
+  function handleConfirmRevoke() {
+    if (!revokeTarget) return;
+    revokeApiKey.mutate(
+      { id: revokeTarget.id },
+      { onSettled: () => setRevokeTarget(null) },
     );
-    if (ok) revokeApiKey.mutate({ id });
   }
 
   return (
-    <div>
+    <div className="anim-in">
       <PageHeader
-        pictogram={<KeystoresExternal aria-hidden />}
-        title="API keys"
-        description="Let the CLI and scripts sign in without a browser. A key is shown only once, when you create it."
+        title="API Keys"
+        description="Long-lived tokens for headless / CI use. Pass the value as a bearer credential when calling the API. Plaintext is shown once on creation and never recoverable."
       />
 
-      <ListSection
-        loading={isLoading}
-        error={isError && "Couldn't load API keys."}
-        isEmpty={(keys ?? []).length === 0}
-        empty="No API keys yet. Create one to authenticate the CLI without a browser."
-        onNew={() => setCreateOpen(true)}
-        newLabel="Create API key"
-        addRow={
-          <AddRow onClick={() => setCreateOpen(true)}>
-            <Add size={20} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-md font-medium text-foreground">
-                Create API key
-              </p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Let the CLI and scripts sign in without a browser.
-              </p>
-            </div>
-          </AddRow>
-        }
-      >
-        {keys?.map((k) => (
-          <ApiKeyRow
-            key={k.id}
-            apiKey={k}
-            onRevoke={revoke}
-            revoking={
-              revokeApiKey.isPending && revokeApiKey.variables?.id === k.id
-            }
-          />
-        ))}
-      </ListSection>
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+
+      {isError && (
+        <Callout tone="danger">
+          <p className="text-sm text-danger font-semibold mb-1">
+            Couldn't load API keys
+          </p>
+          <p className="text-xs text-muted-foreground">
+            The server returned an error. Try again or check your network
+            connection.
+          </p>
+        </Callout>
+      )}
+
+      {!isLoading && !isError && keys && keys.length === 0 && (
+        <PageEmptyState
+          title="No API keys yet"
+          message="Create one to authenticate the CLI without a browser."
+          actionLabel="Create key"
+          onAction={() => setCreateOpen(true)}
+        />
+      )}
+
+      {!isLoading && !isError && keys && keys.length > 0 && (
+        <>
+          <Button className="mb-4" onClick={() => setCreateOpen(true)}>
+            Create key
+          </Button>
+          <ul className="space-y-2">
+            {keys.map((k) => (
+              <ApiKeyRow
+                key={k.id}
+                apiKey={k}
+                onRevoke={(id, name) => setRevokeTarget({ id, name })}
+                revoking={revokeApiKey.isPending && revokeTarget?.id === k.id}
+              />
+            ))}
+          </ul>
+        </>
+      )}
 
       {createOpen && (
         <CreateApiKeyDialog onClose={() => setCreateOpen(false)} />
+      )}
+
+      {revokeTarget && (
+        <ConfirmRevokeDialog
+          apiKey={revokeTarget}
+          onConfirm={handleConfirmRevoke}
+          onCancel={() => setRevokeTarget(null)}
+          pending={revokeApiKey.isPending}
+        />
       )}
     </div>
   );

@@ -12,7 +12,7 @@ const selectVariants = cva(
         standard: "border-input",
         ghost:
           "border-transparent bg-transparent hover:border-input hover:bg-background",
-        invalid: "border-danger focus-visible:ring-danger",
+        invalid: "border-destructive focus-visible:ring-destructive",
       },
       size: {
         default: "h-10 pl-4 py-2 text-sm",
@@ -53,4 +53,4 @@ function Select({ className, variant, size, ...props }: SelectProps) {
   );
 }
 
-export { Select };
+export { Select, selectVariants };

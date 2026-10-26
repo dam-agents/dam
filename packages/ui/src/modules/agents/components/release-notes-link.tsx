@@ -1,4 +1,4 @@
-import { Launch } from "@carbon/icons-react";
+import { ArrowRight } from "@carbon/icons-react";
 
 import { externalLinkProps, isExternalHttpUrl } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,7 @@ export function ReleaseNotesLink({
         className,
       )}
     >
-      See what changed <Launch size={16} />
+      See what changed <ArrowRight size={16} />
     </a>
   );
 }

@@ -1,14 +1,7 @@
 import { Information } from "@carbon/icons-react";
 import { useId } from "react";
-import type {
-  Control,
-  FieldErrors,
-  FieldValues,
-  Path,
-  UseFormRegister,
-  UseFormRegisterReturn,
-} from "react-hook-form";
-import { Controller, useController, useWatch } from "react-hook-form";
+import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
+import { Controller } from "react-hook-form";
 
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -20,38 +13,6 @@ import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
-import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
-import { useIsAgentOperable } from "../../agents/api/queries.js";
-import {
-  useHarnessCatalog,
-  useHarnessCatalogModels,
-  useHarnessConfigured,
-  useProviderConnections,
-  useSessionDefaults,
-} from "../../sessions/api/session-pair.js";
-import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
-import {
-  type Choice,
-  OptionPicker,
-} from "../../sessions/components/model-settings-panel.js";
-import { SessionSettingsControls } from "../../sessions/components/session-settings-controls.js";
-import {
-  findModel,
-  modelGroups,
-  modelIndicatorLabel,
-  sameSideGroups,
-} from "../../sessions/lib/catalog-groups.js";
-import { fittingProviders } from "../../sessions/lib/session-pair-options.js";
-import {
-  applySettingChanges,
-  settingDefaults,
-  settingsForModel,
-} from "../../sessions/lib/session-settings.js";
-import {
-  useHasHarnessDefault,
-  useScheduleDefault,
-  useSessionModelChoices,
-} from "../api/session-model.js";
 import {
   DAYS_ISO,
   formatTime12,
@@ -61,7 +22,6 @@ import {
 } from "../lib/schedule-form-options.js";
 import {
   buildRRuleParts,
-  errorField,
   type ScheduleFormValues,
 } from "./schedule-form-schema.js";
 
@@ -201,7 +161,9 @@ export function ScheduleRecurrenceFields({
         <Field
           layout={layout}
           label="Every"
-          {...(cadence.error ? { error: cadence.error } : {})}
+          {...(errors.interval?.message
+            ? { error: errors.interval.message }
+            : {})}
         >
           <div
             className={cn(
@@ -213,7 +175,7 @@ export function ScheduleRecurrenceFields({
               type="number"
               min={1}
               className={cn("w-[80px]", rows ? "h-8" : "h-10")}
-              variant={cadence.error ? "invalid" : undefined}
+              variant={errors.interval ? "invalid" : undefined}
               {...register("interval")}
             />
             <span>{values.kind === "minutely" ? "minutes" : "hours"}</span>
@@ -276,9 +238,7 @@ export function ScheduleRecurrenceFields({
       )}
 
       {cadence.error
-        ? errorField(values.kind) === "kind" && (
-            <FormError message={cadence.error} />
-          )
+        ? values.kind !== "custom" && <FormError message={cadence.error} />
         : !rows &&
           cadence.summary && (
             <p className="-mt-1 text-sm text-muted-foreground">
@@ -317,13 +277,13 @@ export function ScheduleRecurrenceFields({
   );
 }
 
-export function ScheduleSessionTypeField<T extends FieldValues>({
+export function ScheduleSessionTypeField({
   layout,
   control,
   accentClassName = DEFAULT_ACCENT,
 }: {
   layout: ScheduleFieldLayout;
-  control: Control<T>;
+  control: Control<ScheduleFormValues>;
   accentClassName?: string;
 }) {
   return (
@@ -343,7 +303,7 @@ export function ScheduleSessionTypeField<T extends FieldValues>({
     >
       <Controller
         control={control}
-        name={"sessionMode" as Path<T>}
+        name="sessionMode"
         render={({ field }) => (
           <div
             className={cn("flex gap-1.5", layout === "rows" && "justify-end")}
@@ -367,37 +327,42 @@ export function ScheduleSessionTypeField<T extends FieldValues>({
 }
 
 const PRECHECK_HINT =
-  "A shell command run in the agent's workspace before each run. Exit 0 runs the task, exit 1 skips this run, and any other exit runs it anyway. What it prints is added to the prompt.";
+  "A shell command run before each fire, from the agent's workspace root (/home/agent/work) — so a script in a repo cloned there is ./<repo>/scripts/check.sh. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
 
 const PRECHECK_PLACEHOLDER =
   "git fetch -q && git log --oneline HEAD..origin/main | grep -q .";
 
 interface PrecheckFieldProps {
   layout: ScheduleFieldLayout;
-  registration: UseFormRegisterReturn;
-  error?: string | undefined;
+  register: UseFormRegister<ScheduleFormValues>;
+  errors: FieldErrors<ScheduleFormValues>;
 }
 
 export function SchedulePrecheckField({
   layout,
-  registration,
-  error,
+  register,
+  errors,
 }: PrecheckFieldProps) {
   const fieldId = useId();
   const input = (
     <Textarea
       id={fieldId}
       className="min-h-[56px] resize-y font-mono text-xs"
-      variant={error ? "invalid" : undefined}
+      variant={errors.precheck ? "invalid" : undefined}
       placeholder={PRECHECK_PLACEHOLDER}
       rows={2}
-      {...registration}
+      {...register("precheck")}
     />
   );
 
   if (layout === "stacked")
     return (
-      <FormField label="Precheck (optional)" error={error} hint={PRECHECK_HINT}>
+      <FormField
+        label="Precheck (optional)"
+        error={errors.precheck?.message}
+        hint={PRECHECK_HINT}
+        disableInset
+      >
         {input}
       </FormField>
     );
@@ -418,296 +383,7 @@ export function SchedulePrecheckField({
         </HintTooltip>
       </div>
       {input}
-      <FormError message={error} />
-    </div>
-  );
-}
-
-const MODEL_HINT =
-  "Default is the harness's own default; where the agent has none, a schedule without a model follows the agent's model.";
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when agents.runtimeFleet.outdated is empty on prod.
- * The single model field of a schedule: a bare name from the agent's list.
- */
-export function ScheduleModelField({
-  agentId,
-  value,
-  onChange,
-}: {
-  agentId: string;
-  value: string;
-  onChange: (model: string) => void;
-}) {
-  const choices = useSessionModelChoices(agentId || null);
-  const hasDefault = useHasHarnessDefault(agentId || null);
-  const supported = choices.length > 0;
-  if (!supported && !value) return null;
-  const options: Choice[] = choices.map((c) => ({
-    id: c.value,
-    name: c.name,
-    description: c.description,
-  }));
-  if (value && !options.some((c) => c.id === value))
-    options.push({
-      id: value,
-      name: value,
-      description: supported
-        ? "Not in this agent's model list"
-        : "This agent can't switch a session's model; clear it so runs follow the agent",
-    });
-
-  return (
-    <FormField label="Model" hint={MODEL_HINT}>
-      <OptionPicker
-        title="Model"
-        choices={options}
-        value={value || null}
-        clearable
-        {...(hasDefault
-          ? {}
-          : {
-              placeholder: "Same as agent",
-              clearedLabel: "Same as agent",
-              clearedDescription: "Follows the model the agent is set to",
-            })}
-        onSelect={(id) => onChange(id ?? "")}
-      />
-    </FormField>
-  );
-}
-
-const SESSION_TITLE_HINT =
-  "Shown in the session list instead of the title the agent derives from the prompt. Every run of a fresh schedule gets the same title.";
-
-export function ScheduleSessionTitleField({
-  registration,
-  error,
-}: {
-  registration: UseFormRegisterReturn;
-  error?: string | undefined;
-}) {
-  return (
-    <FormField
-      label="Session title (optional)"
-      error={error}
-      hint={SESSION_TITLE_HINT}
-    >
-      <Input
-        variant={error ? "invalid" : undefined}
-        placeholder="Derived from the prompt"
-        {...registration}
-      />
-    </FormField>
-  );
-}
-
-interface ChoicesControl {
-  harness: string;
-  model: string;
-  settings: Record<string, string>;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the same three choices a session picks.
- * "Scheduled default" is the empty choice and says what that default is now,
- * and whether it is the chat default, set on the Providers page. On
- * a runtime without the Model Router the old single model field stands.
- */
-export function ScheduleChoicesField<T extends ChoicesControl>({
-  agentId,
-  control,
-  migrationNote,
-}: {
-  agentId: string;
-  control: Control<T>;
-  migrationNote: string | null;
-}) {
-  const typed = control as unknown as Control<ChoicesControl>;
-  const { data: status } = useHarnessConfigStatus(agentId || null);
-  const agentOperable = useIsAgentOperable(agentId || null);
-  const routed = status?.modelRouter ?? false;
-  const harnessValue = useWatch({ control: typed, name: "harness" });
-  const { field: modelField } = useController({
-    control: typed,
-    name: "model",
-  });
-  const { field: settingsField } = useController({
-    control: typed,
-    name: "settings",
-  });
-  const { data: savedDefaults } = useSessionDefaults(
-    routed && agentId ? agentId : null,
-  );
-  const sameAsChat = savedDefaults !== undefined && !savedDefaults.scheduled;
-  const storedModel = modelField.value;
-  const settingsValue = settingsField.value;
-  const { data: catalog } = useHarnessCatalog();
-  const carried = status?.harnesses ?? [];
-  const { data: fallback } = useScheduleDefault(
-    routed && agentId ? agentId : null,
-    harnessValue || null,
-  );
-  const harness =
-    harnessValue ||
-    fallback?.harness ||
-    status?.defaultHarness ||
-    carried[0]?.name ||
-    "";
-  const { data: catalogModels } = useHarnessCatalogModels(
-    routed && agentId ? agentId : null,
-    routed ? harness || null : null,
-  );
-  const { granted } = useProviderConnections(routed ? agentId : null);
-  const capability = carried.find((h) => h.name === harness);
-  const defaults = settingDefaults(
-    capability,
-    useHarnessConfigured(agentId, harness),
-    storedModel || fallback?.model || null,
-  );
-  const listedByRunningAgent =
-    !status?.harnesses ||
-    (!routed && status.sessionModel && !!status.defaultHarness);
-  if (agentId && status && !agentOperable && listedByRunningAgent)
-    return (
-      <FormField label="Model">
-        <AwakeModelsGate agentId={agentId} />
-      </FormField>
-    );
-  if (!routed)
-    return (
-      <ScheduleModelField
-        agentId={agentId}
-        value={modelField.value}
-        onChange={modelField.onChange}
-      />
-    );
-  const groups = modelGroups(catalogModels);
-  const modelValue = storedModel
-    ? (findModel(groups, storedModel)?.model.name ?? storedModel)
-    : storedModel;
-  const fitting = fittingProviders(catalog?.harnesses ?? [], granted);
-  const harnessChoices: Choice[] = carried
-    .filter((h) => h.name === harnessValue || fitting(h.name).length > 0)
-    .map((h) => ({
-      id: h.name,
-      name:
-        catalog?.harnesses.find((v) => v.name === h.name)?.displayName ??
-        h.name,
-    }));
-  const modelChoices: Choice[] = groups.flatMap((g) =>
-    g.models.map((m) => ({
-      id: m.name,
-      name: `${m.upstreamId} · ${g.displayName}`,
-    })),
-  );
-  if (modelValue && !modelChoices.some((c) => c.id === modelValue))
-    modelChoices.push({
-      id: modelValue,
-      name: modelValue,
-      ...(catalogModels !== undefined && {
-        description: "Not in this agent's model list",
-      }),
-    });
-  const todayModel = fallback?.model
-    ? modelIndicatorLabel(groups, fallback.model)
-    : null;
-  const now = (value: string) =>
-    sameAsChat ? `Now: ${value}, same as chat` : `Now: ${value}`;
-  const defaultHint = sameAsChat
-    ? "Scheduled default runs on the agent's scheduled default, set on its Providers page, which is the same as its chat default."
-    : "Scheduled default runs on the agent's scheduled default, set on its Providers page.";
-  return (
-    <div className="flex flex-col gap-4">
-      <FormField label="Harness" hint={defaultHint}>
-        <Controller
-          control={typed}
-          name="harness"
-          render={({ field }) => (
-            <OptionPicker
-              title="Harness"
-              choices={harnessChoices}
-              value={field.value || null}
-              clearable
-              placeholder="Scheduled default"
-              clearedLabel="Scheduled default"
-              clearedDescription={
-                fallback?.harness
-                  ? now(
-                      harnessChoices.find((c) => c.id === fallback.harness)
-                        ?.name ?? fallback.harness,
-                    )
-                  : "Follows the agent's scheduled default"
-              }
-              onSelect={(id) => {
-                field.onChange(id ?? "");
-                modelField.onChange("");
-                settingsField.onChange({});
-              }}
-            />
-          )}
-        />
-      </FormField>
-      <FormField
-        label="Model"
-        hint="Each model is named with its provider. Scheduled default uses the scheduled default's model for the harness."
-        {...(migrationNote ? { error: migrationNote } : {})}
-      >
-        <AwakeModelsGate agentId={agentId}>
-          <OptionPicker
-            title="Model"
-            choices={modelChoices}
-            value={modelValue || null}
-            clearable
-            placeholder="Scheduled default"
-            clearedLabel="Scheduled default"
-            clearedDescription={
-              todayModel
-                ? now(todayModel)
-                : "Follows the scheduled default's model for the harness"
-            }
-            onSelect={(id) => {
-              modelField.onChange(id ?? "");
-              if (!id && fallback === undefined) return;
-              const current = settingsValue ?? {};
-              const kept = settingsForModel(
-                capability,
-                groups,
-                id || fallback?.model || null,
-                current,
-              );
-              if (Object.keys(kept).length !== Object.keys(current).length)
-                settingsField.onChange(kept);
-            }}
-          />
-        </AwakeModelsGate>
-      </FormField>
-      {capability?.sessionSettings && capability.sessionSettings.length > 0 && (
-        <FormField label="Session settings">
-          <SessionSettingsControls
-            agentId={agentId}
-            carried={carried}
-            capability={capability}
-            model={modelValue || fallback?.model || null}
-            settings={settingsValue ?? {}}
-            defaults={defaults}
-            modelChoices={sameSideGroups(
-              groups,
-              modelValue || fallback?.model || null,
-            ).flatMap((g) =>
-              g.models.map((m) => ({
-                value: m.name,
-                name: `${m.upstreamId} · ${g.displayName}`,
-              })),
-            )}
-            onChange={(changes) =>
-              settingsField.onChange(
-                applySettingChanges(settingsValue ?? {}, changes),
-              )
-            }
-          />
-        </FormField>
-      )}
+      <FormError message={errors.precheck?.message} />
     </div>
   );
 }

@@ -5,7 +5,6 @@ import { preferenceGroupOf } from "api-server-api";
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 
 function samePreferenceGroup(connectionId: string): Set<string> {
   const connections =
@@ -54,9 +53,6 @@ export function useSetPreferredConnection() {
       if (context?.previous)
         queryClient.setQueryData(context.key, context.previous);
     },
-    onSettled: (_data, error, vars) => {
-      if (!error) askToRestartAfterSave(vars.agentId);
-    },
     meta: {
       invalidates: [trpc.connections.getAgentConnections.queryKey()],
       errorToast: "Couldn't change the default account",
@@ -81,7 +77,6 @@ export function useUpdateConnection(opts?: { silent?: boolean }) {
       invalidates: [
         trpc.connections.list.queryKey(),
         trpc.connections.getAgentConnections.queryKey(),
-        trpc.connections.getProviderBalance.queryKey(),
       ],
       ...(opts?.silent
         ? { suppressErrorToast: true }
@@ -97,7 +92,6 @@ export function useDeleteConnection() {
       invalidates: [
         trpc.connections.list.queryKey(),
         trpc.connections.getAgentConnections.queryKey(),
-        trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't delete connection",
     },

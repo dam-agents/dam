@@ -18,7 +18,7 @@ function pickNext(current: number, count: number): number {
 function render(tip: string) {
   return tip.split(/`([^`]+)`/g).map((part, i) =>
     i % 2 === 1 ? (
-      <code key={i} className="font-mono text-sm">
+      <code key={i} className="font-mono text-[13px]">
         {part}
       </code>
     ) : (

@@ -3,7 +3,10 @@ import { useCallback } from "react";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../api/queries.js";
 
-type AgentPowerMutate = (variables: { id: string }) => Promise<unknown>;
+type AgentPowerMutate = (
+  variables: { id: string },
+  options: { onError: () => void },
+) => void;
 
 export function useRestartingAction(mutate: AgentPowerMutate) {
   const agents = useAgentsList();
@@ -12,13 +15,12 @@ export function useRestartingAction(mutate: AgentPowerMutate) {
 
   return useCallback(
     (id: string) => {
-      const agent = agents.find((a) => a.id === id);
       setRestarting(id, {
-        seenNonRunning: agent?.state !== "running",
+        seenNonRunning: false,
         clickedAt: Date.now(),
-        parkedAtClick: agent?.overBudget ?? false,
+        parkedAtClick: agents.find((a) => a.id === id)?.overBudget ?? false,
       });
-      mutate({ id }).catch(() => clearRestarting(id));
+      mutate({ id }, { onError: () => clearRestarting(id) });
     },
     [agents, setRestarting, clearRestarting, mutate],
   );

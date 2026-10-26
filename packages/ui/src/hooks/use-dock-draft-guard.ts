@@ -1,3 +1,5 @@
+import { useCallback } from "react";
+
 import { useStore } from "../store.js";
 
 /**
@@ -5,8 +7,15 @@ import { useStore } from "../store.js";
  * an artifact or a sandbox file, never both — opening one evicts the other and
  * throws away whatever draft it held. Both lineages ask this before they swap,
  * so a draft dies only when its owner has said so, whichever surface displaced
- * it. The store asks the same question when navigation leaves the chat.
+ * it.
  */
 export function useDockDraftGuard() {
-  return useStore((s) => s.confirmDockDiscard);
+  const openArtifactDirty = useStore((s) => s.openArtifactDirty);
+  const openFileDirty = useStore((s) => s.openFileDirty);
+  const showConfirm = useStore((s) => s.showConfirm);
+
+  return useCallback(async () => {
+    if (!openArtifactDirty && !openFileDirty) return true;
+    return showConfirm("Discard unsaved changes?", "Unsaved changes");
+  }, [openArtifactDirty, openFileDirty, showConfirm]);
 }

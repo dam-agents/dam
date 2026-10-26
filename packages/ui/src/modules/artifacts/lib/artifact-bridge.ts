@@ -10,7 +10,7 @@ export function canUseArtifactBridge(
     enabled &&
     artifact?.interactive === true &&
     artifact.kind === "html" &&
-    artifact.visibility !== "public" &&
+    artifact.visibility === "private" &&
     agentId !== null &&
     artifact.agentId === agentId &&
     artifact.version === version

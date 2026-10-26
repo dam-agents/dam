@@ -10,7 +10,8 @@ import type {
   SkillSource,
   SkillsState,
 } from "api-server-api";
-import { useCallback, useMemo, useState } from "react";
+import { skillKey } from "api-server-api";
+import { useCallback, useState } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
 import { toScanFailure } from "@/lib/scan-failure";
@@ -22,12 +23,6 @@ import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { useSkillSources, useSkillsState } from "../../agents/api/skills.js";
 import { saveSkillFiles } from "../lib/skill-download.js";
-import {
-  sameSourcePath,
-  selectionKey,
-  type SkillIdentity,
-  withSourcePath,
-} from "../lib/skill-identity.js";
 
 const SCAN_STALE_MS = 60_000;
 const SCAN_GC_MS = 24 * 60 * 60_000;
@@ -62,7 +57,6 @@ function skippedSummary(skipped: SkillSetApplyResult["skipped"]): string {
 
 export interface SkillsSurface {
   sources: SkillSource[];
-  hiddenSources: SkillSource[];
   sourcesLoaded: boolean;
   stateLoaded: boolean;
   skillsBySource: Record<string, Skill[]>;
@@ -79,7 +73,7 @@ export interface SkillsSurface {
   busyKey: string | null;
   busySourceId: string | null;
   updatingAll: boolean;
-  installedRef: (skill: SkillIdentity) => SkillRef | undefined;
+  installedRef: (source: string, name: string) => SkillRef | undefined;
   toggle: (skill: Skill) => Promise<void>;
   update: (skill: Skill) => Promise<boolean>;
   toggleSource: (
@@ -117,7 +111,6 @@ export interface SkillsSurface {
   downloadStandalone: (skill: LocalSkill) => Promise<void>;
   removeSource: (id: string) => Promise<boolean>;
   refreshSource: (id: string) => Promise<void>;
-  setSourceHidden: (id: string, hidden: boolean) => Promise<boolean>;
 }
 
 export function useSkillsSurface(
@@ -135,14 +128,7 @@ export function useSkillsSurface(
   const [applyingSets, setApplyingSets] = useState(false);
 
   const sourcesQuery = useSkillSources(agentId);
-  const allSources = sourcesQuery.data ?? NO_SOURCES;
-  const [sources, hiddenSources] = useMemo(
-    () => [
-      allSources.filter((s) => !s.hidden),
-      allSources.filter((s) => s.hidden),
-    ],
-    [allSources],
-  );
+  const sources = sourcesQuery.data ?? NO_SOURCES;
   const sourcesLoaded = agentId === null || !sourcesQuery.isPending;
 
   const scans = useQueries({
@@ -151,6 +137,7 @@ export function useSkillsSurface(
       retry: false,
       staleTime: SCAN_STALE_MS,
       gcTime: SCAN_GC_MS,
+      refetchOnWindowFocus: false,
     })),
     combine: (results) => {
       const skillsBySource: Record<string, Skill[]> = {};
@@ -220,22 +207,17 @@ export function useSkillsSurface(
   );
 
   const installedRef = useCallback(
-    (skill: SkillIdentity) =>
-      installed.find(
-        (s) =>
-          s.source === skill.source &&
-          s.name === skill.name &&
-          sameSourcePath(s.path, skill.path),
-      ),
+    (source: string, name: string) =>
+      installed.find((s) => s.source === source && s.name === name),
     [installed],
   );
 
   const toggle = useCallback(
     async (skill: Skill) => {
       if (!agentId || isError || readOnly) return;
-      const key = selectionKey(skill);
+      const key = skillKey(skill);
       setBusyKey(key);
-      const currentlyInstalled = !!installedRef(skill);
+      const currentlyInstalled = !!installedRef(skill.source, skill.name);
       const result = await runAction(
         () =>
           currentlyInstalled
@@ -250,7 +232,6 @@ export function useSkillsSurface(
                 name: skill.name,
                 version: skill.version,
                 contentHash: skill.contentHash,
-                ...withSourcePath(skill),
               }),
         `Failed to ${currentlyInstalled ? "uninstall" : "install"} ${skill.name}`,
       );
@@ -263,7 +244,7 @@ export function useSkillsSurface(
   const update = useCallback(
     async (skill: Skill) => {
       if (!agentId || isError || readOnly) return false;
-      const key = selectionKey(skill);
+      const key = skillKey(skill);
       setBusyKey(key);
       const result = await runAction(
         () =>
@@ -273,7 +254,6 @@ export function useSkillsSurface(
             name: skill.name,
             version: skill.version,
             contentHash: skill.contentHash,
-            ...withSourcePath(skill),
           }),
         `Failed to update ${skill.name}`,
       );
@@ -287,7 +267,9 @@ export function useSkillsSurface(
   const toggleSource = useCallback(
     async (sourceId: string, skills: Skill[], on: boolean) => {
       if (!agentId || isError || readOnly) return;
-      const changing = skills.filter((s) => !!installedRef(s) !== on);
+      const changing = skills.filter(
+        (s) => !!installedRef(s.source, s.name) !== on,
+      );
       if (changing.length === 0) return;
       setBusySourceId(sourceId);
       const result = await runAction(
@@ -300,7 +282,6 @@ export function useSkillsSurface(
                   name: s.name,
                   version: s.version,
                   contentHash: s.contentHash,
-                  ...withSourcePath(s),
                 }))
               : [],
             uninstall: on
@@ -328,7 +309,6 @@ export function useSkillsSurface(
               name: s.name,
               version: s.version,
               contentHash: s.contentHash,
-              ...withSourcePath(s),
             })),
             uninstall: [],
           }),
@@ -341,7 +321,10 @@ export function useSkillsSurface(
   );
 
   const createSet = useCallback(
-    async (input: { name: string; skills: SkillIdentity[] }) => {
+    async (input: {
+      name: string;
+      skills: { source: string; name: string }[];
+    }) => {
       const result = await runAction(
         () => api.skills.sets.create.mutate(input),
         `Failed to save ${input.name}`,
@@ -533,29 +516,6 @@ export function useSkillsSurface(
     [agentId],
   );
 
-  const setSourceHidden = useCallback(
-    async (id: string, hidden: boolean) => {
-      if (!agentId) return false;
-      const result = await runAction(
-        () => api.skills.sources.setHidden.mutate({ agentId, id, hidden }),
-        hidden ? "Failed to hide source" : "Failed to show source",
-      );
-      if (result === ACTION_FAILED) return false;
-      queryClient.setQueryData(
-        trpc.skills.sources.list.queryKey({ agentId }),
-        (prev) =>
-          (prev ?? []).map((s) =>
-            s.id === id ? { ...s, hidden: hidden || undefined } : s,
-          ),
-      );
-      void queryClient.invalidateQueries({
-        queryKey: trpc.skills.sources.list.queryKey({ agentId }),
-      });
-      return true;
-    },
-    [agentId],
-  );
-
   const publish = useCallback(
     async (input: {
       sourceId: string;
@@ -620,7 +580,6 @@ export function useSkillsSurface(
 
   return {
     sources,
-    hiddenSources,
     sourcesLoaded,
     stateLoaded,
     skillsBySource: scans.skillsBySource,
@@ -654,7 +613,6 @@ export function useSkillsSurface(
     downloadStandalone,
     removeSource,
     refreshSource,
-    setSourceHidden,
     publish,
   };
 }

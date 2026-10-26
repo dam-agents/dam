@@ -1,5 +1,5 @@
 import type { Skill, SkillSource } from "api-server-api";
-import { skillSetNameSchema } from "api-server-api";
+import { skillKey, skillSetNameSchema } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import {
@@ -13,8 +13,6 @@ import { CheckboxItem } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useToggleSet } from "@/hooks/use-toggle-set";
-
-import { selectionKey, withSourcePath } from "../../lib/skill-identity.js";
 
 export interface SaveSetGroup {
   source: SkillSource;
@@ -44,7 +42,7 @@ export function SaveSkillSetModal({
     const on = new Set<string>();
     for (const group of groups) {
       for (const skill of group.skills) {
-        if (isOn(skill)) on.add(selectionKey(skill));
+        if (isOn(skill)) on.add(skillKey(skill));
       }
     }
     return { groups, on, omitted };
@@ -70,7 +68,7 @@ export function SaveSkillSetModal({
   }, [trimmed, existingNames]);
 
   const allKeys = useMemo(
-    () => snapshot.groups.flatMap((g) => g.skills.map((s) => selectionKey(s))),
+    () => snapshot.groups.flatMap((g) => g.skills.map((s) => skillKey(s))),
     [snapshot],
   );
 
@@ -82,8 +80,8 @@ export function SaveSkillSetModal({
     setSubmitting(true);
     const skills = snapshot.groups.flatMap((g) =>
       g.skills
-        .filter((s) => marked.has(selectionKey(s)))
-        .map((s) => ({ source: s.source, name: s.name, ...withSourcePath(s) })),
+        .filter((s) => marked.has(skillKey(s)))
+        .map((s) => ({ source: s.source, name: s.name })),
     );
     const ok = await onCreate({ name: trimmed, skills });
     setSubmitting(false);
@@ -91,12 +89,12 @@ export function SaveSkillSetModal({
   };
 
   return (
-    <Modal onClose={submitting ? undefined : onClose} size="md">
+    <Modal widthClass="w-[620px]">
       <DialogHeader
-        closeDisabled={submitting}
         title="Save as skill set"
         subtitle="Starts from what's on here — unmark anything you don't want in the set."
         onClose={onClose}
+        divided={false}
       />
 
       <form
@@ -163,7 +161,7 @@ export function SaveSkillSetModal({
                   <SectionLabel>{group.source.name}</SectionLabel>
                 </div>
                 {group.skills.map((skill) => {
-                  const key = selectionKey(skill);
+                  const key = skillKey(skill);
                   return (
                     <div
                       key={key}
@@ -197,6 +195,7 @@ export function SaveSkillSetModal({
         </DialogBody>
 
         <DialogActions
+          divided
           onCancel={onClose}
           label="Create"
           pendingLabel="Creating…"

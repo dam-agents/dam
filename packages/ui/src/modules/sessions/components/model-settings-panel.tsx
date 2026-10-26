@@ -1,16 +1,14 @@
-import { ChevronDown } from "@carbon/icons-react";
-import { modelConstraintsFor } from "agent-runtime-api";
+import { Checkmark, ChevronDown } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Callout } from "@/components/ui/callout";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
+  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SectionHeader } from "@/components/ui/list-section";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import {
   useHarnessConfigStatus,
@@ -23,7 +21,7 @@ import {
 } from "./model-settings-snapshot.js";
 import { OptionField, ReadOnlyOptionFace } from "./option-field.js";
 
-export interface Choice {
+interface Choice {
   id: string;
   name: string;
   description?: string | null;
@@ -56,12 +54,13 @@ export function ModelSettingsPanel({
   const valueOf = (field: string): string | null => draft.valueOf(field);
 
   const shownModel = valueOf("model");
-  const constraints = modelConstraintsFor(catalog, shownModel);
+  const constraints =
+    (shownModel && catalog.modelConstraints?.[shownModel]) || undefined;
 
   const change = (field: string, value: string | null) => {
     draft.set(field, value);
     if (field !== "model") return;
-    const allowed = modelConstraintsFor(catalog, value) ?? {};
+    const allowed = (value && catalog.modelConstraints?.[value]) || {};
     for (const group of catalog.options) {
       if (group.id === "model") continue;
       const list = allowed[group.id];
@@ -83,7 +82,7 @@ export function ModelSettingsPanel({
         name: c.name,
         description: c.description,
       }));
-    const cur = valueOf(group.id) ?? group.default ?? null;
+    const cur = valueOf(group.id);
     if (cur && !choices.some((c) => c.id === cur)) {
       choices.push({
         id: cur,
@@ -100,7 +99,6 @@ export function ModelSettingsPanel({
         title={group.name}
         choices={choices}
         value={cur}
-        clearable={group.id === "model"}
         disabled={disabled}
         onSelect={(id) => change(group.id, id)}
       />
@@ -108,7 +106,7 @@ export function ModelSettingsPanel({
   });
 
   const note = (
-    <p className="pt-3 text-2xs leading-snug text-muted-foreground">
+    <p className="pt-3 text-[11px] leading-snug text-muted-foreground">
       Applies to new sessions. A session that's already running keeps the
       settings it started with — start a new session to use these.
     </p>
@@ -120,8 +118,11 @@ export function ModelSettingsPanel({
   return (
     <section className="mb-8">
       {staleModel && <StaleModelCallout model={staleModel} />}
-      <SectionHeader label="Model settings">{headerAction}</SectionHeader>
-      <Callout>
+      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+        <SectionLabel>Model settings</SectionLabel>
+        {headerAction}
+      </div>
+      <Callout inset>
         {fromSnapshot && capturedAt && <SnapshotNote capturedAt={capturedAt} />}
         {groups}
         {note}
@@ -130,140 +131,100 @@ export function ModelSettingsPanel({
   );
 }
 
-const CLEARED_LABEL = "Agent default";
-const CLEARED_DESCRIPTION = "The model the agent's harness starts on";
-const CLEARED_VALUE = "";
+const CLEARED_LABEL = "Default";
+const CLEARED_DESCRIPTION = "Determined by harness settings";
 
 function OptionGroup({
   title,
   choices,
   value,
-  clearable,
   disabled = false,
   onSelect,
 }: {
   title: string;
   choices: Choice[];
   value: string | null;
-  clearable: boolean;
   disabled?: boolean;
   onSelect: (id: string | null) => void;
 }) {
+  const selected = value === null ? null : choices.find((c) => c.id === value);
   if (disabled) {
-    const selected =
-      value === null ? null : choices.find((c) => c.id === value);
     return (
       <OptionField title={title}>
-        <ReadOnlyOptionFace label={selected?.name ?? value ?? CLEARED_LABEL} />
+        <ReadOnlyOptionFace label={selected?.name ?? CLEARED_LABEL} />
       </OptionField>
     );
   }
   return (
     <OptionField title={title}>
-      <OptionPicker
-        title={title}
-        choices={choices}
-        value={value}
-        clearable={clearable}
-        onSelect={onSelect}
-      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label={title}
+            className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="truncate">{selected?.name ?? CLEARED_LABEL}</span>
+            <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+        >
+          <OptionItem
+            label={CLEARED_LABEL}
+            description={CLEARED_DESCRIPTION}
+            active={value === null}
+            onSelect={() => onSelect(null)}
+          />
+          {choices.map((c) => (
+            <OptionItem
+              key={c.id}
+              label={c.name}
+              detail={c.name === c.id ? undefined : c.id}
+              description={c.description}
+              active={c.id === value}
+              onSelect={() => onSelect(c.id)}
+            />
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </OptionField>
   );
 }
 
-export function OptionPicker({
-  title,
-  choices,
-  value,
-  clearable = false,
-  placeholder = CLEARED_LABEL,
-  clearedLabel = CLEARED_LABEL,
-  clearedDescription = CLEARED_DESCRIPTION,
-  onSelect,
-}: {
-  title: string;
-  choices: Choice[];
-  value: string | null;
-  clearable?: boolean;
-  placeholder?: string;
-  clearedLabel?: string;
-  clearedDescription?: string;
-  onSelect: (id: string | null) => void;
-}) {
-  const selected = value === null ? null : choices.find((c) => c.id === value);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={title}
-          className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span className="truncate">
-            {selected?.name ?? value ?? placeholder}
-          </span>
-          <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="w-[var(--radix-dropdown-menu-trigger-width)]"
-      >
-        <DropdownMenuRadioGroup value={value ?? CLEARED_VALUE}>
-          {clearable && (
-            <OptionItem
-              value={CLEARED_VALUE}
-              label={clearedLabel}
-              description={clearedDescription}
-              onSelect={() => onSelect(null)}
-            />
-          )}
-          {choices.map((c) => (
-            <OptionItem
-              key={c.id}
-              value={c.id}
-              label={c.name}
-              detail={c.name === c.id ? undefined : c.id}
-              description={c.description}
-              onSelect={() => onSelect(c.id)}
-            />
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function OptionItem({
-  value,
   label,
   detail,
   description,
+  active,
   onSelect,
 }: {
-  value: string;
   label: string;
   detail?: string;
   description?: string | null;
+  active: boolean;
   onSelect: () => void;
 }) {
   return (
-    <DropdownMenuRadioItem
-      value={value}
+    <DropdownMenuItem
       onSelect={onSelect}
-      className="h-auto py-2"
+      className="h-auto flex-col items-start gap-0.5 py-2"
     >
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-medium">{label}</span>
-        {detail && (
-          <span className="font-mono text-2xs text-muted-foreground">
-            {detail}
-          </span>
-        )}
-        {description && (
-          <span className="text-2xs text-muted-foreground">{description}</span>
-        )}
+      <span className="flex items-center gap-1.5 font-medium">
+        {active && <Checkmark size={12} className="shrink-0" />}
+        <span className={active ? "" : "pl-[18px]"}>{label}</span>
       </span>
-    </DropdownMenuRadioItem>
+      {detail && (
+        <span className="pl-[18px] font-mono text-[11px] text-muted-foreground">
+          {detail}
+        </span>
+      )}
+      {description && (
+        <span className="pl-[18px] text-[11px] text-muted-foreground">
+          {description}
+        </span>
+      )}
+    </DropdownMenuItem>
   );
 }

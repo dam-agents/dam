@@ -253,7 +253,7 @@ Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cac
 Anything written to the container's ephemeral filesystem (OS-level changes, tools installed outside `$HOME`) is lost; this is a deliberate constraint of the lifetime model.
 
 **Sleep.** A scale-down on request, built to free [Reserved compute](budgets.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
-The UI calls the state *Sleeping* but offers no Sleep action: an Agent the user wants down without waiting for the idle timeout is [disabled](#disable) instead, and the api-server keeps the sleep call for other clients.
+The web UI's **Pause** calls it, and its **Stop** calls a release-only `agents.stop` that stamps the same stop request without waiting for the idle checker.
 The api-server stamps `agent-platform.ai/stop-requested`, clears the session and Invocation pins, and stales `last-activity`, so the Agent stays down once the stamp is gone; `shouldRun` treats the stamp as an overriding *negative* signal, and the reconciler scales the pair to zero immediately, bypassing the busy probe — sleep may interrupt work by design.
 While the stamp stands, background activity (UI polling, relay reconnects, proxied calls) never clears it — `ensureReady` on such an Agent fails with a typed *stopped* error instead of bumping — so an open tab cannot resurrect the pair before it lands.
 An explicit wake and a schedule fire clear it at any time, back through the budget gate.

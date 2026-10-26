@@ -1,3 +1,4 @@
+import { TRPCClientError } from "@trpc/client";
 import type {
   ConnectionCredentialUpdate,
   ConnectionView,
@@ -5,11 +6,12 @@ import type {
 import { type ReactNode, useState } from "react";
 
 import {
-  DialogActions,
   DialogBody,
+  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Button } from "@/components/ui/button";
 
 import { useUpdateConnection } from "../api/mutations.js";
 import {
@@ -18,7 +20,6 @@ import {
   labelFor,
 } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
-import { mutationMessage } from "../lib/mutation-message.js";
 import { ConnectionEditGithubAppScopeDialog } from "./connection-edit-github-app-scope-dialog.js";
 import { ConnectionEditGithubUserTokenScopeDialog } from "./connection-edit-github-user-token-scope-dialog.js";
 
@@ -174,10 +175,12 @@ function KeyPairCredentialDialog({
 
 function useCredentialUpdate(connection: ConnectionView, onClose: () => void) {
   const update = useUpdateConnection({ silent: true });
-  const fieldError = mutationMessage(
-    update.error,
-    "Couldn't update the credential. Please try again.",
-  );
+  const fieldError =
+    update.error === null
+      ? undefined
+      : isBadRequest(update.error)
+        ? update.error.message
+        : "Couldn't update the credential. Please try again.";
   const submit = async (credential: ConnectionCredentialUpdate) => {
     try {
       await update.mutateAsync({ id: connection.id, ...credential });
@@ -205,7 +208,7 @@ function CredentialDialogFrame({
   children: ReactNode;
 }) {
   return (
-    <Modal onClose={pending ? undefined : onClose} size="sm">
+    <Modal widthClass="w-[505px]">
       <DialogHeader
         title={title}
         subtitle={subtitle}
@@ -213,16 +216,22 @@ function CredentialDialogFrame({
         closeTestId="update-credential-close"
       />
       <DialogBody className="flex flex-col gap-4">{children}</DialogBody>
-      <DialogActions
-        onCancel={onClose}
-        cancelDisabled={pending}
-        label="Save"
-        pendingLabel="Saving…"
-        pending={pending}
-        disabled={!canSubmit}
-        onSubmit={() => void onSubmit()}
-        testId="update-credential-submit"
-      />
+      <DialogFooter>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          disabled={!canSubmit || pending}
+          onClick={() => void onSubmit()}
+          data-testid="update-credential-submit"
+        >
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
     </Modal>
   );
+}
+
+function isBadRequest(err: unknown): err is Error {
+  return err instanceof TRPCClientError && err.data?.code === "BAD_REQUEST";
 }

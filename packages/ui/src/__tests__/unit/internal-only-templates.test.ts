@@ -1,6 +1,40 @@
 import { describe, expect, test } from "vitest";
 
-import { filterOfferedTemplates } from "../../modules/connections/internal-only.js";
+import {
+  filterOfferedTemplates,
+  isInternalOnlyTemplate,
+} from "../../modules/connections/internal-only.js";
+
+describe("isInternalOnlyTemplate", () => {
+  test("Slack is a standard template, offered without the flag", () => {
+    expect(isInternalOnlyTemplate("slack")).toBe(false);
+  });
+
+  test.each(["spotify", "youtube", "custom-client-credentials"])(
+    "%s stays behind the flag",
+    (id) => {
+      expect(isInternalOnlyTemplate(id)).toBe(true);
+    },
+  );
+
+  test.each(["google-gmail", "google-drive"])(
+    "%s stays behind the flag, matched by prefix",
+    (id) => {
+      expect(isInternalOnlyTemplate(id)).toBe(true);
+    },
+  );
+
+  test.each([
+    "github",
+    "github-pat",
+    "github-app",
+    "github-enterprise-pat",
+    "github-enterprise-app",
+    "custom-mcp-oauth",
+  ])("%s is offered without the flag", (id) => {
+    expect(isInternalOnlyTemplate(id)).toBe(false);
+  });
+});
 
 describe("filterOfferedTemplates", () => {
   const templates = [

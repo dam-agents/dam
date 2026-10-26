@@ -1,73 +1,55 @@
-import {
-  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  displayNameForTemplate,
-} from "api-server-api";
+import type { ProviderPresetType } from "../../../types.js";
 
-import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
-
-export interface ProviderRowDef {
+interface ProviderRowDef {
   type: ProviderPresetType;
-  templateId?: string;
   description: string;
 }
 
 export const IBM_LITELLM_DESCRIPTION =
-  "IBM's LiteLLM proxy for Claude, GPT and other models — Anthropic, OpenAI Chat and Responses APIs.";
+  "IBM's external LiteLLM proxy — Claude on watsonx-routed AWS.";
 
 export const CURVE_BENDER_DESCRIPTION =
-  "Open-source models hosted internally in IBM.";
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: one preset can offer a user-keyed template and
- * the deployment's under different names, so a row takes its template's name
- * when that template has one of its own.
- */
-export function providerName(
-  type: ProviderPresetType,
-  templateId?: string,
-): string {
-  return (
-    (templateId ? displayNameForTemplate(templateId) : null) ??
-    PROVIDERS[type].displayName
-  );
-}
-
-export function providerRowName(row: ProviderRowDef): string {
-  return providerName(row.type, row.templateId);
-}
+  "LiteLLM proxy fronting open models hosted on RITS — GLM and Nemotron.";
 
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
-  {
-    type: "curve-bender",
-    templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-    description: CURVE_BENDER_DESCRIPTION,
-  },
-  {
-    type: "curve-bender",
-    templateId: "curve-bender",
-    description: CURVE_BENDER_DESCRIPTION,
-  },
   {
     type: "ibm-litellm",
     description: IBM_LITELLM_DESCRIPTION,
   },
   {
-    type: "bob",
-    description: "IBM's model endpoint for Bob Shell.",
+    type: "curve-bender",
+    description: CURVE_BENDER_DESCRIPTION,
   },
   {
-    type: "bedrock",
+    type: "bob",
     description:
-      "Models available in your AWS region for Claude and Pi, using a Bedrock API key.",
+      "IBM Bob Shell endpoint with twin-secret credential injection.",
   },
   {
     type: "anthropic",
     description:
-      "Claude models for Claude and Pi. API keys also support OpenAI Chat Completions; OAuth is Claude-only.",
+      "Claude Code, Claude SDK, and any Anthropic-compatible client.",
   },
   {
     type: "openai",
+    description: "GPT-family models for Codex and OpenAI-compatible agents.",
+  },
+  {
+    type: "bedrock",
     description:
-      "OpenAI models for Codex and Pi via Chat Completions and Responses APIs.",
+      "Models your organization hosts in AWS Bedrock, for Claude Code and Pi agents.",
   },
 ];
+
+export function offeredProviderRows(
+  allow?: readonly ProviderPresetType[],
+  recommended?: ProviderPresetType,
+): readonly ProviderRowDef[] {
+  const offered = allow
+    ? PROVIDER_ROWS.filter((row) => allow.includes(row.type))
+    : PROVIDER_ROWS;
+  if (!recommended) return offered;
+  return [...offered].sort(
+    (a, b) => Number(b.type === recommended) - Number(a.type === recommended),
+  );
+}

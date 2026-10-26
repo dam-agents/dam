@@ -13,7 +13,7 @@ export interface PermissionOutcome {
   outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
 }
 
-export interface PendingPermission {
+interface PendingPermission {
   toolCallId: string;
   sessionId: string;
   toolCall: unknown;

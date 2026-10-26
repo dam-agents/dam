@@ -15,9 +15,9 @@ export function useDeleteUndelivered(
   return useCallback(
     (id: string) => {
       void showConfirm(
-        "It was never delivered to the agent, and its text cannot be recovered afterwards.",
-        "Delete message?",
-        { kind: "destructive", confirmLabel: "Delete message" },
+        "Delete this message? It was never delivered to the agent, and its text cannot be recovered afterwards.",
+        "Delete Message",
+        { kind: "destructive" },
       ).then((confirmed) => {
         if (!confirmed) return;
         setMessages((prev) => prev.filter((m) => m.id !== id));

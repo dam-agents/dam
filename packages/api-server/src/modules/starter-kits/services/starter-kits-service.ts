@@ -328,7 +328,8 @@ export function createStarterKitsService(
         : undefined;
       const kitHarness =
         kit.image || templateHarness ? undefined : kit.harnesses?.[0];
-      const harness = kit.image?.harness ?? templateHarness ?? kitHarness;
+      const requestedHarness = input.harness ?? kitHarness;
+      const harness = kit.image?.harness ?? templateHarness ?? requestedHarness;
       const createInput: AgentCreateInput = {
         name: input.name,
         ...(input.avatar ? { avatar: input.avatar } : {}),
@@ -336,7 +337,7 @@ export function createStarterKitsService(
           ? { image: kit.image.ref }
           : {
               templateId: input.templateId,
-              ...(kitHarness ? { harness: kitHarness } : {}),
+              ...(requestedHarness ? { harness: requestedHarness } : {}),
             }),
         ...(kit.knowledgeBase
           ? { kbShareRoots: kit.knowledgeBase.shareRoots }

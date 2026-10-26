@@ -9,12 +9,7 @@ export interface Toast {
   ttl?: number;
 }
 
-const DEFAULT_TTL: Record<ToastKind, number> = {
-  error: 8000,
-  warning: 8000,
-  success: 5000,
-  info: 5000,
-};
+const DEFAULT_TTL = 5000;
 
 type EmitOpts = Parameters<typeof sonner.success>[1];
 
@@ -42,7 +37,7 @@ export function onToastHostMounted(): () => void {
 function send({ kind, message, action, ttl }: Toast): void {
   EMIT[kind](message, {
     action,
-    duration: ttl === undefined ? DEFAULT_TTL[kind] : ttl > 0 ? ttl : Infinity,
+    duration: ttl === undefined ? DEFAULT_TTL : ttl > 0 ? ttl : Infinity,
   });
 }
 

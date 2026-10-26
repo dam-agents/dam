@@ -1,13 +1,14 @@
 import type { LibraryArtifact } from "api-server-api";
 import { useCallback } from "react";
 
+import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { artifactSessionPrefill } from "../lib/session-prefill.js";
 
 interface StartArtifactSession {
   available: boolean;
-  start: () => void;
+  start: () => Promise<void>;
 }
 
 /**
@@ -25,21 +26,20 @@ export function useStartArtifactSession(
   const appendNewSessionDraft = useStore((s) => s.appendNewSessionDraft);
   const selectAgent = useStore((s) => s.selectAgent);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
-  const leaveChatContext = useStore((s) => s.leaveChatContext);
+  const confirmDiscard = useDockDraftGuard();
 
   const agent = agents.find((a) => a.id === artifact?.agentId);
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     if (!artifact || !agent) return;
-    leaveChatContext(() => {
-      appendNewSessionDraft(agent.id, artifactSessionPrefill(artifact));
-      selectAgent(agent.id);
-      setMobileScreen("chat");
-    });
+    if (!(await confirmDiscard())) return;
+    appendNewSessionDraft(agent.id, artifactSessionPrefill(artifact));
+    selectAgent(agent.id);
+    setMobileScreen("chat");
   }, [
     artifact,
     agent,
-    leaveChatContext,
+    confirmDiscard,
     appendNewSessionDraft,
     selectAgent,
     setMobileScreen,

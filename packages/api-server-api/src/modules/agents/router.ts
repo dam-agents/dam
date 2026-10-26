@@ -21,6 +21,7 @@ import {
   agentUpdateInputSchema,
   agentSetDisabledInputSchema,
   agentSleepInputSchema,
+  agentStopInputSchema,
   agentUpgradeInputSchema,
   agentWakeInputSchema,
   agentRetryWorkspaceInputSchema,
@@ -119,6 +120,14 @@ export const agentsRouter = t.router({
     .input(agentRetryWorkspaceInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.retryWorkspace(input.id, input.kind);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+      return toAgentView(agent);
+    }),
+
+  stop: manageAgentsProcedure
+    .input(agentStopInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const agent = await ctx.agents.stop(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
     }),

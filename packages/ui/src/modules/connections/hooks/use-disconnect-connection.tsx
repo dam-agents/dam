@@ -1,6 +1,8 @@
+import { Callout } from "@/components/ui/callout";
+import { SectionLabel } from "@/components/ui/section-label";
+
 import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
-import { AffectedAgents } from "../../agents/components/affected-agents.js";
 import { useDeleteConnection } from "../api/mutations.js";
 
 async function affectedSandboxNames(connectionId: string): Promise<string[]> {
@@ -37,7 +39,16 @@ export function useDisconnectConnection() {
           This connection will be deleted. Any agent using it may no longer
           function as expected.
         </p>
-        {affected.length > 0 && <AffectedAgents names={affected} />}
+        {affected.length > 0 && (
+          <Callout tone="muted" className="mt-4">
+            <SectionLabel>Affected agents</SectionLabel>
+            <ul className="mt-2 list-disc pl-5 text-sm text-foreground/90">
+              {affected.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          </Callout>
+        )}
       </>,
       `Delete ${name}?`,
       { kind: "destructive", confirmLabel: "Delete connection" },

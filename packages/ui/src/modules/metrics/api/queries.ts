@@ -1,9 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { useEffect, useState } from "react";
 
 import { trpc } from "../../../trpc.js";
+import { monthRange, monthStart } from "../lib/month-range.js";
 import { keyAgentId } from "../lib/spend-key.js";
+import { totalCostUsd } from "../lib/totals.js";
 
 export function useSpendBreakdown(
   from: string,
@@ -35,9 +37,34 @@ export function useSpendBreakdown(
   return {
     data: query.data,
     isPending: query.isPending,
-    isFetching: query.isFetching,
     isError: query.isError,
     isPlaceholderData: query.isPlaceholderData,
     isUnavailable,
   };
+}
+
+export function useAgentMonthSpend(agentId: string | null) {
+  const { from, to } = monthRange(monthStart(new Date(), 0));
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return useQuery({
+    ...trpc.metrics.spendBreakdown.queryOptions(
+      agentId ? { from, to, timeZone, agentId } : skipToken,
+    ),
+    staleTime: 60_000,
+    retry: false,
+    select: (data) => totalCostUsd(data.byModel),
+  });
+}
+
+export function useSessionCosts(agentId: string | null, enabled: boolean) {
+  return useQuery({
+    ...trpc.metrics.overview.queryOptions(
+      agentId && enabled ? { agentId, limit: 1 } : skipToken,
+    ),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+    select: (data) =>
+      new Map(data.runtimeBySession.map((r) => [r.sessionId, r])),
+  });
 }

@@ -1,24 +1,23 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 
-import { useStore } from "../../../store.js";
 import { useAgentsList } from "../api/queries.js";
-import { nextAutoWake } from "../lib/auto-wake.js";
 import { useWakeAgent } from "./use-wake-agent.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the wake runs in a layout effect, so the agent already shows as starting in the first painted frame and the sleeping screen never flashes.
 export function useAutoWakeOnOpen(agentId: string | null): void {
   const agents = useAgentsList();
   const { wake } = useWakeAgent();
-  const decidedFor = useRef<string | null>(null);
+  const decided = useRef(new Set<string>());
 
-  useLayoutEffect(() => {
-    const next = nextAutoWake(
-      decidedFor.current,
-      agentId,
-      agents.find((a) => a.id === agentId),
-      !!agentId && useStore.getState().restartingAgents.has(agentId),
-    );
-    decidedFor.current = next.decidedFor;
-    if (next.wake && agentId) wake(agentId);
+  useEffect(() => {
+    if (!agentId || decided.current.has(agentId)) return;
+    const agent = agents.find((a) => a.id === agentId);
+    if (!agent) return;
+    decided.current.add(agentId);
+    if (
+      agent.state === "hibernated" &&
+      !agent.overBudget &&
+      !agent.stopRequested
+    )
+      wake(agentId);
   }, [agentId, agents, wake]);
 }
