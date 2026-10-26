@@ -217,27 +217,7 @@ export function EnvTab({
   return (
     <>
       {header()}
-      {!panelHeading && warnings.length > 0 && (
-        <Callout
-          tone="warning"
-          size="sm"
-          className="mb-4 flex flex-col gap-1 text-xs"
-        >
-          <div className="flex items-center gap-2 text-warning">
-            <WarningAlt size={12} />
-            <span className="font-semibold">Shadowing inherited values</span>
-          </div>
-          <ul className="list-disc pl-5 text-muted-foreground">
-            {warnings.map((w) => (
-              <li key={w.envName}>
-                <span className="font-mono">{w.envName}</span> shadows the value
-                from {w.shadowedSource}
-              </li>
-            ))}
-          </ul>
-        </Callout>
-      )}
-
+      {!panelHeading && <ShadowWarnings warnings={warnings} />}
       {panelHeading && (
         <SectionHeading
           label={panelHeading}
@@ -260,26 +240,7 @@ export function EnvTab({
         />
       )}
 
-      {panelHeading && warnings.length > 0 && (
-        <Callout
-          tone="warning"
-          size="sm"
-          className="mb-4 mt-3 flex flex-col gap-1 text-xs"
-        >
-          <div className="flex items-center gap-2 text-warning">
-            <WarningAlt size={12} />
-            <span className="font-semibold">Shadowing inherited values</span>
-          </div>
-          <ul className="list-disc pl-5 text-muted-foreground">
-            {warnings.map((w) => (
-              <li key={w.envName}>
-                <span className="font-mono">{w.envName}</span> shadows the value
-                from {w.shadowedSource}
-              </li>
-            ))}
-          </ul>
-        </Callout>
-      )}
+      {panelHeading && <ShadowWarnings warnings={warnings} />}
 
       <ListSection
         className={panelHeading ? "mb-0" : undefined}
@@ -426,6 +387,33 @@ function EnvVarModal({
         />
       </form>
     </Modal>
+  );
+}
+
+function ShadowWarnings({
+  warnings,
+}: {
+  warnings: { envName: string; shadowedSource: string }[];
+}) {
+  return (
+    <Callout
+      tone="warning"
+      size="sm"
+      className="mb-4 flex flex-col gap-1 text-xs"
+    >
+      <div className="flex items-center gap-2 text-warning">
+        <WarningAlt size={12} />
+        <span className="font-semibold">Shadowing inherited values</span>
+      </div>
+      <ul className="list-disc pl-5 text-muted-foreground">
+        {warnings.map((w) => (
+          <li key={w.envName}>
+            <span className="font-mono">{w.envName}</span> shadows the value
+            from {w.shadowedSource}
+          </li>
+        ))}
+      </ul>
+    </Callout>
   );
 }
 
