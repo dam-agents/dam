@@ -786,11 +786,10 @@ fn a_loader_starts_the_release_it_was_given_after_the_node_drops_it() {
             .iter()
             .any(|line| line.starts_with(&format!("{} ", copy.join(RUNNER).display())))
     });
-    assert_eq!(
-        pod.status().running,
-        "runner:3",
-        "the successor did not settle on the release it was given: {:?}",
-        lines(&dir.join("runners"))
+    // UNIT_BOUNDARY_DESCRIPTION: the loader writes the status only after it spawned the runner, so the runner's start line can come before it.
+    wait_for(
+        "the successor to settle on runner:3, the release it was given",
+        || pod.status().running == "runner:3",
     );
     let exited = pod.terminate();
     assert!(exited.success(), "the loader exited with {exited}");
