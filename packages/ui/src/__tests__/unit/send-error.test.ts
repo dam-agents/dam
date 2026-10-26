@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   describeSendError,
   extractErrorMessage,
+  unstoredSessionPrompts,
 } from "../../modules/acp/errors.js";
 
 describe("send-error surfacing", () => {
@@ -37,5 +38,28 @@ describe("send-error surfacing", () => {
     const { message, hint } = describeSendError("Internal error");
     expect(message).not.toMatch(/internal error/i);
     expect(hint).toMatch(/session log/i);
+  });
+});
+
+describe("an unstored session", () => {
+  // TEST_SCENARIO: the runtime refuses to load a session the harness never stored and carries the prompts it kept on the error, so the chat can move them into a new chat instead of losing them.
+  test("its kept prompts are read from the load error", () => {
+    const prompt = {
+      id: "p1",
+      recordedAt: "2026-10-26T10:00:00Z",
+      blocks: [{ type: "text" as const, text: "do the thing" }],
+      droppedAttachments: [],
+      reason: "undelivered",
+    };
+    expect(
+      unstoredSessionPrompts({
+        code: -32000,
+        message: "This session was never stored",
+        data: { platform: { unstored: true, undelivered: [prompt] } },
+      }),
+    ).toEqual([prompt]);
+    expect(unstoredSessionPrompts({ code: -32000, message: "other" })).toBe(
+      null,
+    );
   });
 });

@@ -86,6 +86,7 @@ export interface Message {
   streaming: boolean;
   queued?: boolean;
   promptId?: string;
+  turnId?: string;
   retryWith?: RetryPayload;
   notice?: boolean;
   loadOlderBefore?: string;

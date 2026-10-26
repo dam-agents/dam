@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openInitializedConnection } from "../../acp/acp.js";
+import { unstoredSessionPrompts } from "../../acp/errors.js";
 import {
   appendInterruptedNotice,
   appendUndelivered,
@@ -476,7 +477,15 @@ export function useAcpConnection(
 
     if (reloadSid) {
       setState("reloading");
-      const fresh = await loadSessionHistory(reloadSid);
+      let fresh: Message[];
+      try {
+        fresh = await loadSessionHistory(reloadSid);
+      } catch (e) {
+        const unstored = unstoredSessionPrompts(e);
+        if (unstored === null) throw e;
+        await useStore.getState().reopenUnstoredSession(reloadSid, unstored);
+        return null;
+      }
       if (useStore.getState().sessionId !== reloadSid) return null;
       setMessages((prev) => mergeLocalFailures(fresh, prev));
     }

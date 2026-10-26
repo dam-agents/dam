@@ -341,6 +341,22 @@ describe("applyUpdate — turn boundaries", () => {
     ]);
   });
 
+  // TEST_SCENARIO: Claude Code delivers a subagent's report as a prompt of its own, wrapped in `<agent-message from="…">`. It is plumbing like a task notification, and the tag names an attribute, so neither the report nor the wrapper shows under the owner's name.
+  test("a subagent hand-back with an attribute is hidden as plumbing", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: [
+          '<agent-message from="agent-7">\nfound three issues\n</agent-message>',
+          "carry on",
+        ].join("\n\n"),
+      },
+    });
+    expect(out[0].parts).toEqual([{ kind: "text", text: "carry on" }]);
+  });
+
   test("a lowercase tag that is not platform plumbing stays visible", () => {
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,
@@ -755,5 +771,41 @@ describe("applyUpdate — the harness's name for the prompt", () => {
     ];
     const out = applyUpdate(start, txtChunk("lo"));
     expect(out[1].telemetryPromptId).toBe("otel-3");
+  });
+});
+
+describe("applyUpdate — turn correlation", () => {
+  // TEST_SCENARIO: the runtime stamps each frame with its turn and names the turn it ends. Two turns stream at once (a background task's answer and the chat's own), so the ending of one closes only its reply and leaves the other streaming.
+  test("a named turn end closes only that turn's reply", () => {
+    let messages = applyUpdate(
+      [],
+      txtChunk("background result"),
+      undefined,
+      undefined,
+      "turn-bg",
+    );
+    messages = applyUpdate(
+      messages,
+      txtChunk("foreground answer"),
+      undefined,
+      undefined,
+      "turn-fg",
+    );
+    expect(messages.map((m) => m.turnId)).toEqual(["turn-bg", "turn-fg"]);
+    const closed = applyUpdate(messages, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+      turnId: "turn-bg",
+    });
+    expect(closed.map((m) => m.streaming)).toEqual([false, true]);
+  });
+
+  // TEST_SCENARIO: a frame with no turn id (an older runtime, a replay) keeps the old rule of closing the reply being streamed, so nothing regresses before the runtime speaks turns.
+  test("a turn end without a turn id still closes the active reply", () => {
+    const out = applyUpdate(
+      [userMsg("u1", "hi"), assistantMsg("a1", "hello", true)],
+      { sessionUpdate: "platform_turn_ended", sessionId: "test-sid" },
+    );
+    expect(out[1].streaming).toBe(false);
   });
 });
