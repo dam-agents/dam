@@ -26,9 +26,12 @@ export interface ConnectionsRepository {
     inputs: Record<string, unknown>;
     auth: ConnectionAuthConfig;
     contributions: Contribution[];
+    parentId?: string;
+    isParent?: true;
   }): Promise<void>;
 
   listByOwner(ownerId: string): Promise<Connection[]>;
+  listChildren(parentId: string): Promise<Connection[]>;
   listByOwnerOldestFirst(ownerId: string): Promise<Connection[]>;
 
   get(id: string, ownerId: string): Promise<Connection | null>;
@@ -70,6 +73,8 @@ interface ConnectionRow {
   inputs: unknown;
   auth: unknown;
   contributions: unknown;
+  parentId?: string | null;
+  isParent?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,6 +90,8 @@ export function toConnection(row: ConnectionRow): Connection | null {
     inputs: (row.inputs as Record<string, unknown>) ?? {},
     auth: auth.data,
     contributions: contributionsOf(row.contributions),
+    ...(row.parentId ? { parentId: row.parentId } : {}),
+    ...(row.isParent ? { isParent: true as const } : {}),
   };
 }
 
@@ -114,6 +121,8 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         inputs: input.inputs,
         auth: input.auth,
         contributions: input.contributions,
+        ...(input.parentId ? { parentId: input.parentId } : {}),
+        ...(input.isParent ? { isParent: true } : {}),
       });
     },
 
@@ -123,6 +132,18 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .from(connectionsTable)
         .where(eq(connectionsTable.owner, ownerId))
         .orderBy(asc(connectionsTable.name))) as ConnectionRow[];
+      return connectionsOf(rows);
+    },
+
+    async listChildren(parentId): Promise<Connection[]> {
+      const rows = (await db
+        .select()
+        .from(connectionsTable)
+        .where(eq(connectionsTable.parentId, parentId))
+        .orderBy(
+          asc(connectionsTable.createdAt),
+          asc(connectionsTable.id),
+        )) as ConnectionRow[];
       return connectionsOf(rows);
     },
 
