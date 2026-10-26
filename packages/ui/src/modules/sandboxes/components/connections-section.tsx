@@ -116,6 +116,7 @@ export function ConnectionsSection({
         preferPending={setPreferred.isPending}
         addRowHidden={panelHeading !== undefined}
         flush={panelHeading !== undefined}
+        flat={panelHeading !== undefined}
         extraGroups={
           managesConnections &&
           satellites.granted.length > 0 && (
@@ -146,6 +147,7 @@ export function ConnectionsSection({
           }}
           satelliteGrant={satellites.grantControls}
           oauthReturnView={oauthReturnView}
+          singlePage={panelHeading !== undefined}
         />
       )}
     </>

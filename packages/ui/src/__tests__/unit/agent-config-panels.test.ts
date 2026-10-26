@@ -7,7 +7,6 @@ import { environmentsPanelShown } from "../../modules/environments/lib/environme
 import { createFeaturesSlice } from "../../modules/features/store.js";
 import type { SandboxSection } from "../../modules/platform/lib/routes.js";
 import { createNavigationSlice } from "../../modules/platform/store/navigation.js";
-import { channelsPanelShown } from "../../modules/sandboxes/lib/channels-surface.js";
 import { SIDE_PANEL_TABS } from "../../modules/sessions/components/side-panel-bar.js";
 import {
   configRedirectTab,
@@ -63,30 +62,23 @@ beforeEach(() => {
 // TEST_SCENARIO: every section of the configuration page has a panel that carries its knobs, so no setting is left without a home once the page is gone. The Environments panel keeps its own renderer, and Documentation is no section of the page.
 it("maps every configuration section to a panel", () => {
   const panels = SECTIONS.map(configTabForSection);
-  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share six panels: Providers, Connections, Environment vars and Network access are the Services panel, General and Usage the Spending one, and Chat forms has none.
-  expect(new Set(panels).size).toBe(6);
+  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share five panels: General, Providers, Chat forms and Usage are Models, Connections, Environment vars and Network access are Services, and Channels and Schedules share Automations.
+  expect(new Set(panels).size).toBe(5);
   expect(panels).toEqual([
-    "agent",
+    "models",
+    "models",
     "services",
     "services",
     "services",
-    "services",
-    "channels",
-    "agent",
+    "automations",
+    "models",
     "skills",
-    "schedules",
+    "automations",
     "environments",
-    "agent",
+    "models",
   ]);
   expect([...CONFIGURATION_TABS].sort()).toEqual(
-    [
-      "agent",
-      "channels",
-      "environments",
-      "schedules",
-      "services",
-      "skills",
-    ].sort(),
+    ["models", "services", "skills", "automations", "environments"].sort(),
   );
 });
 
@@ -108,7 +100,7 @@ it("opens the panel instead of the page, and the page when the experiment is off
   on.setState({ view: "chat", selectedAgent: "agent-1", sidePanelTab: null });
   const before = history.length;
   on.getState().navigateToSandboxHome("agent-1", "providers");
-  expect(on.getState().sidePanelTab).toBe("services");
+  expect(on.getState().sidePanelTab).toBe("models");
   expect(history.length).toBe(before);
 
   const off = navigationStore(false);
@@ -120,18 +112,13 @@ it("opens the panel instead of the page, and the page when the experiment is off
 // TEST_SCENARIO: a configuration address becomes a panel only when the install's flag says so; a browser that stored the experiment on last does not redirect a page the install turned off.
 it("redirects a configuration address only with the install's flag", () => {
   expect(configRedirectTab(true, "network")).toBe("services");
-  expect(configRedirectTab(true, "usage")).toBe("agent");
+  expect(configRedirectTab(true, "usage")).toBe("models");
+  expect(configRedirectTab(true, "providers")).toBe("models");
+  expect(configRedirectTab(true, "schedules")).toBe("automations");
+  expect(configRedirectTab(true, "channels")).toBe("automations");
   // TEST_OVERVIEW: People arrived after the panels did, so no panel holds it and its address keeps the page.
   expect(configRedirectTab(true, "people")).toBe(null);
   expect(configRedirectTab(false, "network")).toBe(null);
-});
-
-// TEST_SCENARIO: the Channels panel is offered only where the install offers a messenger to bind, since that panel is the only place to bind one under the experiment.
-it("offers the Channels panel only when a messenger exists", () => {
-  expect(channelsPanelShown({ slack: true })).toBe(true);
-  expect(channelsPanelShown({ telegram: true })).toBe(true);
-  expect(channelsPanelShown({})).toBe(false);
-  expect(channelsPanelShown({ slack: false, telegram: false })).toBe(false);
 });
 
 // TEST_SCENARIO: with the experiment off, none of the configuration panels exists, so one left open closes; with it on, all of them do.
@@ -143,7 +130,6 @@ it("hides every configuration panel with the experiment off", () => {
     changes: true,
     processesEnabled: true,
     environments: true,
-    channels: true,
     gettingStarted: true,
   };
   const on = hiddenSidePanelTabs({ ...available, configuration: true });

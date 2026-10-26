@@ -103,7 +103,7 @@ it("gives every configuration panel its own tile", () => {
       TooltipProvider,
       null,
       createElement(SidePanelBar, {
-        active: "schedules",
+        active: "automations",
         hidden: new Set<never>(),
         onSelect: () => {},
         tiles: true,
@@ -111,11 +111,10 @@ it("gives every configuration panel its own tile", () => {
     ),
   );
   for (const tab of [
-    "agent",
+    "models",
     "services",
-    "channels",
     "skills",
-    "schedules",
+    "automations",
     "environments",
   ])
     expect(html).toContain(`data-testid="side-panel-tab-${tab}"`);
@@ -158,7 +157,6 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
           processesEnabled: true,
           environments: true,
           configuration: false,
-          channels: true,
           gettingStarted: true,
         }),
         onSelect: () => {},

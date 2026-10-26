@@ -21,6 +21,43 @@ interface Props {
   compact?: boolean;
 }
 
+export function useConnectionSpendLimit({
+  agentId,
+  connectionId,
+  connectionName,
+  templateId,
+}: {
+  agentId: string;
+  connectionId: string;
+  connectionName: string;
+  templateId: string;
+}) {
+  const rule = connectionLimitRule(templateId);
+  const { data: status } = useAgentSpendStatus(rule.limitable ? agentId : null);
+  const agentName = useAgentDisplayName(agentId);
+  const agent = useLevelAgent(agentId);
+  if (!rule.limitable || !status) return null;
+  const connection = { id: connectionId, name: connectionName, templateId };
+  const view = agentConnectionLevels(status, agentId, connection, rule.unit);
+  const spentMicros = spentOn(
+    status.spentByConnection,
+    connectionId,
+    rule.unit,
+  );
+  return {
+    rule,
+    view,
+    agent,
+    spentMicros,
+    subject: `${agentName} on ${connectionName}`,
+    compare: {
+      spentMicros,
+      extensions: view.current?.extensions ?? 0,
+      other: firstOther(view),
+    },
+  };
+}
+
 export function ConnectionSpendLimit({
   agentId,
   connectionId,
@@ -28,10 +65,13 @@ export function ConnectionSpendLimit({
   templateId,
   compact = false,
 }: Props) {
+  const spend = useConnectionSpendLimit({
+    agentId,
+    connectionId,
+    connectionName,
+    templateId,
+  });
   const rule = connectionLimitRule(templateId);
-  const { data: status } = useAgentSpendStatus(rule.limitable ? agentId : null);
-  const agentName = useAgentDisplayName(agentId);
-  const agent = useLevelAgent(agentId);
   if (!rule.limitable) {
     if (compact) return null;
     return (
@@ -40,33 +80,21 @@ export function ConnectionSpendLimit({
       </p>
     );
   }
-  if (!status) return null;
-
-  const connection = { id: connectionId, name: connectionName, templateId };
-  const view = agentConnectionLevels(status, agentId, connection, rule.unit);
-  const spentMicros = spentOn(
-    status.spentByConnection,
-    connectionId,
-    rule.unit,
-  );
+  if (!spend) return null;
 
   return (
     <div className="border-t border-border pt-3">
       <LimitLine
-        view={view}
-        spentMicros={spentMicros}
+        view={spend.view}
+        spentMicros={spend.spentMicros}
         unit={rule.unit}
         scope={{ kind: "connection", agentId, connectionId }}
-        subject={`${agentName} on ${connectionName}`}
+        subject={spend.subject}
         buttonTip={AGENT_PROVIDER_LIMIT_BUTTON_TIP}
         agentId={agentId}
-        agent={agent}
+        agent={spend.agent}
         compact={compact}
-        compare={{
-          spentMicros,
-          extensions: view.current?.extensions ?? 0,
-          other: firstOther(view),
-        }}
+        compare={spend.compare}
       />
     </div>
   );

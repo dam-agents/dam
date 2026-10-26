@@ -4,7 +4,7 @@ import { PLATFORM_OUTBOUND_MCP_SERVER } from "api-server-api";
 import type { ToolChip } from "../../../types.js";
 
 export interface AgentChange {
-  tab: "schedules" | "skills";
+  tab: "automations" | "skills";
   kind: "schedule" | "skill";
   verb: "created" | "changed";
   id: string;
@@ -36,7 +36,7 @@ function scheduleChange(chip: ToolChip, tool: string): AgentChange | null {
   const id = output?.id;
   if (typeof id !== "string" || id === "") return null;
   return {
-    tab: "schedules",
+    tab: "automations",
     kind: "schedule",
     verb,
     id,

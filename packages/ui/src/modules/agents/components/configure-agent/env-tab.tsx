@@ -8,7 +8,7 @@ import {
   WarningAlt,
 } from "@carbon/icons-react";
 import { isProtectedAgentEnvName } from "api-server-api";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -19,7 +19,9 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
+import { ListGroup } from "@/components/ui/list-group";
 import { AddRow, LIST_ROW, ListSection } from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -40,6 +42,7 @@ import {
 } from "../../../sandboxes/hooks/use-inherited-envs.js";
 import { useSetAgentEnv } from "../../api/mutations.js";
 import { useAgentConnections } from "../../api/queries.js";
+import { contributorOf, matchesEnvQuery } from "../../lib/env-contributors.js";
 
 const ENV_NAME_RULE =
   "Use capital letters, digits and _, and don't start with a digit.";
@@ -108,6 +111,109 @@ export function EnvTab({
       if (!next.delete(name)) next.add(name);
       return next;
     });
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [query, setQuery] = useState("");
+  // UNIT_BOUNDARY_DESCRIPTION: in a panel the variables are grouped by who contributes them — the Agent's own first, then one group per provider, connection or the platform — and each group folds to its name and count until a search opens them all, the way the network rules group.
+  const manualRows = envVars.map((v, i) => ({
+    name: v.name,
+    value: v.value,
+    node: (
+      <div key={`${v.name}:${i}`} className={cn(LIST_ROW, "text-xs")}>
+        <span className="font-mono font-semibold text-foreground truncate">
+          {v.name}
+        </span>
+        <span className="text-muted-foreground">=</span>
+        <span
+          className="font-mono text-muted-foreground truncate flex-1"
+          title={revealed.has(v.name) ? v.value : undefined}
+        >
+          {revealed.has(v.name) ? v.value : MASK}
+          {!revealed.has(v.name) && (
+            <span className="sr-only">Value hidden</span>
+          )}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${revealed.has(v.name) ? "Hide" : "Show"} value of ${v.name}`}
+          aria-pressed={revealed.has(v.name)}
+          tooltip={revealed.has(v.name) ? "Hide value" : "Show value"}
+          onClick={() => toggleReveal(v.name)}
+        >
+          {revealed.has(v.name) ? <ViewOff size={14} /> : <View size={14} />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Edit ${v.name}`}
+          tooltip="Edit"
+          disabled={saving}
+          onClick={() => setEditing(i)}
+        >
+          <RequestQuote size={14} />
+        </Button>
+        <RemoveButton
+          label={`Remove ${v.name}`}
+          tooltip="Remove"
+          onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
+          disabled={saving}
+        />
+      </div>
+    ),
+  }));
+
+  const needle = query.trim().toLowerCase();
+  const bySource = new Map<string, { title: string; rows: ReactNode[] }>();
+  for (const entry of shownInherited) {
+    const { key, title } = contributorOf(entry.source);
+    const group = bySource.get(key) ?? { title, rows: [] };
+    if (matchesEnvQuery(query, entry))
+      group.rows.push(
+        <InheritedEnvRow
+          key={`${entry.name}:${contributorOf(entry.source).key}`}
+          entry={entry}
+          showSource={false}
+        />,
+      );
+    bySource.set(key, group);
+  }
+  const groups = [
+    {
+      key: "own",
+      title: "Your variables",
+      rows: manualRows
+        .filter((r) => matchesEnvQuery(query, r))
+        .map((r) => r.node),
+    },
+    ...[...bySource.entries()].map(([key, group]) => ({ key, ...group })),
+  ].filter((group) => group.rows.length > 0);
+  const collapsible = needle === "";
+  const groupList = groups.map((group) => {
+    const open = !collapsible || (openGroups[group.key] ?? false);
+    return (
+      <ListGroup
+        key={group.key}
+        title={`${group.title} (${group.rows.length})`}
+        testId={`env-group-${group.key}`}
+        accessory={
+          collapsible && (
+            <DisclosureToggle
+              open={open}
+              onToggle={() =>
+                setOpenGroups((prev) => ({ ...prev, [group.key]: !open }))
+              }
+              className="ml-auto text-sm text-muted-foreground hover:text-foreground"
+            >
+              {open ? "Hide" : "Show"}
+            </DisclosureToggle>
+          )
+        }
+      >
+        {open && group.rows}
+      </ListGroup>
+    );
+  });
+
   return (
     <>
       {header()}
@@ -142,6 +248,18 @@ export function EnvTab({
         />
       )}
 
+      {panelHeading && (
+        <Input
+          type="search"
+          size="sm"
+          aria-label="Search variables"
+          placeholder="Search variables"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="mb-3"
+        />
+      )}
+
       <ListSection
         className={panelHeading ? "mb-0" : undefined}
         isEmpty={
@@ -173,58 +291,7 @@ export function EnvTab({
           )
         }
       >
-        {envVars.map((v, i) => (
-          <div key={`${v.name}:${i}`} className={cn(LIST_ROW, "text-xs")}>
-            <span className="font-mono font-semibold text-foreground truncate">
-              {v.name}
-            </span>
-            <span className="text-muted-foreground">=</span>
-            <span
-              className="font-mono text-muted-foreground truncate flex-1"
-              title={revealed.has(v.name) ? v.value : undefined}
-            >
-              {revealed.has(v.name) ? v.value : MASK}
-              {!revealed.has(v.name) && (
-                <span className="sr-only">Value hidden</span>
-              )}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`${revealed.has(v.name) ? "Hide" : "Show"} value of ${v.name}`}
-              aria-pressed={revealed.has(v.name)}
-              tooltip={revealed.has(v.name) ? "Hide value" : "Show value"}
-              onClick={() => toggleReveal(v.name)}
-            >
-              {revealed.has(v.name) ? (
-                <ViewOff size={14} />
-              ) : (
-                <View size={14} />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Edit ${v.name}`}
-              tooltip="Edit"
-              disabled={saving}
-              onClick={() => setEditing(i)}
-            >
-              <RequestQuote size={14} />
-            </Button>
-            <RemoveButton
-              label={`Remove ${v.name}`}
-              tooltip="Remove"
-              onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
-              disabled={saving}
-            />
-          </div>
-        ))}
-        {/* UNIT_BOUNDARY_DESCRIPTION: in a panel the inherited entries join the manual ones in one list, since they are the same concept — a variable the Agent reads — and only their source differs. */}
-        {panelHeading &&
-          shownInherited.map((e, i) => (
-            <InheritedEnvRow key={`${e.name}:${i}`} entry={e} />
-          ))}
+        {panelHeading ? groupList : manualRows.map((r) => r.node)}
       </ListSection>
 
       {!panelHeading && shownInherited.length > 0 && (
@@ -341,21 +408,29 @@ function EnvVarModal({
   );
 }
 
-function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
-  const source = entry.source === "system" ? null : entry.source;
+function InheritedEnvRow({
+  entry,
+  showSource = true,
+}: {
+  entry: InheritedEnv;
+  showSource?: boolean;
+}) {
+  const source = showSource && entry.source !== "system" ? entry.source : null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-xs">
       <span className="flex min-w-0 items-center gap-3 max-sm:basis-full">
-        <span
-          className={cn("shrink-0", !source && "text-muted-foreground")}
-          title={
-            source
-              ? `From the ${source.kind} ${source.label}`
-              : "Platform-managed"
-          }
-        >
-          {source ? <Password size={12} /> : <Locked size={12} />}
-        </span>
+        {showSource && (
+          <span
+            className={cn("shrink-0", !source && "text-muted-foreground")}
+            title={
+              source
+                ? `From the ${source.kind} ${source.label}`
+                : "Platform-managed"
+            }
+          >
+            {source ? <Password size={12} /> : <Locked size={12} />}
+          </span>
+        )}
         <span className="font-mono font-semibold text-foreground truncate">
           {entry.name}
         </span>

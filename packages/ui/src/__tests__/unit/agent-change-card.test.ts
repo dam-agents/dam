@@ -78,9 +78,9 @@ it("opens the matching side panel tab on the schedule", () => {
   mount(SCHEDULE);
   expect(card()?.textContent).toContain("Created schedule “Daily triage”");
   act(() => (card() as HTMLElement).click());
-  expect(useStore.getState().sidePanelTab).toBe("schedules");
+  expect(useStore.getState().sidePanelTab).toBe("automations");
   expect(useStore.getState().sidePanelFocus).toEqual({
-    tab: "schedules",
+    tab: "automations",
     id: "sched-1",
   });
 });
@@ -110,7 +110,7 @@ it("names the card with its visible text", () => {
         { value: true },
         createElement(AgentChangeCard, {
           change: {
-            tab: "schedules",
+            tab: "automations",
             kind: "schedule",
             verb: "created",
             id: "sched-1",

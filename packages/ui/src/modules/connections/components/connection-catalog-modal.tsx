@@ -62,6 +62,7 @@ interface Props {
   accepts?: readonly string[];
   title?: string;
   subtitle?: string;
+  singlePage?: boolean;
 }
 
 export function ConnectionCatalogModal({
@@ -76,6 +77,7 @@ export function ConnectionCatalogModal({
   accepts,
   title,
   subtitle,
+  singlePage = false,
 }: Props) {
   const connectionsQ = useAppConnections({ fresh: true });
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
@@ -218,6 +220,29 @@ export function ConnectionCatalogModal({
     return <ConnectionMaintenanceDialog maintenance={maintenance} />;
   }
 
+  const createGroup =
+    pane.kind === "create" ? groupById(pane.providerId) : undefined;
+  // UNIT_BOUNDARY_DESCRIPTION: one page keeps the create pane above the catalog it was opened from, instead of replacing it, since the reader scrolls one list of providers there.
+  const createPane =
+    pane.kind === "create" ? (
+      createGroup ? (
+        <CatalogCreatePane
+          group={createGroup}
+          oauthReturnView={oauthReturnView}
+          initialTemplateId={initialTemplateId}
+          onBack={() => setPane({ kind: "browse" })}
+          onCreated={onCreated}
+        />
+      ) : null
+    ) : pane.kind === "create-mcp" ? (
+      <McpCreatePane
+        templateById={templateById}
+        oauthReturnView={oauthReturnView}
+        onBack={() => setPane({ kind: "browse" })}
+        onCreated={onCreated}
+      />
+    ) : null;
+
   return (
     <Modal onClose={onClose} size="lg" heightClass="h-[85vh]">
       <DialogHeader
@@ -229,7 +254,7 @@ export function ConnectionCatalogModal({
         closeTestId="catalog-close"
       />
       <div className="flex min-h-0 flex-1">
-        {!narrowed && (
+        {!narrowed && !singlePage && (
           <Tabs
             ariaLabel="Connection categories"
             tabs={catalogTabs}
@@ -244,8 +269,9 @@ export function ConnectionCatalogModal({
           />
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {pane.kind === "browse" && (
+          {(singlePage || pane.kind === "browse") && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+              {singlePage && createPane}
               {sharing?.dismissed && !!sharing.channels?.length && (
                 <SharedChannelsNotice>
                   This agent is bound to{" "}
@@ -258,7 +284,10 @@ export function ConnectionCatalogModal({
                   Nothing this install offers satisfies this requirement.
                 </p>
               )}
-              {(narrowed ?? byTab.get(activeTab) ?? []).map((group) => (
+              {(
+                narrowed ??
+                (singlePage ? allGroups : (byTab.get(activeTab) ?? []))
+              ).map((group) => (
                 <CatalogProviderCard
                   key={group.provider.id}
                   group={group}
@@ -280,27 +309,7 @@ export function ConnectionCatalogModal({
               )}
             </div>
           )}
-          {pane.kind === "create" &&
-            (() => {
-              const group = groupById(pane.providerId);
-              return group ? (
-                <CatalogCreatePane
-                  group={group}
-                  oauthReturnView={oauthReturnView}
-                  initialTemplateId={initialTemplateId}
-                  onBack={() => setPane({ kind: "browse" })}
-                  onCreated={onCreated}
-                />
-              ) : null;
-            })()}
-          {pane.kind === "create-mcp" && (
-            <McpCreatePane
-              templateById={templateById}
-              oauthReturnView={oauthReturnView}
-              onBack={() => setPane({ kind: "browse" })}
-              onCreated={onCreated}
-            />
-          )}
+          {!singlePage && createPane}
         </div>
       </div>
     </Modal>

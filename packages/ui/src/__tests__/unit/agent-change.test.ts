@@ -23,7 +23,7 @@ it("reads a created schedule from the tool result", () => {
     ),
   );
   expect(change).toEqual({
-    tab: "schedules",
+    tab: "automations",
     kind: "schedule",
     verb: "created",
     id: "sched-1",

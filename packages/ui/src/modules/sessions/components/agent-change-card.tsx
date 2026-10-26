@@ -32,7 +32,7 @@ export function AgentChangeCard({ change }: { change: AgentChange }) {
       className="h-auto w-full justify-start gap-2 py-2 text-left font-normal"
       onClick={() => {
         setSidePanelFocus(
-          change.tab === "schedules"
+          change.tab === "automations"
             ? { tab: change.tab, id: change.id }
             : null,
         );

@@ -28,6 +28,7 @@ interface Props {
   addRowHidden?: boolean;
   readOnly?: boolean;
   flush?: boolean;
+  flat?: boolean;
 }
 
 export function GrantedConnectionsPanel({
@@ -45,6 +46,7 @@ export function GrantedConnectionsPanel({
   addRowHidden = false,
   readOnly = false,
   flush = false,
+  flat = false,
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
@@ -92,7 +94,8 @@ export function GrantedConnectionsPanel({
             key={group.provider.id}
             group={group}
             templateById={templateById}
-            showCount
+            showCount={!flat}
+            flat={flat}
             grant={
               readOnly
                 ? undefined

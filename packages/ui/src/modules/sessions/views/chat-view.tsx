@@ -43,7 +43,6 @@ import {
 } from "../../agents/api/harness-config.js";
 import {
   useAgent,
-  useAgents,
   useIsAgentInaccessible,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
@@ -119,7 +118,6 @@ import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-liv
 import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import { processesBadgeTone } from "../../processes/lib/process-summary.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
-import { channelsPanelShown } from "../../sandboxes/lib/channels-surface.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
@@ -234,7 +232,6 @@ const SEND_SETTLE_MS = 300;
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
-  const { data: agentsData } = useAgents();
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
   const leavingForPublicPage = usePublicAgentFallback(
@@ -763,7 +760,6 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
-    channels: channelsPanelShown(agentsData?.availableChannels ?? {}),
     // UNIT_BOUNDARY_DESCRIPTION: the experiment offers the Environments panel once the agent owns one, and while its access list is open before that; every other shell keeps the tab it had, which waits for neither.
     environments: rightToolbar
       ? environmentsPanelShown({

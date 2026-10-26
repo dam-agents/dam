@@ -7,11 +7,10 @@ export type SidePanelTab =
   | "browser"
   | "processes"
   | "environments"
+  | "models"
   | "services"
-  | "channels"
   | "skills"
-  | "schedules"
-  | "agent"
+  | "automations"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -41,7 +40,6 @@ export type SidePanelAvailability = {
   changes: boolean;
   processesEnabled: boolean;
   environments: boolean;
-  channels: boolean;
   configuration: boolean;
   gettingStarted: boolean;
 };
@@ -57,11 +55,10 @@ export function hiddenSidePanelTabs(
     browser: available.agent && available.canOpenBrowser,
     processes: available.agent && available.processesEnabled,
     environments: available.agent && available.environments,
+    models: available.agent && available.configuration,
     services: available.agent && available.configuration,
-    channels: available.agent && available.configuration && available.channels,
     skills: available.agent && available.configuration,
-    schedules: available.agent && available.configuration,
-    agent: available.agent && available.configuration,
+    automations: available.agent && available.configuration,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
@@ -100,22 +97,26 @@ export function visibleSidePanelTab(
 
 export type ConfigurationTab = Extract<
   SidePanelTab,
-  "agent" | "services" | "channels" | "skills" | "schedules" | "environments"
+  "models" | "services" | "skills" | "automations" | "environments"
 >;
 
+/* UNIT_BOUNDARY_DESCRIPTION: each of the page's sections opens the tile that
+ * holds it, so an address the page had still lands on what it named: General,
+ * Chat forms and Usage open Models, which owns the providers and the spending;
+ * the channels and the schedules share Automations. */
 const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
-  setup: "agent",
-  people: "agent",
-  providers: "services",
+  setup: "models",
+  people: "models",
+  providers: "models",
   connections: "services",
   network: "services",
   environment: "services",
-  "chat-forms": "agent",
-  channels: "channels",
+  "chat-forms": "models",
+  channels: "automations",
   skills: "skills",
-  schedules: "schedules",
+  schedules: "automations",
   environments: "environments",
-  usage: "agent",
+  usage: "models",
 };
 
 export function configTabForSection(section: SandboxSection): ConfigurationTab {
@@ -139,11 +140,10 @@ export function configRedirectTab(
 }
 
 export const CONFIGURATION_TABS: readonly ConfigurationTab[] = [
-  "agent",
+  "models",
   "services",
-  "channels",
   "skills",
-  "schedules",
+  "automations",
   "environments",
 ];
 
