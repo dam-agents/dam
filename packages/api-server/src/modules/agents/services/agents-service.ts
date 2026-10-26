@@ -22,6 +22,7 @@ import {
   type WorkspaceMutationKind,
   type BindTelegramChatResult,
   type BindSlackChannelResult,
+  type ConnectSlackError,
   type ConnectSlackResult,
   type UnbindTelegramChatResult,
   type AgentBackgroundWork,
@@ -346,6 +347,19 @@ function withinBudget<T>(
   });
 }
 
+export type SlackConnectResult =
+  | Extract<ConnectSlackResult, { ok: true }>
+  | {
+      ok: false;
+      error: Exclude<
+        ConnectSlackError,
+        {
+          type:
+            "SlackAccountUnlinked" | "NotChannelMember" | "MembershipUnchecked";
+        }
+      >;
+    };
+
 export interface SlackBindingPort {
   peekFlow(flowId: string): Promise<{
     slackChannelId: string;
@@ -372,7 +386,7 @@ export function executeSlackBind(deps: {
     agentId: string,
     slackChannelId: string,
     teamId: string,
-  ) => Promise<ConnectSlackResult>;
+  ) => Promise<SlackConnectResult>;
   binding: SlackBindingPort;
 }) {
   return async (
@@ -606,6 +620,11 @@ export function createAgentsService(deps: {
     | { kind: "unreachable" }
     | { kind: "none" }
   >;
+  slackChannelMembership?: (
+    keycloakSub: string,
+    slackChannelId: string,
+    teamId: string,
+  ) => Promise<"member" | "not-member" | "unlinked">;
   findSlackBindings: (slackChannelId: string) => Promise<
     {
       agentId: string;
@@ -826,13 +845,49 @@ export function createAgentsService(deps: {
     return infra ? { id: infra.id, name: infra.name } : null;
   }
 
+  const unresolvedWorkspace = (workspace: {
+    kind: "unknown" | "unreachable" | "none";
+  }) =>
+    match(workspace.kind)
+      .with("unreachable", () => ({ type: "WorkspaceUnreachable" as const }))
+      .with("none", () => ({ type: "NoSlackWorkspace" as const }))
+      .with("unknown", () => ({ type: "WorkspaceUnresolved" as const }))
+      .exhaustive();
+
+  const membershipRefusal = async (
+    slackChannelId: string,
+    teamId: string,
+  ): Promise<ConnectSlackError | null> => {
+    if (!deps.actor || !deps.slackChannelMembership)
+      return { type: "SlackAccountUnlinked" };
+    let membership;
+    try {
+      membership = await deps.slackChannelMembership(
+        deps.actor,
+        slackChannelId,
+        teamId,
+      );
+    } catch (e) {
+      getLogger().warn(
+        { err: e, slackChannelId },
+        "agents: could not ask Slack whether the person is in the channel",
+      );
+      return { type: "MembershipUnchecked" };
+    }
+    return match(membership)
+      .with("member", () => null)
+      .with("unlinked", () => ({ type: "SlackAccountUnlinked" as const }))
+      .with("not-member", () => ({ type: "NotChannelMember" as const }))
+      .exhaustive();
+  };
+
   const connectSlackImpl = async (
     id: string,
     slackChannelId: string,
     ambient?: boolean,
     knownWorkspace?: string,
     customEmoji?: string[] | null,
-  ): Promise<ConnectSlackResult> => {
+  ): Promise<SlackConnectResult> => {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
 
@@ -845,15 +900,8 @@ export function createAgentsService(deps: {
       settledWorkspace === undefined
         ? await deps.resolveSlackWorkspace(slackChannelId)
         : ({ kind: "resolved", teamId: settledWorkspace } as const);
-    if (workspace.kind === "unreachable") {
-      return err({ type: "WorkspaceUnreachable" as const });
-    }
-    if (workspace.kind === "none") {
-      return err({ type: "NoSlackWorkspace" as const });
-    }
-    if (workspace.kind !== "resolved") {
-      return err({ type: "WorkspaceUnresolved" as const });
-    }
+    if (workspace.kind !== "resolved")
+      return err(unresolvedWorkspace(workspace));
 
     const requestedAmbient = ambient === true;
 
@@ -1685,11 +1733,41 @@ export function createAgentsService(deps: {
     },
 
     async connectSlack(id, slackChannelId, ambient, customEmoji) {
+      if (!(await deps.repo.get(id, deps.owner)))
+        return err({ type: "AgentNotFound" });
+      const alreadyHere = (await deps.findSlackBindings(slackChannelId)).some(
+        (b) => b.agentId === id,
+      );
+      if (alreadyHere)
+        return connectSlackImpl(
+          id,
+          slackChannelId,
+          ambient,
+          undefined,
+          customEmoji,
+        );
+      const workspace = await deps.resolveSlackWorkspace(slackChannelId);
+      if (workspace.kind !== "resolved")
+        return err(unresolvedWorkspace(workspace));
+      const refusal = await membershipRefusal(slackChannelId, workspace.teamId);
+      if (refusal) {
+        securityLog("warn", "channel.connect_refused", {
+          category: "channel",
+          actor: deps.actor ?? null,
+          actorKind: "user",
+          surface: "slack",
+          agentId: id,
+          result: "failure",
+          reason: refusal.type,
+          detail: { slackChannelId },
+        });
+        return err(refusal);
+      }
       return connectSlackImpl(
         id,
         slackChannelId,
         ambient,
-        undefined,
+        workspace.teamId,
         customEmoji,
       );
     },

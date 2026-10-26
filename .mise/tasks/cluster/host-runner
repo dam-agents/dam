@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
 #MISE description="Build and (re)start the VM runner on this Mac's own hypervisor"
 # cluster:install runs vm agents on it here, instead of on a runner pod nested
-# inside the k3s VM. It serves every owner from ~/.local/state/platform-vm-
-# runner, listening on loopback, where the k3s VM's pods reach it.
+# inside the k3s VM. It serves every owner of one install, listening on loopback,
+# where the k3s VM's pods reach it.
+# One Mac runs one runner per install: each holds its install's token and CA, so
+# each has a directory of its own under ~/.local/state/platform-vm-runner, a
+# port of its own, and the machines the owner's agents live in.
 set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+B="$HOST_RUNNER_BASE"
 R="$HOST_RUNNER_DIR"
 pkg="$MISE_CONFIG_ROOT/packages/vm-runner"
-mkdir -p "$R" "$HOST_RUNNER_VM_HOME"
+mkdir -p "$B" "$R" "$HOST_RUNNER_VM_HOME"
+port="$(host_runner_port)" || exit 1
+read -r port_min port_max <<<"$(host_runner_machine_ports "$port")"
+# The chart this install was installed with names the port its controller dials;
+# recording it here is what keeps a later restart on the same one.
+printf '%s\n' "$port" > "$R/port"
 
 mise run //packages/vm-runner:host
-install -m 755 "$pkg/dist/host/vm-runner" "$R/vm-runner.new"
+install -m 755 "$pkg/dist/host/vm-runner" "$B/vm-runner.new"
 
 # The smolvm release the binary was built against, for what the VMM loads at
 # run time: libkrun, the guest agent's root filesystem and the disk templates.
@@ -19,9 +28,9 @@ install -m 755 "$pkg/dist/host/vm-runner" "$R/vm-runner.new"
 # the runner (//packages/vm-runner:host builds it in).
 tag="$(sed -n 's/^tag=//p' "$pkg/smolvm.pin")"
 sha="$(sed -n 's/^sha256-darwin-arm64=//p' "$pkg/smolvm.pin")"
-release="$R/smolvm-$tag"
+release="$B/smolvm-$tag"
 if [ ! -x "$release/smolvm-bin" ]; then
-  tarball="$R/smolvm-$tag.tar.gz"
+  tarball="$B/smolvm-$tag.tar.gz"
   curl -fsSL -o "$tarball" "https://github.com/smol-machines/smolvm/releases/download/$tag/smolvm-${tag#v}-darwin-arm64.tar.gz"
   echo "$sha  $tarball" | shasum -a 256 -c --quiet -
   rm -rf "$release" "$release.new" && mkdir "$release.new"
@@ -55,32 +64,32 @@ fi
 for path in usr/local/libexec/vm-runner/platform-init usr/local/libexec/vm-runner/platform-runc opt/smolvm/storage-template.btrfs.zst; do
   bin="${path##*/}"
   for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
-    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "$path" > "$R/$bin.new" 2>/dev/null || true
-    [ ! -s "$R/$bin.new" ] || break
+    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "$path" > "$B/$bin.new" 2>/dev/null || true
+    [ ! -s "$B/$bin.new" ] || break
   done
-  [ -s "$R/$bin.new" ] || { echo "FATAL: no $bin in $image" >&2; exit 1; }
-  chmod 755 "$R/$bin.new"
+  [ -s "$B/$bin.new" ] || { echo "FATAL: no $bin in $image" >&2; exit 1; }
+  chmod 755 "$B/$bin.new"
 done
 
 # The guest kernel is compiled here in place of the release's libkrunfw.
 if $need_kernel; then
-  vm_sh 'cat ~/"$1"' _ "$fw_c" > "$R/kernel.c"
-  cc -fPIC -DABI_VERSION=5 -shared -O2 -install_name libkrunfw.5.dylib -o "$R/libkrunfw.5.dylib" "$R/kernel.c" 2>/dev/null
-  codesign -f -s - "$R/libkrunfw.5.dylib"
-  mv "$R/libkrunfw.5.dylib" "$release/lib/libkrunfw.5.dylib"
-  rm "$R/kernel.c"
+  vm_sh 'cat ~/"$1"' _ "$fw_c" > "$B/kernel.c"
+  cc -fPIC -DABI_VERSION=5 -shared -O2 -install_name libkrunfw.5.dylib -o "$B/libkrunfw.5.dylib" "$B/kernel.c" 2>/dev/null
+  codesign -f -s - "$B/libkrunfw.5.dylib"
+  mv "$B/libkrunfw.5.dylib" "$release/lib/libkrunfw.5.dylib"
+  rm "$B/kernel.c"
   echo "$fw_id" > "$release/lib/libkrunfw.id"
 fi
 
 # The chart renders the runner's token and asks cert-manager for its serving
 # certificate (virtualization.runner.hostAddress); the runner holds copies.
-secret=platform-vm-runner-host
-for _ in $(seq 1 60); do kubectl -n platform-agents get secret "$secret-tls" >/dev/null 2>&1 && break; sleep 2; done
+secret="$CLUSTER_RELEASE-vm-runner-host"
+for _ in $(seq 1 60); do kubectl -n "$CLUSTER_AGENT_NAMESPACE" get secret "$secret-tls" >/dev/null 2>&1 && break; sleep 2; done
 (
   umask 077
-  kubectl -n platform-agents get secret "$secret" -o jsonpath='{.data.token}' | base64 -d > "$R/token"
-  kubectl -n platform-agents get secret "$secret-tls" -o jsonpath='{.data.tls\.crt}' | base64 -d > "$R/tls.crt"
-  kubectl -n platform-agents get secret "$secret-tls" -o jsonpath='{.data.tls\.key}' | base64 -d > "$R/tls.key"
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" get secret "$secret" -o jsonpath='{.data.token}' | base64 -d > "$R/token"
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" get secret "$secret-tls" -o jsonpath='{.data.tls\.crt}' | base64 -d > "$R/tls.crt"
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" get secret "$secret-tls" -o jsonpath='{.data.tls\.key}' | base64 -d > "$R/tls.key"
 )
 # The runner boots only the trees cluster:install stages onto this volume: it
 # runs no node image cache service, so it fetches nothing from a registry.
@@ -92,31 +101,35 @@ host_runner_stop
 if [ -d "$R/Library" ] && [ ! -e "$HOST_RUNNER_VM_HOME/Library" ]; then
   mv "$R/Library" "$HOST_RUNNER_VM_HOME/Library"
 fi
-mv "$R/vm-runner.new" "$R/vm-runner"
-mv "$R/platform-init.new" "$R/platform-init"
-mv "$R/platform-runc.new" "$R/platform-runc"
-mv "$R/storage-template.btrfs.zst.new" "$release/storage-template.btrfs.zst"
+mv "$B/vm-runner.new" "$B/vm-runner"
+mv "$B/platform-init.new" "$B/platform-init"
+mv "$B/platform-runc.new" "$B/platform-runc"
+mv "$B/storage-template.btrfs.zst.new" "$release/storage-template.btrfs.zst"
 # The guest's init, as in the runner image (see oci): platform-init, whose
 # first stage executes the release's copy from the share.
-install -m 755 "$R/platform-init" "$release/agent-rootfs/sbin/platform-init"
-mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 / 3 ))}"
+install -m 755 "$B/platform-init" "$release/agent-rootfs/sbin/platform-init"
+# A runner's memory is an admission ceiling, not a reservation; two runners on
+# one Mac still add up. PLATFORM_VM_RUNNER_MEMORY_MIB overrides it.
+default_mem_div=3
+[ -z "$CLUSTER_INSTALL" ] || default_mem_div=4
+mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 / default_mem_div ))}"
 (
   cd "$R"
-  HOME="$HOST_RUNNER_VM_HOME" SMOLVM_VM_UID_DROP=off RUST_LOG=info nohup "$R/vm-runner" \
-    --listen=127.0.0.1:4600 --publish-address=127.0.0.1 \
-    --port-min="$HOST_RUNNER_PORT_MIN" --port-max="$HOST_RUNNER_PORT_MAX" \
+  HOME="$HOST_RUNNER_VM_HOME" SMOLVM_VM_UID_DROP=off RUST_LOG=info nohup "$B/vm-runner" \
+    --listen="127.0.0.1:$port" --publish-address=127.0.0.1 \
+    --port-min="$port_min" --port-max="$port_max" \
     --token-file="$R/token" --tls-cert="$R/tls.crt" --tls-key="$R/tls.key" \
     --state-dir="$R/machines" --image-dir="$images" --image-budget-bytes=$((50 << 30)) \
     --memory-mib="$mem_mib" --reserve-mib=256 --boot-mib=2048 \
-    --smolvm="$release/smolvm" --platform-init="$R/platform-init" --platform-runc="$R/platform-runc" \
+    --smolvm="$release/smolvm" --platform-init="$B/platform-init" --platform-runc="$B/platform-runc" \
     >> "$R/runner.log" 2>&1 &
   echo $! > "$R/runner.pid"
 )
-# One runner per Mac, serving the cluster that started it last: cluster:stop
-# and cluster:delete of that cluster are the ones that stop it.
+# Which Lima VM this runner serves: cluster:stop stops this install's, and
+# cluster:delete stops every install's runner on that VM.
 echo "$LIMA_INSTANCE" > "$R/instance"
 for _ in $(seq 1 30); do
-  curl -sfk -o /dev/null https://127.0.0.1:4600/healthz && { echo "host VM runner serving (log: $R/runner.log)"; exit 0; }
+  curl -sfk -o /dev/null "https://127.0.0.1:$port/healthz" && { echo "host VM runner for install '${CLUSTER_INSTALL:-default}' serving on 127.0.0.1:$port (log: $R/runner.log)"; exit 0; }
   sleep 1
 done
 echo "FATAL: the host VM runner did not come up; see $R/runner.log" >&2

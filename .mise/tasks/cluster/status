@@ -2,6 +2,7 @@
 #MISE description="Show cluster and pod status (--watch refreshes every 2s)"
 #MISE raw=true
 # --environment <name> first shows one of this agent's Environments.
+#USAGE flag "--name <name>" help="Show this install instead of this worktree's"
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
@@ -23,11 +24,11 @@ echo ''
 echo '=== Nodes ==='
 kubectl get nodes 2>/dev/null || echo 'Cluster not reachable'
 echo ''
-echo '=== Pods (default) ==='
-kubectl get pods 2>/dev/null || true
+echo \"=== Pods ($CLUSTER_NAMESPACE) ===\"
+kubectl -n \"$CLUSTER_NAMESPACE\" get pods 2>/dev/null || true
 echo ''
-echo '=== Pods (platform-agents) ==='
-kubectl get pods -n platform-agents 2>/dev/null || true
+echo \"=== Pods ($CLUSTER_AGENT_NAMESPACE) ===\"
+kubectl -n \"$CLUSTER_AGENT_NAMESPACE\" get pods 2>/dev/null || true
 "
 
 case "${1:-}" in
@@ -43,7 +44,10 @@ case "${1:-}" in
     ;;
   *)
     eval "$STATUS_CMD"
-    # One-shot only — log fetches are too slow for the --watch loop.
+    # One-shot only — log fetches and helm calls are too slow for the --watch loop.
+    echo ''
+    echo '=== Installs ==='
+    "$MISE_CONFIG_ROOT/.mise/tasks/cluster/installs" --all || true
     echo ''
     echo '=== Mesh cert health (istio-system) ==='
     # A cluster:install --no-mesh cluster has no ztunnel to read, and an empty

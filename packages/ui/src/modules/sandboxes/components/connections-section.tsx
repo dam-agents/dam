@@ -9,6 +9,8 @@ import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
 import { useSetPreferredConnection } from "../../connections/api/mutations.js";
 import { useAgentPageConnections } from "../../connections/api/queries.js";
+import { ConnectionAudienceNotice } from "../../connections/components/connection-audience-notice.js";
+import { ConnectionAudienceSentence } from "../../connections/components/connection-audience-sentence.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
 import { useConfirmSharedConnection } from "../../connections/hooks/use-confirm-shared-connection.js";
@@ -18,6 +20,8 @@ import { useSharedChannels } from "../hooks/use-shared-channels.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
 import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
+
+const NO_EDITORS: readonly string[] = [];
 
 interface Props {
   agentId: string;
@@ -46,7 +50,12 @@ export function ConnectionsSection({
   const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const satellites = useAgentSatellites(agentId);
   const sharedChannels = useSharedChannels(agentId);
-  const shareConfirm = useConfirmSharedConnection(sharedChannels);
+  const editors = access?.role === "owner" ? access.editors : NO_EDITORS;
+  const audience = useMemo(
+    () => ({ editors, channels: sharedChannels }),
+    [editors, sharedChannels],
+  );
+  const shareConfirm = useConfirmSharedConnection(audience);
 
   const grantedIds = useMemo(
     () =>
@@ -94,6 +103,17 @@ export function ConnectionsSection({
           one, remove one, or re-authenticate an expired one.
         </OwnerOnlyNotice>
       )}
+      {editors.length > 0 && (
+        <ConnectionAudienceNotice
+          className="mb-6"
+          testId="connections-editors-notice"
+        >
+          <ConnectionAudienceSentence
+            audience={{ editors, channels: sharedChannels }}
+            uses="these connections"
+          />
+        </ConnectionAudienceNotice>
+      )}
       {leading}
       {panelHeading && (
         <SectionHeading
@@ -140,11 +160,7 @@ export function ConnectionsSection({
           }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
-          sharing={{
-            channels: sharedChannels,
-            confirm: shareConfirm.confirm,
-            dismissed: shareConfirm.dismissed,
-          }}
+          sharing={shareConfirm}
           satelliteGrant={satellites.grantControls}
           oauthReturnView={oauthReturnView}
           singlePage={panelHeading !== undefined}

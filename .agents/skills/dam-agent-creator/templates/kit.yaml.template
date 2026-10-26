@@ -55,6 +55,8 @@ connections:
 
 # TODO(creator): keep only when the agent listens on a channel; suggested only, a
 # channel never blocks apply. Delete the key otherwise.
+# Add `conversation: direct` when the agent serves one person in a DM with the bot:
+# the kit modal then shows the DM bind steps instead of a channel picker.
 channels:
   - type: slack
     note: TODO(creator) — what arrives here and what the agent does with it.

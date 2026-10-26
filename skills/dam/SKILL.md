@@ -71,8 +71,19 @@ Compare the version at the top of this page with what `dam --version` prints:
 
 ### Point it at the server
 
-`dam auth status` lists the servers the CLI knows and which one is active.
+`dam auth status --json` lists the servers the CLI has signed in to, which one is active, and whether each session is `valid` or `expired`.
 If none is configured, ask the user for the address of their DAM deployment (the URL they open the web app at) — it is not a secret.
+
+To make another saved server the active one, without signing in again:
+
+```sh
+dam auth switch https://dam.example.com
+```
+
+It takes the URL with or without a trailing slash, or just the host name.
+A server the CLI has not signed in to exits with code 2 and lists the saved ones: sign in there with `dam auth login --server <url>`.
+When the session there expired, the server still becomes active, and the command says to run `dam auth login`.
+For one command against another saved server, without changing the active one, add `--server <url>` to that command.
 
 ### Sign in
 
@@ -116,7 +127,9 @@ For `dam connection connect` and `dam connection update`, the user types the sec
 3. The command ends when the user saves (exit `0`; `--json` gives the connection's ID), cancels, or lets the link expire after ten minutes (exit `1`).
    Run it again for a new link.
 4. Read the `check` in the `--json` output before you tell the user the connection is ready.
-   A GitHub or Kubernetes token is checked when it is saved: `"status": "passed"` names the `account`, so tell the user which account it is.
+   These connections are checked when they are saved: a GitHub token (`github-pat`, `github-enterprise-pat`), a GitHub App (`github-app`, `github-enterprise-app`), a Kubernetes token, and a model provider key.
+   `"status": "passed"` names the `account`, so tell the user which account it is.
+   A GitHub App's `account` is its bot (`<app>[bot]`), `installedOn` the user or organization it is installed on, and `repositories` the repositories it reaches (`repositoriesTruncated` when there are more): tell the user these.
    When `expiresAt` is set, tell the user when the token expires; the CLI warns when that is within a day.
    A Kubernetes token's `account` is the user it acts as, such as `system:serviceaccount:<namespace>:<name>`.
    `"failed"` or `"unchecked"` means the user saved it anyway after a warning: tell them the `reason` and that agents using it may be refused, and offer `dam connection update` to replace it.
@@ -312,6 +325,7 @@ dam connection scope github --clear
 A flag you leave out keeps that part of the scope; `--clear` removes the limit.
 A narrowed sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.
 `dam connection list --json` shows each GitHub connection's `scope`: `{ "restricted": false }` means it reaches everything the sign-in or installation can.
+A GitHub App is checked again with a token minted for the new scope: after a change with `--repositories` or `--permissions`, read the `check` in the `--json` output.
 
 When a DAM agent's calls with a connection fail, for example GitHub answers `401 Bad credentials`, check the stored credential before you look elsewhere:
 

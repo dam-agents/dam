@@ -65,9 +65,9 @@ func TestLoadFromEnv_Telemetry(t *testing.T) {
 
 func TestLoadFromEnv_RejectsMissingStorageSize(t *testing.T) {
 	setEnv(t, map[string]string{
-		"PLATFORM_RELEASE_NAME":   "platform",
-		"POD_NAME":                "controller-0",
-		"AGENT_TEMPLATE_DEFAULTS": `{}`,
+		"PLATFORM_RELEASE_NAME":           "platform",
+		"POD_NAME":                        "controller-0",
+		"AGENT_HARNESS_TEMPLATE_DEFAULTS": `{}`,
 	})
 	_, err := LoadFromEnv()
 	require.Error(t, err)
@@ -129,11 +129,11 @@ func TestLoadFromEnv_AgentBase_Parsed(t *testing.T) {
 	assert.Equal(t, 30*time.Minute, b.VMIdleTimeout.AsDuration())
 }
 
-func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
+func TestLoadFromEnv_HarnessTemplateDefaults_Parsed(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_TEMPLATE_DEFAULTS": `{
+		"AGENT_HARNESS_TEMPLATE_DEFAULTS": `{
 			"storageSize": "10Gi",
 			"resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
 			"mounts": [{"path": "$HOME", "persist": true}, {"path": "/tmp"}],
@@ -142,7 +142,7 @@ func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
-	d := cfg.AgentTemplateDefaults
+	d := cfg.HarnessTemplateDefaults
 	assert.Equal(t, "10Gi", d.StorageSize)
 	require.Len(t, d.Mounts, 2)
 	assert.Equal(t, "$HOME", d.Mounts[0].Path)
@@ -194,9 +194,9 @@ func TestLoadFromEnv_GatewayEgressPeers(t *testing.T) {
 }
 
 const (
-	minAgentBaseJSON             = `{"vmIdleTimeout": "5m"}`
-	minAgentVMJSON               = `{"runner":{"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"}}`
-	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi", "resources": {"limits": {"cpu": "1", "memory": "1Gi"}}}`
+	minAgentBaseJSON               = `{"vmIdleTimeout": "5m"}`
+	minAgentVMJSON                 = `{"runner":{"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"}}`
+	minHarnessTemplateDefaultsJSON = `{"storageSize": "10Gi", "resources": {"limits": {"cpu": "1", "memory": "1Gi"}}}`
 )
 
 func setEnv(t *testing.T, vars map[string]string) {
@@ -204,7 +204,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 	for _, key := range []string{
 		"PLATFORM_AGENT_NAMESPACE", "PLATFORM_RELEASE_NAMESPACE", "PLATFORM_RELEASE_NAME",
 		"PLATFORM_LEASE_NAME", "POD_NAME",
-		"AGENT_BASE", "AGENT_TEMPLATE_DEFAULTS",
+		"AGENT_BASE", "AGENT_HARNESS_TEMPLATE_DEFAULTS",
 		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL",
 		"OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG",
 		"OTEL_RESOURCE_ATTRIBUTES", "OTEL_SERVICE_NAME",
@@ -221,8 +221,8 @@ func setEnv(t *testing.T, vars map[string]string) {
 	if _, ok := vars["AGENT_BASE"]; !ok {
 		t.Setenv("AGENT_BASE", minAgentBaseJSON)
 	}
-	if _, ok := vars["AGENT_TEMPLATE_DEFAULTS"]; !ok {
-		t.Setenv("AGENT_TEMPLATE_DEFAULTS", minAgentTemplateDefaultsJSON)
+	if _, ok := vars["AGENT_HARNESS_TEMPLATE_DEFAULTS"]; !ok {
+		t.Setenv("AGENT_HARNESS_TEMPLATE_DEFAULTS", minHarnessTemplateDefaultsJSON)
 	}
 	if _, ok := vars["AGENT_VM"]; !ok {
 		t.Setenv("AGENT_VM", minAgentVMJSON)
@@ -365,6 +365,18 @@ func TestLoadFromEnv_RejectsAVMRunnerWithNoMemoryLimit(t *testing.T) {
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	assert.Equal(t, "8Gi", cfg.VM.Runner.Resources.Limits.Memory().String())
+}
+
+// TEST_SCENARIO: a runner configuration that names no machine memory keeps the chart's 2 GiB, the value a machine takes where its owner's pool cannot size it. Every chart render sends it, so this is the value a hand-written AGENT_VM gets.
+func TestLoadFromEnv_MachineMemoryDefaultsToTheChartsValue(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 2048, cfg.VM.Runner.MachineMemoryMiB)
 }
 
 // TEST_SCENARIO: runner pods take a new runner image only as a hand-off from the node's release directory, so virtualization with runner pods and no such directory is refused at start. A host runner outside the cluster has no pod to hand off in, and needs none.

@@ -11,7 +11,7 @@ const setupFormSchema = z.object({
   name: z.string(),
   avatar: avatarSchema.nullable().default(null).catch(null),
   connectionIds: z.array(z.string()).default([]),
-  slackChannelId: z.string().default(""),
+  slackChannelIds: z.array(z.string()).default([]),
   skippedSchedules: z.array(z.string()).default([]),
   scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
 });

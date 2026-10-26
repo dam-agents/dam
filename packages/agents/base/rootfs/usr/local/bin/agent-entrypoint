@@ -108,24 +108,6 @@ if [ "$uid" = 0 ]; then
 	fi
 fi
 
-# In a container $HOME is a network volume: ~/.cache goes to pod-local /tmp.
-mkdir -p /tmp/agent-cache
-if [ "${PLATFORM_BACKEND:-container}" != vm ] && [ ! -L "$home/.cache" ]; then
-	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
-		rm -rf "$home/.cache" && mv "$home/.cache.tmp" "$home/.cache"
-	else
-		rm -f "$home/.cache.tmp"
-		echo "agent-entrypoint: WARNING: could not swap ~/.cache to local disk; caches stay on the workspace volume" >&2
-	fi
-fi
-
-# npm keeps its tarball cache, npx installs and debug logs under ~/.npm, not
-# ~/.cache, so they miss the swap above; in a container they go to the same
-# local disk. An image that sets its own location wins.
-if [ "${PLATFORM_BACKEND:-container}" != vm ]; then
-	export npm_config_cache="${npm_config_cache:-/tmp/agent-cache/npm}"
-fi
-
 # The home outlives the image, so a cache a tool wrote there survives the image
 # that dropped or replaced the tool, and nothing in the agent's own work shrinks
 # it: on a default-sized home that is how an agent stops starting. Caches no
@@ -168,11 +150,6 @@ if [ -d "$pnpm_stores" ]; then
 	purge_discarded "$pnpm_stores"
 fi
 
-if [ "${npm_config_cache:-$home/.npm}" != "$home/.npm" ]; then
-	for d in _cacache _npx _logs; do
-		discard "$home/.npm/$d" "npm caches on local disk now"
-	done
-fi
 purge_discarded "$home/.npm"
 
 # Maven reads proxies only from settings.xml.

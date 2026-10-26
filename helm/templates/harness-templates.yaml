@@ -1,13 +1,13 @@
 {{/*
-Agent templates. One ConfigMap in the RELEASE namespace with a
+Harness templates. One ConfigMap in the RELEASE namespace with a
 `<name>.yaml` data key per enabled `.Values.harnessTemplates` entry. It is
 mounted into the api-server pod (see apiserver/app.yaml) and loaded once at
 boot — the api-server no longer reads templates dynamically via the K8s API,
 so this CM needs no label selector and no agent-namespace placement.
 
 Only fields the template differs on are rendered. Anything omitted falls
-through at reconcile time to `controller.agent.templateDefaults.*` (chart
-fallback) or `controller.agent.base.*` (chart-only policy).
+through at reconcile time to `controller.agent.harnessTemplateDefaults.*`
+(chart fallback) or `controller.agent.base.*` (chart-only policy).
 
 The literal string `$HOME` in mount paths is substituted
 HERE (chart render time) with the fixed agent home (/home/agent). The

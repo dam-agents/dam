@@ -100,7 +100,12 @@ import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
-import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
+import {
+  checkGitHubApp,
+  describeGitHubAppToken,
+  gitHubAppMintLockKey,
+  mintGitHubAppToken,
+} from "./github-app.js";
 import type { XactLock } from "../../../core/xact-lock.js";
 import {
   refreshOAuthAccessToken,
@@ -129,6 +134,7 @@ import {
   credentialProbeTarget,
   fromKeyCheck,
   type CredentialProbe,
+  type CredentialProbeOutcome,
 } from "../domain/credential-check.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -540,11 +546,33 @@ export function createConnectionsService(deps: {
     );
   }
 
+  async function recordGitHubAppCheck(
+    conn: Connection,
+    minted: {
+      auth: Extract<Connection["auth"], { kind: "github-app" }>;
+      privateKeyPem: string;
+      accessToken: string;
+    },
+  ): Promise<void> {
+    const outcome = await describeGitHubAppToken(deps.githubAppEngine, {
+      connectionRef: `connection:${conn.id}:${conn.templateId}`,
+      ...minted,
+    });
+    await deps.repo.mergeInputs(conn.id, {
+      [CREDENTIAL_CHECK_INPUT_KEY]: stampCheck(
+        conn.templateId,
+        conn.id,
+        outcome,
+      ),
+    });
+  }
+
   async function rotatePrivateKey(
     conn: Connection,
     auth: Extract<Connection["auth"], { kind: "github-app" }>,
     rawPrivateKey: string,
   ): Promise<void> {
+    let rotated: Parameters<typeof recordGitHubAppCheck>[1] | undefined;
     await mintUnderLock(
       conn,
       auth,
@@ -573,9 +601,15 @@ export function createConnectionsService(deps: {
             [freshAuth.privateKeyRef.field]: privateKeyPem,
           },
         );
+        rotated = {
+          auth: freshAuth,
+          privateKeyPem,
+          accessToken: minted.accessToken,
+        };
         return renewedAuth(freshAuth, minted.expiresAt);
       },
     );
+    if (rotated) await recordGitHubAppCheck(conn, rotated);
   }
 
   async function rotateOAuthClientSecret(
@@ -889,6 +923,14 @@ export function createConnectionsService(deps: {
       credentialProbeTarget(template.credentialCheck, contributions, caPem),
       value,
     );
+    return stampCheck(templateId, connectionId, outcome);
+  }
+
+  function stampCheck(
+    templateId: string,
+    connectionId: string,
+    outcome: CredentialProbeOutcome,
+  ): CredentialCheck {
     const check: CredentialCheck = {
       ...outcome,
       at: new Date().toISOString(),
@@ -1192,6 +1234,30 @@ export function createConnectionsService(deps: {
     async checkCredential(id: string): Promise<CredentialCheck | null> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      if (conn.auth.kind === "github-app") {
+        const auth = conn.auth;
+        const privateKeyPem = await deps.secretStore
+          .getField(auth.privateKeyRef)
+          .catch(() => null);
+        const check = stampCheck(
+          conn.templateId,
+          conn.id,
+          privateKeyPem
+            ? await checkGitHubApp(deps.githubAppEngine, {
+                connectionRef: `connection:${conn.id}:${conn.templateId}`,
+                auth,
+                privateKeyPem,
+              })
+            : {
+                status: "unchecked",
+                reason: "the stored private key could not be read",
+              },
+        );
+        await deps.repo.mergeInputs(conn.id, {
+          [CREDENTIAL_CHECK_INPUT_KEY]: check,
+        });
+        return check;
+      }
       if (conn.auth.kind !== "header") return null;
       if (PROVIDER_TEMPLATE_IDS.has(conn.templateId)) {
         const keyCheck = await recheckProviderKey(conn);
@@ -1598,8 +1664,10 @@ export function createConnectionsService(deps: {
         );
       }
 
+      let appCheck: CredentialCheck | null = null;
       if (auth.kind === "github-app") {
         const appAuth = auth;
+        let minted: { privateKeyPem: string; accessToken: string } | undefined;
         auth = await mintFirstToken(
           appAuth,
           {
@@ -1607,13 +1675,27 @@ export function createConnectionsService(deps: {
             missing: "privateKey",
             grant: "github_app_installation",
           },
-          (privateKeyPem) =>
-            mintGitHubAppToken(deps.githubAppEngine, {
+          async (privateKeyPem) => {
+            const token = await mintGitHubAppToken(deps.githubAppEngine, {
               connectionRef: `connection:${id}:${template.id}`,
               auth: appAuth,
               privateKeyPem,
-            }),
+            });
+            minted = { privateKeyPem, accessToken: token.accessToken };
+            return token;
+          },
         );
+        if (minted) {
+          appCheck = stampCheck(
+            template.id,
+            id,
+            await describeGitHubAppToken(deps.githubAppEngine, {
+              connectionRef: `connection:${id}:${template.id}`,
+              auth: appAuth,
+              ...minted,
+            }),
+          );
+        }
       }
 
       if (effectiveInput.authKind === "sigv4" && auth.kind === "sigv4") {
@@ -1679,7 +1761,9 @@ export function createConnectionsService(deps: {
           ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
           ...(credentialCheck
             ? { [CREDENTIAL_CHECK_INPUT_KEY]: credentialCheck }
-            : {}),
+            : appCheck
+              ? { [CREDENTIAL_CHECK_INPUT_KEY]: appCheck }
+              : {}),
         },
         auth,
         contributions,
@@ -1784,6 +1868,7 @@ export function createConnectionsService(deps: {
       const privateKeyPem = await readPrivateKey(auth);
 
       const scope = parseGitHubAppScope(input);
+      let scoped: Parameters<typeof recordGitHubAppCheck>[1] | undefined;
       await mintUnderLock(
         conn,
         auth,
@@ -1808,9 +1893,15 @@ export function createConnectionsService(deps: {
             freshAuth,
             token.accessToken,
           );
+          scoped = {
+            auth: next,
+            privateKeyPem,
+            accessToken: token.accessToken,
+          };
           return renewedAuth(next, token.expiresAt);
         },
       );
+      if (scoped) await recordGitHubAppCheck(conn, scoped);
 
       securityLog("info", "connection.scope_update", {
         category: "credential",

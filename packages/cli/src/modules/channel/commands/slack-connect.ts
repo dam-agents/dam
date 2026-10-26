@@ -34,7 +34,8 @@ export function buildSlackConnectCommand(deps: {
     .option("--json", "emit the updated ChannelConfig[] as JSON")
     .addHelpText(
       "after",
-      "\nExamples:\n" +
+      "\nYour Slack account must be linked, and you and the bot must both be in the channel.\n" +
+        "\nExamples:\n" +
         "  dam channel slack connect my-agent --channel-id C0123ABCD\n" +
         "  dam channel slack connect my-agent --channel-id C0123ABCD --ambient\n",
     )

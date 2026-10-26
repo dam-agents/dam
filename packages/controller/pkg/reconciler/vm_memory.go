@@ -58,9 +58,9 @@ func (r *AgentReconciler) liveMachine(name string) vmrunner.MachineStatus {
 // UNIT_BOUNDARY_DESCRIPTION: measured it and while it reports it warming up.
 // UNIT_BOUNDARY_DESCRIPTION: A running machine's size is the larger of the one
 // UNIT_BOUNDARY_DESCRIPTION: it booted with and the one its next start takes.
-func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name string, spec *apiv1.AgentSpec) int {
+func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name string) int {
 	live := r.liveMachine(name)
-	machineMiB, _ := r.machineMemoryMiB(ctx, owner, spec)
+	machineMiB, _ := r.machineMemoryMiB(ctx, owner)
 	size := max(machineMiB, live.MemoryMiB)
 	floor := size
 	if boot := r.config.VM.Runner.BootMiB; boot > 0 {
@@ -456,7 +456,7 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 		if err != nil {
 			return 0, err
 		}
-		own := r.accountedMemoryMiB(ctx, owner, agent.Name, &agent.Spec)
+		own := r.accountedMemoryMiB(ctx, owner, agent.Name)
 		return held.memoryMiB + own + r.config.VM.Runner.ReserveMiB - bound, nil
 	}, false, true)
 }

@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -63,10 +63,13 @@ A user who refuses the grant in the browser ends the poll with `access_denied`: 
 
 Credentials are keyed by host URL, so switching between deployments never clobbers state.
 A host that moved redirects its `/api/auth/config` to the new host; login follows that redirect, keys the credential under the new host, and saves the new host as the active one.
-`dam auth status` lists each host, credential source, and token expiry, and never prints tokens.
-Login and status judge the active host's saved credential the way every other verb does: through the `TokenProvider`'s saved-credential path, which refreshes a lapsed access token.
+Host URLs are normalised wherever they are saved or compared (a lower-case origin, no trailing slash), so a host matches however its URL is written.
+`dam auth status` lists each host, credential source, session state, and token expiry, and never prints tokens; `--json` gives the same as data.
+`dam auth switch <server>` makes a saved host the active one by writing it to the config file, with no new sign-in; it finds the host by its URL or its host name, and refuses one with no saved credential.
+Login, status, and switch judge a saved credential the way every other verb does: through the `TokenProvider`'s saved-credential path, which refreshes a lapsed access token.
 A credential that refreshes counts as a valid sign-in, and login asks for confirmation (or `--force` without a terminal) before it replaces one.
 A credential whose refresh fails with an invalid grant is expired: status marks it so and exits non-zero, and login replaces it without `--force`.
+Status checks every saved host, one after another, and keeps an expired credential listed, so a user can still switch to that host and sign in there again.
 When the refresh cannot reach the IdP, status says it could not check, and login goes ahead rather than refuse on a session it cannot show to work.
 `dam auth logout` best-effort revokes the refresh token ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)) and removes the local entry; the local clear always proceeds even when revocation fails.
 Logout is deliberately not RP-Initiated Logout — the CLI must not kill SSO sessions belonging to the web UI or federated apps.
@@ -183,6 +186,7 @@ Sign-in stays the device flow the user approves in a browser, and the agent neve
 A connection's credential, new or rotated, the agent never sees: it runs `connect` or `update` without the secret, the CLI opens the [secret-entry page](connections.md#connection) where the user types it, and waits for the outcome, as it waits for an OAuth sign-in.
 Since the agent cannot check that secret itself, the outcome carries the server's [credential check](connections.md#connection) where the template has one, and `dam connection test` runs it again on the stored credential, so the agent can tell a broken token from a working one.
 The CLI warns when a checked token expires within a day, and `dam connection list` shows each checked credential's expiry.
+A GitHub App connection's check names the bot it acts as and the repositories it reaches, and `dam connection scope` reports the check of the new scope.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 

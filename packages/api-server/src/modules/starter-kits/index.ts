@@ -43,6 +43,7 @@ export {
   createKitUpdateReporter,
   type KitUpdateReporter,
 } from "./services/kit-update-reporter.js";
+export { createTurnReplyReader } from "./infrastructure/turn-reply.js";
 export {
   createKitUpdateNudge,
   type KitUpdateNudge,

@@ -27,7 +27,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what tells anything inside the guest which backend it is on. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too, and not only the exec chain that came from the entrypoint. agent-runtime reads it to know it has no cgroup to measure memory against, and the image's boot to know its HOME is a local disk rather than a network volume.
+// UNIT_BOUNDARY_DESCRIPTION: what told anything inside the guest which backend it was on, kept for the images that still read it. An Agent's image may predate the container backend's removal: its entrypoint reads this to know its HOME is a local disk rather than a network volume, and takes the container path when it is missing. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too. Remove it once every Agent runs an image that no longer reads it (agents.runtimeFleet.outdated).
 const vmBackendEnv = "PLATFORM_BACKEND"
 
 const (
@@ -125,7 +125,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			}
 		}()
 	}
-	defaults := r.config.AgentTemplateDefaults
+	defaults := r.config.HarnessTemplateDefaults
 
 	proxy, allow, gatewayHostPort, resolver := agentProxyAddr(r.config, gatewayIP), []string{gatewayIP + "/32"}, 0, gatewayIP
 	if r.config.VM.Runner.HostAddress != "" {
@@ -181,8 +181,8 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if pullErr != nil {
 		return vmrunner.MachineStatus{}, false, pullErr
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: a machine that should stop is sized from its spec when the pool cannot be read, and takes no admission ceiling either. A stop acts on no size, and refusing it would leave a machine up that the controller asked to stop, holding everything the stop releases.
-	memoryMiB, err := r.machineMemoryMiB(ctx, owner, spec)
+	// UNIT_BOUNDARY_DESCRIPTION: a machine that should stop is sized from the install's fallback when the pool cannot be read, and takes no admission ceiling either. A stop acts on no size, and refusing it would leave a machine up that the controller asked to stop, holding everything the stop releases.
+	memoryMiB, err := r.machineMemoryMiB(ctx, owner)
 	if err != nil && running {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the machine: %w", err)
 	}
@@ -222,7 +222,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		Revision:             agent.Annotations[annRollRev],
 		Running:              running,
 		PullAuths:            pullAuths,
-		NestedVirtualization: wantsNesting(agent, r.config.AgentTemplateDefaults) && r.config.VM.Runner.NestedVirtualization,
+		NestedVirtualization: wantsNesting(agent, r.config.HarnessTemplateDefaults) && r.config.VM.Runner.NestedVirtualization,
 		AdmitMiB:             admitMiB,
 	}
 	st, err := runner.Ensure(ctx, name, machine)
@@ -758,7 +758,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	}
 	if err := r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
 		func(s *apiv1.AgentStatus) {
-			nestingCondition(s, agent, st, r.config.AgentTemplateDefaults, r.config.VM.Runner.NestedVirtualization)
+			nestingCondition(s, agent, st, r.config.HarnessTemplateDefaults, r.config.VM.Runner.NestedVirtualization)
 			r.runnerCapacityCondition(s, agent)
 			if runnerReached {
 				setStartFailure(s, failure, agent.Generation)
@@ -933,12 +933,12 @@ func setConditionTime(s *apiv1.AgentStatus, condType string, at time.Time) {
 const runnerOOMEpisode = 10 * time.Minute
 
 // UNIT_BOUNDARY_DESCRIPTION: the nesting ask is the one thing the Agent's Backend still says. The schema keeps that field until the Agents move to Postgres, so the machine reads the ask from where an existing Agent carries it; nothing else in the controller reads the field.
-func wantsNesting(agent *apiv1.Agent, defaults config.AgentTemplateDefaults) bool {
+func wantsNesting(agent *apiv1.Agent, defaults config.HarnessTemplateDefaults) bool {
 	return defaults.NestedVirtualization || (agent.Spec.Backend != nil && agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: tells an owner whose agent asks for nesting, itself or through controller.agent.templateDefaults.nestedVirtualization, whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it.
-func nestingCondition(s *apiv1.AgentStatus, agent *apiv1.Agent, st vmrunner.MachineStatus, defaults config.AgentTemplateDefaults, installAllows bool) {
+// UNIT_BOUNDARY_DESCRIPTION: tells an owner whose agent asks for nesting, itself or through controller.agent.harnessTemplateDefaults.nestedVirtualization, whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it.
+func nestingCondition(s *apiv1.AgentStatus, agent *apiv1.Agent, st vmrunner.MachineStatus, defaults config.HarnessTemplateDefaults, installAllows bool) {
 	if !wantsNesting(agent, defaults) {
 		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionNestedVirtualization)
 		return
@@ -1027,7 +1027,7 @@ func (r *AgentReconciler) machineDiskGiB(ctx context.Context, runner *vmrunner.C
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. On a runner that grows a disk at the next start, the size worked out here only names the disk an older runner keeps (machineDiskGiB); the path rule holds on every runner. The size is one quantity, rounded once, and the path is not configurable: HOME is fixed, every template in the chart persists it and nothing else, and a machine's root lasts only until an image of another root generation boots. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount declares raises the disk rather than being dropped, since a spec that asks for 50Gi must not quietly get the chart's 10Gi. Several of them take the largest and not the sum, because they are all nested inside the one path a machine keeps and a sum would size the disk for capacity no single mount could have claimed.
-func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (int, error) {
+func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.HarnessTemplateDefaults) (int, error) {
 	for _, m := range resolveSpecMounts(spec, defaults) {
 		if m.Persist && m.Path != agentHomeDir && !strings.HasPrefix(m.Path, agentHomeDir+"/") {
 			return 0, fmt.Errorf("the vm backend persists only %s, so this Agent's persisted mount %s would be lost at the first stop; move it under %s or run this Agent on the container backend",
