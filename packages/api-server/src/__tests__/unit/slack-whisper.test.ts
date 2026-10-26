@@ -116,6 +116,7 @@ function harness(
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => OWNER,
+    ownerDisplayName: async () => null,
     channelRegistry: {
       resolveSlackBindings: async (channel: string) =>
         (bindings[channel] ?? []).map((spec) => ({
@@ -259,7 +260,7 @@ describe("/dam whisper with a message", () => {
 
     const text = h.prompts[0]!.text;
     expect(text).toContain("no more authority than the same message");
-    expect(text).toContain("is not your owner");
+    expect(text).toContain("whoever whispered it, your owner included");
     expect(text).toContain("never from your owner");
   });
 

@@ -59,7 +59,9 @@ export const BOB_LISTING_USER_AGENT = "platform-bob-catalog/1";
  * metadata from the price table; Bob's gateway is the one provider-sourced
  * listing. The catalog shows the platform's self-hosted vLLM at no cost; the
  * spend meter prices its calls with the operator's price instead. Null for
- * a template the router does not serve (Bedrock).
+ * a template the router does not serve (Bedrock). A listing may name the only
+ * harnesses it serves: Bob's gateway serves the Bob harness alone, as a
+ * subscription token serves Claude Code alone.
  */
 export function listingForTemplate(templateId: string): ProviderListing | null {
   switch (templateId) {
@@ -119,6 +121,7 @@ export function listingForTemplate(templateId: string): ProviderListing | null {
           shape: "litellm-model-info",
           fallback: { path: "/inference/v1/models" },
         },
+        harnesses: ["bob"],
       };
     default:
       return null;

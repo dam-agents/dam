@@ -47,6 +47,7 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(),
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
+  granted: [] as { id: string; name: string; type: string }[],
   noProviders: false,
   ungranted: false,
   chosen: null as {
@@ -190,7 +191,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
         {
           name: "pi",
           displayName: "Pi",
-          providers: ["ibm-litellm", "curve-bender"],
+          providers: ["ibm-litellm", "curve-bender", "anthropic"],
         },
         { name: "codex", displayName: "Codex", providers: ["openai"] },
       ],
@@ -209,10 +210,12 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
             : [
                 { id: "ibm", name: "IBM", type: "ibm-litellm" },
                 { id: "curve", name: "Curve", type: "curve-bender" },
+                ...state.granted,
               ],
           owned: [
             { id: "ibm", name: "IBM", type: "ibm-litellm" },
             { id: "curve", name: "Curve", type: "curve-bender" },
+            ...state.granted,
             ...state.owned,
           ],
         },
@@ -646,6 +649,7 @@ describe("one model list on a runtime that routes by model name", () => {
     state.chosen = null;
     state.catalog = routedCatalog;
     state.providersAsked = [];
+    state.granted = [];
     state.chosenModel.mockReset();
   });
 
@@ -674,6 +678,66 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).not.toContain('aria-label="Curve"');
     expect(html).not.toContain("Disconnect IBM");
     expect(state.providersAsked).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: A runtime may list a provider the harness does not fit,
+   * as one listing Bob's gateway under Pi does; both menus, a new session's
+   * and a running session's, offer only the providers the harness fits, so a
+   * pick from one is never dropped. Until the harness catalog that says what
+   * fits arrives, the menus keep every group rather than hide them all. */
+  it("hides a provider the harness does not fit", () => {
+    state.catalogLoaded = true;
+    state.granted = [{ id: "bob", name: "Bob Shell", type: "bob" }];
+    state.catalog = {
+      ...routedCatalog,
+      providers: [
+        ...routedCatalog.providers,
+        {
+          connectionId: "bob",
+          alias: "bob",
+          template: "bob",
+          displayName: "Bob Shell",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("bob", "granite-4-1-8b")],
+        },
+      ],
+    };
+    const picker = () =>
+      renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+    const indicator = () =>
+      renderToStaticMarkup(
+        createElement(ModelIndicator, {
+          kind: "chat",
+          onFollowDefault: () => {},
+          agentId: "agent",
+          harness: "pi",
+          provider: "ibm",
+          model: "ibm/gpt-5.5",
+          carried,
+          routed: true,
+          onChoose: vi.fn(),
+          onConfigure: vi.fn(),
+          onNewSession: state.newSession,
+        }),
+      );
+    expect(picker()).toContain('aria-label="GPT"');
+    expect(picker()).not.toContain("bob/granite-4-1-8b");
+    expect(picker()).not.toContain("Bob Shell");
+    expect(indicator()).toContain("GPT 5.5");
+    expect(indicator()).not.toContain("bob/granite-4-1-8b");
+    state.catalogLoaded = false;
+    expect(picker()).toContain("bob/granite-4-1-8b");
+    expect(indicator()).toContain("bob/granite-4-1-8b");
+    state.catalogLoaded = true;
   });
 
   /** TEST_SCENARIO: The model list is read from the running agent, so on a
@@ -705,6 +769,7 @@ describe("one model list on a runtime that routes by model name", () => {
    * per size on the newest version with the providers that offer it, older
    * versions behind More, and models of no known family last under Other. */
   it("groups known models by family and size, with a provider choice", () => {
+    state.granted = [{ id: "anthropic", name: "Anthropic", type: "anthropic" }];
     state.catalog = {
       harness: "pi",
       routed: true,

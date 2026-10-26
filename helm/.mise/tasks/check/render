@@ -542,6 +542,39 @@ for h in localhost keycloak.localhost share.localhost content.localhost; do
 done
 ! grep -q 'localhost$' <<<"$(hosts --set domain=example.com --set 'ingress.aliasDomains=null')" ||
   { echo "an install without a backchannel routes a localhost host" >&2; exit 1; }
+# Traefik gives every router an Ingress makes the priority that Ingress sets,
+# so the host-less catch-all rule has an Ingress of its own: beside the
+# explicit hosts it tied them at their priority, and a `keycloak.localhost`
+# request could reach the UI. A named local install ranks its hosts (1000)
+# above that catch-all (100), and the catch-all still above the rule-length
+# priority of an Ingress that predates the entrypoint annotation; both of its
+# Ingresses carry that annotation, or it answers on every install's port.
+CATCHALL=(--set ingress.catchAllAppHost=true)
+NAMED=("${CATCHALL[@]}"
+  --set-string 'ingress.annotations.traefik\.ingress\.kubernetes\.io/router\.entrypoints=platform-named'
+  --set-string 'ingress.annotations.traefik\.ingress\.kubernetes\.io/router\.priority=1000'
+  --set-string ingress.catchAllPriority=100)
+catchall=$(helm template platform . "${COMMON[@]}" "${NAMED[@]}" \
+  --show-only templates/ingress-catchall.yaml |
+  yq -o=json 'select(.kind == "Ingress") | {"ann": .metadata.annotations, "hosts": [.spec.rules[].host // ""]}')
+jq -e '.hosts == [""]
+  and (.ann["traefik.ingress.kubernetes.io/router.priority"] | tostring) == "100"
+  and .ann["traefik.ingress.kubernetes.io/router.entrypoints"] == "platform-named"' <<<"$catchall" >/dev/null ||
+  { echo "a named install's catch-all is not the host-less rule at its own priority on its own entrypoint: $catchall" >&2; exit 1; }
+app=$(helm template platform . "${COMMON[@]}" "${NAMED[@]}" --show-only templates/ingress.yaml |
+  yq -o=json 'select(.kind == "Ingress") | {"prio": .metadata.annotations["traefik.ingress.kubernetes.io/router.priority"], "hosts": [.spec.rules[].host // ""]}')
+jq -e '(.prio | tostring) == "1000" and (.hosts | index("") | not)' <<<"$app" >/dev/null ||
+  { echo "a named install's app Ingress lost its priority, or kept the host-less rule that ties it: $app" >&2; exit 1; }
+# An install that turns the catch-all on without a priority keeps Traefik's
+# rule-length ranking, as it did before the rule had its own Ingress.
+catchall=$(helm template platform . "${COMMON[@]}" "${CATCHALL[@]}" \
+  --show-only templates/ingress-catchall.yaml |
+  yq -o=json 'select(.kind == "Ingress") | .metadata.annotations // {}')
+jq -e 'has("traefik.ingress.kubernetes.io/router.priority") | not' <<<"$catchall" >/dev/null ||
+  { echo "a catch-all with no catchAllPriority got a priority: $catchall" >&2; exit 1; }
+! helm template platform . "${COMMON[@]}" | grep -q 'name: platform-catchall$' ||
+  { echo "an install with the catch-all off rendered it anyway" >&2; exit 1; }
+helm template platform . "${COMMON[@]}" "${NAMED[@]}" | "${KUBECONFORM[@]}" "$@"
 kc_hostname() {
   helm template platform . "${COMMON[@]}" "$@" --show-only templates/keycloak/app.yaml |
     yq -o=json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env' |

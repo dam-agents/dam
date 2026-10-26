@@ -190,6 +190,8 @@ export const runtimeManifestSchema = z.object({
 
   terminalSessionPins: z.string().min(1).optional(),
 
+  sessionLoadTimeoutSeconds: z.number().int().positive().max(600).optional(),
+
   sessionEnvVar: z
     .string()
     .regex(/^[A-Z_][A-Z0-9_]*$/)

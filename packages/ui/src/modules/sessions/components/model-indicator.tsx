@@ -34,6 +34,7 @@ import {
 import {
   harnessDisplayName,
   modelProviderLabel,
+  providerOptions,
 } from "../lib/session-pair-options.js";
 import { settingDefaults, settingsForModel } from "../lib/session-settings.js";
 import { SessionModelList } from "./session-model-list.js";
@@ -113,8 +114,16 @@ export function ModelIndicator({
     routed ? agentId : null,
     harness,
   );
+  const fitting = providerOptions(
+    harness,
+    catalog?.harnesses ?? [],
+    granted,
+    owned,
+  ).granted;
   const groups = routed
-    ? modelGroups(catalogModels.data, catalogModels.granted)
+    ? modelGroups(catalogModels.data, catalogModels.granted).filter(
+        (g) => !catalog || fitting.some((p) => p.id === g.connectionId),
+      )
     : [];
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
   const models = removed
