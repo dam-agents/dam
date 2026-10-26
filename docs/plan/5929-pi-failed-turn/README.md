@@ -201,7 +201,7 @@ The feature is two sub-issues, one atomic commit each, in this order:
 
 | #   | Sub-issue                                                                                | Done |
 | --- | ---------------------------------------------------------------------------------------- | ---- |
-| 01  | [A Pi turn fails when its last model call failed](./01-pi-turn-fails-on-model-error.md)  | [ ]  |
+| 01  | [A Pi turn fails when its last model call failed](./01-pi-turn-fails-on-model-error.md)  | [x]  |
 | 02  | [A Codex turn fails when its model call failed](./02-codex-turn-fails-on-model-error.md) | [ ]  |
 
 02 does not need 01's code, but it edits the same paragraphs of provider-status and spend-limits, so it comes second.
