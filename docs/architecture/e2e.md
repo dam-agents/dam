@@ -1,15 +1,16 @@
 # End-to-end suite
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
-It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so it runs twice for every change, once per lane.
+It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
 
 ## Lanes
 
 A **lane** is a gateway topology for the Agents a spec creates, each a machine on its owner's VM runner.
 One lane runs the chart's default, a gateway pod per Agent; the other turns on the [owner gateway](credential-gateway.md#owner-gateway), one gateway pod per owner.
-The lanes differ in nothing else, and both run on every pull request and in every full-suite run, each on its own runner, so a fault only one topology has shows on the change that caused it.
+The lanes differ in nothing else, and each runs on its own runner.
+Both run in every full-suite run; a pull request runs the default lane alone, since the merge queue runs both on the same tree before the change lands, so a fault only one topology has still shows on the change that caused it.
 The lane is one variable, `E2E_GATEWAY_PER_OWNER`, which the install reads to turn the owner gateway on.
 
 ## Projects and the order between them
@@ -50,7 +51,7 @@ The tier under `src/tests/full/` is on demand: a local run asks for it, and no C
 
 ## Scope: what a pull request runs
 
-A pull request runs the smoke suite on both lanes, with a reduced set of specs; every other event runs all of them — the merge queue that puts a change on main, the nightly run, a dispatch, and a tag.
+A pull request runs the smoke suite on the default lane, with a reduced set of specs; every other event runs both lanes and all of the specs — the merge queue that puts a change on main, the nightly run, and a dispatch.
 The reduction is measured, not guessed: over five weeks of CI ending 2026-10-18, about 600 failed e2e jobs came from a handful of specs, and only some of those failures were likely real — the same spec failing in both lanes of one run, or again on the pull request's next run.
 A spec that never fails for real earns nothing on a pull request.
 
