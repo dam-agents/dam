@@ -34,6 +34,7 @@ function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
   const resumed: string[] = [];
   const tasks: string[] = [];
   const fresh: { meta: unknown; unattended: boolean | undefined }[] = [];
+  const bound: { scheduleId: string; sessionId: string }[] = [];
   let minted = 0;
   const triggerDriver: TriggerSessionDriver = {
     start({ task, resumeSessionId, platformMeta, unattended }) {
@@ -56,11 +57,14 @@ function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
     resumed,
     tasks,
     fresh,
+    bound,
     recover: (store: ReturnType<typeof createActiveTurnStore>) =>
       recoverInterruptedTurns({
         store,
         sessionMetadata,
         triggerDriver,
+        bindScheduleSession: (scheduleId, sessionId) =>
+          bound.push({ scheduleId, sessionId }),
         log: () => {},
       }),
   };
@@ -185,6 +189,9 @@ describe("interrupted-turn recovery", () => {
     expect(world.fresh).toEqual([{ meta, unattended: true }]);
     expect(world.sessionMetadata.get("fresh-1")?.meta).toEqual(meta);
     expect(world.sessionMetadata.isTombstoned("sched-run")).toBe(true);
+    expect(world.bound).toEqual([
+      { scheduleId: "sched-1", sessionId: "fresh-1" },
+    ]);
   });
 
   /**

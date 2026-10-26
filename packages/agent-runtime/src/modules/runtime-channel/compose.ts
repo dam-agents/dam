@@ -28,7 +28,10 @@ import {
 import { createStateStore } from "./state-store.js";
 import { bindingsFingerprint } from "./domain/bindings-fingerprint.js";
 import type { ApplyStateDeps } from "./service.js";
-import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
+import {
+  createTriggerStateStore,
+  type TriggerStateStore,
+} from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
 import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js";
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
@@ -82,6 +85,7 @@ export interface RuntimeChannelComposition {
   harnessConfig: HarnessConfigService;
   writeModelWindows(): Promise<void>;
   sessionDirectory: SessionDirectoryReporter;
+  triggerStateStore: TriggerStateStore;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
 
@@ -383,6 +387,7 @@ export async function composeRuntimeChannel(
         },
     },
     sessionDirectory,
+    triggerStateStore,
     async helloOnBoot({ agentRuntimeVersion }) {
       const capabilities = {
         contributions: contributionKinds as never,

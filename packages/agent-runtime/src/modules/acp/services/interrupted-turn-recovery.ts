@@ -86,6 +86,7 @@ export async function recoverInterruptedTurns(deps: {
   store: ActiveTurnStore;
   sessionMetadata: SessionMetadataStore;
   triggerDriver: TriggerSessionDriver;
+  bindScheduleSession?: (scheduleId: string, sessionId: string) => void;
   log: (msg: string) => void;
 }): Promise<void> {
   for (const { sessionId } of deps.store.leftovers()) {
@@ -122,6 +123,8 @@ export async function recoverInterruptedTurns(deps: {
         });
         deps.sessionMetadata.tombstone(marker.sessionId);
         deps.store.remove(marker.sessionId);
+        if (entry.meta.scheduleId)
+          deps.bindScheduleSession?.(entry.meta.scheduleId, rerun);
         deps.log(
           `ran the cut first turn of ${marker.sessionId} again in ${rerun}`,
         );
