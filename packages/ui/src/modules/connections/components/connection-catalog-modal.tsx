@@ -228,7 +228,7 @@ export function ConnectionCatalogModal({
 
   const createGroup =
     pane.kind === "create" ? groupById(pane.providerId) : undefined;
-  // UNIT_BOUNDARY_DESCRIPTION: one page keeps the create pane above the catalog it was opened from, instead of replacing it, since the reader scrolls one list of providers there.
+  // UNIT_BOUNDARY_DESCRIPTION: a create pane takes the whole body while it is open — it brings its own heading, its own scrolling and its own Cancel — and Back or Cancel brings the list back; one page only spares the reader the category rail.
   const createPane =
     pane.kind === "create" ? (
       createGroup ? (
@@ -275,9 +275,8 @@ export function ConnectionCatalogModal({
           />
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {(singlePage || pane.kind === "browse") && (
+          {pane.kind === "browse" && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-              {singlePage && createPane}
               {sharing?.notice && (
                 <ConnectionAudienceNotice>
                   <ConnectionAudienceSentence
@@ -316,7 +315,7 @@ export function ConnectionCatalogModal({
               )}
             </div>
           )}
-          {!singlePage && createPane}
+          {createPane}
         </div>
       </div>
     </Modal>
