@@ -161,7 +161,7 @@ What the installs still share, because the cluster has one of each:
 
 - the cluster, its node and its disk: two installs' pods compete for the VM's CPU and memory, and two host runners share the Mac's;
 - the Istio mesh, cert-manager, the Gateway API CRDs and the platform CRDs: installed once — the default install re-applies the CRDs on every run, a named install only adds the ones the cluster lacks;
-- the one Traefik the cluster runs, with an entrypoint per install (the installs merge them into one `HelmChartConfig`, and each Ingress names its own);
+- the one Traefik the cluster runs, with an entrypoint per install (the installs merge them into one `HelmChartConfig`, and each Ingress names its own; the catch-all that serves an unplanned host name has an Ingress of its own, ranked below the explicit hosts);
 - the VM runner's program, its image volume and, on a Mac, the hypervisor: a runner per install is still one Mac's worth of CPUs.
 
 Two installs do not serialise against each other: install the default install before the others on a fresh cluster.

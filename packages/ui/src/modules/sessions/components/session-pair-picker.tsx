@@ -219,7 +219,9 @@ export function SessionPairPicker(props: Props) {
     harness,
   );
   const groups = routed
-    ? modelGroups(catalogModels.data, catalogModels.granted)
+    ? modelGroups(catalogModels.data, catalogModels.granted).filter(
+        (g) => !catalog || offered.granted.some((p) => p.id === g.connectionId),
+      )
     : [];
   const models = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
   const primary = primaryProfileOf(pair, profiles, capability);

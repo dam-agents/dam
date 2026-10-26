@@ -49,6 +49,7 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(),
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
+  granted: [] as { id: string; name: string; type: string }[],
   noProviders: false,
   ungranted: false,
   chosen: null as {
@@ -203,7 +204,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
         {
           name: "pi",
           displayName: "Pi",
-          providers: ["ibm-litellm", "curve-bender"],
+          providers: ["ibm-litellm", "curve-bender", "anthropic"],
         },
         { name: "codex", displayName: "Codex", providers: ["openai"] },
       ],
@@ -227,6 +228,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
                   type: "curve-bender",
                   templateId: "curve-bender",
                 },
+                ...state.granted,
               ],
           owned: [
             { id: "ibm", name: "IBM", type: "ibm-litellm" },
@@ -236,6 +238,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
               type: "curve-bender",
               templateId: "curve-bender",
             },
+            ...state.granted,
             ...state.owned,
           ],
         },
@@ -700,6 +703,7 @@ describe("one model list on a runtime that routes by model name", () => {
     state.chosen = null;
     state.catalog = routedCatalog;
     state.providersAsked = [];
+    state.granted = [];
     state.chosenModel.mockReset();
   });
 
@@ -728,6 +732,66 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).not.toContain('aria-label="Curve"');
     expect(html).not.toContain("Disconnect IBM");
     expect(state.providersAsked).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: A runtime may list a provider the harness does not fit,
+   * as one listing Bob's gateway under Pi does; both menus, a new session's
+   * and a running session's, offer only the providers the harness fits, so a
+   * pick from one is never dropped. Until the harness catalog that says what
+   * fits arrives, the menus keep every group rather than hide them all. */
+  it("hides a provider the harness does not fit", () => {
+    state.catalogLoaded = true;
+    state.granted = [{ id: "bob", name: "Bob Shell", type: "bob" }];
+    state.catalog = {
+      ...routedCatalog,
+      providers: [
+        ...routedCatalog.providers,
+        {
+          connectionId: "bob",
+          alias: "bob",
+          template: "bob",
+          displayName: "Bob Shell",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("bob", "granite-4-1-8b")],
+        },
+      ],
+    };
+    const picker = () =>
+      renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+    const indicator = () =>
+      renderToStaticMarkup(
+        createElement(ModelIndicator, {
+          onToolApproval: () => {},
+          agentId: "agent",
+          sessionId: "s1",
+          harness: "pi",
+          provider: "ibm",
+          model: "ibm/gpt-5.5",
+          carried,
+          routed: true,
+          onChoose: vi.fn(),
+          onConfigure: vi.fn(),
+          onNewSession: state.newSession,
+        }),
+      );
+    expect(picker()).toContain('aria-label="GPT"');
+    expect(picker()).not.toContain("bob/granite-4-1-8b");
+    expect(picker()).not.toContain("Bob Shell");
+    expect(indicator()).toContain("GPT 5.5");
+    expect(indicator()).not.toContain("bob/granite-4-1-8b");
+    state.catalogLoaded = false;
+    expect(picker()).toContain("bob/granite-4-1-8b");
+    expect(indicator()).toContain("bob/granite-4-1-8b");
+    state.catalogLoaded = true;
   });
 
   /** TEST_SCENARIO: The model list is read from the running agent, so on a
@@ -759,6 +823,7 @@ describe("one model list on a runtime that routes by model name", () => {
    * per size on the newest version with the providers that offer it, older
    * versions behind More, and models of no known family last under Other. */
   it("groups known models by family and size, with a provider choice", () => {
+    state.granted = [{ id: "anthropic", name: "Anthropic", type: "anthropic" }];
     state.catalog = {
       harness: "pi",
       routed: true,
@@ -1049,8 +1114,9 @@ describe("the profile a session's pick came from", () => {
 
 describe("the picker editing a profile in Settings", () => {
   /** TEST_SCENARIO: Settings opens the picker on its Custom screen with no
-   * profile view, Save row or tool approval, and a pick goes to the profile,
-   * never to the agent's next session. */
+   * profile view, Save row or tool approval, and only the providers the
+   * harness fits, and a pick goes to the profile, never to the agent's next
+   * session. */
   it("shows the Custom screen and hands a pick to the profile", () => {
     profilesState = [
       {
@@ -1065,7 +1131,22 @@ describe("the picker editing a profile in Settings", () => {
         availability: { available: true, reason: null, attachable: false },
       },
     ];
-    state.catalog = routedCatalog;
+    state.granted = [{ id: "bob", name: "Bob Shell", type: "bob" }];
+    state.catalog = {
+      ...routedCatalog,
+      providers: [
+        ...routedCatalog.providers,
+        {
+          connectionId: "bob",
+          alias: "bob",
+          template: "bob",
+          displayName: "Bob Shell",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("bob", "granite-4-1-8b")],
+        },
+      ],
+    };
     state.chosenModel.mockReset();
     const onChoose = vi.fn();
     const container = document.createElement("div");
@@ -1095,6 +1176,7 @@ describe("the picker editing a profile in Settings", () => {
       expect(text).not.toContain("Primary model");
       expect(text).not.toContain("Use a profile");
       expect(text).not.toContain("Save as a profile");
+      expect(text).not.toContain("granite");
       expect(
         container.querySelector('[data-testid="tool-approval-picker"]'),
       ).toBeNull();
@@ -1111,6 +1193,7 @@ describe("the picker editing a profile in Settings", () => {
     } finally {
       act(() => root.unmount());
       profilesState = [];
+      state.granted = [];
     }
   });
 });

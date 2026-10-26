@@ -787,6 +787,11 @@ if [ -n "$CLUSTER_INSTALL" ]; then
   # router names itself the winner on its own port; once every install carries
   # the entrypoint annotation the priority decides nothing.
   HELM_EXTRA_ARGS+=("--set-string=ingress.annotations.traefik\.ingress\.kubernetes\.io/router\.priority=1000")
+  # The catch-all rule's own Ingress takes its priority from here, not from the
+  # annotation above: it must lose to this install's explicit hosts (1000),
+  # which it would tie at 1000, and beat the rule-length priority (well below
+  # 100) of an Ingress that still answers on every entrypoint.
+  HELM_EXTRA_ARGS+=("--set-string=ingress.catchAllPriority=100")
 fi
 echo "Install $CLUSTER_RELEASE answers on port $APP_PORT (Traefik entrypoint $CLUSTER_ENTRYPOINT)"
 if [ "$CLUSTER_TARGET" = environment ]; then
