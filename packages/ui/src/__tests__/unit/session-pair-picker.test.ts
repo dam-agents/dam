@@ -92,6 +92,7 @@ const state = vi.hoisted(() => ({
     | undefined,
   chosenModel: vi.fn(),
   grant: vi.fn(async (_id: string) => true),
+  remember: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -251,7 +252,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
     revoke: state.revoke,
     pending: false,
   }),
-  rememberSessionPair: vi.fn(),
+  rememberSessionPair: state.remember,
   useHarnessConfigured: () => state.configured,
   useHarnessCatalogModels: (agentId: string | null) => ({
     granted:
@@ -506,7 +507,7 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain(">IBM</span></button>");
+    expect(html).toMatch(/>IBM<\/span><svg[^>]*>.*?<\/svg><\/button>/);
     expect(html).toContain("Loading models…");
     expect(html).not.toContain("Configure");
     expect(html).not.toContain("Connect an LLM provider");
@@ -562,7 +563,9 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain(">glm (Curve)</span></button>");
+    expect(html).toMatch(
+      />glm \(Curve\)<\/span><svg[^>]*>.*?<\/svg><\/button>/,
+    );
   });
 
   it("warns before the agent answers when no provider is connected", () => {
@@ -1266,6 +1269,42 @@ describe("a profile whose provider a pick connects", () => {
     } finally {
       act(() => root.unmount());
       profilesState = [];
+    }
+  });
+});
+
+describe("a harness picked without a model", () => {
+  /** TEST_SCENARIO: picking a harness in the new chat's picker clears the
+   * model; the pick waits for a model there and saves no chat default, which
+   * the server refuses without one. */
+  it("waits for a model before it saves the chat default", () => {
+    state.chosenModel.mockReset();
+    state.remember.mockReset();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+      const pi = [
+        ...container.querySelectorAll('[aria-label="Harness"] button'),
+      ].find((b) => b.textContent?.includes("Pi")) as HTMLButtonElement;
+      act(() => pi.click());
+      expect(state.chosenModel).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({ harness: "pi", model: null }),
+      );
+      expect(state.remember).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
     }
   });
 });

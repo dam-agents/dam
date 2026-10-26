@@ -217,7 +217,8 @@ export function SessionPairPicker(props: Props) {
     if (edit) return edit.onChoose(chosenPair);
     if (!agentId) return;
     setPair(agentId, chosenPair);
-    if (routed)
+    /* UNIT_BOUNDARY_DESCRIPTION: a harness picked without a model waits for its model; the server keeps no chat default without one. */
+    if (routed && chosenPair.model !== null)
       rememberSessionPair(agentId, chosenPair, "chat", undefined, references);
   };
   const withSettings = (next: SessionPair): SessionPair =>
@@ -897,19 +898,17 @@ function ModelChoice({
   onClick: () => void;
 }) {
   return (
-    <PopoverClose asChild>
-      <button
-        type="button"
-        aria-current={current ? "true" : undefined}
-        onClick={onClick}
-        className={cn(
-          "w-full truncate rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground",
-          current && "font-medium text-foreground",
-        )}
-      >
-        {label}
-      </button>
-    </PopoverClose>
+    <button
+      type="button"
+      aria-current={current ? "true" : undefined}
+      onClick={onClick}
+      className={cn(
+        "w-full truncate rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground",
+        current && "font-medium text-foreground",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 

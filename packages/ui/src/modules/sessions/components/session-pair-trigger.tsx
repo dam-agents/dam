@@ -1,3 +1,4 @@
+import { ChevronDown } from "@carbon/icons-react";
 import type { ComponentProps } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
@@ -24,7 +25,12 @@ export function SessionPairTrigger({
       {...props}
     >
       {label ? (
-        <PairSummary harness={harness} label={label} />
+        <>
+          <PairSummary harness={harness} label={label} />
+          {!props.disabled && (
+            <ChevronDown size={12} aria-hidden className="shrink-0" />
+          )}
+        </>
       ) : (
         <Spinner size={12} />
       )}

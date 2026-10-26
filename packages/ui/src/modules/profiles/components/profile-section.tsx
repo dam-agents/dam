@@ -1,9 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  DEFAULT_PROFILE_UNDELETABLE,
-  type ProfileWithUsage,
-  type SessionPair,
-} from "api-server-api";
+import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import { useState } from "react";
 
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -145,14 +141,7 @@ export function ProfileSection() {
                   disabled={profile.newAgentDefault || remove.isPending}
                   onSelect={() => void confirmDelete(profile)}
                 >
-                  <span className="flex max-w-64 flex-col">
-                    Delete
-                    {profile.newAgentDefault && (
-                      <span className="text-xs text-muted-foreground">
-                        {DEFAULT_PROFILE_UNDELETABLE}
-                      </span>
-                    )}
-                  </span>
+                  {profile.newAgentDefault ? "Can't remove default" : "Delete"}
                 </DropdownMenuItem>
               </RowActionsMenu>
             </li>

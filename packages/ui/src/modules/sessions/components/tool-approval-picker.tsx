@@ -1,5 +1,9 @@
 import { ChevronDown } from "@carbon/icons-react";
-import { approvalOption, type HarnessCapability } from "agent-runtime-api";
+import {
+  approvalOption,
+  COPILOT_AUTOPILOT,
+  type HarnessCapability,
+} from "agent-runtime-api";
 
 import {
   DropdownMenu,
@@ -13,13 +17,14 @@ import {
  * UNIT_BOUNDARY_DESCRIPTION: the harness value each tool-approval choice
  * stands for. Claude Code keeps approval in its permission mode, where Always
  * ask is Accept edits (edits never prompt); Bob keeps it in its approvals
- * option and has no Bypass. A harness with neither (Pi, Codex, Copilot) runs
- * every tool unasked, so it offers Bypass alone. Plan modes are never offered.
- * A pick is the session's alone; with none, a session runs on Auto mode.
+ * option and has no Bypass; Copilot's Autopilot is its Auto mode. A harness
+ * with neither (Pi, Codex) runs every tool unasked. Plan modes are never
+ * offered, and a harness with one choice or none shows no picker. A pick is
+ * the session's alone; with none, a session runs on Auto mode.
  */
 const APPROVALS = [
   { label: "Always ask", values: ["acceptEdits", "ask"] },
-  { label: "Auto mode", values: ["auto"] },
+  { label: "Auto mode", values: ["auto", COPILOT_AUTOPILOT] },
   { label: "Bypass", values: ["bypassPermissions"] },
 ] as const;
 
@@ -40,34 +45,32 @@ export function ToolApprovalPicker({
     );
     return choice ? [{ label, value: choice.value }] : [];
   });
+  if (!option || choices.length < 2) return null;
   const current =
-    option &&
-    (settings[option.id] ??
-      option.choices.find((c) => c.value === "auto")?.value ??
-      option.default);
+    settings[option.id] ??
+    choices.find((c) => c.label === "Auto mode")?.value ??
+    option.default;
   const label =
-    option === undefined
-      ? "Bypass"
-      : (choices.find((c) => c.value === current)?.label ??
-        option.choices.find((c) => c.value === current)?.name ??
-        "Tool approval");
+    choices.find((c) => c.value === current)?.label ??
+    option.choices.find((c) => c.value === current)?.name ??
+    "Tool approval";
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild disabled={choices.length < 2}>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
           aria-label={`Tool approval: ${label}`}
           data-testid="tool-approval-picker"
-          className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none"
+          className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {label}
-          {choices.length > 1 && <ChevronDown size={12} aria-hidden />}
+          <ChevronDown size={12} aria-hidden />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuRadioGroup
           value={current ?? ""}
-          onValueChange={(next) => option && onChange({ [option.id]: next })}
+          onValueChange={(next) => onChange({ [option.id]: next })}
         >
           {choices.map((c) => (
             <DropdownMenuRadioItem key={c.value} value={c.value}>

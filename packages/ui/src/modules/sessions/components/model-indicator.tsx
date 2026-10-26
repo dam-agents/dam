@@ -308,7 +308,6 @@ export function ModelIndicator({
                   <PairSummary harness={harness} label={modelName ?? ""} />
                 ),
                 onPick: (profile) => {
-                  setOpen(false);
                   setFromProfile(profile);
                   onChoose(profile.model, {
                     ...Object.fromEntries(
@@ -484,16 +483,14 @@ function OldRuntimeModels({
       >
         {models.map((choice) => (
           <li key={choice.value}>
-            <PopoverClose asChild>
-              <button
-                type="button"
-                aria-current={choice.value === model ? "true" : undefined}
-                onClick={() => onChoose(choice.value)}
-                className="w-full truncate rounded px-1 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-[current]:font-medium aria-[current]:text-foreground"
-              >
-                {choice.name}
-              </button>
-            </PopoverClose>
+            <button
+              type="button"
+              aria-current={choice.value === model ? "true" : undefined}
+              onClick={() => onChoose(choice.value)}
+              className="w-full truncate rounded px-1 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-[current]:font-medium aria-[current]:text-foreground"
+            >
+              {choice.name}
+            </button>
           </li>
         ))}
         {models.length === 0 && (

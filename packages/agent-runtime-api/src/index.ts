@@ -32,6 +32,7 @@ export {
   modelConstraintsFor,
   startModeFor,
   approvalOption,
+  COPILOT_AUTOPILOT,
   withoutApproval,
   sessionSettingsError,
   SUBAGENT_MODEL_SETTING,

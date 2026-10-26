@@ -44,8 +44,8 @@ While exactly one Copilot session runs a turn, the router books the call, and it
 `COPILOT_ALLOW_ALL=true` lets Copilot run every tool without asking and trusts the working directory.
 The pod is the boundary, and nobody answers a permission prompt on a schedule or a channel turn.
 
-A session can pick Copilot's mode: Agent, Plan or Autopilot.
-A session that picks none starts in Autopilot: an ACP session ignores `--autopilot` and starts in Agent, so the runtime sends the catalog's start mode (`deriveStartMode` in the [manifest](rootfs/app/runtime-manifest.yaml)), and `harness-terminal` passes `--autopilot`.
+Copilot's mode is the platform's tool approval: Autopilot is Auto mode, its only choice there, so no picker shows and Agent and Plan are not offered.
+A session starts in Autopilot: an ACP session ignores `--autopilot` and starts in Agent, so the runtime sends the catalog's start mode (`deriveStartMode` in the [manifest](rootfs/app/runtime-manifest.yaml)), and `harness-terminal` passes `--autopilot`.
 The Config panel stores the agent's default under `platform.mode` in `~/.copilot/settings.json`, a key Copilot itself ignores.
 
 A session can also pick the reasoning effort.

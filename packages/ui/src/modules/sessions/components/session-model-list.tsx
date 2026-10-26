@@ -260,22 +260,20 @@ function ModelRow({
         isCurrent && "font-medium text-foreground",
       )}
     >
-      <PopoverClose asChild>
-        <button
-          type="button"
-          aria-current={isCurrent ? "true" : undefined}
-          title={option.model.name}
-          onClick={() => onChoose(option.model.name, option.group)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left"
-        >
-          <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-          {entry.options.length === 1 && (
-            <span className="shrink-0 whitespace-nowrap text-xs font-normal text-muted-foreground">
-              {providerLabel(option.group)}
-            </span>
-          )}
-        </button>
-      </PopoverClose>
+      <button
+        type="button"
+        aria-current={isCurrent ? "true" : undefined}
+        title={option.model.name}
+        onClick={() => onChoose(option.model.name, option.group)}
+        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left"
+      >
+        <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+        {entry.options.length === 1 && (
+          <span className="shrink-0 whitespace-nowrap text-xs font-normal text-muted-foreground">
+            {providerLabel(option.group)}
+          </span>
+        )}
+      </button>
       {entry.options.length > 1 && (
         <ProviderChoice
           label={entry.label}
