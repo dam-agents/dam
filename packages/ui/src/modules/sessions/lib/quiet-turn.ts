@@ -51,11 +51,24 @@ function isOpenTool(part: Message["parts"][number]): boolean {
   );
 }
 
-function hasOpenTool(messages: readonly Message[]): boolean {
-  const turn = [...messages]
-    .reverse()
-    .find((m) => m.role === "assistant" && m.streaming);
-  return turn?.parts.some(isOpenTool) ?? false;
+function laterOf(a: string | null, b: string | undefined): string | null {
+  if (b === undefined) return a;
+  return a === null || Date.parse(b) > Date.parse(a) ? b : a;
+}
+
+function runningTurnOf(
+  messages: readonly Message[],
+): { turn: Message; opening: Message | undefined } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const turn = messages[i];
+    if (turn?.role !== "assistant" || !turn.streaming || turn.queued) continue;
+    const opening = messages
+      .slice(0, i)
+      .reverse()
+      .find((m) => m.role === "user");
+    return { turn, opening };
+  }
+  return null;
 }
 
 export function quietTurnOf({
@@ -67,10 +80,13 @@ export function quietTurnOf({
   lastOutputAt: string | null;
   now: Date;
 }): QuietTurn | null {
-  if (lastOutputAt === null) return null;
-  if (!messages.some((m) => m.role === "assistant" && m.streaming)) return null;
-  const quietMs = now.getTime() - Date.parse(lastOutputAt);
-  if (hasOpenTool(messages))
+  const running = runningTurnOf(messages);
+  if (running === null) return null;
+  const { turn, opening } = running;
+  const since = laterOf(lastOutputAt, opening?.at);
+  if (since === null) return null;
+  const quietMs = now.getTime() - Date.parse(since);
+  if (turn.parts.some(isOpenTool))
     return quietMs >= TOOL_QUIET_MS ? { kind: "tool", quietMs } : null;
   if (quietMs >= MAYBE_STUCK_MS) return { kind: "maybe-stuck", quietMs };
   if (quietMs >= MODEL_QUIET_MS) return { kind: "model", quietMs };
