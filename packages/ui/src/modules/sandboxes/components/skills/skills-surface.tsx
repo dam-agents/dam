@@ -9,7 +9,6 @@ import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
 import { useResolvedHarnessConfig } from "../../../agents/api/harness-config.js";
 import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
-import { useUnifiedRightToolbar } from "../../../features/hooks/use-unified-right-toolbar.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
@@ -26,7 +25,6 @@ import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
 
 export function SkillsSurface({
-  panel = false,
   agentId,
   agentState,
   agentDisabled = false,
@@ -42,10 +40,8 @@ export function SkillsSurface({
   comingUp?: boolean;
   managesLibrary: boolean;
   canPublish: boolean;
-  panel?: boolean;
 }) {
   const isError = agentState === "error";
-  const rightToolbar = useUnifiedRightToolbar();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
@@ -140,10 +136,8 @@ export function SkillsSurface({
         )
       ) : (
         <>
-          {}
           <div className="mb-5">
             <SkillsSearchHeader
-              hideCounts={rightToolbar}
               query={query}
               onQueryChange={setQuery}
               totals={totals}
@@ -204,7 +198,6 @@ export function SkillsSurface({
                     : undefined
                 }
                 trackTargets={trackTargets}
-                addInHeader={panel}
                 onUpload={
                   dropEnabled
                     ? () =>
@@ -236,7 +229,6 @@ export function SkillsSurface({
                 setOpenModal({ kind: "render", source, skill })
               }
               onAddSets={() => setOpenModal({ kind: "add-sets" })}
-              panel={panel}
               onToggleAll={(src, on, scope) =>
                 void toggleAllWithConfirm(src, on, scope)
               }
@@ -254,52 +246,31 @@ export function SkillsSurface({
               />
             )}
 
-            {}
-            {/* UNIT_BOUNDARY_DESCRIPTION: with the experiment on, the platform's own skills are one list with one whole-row target each; every other shell keeps the two named groups and the name-only target it had. */}
-            {rightToolbar ? (
-              shownPlatform.length + shownBuiltIn.length > 0 && (
-                <LocalSkillsGroup
-                  label="Platform features"
-                  skills={[...shownPlatform, ...shownBuiltIn]}
-                  wholeRows
-                  onOpenSkill={
-                    agentId
-                      ? (skill) => setOpenModal({ kind: "render-local", skill })
-                      : undefined
-                  }
-                />
-              )
-            ) : (
-              <>
-                {shownPlatform.length > 0 && (
-                  <PlatformSkillsGroup
-                    skills={shownPlatform}
-                    onOpenSkill={
-                      agentId
-                        ? (skill) =>
-                            setOpenModal({ kind: "render-local", skill })
-                        : undefined
-                    }
-                    onOpenSection={
-                      agentId
-                        ? (section) => navigateToSandboxHome(agentId, section)
-                        : undefined
-                    }
-                  />
-                )}
-                {shownBuiltIn.length > 0 && (
-                  <LocalSkillsGroup
-                    label="Included with sandbox image"
-                    skills={shownBuiltIn}
-                    onOpenSkill={
-                      agentId
-                        ? (skill) =>
-                            setOpenModal({ kind: "render-local", skill })
-                        : undefined
-                    }
-                  />
-                )}
-              </>
+            {shownPlatform.length > 0 && (
+              <PlatformSkillsGroup
+                skills={shownPlatform}
+                onOpenSkill={
+                  agentId
+                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    : undefined
+                }
+                onOpenSection={
+                  agentId
+                    ? (section) => navigateToSandboxHome(agentId, section)
+                    : undefined
+                }
+              />
+            )}
+            {shownBuiltIn.length > 0 && (
+              <LocalSkillsGroup
+                label="Included with sandbox image"
+                skills={shownBuiltIn}
+                onOpenSkill={
+                  agentId
+                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    : undefined
+                }
+              />
             )}
           </div>
         </>

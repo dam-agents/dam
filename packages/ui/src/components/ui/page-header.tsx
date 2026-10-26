@@ -2,8 +2,6 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { useNewLayout } from "../../modules/features/hooks/use-new-layout.js";
-
 export const PAGE_TITLE =
   "text-2xl font-semibold tracking-[-0.65px] text-foreground md:text-[28px] md:leading-[1.25]";
 
@@ -13,7 +11,6 @@ interface PageHeaderProps {
   description?: ReactNode;
   actions?: ReactNode;
   adornment?: ReactNode;
-  pictogram?: ReactNode;
   className?: string;
 }
 
@@ -23,10 +20,8 @@ export function PageHeader({
   description,
   actions,
   adornment,
-  pictogram,
   className,
 }: PageHeaderProps) {
-  const newLayout = useNewLayout();
   return (
     <header className={cn("@container mb-8", className)}>
       <div className="flex items-start justify-between gap-4">
@@ -54,14 +49,6 @@ export function PageHeader({
             </p>
           )}
         </div>
-        {newLayout && pictogram && (
-          <span
-            className="hidden shrink-0 text-muted-foreground/70 sm:block"
-            aria-hidden
-          >
-            {pictogram}
-          </span>
-        )}
       </div>
     </header>
   );

@@ -69,7 +69,6 @@ interface CommonProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
-  newLayout?: boolean;
 }
 
 type Props = CommonProps &
@@ -91,13 +90,7 @@ type Props = CommonProps &
  * row that leads to the agent's Providers page.
  */
 export function SessionPairPicker(props: Props) {
-  const {
-    agentId,
-    open,
-    onOpenChange,
-    onConnectProviders,
-    newLayout = false,
-  } = props;
+  const { agentId, open, onOpenChange, onConnectProviders } = props;
   const carried = props.pending ? [] : props.carried;
   const routed = props.pending ? false : (props.routed ?? false);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
@@ -105,7 +98,6 @@ export function SessionPairPicker(props: Props) {
   const { data: catalog } = useHarnessCatalog();
   const picked = useStore((s) => s.nextSessionPair[agentId] ?? null);
   const chosen = picked;
-  const manageProviders = newLayout;
   const setPair = useStore((s) => s.setNextSessionPair);
   const clearPair = useStore((s) => s.clearNextSessionPair);
   const { data: remembered } = useRememberedPair(agentId);
@@ -345,16 +337,12 @@ export function SessionPairPicker(props: Props) {
                 agentId={agentId}
                 harness={harness}
                 carried={carried}
-                sections={
-                  manageProviders
-                    ? sections.filter((p) => attached(p.id))
-                    : sections
-                }
+                sections={sections}
                 attached={attached}
                 pair={pair}
                 pending={pending}
                 harnessName={harnessName(harness)}
-                {...(!manageProviders && { onDisconnect: confirmDisconnect })}
+                onDisconnect={confirmDisconnect}
                 onAttach={attach}
                 onChoose={(id, model) =>
                   choose(withSettings({ harness, provider: id, model }))

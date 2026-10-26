@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The side panel shell draws one column beside the page. JanUI alone decides the shell around the panel: with JanUI on the rail stays on screen over a narrow page even when the panel is closed, and the panel it lays over the page leaves the left rail standing. The Unified right toolbar experiment makes the panel one tab at a time whatever the shell, so a closed panel hides itself on a page with no rail and takes the whole width when it opens, while a page with no experiment keeps the classic column.
+// TEST_OVERVIEW: The side panel shell draws one column beside the page. On a phone the panel is the classic full-screen column: it hides itself while closed and fills the screen while open. A page whose panels live outside the shell gets no column at all.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -7,8 +7,6 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 
 const fake = vi.hoisted(() => ({
-  janui: false,
-  toolbar: false,
   desktop: false,
   store: {
     dock: null,
@@ -33,12 +31,6 @@ vi.mock("../../store.js", () => ({
 }));
 vi.mock("@/hooks/use-is-desktop", () => ({
   useIsDesktop: () => fake.desktop,
-}));
-vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
-  useNewLayout: () => fake.janui,
-}));
-vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
-  useUnifiedRightToolbar: () => fake.toolbar,
 }));
 
 const { SidePanelShell } =
@@ -90,40 +82,11 @@ function panelClasses(activeTab: "files" | null): string[] {
 }
 
 beforeEach(() => {
-  fake.janui = false;
-  fake.toolbar = false;
   fake.desktop = false;
 });
 
-// TEST_SCENARIO: with JanUI on the rail is the only way into the panel on a phone, so it stays on screen and in the page's own row while the panel is closed, and only an open panel takes the inset that leaves the left rail standing.
-it("keeps the JanUI rail on screen while the panel is closed", () => {
-  fake.janui = true;
-  const closed = panelClasses(null);
-  expect(closed).not.toContain("max-md:fixed");
-  expect(closed).not.toContain("max-md:left-14");
-  expect(closed).not.toContain("max-md:hidden");
-
-  const open = panelClasses("files");
-  expect(open).toContain("max-md:fixed");
-  expect(open).toContain("max-md:left-14");
-});
-
-// TEST_SCENARIO: the toolbar alone makes the panel one tab at a time on a page with no rail: the closed panel hides itself, and the open one takes the whole width.
-it("hides the toolbar-only panel on a phone until it opens", () => {
-  fake.toolbar = true;
-  const closed = panelClasses(null);
-  expect(closed).toContain("max-md:hidden");
-  expect(closed).not.toContain("max-md:left-14");
-
-  const open = panelClasses("files");
-  expect(open).toContain("max-md:fixed");
-  expect(open).toContain("max-md:left-0");
-  expect(open).not.toContain("max-md:left-14");
-  expect(open).not.toContain("max-md:hidden");
-});
-
-// TEST_SCENARIO: with both experiments off the panel stays the classic full-screen column, whether or not it is open.
-it("keeps the classic column with both experiments off", () => {
+// TEST_SCENARIO: the panel stays the classic full-screen column, whether or not it is open.
+it("keeps the classic column", () => {
   expect(panelClasses("files")).toContain("max-md:inset-0");
   expect(panelClasses(null)).toContain("max-md:hidden");
 });

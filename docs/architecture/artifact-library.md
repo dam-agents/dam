@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -199,11 +199,10 @@ flowchart LR
 
 ## UI surfaces
 
-- The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens except while the Unified right toolbar offers that tab on every page; an artifact opened there docks in the side panel on the right.
+- The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens; an artifact opened there docks in the side panel on the right.
   The page shows the same list as the side panel's **Artifacts tab**, which an Agent's configuration page offers, scoped to that Agent; other pages outside an Agent's chat leave the tab out, so the library is never open twice.
   On a phone, the configuration page's top bar has the Artifacts button that opens that tab.
-  With the `new-layout` or `unified-right-toolbar` experiment on, every page offers the tab, with the whole library, and Home's Artifacts card opens it; the toolbar draws it whatever shell the page has.
-  In an Agent's chat the side panel is part of those [experiments](features.md): with either on, the chat has the same Artifacts tab in its side panel; with both off, the list is an **Artifacts section** in the column beside the conversation, under Files.
+  In an Agent's chat the list is an **Artifacts section** in the column beside the conversation, under Files.
   In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
   While the library holds no artifact and no folder, the page shows an introduction instead of the list, with Create agent and Upload artifact; a list that fails to load still shows the list's retry.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.

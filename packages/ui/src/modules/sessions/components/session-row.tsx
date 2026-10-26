@@ -2,8 +2,6 @@ import {
   Download,
   Edit,
   Pen,
-  Pin,
-  PinFilled,
   Terminal,
   Time,
   TrashCan,
@@ -70,15 +68,6 @@ interface Props {
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SpendSessionRow;
   conversation?: ReactNode;
-  metaLead?: ReactNode;
-  leading?: ReactNode;
-  titleIcon?: ReactNode;
-  harnessIcon?: ReactNode;
-  activityIndicators?: boolean;
-  repositoryBadges?: boolean;
-  pinned?: boolean;
-  quietPin?: boolean;
-  onTogglePin?: () => void;
   onResume: () => void;
   onPrefetch?: () => void;
   onRename: () => void;
@@ -97,15 +86,6 @@ export function SessionRow({
   backgroundWork = NO_WORK,
   cost,
   conversation,
-  metaLead,
-  leading,
-  titleIcon,
-  harnessIcon,
-  activityIndicators = true,
-  repositoryBadges = true,
-  pinned = false,
-  quietPin = false,
-  onTogglePin,
   onResume,
   onPrefetch,
   onRename,
@@ -155,8 +135,6 @@ export function SessionRow({
         : null;
 
   const menuProps = {
-    pinned,
-    ...(onTogglePin && { onTogglePin }),
     ...(onExportTimeline && { onExportTimeline }),
     onRename: () => {
       afterMenu.current = onRename;
@@ -192,7 +170,6 @@ export function SessionRow({
           onPointerLeave={endDwell}
           onFocus={onPrefetch}
         >
-          {leading}
           <div className="flex-1 min-w-0 flex flex-col gap-0.5">
             <div className="flex items-center gap-1.5">
               <button
@@ -204,11 +181,6 @@ export function SessionRow({
                 aria-describedby={metaId}
                 className="flex min-w-0 items-center gap-1.5 text-left outline-none"
               >
-                {titleIcon && (
-                  <span aria-hidden className="flex shrink-0">
-                    {titleIcon}
-                  </span>
-                )}
                 <span className={`text-sm min-w-0 truncate ${titleClass}`}>
                   {titleLabel}
                 </span>
@@ -226,42 +198,27 @@ export function SessionRow({
                   )
                 )}
               </button>
-              {pinned && !quietPin && (
-                <PinFilled
-                  size={12}
-                  aria-label="Pinned"
-                  className={cn(
-                    "ml-auto shrink-0 text-muted-foreground group-has-[[data-row-actions]_:focus-visible]:hidden group-has-[[data-row-actions]_[data-state=open]]:hidden hover-capable:group-hover:hidden",
-                    onTogglePin && "[@media(hover:none)]:hidden",
-                  )}
-                />
-              )}
               <div
                 className={cn(
                   "flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]",
-                  pinned && !quietPin ? "ml-1" : "ml-auto",
+                  "ml-auto",
                 )}
               >
                 <SessionIndicators
-                  harnessIcon={harnessIcon}
                   scheduled={scheduled}
                   terminal={terminal}
                   messenger={messenger}
-                  {...(activityIndicators && {
-                    needsApproval,
-                    working,
-                    draft,
-                    backgroundWork,
-                    unread,
-                  })}
+                  needsApproval={needsApproval}
+                  working={working}
+                  draft={draft}
+                  backgroundWork={backgroundWork}
+                  unread={unread}
                 />
                 <div
                   data-row-actions
                   className={cn(
                     "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
                     HOVER_ACTION,
-                    quietPin &&
-                      "hover-capable:group-has-[:focus-visible]:w-auto group-has-[:focus-visible]:opacity-100",
                   )}
                 >
                   <RowActionsMenu
@@ -290,7 +247,6 @@ export function SessionRow({
               id={metaId}
               className="text-2xs text-muted-foreground truncate"
             >
-              {metaLead}
               <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
                 {timeAgo(s.updatedAt ?? s.createdAt)}
               </span>
@@ -323,7 +279,7 @@ export function SessionRow({
                 </>
               )}
             </span>
-            {repositoryBadges && badges.length > 0 && (
+            {badges.length > 0 && (
               <SessionRepositoryBadges repositories={badges} />
             )}
           </div>
@@ -338,15 +294,11 @@ export function SessionRow({
 
 function SessionMenuItems({
   menu,
-  pinned,
-  onTogglePin,
   onExportTimeline,
   onRename,
   onDelete,
 }: {
   menu: keyof typeof MENU_PARTS;
-  pinned: boolean;
-  onTogglePin?: (() => void) | undefined;
   onExportTimeline?: (() => void) | undefined;
   onRename: () => void;
   onDelete: () => void;
@@ -354,12 +306,6 @@ function SessionMenuItems({
   const { Item } = MENU_PARTS[menu];
   return (
     <>
-      {onTogglePin && (
-        <Item data-testid="session-pin-button" onSelect={() => onTogglePin()}>
-          {pinned ? <PinFilled size={14} /> : <Pin size={14} />}{" "}
-          {pinned ? "Unpin session" : "Pin to top"}
-        </Item>
-      )}
       {onExportTimeline && (
         <Item
           data-testid="session-export-timeline-button"
@@ -383,7 +329,6 @@ function SessionMenuItems({
 }
 
 function SessionIndicators({
-  harnessIcon,
   scheduled,
   terminal,
   messenger,
@@ -393,7 +338,6 @@ function SessionIndicators({
   backgroundWork = NO_WORK,
   unread = false,
 }: {
-  harnessIcon?: ReactNode;
   scheduled: boolean;
   terminal: boolean;
   messenger: ChannelType | null;
@@ -405,7 +349,6 @@ function SessionIndicators({
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
-    !harnessIcon &&
     !scheduled &&
     !terminal &&
     !messenger &&
@@ -420,7 +363,6 @@ function SessionIndicators({
     <span
       className={cn("flex shrink-0 items-center gap-2.5 pl-2", HOVER_YIELD)}
     >
-      {harnessIcon}
       {terminal && (
         <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}

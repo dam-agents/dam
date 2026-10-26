@@ -53,14 +53,12 @@ export function SandboxHomeHeader({
   agent,
   title,
   description,
-  pictogram,
   actions,
   showUpdate = true,
 }: {
   agent: AgentView;
   title: string;
   description?: string;
-  pictogram?: ReactNode;
   actions?: ReactNode;
   showUpdate?: boolean;
 }) {
@@ -69,7 +67,6 @@ export function SandboxHomeHeader({
     <PageHeader
       title={title}
       description={description}
-      pictogram={pictogram}
       actions={
         <>
           {showUpdate && (

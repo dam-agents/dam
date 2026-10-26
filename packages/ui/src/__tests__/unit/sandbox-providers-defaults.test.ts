@@ -16,12 +16,8 @@ const state = vi.hoisted(() => ({
   operable: true,
   comingUp: false,
   hasRun: true,
-  newLayout: false,
 }));
 
-vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
-  useNewLayout: () => state.newLayout,
-}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
     select({ navigateToSettings: vi.fn(), showConfirm: vi.fn() }),
@@ -230,26 +226,6 @@ describe("agent default on a runtime that routes by model name", () => {
       /aria-label="Model"[^>]*><span[^>]*>gpt-5.5 · OpenAI</,
     );
     expect(html).not.toContain('aria-label="Provider"');
-    state.routed = false;
-  });
-});
-
-describe("JanUI's Providers page", () => {
-  // TEST_SCENARIO: the new layout renders the same three session defaults as the standard one, so a channel or a schedule can be given its own harness, provider and model there too.
-  it("shows the chat, channel and scheduled defaults", () => {
-    state.routed = true;
-    state.remembered = {
-      harness: "codex",
-      provider: "oai",
-      model: "openai/gpt-5.5",
-    };
-    state.newLayout = true;
-    const html = renderSection();
-    expect(html).toContain("Chat sessions");
-    expect(html).toContain("Channel sessions");
-    expect(html).toContain("Scheduled sessions");
-    expect(html).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Codex</);
-    state.newLayout = false;
     state.routed = false;
   });
 });

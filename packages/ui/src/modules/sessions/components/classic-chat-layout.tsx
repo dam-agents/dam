@@ -53,9 +53,8 @@ function PanelDivider({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The chat view's layout while the new-layout
- * experiment is off, as it was before the side panel and its icon bar: a top
- * bar with the Agent's identity and status, a resizable column of Files,
+ * UNIT_BOUNDARY_DESCRIPTION: The chat view's layout: a top bar with the
+ * Agent's identity and status, a resizable column of Files,
  * Artifacts and Processes sections on the left, the conversation in the
  * middle, and the docked item on the right, beside the conversation. Get
  * started opens in that right-hand slot from the top bar and hides the docked

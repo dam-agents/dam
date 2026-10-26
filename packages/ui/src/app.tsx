@@ -10,13 +10,9 @@ import { cn } from "./lib/utils.js";
 import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
-import { holds } from "./modules/agents/lib/agent-permissions.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { SignInFollowUp } from "./modules/connections/components/sign-in-follow-up.js";
 import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
-import { useFeatures } from "./modules/features/api/queries.js";
-import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
-import { useUnifiedRightToolbar } from "./modules/features/hooks/use-unified-right-toolbar.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -27,7 +23,6 @@ import {
 import { AppTopBar } from "./modules/platform/components/sidebar/app-top-bar.js";
 import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-nav-drawer.js";
 import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
-import { SidebarV2 } from "./modules/platform/components/sidebar-v2/sidebar.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
 import { applyTheme } from "./modules/platform/store/theme.js";
@@ -143,38 +138,10 @@ function SkipLink() {
   );
 }
 
-function AppSidebar() {
-  return useNewLayout() ? <SidebarV2 /> : <Sidebar />;
-}
-
 function MainApp() {
   const view = useStore((s) => s.view);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
   const desktop = useIsDesktop();
-
-  const newLayout = useNewLayout();
-  const rightToolbar = useUnifiedRightToolbar();
-  const setUnifiedToolbar = useStore((s) => s.setUnifiedToolbar);
-  // UNIT_BOUNDARY_DESCRIPTION: code that is not a component reads the experiment from the store, so the store takes only the install's answer — never the value this browser stored last — and a link clicked while the flags load keeps opening the page the install says.
-  const flags = useFeatures();
-  useEffect(() => {
-    if (flags.isSuccess)
-      setUnifiedToolbar(flags.data?.["unified-right-toolbar"] === true);
-  }, [flags.isSuccess, flags.data, setUnifiedToolbar]);
-  const selectedAgent = useStore((s) => s.selectedAgent);
-  const selected = useAgent(selectedAgent);
-  const setChatBarred = useStore((s) => s.setChatBarred);
-  const barred = selected !== null && !holds(selected.access, "sessions");
-  useEffect(() => setChatBarred(barred), [barred, setChatBarred]);
-  const classic = !newLayout && !rightToolbar;
-  useEffect(() => {
-    if (newLayout) document.documentElement.dataset.layout = "new";
-    else delete document.documentElement.dataset.layout;
-  }, [newLayout]);
-  useEffect(() => {
-    if (rightToolbar) document.documentElement.dataset.rightToolbar = "new";
-    else delete document.documentElement.dataset.rightToolbar;
-  }, [rightToolbar]);
 
   useLiveEvents();
   useSyncRestartingAgents();
@@ -209,7 +176,7 @@ function MainApp() {
       <>
         <SkipLink />
         <div className="flex h-dvh bg-background overflow-hidden">
-          <AppSidebar />
+          <Sidebar />
           <main
             id="main"
             tabIndex={-1}
@@ -230,18 +197,17 @@ function MainApp() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <SkipLink />
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <AppSidebar />
+        <Sidebar />
         <AppSidePanelHost>
           <main
             id="main"
             tabIndex={-1}
             className="flex flex-1 min-w-0 flex-col overflow-y-auto [scrollbar-gutter:stable] outline-none"
           >
-            {/* UNIT_BOUNDARY_DESCRIPTION: JanUI's rail is the whole of the navigation and its right rail the whole of the panel, so the bar that stands in for both on a phone has nothing left to do there. */}
-            {!desktop && !newLayout && (
+            {!desktop && (
               <AppTopBar actions={<AppSidePanelButtons withArtifacts />} />
             )}
-            {classic && <ClassicPageActions />}
+            <ClassicPageActions />
             <div
               className={cn(
                 "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
@@ -277,7 +243,7 @@ function MainApp() {
         </AppSidePanelHost>
       </div>
       {kitBrowserOpen && <BrowseKitsModal />}
-      {classic && <ClassicPagePanels />}
+      <ClassicPagePanels />
       <MobileNavDrawer />
       <SignInFollowUp />
       <DialogOverlay />

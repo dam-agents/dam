@@ -9,7 +9,7 @@ import {
 import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
 
 /**
- * TEST_OVERVIEW: With the new-layout experiment off, an Agent's chat keeps the
+ * TEST_OVERVIEW: An Agent's chat keeps the
  * layout from before the side panel: Files, Artifacts and Processes are
  * sections in a column beside the conversation, and the docked item (a file,
  * an artifact, the browser, the changes, a process output or a delegation)
@@ -25,8 +25,6 @@ const SHOWN = hiddenSidePanelTabs({
   canOpenBrowser: true,
   changes: true,
   processesEnabled: true,
-  environments: true,
-  configuration: false,
   gettingStarted: true,
 });
 
@@ -63,8 +61,6 @@ describe("what the right-hand slot shows", () => {
       canOpenBrowser: true,
       changes: true,
       processesEnabled: true,
-      environments: true,
-      configuration: false,
       gettingStarted: false,
     });
     expect(classicPanel("getting-started", hidden, true)).toBe("dock");
