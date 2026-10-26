@@ -85,6 +85,7 @@ import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
 import { useContinuedFrom } from "../../invocations/api/queries.js";
 import {
   DelegationOwnersProvider,
@@ -701,7 +702,7 @@ export function ChatView() {
     browser: shownDock?.kind === "browser" && canOpenBrowser,
     delegation: shownDock?.kind === "delegation",
   };
-  const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
+  const appTabs = useAppSidePanelTabs();
   const changesAvailable = useChangesAvailable(selectedAgent, sessionId);
   const hiddenTabs = hiddenSidePanelTabs({
     agent: true,
@@ -709,15 +710,10 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
-    gettingStarted,
   });
   const dockedTab = dockedItemTab(docked);
   const classicTab = classicAppTab(sidePanelTab, hiddenTabs);
-  const shownClassicPanel = classicPanel(
-    sidePanelTab,
-    hiddenTabs,
-    dockedTab !== null,
-  );
+  const shownClassicPanel = classicPanel(dockedTab !== null);
   const dockedItem = dockedTab && dockKey(shownDock);
   const [phoneHiddenDock, setPhoneHiddenDock] = useState<string | null>(null);
   const dockHiddenOnPhone =
@@ -1239,6 +1235,7 @@ export function ChatView() {
               sessionId={sessionId}
               processesEnabled={processesEnabled}
             />
+            <GettingStartedDock placement="chat" />
             <SidePanelTabButtons
               tabs={appSidePanelTabs(hiddenTabs)}
               active={classicTab}
