@@ -75,6 +75,8 @@ type VMRunnerSpec struct {
 	Seccomp string `json:"seccomp,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: the PriorityClass every runner pod runs under, rendered by the chart above the pods of agents and above the platform's own control plane, which the chart leaves at no class. A node under memory pressure evicts, and a full node preempts, the lowest priority first, and a runner going down takes every machine of its owner with it — a whole owner's agents for one pod — where one agent's machine going down costs one agent. Empty leaves runner pods at the cluster default.
 	PriorityClassName string `json:"priorityClassName,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the memory a machine is given where the controller cannot take half its owner's pool — on the host runner, which admits against a share of the Mac's memory the controller never learns, and on a runner pod whose pool cannot be read. It is the install's, not the Agent's: no agent has a size of its own. Zero keeps the chart's default.
+	MachineMemoryMiB int `json:"machineMemoryMiB,omitempty"`
 }
 
 type VMRunnerClusterDNS struct {
