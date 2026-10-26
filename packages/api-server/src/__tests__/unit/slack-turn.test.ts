@@ -1625,3 +1625,31 @@ describe("slack turn — contract framing and attendance", () => {
     expect(rec.calls).toContain("release:agent-1");
   });
 });
+
+describe("slack turn — session title", () => {
+  /**
+   * TEST_SCENARIO: The reported bug. A Slack session took its title from its
+   * first prompt, which opens with the platform's instructions, so every
+   * Slack session had the same title. A mention that starts a session names
+   * the person's message, without the mention, as the session's title.
+   */
+  it("names the person's message as the title of the session it starts", async () => {
+    const metas: unknown[] = [];
+    const h = harness({
+      sendPrompt: async (_prompt, opts) => {
+        metas.push("platformMeta" in opts ? opts.platformMeta : undefined);
+        return "ok";
+      },
+    });
+
+    await h.mention({ text: "<@UBOT> who owns you?" });
+    await tick();
+
+    expect(metas).toEqual([
+      expect.objectContaining({
+        type: "channel_slack",
+        title: "who owns you?",
+      }),
+    ]);
+  });
+});
