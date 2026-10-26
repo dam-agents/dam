@@ -44,7 +44,8 @@ export type Route =
   | { view: "starter-kits"; category?: StarterKitCategory }
   | { view: "starter-kit"; catalog: string; kit: string }
   | { view: "starter-kit-new"; catalog: string; kit: string }
-  | { view: "artifacts" };
+  | { view: "artifacts" }
+  | { view: "connection-secret" };
 
 export type View = Route["view"];
 
@@ -65,6 +66,16 @@ export function parsePublicAgentPath(pathname: string): string | null {
 
 export function publicAgentPath(agentId: string): string {
   return `/a/${encodeURIComponent(agentId)}`;
+}
+
+export const UNSUPPORTED_PATHS = new Set(["/analytics", "/analytics/"]);
+
+export function isUnsupportedLink(path: string): boolean {
+  return (
+    UNSUPPORTED_PATHS.has(path) ||
+    path === "/starter-kits/linked" ||
+    path.startsWith("/starter-kits/linked/")
+  );
 }
 
 export const RETIRED_PATHS = new Set([
@@ -111,7 +122,9 @@ export function parseRoute(path: string): Route {
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
+  if (isUnsupportedLink(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/connections/secret") return { view: "connection-secret" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const segment = sandboxHomeMatch[2];
@@ -192,6 +205,8 @@ export function routeToPath(route: Route): string {
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}/new`;
     case "artifacts":
       return "/artifacts";
+    case "connection-secret":
+      return "/connections/secret";
     default: {
       const unhandled: never = route;
       return unhandled;
