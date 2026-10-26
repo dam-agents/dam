@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDam, spawnDam } from "./run-dam.js";
 import { ownedAgents } from "./owned-agents.js";
+import { signInEnv, writeSavedSignIns } from "./saved-sign-ins.js";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import {
@@ -270,6 +271,29 @@ describe("dam agent list (integration)", () => {
       expect(r.exitCode).toBe(0);
       expect(r.stdout).toContain("demo");
       expect(r.stdout).toContain("NAME");
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  /** TEST_SCENARIO: AC-5 — the server was saved with a trailing slash, and `--server` names it without one. The saved sign-in is found and used, instead of "not logged in". */
+  it("--server without the trailing slash finds the sign-in saved with one", async () => {
+    const fixture = await startFixture({
+      list: async () => [makeAgent({ name: "dev-agent" })],
+      expectAuthorization: "Bearer saved-access",
+    });
+    try {
+      await writeSavedSignIns(home, [{ host: `${fixture.url}/` }]);
+
+      const r = await runDam(
+        ["agent", "list", "--server", fixture.url, "--json"],
+        signInEnv(home),
+      );
+
+      expect(r.exitCode, r.stderr).toBe(0);
+      expect(JSON.parse(r.stdout)).toEqual([
+        expect.objectContaining({ name: "dev-agent" }),
+      ]);
     } finally {
       await fixture.close();
     }
