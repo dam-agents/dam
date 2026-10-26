@@ -79,7 +79,7 @@ test.afterAll(async () => {
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: with the experiment off, the user sees the current layout: no sidebar tree, and Home lists the Agents as rows.
+// TEST_SCENARIO: with the experiment off, the user sees the current layout: no sidebar tree, Home lists the Agents as rows, and no icon column takes room beside the page. The Get started ring and the approvals bell sit in the page's own top corner, and the bell opens its approvals as a drawer over the page, not a column beside it.
 test("keeps the current layout while the experiment is off", async ({
   page,
 }) => {
@@ -88,7 +88,16 @@ test("keeps the current layout while the experiment is off", async ({
   await openHome(page);
   await expect(page.getByTestId("agent-row").first()).toBeVisible();
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
+  await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
   await expect(page.getByTestId("side-panel-tab-artifacts")).toHaveCount(0);
+
+  const bell = page.getByTestId("side-panel-tab-approvals");
+  await expect(bell).toBeVisible();
+  await bell.click();
+  const drawer = page.getByRole("dialog", { name: "Approvals" });
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "Close approvals" }).click();
+  await expect(drawer).toHaveCount(0);
 });
 
 // TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Documentation and Artifacts, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar without Documentation. On a phone the bar stays inside the viewport with the panel closed, whichever flag draws it.

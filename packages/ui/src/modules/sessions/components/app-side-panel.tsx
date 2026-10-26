@@ -14,6 +14,7 @@ import {
   hiddenSidePanelTabs,
   NOTHING_DOCKED,
   selectSidePanelTab,
+  type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
 import {
@@ -25,8 +26,10 @@ import { SidePanelShell } from "./side-panel-shell.js";
 
 export function AppSidePanelButtons({
   withArtifacts = false,
+  onDesktop = false,
 }: {
   withArtifacts?: boolean;
+  onDesktop?: boolean;
 }) {
   const { gettingStarted, ...tabs } = useAppSidePanelTabs();
   const openSidePanel = useOpenSidePanel();
@@ -34,7 +37,7 @@ export function AppSidePanelButtons({
   const view = useStore((s) => s.view);
   const newLayout = useNewLayout();
   const rightToolbar = useUnifiedRightToolbar();
-  if (desktop) return null;
+  if (desktop && !onDesktop) return null;
   return (
     <SidePanelTabButtons
       tabs={appSidePanelTabs(
@@ -77,6 +80,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const agentId = useStore((s) => s.agentId);
   const newLayout = useNewLayout();
   const rightToolbar = useUnifiedRightToolbar();
+  const classic = !newLayout && !rightToolbar;
   const { gettingStarted, ...tabs } = useAppSidePanelTabs();
   const hidden = hiddenSidePanelTabs({
     agent: false,
@@ -87,19 +91,27 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
     environments: false,
     gettingStarted,
   });
+  // UNIT_BOUNDARY_DESCRIPTION: the current layout offers Get started and Approvals as drawers over the page, not as side-panel tabs, so the shell's bar holds only the tabs it still opens; the drawers read the same store tab.
+  const shellHidden = classic
+    ? new Set<SidePanelTab>([...hidden, "getting-started", "approvals"])
+    : hidden;
   const activeTab =
     view === "artifacts" &&
     openArtifactId !== null &&
     sidePanelTab === "artifacts"
       ? "artifacts"
-      : visibleSidePanelTab(sidePanelTab, NOTHING_DOCKED, hidden);
+      : visibleSidePanelTab(sidePanelTab, NOTHING_DOCKED, shellHidden);
   const dockedShown = openArtifactId !== null && activeTab === "artifacts";
+  const dockedKept = openArtifactId !== null && (dockedShown || artifactDirty);
+
+  if (classic && activeTab === null && openArtifactId === null)
+    return <>{children}</>;
 
   return (
     <SidePanelShell
       mainClassName="z-content"
       activeTab={activeTab}
-      hiddenTabs={hidden}
+      hiddenTabs={shellHidden}
       onSelectTab={(tab) =>
         setSidePanelTab(
           selectSidePanelTab(tab, activeTab, NOTHING_DOCKED).kind === "collapse"
@@ -109,12 +121,12 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
       }
       {...tabs}
       dockedShown={dockedShown}
-      dockedKept={openArtifactId !== null && (dockedShown || artifactDirty)}
+      dockedKept={dockedKept}
       mobileTitle={SIDE_PANEL_TABS.find((t) => t.tab === activeTab)?.label}
       mobileBackLabel="Close side panel"
       panel={
         activeTab === "artifacts" &&
-        !hidden.has("artifacts") && (
+        !shellHidden.has("artifacts") && (
           <ChatArtifactsPanel
             agentId={newLayout || view !== "sandbox-home" ? null : agentId}
             open
