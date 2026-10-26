@@ -1585,6 +1585,7 @@ function SidebarChecklist({ expanded }: { expanded: boolean }) {
   const { done, total, celebrating, finished } = useChecklistState();
   const [open, setOpen] = useState(false);
   const prevCelebrating = useRef(false);
+  const prevLanding = useRef(false);
 
   useEffect(() => {
     if (celebrating && !prevCelebrating.current) {
@@ -1592,6 +1593,13 @@ function SidebarChecklist({ expanded }: { expanded: boolean }) {
     }
     prevCelebrating.current = !!celebrating;
   }, [celebrating]);
+
+  useEffect(() => {
+    if (ctx?.firstLanding && !prevLanding.current) {
+      setOpen(true);
+    }
+    prevLanding.current = !!ctx?.firstLanding;
+  }, [ctx?.firstLanding]);
 
   if (!ctx?.firstLanding || finished) return null;
 

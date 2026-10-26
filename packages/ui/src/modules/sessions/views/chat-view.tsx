@@ -1014,12 +1014,12 @@ function CurveBenderBudget({
 
   const popover = budgetExhausted
     ? {
-        title: "Budget up",
+        title: "Budget used up — 0% remaining",
         body: "Your free budget has been used up. Change your provider to keep going.",
       }
     : isLow
       ? {
-          title: "10% Remaining budget",
+          title: `${pct}% remaining`,
           body: "You’re running low on free budget. Change your provider before it runs out.",
         }
       : firstLanding
@@ -1029,7 +1029,22 @@ function CurveBenderBudget({
           }
         : null;
 
-  const label = budgetExhausted ? "Budget used up" : `${pct}% remaining`;
+  const [open, setOpen] = useState(!!popover);
+  const prevKey = useRef<string | null>(null);
+  const key = budgetExhausted
+    ? "exhausted"
+    : isLow
+      ? "low"
+      : firstLanding
+        ? "landing"
+        : null;
+
+  useEffect(() => {
+    if (key && key !== prevKey.current) setOpen(true);
+    prevKey.current = key;
+  }, [key]);
+
+  const label = budgetExhausted ? "0% remaining" : `${pct}% remaining`;
 
   const trigger = (
     <button
@@ -1048,7 +1063,7 @@ function CurveBenderBudget({
   if (!popover) return trigger;
 
   return (
-    <Popover defaultOpen>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent side="top" align="end" className="w-64 p-3">
         <div className="flex items-center gap-1.5">
