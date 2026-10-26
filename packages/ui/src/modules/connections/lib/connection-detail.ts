@@ -4,7 +4,7 @@ import { connectionScopeSummary, fullAccessLine } from "./github-access.js";
 
 export interface ConnectionDetail {
   account?: string;
-  reach?: { text: string; fullAccess: boolean };
+  reach?: { text: string; fullAccess: boolean; title?: string };
 }
 
 type DetailedConnection = Pick<
@@ -35,8 +35,14 @@ export function connectionDetail(
       reach: { text: fullAccessLine(connection), fullAccess: true },
     };
   const scope = connectionScopeSummary(connection);
+  if (!scope) return { account };
+  const listed = connectionScopeSummary(connection, "list");
   return {
     account,
-    ...(scope ? { reach: { text: scope, fullAccess: false } } : {}),
+    reach: {
+      text: scope,
+      fullAccess: false,
+      ...(listed && listed !== scope ? { title: listed } : {}),
+    },
   };
 }

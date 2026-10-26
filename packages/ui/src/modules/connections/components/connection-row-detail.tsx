@@ -19,7 +19,7 @@ export function ConnectionRowDetail({
         "mt-0.5 truncate text-xs text-muted-foreground",
         indented && "pl-6",
       )}
-      title={[account, reach?.text].filter(Boolean).join(" · ")}
+      title={[account, reach?.title ?? reach?.text].filter(Boolean).join(" · ")}
       data-testid={`catalog-connection-account-${connection.id}`}
     >
       {account}

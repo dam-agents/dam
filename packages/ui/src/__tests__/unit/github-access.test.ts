@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: what a GitHub connection made from a sign-in or an installation reaches, as its row says it: the account, the repositories by name when known or else by count, and the permissions; or a full-access line in the danger tone. The scope dialogs send full access only as an explicit flag, and a narrowed choice with nothing chosen sends nothing.
+// TEST_OVERVIEW: what a GitHub connection made from a sign-in or an installation reaches, as its row says it: the account, the repositories by name when known or else by count, and how many permissions, each one listed only in the row's tooltip and on the secret-entry page; or a full-access line in the danger tone. The scope dialogs send full access only as an explicit flag, and a narrowed choice with nothing chosen sends nothing.
 import type { ConnectionView } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -13,7 +13,7 @@ const view = (fields: Partial<ConnectionView>): ConnectionView =>
   ({ id: "c", name: "c", authKind: "oauth", ...fields }) as ConnectionView;
 
 describe("connection scope summary", () => {
-  it("says the account, the repository names and the permissions of a sign-in connection", () => {
+  it("says the account, the repository names and how many permissions a sign-in connection has", () => {
     expect(
       connectionScopeSummary(
         view({
@@ -28,7 +28,51 @@ describe("connection scope summary", () => {
           },
         }),
       ),
-    ).toBe("acme · api, web · contents: read, issues: write");
+    ).toBe("acme · api, web · 2 permissions");
+  });
+
+  it("says one permission in the singular", () => {
+    expect(
+      connectionScopeSummary(
+        view({
+          githubUserToken: {
+            scope: { targetId: 1, permissions: { issues: "write" } },
+          },
+        }),
+      ),
+    ).toBe("account 1 · all repositories · 1 permission");
+  });
+
+  it("counts the permissions of an installation connection", () => {
+    expect(
+      connectionScopeSummary(
+        view({
+          authKind: "github-app",
+          githubAppScope: {
+            repositories: ["api"],
+            permissions: { contents: "read", issues: "write", pulls: "write" },
+          },
+          check: { status: "passed", at: "x", installedOn: "acme" },
+        }),
+      ),
+    ).toBe("acme · api · 3 permissions");
+  });
+
+  it("lists each permission when asked to", () => {
+    expect(
+      connectionScopeSummary(
+        view({
+          githubUserToken: {
+            scope: {
+              targetId: 1,
+              targetLogin: "acme",
+              permissions: { issues: "write", contents: "read" },
+            },
+          },
+        }),
+        "list",
+      ),
+    ).toBe("acme · all repositories · contents: read, issues: write");
   });
 
   it("counts repositories it knows only by id", () => {
@@ -88,6 +132,46 @@ describe("connection row detail", () => {
       reach: {
         text: "Full access — everything the app can reach on every account",
         fullAccess: true,
+      },
+    });
+  });
+
+  // TEST_SCENARIO: the row counts the permissions, and its tooltip lists them, so the line stays short and each permission can still be read on hover.
+  it("lists the permissions in the tooltip of a row that counts them", () => {
+    expect(
+      connectionDetail(
+        view({
+          accountLabel: "octocat",
+          githubUserToken: {
+            scope: {
+              targetId: 1,
+              targetLogin: "acme",
+              permissions: { issues: "write", contents: "read" },
+            },
+          },
+        }),
+      ),
+    ).toEqual({
+      account: "Acts as octocat",
+      reach: {
+        text: "acme · all repositories · 2 permissions",
+        fullAccess: false,
+        title: "acme · all repositories · contents: read, issues: write",
+      },
+    });
+  });
+
+  it("gives no tooltip of its own when no permission is narrowed", () => {
+    expect(
+      connectionDetail(
+        view({
+          githubUserToken: { scope: { targetId: 1, targetLogin: "acme" } },
+        }),
+      ),
+    ).toEqual({
+      reach: {
+        text: "acme · all repositories · all permissions",
+        fullAccess: false,
       },
     });
   });
