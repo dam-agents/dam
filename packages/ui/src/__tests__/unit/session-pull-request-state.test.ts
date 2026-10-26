@@ -42,7 +42,7 @@ describe("pull request badge state", () => {
       struck: false,
     });
     expect(of("pending")).toMatchObject({
-      variant: "warning",
+      variant: "pending",
       label: "Review pending",
     });
     expect(of("approved")).toMatchObject({

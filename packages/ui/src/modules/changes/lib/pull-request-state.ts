@@ -16,7 +16,7 @@ export function pullRequestStatus(link: PullRequestLink): PullRequestStatus {
   const review = match(link.state)
     .with("draft", () => ({ variant: "muted" as const, label: "Draft" }))
     .with("pending", () => ({
-      variant: "warning" as const,
+      variant: "pending" as const,
       label: "Review pending",
     }))
     .with("approved", () => ({
