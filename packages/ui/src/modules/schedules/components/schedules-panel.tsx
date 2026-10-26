@@ -21,6 +21,7 @@ type FormState =
 export function SchedulesPanel({
   agentId,
   header,
+  panel = false,
   onResumeSession,
   focusId,
   onFocusApplied,
@@ -28,6 +29,7 @@ export function SchedulesPanel({
 }: {
   agentId: string;
   header: SectionHeaderSlot;
+  panel?: boolean;
   onResumeSession: (sessionId: string) => void;
   focusId?: string | null;
   onFocusApplied?: () => void;
@@ -91,6 +93,7 @@ export function SchedulesPanel({
         onNew={() => setForm({ mode: "create" })}
         newLabel="Create schedule"
         newTestId="schedule-new"
+        addInHeader={panel}
         addRow={
           <AddRow
             onClick={() => setForm({ mode: "create" })}

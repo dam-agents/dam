@@ -57,6 +57,7 @@ export function SlackChannelCard({
         newDisabled={!agent}
         newTestId="slack-connect"
         newLabel="Add Slack channel"
+        addInHeader={withWhisper}
         isEmpty={!agent || slackChannels.length === 0}
         empty="No channels connected yet. Mentions of the bot in a connected channel drive this agent."
         addRow={

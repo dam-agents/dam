@@ -26,6 +26,7 @@ import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
 
 export function SkillsSurface({
+  panel = false,
   agentId,
   agentState,
   agentDisabled = false,
@@ -41,6 +42,7 @@ export function SkillsSurface({
   comingUp?: boolean;
   managesLibrary: boolean;
   canPublish: boolean;
+  panel?: boolean;
 }) {
   const isError = agentState === "error";
   const rightToolbar = useUnifiedRightToolbar();
@@ -202,6 +204,7 @@ export function SkillsSurface({
                     : undefined
                 }
                 trackTargets={trackTargets}
+                addInHeader={panel}
                 onUpload={
                   dropEnabled
                     ? () =>
@@ -233,6 +236,7 @@ export function SkillsSurface({
                 setOpenModal({ kind: "render", source, skill })
               }
               onAddSets={() => setOpenModal({ kind: "add-sets" })}
+              panel={panel}
               onToggleAll={(src, on, scope) =>
                 void toggleAllWithConfirm(src, on, scope)
               }

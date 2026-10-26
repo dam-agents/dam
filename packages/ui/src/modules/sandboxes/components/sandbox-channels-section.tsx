@@ -55,7 +55,11 @@ export function SandboxChannelsSection({
         />
       )}
       {available.telegram && (
-        <TelegramChannelCard agentId={agentId} readOnly={readOnly} />
+        <TelegramChannelCard
+          agentId={agentId}
+          readOnly={readOnly}
+          compact={compact}
+        />
       )}
     </>
   );

@@ -1,11 +1,10 @@
-import { ChevronDown, ChevronUp, Renew, Time } from "@carbon/icons-react";
+import { ChevronDown, ChevronUp } from "@carbon/icons-react";
 import type { Skill, SkillSource } from "api-server-api";
 import { skillKey } from "api-server-api";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl } from "@/lib/git-source";
 
 import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
@@ -19,40 +18,6 @@ import {
   SkillSourceHeader,
 } from "./skill-source-header.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
-
-function ScanFreshness({
-  scannedAt,
-  rescanning,
-  onRescan,
-}: {
-  scannedAt: string;
-  rescanning: boolean;
-  onRescan: () => void;
-}) {
-  return (
-    <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
-      {rescanning ? (
-        <Spinner size={14} label="Re-scanning this source" />
-      ) : (
-        <Time size={13} />
-      )}
-      <span title={formatTimestamp(scannedAt)}>
-        scanned {timeAgo(scannedAt)}
-      </span>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Re-scan this source"
-        tooltip="Re-scan this source"
-        disabled={rescanning}
-        onClick={onRescan}
-        className="text-muted-foreground"
-      >
-        <Renew size={14} />
-      </Button>
-    </span>
-  );
-}
 
 export function SkillSourceCard({
   source,
@@ -141,22 +106,8 @@ export function SkillSourceCard({
         source={source}
         visibility={visibility}
         badgeTitle="Only readable through this agent's GitHub connection"
-        note={
-          loaded && (
-            <span className="shrink-0 text-sm text-muted-foreground">
-              {enabled.length} of {list.length} on
-            </span>
-          )
-        }
       >
         <div className="flex shrink-0 items-center gap-2">
-          {scannedAt && (
-            <ScanFreshness
-              scannedAt={scannedAt}
-              rescanning={revalidating}
-              onRescan={() => void surface.refreshSource(source.id)}
-            />
-          )}
           {!scannedAt && loading && (
             <Spinner size={14} label="Scanning this source" />
           )}
@@ -179,6 +130,7 @@ export function SkillSourceCard({
           )}
           <SkillSourceActions
             source={source}
+            scannedAt={scannedAt}
             busy={loading || revalidating}
             onRescan={() => void surface.refreshSource(source.id)}
             onRemove={onRemove}

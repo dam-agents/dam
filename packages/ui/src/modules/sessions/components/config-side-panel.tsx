@@ -96,11 +96,12 @@ export function ConfigSidePanel({
               onGoToChannels={() => setSidePanelTab("automations")}
             />
           ))
-          .with("skills", () => <SandboxSkillsSection agent={agent} />)
+          .with("skills", () => <SandboxSkillsSection agent={agent} panel />)
           .with("automations", () => (
             <>
               <SchedulesPanel
                 agentId={agentId}
+                panel
                 header={() => null}
                 onResumeSession={onResumeSession}
                 focusId={focus?.tab === "automations" ? focus.id : null}

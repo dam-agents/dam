@@ -13,8 +13,10 @@ import { cn } from "@/lib/utils";
  * things" block: a label above a rounded card whose rows are split by
  * dividers. Adding a row is itself a row: addRow sits below the card, in the
  * same shape as the page's own rows, and an empty list shows its empty text
- * with the same action button inside the card instead. Adding and editing
- * happen in a modal the caller opens from onNew.
+ * with the same action button inside the card instead; a panel passes
+ * addInHeader so its section carries the one add button on the label's line and
+ * no row of its own. Adding and editing happen in a modal the caller opens
+ * from onNew.
  */
 export function ListSection({
   label,
@@ -31,6 +33,7 @@ export function ListSection({
   loading = false,
   footer,
   separated = false,
+  addInHeader = false,
   className,
   children,
 }: {
@@ -48,11 +51,25 @@ export function ListSection({
   loading?: boolean;
   footer?: ReactNode;
   separated?: boolean;
+  addInHeader?: boolean;
   className?: string;
   children?: ReactNode;
 }) {
-  const newButton = (testId?: string) =>
-    onNew && (
+  const newButton = (testId?: string, look: "outline" | "icon" = "outline") =>
+    onNew &&
+    (look === "icon" ? (
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label={newLabel}
+        tooltip={newLabel}
+        onClick={onNew}
+        disabled={newDisabled}
+        data-testid={testId}
+      >
+        <Add size={16} />
+      </Button>
+    ) : (
       <Button
         variant="outline"
         size="sm"
@@ -63,11 +80,14 @@ export function ListSection({
         <Add size={16} />
         {newLabel}
       </Button>
-    );
+    ));
   return (
     <section className={cn("mb-8", className)}>
-      {(label || headerExtra) && (
-        <SectionHeader label={label}>{headerExtra}</SectionHeader>
+      {(label || headerExtra || (addInHeader && onNew)) && (
+        <SectionHeader label={label}>
+          {addInHeader && newButton(newTestId, "icon")}
+          {headerExtra}
+        </SectionHeader>
       )}
       {description && (
         <p className="mb-3 text-sm text-muted-foreground">{description}</p>
@@ -108,7 +128,7 @@ export function ListSection({
           {footer}
         </Card>
       )}
-      {addRow && !loading && !isEmpty && (
+      {addRow && !addInHeader && !loading && !isEmpty && (
         <Card className="mt-3 overflow-hidden">{addRow}</Card>
       )}
     </section>
