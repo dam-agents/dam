@@ -92,7 +92,14 @@ export function SidebarAgents({
         orderReady={orderActions.ready}
         onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
         onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}
-        onSelect={() => setAgentOpen(agent.id, !open)}
+        onSelect={
+          open
+            ? () => setAgentOpen(agent.id, false)
+            : navigate(() => {
+                setAgentOpen(agent.id, true);
+                startSession(agent.id);
+              })
+        }
         onOpenPeople={navigate(() => navigateToSandboxHome(agent.id, "people"))}
         actionCount={hasChannelActions(available) ? 4 : 3}
         filtered={agentFilters.has(agent.id)}
