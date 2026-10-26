@@ -6,7 +6,8 @@
  * providers whose dialects it speaks, named the way its manifest asks. A
  * failed listing keeps that Connection's last good list and never touches
  * another's. An Anthropic subscription token is listed like the key and
- * offered to Claude Code alone. A Connection the router never serves
+ * offered to Claude Code alone. Bob's gateway is offered to the Bob harness
+ * alone, though Pi speaks its dialect. A Connection the router never serves
  * (Bedrock) is listed as unsupported with no models; a harness that runs it
  * natively sees that Connection's models as its own names, which the router
  * never routes.
@@ -385,7 +386,8 @@ describe("the model catalog", () => {
   /** TEST_SCENARIO: Bob's gateway serves chat completions only, so Claude
    * Code, which speaks Messages, cannot run on it: Claude Code's view says
    * the provider is unsupported rather than listed with no models, while
-   * Bob's own view lists them. */
+   * Bob's own view lists them. Pi speaks chat but is not offered them either,
+   * since the shipped catalog runs the provider on the Bob harness alone. */
   it("marks a listed provider unsupported for a harness it cannot serve", async () => {
     const { catalog } = catalogWith(
       { ...BOTH, "https://bob.example": { ids: ["fast"] } },
@@ -402,6 +404,8 @@ describe("the model catalog", () => {
     });
     expect(bobFor("bob").status).toBe("listed");
     expect(bobFor("bob").models.map((m) => m.upstreamId)).toEqual(["fast"]);
+    expect(bobFor("pi")).toMatchObject({ status: "unsupported", models: [] });
+    expect(catalog.forHarness("pi").map((e) => e.alias)).not.toContain("bob");
   });
 
   /** TEST_SCENARIO: Nothing is listed before the env rail is materialised,
