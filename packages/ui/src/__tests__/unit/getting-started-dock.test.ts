@@ -14,17 +14,20 @@ const fake = vi.hoisted(() => ({
   startTask: vi.fn(),
 }));
 
-vi.mock("../../store.js", () => ({
-  useStore: (select: (s: unknown) => unknown) =>
-    select({
-      checklistExpanded: fake.expanded,
-      setChecklistExpanded: (expanded: boolean) => {
-        fake.expanded = expanded;
-        fake.setExpanded(expanded);
-      },
-      setMobileScreen: () => {},
-    }),
-}));
+vi.mock("../../store.js", () => {
+  const setChecklistExpanded = (expanded: boolean) => {
+    fake.expanded = expanded;
+    fake.setExpanded(expanded);
+  };
+  return {
+    useStore: (select: (s: unknown) => unknown) =>
+      select({
+        checklistExpanded: fake.expanded,
+        setChecklistExpanded,
+        setMobileScreen: () => {},
+      }),
+  };
+});
 vi.mock("../../modules/getting-started/api/queries.js", () => ({
   useGettingStarted: () => ({ data: fake.progress }),
 }));
@@ -209,6 +212,52 @@ it("hangs the dock under the ring of its page", () => {
   expect(layer()?.className).toContain("fixed");
   expect(layer()?.className).toContain("top-[60px]");
   expect(layer()?.className).toContain("md:top-[78px]");
+});
+
+// TEST_SCENARIO: a dock that leaves the page because the last celebration completed the checklist closes itself, so the reset or the next unlock does not open a card nobody asked for.
+it("clears the open flag when the checklist completes", () => {
+  fake.expanded = true;
+  rendered("corner");
+  expect(inDocument("getting-started-dock")).not.toBeNull();
+  fake.progress = {
+    unlocks: ALL_TASKS.map((task, i) => ({
+      task,
+      character: ALL_CHARACTERS[i]!,
+      seen: true,
+      fresh: false,
+      unlockedAt: "2026-01-01",
+    })),
+    dismissed: false,
+  };
+  rerenderAll();
+  expect(inDocument("getting-started-dock")).toBeNull();
+  expect(fake.setExpanded).toHaveBeenCalledWith(false);
+});
+
+// TEST_SCENARIO: a dock that leaves the page because another tab dismissed the checklist closes itself too.
+it("clears the open flag when the checklist is dismissed elsewhere", () => {
+  fake.expanded = true;
+  rendered("corner");
+  expect(inDocument("getting-started-dock")).not.toBeNull();
+  fake.progress = { unlocks: [], dismissed: true };
+  rerenderAll();
+  expect(inDocument("getting-started-dock")).toBeNull();
+  expect(fake.setExpanded).toHaveBeenCalledWith(false);
+});
+
+// TEST_SCENARIO: the avatar picker opens a dismissed checklist in one click: the click clears the dismissal on the server and opens the dock, so the dock must not close itself in the moment the dismissal is still in the cache.
+it("stays open when the avatar picker clears the dismissal", () => {
+  fake.progress = { unlocks: [], dismissed: true };
+  rendered("corner");
+  fake.setExpanded.mockClear();
+  act(() => {
+    fake.expanded = true;
+    rerenderAll();
+  });
+  expect(fake.setExpanded).not.toHaveBeenCalled();
+  fake.progress = { unlocks: [], dismissed: false };
+  rerenderAll();
+  expect(inDocument("getting-started-dock")).not.toBeNull();
 });
 
 // TEST_SCENARIO: a dismissed checklist is gone until the avatar picker asks for it again, and one whose every character is unlocked is gone for good, so the ring leaves the page's corner too.

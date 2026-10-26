@@ -37,7 +37,9 @@ const PANEL_POSITION = {
  * page that scrolls passes under the card either way. The card takes the
  * keyboard while it is open and gives it back to the ring when it closes, as
  * the drawer it replaces did; it does not trap the keyboard, because the page
- * stays reachable and a click there closes it.
+ * stays reachable and a click there closes it. A dock that leaves the page,
+ * because every character is unlocked or another tab dismissed it, drops the
+ * open flag with it, so the reset or the next unlock cannot open it unasked.
  */
 export function GettingStartedDock({
   placement,
@@ -64,6 +66,10 @@ export function GettingStartedDock({
   const wasOpen = useRef(open);
 
   const close = useCallback(() => setExpanded(false), [setExpanded]);
+
+  useEffect(() => {
+    if (!visible) setExpanded(false);
+  }, [visible, setExpanded]);
 
   useEffect(() => {
     if (!open) return;
