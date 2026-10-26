@@ -16,7 +16,7 @@ export function ClassicPageActions() {
   return (
     <div className="pointer-events-none sticky top-0 z-raised hidden justify-end px-4 pt-3 md:flex md:px-6">
       <div className="pointer-events-auto flex items-center gap-1">
-        <AppSidePanelButtons onDesktop />
+        <AppSidePanelButtons onDesktop withArtifacts />
       </div>
     </div>
   );

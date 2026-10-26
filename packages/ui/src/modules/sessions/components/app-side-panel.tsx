@@ -103,13 +103,13 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
       : visibleSidePanelTab(sidePanelTab, NOTHING_DOCKED, shellHidden);
   const dockedShown = openArtifactId !== null && activeTab === "artifacts";
   const dockedKept = openArtifactId !== null && (dockedShown || artifactDirty);
-
-  if (classic && activeTab === null && openArtifactId === null)
-    return <>{children}</>;
+  // UNIT_BOUNDARY_DESCRIPTION: the current layout keeps the page in the shell's column whatever its panel does, so opening a panel never remounts the page; with nothing to show, the shell draws no column at all and the page takes the whole window.
+  const rail = !classic || activeTab !== null || openArtifactId !== null;
 
   return (
     <SidePanelShell
       mainClassName="z-content"
+      rail={rail}
       activeTab={activeTab}
       hiddenTabs={shellHidden}
       onSelectTab={(tab) =>
