@@ -54,6 +54,9 @@ export function TelegramBindView() {
   if (error?.terminal) {
     return <TerminalError copy={error} />;
   }
+  if (flow.isSuccess && !flow.data) {
+    return <TerminalError copy={bindErrorCopy("BAD_REQUEST")} />;
+  }
 
   const pick = (agent: AgentView) => {
     setError(null);

@@ -4,6 +4,7 @@ import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
 import {
   bindErrorCopy,
   callbackErrorCopy,
+  flowIsGone,
   readCallbackErrorFromSearch,
   readFlowIdFromSearch,
 } from "../../modules/slack/lib/bind-flow.js";
@@ -45,6 +46,15 @@ describe("slack bind flow helpers", () => {
       expect(copy.terminal).toBe(true);
       expect(copy.hint).toContain(`/${BRAND} bind`);
     }
+  });
+});
+
+// TEST_SCENARIO: a bind link outlives the flow it names. The query then succeeds with no flow, and the page must end with the expired-link copy instead of an empty picker.
+describe("an expired bind link", () => {
+  it("is a finished query with no flow", () => {
+    expect(flowIsGone({ isSuccess: true, data: null })).toBe(true);
+    expect(flowIsGone({ isSuccess: true, data: { id: "f" } })).toBe(false);
+    expect(flowIsGone({ isSuccess: false, data: undefined })).toBe(false);
   });
 });
 
