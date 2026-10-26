@@ -23,7 +23,7 @@ const carried: HarnessCapability[] = [
         {
           id: "mode",
           name: "Thinking",
-          category: "mode",
+          category: "thought_level",
           default: "low",
           choices: [
             { value: "low", name: "Low" },
@@ -185,8 +185,13 @@ vi.mock("../../modules/profiles/lib/profile-detail.js", () => ({
   profileProviderName: () => "",
 }));
 
-vi.mock("../../modules/profiles/components/save-as-profile.js", () => ({
-  SaveAsProfile: () => null,
+vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
+  useProfileAttach: () => ({ attach: async () => true, manage: () => {} }),
+}));
+
+vi.mock("../../modules/profiles/api/mutations.js", () => ({
+  useCreateProfile: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateProfile: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
@@ -218,7 +223,12 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
               ],
           owned: [
             { id: "ibm", name: "IBM", type: "ibm-litellm" },
-            { id: "curve", name: "Curve", type: "curve-bender" },
+            {
+              id: "curve",
+              name: "Curve",
+              type: "curve-bender",
+              templateId: "curve-bender",
+            },
             ...state.owned,
           ],
         },
@@ -272,10 +282,7 @@ describe("the profile view a routed picker opens on", () => {
     state.catalog = routedCatalog;
   });
 
-  /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on the
-   * model configuration: a primary-model section, a subagent section behind its
-   * toggle, and a custom row that says what it costs. An unavailable profile is
-   * disabled with its reason and the one action that would fix it. */
+  /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on them: a primary-model section, a subagent section behind its toggle, each ending in Custom selection; an unavailable profile is disabled with its reason and the one action that would fix it. */
   it("lists the profiles under both headings, and disables the unavailable one", () => {
     state.chosen = {
       harness: "pi",
@@ -291,8 +298,6 @@ describe("the profile view a routed picker opens on", () => {
         model: "ibm/gpt-5.5",
         settings: {},
         seeded: false,
-        createdAt: "",
-        updatedAt: "",
         usage: { agents: 1, channels: 0, schedules: 0 },
         availability: { available: true, reason: null, attachable: false },
       },
@@ -304,8 +309,6 @@ describe("the profile view a routed picker opens on", () => {
         model: "cb/local",
         settings: {},
         seeded: false,
-        createdAt: "",
-        updatedAt: "",
         usage: { agents: 0, channels: 0, schedules: 0 },
         availability: {
           available: false,
@@ -324,7 +327,6 @@ describe("the profile view a routed picker opens on", () => {
           onConnectProviders: state.connectProviders,
         }),
       );
-      expect(html).toContain("Model configuration");
       expect(html).toContain("Primary model");
       expect(html).toContain("Subagent model");
       expect(html).toContain("Let the agent pick");
@@ -396,13 +398,6 @@ describe("session pair model choices", () => {
     expect(html).toMatch(/<button type="button" disabled=""[^>]*>.*?Codex/);
     expect(html).not.toMatch(/<button type="button" disabled=""[^>]*>.*?Pi</);
     expect(html).toContain('aria-label="Why Codex is unavailable"');
-  });
-
-  it("starts a setting on the harness's configured value over the catalog default", () => {
-    state.configured = { mode: "high", configOptions: {} };
-    expect(renderPicker()).toContain(
-      '<option value="high" selected="">High</option>',
-    );
   });
 
   it("asks before disconnecting a provider, and disconnects only on yes", async () => {
@@ -518,7 +513,6 @@ describe("session pair model choices", () => {
       renderPicker(),
       renderToStaticMarkup(
         createElement(ModelIndicator, {
-          kind: "chat",
           agentId: "agent",
           harness: "pi",
           provider: "ibm",
@@ -589,7 +583,6 @@ describe("session pair model choices", () => {
       state.fetching = true;
       const html = renderToStaticMarkup(
         createElement(ModelIndicator, {
-          kind: "chat",
           agentId: "agent",
           harness: "pi",
           provider: "curve",
@@ -625,7 +618,6 @@ describe("session pair model choices", () => {
       /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(
         renderToStaticMarkup(
           createElement(ModelIndicator, {
-            kind: "chat",
             agentId: "agent",
             harness: "pi",
             provider: "curve",
@@ -825,7 +817,6 @@ describe("one model list on a runtime that routes by model name", () => {
   it("offers every provider's models to a running session", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
-        kind: "chat",
         agentId: "agent",
         harness: "pi",
         provider: "ibm",
@@ -849,7 +840,6 @@ describe("one model list on a runtime that routes by model name", () => {
   it("shows the pretty model name under the composer", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
-        kind: "chat",
         agentId: "agent",
         harness: "pi",
         provider: "curve",
@@ -886,7 +876,6 @@ describe("one model list on a runtime that routes by model name", () => {
     ];
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
-        kind: "chat",
         agentId: "agent",
         harness: "pi",
         provider: null,
@@ -952,7 +941,11 @@ describe("the profile save on a shared agent", () => {
   it("offers the save on an agent the person owns, and not on a shared one", () => {
     profilesState = [];
     state.loading = false;
-    state.owned = [];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
     state.catalogLoaded = true;
     const render = () =>
       renderToStaticMarkup(
@@ -971,6 +964,7 @@ describe("the profile save on a shared agent", () => {
       expect(render()).not.toContain("Save as a profile");
     } finally {
       agentAccess = "owner";
+      state.chosen = null;
     }
   });
 });

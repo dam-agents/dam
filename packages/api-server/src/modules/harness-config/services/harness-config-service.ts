@@ -19,7 +19,6 @@ import type {
   HarnessConfigService,
   HarnessConfigSnapshotPatch,
   ProviderPresetType,
-  RepublishDefaultsResult,
   SessionPair,
 } from "api-server-api";
 import { z } from "zod";
@@ -28,6 +27,7 @@ import {
   qualifiedPairModel,
   sameModelName,
   resolveSessionPair,
+  withPlatformSubagent,
 } from "../domain/session-pair.js";
 import { harnessFits } from "../../templates/index.js";
 import { NoDefaultModelError } from "../domain/no-default-model.js";
@@ -37,7 +37,7 @@ import type { DbTx } from "db";
 import type { HarnessConfigEventQueue } from "../infrastructure/config-event-queue.js";
 import { getLogger } from "../../../core/logger.js";
 import type { PublishSessionDefaults } from "./session-defaults-publisher.js";
-import type { StoredProfileResolver } from "../../profiles/index.js";
+import type { ProfileResolver } from "../../profiles/index.js";
 
 export function createHarnessConfigService(deps: {
   surface: string;
@@ -57,7 +57,7 @@ export function createHarnessConfigService(deps: {
     harness?: string,
   ) => Promise<unknown>;
   publishDefaults: PublishSessionDefaults;
-  profiles: StoredProfileResolver;
+  resolveProfile: ProfileResolver;
 }): HarnessConfigService {
   async function requireOwned(agentId: string): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
@@ -148,11 +148,7 @@ export function createHarnessConfigService(deps: {
 
     async sessionDefaults(agentId) {
       await requireOwned(agentId);
-      const [defaults, references] = await Promise.all([
-        deps.pairRepo.readSaved(agentId),
-        deps.pairRepo.readReferences(agentId),
-      ]);
-      return { ...defaults, chatProfileId: references.sessionProfile ?? null };
+      return deps.pairRepo.readSaved(agentId);
     },
 
     async defaultFor(agentId, kind, harness) {
@@ -172,36 +168,18 @@ export function createHarnessConfigService(deps: {
       return pair ?? null;
     },
 
-    async republishDefaults(agentId): Promise<RepublishDefaultsResult> {
+    async republishDefaults(agentId) {
       await requireOwned(agentId);
-      const references = await deps.pairRepo.readReferences(agentId);
-      if (
-        references.sessionProfile === null &&
-        references.platformSubagentProfile === null
-      )
-        return { published: true };
-      /* UNIT_BOUNDARY_DESCRIPTION: a profile edit is a claim about every agent
-       * that points at it, so each is checked before it is sent anything: an
-       * agent that cannot run the new pair keeps the one it holds, and says
-       * why, rather than being handed a pair its next turn would fail on. */
       const pair = await deps.pairRepo.read(agentId, "chat");
-      if (pair === null)
-        return {
-          published: false,
-          reason: "the profile cannot run on this agent",
-        };
+      if (pair === null) return "the profile cannot run on this agent";
       try {
         await validDefaultPair(agentId, pair);
       } catch (err) {
-        return {
-          published: false,
-          reason:
-            err instanceof Error ? err.message : "the profile cannot run here",
-        };
+        return (err as Error).message;
       }
       await deps.publishDefaults(agentId);
       notifyDefaultChanged(agentId);
-      return { published: true };
+      return null;
     },
 
     async clearSessionDefault(agentId, kind) {
@@ -217,16 +195,11 @@ export function createHarnessConfigService(deps: {
       if (profileId !== null && kind !== "chat")
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message:
-            "only the chat default can name a profile; a channel and a schedule keep their own",
+          message: "only the chat default can name a profile",
         });
-      /* UNIT_BOUNDARY_DESCRIPTION: a reference stands for the pair it resolves
-       * to, so the value written is validated exactly as a picked one, and the
-       * runtime is sent values either way. A reference that cannot run here is
-       * refused at save rather than left to fail every later run. */
-      if (profileId !== null) {
-        const resolved = await deps.profiles.resolveStored({
-          profileId,
+      const owned = async (id: string) => {
+        const resolved = await deps.resolveProfile({
+          profileId: id,
           agentId,
           owner: deps.ownerSub,
         });
@@ -238,41 +211,14 @@ export function createHarnessConfigService(deps: {
         if (resolved.unavailable)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: resolved.unavailable.detail,
+            message: resolved.unavailable,
           });
-        pair = resolved.pair;
-      }
-      const subagentProfileId = references?.platformSubagentProfileId ?? null;
-      if (subagentProfileId !== null) {
-        /* UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot names a profile
-         * of the caller's own, and only its harness and model are taken from it
-         * (D93); its mode and settings belong to the harness that runs it. */
-        const slot = await deps.profiles.resolveStored({
-          profileId: subagentProfileId,
-          agentId,
-          owner: deps.ownerSub,
-        });
-        if (!slot)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "profile not found",
-          });
-        if (slot.unavailable)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: slot.unavailable.detail,
-          });
-        pair = {
-          ...pair,
-          settings: {
-            ...(pair.settings ?? {}),
-            "platformSubagent.harness": slot.pair.harness,
-            ...(slot.pair.model !== null && {
-              "platformSubagent.model": slot.pair.model,
-            }),
-          },
-        };
-      }
+        return resolved.pair;
+      };
+      if (profileId !== null) pair = await owned(profileId);
+      const slotId = references?.platformSubagentProfileId ?? null;
+      if (slotId !== null)
+        pair = withPlatformSubagent(pair, await owned(slotId));
       pair = await validDefaultPair(agentId, pair);
       await deps.pairRepo.write(agentId, kind, pair, references);
       await deps.publishDefaults(agentId);
@@ -280,10 +226,6 @@ export function createHarnessConfigService(deps: {
     },
   };
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the one check a chat default passes whether it
-   * was picked or resolved from a profile: the harness is carried, the provider
-   * is granted and fits, the model is qualified and listed, and every setting
-   * belongs to that harness. */
   async function validDefaultPair(
     agentId: string,
     pair: SessionPair,

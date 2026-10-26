@@ -17,18 +17,6 @@ export type DefaultKind = z.infer<typeof defaultKindSchema>;
 export type SessionDefaults = z.infer<typeof sessionDefaultsSchema>;
 export type SessionDefaultsView = z.infer<typeof sessionDefaultsViewSchema>;
 
-/* UNIT_BOUNDARY_DESCRIPTION: a chat default is a profile reference or an inline
- * pair; a reference names a profile the agent's owner holds, and the runtime is
- * sent the pair it resolves to. */
-export interface SessionPairReferences {
-  profileId?: string | null;
-  platformSubagentProfileId?: string | null;
-}
-
-/** UNIT_BOUNDARY_DESCRIPTION: what a profile edit did for one agent that points at it — republished, or kept its previous pair with the reason it cannot take the new one. */
-export type RepublishDefaultsResult =
-  { published: true } | { published: false; reason: string };
-
 export interface HarnessConfigChange {
   harness?: string;
   model?: string;
@@ -75,14 +63,17 @@ export interface HarnessConfigService {
     agentId: string,
     kind: DefaultKind,
     pair: SessionPair,
-    references?: SessionPairReferences,
+    references?: {
+      profileId?: string | null;
+      platformSubagentProfileId?: string | null;
+    },
   ): Promise<void>;
   clearSessionDefault(
     agentId: string,
     kind: Exclude<DefaultKind, "chat">,
   ): Promise<void>;
-  /** UNIT_BOUNDARY_DESCRIPTION: after a profile an agent points at changed, send that agent its new effective pair, or report why it keeps the one it holds. */
-  republishDefaults(agentId: string): Promise<RepublishDefaultsResult>;
+  /** UNIT_BOUNDARY_DESCRIPTION: after a profile the agent points at changed, sends the agent its new pair, or answers why it keeps the one it holds. */
+  republishDefaults(agentId: string): Promise<string | null>;
   defaultFor(
     agentId: string,
     kind: DefaultKind,

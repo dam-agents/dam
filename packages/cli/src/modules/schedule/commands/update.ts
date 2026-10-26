@@ -60,7 +60,6 @@ export function buildUpdateCommand(deps: {
     host: string,
     ref: string,
   ) => Promise<{ id: string; name: string } | null>;
-  profileName: (host: string, id: string) => Promise<string | null>;
 }): Command {
   return new Command("update")
     .description(
@@ -174,7 +173,6 @@ export function buildUpdateCommand(deps: {
           view,
           opts,
           await profileOrExit(deps, host, opts.profile),
-          (saved) => noteDetach(deps, host, view, saved),
         );
       }
       if (opts.at !== undefined) {
@@ -247,7 +245,7 @@ export function buildUpdateCommand(deps: {
         ...choicesOrExit(opts, view, true, profileId),
       });
       exitOnServiceError(result, host, describeScheduleError);
-      await noteDetach(deps, host, view, result.value);
+      noteDetach(view, result.value);
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
@@ -266,7 +264,6 @@ async function updateOnce(
   view: ScheduleView,
   opts: UpdateOpts,
   profileId: string | null,
-  note: (saved: ScheduleView) => Promise<void>,
 ): Promise<never> {
   const conflicting = recurringFlagsGiven(opts);
   if (conflicting.length > 0) {
@@ -295,7 +292,7 @@ async function updateOnce(
     ...choicesOrExit(opts, view, false, profileId),
   });
   exitOnServiceError(result, host, describeScheduleError);
-  await note(result.value);
+  noteDetach(view, result.value);
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(result.value)}\n`);
   } else {
@@ -306,25 +303,10 @@ async function updateOnce(
   process.exit(EXIT_SUCCESS);
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: an inline flag on a schedule that names a profile
- * detaches it, and a detach nobody asked for is worth one line: the schedule
- * keeps running on the values it had, under its own name now.
- */
-async function noteDetach(
-  deps: {
-    profileName: (host: string, id: string) => Promise<string | null>;
-  },
-  host: string,
-  view: ScheduleView,
-  saved: ScheduleView,
-): Promise<void> {
-  /* UNIT_BOUNDARY_DESCRIPTION: the server decides what detached — a blank or
-   * unchanged value keeps the profile — so the note follows the schedule that
-   * came back, never the flag that was passed. */
-  if (view.profile === null || saved.profile !== null) return;
-  const name = (await deps.profileName(host, view.profile)) ?? view.profile;
-  process.stderr.write(`note: detached from profile ${name}\n`);
+/** UNIT_BOUNDARY_DESCRIPTION: an inline flag on a schedule that names a profile detaches it onto its own values, which is worth one line. */
+function noteDetach(view: ScheduleView, saved: ScheduleView): void {
+  if (view.profile !== null && saved.profile === null)
+    process.stderr.write("note: detached from its profile\n");
 }
 
 function choicesGiven(opts: UpdateOpts): boolean {
@@ -376,10 +358,9 @@ function choicesOrExit(
   nullable: boolean,
   profileId: string | null,
 ): NullableChoices | ProfiledChoices {
-  /* UNIT_BOUNDARY_DESCRIPTION: naming a profile replaces the inline values; an
-   * inline flag detaches by sending the values the schedule runs on now, so a
-   * detach keeps what was running instead of dropping it. */
-  if (profileId !== null) return { profile: profileId };
+  /* UNIT_BOUNDARY_DESCRIPTION: without a choice flag a profile schedule sends its profile again, so the values it resolves to are not taken for a detach. */
+  const profile = profileId ?? (choicesGiven(opts) ? null : view.profile);
+  if (profile !== null) return { profile };
   let given: Record<string, string> | undefined;
   try {
     given = parseSettingFlags(opts.setting);

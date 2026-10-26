@@ -8,7 +8,7 @@ import { LocalSkillsGroup } from "./local-skills-group.js";
 
 const FEATURE_SECTION: Partial<Record<PlatformFeatureId, SandboxSection>> = {
   schedules: "automations",
-  connections: "connections",
+  connections: "services",
   "chat-forms": "chat-forms",
 };
 

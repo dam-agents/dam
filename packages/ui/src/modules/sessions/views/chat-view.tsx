@@ -1,5 +1,6 @@
 import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import {
+  type DefaultKind,
   SessionMode,
   type SessionPair,
   SessionType,
@@ -198,6 +199,7 @@ import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import { sendPreparation } from "../lib/send-preparation.js";
+import { applySettingChanges } from "../lib/session-settings.js";
 import {
   type DockedItems,
   dockedItemTab,
@@ -207,10 +209,7 @@ import {
   type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
-import {
-  subagentProfileOf,
-  subagentSaveReferences,
-} from "../lib/subagent-choice.js";
+import { primaryProfileOf, subagentProfileOf } from "../lib/subagent-choice.js";
 import {
   dividerLabel,
   setupMessageOf,
@@ -394,24 +393,16 @@ export function ChatView() {
   const setNextSessionPair = useStore((s) => s.setNextSessionPair);
   const setDraft = useStore((s) => s.setDraft);
   const { data: profiles = [] } = useProfiles(selectedAgent);
-  /* UNIT_BOUNDARY_DESCRIPTION: a pick inside a running chat is the next chat's
-   * default too (D90) — the last pick in any chat, new or open, is what a new
-   * one starts on. The profile and slot references the pair still matches travel
-   * with it, so a subagent choice or a small tune does not detach the primary
-   * from its profile. */
-  const rememberSessionChoice = (pair: SessionPair) => {
-    if (!selectedAgent) return;
-    rememberSessionPair(
-      selectedAgent,
-      pair,
-      "chat",
-      undefined,
-      subagentSaveReferences({
-        pair,
-        slot: subagentProfileOf(pair, profiles),
-        profiles,
-      }),
-    );
+  /* UNIT_BOUNDARY_DESCRIPTION: a pick in a running chat is the next chat's default too (D90), with the profile references its values still match (QA D1, D2); a channel or scheduled session's pick stays its own. */
+  const rememberSessionChoice = (
+    kind: DefaultKind | null,
+    pair: SessionPair,
+  ) => {
+    if (!selectedAgent || kind !== "chat") return;
+    rememberSessionPair(selectedAgent, pair, "chat", undefined, {
+      profileId: primaryProfileOf(pair, profiles)?.id ?? null,
+      platformSubagentProfileId: subagentProfileOf(pair, profiles)?.id ?? null,
+    });
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
@@ -1227,7 +1218,6 @@ export function ChatView() {
                     <div className="flex min-w-0 items-center justify-between gap-3">
                       <ModelIndicator
                         agentId={selectedAgent}
-                        kind={defaultKindOf(sessionView?.type)}
                         harness={choice.harness}
                         provider={currentSession.provider ?? null}
                         model={currentSession.model ?? null}
@@ -1235,36 +1225,47 @@ export function ChatView() {
                         carried={harnessStatus?.harnesses ?? []}
                         routed={harnessStatus?.modelRouter ?? false}
                         turnRunning={busy}
-                        onChoose={(value) =>
+                        onChoose={(value, change = {}) => {
+                          const remember = () =>
+                            rememberSessionChoice(
+                              defaultKindOf(sessionView?.type),
+                              {
+                                harness: choice.harness,
+                                provider: currentSession.provider ?? null,
+                                model: value,
+                                settings: applySettingChanges(
+                                  currentSession.settings ?? {},
+                                  change,
+                                ),
+                              },
+                            );
                           void chooseSessionModel(value, () =>
-                            rememberSessionChoice({
-                              harness: choice.harness,
-                              provider: currentSession.provider ?? null,
-                              model: value,
-                              ...(currentSession.settings && {
-                                settings: currentSession.settings,
-                              }),
-                            }),
-                          )
-                        }
-                        onConfigure={(change) => {
-                          const settings = Object.fromEntries(
-                            Object.entries({
-                              ...(currentSession.settings ?? {}),
-                              ...change,
-                            }).filter(([, value]) => value !== ""),
-                          );
-                          void configureSession(change, null, false, () =>
-                            rememberSessionChoice({
-                              harness: choice.harness,
-                              provider: currentSession.provider ?? null,
-                              model: currentSession.model ?? null,
-                              ...(Object.keys(settings).length > 0 && {
-                                settings,
-                              }),
-                            }),
+                            Object.keys(change).length > 0
+                              ? void configureSession(
+                                  change,
+                                  null,
+                                  false,
+                                  remember,
+                                )
+                              : remember(),
                           );
                         }}
+                        onConfigure={(change) =>
+                          void configureSession(change, null, false, () =>
+                            rememberSessionChoice(
+                              defaultKindOf(sessionView?.type),
+                              {
+                                harness: choice.harness,
+                                provider: currentSession.provider ?? null,
+                                model: currentSession.model ?? null,
+                                settings: applySettingChanges(
+                                  currentSession.settings ?? {},
+                                  change,
+                                ),
+                              },
+                            ),
+                          )
+                        }
                         onNewSession={() => handleNewSession(true)}
                       />
                       <SessionPullRequests

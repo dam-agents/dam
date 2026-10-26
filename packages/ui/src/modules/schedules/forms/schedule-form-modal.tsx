@@ -6,7 +6,6 @@ import type { Schedule } from "../../../types.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import type { ExactCronConversion } from "../lib/cron-conversion.js";
 import { ConvertCronStep } from "./convert-cron-step.js";
-import type { ScheduleChoicesPayload } from "./cron-schedule-form.js";
 import { CronScheduleForm } from "./cron-schedule-form.js";
 import { OnceScheduleForm } from "./once-schedule-form.js";
 import { RecurringScheduleForm } from "./recurring-schedule-form.js";
@@ -25,7 +24,6 @@ interface Props {
 interface Converting {
   draft: Schedule;
   conversion: ExactCronConversion;
-  choices: ScheduleChoicesPayload;
 }
 
 export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
@@ -46,7 +44,6 @@ export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
         {converting ? (
           <ConvertCronStep
             schedule={converting.draft}
-            choices={converting.choices}
             conversion={converting.conversion}
             onBack={() => {
               setCronDraft(converting.draft);
@@ -62,11 +59,10 @@ export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
           <CronScheduleForm
             agentId={agentId}
             existing={cronDraft ?? editing}
-            baseline={editing}
             onClose={onClose}
             onDirtyChange={setDirty}
-            onConvert={(draft, conversion, choices) =>
-              setConverting({ draft, conversion, choices })
+            onConvert={(draft, conversion) =>
+              setConverting({ draft, conversion })
             }
           />
         )}

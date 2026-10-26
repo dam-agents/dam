@@ -1,11 +1,10 @@
 import { ChevronLeft } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
-import type { ProfileWithUsage } from "api-server-api";
 import {
   aliasForProviderType,
-  type DefaultKind,
   parseQualifiedModel,
   type ProviderPresetType,
+  type SessionPair,
 } from "api-server-api";
 import { useState } from "react";
 
@@ -20,15 +19,9 @@ import {
 } from "@/components/ui/popover";
 
 import { useStore } from "../../../store.js";
-import { useAgent } from "../../agents/api/queries.js";
-import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { useProfiles } from "../../profiles/api/queries.js";
-import {
-  ProfileList,
-  SaveAsProfileRow,
-  SubagentSection,
-} from "../../profiles/components/profile-list.js";
-import { SaveAsProfile } from "../../profiles/components/save-as-profile.js";
+import { ModelConfiguration } from "../../profiles/components/profile-list.js";
+import { useSaveAsProfile } from "../../profiles/components/save-as-profile.js";
 import {
   useGrantProvider,
   useHarnessCatalog,
@@ -37,7 +30,6 @@ import {
   useProviderConnections,
   useProviderModels,
 } from "../api/session-pair.js";
-import { rememberSessionPair } from "../api/session-pair.js";
 import {
   modelGroups,
   sameSideGroups,
@@ -47,15 +39,26 @@ import {
   harnessDisplayName,
   modelProviderLabel,
 } from "../lib/session-pair-options.js";
-import { settingDefaults } from "../lib/session-settings.js";
-import { subagentProfileOf, withSubagent } from "../lib/subagent-choice.js";
+import {
+  applySettingChanges,
+  settingDefaults,
+} from "../lib/session-settings.js";
+import {
+  pickProfile,
+  primaryProfileOf,
+  SUBAGENT_KEYS,
+  subagentOf,
+  subagentProfileOf,
+  withSubagent,
+} from "../lib/subagent-choice.js";
+import { PlatformSubagentSettings } from "./platform-subagent-settings.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
+import { approvalOption, ToolApprovalPicker } from "./tool-approval-picker.js";
 
 interface Props {
   agentId: string;
-  kind: DefaultKind | null;
   harness: string;
   provider: string | null;
   model: string | null;
@@ -63,14 +66,14 @@ interface Props {
   carried: readonly HarnessCapability[];
   routed?: boolean;
   turnRunning?: boolean;
-  onChoose: (model: string) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: a model, and the settings changes that come with it when a profile is picked. */
+  onChoose: (model: string, settings?: Record<string, string>) => void;
   onConfigure: (settings: Record<string, string>) => void;
   onNewSession: () => void;
 }
 
 export function ModelIndicator({
   agentId,
-  kind,
   harness,
   provider,
   model,
@@ -83,46 +86,6 @@ export function ModelIndicator({
   onNewSession,
 }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
-  /* UNIT_BOUNDARY_DESCRIPTION: an Agent Editor may use the owner's profiles and
-   * not change that set, so the save is not offered on a shared agent. */
-  const agent = useAgent(agentId);
-  const canSaveProfile = agent === null || isOwnAgent(agent);
-  /* UNIT_BOUNDARY_DESCRIPTION: the picker opens on the profiles, the same view a
-   * new chat shows, so one place teaches the other. */
-  const [custom, setCustom] = useState(false);
-  /* UNIT_BOUNDARY_DESCRIPTION: a pick ends the choice, so the popover closes on
-   * one, as it already does on a custom pick (QA). */
-  const [open, setOpen] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
-  /* UNIT_BOUNDARY_DESCRIPTION: the profile the session's pick came from, kept
-   * while the user tunes it, so the save can offer to update that profile. */
-  const [fromProfile, setFromProfile] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-  const { data: profiles = [] } = useProfiles(agentId);
-  /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so it offers only
-   * the profiles that run on it, and the slot's options and its current value
-   * read the same list. */
-  const sessionProfiles = profiles.filter((p) => p.harness === harness);
-  const withSubagentSettings = (profile: ProfileWithUsage | null) => {
-    const next = withSubagent(
-      { harness, provider, model, ...(settings && { settings }) },
-      profile,
-      capability,
-      groups.flatMap((g) => g.models.map((m) => ({ name: m.name }))),
-    );
-    const keys = [
-      "platformSubagent.harness",
-      "platformSubagent.model",
-      "subagentModel",
-      "subagentEffort",
-    ];
-    return Object.fromEntries(
-      keys.map((id) => [id, next.settings?.[id] ?? ""]),
-    );
-  };
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { data: catalog } = useHarnessCatalog();
   const capability = carried.find((h) => h.name === harness);
@@ -161,25 +124,34 @@ export function ModelIndicator({
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
-  /* UNIT_BOUNDARY_DESCRIPTION: the values the view reads — what "Custom
-   * selection" costs and how a repair attaches a provider — derived from the
-   * pair and the connections, never kept in state. */
-  const catalogCounts = { harnesses: carried.length };
-  const attachAndPick = (profile: ProfileWithUsage) => {
-    const connection = owned.find(
-      (p) => p.templateId === profile.providerTemplate,
-    );
-    if (!connection) {
-      navigateToSettings("providers");
-      return;
-    }
-    void grant(connection.id).then((ok) => {
-      if (ok) onChoose(profile.model);
-    });
-  };
-  /* UNIT_BOUNDARY_DESCRIPTION: the subagent section writes the slot's keys and
-   * the native ones through the ordinary configure call, empty string clearing
-   * a key, so the session and its next saved default agree. */
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<"profiles" | "custom" | "subagent">(
+    "profiles",
+  );
+  const [fromProfile, setFromProfile] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const { data: profiles = [] } = useProfiles(agentId);
+  /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so its primary model is offered only the profiles that run on it. */
+  const sessionProfiles = profiles.filter((p) => p.harness === harness);
+  const current: SessionPair = { harness, provider, model, settings };
+  const listed = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
+  const primary = primaryProfileOf(current, sessionProfiles);
+  const slot = subagentProfileOf(current, profiles);
+  const customSlot = subagentOf(current);
+  const subagentChanges = (next: SessionPair) =>
+    Object.fromEntries(SUBAGENT_KEYS.map((k) => [k, next.settings?.[k] ?? ""]));
+  const saveAs = useSaveAsProfile({
+    agentId,
+    pair: current,
+    providerTemplate: activeProvider?.templateId,
+    from: fromProfile,
+    approvalId: approvalOption(capability)?.id,
+    onSaved: setFromProfile,
+  });
+  const showProfiles =
+    routed && view === "profiles" && sessionProfiles.length > 0;
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
   const models = removed
     ? []
@@ -198,22 +170,16 @@ export function ModelIndicator({
     !!data?.availableModels?.length &&
     !data.availableModels.some((m) => m.value === model);
 
-  const savingAsProfile =
-    savingProfile && activeProvider?.templateId !== undefined ? (
-      <SaveAsProfile
-        agentId={agentId}
-        pair={{ harness, provider, model, ...(settings && { settings }) }}
-        providerTemplate={activeProvider.templateId}
-        profile={fromProfile}
-        onClose={() => setSavingProfile(false)}
-        onSaved={() => setSavingProfile(false)}
-      />
-    ) : null;
-
   return (
-    <>
-      {savingAsProfile}
-      <Popover open={open} onOpenChange={setOpen}>
+    <div className="flex min-w-0 items-center gap-3">
+      {saveAs.dialog}
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          if (next) setView("profiles");
+          setOpen(next);
+        }}
+      >
         <PopoverTrigger asChild>
           <SessionPairTrigger
             testId="session-model-picker"
@@ -310,99 +276,70 @@ export function ModelIndicator({
               )}
             </section>
           )}
-          {routed && !custom && sessionProfiles.length > 0 ? (
-            <div className="flex flex-col gap-1">
-              <ProfileList
-                /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so it
-                 * offers only the profiles that run on it; another harness needs a
-                 * new session, which the profile list cannot show. */
-                profiles={sessionProfiles}
-                current={{
-                  harness,
-                  provider,
-                  model,
-                  ...(settings && { settings }),
-                }}
-                onPick={(profile) => {
+          {showProfiles ? (
+            <ModelConfiguration
+              agentId={agentId}
+              profiles={sessionProfiles}
+              customHint={harnessName ?? harness}
+              primary={{
+                selectedId: primary?.id ?? null,
+                custom: primary ? null : modelName,
+                onPick: (profile) => {
                   setOpen(false);
-                  /* UNIT_BOUNDARY_DESCRIPTION: a pick applies the model and the
-                   * settings the profile holds, and saves those same values with
-                   * the reference, so the next chat starts on what this one got.
-                   * Only a chat session names a profile; a channel or scheduled
-                   * session keeps its own on the row or the spec. */
-                  setFromProfile({ id: profile.id, name: profile.name });
-                  onChoose(profile.model);
-                  /* UNIT_BOUNDARY_DESCRIPTION: the session takes exactly what
-                   * the profile holds, so a setting the profile does not name is
-                   * cleared rather than left from the previous pick. */
-                  /* UNIT_BOUNDARY_DESCRIPTION: the profile's own settings
-                   * replace the session's, and the subagent choice it did not
-                   * name is carried over through the same rule, so a primary
-                   * pick never clears the subagent one. */
-                  onConfigure({
+                  setFromProfile(profile);
+                  onChoose(profile.model, {
                     ...Object.fromEntries(
-                      Object.keys(settings)
-                        .filter((id) => !id.startsWith("platformSubagent."))
-                        .map((id) => [id, ""]),
+                      Object.keys(settings).map((k) => [k, ""]),
                     ),
-                    ...profile.settings,
-                    ...withSubagentSettings(
-                      subagentProfileOf(
-                        {
-                          harness,
-                          provider,
-                          model,
-                          ...(settings && { settings }),
-                        },
-                        profiles,
-                      ),
+                    ...pickProfile(current, profile, capability, listed)
+                      .settings,
+                  });
+                },
+                onCustom: () => setView("custom"),
+              }}
+              subagent={{
+                selectedId: slot?.id ?? null,
+                custom:
+                  slot || !customSlot
+                    ? null
+                    : `${customSlot.harness} · ${customSlot.model}`,
+                onPick: (profile) =>
+                  onConfigure(
+                    subagentChanges(
+                      withSubagent(current, profile, capability, listed),
+                    ),
+                  ),
+                onCustom: () => setView("subagent"),
+              }}
+              onAgentPicks={() =>
+                onConfigure(
+                  subagentChanges(
+                    withSubagent(current, null, capability, listed),
+                  ),
+                )
+              }
+            />
+          ) : view === "subagent" ? (
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-xs">
+              <BackToProfiles onClick={() => setView("profiles")} />
+              <PlatformSubagentSettings
+                agentId={agentId}
+                carried={carried}
+                settings={settings}
+                idPrefix="session"
+                disabled={false}
+                onChange={(changes) => {
+                  const next = {
+                    ...current,
+                    settings: applySettingChanges(settings, changes),
+                  };
+                  onConfigure({
+                    ...changes,
+                    ...subagentChanges(
+                      withSubagent(next, subagentOf(next), capability, listed),
                     ),
                   });
-                  rememberSessionPair(
-                    agentId,
-                    {
-                      harness,
-                      provider,
-                      model: profile.model,
-                      ...(Object.keys(profile.settings).length > 0 && {
-                        settings: profile.settings,
-                      }),
-                    },
-                    "chat",
-                    undefined,
-                    kind === "chat" ? { profileId: profile.id } : undefined,
-                  );
                 }}
-                counts={catalogCounts}
-                onAttach={(profile) => {
-                  setOpen(false);
-                  attachAndPick(profile);
-                }}
-                onCustom={() => setCustom(true)}
-                onManage={() => navigateToSettings("providers")}
-              />
-              <SubagentSection
-                /* UNIT_BOUNDARY_DESCRIPTION: a platform sub-agent is another
-                 * agent, so this section offers every profile; the native rule
-                 * decides what the session's own harness can take from it. */
-                profiles={profiles}
-                selectedId={
-                  subagentProfileOf(
-                    {
-                      harness,
-                      provider,
-                      model,
-                      ...(settings && { settings }),
-                    },
-                    /* UNIT_BOUNDARY_DESCRIPTION: the section offers every
-                     * profile, so the selection is looked up in the same list. */
-                    profiles,
-                  )?.id ?? null
-                }
-                onAgentPicks={() => onConfigure(withSubagentSettings(null))}
-                onPick={(profile) => onConfigure(withSubagentSettings(profile))}
-                onAttach={attachAndPick}
-                onManage={() => navigateToSettings("providers")}
               />
             </div>
           ) : routed ? (
@@ -411,14 +348,7 @@ export function ModelIndicator({
               className="-mx-1 flex max-h-72 flex-col gap-2 overflow-y-auto"
             >
               {sessionProfiles.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setCustom(false)}
-                  className="flex items-center gap-1 rounded px-1 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <ChevronLeft size={14} aria-hidden />
-                  Use a profile
-                </button>
+                <BackToProfiles onClick={() => setView("profiles")} />
               )}
               <SessionModelList
                 agentId={agentId}
@@ -446,43 +376,51 @@ export function ModelIndicator({
               onChoose={onChoose}
             />
           )}
-          {routed &&
-            (custom || sessionProfiles.length === 0) &&
-            model !== null &&
-            canSaveProfile && (
-              <div className="border-t border-border pt-2">
-                <SaveAsProfileRow
-                  label={
-                    fromProfile
-                      ? `Update “${fromProfile.name}”`
-                      : "Save as a profile"
-                  }
-                  onClick={() => setSavingProfile(true)}
+          {routed && view === "custom" && saveAs.row && (
+            <div className="border-t border-border pt-2">{saveAs.row}</div>
+          )}
+          {!showProfiles &&
+            view !== "subagent" &&
+            capability?.sessionSettings && (
+              <div className="border-t border-border pt-2 empty:hidden">
+                <SessionSettingsControls
+                  agentId={agentId}
+                  carried={carried}
+                  capability={capability}
+                  model={model}
+                  settings={settings}
+                  defaults={defaults}
+                  modelChoices={sameSideGroups(groups, model).flatMap((g) =>
+                    g.models.map((m) => ({
+                      value: m.name,
+                      name: `${m.upstreamId} · ${g.displayName}`,
+                    })),
+                  )}
+                  onChange={onConfigure}
                 />
               </div>
             )}
-          {capability?.sessionSettings && (
-            <div className="border-t border-border pt-2 empty:hidden">
-              <SessionSettingsControls
-                agentId={agentId}
-                carried={carried}
-                capability={capability}
-                model={model}
-                settings={settings}
-                defaults={defaults}
-                modelChoices={sameSideGroups(groups, model).flatMap((g) =>
-                  g.models.map((m) => ({
-                    value: m.name,
-                    name: `${m.upstreamId} · ${g.displayName}`,
-                  })),
-                )}
-                onChange={onConfigure}
-              />
-            </div>
-          )}
         </PopoverContent>
       </Popover>
-    </>
+      <ToolApprovalPicker
+        capability={capability}
+        settings={{ ...defaults, ...settings }}
+        onChange={onConfigure}
+      />
+    </div>
+  );
+}
+
+function BackToProfiles({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="col-span-2 flex items-center gap-1 rounded px-1 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+      <ChevronLeft size={14} aria-hidden />
+      Use a profile
+    </button>
   );
 }
 

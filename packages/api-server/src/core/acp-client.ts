@@ -156,14 +156,10 @@ export interface PlatformSessionMeta {
   threadTs?: string;
   createdAt?: string;
   customTitle?: string;
-  /* UNIT_BOUNDARY_DESCRIPTION: the pair a caller sends for a session it already
-   * decided on — a channel's profile — and the kind such a session follows when
-   * it does not name one itself. */
   harness?: string;
   provider?: string;
   model?: string;
   settings?: Record<string, string>;
-  follows?: "chat" | "channel" | "scheduled" | null;
 }
 
 export interface AcpSessionInfo {
@@ -181,11 +177,6 @@ const platformSessionMetaSchema = z.object({
   threadTs: z.string().optional(),
   createdAt: z.string().optional(),
   customTitle: z.string().optional(),
-  harness: z.string().optional(),
-  provider: z.string().optional(),
-  model: z.string().optional(),
-  settings: z.record(z.string(), z.string()).optional(),
-  follows: z.enum(["chat", "channel", "scheduled"]).nullable().optional(),
 });
 
 export interface TriggerSessionResult {
@@ -459,15 +450,19 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
-function pairMeta(pair: SessionPair | undefined): Record<string, unknown> {
+/** UNIT_BOUNDARY_DESCRIPTION: a pair as `_meta.platform` fields; a session created with them alone runs on them as its own, and follows no default. */
+export function pairFields(pair: SessionPair | null | undefined) {
   if (!pair) return {};
   return {
-    follows: "channel",
     harness: pair.harness,
     ...(pair.provider !== null && { provider: pair.provider }),
     ...(pair.model !== null && { model: pair.model }),
     ...(pair.settings && { settings: pair.settings }),
   };
+}
+
+function pairMeta(pair: SessionPair | undefined): Record<string, unknown> {
+  return pair ? { follows: "channel", ...pairFields(pair) } : {};
 }
 
 async function resolvePair(
@@ -481,28 +476,6 @@ async function resolvePair(
       "no model provider granted to this agent can run its harness",
     );
   return pair;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the `_meta.platform` a fresh session is created
- * with. The caller's own values — a channel's profile — are what the session
- * runs on and win over the agent's default; the agent's kind default fills in
- * only a session the caller left open, and is then not even read when the
- * caller named both a harness and a model, so a channel with a profile runs on
- * an agent that has no default at all.
- */
-export async function sessionPlatformMeta(input: {
-  platformMeta: PlatformSessionMeta | undefined;
-  firePair:
-    ((agentId: string) => Promise<SessionPair | null | undefined>) | undefined;
-  agentId: string;
-}): Promise<Record<string, unknown>> {
-  const caller = input.platformMeta;
-  const decided = caller?.harness !== undefined && caller?.model !== undefined;
-  const pair = decided
-    ? undefined
-    : await resolvePair(input.firePair, input.agentId);
-  return { ...pairMeta(pair), ...caller };
 }
 
 const refusedForNoModel = (err: unknown): boolean =>
@@ -642,11 +615,12 @@ export function createAcpClient(opts: {
             sessionId = sendOpts.resumeSessionId;
             watchSessionId = sessionId;
           } else {
-            const platform = await sessionPlatformMeta({
-              platformMeta: sendOpts.platformMeta,
-              firePair: opts.firePair,
-              agentId,
-            });
+            const caller = sendOpts.platformMeta;
+            const platform = {
+              ...(caller?.harness === undefined &&
+                pairMeta(await resolvePair(opts.firePair, agentId))),
+              ...caller,
+            };
             const newSession: NewSessionRequest = {
               cwd: ".",
               mcpServers: [],

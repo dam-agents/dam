@@ -1,16 +1,19 @@
-import { Locked, WarningAltFilled } from "@carbon/icons-react";
+import {
+  Cognitive,
+  Locked,
+  WarningAltFilled,
+  WifiController,
+} from "@carbon/icons-react";
 import {
   Briefcase,
   CalendarEvent,
   type CarbonPictogramType,
   CloudComputing,
-  ConnectApplications,
-  FoundationModel,
   Robot,
   Teammates,
   UserInterface,
 } from "@carbon/pictograms-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ComponentType, type ReactNode, useEffect, useRef } from "react";
 
 import { Tabs } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -18,10 +21,12 @@ import { cn } from "@/lib/utils";
 
 import type { SandboxSection } from "../../platform/lib/routes.js";
 
+type IconProps = { "aria-hidden"?: boolean };
+
 interface SectionEntry {
   section: SandboxSection;
   title: string;
-  pictogram: CarbonPictogramType;
+  pictogram: CarbonPictogramType | ComponentType<IconProps>;
   description?: string;
 }
 
@@ -41,15 +46,15 @@ export const SECTIONS: SectionEntry[] = [
   },
   {
     section: "models",
-    pictogram: FoundationModel,
+    pictogram: (props: IconProps) => <Cognitive size={64} {...props} />,
     title: "Models",
     description:
       "What this agent runs on, which providers it may reach a model through, and what it spends.",
   },
   {
-    section: "connections",
-    pictogram: ConnectApplications,
-    title: "Connections",
+    section: "services",
+    pictogram: (props: IconProps) => <WifiController size={64} {...props} />,
+    title: "Services",
     description:
       "What this agent can reach: connections to MCP servers and external services like GitHub, its environment variables, and the network rules behind them.",
   },

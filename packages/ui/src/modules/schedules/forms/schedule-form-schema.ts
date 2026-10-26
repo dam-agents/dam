@@ -158,6 +158,27 @@ export function presetFormValues(
   };
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: a schedule's choices as a save sends them: its profile alone, so values it resolves to are never taken for a detach, or its own values with the profile cleared. */
+export function scheduleChoices(v: {
+  profile?: string | null;
+  harness?: string | null;
+  model?: string | null;
+  settings?: Record<string, string> | null;
+}) {
+  if (v.profile) return { profile: v.profile };
+  const harness = v.harness?.trim();
+  const model = v.model?.trim();
+  const settings = Object.fromEntries(
+    Object.entries(v.settings ?? {}).filter(([, value]) => value !== ""),
+  );
+  return {
+    profile: null,
+    ...(harness ? { harness } : {}),
+    ...(model ? { model } : {}),
+    ...(Object.keys(settings).length > 0 ? { settings } : {}),
+  };
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: whether a schedule follows the agent's chat default
  * because it was written before profiles — no profile, no harness, no model —

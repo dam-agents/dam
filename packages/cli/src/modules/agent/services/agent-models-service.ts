@@ -1,8 +1,8 @@
 import type {
   ConnectionView,
   DefaultKind,
-  ProfileView,
   HarnessConfigStatus,
+  ProfileWithUsage,
   SessionDefaults,
   SessionPair,
 } from "api-server-api";
@@ -44,7 +44,7 @@ export interface AgentModelsService {
     pair: SessionPair,
     references?: { profileId?: string | null },
   ): Promise<ModelsResult<void>>;
-  profiles(): Promise<ModelsResult<readonly ProfileView[]>>;
+  profiles(): Promise<ModelsResult<readonly ProfileWithUsage[]>>;
   clearDefault(
     agentId: string,
     kind: Exclude<DefaultKind, "chat">,

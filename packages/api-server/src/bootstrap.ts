@@ -164,7 +164,7 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
-import { createChannelPairResolver } from "./modules/channels/services/channel-pair-resolver.js";
+import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
 import {
   createSlackTokenRotation,
   noSlackTokenRotation,
@@ -208,10 +208,7 @@ import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
 } from "./modules/usage/index.js";
-import {
-  isAgentRowDeleted,
-  listAgentIdsByOwner,
-} from "./modules/usage/infrastructure/agents-postgres-repository.js";
+import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import {
   composeTelemetryReader,
   createTelemetryRoutes,
@@ -386,12 +383,7 @@ import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js
 import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
-import {
-  createProfileResolver,
-  createProfilesRepository,
-  createProfilesService,
-  seededProvider,
-} from "./modules/profiles/index.js";
+import { composeProfileResolver } from "./modules/profiles/index.js";
 import {
   composeSatellitesModule,
   createOutcomeDelivery,
@@ -940,16 +932,12 @@ export async function bootstrap() {
       await runtimeDelivery.queue.enqueue(agentId);
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
-  /* UNIT_BOUNDARY_DESCRIPTION: one resolver for the whole process, because a
-   * stored reference is resolved on behalf of the row that holds it, not of a
-   * caller: the agent, channel and schedule paths all read through it. */
-  const profilesRepository = createProfilesRepository(db, subPseudonymizer);
-  const profileResolver = createProfileResolver({ repo: profilesRepository });
+  const resolveProfile = composeProfileResolver(db, subPseudonymizer);
 
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
-    profiles: profileResolver,
+    resolveProfile,
     getCapabilities: async (agentId) =>
       (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
         ?.runtimeCapabilities ?? null,
@@ -1264,28 +1252,9 @@ export async function bootstrap() {
   usageMetrics.start();
   const seedSources = parseSeedSources(config.skillSourcesSeed);
 
-  /* UNIT_BOUNDARY_DESCRIPTION: an Agent restored from deletion has no chat
-   * default of its own — the deletion cleared its references — so it is bound to
-   * the owner's seeded Default under the same rules as create: a kit that names
-   * a model decides the default, and an Environment never starts a session. */
-  const bindRestoredAgent = async (agentId: string): Promise<void> => {
-    const agent = await agentsRepo.get(agentId);
-    const harness = agent?.spec.harness;
-    if (!agent?.owner || typeof harness !== "string") return;
-    if (agent.spec.environmentOf || agent.starterKitDefaultModel) return;
-    await createProfilesService({
-      repo: profilesRepository,
-      owner: agent.owner,
-      catalog: harnessCatalog,
-      seededProvider: seededProvider(config.curveBenderDeployment !== null),
-    }).bindDefaultAgentProfile({ agentId, harness });
-  };
-  const isRestoredAgent = isAgentRowDeleted(db);
   const usage = composeUsageModule({
     db,
     subPseudonymizer,
-    isRestoredAgent,
-    onAgentRestored: bindRestoredAgent,
     activityTrackingEnabled: config.activityTrackingEnabled,
     inspectorRole: config.keycloakInspectorRole ?? "",
     listK8sAgents: async () => {
@@ -1349,7 +1318,7 @@ export async function bootstrap() {
       db,
       namespace: config.namespace,
       catalog: harnessCatalog,
-      profiles: profileResolver,
+      resolveProfile,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
@@ -1671,15 +1640,7 @@ export async function bootstrap() {
       : undefined;
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
-  /* UNIT_BOUNDARY_DESCRIPTION: a channel's own profile decides what a fresh
-   * session in it starts on (D91, D119), and a thread already running keeps the
-   * values it has, as a session that picked does (D94 A). A row without one
-   * keeps the agent's default chain; a profile that cannot run refuses the turn
-   * rather than falling back to that default. */
-  const channelPair = createChannelPairResolver({
-    db,
-    resolver: profileResolver,
-  });
+  const channelPair = createChannelProfiles(db, resolveProfile).pair;
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
@@ -1972,11 +1933,7 @@ export async function bootstrap() {
   });
   const schedulesBoot = composeSchedulesAtBoot({
     db,
-    profiles: {
-      resolveStored: profileResolver.resolveStored,
-      owned: async (owner, profileId) =>
-        (await profilesRepository.get(owner, profileId)) !== null,
-    },
+    resolveProfile,
     firePair,
     agentOnceLimits: {
       maxOpen: config.onceScheduleAgentMaxOpen,
@@ -1985,7 +1942,7 @@ export async function bootstrap() {
     validateSessionChoices: composeSessionChoicesValidator({
       db,
       catalog: harnessCatalog,
-      profiles: profileResolver,
+      resolveProfile,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,

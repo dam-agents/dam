@@ -3,7 +3,6 @@ import {
   parseQualifiedModel,
   type DefaultKind,
   type DefaultModelNotice,
-  type ProfileUnavailableReason,
   type SessionDefaults,
   type SessionPair,
 } from "api-server-api";
@@ -30,9 +29,8 @@ const KINDS: readonly DefaultKind[] = ["chat", "channel", "scheduled"];
  * Schedule or a bound Slack or Telegram Channel: nothing fails elsewhere yet.
  * A conversion note is told whatever the Agent runs, since it names the model
  * every run pays for. Kinds that run on the same pair share one notice; one
- * that runs as saved has none. A chat default held by a profile that cannot
- * run here is told by what stops it: a provider the Agent does not hold, or no
- * model it can reach at all.
+ * that runs as saved has none. A chat profile that cannot run here is a
+ * provider the Agent does not hold.
  */
 export function defaultModelNoticesOf(input: {
   agentId: string;
@@ -41,8 +39,7 @@ export function defaultModelNoticesOf(input: {
   note: DefaultModelNote | null;
   grantedAliases: ReadonlySet<string>;
   runsUnattended: boolean;
-  /** UNIT_BOUNDARY_DESCRIPTION: why the chat default's profile cannot run here, if it cannot; the precise state and its copy arrive with the surfaces that show it. */
-  unavailable?: { reason: ProfileUnavailableReason } | null;
+  profileUnavailable?: boolean;
 }): DefaultModelNotice[] {
   const { agentId, saved, note } = input;
   if (!input.routed) return [];
@@ -82,13 +79,7 @@ export function defaultModelNoticesOf(input: {
   ): DefaultModelNotice["state"] | null {
     const stopsRuns = (state: DefaultModelNotice["state"]) =>
       input.runsUnattended ? state : null;
-    if (onChat && input.unavailable)
-      return stopsRuns(
-        input.unavailable.reason === "no-provider" ||
-          input.unavailable.reason === "rival-provider"
-          ? "provider-gone"
-          : "not-set",
-      );
+    if (onChat && input.profileUnavailable) return stopsRuns("provider-gone");
     if (pair.model === null)
       return stopsRuns(
         input.grantedAliases.size === 0 ? "no-provider" : "not-set",

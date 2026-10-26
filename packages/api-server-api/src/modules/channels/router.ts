@@ -1,4 +1,3 @@
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { t } from "../../trpc.js";
 import {
@@ -12,8 +11,6 @@ import {
 export const channelsRouter = t.router({
   available: readAgentProcedure.query(({ ctx }) => ctx.channels.available),
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the profile a channel's turns run on (D91), set
-   * from the channel's row; an Agent Editor may change it, as any set-up. */
   setProfile: manageAgentsProcedure
     .input(
       z.object({
@@ -25,30 +22,7 @@ export const channelsRouter = t.router({
       }),
     )
     .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
-    .mutation(async ({ ctx, input }) => {
-      const result = await ctx.channels.setProfile(input);
-      /* UNIT_BOUNDARY_DESCRIPTION: a write that matched no binding, a profile the
-       * agent's owner does not hold, or one its turns would refuse is a refusal
-       * rather than a success the UI would show as done. */
-      if (result.outcome === "not-owned")
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "That profile is not one this agent's owner holds",
-        });
-      if (result.outcome === "no-such-channel")
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "This agent has no such channel bound",
-        });
-      if (result.outcome === "unavailable")
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: result.attachable
-            ? `${result.reason} — attach it on the agent first`
-            : `That profile cannot run on this agent: ${result.reason}`,
-        });
-      return true;
-    }),
+    .mutation(({ ctx, input }) => ctx.channels.setProfile(input)),
 
   telegramBot: readAgentProcedure.query(({ ctx }) => {
     const username = ctx.channels.telegramBotUsername();

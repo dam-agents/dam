@@ -14,6 +14,7 @@ import {
 } from "./schedule-fields.js";
 import {
   buildRRuleParts,
+  scheduleChoices,
   scheduleFormDefaults,
   scheduleFormSchema,
   type ScheduleFormValues,
@@ -47,7 +48,7 @@ export function RecurringScheduleForm({
     resolver: zodResolver(scheduleFormSchema),
     defaultValues: { ...scheduleFormDefaults(existing), ...draft },
   });
-  const { errors, dirtyFields } = form.formState;
+  const { errors } = form.formState;
   const values = form.watch();
 
   const quietHoursError =
@@ -55,12 +56,6 @@ export function RecurringScheduleForm({
 
   const onValid = (v: ScheduleFormValues) => {
     const precheck = v.precheck.trim();
-    const harness = v.harness.trim();
-    const model = v.model.trim();
-    const settings = Object.fromEntries(
-      Object.entries(v.settings).filter(([, value]) => value !== ""),
-    );
-    const hasSettings = Object.keys(settings).length > 0;
     const sessionTitle = v.sessionTitle.trim();
     const common = {
       name: v.name,
@@ -83,34 +78,11 @@ export function RecurringScheduleForm({
         {
           id: existing.id,
           ...common,
-          /* UNIT_BOUNDARY_DESCRIPTION: quiet hours travel only when the user
-           * changed them, as every other choice does — an untouched list leaves
-           * the stored one alone, and one the user emptied clears it. */
-          ...(dirtyFields.quietHours ? { quietHours: v.quietHours } : {}),
+          ...(form.formState.dirtyFields.quietHours && {
+            quietHours: v.quietHours,
+          }),
           precheck: precheck || null,
-          /* UNIT_BOUNDARY_DESCRIPTION: choices travel only when the user
-           * changed them, so a profile edited after the form opened is not
-           * detached by the values the form was loaded with. */
-          ...(dirtyFields.profile
-            ? {
-                profile: v.profile || null,
-                /* UNIT_BOUNDARY_DESCRIPTION: leaving a profile for a schedule
-                 * of its own carries the values it was running on, since the
-                 * form shows them and the stored spec holds none. */
-                ...(v.profile
-                  ? {}
-                  : {
-                      harness: harness || null,
-                      model: model || null,
-                      settings: hasSettings ? settings : null,
-                    }),
-              }
-            : {}),
-          ...(dirtyFields.harness ? { harness: harness || null } : {}),
-          ...(dirtyFields.model ? { model: model || null } : {}),
-          ...(dirtyFields.settings
-            ? { settings: hasSettings ? settings : null }
-            : {}),
+          ...scheduleChoices(v),
           sessionTitle: sessionTitle || null,
         },
         { onSuccess },
@@ -120,12 +92,9 @@ export function RecurringScheduleForm({
         {
           agentId,
           ...common,
-          ...(v.quietHours.length > 0 ? { quietHours: v.quietHours } : {}),
+          quietHours: v.quietHours,
           ...(precheck ? { precheck } : {}),
-          ...(v.profile ? { profile: v.profile } : {}),
-          ...(harness ? { harness } : {}),
-          ...(model ? { model } : {}),
-          ...(hasSettings ? { settings } : {}),
+          ...scheduleChoices(v),
           ...(sessionTitle ? { sessionTitle } : {}),
         },
         { onSuccess },

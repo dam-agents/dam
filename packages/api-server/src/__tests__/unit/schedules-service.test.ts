@@ -6,11 +6,17 @@ import type {
   RunNowResult,
   SchedulerRunner,
 } from "../../modules/schedules/services/scheduler-runner.js";
+import type {
+  ProfileResolver,
+  ResolvedProfile,
+} from "../../modules/profiles/index.js";
 
 const OWNER = "owner-1";
 const SCHEDULE_ID = "sched-1";
 const RRULE = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0";
 const TIMEZONE = "Europe/Prague";
+const runs: ProfileResolver = async () =>
+  ({ unavailable: null }) as ResolvedProfile;
 
 function makeCurrent(
   sessionMode?: "continuous" | "fresh",
@@ -47,19 +53,6 @@ function makeDeps(
     async get(id: string) {
       return id === current.id ? current : null;
     },
-    /** UNIT_BOUNDARY_DESCRIPTION: what the row stores, which for a profile
-     * schedule is the reference alone. */
-    async getRaw(id: string) {
-      if (id !== current.id) return null;
-      if (current.spec.profile === undefined) return current;
-      const {
-        harness: _harness,
-        model: _model,
-        settings: _settings,
-        ...spec
-      } = current.spec;
-      return { ...current, spec } as Schedule;
-    },
     async updateName() {
       return current;
     },
@@ -77,7 +70,7 @@ function makeDeps(
     runner,
     owner: OWNER,
     agentBinding: "*",
-    ownedProfile: async () => true,
+    resolveProfile: runs,
     ...(validateSessionChoices ? { validateSessionChoices } : {}),
   });
   return { service, getSavedSpec: () => savedSpec, getCleared: () => cleared };
@@ -137,8 +130,6 @@ describe("updateRRule on a cron schedule", () => {
       precheck: "check.sh",
     });
 
-    /* UNIT_BOUNDARY_DESCRIPTION: a schedule that had no quiet hours keeps none
-     * stored, rather than gaining an empty list from the form's save. */
     expect(getSavedSpec()).toEqual({
       version: "1",
       type: "rrule",
@@ -629,9 +620,6 @@ describe("toggle", () => {
       async get() {
         return stored;
       },
-      async getRaw() {
-        return stored;
-      },
       async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
         stored = { ...stored, spec };
         return stored;
@@ -692,64 +680,8 @@ describe("a schedule's profile", () => {
     },
   });
 
-  it("keeps the reference alone when an update names no choice", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({ ...baseUpdate, task: "another thing" });
-    expect(getSavedSpec()?.profile).toBe("profile-1");
-    /* UNIT_BOUNDARY_DESCRIPTION: the resolved values must not be frozen beside
-     * the reference, or a later edit of the profile would never reach it. */
-    expect(getSavedSpec()?.model).toBeUndefined();
-    expect(getSavedSpec()?.harness).toBeUndefined();
-  });
-
-  it("replaces the reference when a profile is named", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({ ...baseUpdate, profile: "profile-2" });
-    expect(getSavedSpec()?.profile).toBe("profile-2");
-    expect(getSavedSpec()?.harness).toBeUndefined();
-    expect(getSavedSpec()?.model).toBeUndefined();
-  });
-
-  it("detaches to the values it ran on when an inline flag is sent", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({ ...baseUpdate, model: "cb/other-model" });
-    const saved = getSavedSpec();
-    expect(saved?.profile).toBeUndefined();
-    expect(saved?.harness).toBe("claude-code");
-    expect(saved?.model).toBe("cb/other-model");
-  });
-
-  it("clears the reference on an explicit null, leaving it on the agent's default", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({ ...baseUpdate, profile: null });
-    expect(getSavedSpec()?.profile).toBeUndefined();
-    expect(getSavedSpec()?.model).toBeUndefined();
-    expect(getSavedSpec()?.harness).toBeUndefined();
-  });
-
-  it("refuses a profile its owner does not hold", async () => {
-    const { service } = makeDeps(profiled());
-    const scoped = createSchedulesService({
-      repo: {
-        async get() {
-          return profiled();
-        },
-        async getRaw() {
-          return profiled();
-        },
-      } as unknown as SchedulesRepository,
-      runner: { async sync() {} } as unknown as SchedulerRunner,
-      owner: OWNER,
-      agentBinding: "*",
-      ownedProfile: async (id) => id === "profile-1",
-    });
-    await expect(
-      scoped.updateRRule({ ...baseUpdate, profile: "profile-other" }),
-    ).rejects.toMatchObject({ message: "unknown profile" });
-    void service;
-  });
-
-  it("records the profile a create names, and no inline values", async () => {
+  /** TEST_SCENARIO: a new schedule names a profile (D92 B), so the values a create also sent are not stored beside it. */
+  it("records the profile a create names, and no values", async () => {
     let created: ScheduleSpec | undefined;
     const service = createSchedulesService({
       repo: {
@@ -764,7 +696,7 @@ describe("a schedule's profile", () => {
       runner: { async sync() {} } as unknown as SchedulerRunner,
       owner: OWNER,
       agentBinding: "*",
-      ownedProfile: async () => true,
+      resolveProfile: runs,
     });
     await service.createRRule({
       name: "daily",
@@ -774,11 +706,54 @@ describe("a schedule's profile", () => {
       task: "do the thing",
       profile: "profile-1",
       harness: "claude-code",
-      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
     });
     expect(created?.profile).toBe("profile-1");
-    expect(created?.model).toBeUndefined();
     expect(created?.harness).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: a save that names no choice is a task edit, and keeps the profile. */
+  it("keeps the profile when an update names no choice", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, task: "another thing" });
+    expect(getSavedSpec()?.profile).toBe("profile-1");
+  });
+
+  /** TEST_SCENARIO: a value given detaches the schedule onto the values it ran on, with the change applied (the CLI's --model). */
+  it("detaches to the values it ran on when a value is given", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, model: "cb/other-model" });
+    expect(getSavedSpec()).toMatchObject({
+      harness: "claude-code",
+      model: "cb/other-model",
+    });
+    expect(getSavedSpec()?.profile).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: a save refuses a profile that is not the owner's, or one that cannot run on the agent, rather than storing it to fail every fire (QA D4). */
+  it("refuses a profile it cannot run", async () => {
+    const scoped = (resolveProfile: ProfileResolver) =>
+      createSchedulesService({
+        repo: {
+          async get() {
+            return profiled();
+          },
+        } as unknown as SchedulesRepository,
+        runner: { async sync() {} } as unknown as SchedulerRunner,
+        owner: OWNER,
+        agentBinding: "*",
+        resolveProfile,
+      });
+    await expect(
+      scoped(async () => null).updateRRule({ ...baseUpdate, profile: "p2" }),
+    ).rejects.toMatchObject({ message: "unknown profile" });
+    await expect(
+      scoped(
+        async () =>
+          ({ unavailable: "AWS Bedrock is not connected" }) as ResolvedProfile,
+      ).updateRRule({ ...baseUpdate, profile: "p2" }),
+    ).rejects.toMatchObject({
+      message: "that profile cannot run: AWS Bedrock is not connected",
+    });
   });
 });
 
@@ -802,26 +777,7 @@ describe("a schedule's quiet hours at save", () => {
   function save(input: {
     quietHours?: { startTime: string; endTime: string; enabled: boolean }[];
   }) {
-    let saved: ScheduleSpec | undefined;
-    const service = createSchedulesService({
-      repo: {
-        async get() {
-          return stored;
-        },
-        async getRaw() {
-          return stored;
-        },
-        async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
-          saved = spec;
-          return { ...stored, spec };
-        },
-        async updateName() {},
-      } as unknown as SchedulesRepository,
-      runner: { async sync() {} } as unknown as SchedulerRunner,
-      owner: OWNER,
-      agentBinding: "*",
-      ownedProfile: async () => true,
-    });
+    const { service, getSavedSpec } = makeDeps(stored);
     return service
       .updateRRule({
         ...baseUpdate,
@@ -829,269 +785,17 @@ describe("a schedule's quiet hours at save", () => {
         timezone: "UTC",
         ...input,
       })
-      .then(() => saved);
+      .then(() => {
+        const saved = getSavedSpec();
+        return saved?.type === "rrule" ? saved.quietHours : undefined;
+      });
   }
 
-  /** TEST_SCENARIO: a form that changed nothing sends no quiet hours, and the
-   * stored ones stand. */
-  it("leaves the stored quiet hours when the save names none", async () => {
-    const saved = await save({});
-    const quietHours = saved?.type === "rrule" ? saved.quietHours : undefined;
-    expect(quietHours).toEqual([
+  /** TEST_SCENARIO: a form that changed nothing sends no quiet hours, and the stored ones stand; an explicit empty list clears them. */
+  it("keeps quiet hours a save omits, and clears them on an empty list", async () => {
+    expect(await save({})).toEqual([
       { startTime: "22:00", endTime: "06:00", enabled: true },
     ]);
-  });
-
-  /** TEST_SCENARIO: an explicit empty list clears the stored quiet hours. */
-  it("clears them on an explicit empty list", async () => {
-    const saved = await save({ quietHours: [] });
-    const quietHours = saved?.type === "rrule" ? saved.quietHours : undefined;
-    expect(quietHours).toBeUndefined();
-  });
-});
-
-describe("a schedule's profile at save", () => {
-  /** TEST_SCENARIO: a profile that cannot run on the agent is refused at save
-   * with its reason, rather than stored to refuse every fire (QA D4). */
-  it("refuses a profile that cannot run on the agent", async () => {
-    const service = createSchedulesService({
-      repo: {
-        async get() {
-          return null;
-        },
-        async create() {
-          throw new Error("must not be stored");
-        },
-      } as unknown as SchedulesRepository,
-      runner: { async sync() {} } as unknown as SchedulerRunner,
-      owner: OWNER,
-      agentBinding: "*",
-      ownedProfile: async () => true,
-      profileIssue: async () =>
-        "the provider it runs on is not attached to this agent",
-    });
-    await expect(
-      service.createRRule({
-        name: "daily",
-        agentId: "agent-1",
-        rrule: RRULE,
-        timezone: TIMEZONE,
-        task: "do the thing",
-        profile: "profile-1",
-      }),
-    ).rejects.toMatchObject({
-      message:
-        "that profile cannot run: the provider it runs on is not attached to this agent",
-    });
-  });
-});
-
-describe("a schedule's profile ownership on every write", () => {
-  const owned = new Set(["profile-1"]);
-  function scoped(repoOverrides: Partial<SchedulesRepository> = {}) {
-    return createSchedulesService({
-      repo: {
-        async get() {
-          return null;
-        },
-        async getRaw() {
-          return null;
-        },
-        async create(input: { spec: ScheduleSpec }) {
-          return { ...makeCurrent(), spec: input.spec };
-        },
-        async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
-          return { ...makeCurrent(), spec };
-        },
-        async updateName() {
-          return null;
-        },
-        async clearPrecheckStatus() {},
-        ...repoOverrides,
-      } as unknown as SchedulesRepository,
-      runner: {
-        async sync() {},
-        async cancel() {},
-      } as unknown as SchedulerRunner,
-      owner: OWNER,
-      agentBinding: "*",
-      ownedProfile: async (id) => owned.has(id),
-    });
-  }
-  const once = {
-    name: "one",
-    agentId: "agent-1",
-    at: "2026-10-26T09:00",
-    timezone: TIMEZONE,
-    task: "do it",
-  };
-
-  it("refuses another owner's profile on a cron create", async () => {
-    await expect(
-      scoped().createCron({
-        name: "daily",
-        agentId: "agent-1",
-        cron: "0 3 * * *",
-        task: "do it",
-        profile: "profile-other",
-      }),
-    ).rejects.toMatchObject({ message: "unknown profile" });
-  });
-
-  it("refuses another owner's profile on a one-time create", async () => {
-    await expect(
-      scoped().createOnce({ ...once, profile: "profile-other" }),
-    ).rejects.toMatchObject({ message: "unknown profile" });
-  });
-
-  it("refuses another owner's profile on a one-time update", async () => {
-    await expect(
-      scoped({
-        async get() {
-          return {
-            ...makeCurrent(),
-            spec: {
-              ...makeCurrent().spec,
-              type: "once",
-              at: "2026-10-26T09:00:00.000Z",
-            },
-          } as Schedule;
-        },
-        async getRaw() {
-          return {
-            ...makeCurrent(),
-            spec: {
-              ...makeCurrent().spec,
-              type: "once",
-              at: "2026-10-26T09:00:00.000Z",
-            },
-          } as Schedule;
-        },
-      }).updateOnce({ ...once, id: SCHEDULE_ID, profile: "profile-other" }),
-    ).rejects.toMatchObject({ message: "unknown profile" });
-  });
-
-  it("clears the profile when a schedule is moved to the agent's default", async () => {
-    let saved: ScheduleSpec | undefined;
-    const service = scoped({
-      async get() {
-        return {
-          ...makeCurrent(),
-          spec: { ...makeCurrent().spec, profile: "profile-1" },
-        } as Schedule;
-      },
-      async getRaw() {
-        return {
-          ...makeCurrent(),
-          spec: { ...makeCurrent().spec, profile: "profile-1" },
-        } as Schedule;
-      },
-      async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
-        saved = spec;
-        return { ...makeCurrent(), spec };
-      },
-    });
-    await service.clearSessionChoices(SCHEDULE_ID);
-    expect(saved?.profile).toBeUndefined();
-  });
-});
-
-describe("a profile schedule saved from a form", () => {
-  const profiled = (): Schedule => ({
-    ...makeCurrent(),
-    spec: {
-      ...makeCurrent().spec,
-      profile: "profile-1",
-      harness: "claude-code",
-      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-      settings: { effort: "high" },
-    },
-  });
-  const resolved = {
-    harness: "claude-code",
-    model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-    settings: { effort: "high" },
-  };
-
-  /** TEST_SCENARIO: The web form pre-fills the resolved values and sends them
-   * back, blank or not, on every save; a task-only edit must keep the profile. */
-  it("keeps the reference when the form repeats the resolved values", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({
-      ...baseUpdate,
-      task: "another thing",
-      ...resolved,
-    });
-    expect(getSavedSpec()?.profile).toBe("profile-1");
-    expect(getSavedSpec()?.model).toBeUndefined();
-  });
-
-  /** TEST_SCENARIO: a form that sends nothing for a choice cannot detach the
-   * profile, even when the profile changed after the form was opened. */
-  it("keeps the reference when the form sends no choices at all", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({ ...baseUpdate, task: "another thing" });
-    expect(getSavedSpec()?.profile).toBe("profile-1");
-  });
-
-  it("keeps the reference when the form sends blanks", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({
-      ...baseUpdate,
-      harness: null,
-      model: null,
-      settings: null,
-    });
-    expect(getSavedSpec()?.profile).toBe("profile-1");
-    expect(getSavedSpec()?.harness).toBeUndefined();
-  });
-
-  /** TEST_SCENARIO: a detach carries over only the keys the caller said nothing
-   * about; a key it cleared stays cleared, rather than being refilled from the
-   * profile behind the user's back. */
-  it("does not refill a choice the caller cleared while detaching", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({
-      ...baseUpdate,
-      ...resolved,
-      harness: "codex",
-      model: null,
-    });
-    const saved = getSavedSpec();
-    expect(saved?.profile).toBeUndefined();
-    expect(saved?.harness).toBe("codex");
-    expect(saved?.model).toBeUndefined();
-  });
-
-  it("detaches on a value that differs, keeping what the profile gave", async () => {
-    const { service, getSavedSpec } = makeDeps(profiled());
-    await service.updateRRule({
-      ...baseUpdate,
-      ...resolved,
-      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030",
-    });
-    const saved = getSavedSpec();
-    expect(saved?.profile).toBeUndefined();
-    expect(saved?.harness).toBe("claude-code");
-    expect(saved?.model).toBe("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030");
-  });
-
-  /** TEST_SCENARIO: A schedule whose profile cannot run shows the form blank;
-   * saving the task must not drop the reference and quietly fall back. */
-  it("keeps the reference of a profile that cannot run on a task-only edit", async () => {
-    const unavailable: Schedule = {
-      ...makeCurrent(),
-      spec: { ...makeCurrent().spec, profile: "profile-1" },
-      profileIssue: "CurveBender (shared) is not connected",
-    };
-    const { service, getSavedSpec } = makeDeps(unavailable);
-    await service.updateRRule({
-      ...baseUpdate,
-      task: "another thing",
-      harness: null,
-      model: null,
-      settings: null,
-    });
-    expect(getSavedSpec()?.profile).toBe("profile-1");
+    expect(await save({ quietHours: [] })).toBeUndefined();
   });
 });

@@ -274,35 +274,35 @@ function ModelRow({
     entry.options.find((o) => sameModel(current, o.model.name)) ??
     entry.options[0]!;
   return (
-    <li className="flex items-center gap-1">
+    <li
+      className={cn(
+        "flex items-center rounded pr-1 text-muted-foreground hover:bg-muted hover:text-foreground",
+        isCurrent && "font-medium text-foreground",
+      )}
+    >
       <PopoverClose asChild>
         <button
           type="button"
           aria-current={isCurrent ? "true" : undefined}
           title={option.model.name}
           onClick={() => onChoose(option.model.name, option.group)}
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground",
-            isCurrent && "font-medium text-foreground",
-          )}
+          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left"
         >
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+          {entry.options.length === 1 && (
+            <span className="shrink-0 whitespace-nowrap text-xs font-normal text-muted-foreground">
+              {option.group.displayName}
+            </span>
+          )}
         </button>
       </PopoverClose>
-      {entry.options.length > 1 ? (
+      {entry.options.length > 1 && (
         <ProviderChoice
           label={entry.label}
           options={entry.options}
           selected={option}
           onPick={(next) => onChoose(next.model.name, next.group)}
         />
-      ) : (
-        <span
-          title={option.group.displayName}
-          className="shrink-0 whitespace-nowrap px-1 py-1 text-xs text-muted-foreground"
-        >
-          {option.group.displayName}
-        </span>
       )}
     </li>
   );
@@ -331,7 +331,7 @@ function ProviderChoice({
           type="button"
           title={selected.group.displayName}
           aria-label={`Provider for ${label}: ${selected.group.displayName}`}
-          className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-normal text-muted-foreground hover:bg-background hover:text-foreground"
         >
           {selected.group.displayName}
           <ChevronDown size={12} aria-hidden />

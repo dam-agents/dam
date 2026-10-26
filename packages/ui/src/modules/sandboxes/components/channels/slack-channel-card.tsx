@@ -45,7 +45,7 @@ export function SlackChannelCard({
             <SlackChannelExplainer
               onGoToConnections={
                 agent
-                  ? () => navigateToSandboxHome(agent.id, "connections")
+                  ? () => navigateToSandboxHome(agent.id, "services")
                   : undefined
               }
             />

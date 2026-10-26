@@ -24,8 +24,6 @@ import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { ProfilePicker } from "../../profiles/components/profile-picker.js";
-import { useProfileAttach } from "../../profiles/hooks/use-profile-attach.js";
-import { saveChannelProfile } from "../../sandboxes/lib/channel-profile-save.js";
 import {
   useHarnessCatalog,
   useHarnessCatalogModels,
@@ -537,7 +535,6 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
 }) {
   const typed = control as unknown as Control<ChoicesControl>;
   const { data: profiles = [] } = useProfiles(agentId);
-  const { attach, manage } = useProfileAttach(agentId);
   const { field: profileField } = useController({
     control: typed,
     name: "profile",
@@ -558,28 +555,16 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
         hint="What this schedule runs on. Editing the profile changes every schedule that names it; Custom selection gives this one its own."
       >
         <ProfilePicker
+          agentId={agentId}
           label="Profile"
           showLabel={false}
-          profiles={profiles}
           value={profileField.value || null}
           placeholder="Custom selection"
           custom={{
-            label: "Custom selection",
             description: "A harness, model and settings for this schedule only",
+            onCustom: () => profileField.onChange(""),
           }}
           onPick={(profile) => profileField.onChange(profile.id)}
-          onCustom={() => profileField.onChange("")}
-          /* UNIT_BOUNDARY_DESCRIPTION: a repair that worked selects the profile,
-           * so the schedule the user is making runs on it — the attach alone
-           * would leave the form on Custom selection. */
-          onAttach={(profile) =>
-            void saveChannelProfile({
-              profile,
-              attach,
-              save: (id) => profileField.onChange(id),
-            })
-          }
-          onManage={manage}
           testId="schedule-profile"
         />
       </FormField>

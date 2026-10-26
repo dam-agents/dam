@@ -31,7 +31,7 @@ describe("the agent's configuration rail", () => {
       "setup",
       "people",
       "models",
-      "connections",
+      "services",
       "skills",
       "automations",
       "environments",
@@ -44,8 +44,9 @@ describe("the agent's configuration rail", () => {
     const moves: [string, string][] = [
       ["providers", "models"],
       ["usage", "models"],
-      ["network", "connections"],
-      ["environment", "connections"],
+      ["connections", "services"],
+      ["network", "services"],
+      ["environment", "services"],
       ["channels", "automations"],
       ["schedules", "automations"],
     ];

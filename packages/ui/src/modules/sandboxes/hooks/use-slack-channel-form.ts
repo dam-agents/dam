@@ -11,18 +11,11 @@ import type { AgentView } from "../../../types.js";
 import { useConnectSlack } from "../../agents/api/mutations.js";
 import { useBindSharingConfirm } from "../../agents/hooks/use-bind-sharing-confirm.js";
 import { useProfiles } from "../../profiles/api/queries.js";
-import {
-  defaultProfileId,
-  newestFirst,
-  newestProfileId,
-} from "../../profiles/lib/default-profile.js";
+import { defaultProfileId } from "../../profiles/lib/default-profile.js";
 import { useSessionDefaults } from "../../sessions/api/session-pair.js";
 import { useSetChannelProfile } from "../api/channel-profile.js";
 import { isSlackDirectMessageId } from "../lib/shared-channels.js";
-import {
-  planSlackChannelSave,
-  saveSlackChannel,
-} from "../lib/slack-channel-save.js";
+import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
 export type { SlackChannel };
 
@@ -71,18 +64,16 @@ export function useSlackChannelForm(
   const { data: profiles = [] } = useProfiles(agent.id);
   const chatProfileId =
     useSessionDefaults(agent.id).data?.chatProfileId ?? null;
-  /* UNIT_BOUNDARY_DESCRIPTION: a new binding starts on the profile the newest
-   * channel of this agent runs on, else the chat profile (D91); the field is
-   * the one place the pick is made for a binding, so the row never opens
-   * without one. */
-  const preselected =
-    editing || profiles.length === 0
-      ? null
-      : defaultProfileId({
-          profiles,
-          newestProfileId: newestProfileId(newestFirst(agent.channels)),
-          chatProfileId,
-        });
+  const preselected = editing
+    ? null
+    : defaultProfileId(profiles, [
+        agent.channels
+          .filter((c) => c.profileId)
+          .sort((a, b) =>
+            (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
+          )[0]?.profileId,
+        chatProfileId,
+      ]);
 
   const form = useForm<SlackChannelFormValues>({
     resolver: zodResolver(slackChannelFormSchema(editing)),
@@ -100,8 +91,6 @@ export function useSlackChannelForm(
     },
   });
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the preselection arrives with the profiles, so
-   * it is written once they are here — and never over a pick already made. */
   useEffect(() => {
     if (preselected === null || form.getValues("profile") !== "") return;
     form.setValue("profile", preselected);
@@ -124,27 +113,20 @@ export function useSlackChannelForm(
         channel,
         values: { channelId, ambient: values.ambient, customEmoji },
       });
-      /* UNIT_BOUNDARY_DESCRIPTION: the binding is made first and the profile it
-       * runs on after it, both awaited, so the dialog cannot report a channel
-       * set up before its row says what it runs on (D91). */
-      const failed = await saveSlackChannel({
-        connect: () =>
-          connect ? connectSlack.mutateAsync(connect) : Promise.resolve(),
-        setProfile:
-          !channel && values.profile !== ""
-            ? () =>
-                setChannelProfile.mutateAsync({
-                  type: "slack",
-                  slackChannelId: channelId,
-                  profileId: values.profile,
-                })
-            : null,
-      });
-      if (failed !== null)
-        emitToast({
-          kind: "error",
-          message: `The channel is connected, but its profile couldn't be set: ${getErrorMessage(failed.profileError, "try again from the channel's row.")}`,
-        });
+      if (connect) await connectSlack.mutateAsync(connect);
+      if (!channel && values.profile)
+        await setChannelProfile
+          .mutateAsync({
+            type: "slack",
+            slackChannelId: channelId,
+            profileId: values.profile,
+          })
+          .catch((err: unknown) =>
+            emitToast({
+              kind: "error",
+              message: `The channel is connected, but its profile couldn't be set: ${getErrorMessage(err, "try again from the channel's row.")}`,
+            }),
+          );
       if (!channel)
         form.setValue(
           "channelIds",

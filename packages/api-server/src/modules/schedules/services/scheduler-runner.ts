@@ -27,7 +27,6 @@ import {
   isNoDefaultModelError,
   type FirePair,
 } from "../../harness-config/index.js";
-
 import { emit, EventType } from "../../../events.js";
 import { annotateSpan } from "../../../core/background-span.js";
 
@@ -204,9 +203,6 @@ export function createSchedulerRunner(
     if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
-    /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile which cannot run
-     * on its agent fails with that reason; it never runs the agent's default and
-     * is never recorded as following one. */
     if (sched.profileIssue !== undefined)
       throw new ProfileRefusedError(
         `this schedule's profile cannot run: ${sched.profileIssue}`,
@@ -247,23 +243,13 @@ export function createSchedulerRunner(
     if (pair) {
       firedHarness.set(sched, pair.harness);
       payload.harness = pair.harness;
-      /* UNIT_BOUNDARY_DESCRIPTION: the payload names the Connection the pair
-       * resolved to, which is unambiguous because an agent holds one Connection
-       * per alias; the runtime resolves a model by its alias anyway. */
       if (pair.provider !== null) payload.provider = pair.provider;
       if (pair.model !== null) payload.model = pair.model;
       else delete payload.model;
       if (pair.settings) payload.settings = pair.settings;
     }
     if (sched.spec.settings) payload.settings = sched.spec.settings;
-    /* UNIT_BOUNDARY_DESCRIPTION: the fire carries no provider of its own, which
-     * is unambiguous only because an agent holds one Connection per alias. */
-    if (
-      pair &&
-      Object.keys(choices).length === 0 &&
-      sched.spec.profile === undefined
-    )
-      payload.onDefault = true;
+    if (pair && Object.keys(choices).length === 0) payload.onDefault = true;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
       payload.once = true;

@@ -119,7 +119,7 @@ export function buildUpdateCommand(deps: {
     )
     .option(
       "--profile <name-or-id>",
-      "run the chat default on one of your profiles, by name or id (see `dam profile list`)",
+      "run the chat default on one of your profiles, by name or id",
     )
     .option(
       "--harness <name>",
@@ -252,13 +252,7 @@ export function buildUpdateCommand(deps: {
         const profile = all.value.find(
           (p) => p.id === opts.profile || p.name === opts.profile,
         );
-        if (!profile)
-          invalid(
-            `unknown profile: ${opts.profile}\nhint: run \`dam profile list\` to see names and ids`,
-          );
-        /* UNIT_BOUNDARY_DESCRIPTION: the server resolves the reference and keeps
-         * only the id, so the values sent here are what the profile says now,
-         * never a copy the CLI decided. */
+        if (!profile) invalid(`unknown profile: ${opts.profile}`);
         const set = await svc.rememberDefault(
           agent.id,
           "chat",

@@ -10,6 +10,7 @@ import {
   sessionModelChoices,
 } from "../../modules/harness-config/services/harness-config-service.js";
 import { harnessConfigSupported } from "../../modules/harness-config/index.js";
+import type { ResolvedProfile } from "../../modules/profiles/index.js";
 
 type QueueCall = { agentId: string; change: unknown; inLock: boolean };
 type MergeCall = {
@@ -26,7 +27,7 @@ function makeService(opts?: {
   granted?: GrantedProvider[];
   resolved?: SessionPair;
   profileOwner?: string;
-  unavailable?: { reason: "no-provider"; detail: string };
+  unavailable?: string;
 }) {
   const calls = {
     queues: [] as QueueCall[],
@@ -44,26 +45,14 @@ function makeService(opts?: {
   let holdingLock = false;
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
-    profiles: {
-      resolveStored: async ({ owner }) =>
-        owner !== undefined && owner !== (opts?.profileOwner ?? "owner-1")
-          ? null
-          : opts?.resolved === undefined
-            ? null
-            : {
-                profile: {
-                  id: "profile-1",
-                  name: "Default",
-                  harness: opts.resolved.harness,
-                  providerTemplate: "curve-bender-deployment",
-                  model: String(opts.resolved.model),
-                  settings: {},
-                },
-                pair: opts.resolved,
-                grantableProvider: null,
-                unavailable: opts.unavailable ?? null,
-              },
-    },
+    resolveProfile: async ({ owner }) =>
+      opts?.resolved === undefined ||
+      (owner !== undefined && owner !== (opts.profileOwner ?? "owner-1"))
+        ? null
+        : ({
+            pair: opts.resolved,
+            unavailable: opts.unavailable ?? null,
+          } as ResolvedProfile),
     surface: "ui",
     eventQueue: {
       queue: async (agentId, change, tx) => {
@@ -99,11 +88,12 @@ function makeService(opts?: {
     },
     pairRepo: {
       read: async () => null,
-      readReferences: async () => ({
-        sessionProfile: null,
-        platformSubagentProfile: null,
+      readSaved: async () => ({
+        chat: null,
+        channel: null,
+        scheduled: null,
+        chatProfileId: null,
       }),
-      readSaved: async () => ({ chat: null, channel: null, scheduled: null }),
       write: async (_agentId, _kind, pair, references) => {
         calls.pairs.push(pair);
         calls.references.push(references ?? {});
@@ -511,10 +501,7 @@ describe("rememberSessionPair naming a profile", () => {
         provider: "conn-1",
         model: "openai/gpt-6.1-sol",
       },
-      unavailable: {
-        reason: "no-provider",
-        detail: "CurveBender (shared) is not connected",
-      },
+      unavailable: "CurveBender (shared) is not connected",
     });
     await expect(
       service.rememberSessionPair("agent-1", "chat", resolvedPair, {
@@ -535,8 +522,7 @@ describe("rememberSessionPair naming a profile", () => {
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message:
-        "only the chat default can name a profile; a channel and a schedule keep their own",
+      message: "only the chat default can name a profile",
     });
   });
 });
@@ -571,24 +557,6 @@ describe("ownership of a profile a caller names", () => {
     await expect(
       service.rememberSessionPair("agent-1", "chat", codexPair, {
         profileId: "profile-1",
-      }),
-    ).rejects.toMatchObject({
-      code: "NOT_FOUND",
-      message: "profile not found",
-    });
-    expect(calls.pairs).toEqual([]);
-  });
-
-  it("refuses another owner's profile in the platform sub-agent slot", async () => {
-    const { service, calls } = makeService({
-      capabilities: carrying,
-      granted: [{ id: "conn-1", type: "openai" }],
-      resolved: codexPair,
-      profileOwner: "owner-2",
-    });
-    await expect(
-      service.rememberSessionPair("agent-1", "chat", codexPair, {
-        platformSubagentProfileId: "profile-1",
       }),
     ).rejects.toMatchObject({
       code: "NOT_FOUND",

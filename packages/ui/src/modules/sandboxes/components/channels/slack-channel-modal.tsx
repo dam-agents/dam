@@ -22,11 +22,9 @@ import type { AgentView } from "../../../../types.js";
 import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
 import { useProfiles } from "../../../profiles/api/queries.js";
 import { ProfilePicker } from "../../../profiles/components/profile-picker.js";
-import { useProfileAttach } from "../../../profiles/hooks/use-profile-attach.js";
 import { SlackChannelPicker } from "../../../slack/components/slack-channel-picker.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
-import { saveChannelProfile } from "../../lib/channel-profile-save.js";
 import { ChannelSwitchCard } from "./channel-switch-card.js";
 
 export function SlackChannelModal({
@@ -219,7 +217,6 @@ function ProfileControls({
   onChange: (id: string) => void;
 }) {
   const { data: profiles = [] } = useProfiles(agentId);
-  const { attach, manage } = useProfileAttach(agentId);
   if (profiles.length === 0)
     return (
       <p className="text-sm text-muted-foreground">
@@ -229,18 +226,12 @@ function ProfileControls({
     );
   return (
     <ProfilePicker
+      agentId={agentId}
       label="Profile"
-      profiles={profiles}
       value={value}
       placeholder="the agent's chat default"
       testId="slack-channel-profile"
-      onPick={(profile) =>
-        void saveChannelProfile({ profile, attach, save: onChange })
-      }
-      onAttach={(profile) =>
-        void saveChannelProfile({ profile, attach, save: onChange })
-      }
-      onManage={manage}
+      onPick={(profile) => onChange(profile.id)}
     />
   );
 }

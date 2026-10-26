@@ -12,7 +12,7 @@ import {
   type DbTx,
   schedules as schedulesTable,
 } from "db";
-import type { StoredProfileResolver } from "../../profiles/index.js";
+import type { ProfileResolver } from "../../profiles/index.js";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
 import type {
@@ -39,8 +39,6 @@ export interface SchedulesRepository {
     opts?: { limit?: number; agentIds?: readonly string[] },
   ): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
-  /** UNIT_BOUNDARY_DESCRIPTION: the stored spec, unresolved, for the write that edits it — reading the resolved one and writing it back would freeze a profile's values beside its reference. */
-  getRaw(id: string, owner: string): Promise<Schedule | null>;
   getById(id: string): Promise<Schedule | null>;
   getOwnerById(id: string): Promise<string | null>;
   listAllEnabled(): Promise<Schedule[]>;
@@ -106,17 +104,6 @@ interface InternalRow {
   precheckFailedCount: number;
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: a schedule whose profile cannot run carries no
- * harness or model of its own, which the fire path already reports as the
- * scheduled run having nothing to run on. */
-function withoutChoices(spec: Schedule["spec"]): Schedule["spec"] {
-  const next = { ...spec };
-  delete next.harness;
-  delete next.model;
-  delete next.settings;
-  return next;
-}
-
 function rowToSchedule(row: InternalRow): Schedule {
   const spec = scheduleSpecSchema.parse(row.spec);
   spec.enabled = row.enabled;
@@ -146,36 +133,32 @@ function rowToSchedule(row: InternalRow): Schedule {
 
 export function createSchedulesRepository(
   db: Db,
-  profiles?: StoredProfileResolver,
+  resolveProfile: ProfileResolver,
 ): SchedulesRepository {
-  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile is read as the
-   * pair it resolves to, so the fire payload, the panel and the CLI all see the
-   * values the profile holds now, and a profile that cannot run here yields no
-   * harness or model rather than another one picked in its place. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile is read with the values the profile resolves to now, so the fire, the panel and the CLI all see them; one that cannot run carries none, and why. A write stores the reference alone. */
   async function effective(row: InternalRow): Promise<Schedule> {
     const schedule = rowToSchedule(row);
     const profileId = schedule.spec.profile;
-    if (profileId === undefined || profiles === undefined) return schedule;
-    const resolved = await profiles.resolveStored({
+    if (profileId === undefined) return schedule;
+    const resolved = await resolveProfile({
       profileId,
       agentId: schedule.agentId,
     });
-    if (!resolved || resolved.unavailable !== null)
+    const { harness: _h, model: _m, settings: _s, ...spec } = schedule.spec;
+    if (resolved && !resolved.unavailable)
       return {
         ...schedule,
-        spec: withoutChoices(schedule.spec),
-        profileIssue:
-          resolved?.unavailable?.detail ??
-          "its profile cannot run on this agent",
+        spec: {
+          ...spec,
+          harness: resolved.pair.harness,
+          model: resolved.profile.model,
+          ...(resolved.pair.settings && { settings: resolved.pair.settings }),
+        },
       };
     return {
       ...schedule,
-      spec: {
-        ...schedule.spec,
-        harness: resolved.pair.harness,
-        ...(resolved.pair.model !== null && { model: resolved.pair.model }),
-        ...(resolved.pair.settings && { settings: resolved.pair.settings }),
-      },
+      spec,
+      profileIssue: resolved?.unavailable ?? "its profile is gone",
     };
   }
 
@@ -215,16 +198,6 @@ export function createSchedulesRepository(
         )
         .orderBy(asc(schedulesTable.createdAt))) as InternalRow[];
       return Promise.all(rows.map(effective));
-    },
-
-    async getRaw(id, owner): Promise<Schedule | null> {
-      const rows = (await db
-        .select()
-        .from(schedulesTable)
-        .where(
-          and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)),
-        )) as InternalRow[];
-      return rows[0] ? rowToSchedule(rows[0]) : null;
     },
 
     async get(id, owner): Promise<Schedule | null> {
@@ -292,9 +265,14 @@ export function createSchedulesRepository(
     },
 
     async updateSpec(id, owner, spec): Promise<Schedule | null> {
+      const { harness: _h, model: _m, settings: _s, ...reference } = spec;
       const result = await db
         .update(schedulesTable)
-        .set({ spec, enabled: spec.enabled, updatedAt: new Date() })
+        .set({
+          spec: spec.profile ? reference : spec,
+          enabled: spec.enabled,
+          updatedAt: new Date(),
+        })
         .where(and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)))
         .returning();
       if (result.length === 0) return null;

@@ -75,7 +75,7 @@ export function SkillsSurface({
   const openAddSource = () =>
     setOpenModal({ kind: "add-source", mode: "github", files: [] });
   const manageConnections = agentId
-    ? () => navigateToSandboxHome(agentId, "connections")
+    ? () => navigateToSandboxHome(agentId, "services")
     : undefined;
 
   const ran = hasRun || surface.standaloneSnapshot !== undefined;

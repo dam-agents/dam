@@ -15,14 +15,14 @@ interface CreateScheduleInput {
   name: string;
   rrule: string;
   timezone: string;
-  quietHours?: { startTime: string; endTime: string; enabled: boolean }[];
+  quietHours: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck?: string;
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
-  profile?: string;
+  profile?: string | null;
   sessionTitle?: string;
 }
 
@@ -31,10 +31,7 @@ export function useCreateSchedule() {
     mutationFn: (input: CreateScheduleInput) =>
       api.schedules.createRRule.mutate({
         ...input,
-        quietHours:
-          input.quietHours && input.quietHours.length > 0
-            ? input.quietHours
-            : undefined,
+        quietHours: input.quietHours.length > 0 ? input.quietHours : undefined,
         sessionMode:
           input.sessionMode === "fresh" ? undefined : input.sessionMode,
       }),
@@ -52,9 +49,6 @@ export interface UpdateCronScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
-  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the form changed it,
-   * so a blank or untouched field leaves the stored one — and a profile the
-   * schedule names — alone. */
   harness?: string | null;
   model?: string | null;
   settings?: Record<string, string> | null;
@@ -88,9 +82,6 @@ interface UpdateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
-  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the form changed it,
-   * so a blank or untouched field leaves the stored one — and a profile the
-   * schedule names — alone. */
   harness?: string | null;
   model?: string | null;
   settings?: Record<string, string> | null;
@@ -122,7 +113,7 @@ export interface CreateOnceScheduleInput {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
-  profile?: string;
+  profile?: string | null;
   sessionTitle?: string;
 }
 
@@ -143,10 +134,6 @@ export interface UpdateOnceScheduleInput {
   task: string;
   timezone: string;
   at: string;
-  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the form changed it,
-   * so an untouched field leaves the stored one — and a profile the schedule
-   * names — alone. A one-time schedule clears a choice by leaving it out, which
-   * its own update contract already says. */
   harness?: string;
   model?: string;
   settings?: Record<string, string>;

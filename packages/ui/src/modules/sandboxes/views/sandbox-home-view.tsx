@@ -53,7 +53,7 @@ import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
   "models",
-  "connections",
+  "services",
   "automations",
   "environments",
 ]);
@@ -189,7 +189,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
                 oauthReturnView={routeToPath({
                   view: "sandbox-home",
                   agentId: agent.id,
-                  sandboxSection: "connections",
+                  sandboxSection: "services",
                 })}
               />
               <FoldedSection

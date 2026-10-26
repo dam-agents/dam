@@ -183,7 +183,7 @@ A schedule, recurring or [one-time](#one-time-schedules), carries the same choic
 A schedule's choices live on its sessions alone.
 A new schedule names a **profile** rather than its own choices: one harness, model and settings the agent's owner holds, kept on the schedule and resolved when the schedule is read, so an edit of the profile reaches every later fire.
 Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else the owner's seeded Default, and offers Custom selection for a schedule with a reason of its own.
-A schedule names a profile or its own values, never both: a value that differs from the profile's detaches it, and a choice the user left untouched keeps it.
+A schedule names a profile or its own values, never both: a save that names the profile keeps it, and one that gives values detaches it, keeping the profile's values for the choices it did not give.
 A profile that cannot run on the agent fails the fire with its reason, and the run is never reported as following the agent's default.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.
 The schedule tools tell the agent that the owner sets that default and that a schedule names choices of its own only for a reason the task gives.

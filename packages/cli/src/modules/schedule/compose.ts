@@ -32,37 +32,22 @@ export function composeScheduleModule(
   const createService = (host: string): ScheduleService =>
     createScheduleService({ trpc: opts.buildTrpc(host) });
 
-  /* UNIT_BOUNDARY_DESCRIPTION: a profile is named on the command line and the
-   * api-server takes its id, so the commands resolve one of the caller's. */
-  const findProfile = async (
-    host: string,
-    ref: string,
-  ): Promise<{
-    id: string;
-    name: string;
-    harness: string;
-    model: string;
-  } | null> => {
-    const profiles = await opts.buildTrpc(host).profiles.list.query();
-    return profiles.find((p) => p.id === ref || p.name === ref) ?? null;
-  };
-  const profileName = async (host: string, id: string) =>
-    (await opts.buildTrpc(host).profiles.list.query()).find((p) => p.id === id)
-      ?.name ?? null;
+  const findProfile = async (host: string, ref: string) =>
+    (await opts.buildTrpc(host).profiles.list.query()).find(
+      (p) => p.id === ref || p.name === ref,
+    ) ?? null;
   const agentScoped = {
     compatService: opts.compatService,
     configService: opts.configService,
     createAgentService: opts.createAgentService,
     createScheduleService: createService,
     findProfile,
-    profileName,
   };
   const idScoped = {
     compatService: opts.compatService,
     configService: opts.configService,
     createScheduleService: createService,
     findProfile,
-    profileName,
   };
 
   const parent = new Command("schedule").description(

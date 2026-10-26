@@ -7,7 +7,7 @@ import type {
   AcpSessionInfo,
   SendPromptOpts,
 } from "../../core/acp-client.js";
-import type { ChannelPairResolver } from "../../modules/channels/services/channel-pair-resolver.js";
+import type { ChannelPair } from "../../modules/channels/infrastructure/channel-profile.js";
 import { createTelegramWorker } from "../../modules/channels/infrastructure/telegram.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram-flows.js";
 import { createMemoryState } from "./chat-state.js";
@@ -40,7 +40,7 @@ export function telegramWorkerHarness(
     steer?: AcpClient["steer"];
     ambient?: boolean;
     groupPrivacy?: { on: boolean };
-    channelPair?: ChannelPairResolver;
+    channelPair?: ChannelPair;
   } = {},
 ) {
   const pending: TelegramUpdate[] = [];

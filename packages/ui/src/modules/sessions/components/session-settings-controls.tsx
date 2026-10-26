@@ -10,7 +10,7 @@ import {
 } from "../lib/session-settings.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the session's own settings — mode, effort, thinking,
+ * UNIT_BOUNDARY_DESCRIPTION: the session's own settings — effort, thinking,
  * prompt cache — as one row each. Subagents are not here: one subagent profile
  * covers both kinds of subagent, in its own section of the model picker.
  */
@@ -39,6 +39,8 @@ export function SessionSettingsControls({
     (o) =>
       !o.subagents &&
       o.id !== SUBAGENT_MODEL_SETTING &&
+      o.category !== "mode" &&
+      o.category !== "approvals" &&
       (!isModelOption(o) || modelChoices.length > 0),
   );
   if (options.length === 0) return null;

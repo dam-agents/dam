@@ -6,7 +6,7 @@ import { DisclosureToggle } from "@/components/ui/disclosure";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a panel that a bigger one holds, folded away until
  * it is asked for — the environment variables and the network rules inside
- * Connections (D104), whose summary line answers the question without opening
+ * Services (D104), whose summary line answers the question without opening
  * them.
  */
 export function FoldedSection({

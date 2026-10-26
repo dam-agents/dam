@@ -8,36 +8,29 @@ import {
   useProviderConnections,
 } from "../../sessions/api/session-pair.js";
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the one repair a profile that cannot run for an
- * agent offers where the owner holds the provider and the agent does not — the
- * pick grants it (plan §c) — and the page that connects one otherwise.
- */
+/** UNIT_BOUNDARY_DESCRIPTION: the repair a profile the agent cannot run offers: grant the owner's Connection of its provider (plan §c), or open the page that connects one. */
 export function useProfileAttach(agentId: string | null) {
   const { owned } = useProviderConnections(agentId);
   const { grant } = useGrantProvider(agentId);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const manage = () => navigateToSettings("providers");
 
   return {
-    manage: () => navigateToSettings("providers"),
-    attach: (profile: ProfileWithUsage): Promise<boolean> => {
+    manage,
+    attach: async (profile: ProfileWithUsage): Promise<boolean> => {
       const connection = owned.find(
         (p) => p.templateId === profile.providerTemplate,
       );
       if (!connection) {
-        navigateToSettings("providers");
-        return Promise.resolve(false);
+        manage();
+        return false;
       }
-      /* UNIT_BOUNDARY_DESCRIPTION: the profile becomes usable once its provider
-       * is granted, so the owner's profiles are refetched — a form that keeps
-       * offering the same row as unavailable would leave the pick unmakeable. */
-      return grant(connection.id).then(async (ok) => {
-        if (ok)
-          await queryClient.invalidateQueries({
-            queryKey: trpc.profiles.list.queryKey(),
-          });
-        return ok;
-      });
+      const ok = await grant(connection.id);
+      if (ok)
+        await queryClient.invalidateQueries({
+          queryKey: trpc.profiles.list.queryKey(),
+        });
+      return ok;
     },
   };
 }

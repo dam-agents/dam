@@ -1,4 +1,5 @@
 import type { ProviderUsage } from "../hooks/use-provider-usage.js";
+import { DEFAULT_KIND_LABEL } from "../lib/default-kind.js";
 
 export function DetachProviderMessage({
   name,
@@ -13,28 +14,11 @@ export function DetachProviderMessage({
         Sessions running on <strong>{name}</strong> stop until it is attached
         again.
       </p>
-      {/* UNIT_BOUNDARY_DESCRIPTION: what still follows an agent-level default
-       * runs on it — the chat default, and a channel or scheduled default saved
-       * before profiles (QA); channels and schedules with a profile of their own
-       * are untouched. */}
-      {usage.kinds.includes("chat") && (
+      {usage.kinds.length > 0 && (
         <p>
-          The chat default runs on it, so new chats can&rsquo;t start until you
-          choose another model.
-        </p>
-      )}
-      {(usage.kinds.includes("channel") ||
-        usage.kinds.includes("scheduled")) && (
-        <p>
-          A{" "}
-          {listed(
-            [
-              ...(usage.kinds.includes("channel") ? ["channel"] : []),
-              ...(usage.kinds.includes("scheduled") ? ["scheduled"] : []),
-            ],
-            "or",
-          )}{" "}
-          default saved before profiles stops too.
+          The {listed(usage.kinds.map((kind) => DEFAULT_KIND_LABEL[kind]))}{" "}
+          {usage.kinds.length === 1 ? "default runs" : "defaults run"} on it and
+          won&rsquo;t run until you choose another model.
         </p>
       )}
       {usage.profiles.length > 0 && (
@@ -61,7 +45,7 @@ export function DetachProviderMessage({
   );
 }
 
-const listed = (words: readonly string[], joins: string): string =>
+const listed = (words: readonly string[]): string =>
   words.length < 2
     ? (words[0] ?? "")
-    : `${words.slice(0, -1).join(", ")} ${joins} ${words[words.length - 1]}`;
+    : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;

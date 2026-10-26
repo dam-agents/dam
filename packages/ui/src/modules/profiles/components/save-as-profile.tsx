@@ -1,3 +1,5 @@
+import { Save } from "@carbon/icons-react";
+import { isPlatformSubagentSetting } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 import { useState } from "react";
 
@@ -10,120 +12,128 @@ import {
 } from "@/components/modal";
 import { Input } from "@/components/ui/input";
 
+import { useAgent } from "../../agents/api/queries.js";
+import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { useCreateProfile, useUpdateProfile } from "../api/mutations.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: "Save as a profile" names the pick the picker is
- * holding, and "Update {name}" writes it back to the profile it came from; both
- * take the values as they are, since that is exactly what the user tuned.
+ * UNIT_BOUNDARY_DESCRIPTION: the foot of the full picker: "Save as a profile"
+ * names the pick, and "Update {name}" writes it back to the profile it came
+ * from (D95 B). Not offered on a shared agent, whose editor uses the owner's
+ * profiles and never changes them. The dialog renders outside the picker's
+ * popover, which an outside click closes.
  */
-export function SaveAsProfile({
+export function useSaveAsProfile({
   agentId,
   pair,
   providerTemplate,
-  profile,
-  onClose,
+  from,
+  approvalId,
   onSaved,
 }: {
-  /* UNIT_BOUNDARY_DESCRIPTION: the agent the profile is saved from, so the
-   * server can refuse a save made through a Shared Agent: an editor references
-   * the owner's profiles there and never writes them. */
   agentId: string;
-  pair: SessionPair;
-  providerTemplate: string;
-  /** UNIT_BOUNDARY_DESCRIPTION: present when the pick is the named profile's own values, so the save updates it instead of creating a second one. */
-  profile: { id: string; name: string } | null;
-  onClose: () => void;
-  onSaved: (profileId: string, name: string) => void;
+  pair: SessionPair | null;
+  providerTemplate: string | undefined;
+  from: { id: string; name: string } | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the harness option that holds tool approval, which a profile never carries. */
+  approvalId: string | undefined;
+  onSaved: (profile: { id: string; name: string }) => void;
 }) {
+  const agent = useAgent(agentId);
   const create = useCreateProfile();
   const update = useUpdateProfile();
-  const [name, setName] = useState(profile?.name ?? "");
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const saving = create.isPending || update.isPending;
+  if (
+    !pair?.model ||
+    providerTemplate === undefined ||
+    (agent !== null && !isOwnAgent(agent))
+  )
+    return { row: null, dialog: null };
 
   const save = () => {
     const trimmed = name.trim();
-    if (trimmed === "") {
-      setError("Give the profile a name.");
-      return;
-    }
-    /* UNIT_BOUNDARY_DESCRIPTION: a profile holds the session's own settings, so
-     * the platform sub-agent keys a session may carry are left out: the server
-     * refuses them, and that slot keeps a reference of its own. */
-    const settings = Object.fromEntries(
-      Object.entries(pair.settings ?? {}).filter(
-        ([id]) => !id.startsWith("platformSubagent."),
-      ),
-    );
+    if (trimmed === "") return setError("Give the profile a name.");
     const body = {
+      agentId,
+      name: trimmed,
       harness: pair.harness,
       providerTemplate,
       model: pair.model ?? "",
-      /* UNIT_BOUNDARY_DESCRIPTION: an update sends the settings even when there
-       * are none, so the profile takes exactly the pick's values instead of
-       * keeping the ones it had. */
-      ...(profile || Object.keys(settings).length > 0 ? { settings } : {}),
+      settings: Object.fromEntries(
+        Object.entries(pair.settings ?? {}).filter(
+          ([id]) => !isPlatformSubagentSetting(id) && id !== approvalId,
+        ),
+      ),
     };
-    if (profile) {
+    const done = {
+      onSuccess: (saved: { id: string; name: string }) => {
+        setOpen(false);
+        onSaved(saved);
+      },
+      onError: (err: { message: string }) => setError(err.message),
+    };
+    if (from)
       update.mutate(
-        { id: profile.id, name: trimmed, agentId, ...body },
+        { id: from.id, ...body },
         {
-          onSuccess: () => onSaved(profile.id, trimmed),
-          onError: (err) => setError(err.message),
+          ...done,
+          onSuccess: () => done.onSuccess({ id: from.id, name: trimmed }),
         },
       );
-      return;
-    }
-    create.mutate(
-      { name: trimmed, agentId, ...body },
-      {
-        onSuccess: (saved) => onSaved(saved.id, saved.name),
-        onError: (err) => setError(err.message),
-      },
-    );
+    else create.mutate(body, done);
   };
 
-  return (
-    <Modal onClose={onClose}>
-      <DialogHeader
-        onClose={onClose}
-        closeDisabled={saving}
-        title={profile ? `Update “${profile.name}”` : "Save as a profile"}
-      />
-      <DialogBody>
-        <p className="mb-3 text-sm text-muted-foreground">
-          {profile
-            ? "Every chat default, channel and schedule that uses this profile takes these values."
-            : "Name this harness, model and settings, then point your defaults, channels and schedules at it."}
-        </p>
-        <FormField
-          label="Name"
-          error={error ?? undefined}
-          hint={
-            profile
-              ? undefined
-              : "A name you will recognise in the model picker."
-          }
-        >
-          <Input
-            autoFocus
-            aria-label="Profile name"
-            placeholder="e.g. Fast review"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && save()}
-          />
-        </FormField>
-      </DialogBody>
-      <DialogActions
-        onCancel={onClose}
-        cancelDisabled={saving}
-        label={profile ? "Update profile" : "Save profile"}
-        pendingLabel="Saving…"
-        pending={saving}
-        onSubmit={save}
-      />
-    </Modal>
-  );
+  return {
+    row: (
+      <button
+        type="button"
+        onClick={() => {
+          setName(from?.name ?? "");
+          setError(null);
+          setOpen(true);
+        }}
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <Save size={14} aria-hidden />
+        {from ? `Update “${from.name}”` : "Save as a profile"}
+      </button>
+    ),
+    dialog: open && (
+      <Modal onClose={() => setOpen(false)}>
+        <DialogHeader
+          onClose={() => setOpen(false)}
+          closeDisabled={saving}
+          title={from ? `Update “${from.name}”` : "Save as a profile"}
+        />
+        <DialogBody>
+          <p className="mb-3 text-sm text-muted-foreground">
+            {from
+              ? "Every chat default, channel and schedule that uses this profile takes these values."
+              : "Name this harness, model and settings, then point your defaults, channels and schedules at it."}
+          </p>
+          <FormField label="Name" error={error ?? undefined}>
+            <Input
+              autoFocus
+              aria-label="Profile name"
+              placeholder="e.g. Fast review"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && save()}
+            />
+          </FormField>
+        </DialogBody>
+        <DialogActions
+          onCancel={() => setOpen(false)}
+          cancelDisabled={saving}
+          label={from ? "Update profile" : "Save profile"}
+          pendingLabel="Saving…"
+          pending={saving}
+          onSubmit={save}
+        />
+      </Modal>
+    ),
+  };
 }

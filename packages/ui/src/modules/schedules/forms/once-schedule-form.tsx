@@ -20,9 +20,9 @@ import {
   onceFormSchema,
   type OnceFormValues,
   onceLocalMoment,
-  onceUpdateChoices,
 } from "./once-form-schema.js";
 import { ScheduleDialog } from "./schedule-dialog.js";
+import { scheduleChoices } from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 interface Props {
@@ -68,32 +68,21 @@ export function OnceScheduleForm({
       });
       onClose();
     };
-    const name = { name: v.name, task: v.task, timezone: v.timezone };
-    const choices = onceUpdateChoices(v);
-    const title = v.sessionTitle ? { sessionTitle: v.sessionTitle } : {};
+    const fields = {
+      name: v.name,
+      task: v.task,
+      timezone: v.timezone,
+      ...scheduleChoices(v),
+      ...(v.sessionTitle ? { sessionTitle: v.sessionTitle } : {}),
+    };
     if (existing) {
       updateOnce.mutate(
-        {
-          id: existing.id,
-          ...name,
-          ...title,
-          at: `${v.date}T${v.time}`,
-          ...choices,
-          /* UNIT_BOUNDARY_DESCRIPTION: leaving a profile for a schedule of its
-           * own tells the server to drop the reference it stored. */
-          ...(!v.profile && existing.profile ? { profile: null } : {}),
-        },
+        { id: existing.id, ...fields, at: `${v.date}T${v.time}` },
         { onSuccess },
       );
     } else {
       createOnce.mutate(
-        {
-          agentId,
-          ...name,
-          ...title,
-          ...(at ? { at } : {}),
-          ...choices,
-        },
+        { agentId, ...fields, ...(at ? { at } : {}) },
         { onSuccess },
       );
     }

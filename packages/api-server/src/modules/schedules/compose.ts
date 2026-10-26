@@ -27,7 +27,7 @@ import type { SpendHoldGate } from "../spend/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { startResumeHeldOnceSaga } from "./sagas/resume-held-once.js";
 import type { FirePair } from "../harness-config/index.js";
-import type { StoredProfileResolver } from "../profiles/index.js";
+import type { ProfileResolver } from "../profiles/index.js";
 
 const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
 
@@ -44,23 +44,14 @@ export interface SchedulesBoot {
   worker: RunningWorker;
   agentOnceLimits: AgentOnceLimits;
   validateSessionChoices?: SessionChoicesValidator;
-  /* UNIT_BOUNDARY_DESCRIPTION: a schedule names a profile of its owner's, and a
-   * stored one is read as the pair it resolves to; both come from the profiles
-   * module so the schedules module learns nothing else about profiles. */
-  profiles: {
-    resolveStored: StoredProfileResolver["resolveStored"];
-    owned: (owner: string, profileId: string) => Promise<boolean>;
-  };
+  resolveProfile: ProfileResolver;
   retentionTick(): Promise<void>;
   close(): Promise<void>;
 }
 
 export interface ComposeSchedulesAtBootOpts {
   db: Db;
-  profiles: {
-    resolveStored: StoredProfileResolver["resolveStored"];
-    owned: (owner: string, profileId: string) => Promise<boolean>;
-  };
+  resolveProfile: ProfileResolver;
   firePair?: FirePair;
   agentOnceLimits?: AgentOnceLimits;
   validateSessionChoices?: SessionChoicesValidator;
@@ -87,7 +78,7 @@ export function composeSchedulesAtBoot(
   opts: ComposeSchedulesAtBootOpts,
 ): SchedulesBoot {
   const log = (m: string) => process.stderr.write(`[schedules] ${m}\n`);
-  const repo = createSchedulesRepository(opts.db, opts.profiles);
+  const repo = createSchedulesRepository(opts.db, opts.resolveProfile);
   const queue = createScheduleQueue(opts.bullConnection);
   const runner = createSchedulerRunner({
     ...(opts.firePair ? { firePair: opts.firePair } : {}),
@@ -125,7 +116,7 @@ export function composeSchedulesAtBoot(
     queue,
     runner,
     worker,
-    profiles: opts.profiles,
+    resolveProfile: opts.resolveProfile,
     agentOnceLimits: opts.agentOnceLimits ?? DEFAULT_AGENT_ONCE_LIMITS,
     ...(opts.validateSessionChoices
       ? { validateSessionChoices: opts.validateSessionChoices }
@@ -188,19 +179,7 @@ export function composeSchedulesForOwner(opts: ComposeSchedulesForOwnerOpts): {
         ? { validateSessionChoices: boot.validateSessionChoices }
         : {}),
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
-      ownedProfile: (profileId) => boot.profiles.owned(owner, profileId),
-      profileIssue: async (profileId, agentId) => {
-        const resolved = await boot.profiles.resolveStored({
-          profileId,
-          agentId,
-          owner,
-        });
-        if (resolved === null) return "its profile is gone";
-        if (resolved.unavailable !== null) return resolved.unavailable.detail;
-        if (resolved.grantableProvider !== null)
-          return "the provider it runs on is not attached to this agent";
-        return null;
-      },
+      resolveProfile: boot.resolveProfile,
     }),
     isOwnedSchedule: async (scheduleId) =>
       (await boot.repo.get(scheduleId, owner)) !== null,

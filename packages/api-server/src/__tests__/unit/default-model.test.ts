@@ -341,10 +341,7 @@ describe("the one-time default conversion", () => {
           chat: saved,
           channel: null,
           scheduled: null,
-        }),
-        readReferences: async () => ({
-          sessionProfile: null,
-          platformSubagentProfile: null,
+          chatProfileId: null,
         }),
         write: async () => {},
         clear: async () => {},
@@ -741,47 +738,30 @@ describe("defaultModelNoticesOf", () => {
 });
 
 describe("defaultModelNoticesOf — a chat default held by a profile", () => {
-  const pair = {
-    harness: "claude-code",
-    provider: "conn-1",
-    model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-  };
   const input = {
     agentId: "agent-1",
     routed: true,
-    saved: { chat: pair, channel: null, scheduled: null },
+    saved: {
+      chat: {
+        harness: "claude-code",
+        provider: "conn-1",
+        model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      },
+      channel: null,
+      scheduled: null,
+    },
     note: null,
     grantedAliases: new Set(["cb"]),
     runsUnattended: true,
   };
 
-  it("says the provider is gone when the profile's provider cannot run here", () => {
-    const notices = defaultModelNoticesOf({
-      ...input,
-      unavailable: { reason: "rival-provider" },
-    });
-    expect(notices.map((n) => n.state)).toEqual(["provider-gone"]);
-  });
-
-  it("says no default can be set when the profile's model is not offered", () => {
-    const notices = defaultModelNoticesOf({
-      ...input,
-      unavailable: { reason: "model-not-listed" },
-    });
-    expect(notices.map((n) => n.state)).toEqual(["not-set"]);
-  });
-
-  it("says nothing when the profile runs here", () => {
-    expect(defaultModelNoticesOf({ ...input, unavailable: null })).toEqual([]);
-  });
-
-  it("tells nothing to an Agent that runs nothing unattended", () => {
+  /** TEST_SCENARIO: a chat profile whose provider the Agent cannot run reads as a gone provider, not as a working default. */
+  it("says the provider is gone when the profile cannot run here", () => {
     expect(
-      defaultModelNoticesOf({
-        ...input,
-        runsUnattended: false,
-        unavailable: { reason: "no-provider" },
-      }),
-    ).toEqual([]);
+      defaultModelNoticesOf({ ...input, profileUnavailable: true }).map(
+        (n) => n.state,
+      ),
+    ).toEqual(["provider-gone"]);
+    expect(defaultModelNoticesOf(input)).toEqual([]);
   });
 });

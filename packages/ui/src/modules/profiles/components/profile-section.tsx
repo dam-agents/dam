@@ -1,5 +1,5 @@
 import { Edit, TrashCan } from "@carbon/icons-react";
-import type { ProfileUsage, ProfileWithUsage } from "api-server-api";
+import type { ProfileWithUsage } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -14,13 +14,7 @@ import { useDeleteProfile, useUpdateProfile } from "../api/mutations.js";
 import { useProfiles } from "../api/queries.js";
 import { profileDetail } from "../lib/profile-detail.js";
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the owner's profiles in Settings: a list with what
- * each one runs and what points at it, a rename in place, and a delete that
- * names what would stop. A profile is created and edited where it is picked —
- * the chat picker's "Save as a profile" and "Update" — so this page opens on
- * what exists rather than being a second editor.
- */
+/** UNIT_BOUNDARY_DESCRIPTION: the owner's profiles in Settings: what each runs and how often it is used, rename, and a delete that names what still uses it (D95 B: created and edited in the chat picker). */
 export function ProfileSection() {
   const { data: profiles = [], isPending } = useProfiles();
   const update = useUpdateProfile();
@@ -40,9 +34,6 @@ export function ProfileSection() {
       setRenaming(null);
       return;
     }
-    /* UNIT_BOUNDARY_DESCRIPTION: the field closes only once the server took the
-     * name, so a refused rename keeps what was typed in front of the person who
-     * typed it. */
     update.mutate(
       { id: profile.id, name: next },
       { onSuccess: () => setRenaming(null) },
@@ -50,19 +41,15 @@ export function ProfileSection() {
   };
   const confirmDelete = async (profile: ProfileWithUsage) => {
     if (uses(profile) > 0) {
-      /* UNIT_BOUNDARY_DESCRIPTION: nothing to confirm, so the dialog names what
-       * stands in the way — the agent, schedule or channel by name, not a count
-       * — and offers no Delete the server would refuse. A usage read that fails
-       * still says what it knows from the list, so the click is never a no-op. */
-      const detail = await queryClient
-        .fetchQuery(trpc.profiles.usage.queryOptions({ id: profile.id }))
-        .catch(() => null);
-      const who = detail
-        ? usedBy(
-            detail,
-            (agentId) => findAgent(agents, agentId)?.name ?? agentId,
-          )
-        : `${uses(profile)} place${uses(profile) === 1 ? "" : "s"}`;
+      const usage = await queryClient.fetchQuery(
+        trpc.profiles.usage.queryOptions({ id: profile.id }),
+      );
+      const agentName = (id: string) => findAgent(agents, id)?.name ?? id;
+      const who = [
+        ...usage.agents.map((a) => `the agent ${agentName(a.id)}`),
+        ...usage.channels.map((c) => `the channel ${c.label}`),
+        ...usage.schedules.map((s) => `the schedule “${s.name}”`),
+      ].join(", ");
       void showConfirm(
         `It is used by ${who}. Move ${uses(profile) === 1 ? "it" : "them"} to another profile first.`,
         `“${profile.name}” cannot be deleted`,
@@ -124,7 +111,7 @@ export function ProfileSection() {
                 </p>
               </div>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {usageLabel(profile)}
+                {uses(profile) === 0 ? "unused" : `used ${uses(profile)}×`}
               </span>
               <Button
                 variant="ghost"
@@ -158,25 +145,3 @@ export function ProfileSection() {
 
 const uses = (profile: ProfileWithUsage): number =>
   profile.usage.agents + profile.usage.channels + profile.usage.schedules;
-
-/** UNIT_BOUNDARY_DESCRIPTION: what points at a profile, named so the owner knows which agent, schedule or channel to move; an agent the list has not loaded yet keeps its id. */
-function usedBy(
-  usage: ProfileUsage,
-  agentName: (agentId: string) => string,
-): string {
-  return [
-    ...usage.agents.map(
-      (agent) =>
-        `${agent.slots.length > 1 ? "the agent defaults" : "the agent default"} of ${agentName(agent.id)}`,
-    ),
-    ...usage.channels.map((channel) => `the channel ${channel.label}`),
-    ...usage.schedules.map((schedule) => `the schedule “${schedule.name}”`),
-  ].join(", ");
-}
-
-function usageLabel(profile: ProfileWithUsage): string {
-  const total =
-    profile.usage.agents + profile.usage.channels + profile.usage.schedules;
-  if (total === 0) return "unused";
-  return `used ${total}×`;
-}

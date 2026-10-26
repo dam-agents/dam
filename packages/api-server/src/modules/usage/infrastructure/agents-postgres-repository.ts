@@ -47,19 +47,6 @@ export function listAgentIdsByOwner(db: Db, pseudo: SubPseudonymizer) {
   };
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: whether the row a boot pass is about to write was
- * soft-deleted before it, which is what tells a restore from an Agent still
- * waiting for its first hello. */
-export function isAgentRowDeleted(db: Db) {
-  return async (id: string): Promise<boolean> => {
-    const rows = await db
-      .select({ deletedAt: agents.deletedAt })
-      .from(agents)
-      .where(eq(agents.id, id));
-    return rows[0]?.deletedAt !== undefined && rows[0]?.deletedAt !== null;
-  };
-}
-
 export function listLiveAgentIds(db: Db) {
   return async (): Promise<string[]> => {
     const rows = await db
@@ -135,10 +122,7 @@ export function fillAgentStarterKitFacts(db: Db) {
   };
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: a deleted Agent drops the profile references it
- * held, because a chat default only means something for an Agent that can
- * chat. Keeping them would let a row its owner can no longer see hold a
- * profile against deletion, with only the foreign key to say so. */
+/* UNIT_BOUNDARY_DESCRIPTION: a deleted Agent drops its profile references, or its hidden row would keep those profiles undeletable; restored, it has no chat default and converts one on its first hello. */
 export function markAgentDeleted(db: Db) {
   return async (id: string): Promise<void> => {
     await db

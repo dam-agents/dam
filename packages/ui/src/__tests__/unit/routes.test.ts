@@ -14,7 +14,7 @@ const canonicalPaths = [
   "/slack/bind",
   "/connections/secret",
   "/sandboxes/sb-1",
-  "/sandboxes/sb-1/connections",
+  "/sandboxes/sb-1/services",
   "/starter-kits/platform/code-reviewer",
   "/starter-kits/link/acme/shared-kit",
   "/analytics",

@@ -7,12 +7,7 @@ const SECTION_PERMISSIONS: Record<SandboxSection, readonly AgentPermission[]> =
     setup: ["settings", "lifecycle", "delete"],
     people: ["editors"],
     models: ["connections", "spendLimits", "settings"],
-    connections: [
-      "connections",
-      "credentialInjection",
-      "egressRules",
-      "envVars",
-    ],
+    services: ["connections", "credentialInjection", "egressRules", "envVars"],
     "chat-forms": ["chatForms"],
     skills: ["skills", "skillSources", "skillPublish"],
     automations: ["schedules", "channels"],

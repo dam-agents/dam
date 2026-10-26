@@ -1,13 +1,14 @@
-// TEST_OVERVIEW: The model configuration the pickers open on: its two headings, the rows a profile that cannot run here keeps, the one action that fixes each, the custom row's counts, and the subagent toggle.
+// TEST_OVERVIEW: The profile rows every picker shows: the selected one is marked, and a profile that cannot run here stays listed, disabled, with its reason and the one action that fixes it inline.
 import type { ProfileWithUsage } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import {
-  ProfileList,
-  SubagentSection,
-} from "../../modules/profiles/components/profile-list.js";
+import { ProfileChoices } from "../../modules/profiles/components/profile-list.js";
+
+vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
+  useProfileAttach: () => ({ attach: async () => true, manage: () => {} }),
+}));
 
 const profile = (
   overrides: Partial<ProfileWithUsage> = {},
@@ -19,142 +20,53 @@ const profile = (
   model: "anthropic/claude-mythos-5-1",
   settings: {},
   seeded: false,
-  createdAt: "",
-  updatedAt: "",
   usage: { agents: 0, channels: 0, schedules: 0 },
   availability: { available: true, reason: null, attachable: false },
   ...overrides,
 });
 
-const render = (element: Parameters<typeof renderToStaticMarkup>[0]) =>
-  renderToStaticMarkup(element);
+const rows = (profiles: ProfileWithUsage[], selectedId: string | null = null) =>
+  renderToStaticMarkup(
+    createElement(ProfileChoices, {
+      profiles,
+      selectedId,
+      onPick: () => {},
+      onAttach: () => {},
+      onManage: () => {},
+    }),
+  );
 
-describe("the model configuration", () => {
-  /** TEST_SCENARIO: two sections of the same weight, and a custom row that says
-   * what it costs while it is not the active choice. */
-  it("names both sections and what Custom selection costs", () => {
-    const html = render(
-      createElement(ProfileList, {
-        profiles: [profile()],
-        current: null,
-        counts: { harnesses: 2 },
-        onPick: () => {},
-        onCustom: () => {},
-        onAttach: () => {},
-        onManage: () => {},
-      }),
-    );
-    expect(html).toContain("Model configuration");
-    expect(html).toContain("Primary model");
-    expect(html).toContain("Custom selection");
-    expect(html).toContain("2 harnesses");
+describe("the profile rows", () => {
+  /** TEST_SCENARIO: the selected profile is marked current. */
+  it("marks the selected profile", () => {
+    expect(rows([profile()], "p1")).toContain('aria-current="true"');
+    expect(rows([profile()])).not.toContain("aria-current");
   });
 
-  /** TEST_SCENARIO: an unavailable profile keeps its place, disabled and never
-   * crossed through, and offers the action its reason allows. */
-  it("offers the one action each unavailable reason allows", () => {
-    const notConnected = renderToStaticMarkup(
-      createElement(ProfileList, {
-        profiles: [
-          profile({
-            availability: {
-              available: false,
-              reason: "AWS Bedrock is not connected",
-              attachable: false,
-            },
-          }),
-        ],
-        current: null,
-        counts: { harnesses: 1 },
-        onPick: () => {},
-        onCustom: () => {},
-        onAttach: () => {},
-        onManage: () => {},
+  /** TEST_SCENARIO: a provider nobody connected offers the page that connects one; one the owner holds and the agent lacks offers the grant (QA D3). */
+  it("offers the action each unavailable profile allows", () => {
+    const notConnected = rows([
+      profile({
+        availability: {
+          available: false,
+          reason: "AWS Bedrock is not connected",
+          attachable: false,
+        },
       }),
-    );
+    ]);
+    expect(notConnected).toContain('disabled=""');
+    expect(notConnected).toContain("AWS Bedrock is not connected");
     expect(notConnected).toContain("Configure providers");
-    expect(notConnected).not.toContain("Connect this provider");
-    expect(notConnected).not.toContain("line-through");
-    expect(notConnected).toContain("disabled");
-
-    const attachable = renderToStaticMarkup(
-      createElement(ProfileList, {
-        profiles: [
-          profile({
-            availability: {
-              available: false,
-              reason: "Bob Shell is not attached to this agent",
-              attachable: true,
-            },
-          }),
-        ],
-        current: null,
-        counts: { harnesses: 1 },
-        onPick: () => {},
-        onCustom: () => {},
-        onAttach: () => {},
-        onManage: () => {},
+    const attachable = rows([
+      profile({
+        availability: {
+          available: true,
+          reason: "Anthropic isn't attached to this agent",
+          attachable: true,
+        },
       }),
-    );
+    ]);
     expect(attachable).toContain("Connect this provider");
-  });
-
-  /** TEST_SCENARIO: a profile the owner holds a provider for that the agent has
-   * not been granted reads as available but offers the same one-click repair,
-   * which is the case the action exists for (QA D3). */
-  it("offers Connect this provider for an available but unattached profile", () => {
-    const html = render(
-      createElement(ProfileList, {
-        profiles: [
-          profile({
-            availability: {
-              available: true,
-              reason: null,
-              attachable: true,
-            },
-          }),
-        ],
-        current: null,
-        counts: { harnesses: 1 },
-        onPick: () => {},
-        onCustom: () => {},
-        onAttach: () => {},
-        onManage: () => {},
-      }),
-    );
-    expect(html).toContain("Connect this provider");
-    expect(html).toContain("Connect its provider to run it here");
-    expect(html).not.toContain("aria-disabled");
-  });
-
-  /** TEST_SCENARIO: the subagent toggle is on by default, and off reveals the
-   * same rows the primary model offers. */
-  it("shows the subagent list only once the agent is not picking", () => {
-    const on = render(
-      createElement(SubagentSection, {
-        profiles: [profile()],
-        selectedId: null,
-        onAgentPicks: () => {},
-        onPick: () => {},
-        onAttach: () => {},
-        onManage: () => {},
-      }),
-    );
-    expect(on).toContain("Subagent model");
-    expect(on).toContain("Let the agent pick");
-    expect(on).toContain("checked");
-    expect(on).not.toContain("Fast review");
-
-    const off = render(
-      createElement(SubagentSection, {
-        profiles: [profile()],
-        selectedId: "p1",
-        onAgentPicks: () => {},
-        onPick: () => {},
-        onAttach: () => {},
-        onManage: () => {},
-      }),
-    );
-    expect(off).toContain("Fast review");
+    expect(attachable).not.toContain('disabled=""');
   });
 });

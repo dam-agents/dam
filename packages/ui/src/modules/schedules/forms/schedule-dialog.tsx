@@ -9,9 +9,12 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useProfiles } from "../../profiles/api/queries.js";
+import { defaultProfileId } from "../../profiles/lib/default-profile.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
+import { useSessionDefaults } from "../../sessions/api/session-pair.js";
 import { useDeleteSchedule } from "../api/mutations.js";
-import { useSchedulePresetProfile } from "../hooks/use-schedule-preset-profile.js";
+import { useSchedules } from "../api/queries.js";
 import {
   ScheduleChoicesField,
   ScheduleSessionTitleField,
@@ -80,10 +83,15 @@ export function ScheduleDialog<T extends DialogValues>({
   const deleteSchedule = useDeleteSchedule();
   const showConfirm = useStore((state) => state.showConfirm);
 
-  const preset = useSchedulePresetProfile(agentId, !existing);
-  /* UNIT_BOUNDARY_DESCRIPTION: a new schedule starts on a profile (D92), written
-   * once the lists are here; the write is not a change the user made, so it
-   * never makes an untouched form look edited. */
+  const presetFor = existing ? null : agentId;
+  const { data: schedules = [] } = useSchedules(presetFor);
+  const { data: profiles = [] } = useProfiles(presetFor);
+  const chatProfileId = useSessionDefaults(presetFor).data?.chatProfileId;
+  const preset = defaultProfileId(profiles, [
+    [...schedules].reverse().find((s) => s.profile)?.profile,
+    chatProfileId,
+  ]);
+  /* UNIT_BOUNDARY_DESCRIPTION: a new schedule starts on a profile (D92) once the lists are here; not a change the user made, so the form stays clean. */
   useEffect(() => {
     if (preset === null || fields.getValues().profile) return;
     fields.setValue("profile", preset, { shouldDirty: false });

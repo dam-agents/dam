@@ -1,418 +1,314 @@
-import { isUniqueViolation } from "../../../core/db-errors.js";
 import { TRPCError } from "@trpc/server";
-import type { RepublishDefaultsResult } from "api-server-api";
 import {
   aliasForProviderType,
+  aliasForTemplateId,
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  CURVE_BENDER_WORK_MODEL,
+  displayNameForTemplate,
   harnessFits,
   parseQualifiedModel,
   PROVIDER_TEMPLATE_IDS,
+  providerAliasConflict,
   providerTypeForTemplateId,
   type HarnessCatalog,
-  type ProfileCreateInput,
-  type ProfileUpdateInput,
-  type ProfileUsage,
-  type ProfileWithUsage,
   type ProfilesService,
+  type ProfileWithUsage,
+  type SessionPair,
 } from "api-server-api";
-import { PLATFORM_SUBAGENT_PREFIX } from "agent-runtime-api";
+import { isUniqueViolation } from "../../../core/db-errors.js";
+import { getLogger } from "../../../core/logger.js";
 import {
   SEEDED_DEFAULT,
+  type ProfileReferences,
   type ProfileRow,
   type ProfilesRepository,
 } from "../infrastructure/profiles-repository.js";
 
-/** UNIT_BOUNDARY_DESCRIPTION: what the deployment's shared provider is, when it has one, so the seeded profile names a provider and a model the install actually serves. */
-export interface SeededProvider {
-  providerTemplate: string;
-  model: string;
+export interface ResolvedProfile {
+  profile: ProfileRow;
+  pair: SessionPair;
+  /** UNIT_BOUNDARY_DESCRIPTION: why the profile cannot run on the agent, or null; a run never substitutes another provider or model for it. */
+  unavailable: string | null;
+  /** UNIT_BOUNDARY_DESCRIPTION: the owner holds the provider and the agent does not, with no rival of its alias granted, so a pick may grant it first. */
+  attachable: boolean;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: what an edit has to tell the agents that point at the profile; the request composes it once the harness-config module exists. */
-export interface ProfileFanOut {
-  republishDefaults(agentId: string): Promise<RepublishDefaultsResult>;
+/** UNIT_BOUNDARY_DESCRIPTION: a stored reference passes no owner, because the row holding it is the authority; a write passes the caller's, so another owner's profile can never be attached. */
+export type ProfileResolver = (input: {
+  profileId: string;
+  agentId: string;
+  owner?: string;
+}) => Promise<ResolvedProfile | null>;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the one place a profile becomes a pair for an
+ * agent. A profile names a provider template, so the Connection is the agent's
+ * grant of that template, else the owner's oldest one, which runs only once it
+ * is granted and only while no rival Connection of the same alias is.
+ */
+export function profileResolver(repo: ProfilesRepository): ProfileResolver {
+  return async ({ profileId, agentId, owner }) => {
+    const profile = await repo.get(profileId, owner);
+    if (!profile) return null;
+    const [owned, granted] = await Promise.all([
+      repo.ownerConnections(profile.owner),
+      repo.agentConnections(profile.owner, agentId),
+    ]);
+    const ofTemplate = owned.filter(
+      (c) => c.templateId === profile.providerTemplate,
+    );
+    const connection =
+      ofTemplate.find((c) => granted.some((g) => g.id === c.id)) ??
+      ofTemplate[0];
+    const isGranted =
+      connection !== undefined && granted.some((g) => g.id === connection.id);
+    const rival =
+      connection && !isGranted
+        ? providerAliasConflict(granted, connection)
+        : null;
+    const providerName =
+      displayNameForTemplate(profile.providerTemplate) ??
+      profile.providerTemplate;
+    return {
+      profile,
+      pair: {
+        harness: profile.harness,
+        provider: isGranted ? connection.id : null,
+        model: profile.model,
+        ...(Object.keys(profile.settings).length > 0 && {
+          settings: profile.settings,
+        }),
+      },
+      unavailable: !connection
+        ? `${providerName} is not connected`
+        : rival
+          ? `this agent runs on ${rival.held.name}; detach it to use ${connection.name}`
+          : !isGranted
+            ? `${providerName} isn't attached to this agent`
+            : null,
+      attachable: connection !== undefined && !isGranted && !rival,
+    };
+  };
 }
 
-export interface ProfilesServiceDeps {
+interface OwnerDeps {
   repo: ProfilesRepository;
   owner: string;
-  /* UNIT_BOUNDARY_DESCRIPTION: a key limited to some agents sees usage of those agents only. */
-  agentBinding?: readonly string[] | "*";
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
-  seededProvider: SeededProvider | null;
-  fanOut?: ProfileFanOut;
-  /* UNIT_BOUNDARY_DESCRIPTION: what a picker needs to cross a profile out for
-   * one agent; absent where nothing asks for one agent, as the CLI does. */
-  resolveStored?: (input: {
-    profileId: string;
-    agentId: string;
-    owner?: string;
-  }) => Promise<{
-    unavailable: { detail: string } | null;
-    grantableProvider: string | null;
-  } | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the deployment serves the shared CurveBender the seeded Default runs on; without it nothing is seeded and no marker is claimed, so configuring it later still seeds. */
+  sharedProvider: boolean;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on, so the owner's seeded profile is what its first chat runs on instead of waiting for the first-hello conversion. A restored Agent passes the same way: its profile references were cleared with the deletion, and a row that names neither shape is unbound. */
-export interface BindDefaultAgentProfileInput {
-  agentId: string;
-  harness: string;
+async function seedDefault(deps: OwnerDeps): Promise<void> {
+  if (!deps.sharedProvider) return;
+  await deps.repo.seed(deps.owner, {
+    name: "Default",
+    harness: deps.catalog.default,
+    providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    model: `${aliasForTemplateId(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!}/${CURVE_BENDER_WORK_MODEL}`,
+    settings: {},
+  });
 }
 
-export type BindDefaultAgentProfile = (
-  input: BindDefaultAgentProfileInput,
-) => Promise<void>;
-
-export type ProfilesWithBinder = ProfilesService & {
-  bindDefaultAgentProfile: BindDefaultAgentProfile;
-};
+/** UNIT_BOUNDARY_DESCRIPTION: a new Agent starts on its owner's seeded Default when its harness and granted provider fit; otherwise its first hello converts a default as before. */
+export async function bindDefaultProfile(
+  deps: OwnerDeps,
+  agentId: string,
+  harness: string,
+): Promise<void> {
+  await seedDefault(deps);
+  const seeded = await deps.repo.seeded(deps.owner);
+  if (seeded?.harness !== harness) return;
+  const granted = await deps.repo.agentConnections(deps.owner, agentId);
+  if (granted.some((c) => c.templateId === seeded.providerTemplate))
+    await deps.repo.bindChatProfile(deps.owner, agentId, seeded.id);
+}
 
 export function createProfilesService(
-  deps: ProfilesServiceDeps,
-): ProfilesWithBinder {
+  deps: OwnerDeps & {
+    agentBinding: readonly string[] | "*";
+    resolve: ProfileResolver;
+    /* UNIT_BOUNDARY_DESCRIPTION: sends an agent that points at an edited profile its new pair, or answers why it cannot take it. */
+    republish: (agentId: string) => Promise<string | null>;
+  },
+): ProfilesService {
   const { repo, owner, catalog } = deps;
-  const binding = () =>
-    deps.agentBinding === undefined || deps.agentBinding === "*"
-      ? undefined
-      : deps.agentBinding;
+  const agentIds = deps.agentBinding === "*" ? undefined : deps.agentBinding;
 
-  function validate(profile: {
-    harness: string;
-    providerTemplate: string;
-    model: string;
-  }): void {
-    const { harness, providerTemplate, model } = profile;
-    if (!catalog.harnesses.some((h) => h.name === harness))
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `unknown harness ${harness}`,
-      });
-    const type = providerTypeForTemplateId(providerTemplate);
-    if (type === null || !PROVIDER_TEMPLATE_IDS.has(providerTemplate))
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `unknown provider ${providerTemplate}`,
-      });
-    const parsed = parseQualifiedModel(model, { claudePrefix: true });
-    if (parsed === null)
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `name the model with its provider, as <provider>/${model}`,
-      });
-    if (parsed.alias !== aliasForProviderType(type))
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `${model} is not a ${providerTemplate} model`,
-      });
-    if (!harnessFits(catalog, harness, type, providerTemplate))
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `the ${harness} harness cannot run on ${providerTemplate}`,
-      });
-  }
-
-  /* UNIT_BOUNDARY_DESCRIPTION: a profile holds the session settings its harness
-   * keeps for a session, and never the platform sub-agent slot, whose reference
-   * lives on the agent (plan §a). A value the owner can see is refused here, as
-   * the model and the harness are; whether a harness offers a value needs that
-   * harness's live catalog, which is an agent's, so it is checked where the
-   * profile is used. */
-  function validateSettings(
-    settings: Record<string, string> | undefined,
+  function validate(
+    profile: Pick<ProfileRow, "harness" | "providerTemplate" | "model">,
   ): void {
-    for (const [id, value] of Object.entries(settings ?? {})) {
-      if (id.startsWith(PLATFORM_SUBAGENT_PREFIX))
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `a profile cannot hold ${id}; the platform sub-agent slot belongs to the agent`,
-        });
-      if (value.trim() === "")
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `${id} needs a value`,
-        });
-    }
+    const { harness, providerTemplate, model } = profile;
+    const type = providerTypeForTemplateId(providerTemplate);
+    const alias = parseQualifiedModel(model, { claudePrefix: true })?.alias;
+    const problem = !catalog.harnesses.some((h) => h.name === harness)
+      ? `unknown harness ${harness}`
+      : type === null || !PROVIDER_TEMPLATE_IDS.has(providerTemplate)
+        ? `unknown provider ${providerTemplate}`
+        : alias !== aliasForProviderType(type)
+          ? `${model} is not a ${providerTemplate} model`
+          : !harnessFits(catalog, harness, type, providerTemplate)
+            ? `the ${harness} harness cannot run on ${providerTemplate}`
+            : null;
+    if (problem) throw new TRPCError({ code: "BAD_REQUEST", message: problem });
   }
 
-  async function view(id: string): Promise<ProfileWithUsage> {
-    const row = await repo.get(owner, id);
+  function view(
+    row: ProfileRow,
+    refs: ProfileReferences,
+    availability: ProfileWithUsage["availability"] = null,
+  ): ProfileWithUsage {
+    return {
+      id: row.id,
+      name: row.name,
+      harness: row.harness,
+      providerTemplate: row.providerTemplate,
+      model: row.model,
+      settings: row.settings,
+      seeded: row.seed === SEEDED_DEFAULT,
+      usage: {
+        agents: refs.agents.filter(
+          (a) => a.chat === row.id || a.platform === row.id,
+        ).length,
+        channels: refs.channels.filter((c) => c.profileId === row.id).length,
+        schedules: refs.schedules.filter((s) => s.profileId === row.id).length,
+      },
+      availability,
+    };
+  }
+
+  async function owned(id: string): Promise<ProfileRow> {
+    const row = await repo.get(id, owner);
     if (!row)
       throw new TRPCError({ code: "NOT_FOUND", message: "profile not found" });
-    const usage = await repo.usage(owner, id, binding());
-    /* UNIT_BOUNDARY_DESCRIPTION: a write answers with no availability, since it
-     * is not asking about one agent; the list does, and a picker reads it. */
-    return { ...withUsage(row, usage), availability: null };
+    return row;
   }
 
-  async function rejectedAgents(
-    profileId: string,
-  ): Promise<{ agentId: string; reason: string }[]> {
-    if (deps.fanOut === undefined) return [];
-    /* UNIT_BOUNDARY_DESCRIPTION: one agent failing to republish must not lose
-     * the others, and the edit has already committed, so a throw is reported as
-     * that agent's rejection rather than failing the whole request. */
-    const usage = await repo.usage(owner, profileId);
-    const results = await Promise.allSettled(
-      usage.agents.map((agent) =>
-        deps.fanOut!.republishDefaults(agent.id).then(
-          (result) => ({ agentId: agent.id, result }),
-          (err: unknown) => ({
-            agentId: agent.id,
-            result: {
-              published: false as const,
-              reason: err instanceof Error ? err.message : String(err),
-            },
-          }),
-        ),
-      ),
-    );
-    return results.flatMap((settled) => {
-      if (settled.status === "rejected")
-        return [{ agentId: "unknown", reason: String(settled.reason) }];
-      const { agentId, result } = settled.value;
-      return result.published ? [] : [{ agentId, reason: result.reason }];
-    });
-  }
-
-  async function ensureDefault(): Promise<void> {
-    const seeded = deps.seededProvider;
-    /* UNIT_BOUNDARY_DESCRIPTION: an install that serves no shared provider has
-     * nothing to write, so it claims no marker either — the marker is what says
-     * "this owner has had their seeded Default", and an owner who configures
-     * the shared provider later still gets one. */
-    if (seeded === null) return;
-    await repo.seed(owner, {
-      name: "Default",
-      harness: catalog.default,
-      providerTemplate: seeded.providerTemplate,
-      model: seeded.model,
-      settings: {},
-    });
-  }
+  const duplicate = (err: unknown, name: string) =>
+    isUniqueViolation(err)
+      ? new TRPCError({
+          code: "CONFLICT",
+          message: `A profile named ${name} already exists.`,
+        })
+      : err;
 
   return {
     async list(input) {
-      await ensureDefault();
-      const agentId = input?.agentId;
-      const [rows, counts] = await Promise.all([
+      await seedDefault(deps);
+      const [rows, refs] = await Promise.all([
         repo.list(owner),
-        repo.usageCounts(owner, binding()),
+        repo.references(owner, agentIds),
       ]);
+      const agentId = input?.agentId;
       return Promise.all(
         rows.map(async (row) => {
-          const availability =
-            agentId === undefined || deps.resolveStored === undefined
-              ? null
-              : await deps
-                  .resolveStored({ profileId: row.id, agentId })
-                  .then((resolved) =>
-                    resolved === null
-                      ? {
-                          available: false,
-                          reason: "this profile is not available here",
-                          attachable: false,
-                        }
-                      : {
-                          available: resolved.unavailable === null,
-                          reason: resolved.unavailable?.detail ?? null,
-                          attachable: resolved.grantableProvider !== null,
-                        },
-                  );
-          const countsFor = counts.get(row.id) ?? {
-            agents: 0,
-            channels: 0,
-            schedules: 0,
-          };
-          return {
-            id: row.id,
-            name: row.name,
-            harness: row.harness,
-            providerTemplate: row.providerTemplate,
-            model: row.model,
-            settings: row.settings,
-            seeded: row.seed === SEEDED_DEFAULT,
-            createdAt: row.createdAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
-            usage: countsFor,
-            availability,
-          };
+          if (agentId === undefined) return view(row, refs);
+          const resolved = await deps.resolve({ profileId: row.id, agentId });
+          return view(row, refs, {
+            available: !resolved?.unavailable || resolved.attachable,
+            reason: resolved?.unavailable ?? null,
+            attachable: resolved?.attachable ?? false,
+          });
         }),
       );
     },
 
-    async usage(id: string) {
-      if (!(await repo.get(owner, id)))
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "profile not found",
-        });
-      return repo.usage(owner, id, binding());
+    async usage(id) {
+      await owned(id);
+      const refs = await repo.references(owner, agentIds, id);
+      return {
+        agents: refs.agents.map((a) => ({ id: a.id })),
+        channels: refs.channels.map(({ agentId, label }) => ({
+          agentId,
+          label,
+        })),
+        schedules: refs.schedules.map(({ id, name, agentId }) => ({
+          id,
+          name,
+          agentId,
+        })),
+      };
     },
 
-    async create(input: ProfileCreateInput) {
-      /* UNIT_BOUNDARY_DESCRIPTION: seed first, so an owner who names a profile
-       * "Default" before their first list cannot swallow the seeded one. */
-      await ensureDefault();
+    async create(input) {
+      /* UNIT_BOUNDARY_DESCRIPTION: seeded first, so a user-made "Default" cannot take the seed's name. */
+      await seedDefault(deps);
       validate(input);
-      validateSettings(input.settings);
-      try {
-        const row = await repo.insert(owner, {
+      const row = await repo
+        .insert(owner, {
           name: input.name,
           harness: input.harness,
           providerTemplate: input.providerTemplate,
           model: input.model,
           settings: input.settings ?? {},
+        })
+        .catch((err: unknown) => {
+          throw duplicate(err, input.name);
         });
-        return view(row.id);
-      } catch (err) {
-        if (isUniqueViolation(err)) throw duplicateName(input.name);
-        throw err;
-      }
+      return view(row, await repo.references(owner, agentIds, row.id));
     },
 
-    async update(input: ProfileUpdateInput) {
-      const current = await repo.get(owner, input.id);
-      if (!current)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "profile not found",
-        });
-      validate({
-        harness: input.harness ?? current.harness,
-        providerTemplate: input.providerTemplate ?? current.providerTemplate,
-        model: input.model ?? current.model,
+    async update({ id, agentId: _agentId, ...patch }) {
+      const current = await owned(id);
+      validate({ ...current, ...patch });
+      await repo.update(owner, id, patch).catch((err: unknown) => {
+        throw duplicate(err, patch.name ?? current.name);
       });
-      validateSettings(input.settings);
-      let written: ProfileRow | null = null;
-      try {
-        written = await repo.update(owner, input.id, {
-          ...(input.name !== undefined && { name: input.name }),
-          ...(input.harness !== undefined && { harness: input.harness }),
-          ...(input.providerTemplate !== undefined && {
-            providerTemplate: input.providerTemplate,
-          }),
-          ...(input.model !== undefined && { model: input.model }),
-          ...(input.settings !== undefined && { settings: input.settings }),
+      const renameOnly = Object.keys(patch).every((key) => key === "name");
+      const { agents } = await repo.references(owner, undefined, id);
+      const rejected = renameOnly
+        ? []
+        : (
+            await Promise.all(
+              agents.map((a) =>
+                deps
+                  .republish(a.id)
+                  .catch((err: unknown) => String(err))
+                  .then((reason) =>
+                    reason === null ? null : { agentId: a.id, reason },
+                  ),
+              ),
+            )
+          ).filter((r) => r !== null);
+      /* UNIT_BOUNDARY_DESCRIPTION: an edit no agent that uses the profile can run is put back, or every new chat on them would fail on it (QA D5); a partial rejection keeps the edit, and those agents keep the pair they hold until fixed. */
+      if (rejected.length > 0 && rejected.length === agents.length) {
+        const { name, harness, providerTemplate, model, settings } = current;
+        await repo.update(owner, id, {
+          name,
+          harness,
+          providerTemplate,
+          model,
+          settings,
         });
-      } catch (err) {
-        if (isUniqueViolation(err))
-          throw duplicateName(input.name ?? current.name);
-        throw err;
-      }
-      /* UNIT_BOUNDARY_DESCRIPTION: a profile edit reaches the agents that point
-       * at it, and each one either takes the new pair or keeps its previous one
-       * with the reason, which the editor shows instead of failing the edit. A
-       * rename changes nothing they run, so it reaches nobody. */
-      const renamed = Object.keys(input).every(
-        (key) => key === "id" || key === "name",
-      );
-      const rejected = renamed ? [] : await rejectedAgents(input.id);
-      /* UNIT_BOUNDARY_DESCRIPTION: an edit no referencing agent can take is not
-       * a preference, it is a profile nothing can run — so it is put back as it
-       * was and the caller is told why, rather than leaving every new chat on
-       * that agent to fail against it (QA D5). A partial rejection keeps the
-       * edit, which is the owner's intent for the agents that can take it. */
-      const referencing = await repo.usage(owner, input.id);
-      if (
-        !renamed &&
-        rejected.length > 0 &&
-        rejected.length === referencing.agents.length
-      ) {
-        /* UNIT_BOUNDARY_DESCRIPTION: the revert is a compare-and-set against the
-         * version this call wrote, so an edit that landed while the fan-out ran
-         * stays — undoing it would throw away a newer intent. */
-        const writtenAt = written?.updatedAt ?? current.updatedAt;
-        await repo.update(
-          owner,
-          input.id,
-          {
-            name: current.name,
-            harness: current.harness,
-            providerTemplate: current.providerTemplate,
-            model: current.model,
-            settings: current.settings,
-          },
-          { expect: writtenAt, at: current.updatedAt },
-        );
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: `no agent can run this profile: ${rejected[0]!.reason}`,
+          message: `No agent can run this profile: ${rejected[0]!.reason}`,
         });
       }
-      const edited = await view(input.id);
-      return { profile: edited, rejected };
+      if (rejected.length > 0)
+        getLogger().warn({ profileId: id, rejected }, "profile edit rejected");
+      return view(await owned(id), await repo.references(owner, agentIds, id));
     },
 
-    async bindDefaultAgentProfile(input) {
-      await ensureDefault();
-      const seeded = await repo.seeded(owner);
-      if (!seeded || seeded.harness !== input.harness) return;
-      if (
-        !(await repo.agentConnections(owner, input.agentId)).some(
-          (connection) => connection.templateId === seeded.providerTemplate,
-        )
-      )
-        return;
-      await repo.bindChatProfile(owner, input.agentId, seeded.id);
-    },
-
-    async delete(id: string) {
-      const outcome = await repo.deleteIfUnused(owner, id, binding());
-      if (outcome.outcome === "missing")
+    async delete(id) {
+      const outcome = await repo.deleteIfUnused(owner, id, agentIds);
+      if (outcome === "missing")
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "profile not found",
         });
-      if (outcome.outcome === "in-use")
+      if (outcome !== "deleted") {
+        const count = (n: number, what: string) =>
+          n === 0 ? [] : [`${n} ${what}${n === 1 ? "" : "s"}`];
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: `that profile is in use by ${inUse(outcome.usage)}`,
+          message: `That profile is in use by ${[
+            ...count(outcome.agents.length, "agent"),
+            ...count(outcome.channels.length, "channel"),
+            ...count(outcome.schedules.length, "schedule"),
+          ].join(", ")}.`,
         });
+      }
     },
   };
 }
-
-function withUsage(
-  row: ProfileRow,
-  usage: ProfileUsage,
-): Omit<ProfileWithUsage, "availability"> {
-  return {
-    id: row.id,
-    name: row.name,
-    harness: row.harness,
-    providerTemplate: row.providerTemplate,
-    model: row.model,
-    settings: row.settings,
-    seeded: row.seed === SEEDED_DEFAULT,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-    usage: {
-      agents: usage.agents.length,
-      channels: usage.channels.length,
-      schedules: usage.schedules.length,
-    },
-  };
-}
-
-function duplicateName(name: string): TRPCError {
-  return new TRPCError({
-    code: "CONFLICT",
-    message: `a profile named ${name} already exists`,
-  });
-}
-
-function inUse(usage: ProfileUsage): string {
-  const parts = [
-    ...(usage.agents.length > 0
-      ? [`${usage.agents.length} agent${plural(usage.agents.length)}`]
-      : []),
-    ...(usage.channels.length > 0
-      ? [`${usage.channels.length} channel${plural(usage.channels.length)}`]
-      : []),
-    ...(usage.schedules.length > 0
-      ? [`${usage.schedules.length} schedule${plural(usage.schedules.length)}`]
-      : []),
-  ];
-  return parts.join(", ");
-}
-
-const plural = (n: number) => (n === 1 ? "" : "s");

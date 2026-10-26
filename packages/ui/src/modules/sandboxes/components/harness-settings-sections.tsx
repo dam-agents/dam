@@ -162,11 +162,13 @@ function HarnessSettings({
           <OptionField key={group.id} title={group.name}>
             <OptionPicker
               title={`${displayName} ${group.name}`}
-              choices={group.choices.map((c) => ({
-                id: c.value,
-                name: c.name,
-                description: c.description,
-              }))}
+              choices={group.choices
+                .filter((c) => !/(^|#)plan$/.test(c.value))
+                .map((c) => ({
+                  id: c.value,
+                  name: c.name,
+                  description: c.description,
+                }))}
               value={valueOf(group.id) ?? group.default ?? null}
               clearable={false}
               onSelect={(id) => choose(group.id, id)}

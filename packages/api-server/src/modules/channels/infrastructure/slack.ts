@@ -72,14 +72,13 @@ import type {
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpSessionLoadError,
+  pairFields,
   AcpTurnAbandonedError,
   type AcpClient,
   type AcpClientFactory,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
-import type { ChannelPairResolver } from "../services/channel-pair-resolver.js";
-import type { ChannelPairDecision } from "../domain/channel-pair.js";
-import { ChannelProfileRefusedError } from "../domain/channel-profile-refusal.js";
+import type { ChannelPair } from "./channel-profile.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
 import {
@@ -1298,10 +1297,7 @@ async function turnContractContext(
 
 export type SlackWorkerDeps = {
   makeAcpClient: AcpClientFactory;
-  /* UNIT_BOUNDARY_DESCRIPTION: the pair a fresh session in a channel starts on,
-   * read from that channel's profile (D119); the worker resolves it per turn so
-   * a profile edit reaches the next thread. */
-  channelPair?: ChannelPairResolver;
+  channelPair?: ChannelPair;
   createGateway: () => SlackGateway;
   agents: () => AgentsService;
   identityLinks: IdentityLinkService;
@@ -2827,8 +2823,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
-    /* UNIT_BOUNDARY_DESCRIPTION: every turn knows its channel, ambient ones
-     * included, so a fresh session starts on the profile that channel runs on. */
     channelId: string;
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
@@ -2841,38 +2835,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     legacyThreadKey?: string;
     signal?: AbortSignal;
   }): Promise<string> {
-    /* UNIT_BOUNDARY_DESCRIPTION: the channel's profile is decided only where a
-     * session is created, so a thread already running keeps the values it runs
-     * on (D94 A, D119) and is never refused for a profile it does not use. */
-    const freshSessionMeta = async () => {
-      const channelDecision: ChannelPairDecision = channelPair
-        ? await channelPair(args.instanceName, {
-            type: "slack",
-            slackChannelId: args.channelId,
-          })
-        : { kind: "none" };
-      if (channelDecision.kind === "unavailable")
-        throw new ChannelProfileRefusedError(
-          channelDecision.profileName,
-          channelDecision.detail,
-        );
-      return {
-        type: SessionType.ChannelSlack,
-        threadTs: args.threadKey,
-        ...(channelDecision.kind === "profile" && {
-          harness: channelDecision.pair.harness,
-          ...(channelDecision.pair.provider !== null && {
-            provider: channelDecision.pair.provider,
-          }),
-          ...(channelDecision.pair.model !== null && {
-            model: channelDecision.pair.model,
-          }),
-          ...(channelDecision.pair.settings && {
-            settings: channelDecision.pair.settings,
-          }),
+    const freshSessionMeta = async () => ({
+      type: SessionType.ChannelSlack,
+      threadTs: args.threadKey,
+      ...pairFields(
+        await channelPair?.(args.instanceName, {
+          type: "slack",
+          id: args.channelId,
         }),
-      };
-    };
+      ),
+    });
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
       await agents().ensureReady(args.instanceName, {
         onWaking: args.onWaking,

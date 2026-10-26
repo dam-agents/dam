@@ -21,14 +21,6 @@ import {
   PREVIEW_RUNS,
 } from "../lib/cron-conversion.js";
 import { cronToText } from "../lib/schedule-format.js";
-
-/** UNIT_BOUNDARY_DESCRIPTION: the choices a form changed, as the update input takes them; a choice the user left alone is absent, so the stored one stands. */
-export interface ScheduleChoicesPayload {
-  harness?: string | null;
-  model?: string | null;
-  settings?: Record<string, string> | null;
-  profile?: string | null;
-}
 import {
   cronFormDefaults,
   cronFormSchema,
@@ -40,34 +32,17 @@ import {
   ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
-import { scheduleInheritsChoices } from "./schedule-form-schema.js";
+import {
+  scheduleChoices,
+  scheduleInheritsChoices,
+} from "./schedule-form-schema.js";
 
 interface Props {
   agentId: string;
   existing: Schedule;
-  /* UNIT_BOUNDARY_DESCRIPTION: the schedule the modal opened, which the draft a
-   * Convert and Back remounts carries cannot change, so a changed choice is
-   * still a changed choice after that round trip. */
-  baseline: Schedule;
   onClose: () => void;
   onDirtyChange?: (dirty: boolean) => void;
-  onConvert: (
-    draft: Schedule,
-    conversion: ExactCronConversion,
-    choices: ScheduleChoicesPayload,
-  ) => void;
-}
-
-/** UNIT_BOUNDARY_DESCRIPTION: two settings records are the same when their content is, whatever order the keys arrived in. */
-function sameSettings(
-  a: Readonly<Record<string, string>>,
-  b: Readonly<Record<string, string>>,
-): boolean {
-  const entries = (value: Readonly<Record<string, string>>) =>
-    JSON.stringify(
-      Object.entries(value).sort(([x], [y]) => x.localeCompare(y)),
-    );
-  return entries(a) === entries(b);
+  onConvert: (draft: Schedule, conversion: ExactCronConversion) => void;
 }
 
 const RUN_FORMAT: Intl.DateTimeFormatOptions = {
@@ -82,7 +57,6 @@ const RUN_FORMAT: Intl.DateTimeFormatOptions = {
 export function CronScheduleForm({
   agentId,
   existing,
-  baseline,
   onClose,
   onConvert,
   onDirtyChange,
@@ -122,47 +96,10 @@ export function CronScheduleForm({
       precheck: v.precheck.trim() || null,
       harness: v.harness.trim() || null,
       model: v.model.trim() || null,
-      profile: v.profile || null,
       settings: Object.keys(settings).length > 0 ? settings : null,
+      profile: v.profile || null,
       sessionTitle: v.sessionTitle.trim() || null,
       sessionMode: v.sessionMode,
-    };
-  };
-
-  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the user changed it,
-   * so a profile edited after the form opened is not detached by the values the
-   * form was loaded with. The comparison is against the schedule the form was
-   * opened with, never against the form's own dirty state: Convert unmounts and
-   * remounts this form with the draft, which would forget every change. */
-  const loaded = cronFormDefaults(baseline);
-  const loadedSettings = Object.fromEntries(
-    Object.entries(loaded.settings).filter(([, value]) => value !== ""),
-  );
-  const changedChoices = (v: CronFormValues) => {
-    const settings = Object.fromEntries(
-      Object.entries(v.settings).filter(([, value]) => value !== ""),
-    );
-    const harness = v.harness.trim() || null;
-    const model = v.model.trim() || null;
-    const profile = v.profile || null;
-    const loadedProfile = loaded.profile || null;
-    return {
-      ...(profile !== loadedProfile && {
-        profile,
-        /* UNIT_BOUNDARY_DESCRIPTION: leaving a profile for a schedule of its
-         * own carries the values it was running on, since the form shows them
-         * and the stored spec holds none. */
-        ...(profile === null && {
-          harness,
-          model,
-          settings: Object.keys(settings).length > 0 ? settings : null,
-        }),
-      }),
-      ...(harness !== (loaded.harness.trim() || null) && { harness }),
-      ...(model !== (loaded.model.trim() || null) && { model }),
-      ...(!sameSettings(settings, loadedSettings) && {
-        settings: Object.keys(settings).length > 0 ? settings : null,
-      }),
     };
   };
 
@@ -174,7 +111,7 @@ export function CronScheduleForm({
       setConvertProblem(conversion.reason);
       return;
     }
-    onConvert(draft, conversion, changedChoices(getValues()));
+    onConvert(draft, conversion);
   };
 
   const handleDelete = async () => {
@@ -198,7 +135,7 @@ export function CronScheduleForm({
         task: draft.task ?? "",
         sessionMode: v.sessionMode,
         precheck: draft.precheck,
-        ...changedChoices(v),
+        ...scheduleChoices(draft),
         sessionTitle: draft.sessionTitle,
       },
       {

@@ -12,6 +12,21 @@ export interface GrantedProvider {
   templateId?: string;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot is its own profile reference (D93) and lends the pair only that profile's harness and model. */
+export function withPlatformSubagent(
+  pair: SessionPair,
+  slot: SessionPair,
+): SessionPair {
+  return {
+    ...pair,
+    settings: {
+      ...pair.settings,
+      "platformSubagent.harness": slot.harness,
+      ...(slot.model !== null && { "platformSubagent.model": slot.model }),
+    },
+  };
+}
+
 export interface SessionPairInputs {
   remembered: SessionPair | null;
   agentHarness: string;

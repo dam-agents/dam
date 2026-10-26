@@ -74,7 +74,7 @@ export function buildCreateCommand(deps: {
     .option("--now", "with --once: run immediately")
     .option(
       "--profile <name-or-id>",
-      "run it on one of your profiles, by name or id (see `dam profile list`); replaces --harness, --model and --setting",
+      "run it on one of your profiles, by name or id; replaces --harness, --model and --setting",
     )
     .option(
       "--harness <name>",

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "@carbon/icons-react";
+import { ChevronDown } from "@carbon/icons-react";
 import type { ProfileWithUsage } from "api-server-api";
 import { useState } from "react";
 
@@ -9,52 +9,45 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
+import { useProfiles } from "../api/queries.js";
+import { useProfileAttach } from "../hooks/use-profile-attach.js";
 import { profileDetail } from "../lib/profile-detail.js";
-import { ProfileChoices } from "./profile-list.js";
+import { CustomRow, ProfileChoices } from "./profile-list.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the profile a channel or a schedule runs on, as a
- * control in its row or its form: the owner's list, the same rows the chat
- * picker shows, and — where the surface can also carry values of its own — the
- * row that switches to them. A channel has no values of its own, so it offers
- * the list alone.
+ * control in its row or form. A pick whose provider the agent lacks grants it
+ * first and is made only if that worked, so nothing is saved on a profile its
+ * runs would refuse.
  */
 export function ProfilePicker({
+  agentId,
   label,
-  profiles,
   value,
   placeholder,
   showLabel = true,
   custom,
   onPick,
-  onCustom,
-  onAttach,
-  onManage,
   disabled = false,
   testId,
 }: {
+  agentId: string;
   label: string;
-  profiles: readonly ProfileWithUsage[];
   value: string | null;
   placeholder: string;
   showLabel?: boolean;
-  custom?: { label: string; description?: string } | undefined;
+  custom?: { description: string; onCustom: () => void };
   onPick: (profile: ProfileWithUsage) => void;
-  onCustom?: (() => void) | undefined;
-  onAttach: (profile: ProfileWithUsage) => void;
-  onManage: () => void;
   disabled?: boolean;
   testId?: string;
 }) {
-  const selected = profiles.find((p) => p.id === value) ?? null;
-  const current = selected?.name ?? custom?.label ?? placeholder;
-  /* UNIT_BOUNDARY_DESCRIPTION: a pick ends the choice, so the list closes on
-   * every one of them — a pick, Custom selection and a repair alike — rather
-   * than leaving the menu over the form it just wrote to. */
+  const { data: profiles = [] } = useProfiles(agentId);
+  const { attach, manage } = useProfileAttach(agentId);
   const [open, setOpen] = useState(false);
-  const choose = (act: () => void) => {
+  const selected = profiles.find((p) => p.id === value) ?? null;
+  const pick = (profile: ProfileWithUsage) => {
     setOpen(false);
-    act();
+    onPick(profile);
   };
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -68,18 +61,14 @@ export function ProfilePicker({
           className="flex max-w-full items-center gap-1.5 rounded px-1.5 py-0.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
         >
           <span className="truncate">
-            {showLabel && (
-              <span className="text-muted-foreground">{label}: </span>
-            )}
+            {showLabel && `${label}: `}
             <span
               className={cn(
                 "text-foreground",
-                selected === null &&
-                  custom === undefined &&
-                  "italic text-muted-foreground",
+                !selected && !custom && "italic text-muted-foreground",
               )}
             >
-              {current}
+              {selected?.name ?? placeholder}
             </span>
           </span>
           <ChevronDown size={12} aria-hidden className="shrink-0" />
@@ -88,30 +77,23 @@ export function ProfilePicker({
       <PopoverContent align="start" className="w-64 p-1">
         <ProfileChoices
           profiles={profiles}
-          current={null}
           selectedId={value}
-          onPick={(profile) => choose(() => onPick(profile))}
-          onAttach={(profile) => choose(() => onAttach(profile))}
-          onManage={() => choose(onManage)}
+          onPick={pick}
+          onAttach={(profile) =>
+            void attach(profile).then((ok) => ok && pick(profile))
+          }
+          onManage={manage}
         />
-        {custom && onCustom && (
-          <button
-            type="button"
-            onClick={() => choose(onCustom)}
-            className="mt-1 flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
-          >
-            <span className="min-w-0">
-              <span className="block truncate text-foreground">
-                {custom.label}
-              </span>
-              {custom.description && (
-                <span className="block truncate text-xs text-muted-foreground">
-                  {custom.description}
-                </span>
-              )}
-            </span>
-            <ChevronRight size={14} aria-hidden className="mt-0.5 shrink-0" />
-          </button>
+        {custom && (
+          <CustomRow
+            label="Custom selection"
+            detail={custom.description}
+            selected={selected === null}
+            onClick={() => {
+              setOpen(false);
+              custom.onCustom();
+            }}
+          />
         )}
       </PopoverContent>
     </Popover>

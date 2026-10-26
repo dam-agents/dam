@@ -1,15 +1,16 @@
+// TEST_OVERVIEW: Profiles are an owner's named presets. A profile names a provider template, so whether it runs on an agent follows from the agent's grants: its own Connection of the template, else an owner's one it may be granted, never one replacing a rival of the same alias. The owner is seeded one Default where the deployment serves the shared provider; a profile in use cannot be deleted; an edit no referencing agent can run is put back.
 import { TRPCError } from "@trpc/server";
+import type { AliasedConnection, HarnessCatalog } from "api-server-api";
 import { describe, expect, it } from "vitest";
-import type { HarnessCatalog, ProfileUsage } from "api-server-api";
 import type {
-  DeleteOutcome,
+  ProfileReferences,
   ProfileRow,
-  ProfileWrite,
   ProfilesRepository,
 } from "../../modules/profiles/infrastructure/profiles-repository.js";
 import {
+  bindDefaultProfile,
   createProfilesService,
-  type SeededProvider,
+  profileResolver,
 } from "../../modules/profiles/services/profiles-service.js";
 
 const catalog: Pick<HarnessCatalog, "default" | "harnesses"> = {
@@ -22,156 +23,95 @@ const catalog: Pick<HarnessCatalog, "default" | "harnesses"> = {
       tags: [],
       experimental: false,
     },
-    {
-      name: "bob",
-      displayName: "Bob",
-      providers: ["bob"],
-      tags: [],
-      experimental: false,
-    },
   ],
 };
 
-const shared: SeededProvider = {
-  providerTemplate: "curve-bender-deployment",
-  model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+const SHARED: AliasedConnection = {
+  id: "conn-shared",
+  name: "CurveBender (shared)",
+  templateId: "curve-bender-deployment",
+};
+const OWN_KEY: AliasedConnection = {
+  id: "conn-own",
+  name: "CurveBender (own key)",
+  templateId: "curve-bender",
 };
 
-const emptyUsage = (): ProfileUsage => ({
-  agents: [],
-  channels: [],
-  schedules: [],
+const profile = (overrides: Partial<ProfileRow> = {}): ProfileRow => ({
+  id: "profile-1",
+  owner: "owner-1",
+  name: "Default",
+  seed: "seeded-default",
+  harness: "claude-code",
+  providerTemplate: "curve-bender-deployment",
+  model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  settings: {},
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  ...overrides,
 });
 
-function row(overrides: Partial<ProfileRow> = {}): ProfileRow {
-  return {
-    id: "profile-1",
-    owner: "owner-1",
-    name: "Default",
-    seed: "seeded-default",
-    harness: "claude-code",
-    providerTemplate: "curve-bender-deployment",
-    model: shared.model,
-    settings: {},
-    createdAt: new Date("2026-10-25T00:00:00Z"),
-    updatedAt: new Date("2026-10-25T00:00:00Z"),
-    ...overrides,
-  };
-}
+const none: ProfileReferences = { agents: [], channels: [], schedules: [] };
 
-interface Fake {
-  repo: ProfilesRepository;
-  calls: {
-    seeds: (ProfileWrite | null)[];
-    inserts: ProfileWrite[];
-    updates: { id: string; profile: Partial<ProfileWrite> }[];
-    deleted: string[];
-    order: string[];
-    binds: { agentId: string; profileId: string }[];
+function fakeRepo(
+  opts: {
+    rows?: ProfileRow[];
+    owned?: AliasedConnection[];
+    granted?: AliasedConnection[];
+    references?: ProfileReferences;
+  } = {},
+) {
+  const rows = opts.rows ?? [profile()];
+  const writes = {
+    seeds: 0,
+    updates: [] as Partial<ProfileRow>[],
+    binds: [] as string[],
   };
-  rows: ProfileRow[];
-}
-
-function fakeRepo(opts: {
-  rows?: ProfileRow[];
-  seeded?: ProfileRow | null;
-  granted?: { id: string; name: string; templateId: string }[];
-  usage?: ProfileUsage;
-  deleteOutcome?: DeleteOutcome;
-  counts?: Map<string, { agents: number; channels: number; schedules: number }>;
-}): Fake {
-  const rows = [...(opts.rows ?? [])];
-  /* UNIT_BOUNDARY_DESCRIPTION: every write takes the next millisecond, so two
-   * writes in one test are two versions, as the database's timestamps are. */
-  let clock = Date.parse("2026-10-20T00:00:00.000Z");
-  const tick = () => new Date((clock += 1));
-  const calls: Fake["calls"] = {
-    seeds: [],
-    inserts: [],
-    updates: [],
-    deleted: [],
-    order: [],
-    binds: [],
-  };
-  const repo: ProfilesRepository = {
+  const repo = {
+    references: async () => opts.references ?? none,
     list: async () => rows,
-    get: async (_owner, id) => rows.find((r) => r.id === id) ?? null,
-    getById: async (id: string) => rows.find((r) => r.id === id) ?? null,
-    seeded: async () => opts.seeded ?? null,
-    bindChatProfile: async (_owner, agentId, profileId) => {
-      calls.binds.push({ agentId, profileId });
+    get: async (id: string, owner?: string) =>
+      rows.find(
+        (r) => r.id === id && (owner === undefined || r.owner === owner),
+      ) ?? null,
+    seeded: async () => rows.find((r) => r.seed !== null) ?? null,
+    insert: async () => rows[0]!,
+    update: async (_owner: string, _id: string, patch: Partial<ProfileRow>) => {
+      writes.updates.push(patch);
     },
-    insert: async (_owner, profile) => {
-      calls.inserts.push(profile);
-      calls.order.push("insert");
-      const inserted = row({
-        id: `profile-${rows.length + 2}`,
-        seed: null,
-        ...profile,
-      });
-      rows.push(inserted);
-      return inserted;
+    deleteIfUnused: async () => opts.references ?? ("deleted" as const),
+    seed: async () => {
+      writes.seeds += 1;
     },
-    update: async (_owner, id, profile, options) => {
-      calls.updates.push({ id, profile });
-      const at = rows.findIndex((r) => r.id === id);
-      if (at === -1) return null;
-      /* UNIT_BOUNDARY_DESCRIPTION: a compare-and-set lands only on the version
-       * the caller read, as the repository's own does. */
-      if (options?.expect && +rows[at]!.updatedAt !== +options.expect)
-        return null;
-      const updated = {
-        ...rows[at]!,
-        ...profile,
-        updatedAt: options?.at ?? tick(),
-      };
-      rows[at] = updated;
-      return updated;
+    bindChatProfile: async (_owner: string, agentId: string) => {
+      writes.binds.push(agentId);
     },
-    deleteIfUnused: async (_owner, id) => {
-      calls.deleted.push(id);
-      return opts.deleteOutcome ?? { outcome: "deleted" };
-    },
-    usage: async () => opts.usage ?? emptyUsage(),
-    usageCounts: async () => opts.counts ?? new Map(),
-    seed: async (_owner, profile) => {
-      calls.seeds.push(profile);
-      calls.order.push("seed");
-    },
-    ownerConnections: async () => [],
-    agentConnections: async () =>
-      opts.granted ?? [
-        {
-          id: "conn-1",
-          name: "CurveBender (shared)",
-          templateId: "curve-bender-deployment",
-        },
-      ],
-  };
-  return { repo, calls, rows };
+    ownerConnections: async () => opts.owned ?? [SHARED],
+    agentConnections: async () => opts.granted ?? [SHARED],
+  } as unknown as ProfilesRepository;
+  return { repo, writes };
 }
 
 function service(
-  fake: Fake,
+  repo: ProfilesRepository,
   opts: {
-    seededProvider?: SeededProvider | null;
-    agentBinding?: readonly string[] | "*";
+    sharedProvider?: boolean;
+    republish?: () => Promise<string | null>;
   } = {},
 ) {
   return createProfilesService({
-    repo: fake.repo,
+    repo,
     owner: "owner-1",
-    ...(opts.agentBinding !== undefined && {
-      agentBinding: opts.agentBinding,
-    }),
     catalog,
-    seededProvider:
-      opts.seededProvider === undefined ? shared : opts.seededProvider,
+    sharedProvider: opts.sharedProvider ?? true,
+    agentBinding: "*",
+    resolve: profileResolver(repo),
+    republish: opts.republish ?? (async () => null),
   });
 }
 
-async function refusal(run: () => Promise<unknown>): Promise<TRPCError> {
-  const err = await run().then(
+async function refusal(run: Promise<unknown>): Promise<TRPCError> {
+  const err = await run.then(
     () => null,
     (e: unknown) => e,
   );
@@ -179,475 +119,149 @@ async function refusal(run: () => Promise<unknown>): Promise<TRPCError> {
   return err as TRPCError;
 }
 
-describe("profiles service — the seeded Default", () => {
-  it("asks the repository to seed the shared CurveBender profile on every list", async () => {
-    const fake = fakeRepo({ rows: [row()] });
-    await service(fake).list();
-    expect(fake.calls.seeds).toEqual([
-      {
-        name: "Default",
+const resolve = (repo: ProfilesRepository, owner?: string) =>
+  profileResolver(repo)({
+    profileId: "profile-1",
+    agentId: "agent-1",
+    ...(owner !== undefined && { owner }),
+  });
+
+describe("what a profile runs on, for one agent", () => {
+  /** TEST_SCENARIO: the owner holds two Connections of the template; the one granted to the agent is the one that runs. */
+  it("runs on the agent's own grant of the template", async () => {
+    const second = { ...SHARED, id: "conn-shared-2" };
+    const { repo } = fakeRepo({ owned: [SHARED, second], granted: [second] });
+    const resolved = await resolve(repo);
+    expect(resolved?.unavailable).toBeNull();
+    expect(resolved?.pair.provider).toBe("conn-shared-2");
+  });
+
+  /** TEST_SCENARIO: the owner holds the provider and the agent does not; the profile does not run yet, but a pick may grant it (QA D3). */
+  it("offers to grant an owned provider the agent does not hold", async () => {
+    const { repo } = fakeRepo({ granted: [] });
+    const resolved = await resolve(repo);
+    expect(resolved?.unavailable).toMatch(/isn't attached/);
+    expect(resolved?.attachable).toBe(true);
+  });
+
+  /** TEST_SCENARIO: the agent holds the own-key CurveBender, a rival of the shared one's alias; granting the shared one would silently swap the provider, so the profile cannot run and is not attachable. */
+  it("never replaces a rival provider of the same alias", async () => {
+    const { repo } = fakeRepo({ owned: [SHARED, OWN_KEY], granted: [OWN_KEY] });
+    const resolved = await resolve(repo);
+    expect(resolved?.unavailable).toMatch(/CurveBender \(own key\)/);
+    expect(resolved?.attachable).toBe(false);
+  });
+
+  /** TEST_SCENARIO: the owner holds no Connection of the template. */
+  it("cannot run on a provider nobody connected", async () => {
+    const { repo } = fakeRepo({ owned: [], granted: [] });
+    expect((await resolve(repo))?.unavailable).toMatch(/not connected/);
+  });
+
+  /** TEST_SCENARIO: a write names the caller, so another owner's profile can never be attached to an agent. */
+  it("finds no profile of another owner for a write", async () => {
+    const { repo } = fakeRepo();
+    expect(await resolve(repo, "owner-2")).toBeNull();
+  });
+});
+
+describe("the owner's profiles", () => {
+  /** TEST_SCENARIO: an install that serves no shared CurveBender seeds nothing, so a later configuration still seeds Default (QA D7). */
+  it("seeds Default only where the shared provider is served", async () => {
+    const served = fakeRepo();
+    await service(served.repo).list();
+    expect(served.writes.seeds).toBe(1);
+    const unserved = fakeRepo();
+    await service(unserved.repo, { sharedProvider: false }).list();
+    expect(unserved.writes.seeds).toBe(0);
+  });
+
+  /** TEST_SCENARIO: a model of another provider than the profile's template would run on a provider nobody chose. */
+  it("refuses a model that is not the provider's", async () => {
+    const { repo } = fakeRepo();
+    const err = await refusal(
+      service(repo).create({
+        name: "Fast review",
         harness: "claude-code",
         providerTemplate: "curve-bender-deployment",
-        model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-        settings: {},
-      },
-    ]);
-  });
-
-  it("claims no marker when the deployment has no shared provider", async () => {
-    const fake = fakeRepo({ rows: [] });
-    await service(fake, { seededProvider: null }).list();
-    /* UNIT_BOUNDARY_DESCRIPTION: an install that serves no seeded provider
-     * writes nothing and claims nothing, so a later shared provider still
-     * seeds Default. */
-    expect(fake.calls.seeds).toEqual([]);
-    expect(fake.calls.inserts).toEqual([]);
-  });
-
-  it("keeps the seeded profile recognisable after a rename", async () => {
-    const fake = fakeRepo({ rows: [row({ name: "Cheap and fast" })] });
-    const [listed] = await service(fake).list();
-    expect(listed).toMatchObject({ name: "Cheap and fast", seeded: true });
-  });
-
-  it("seeds before a create, so a user-made Default cannot swallow the seeded one", async () => {
-    const fake = fakeRepo({ rows: [] });
-    await service(fake).create({
-      name: "Default",
-      harness: "claude-code",
-      providerTemplate: "curve-bender-deployment",
-      model: shared.model,
-    });
-    expect(fake.calls.order).toEqual(["seed", "insert"]);
-  });
-
-  it("does not seed from the delete path, so a deleted Default stays gone", async () => {
-    const fake = fakeRepo({});
-    await service(fake).delete("profile-1");
-    expect(fake.calls.seeds).toEqual([]);
-  });
-});
-
-describe("profiles service — list and usage", () => {
-  it("reports the references each profile has", async () => {
-    const fake = fakeRepo({
-      rows: [row({ id: "p1" }), row({ id: "p2", name: "Review", seed: null })],
-      counts: new Map([
-        ["p1", { agents: 2, channels: 1, schedules: 3 }],
-        ["p2", { agents: 0, channels: 0, schedules: 0 }],
-      ]),
-    });
-    const listed = await service(fake).list();
-    expect(listed.map((p) => [p.name, p.usage])).toEqual([
-      ["Default", { agents: 2, channels: 1, schedules: 3 }],
-      ["Review", { agents: 0, channels: 0, schedules: 0 }],
-    ]);
-  });
-
-  it("refuses to delete a profile that something points at, naming what stops", async () => {
-    const fake = fakeRepo({
-      deleteOutcome: {
-        outcome: "in-use",
-        usage: {
-          agents: [{ id: "agent-1", slots: ["chat"] }],
-          channels: [{ agentId: "agent-1", label: "C0123" }],
-          schedules: [
-            { id: "sched-1", name: "Nightly", agentId: "agent-1" },
-            { id: "sched-2", name: "Weekly", agentId: "agent-1" },
-          ],
-        },
-      },
-    });
-    const err = await refusal(() => service(fake).delete("profile-1"));
-    expect(err.code).toBe("PRECONDITION_FAILED");
-    expect(err.message).toBe(
-      "that profile is in use by 1 agent, 1 channel, 2 schedules",
-    );
-    expect(fake.calls.deleted).toEqual(["profile-1"]);
-  });
-
-  it("asks for usage narrowed to the agents a limited key may see", async () => {
-    const seen: (readonly string[] | undefined)[] = [];
-    const fake = fakeRepo({ rows: [row()] });
-    const service = createProfilesService({
-      repo: {
-        ...fake.repo,
-        usageCounts: async (_owner, binding) => {
-          seen.push(binding);
-          return new Map();
-        },
-      },
-      owner: "owner-1",
-      agentBinding: ["agent-1"],
-      catalog,
-      seededProvider: shared,
-    });
-    await service.list();
-    expect(seen).toEqual([["agent-1"]]);
-  });
-
-  it("reads every agent of the owner with an unrestricted key", async () => {
-    const seen: (readonly string[] | undefined)[] = [];
-    const fake = fakeRepo({ rows: [row()] });
-    const service = createProfilesService({
-      repo: {
-        ...fake.repo,
-        usageCounts: async (_owner, binding) => {
-          seen.push(binding);
-          return new Map();
-        },
-      },
-      owner: "owner-1",
-      agentBinding: "*",
-      catalog,
-      seededProvider: shared,
-    });
-    await service.list();
-    expect(seen).toEqual([undefined]);
-  });
-
-  it("refuses a delete of a profile this owner does not have", async () => {
-    const fake = fakeRepo({ deleteOutcome: { outcome: "missing" } });
-    const err = await refusal(() => service(fake).delete("profile-x"));
-    expect(err.code).toBe("NOT_FOUND");
-  });
-});
-
-describe("profiles service — validation", () => {
-  const valid = {
-    name: "Review",
-    harness: "claude-code",
-    providerTemplate: "curve-bender-deployment",
-    model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-  };
-
-  it("accepts a harness, provider and model that agree", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const created = await service(fake).create(valid);
-    expect(created.name).toBe("Review");
-    expect(fake.calls.inserts).toEqual([{ ...valid, settings: {} }]);
-  });
-
-  it("refuses a harness the catalog does not offer", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const err = await refusal(() =>
-      service(fake).create({ ...valid, harness: "unknown" }),
-    );
-    expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toBe("unknown harness unknown");
-  });
-
-  /** TEST_SCENARIO: a profile holds the settings its harness keeps for a
-   * session, and never the platform sub-agent slot, whose reference is the
-   * agent's. */
-  it("refuses a platform sub-agent setting in a profile", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const err = await refusal(() =>
-      service(fake).create({
-        ...valid,
-        settings: { "platformSubagent.harness": "codex" },
+        model: "anthropic/claude-sonnet-5-5",
       }),
     );
     expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toContain(
-      "platform sub-agent slot belongs to the agent",
-    );
-    expect(fake.calls.inserts).toEqual([]);
   });
 
-  /** TEST_SCENARIO: a blank setting value is refused, so a profile cannot store
-   * an empty choice. */
-  it("refuses a blank setting value", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const err = await refusal(() =>
-      service(fake).create({ ...valid, settings: { effort: "  " } }),
-    );
-    expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toBe("effort needs a value");
-  });
-
-  it("refuses a provider that is not a preset", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const err = await refusal(() =>
-      service(fake).create({ ...valid, providerTemplate: "shared-kb" }),
-    );
-    expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toBe("unknown provider shared-kb");
-  });
-
-  it("refuses a bare model name", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const err = await refusal(() =>
-      service(fake).create({ ...valid, model: "gpt-6.1-sol" }),
-    );
-    expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toBe(
-      "name the model with its provider, as <provider>/gpt-6.1-sol",
-    );
-  });
-
-  it("refuses a model whose provider is not the profile's", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const err = await refusal(() =>
-      service(fake).create({ ...valid, model: "openai/gpt-6.1-sol" }),
-    );
-    expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toBe(
-      "openai/gpt-6.1-sol is not a curve-bender-deployment model",
-    );
-  });
-
-  it("refuses a harness that cannot run on the profile's provider", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const err = await refusal(() =>
-      service(fake).create({
-        ...valid,
-        harness: "bob",
-        providerTemplate: "curve-bender-deployment",
-      }),
-    );
-    expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toBe(
-      "the bob harness cannot run on curve-bender-deployment",
-    );
-  });
-
-  it("re-checks the merged profile on an update, so a provider change cannot orphan the model", async () => {
-    const fake = fakeRepo({ rows: [row()] });
-    const err = await refusal(() =>
-      service(fake).update({ id: "profile-1", providerTemplate: "openai" }),
-    );
-    expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toBe(
-      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017 is not a openai model",
-    );
-    expect(fake.calls.updates).toEqual([]);
-  });
-
-  it("refuses an update to a profile this owner does not have", async () => {
-    const fake = fakeRepo({ rows: [] });
-    const err = await refusal(() =>
-      service(fake).update({ id: "profile-x", name: "Other" }),
-    );
-    expect(err.code).toBe("NOT_FOUND");
-  });
-});
-
-describe("profiles service — binding a new agent's default", () => {
-  it("binds the seeded profile when the agent's harness and provider fit", async () => {
-    const fake = fakeRepo({ seeded: row() });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "claude-code",
-    });
-    expect(fake.calls.binds).toEqual([
-      { agentId: "agent-1", profileId: "profile-1" },
-    ]);
-  });
-
-  it("binds nothing when the agent's harness is not the profile's", async () => {
-    const fake = fakeRepo({ seeded: row() });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "bob",
-    });
-    expect(fake.calls.binds).toEqual([]);
-  });
-
-  it("binds nothing when the agent was not granted the profile's provider", async () => {
-    const fake = fakeRepo({ seeded: row(), granted: [] });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "claude-code",
-    });
-    expect(fake.calls.binds).toEqual([]);
-  });
-
-  it("binds nothing when no profile was seeded", async () => {
-    const fake = fakeRepo({ seeded: null });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "claude-code",
-    });
-    expect(fake.calls.binds).toEqual([]);
-  });
-
-  it("seeds before it binds, so a first create on a fresh owner still binds", async () => {
-    const fake = fakeRepo({ seeded: row() });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "claude-code",
-    });
-    expect(fake.calls.order[0]).toBe("seed");
-  });
-});
-
-describe("profiles service — the fan-out of an edit", () => {
-  const valid = {
-    name: "Review",
-    harness: "claude-code",
-    providerTemplate: "curve-bender-deployment",
-    model: shared.model,
-  };
-
-  it("reports the agents that cannot take the edited profile", async () => {
-    const fake = fakeRepo({
-      rows: [row({ id: "p1", seed: null, ...valid })],
-      usage: {
-        agents: [
-          { id: "agent-1", slots: ["chat"] },
-          { id: "agent-2", slots: ["platformSubagent"] },
+  /** TEST_SCENARIO: a profile something points at cannot be deleted, and the refusal says what uses it. */
+  it("refuses to delete a profile in use", async () => {
+    const { repo } = fakeRepo({
+      references: {
+        ...none,
+        schedules: [
+          { profileId: "profile-1", id: "s1", name: "Nightly", agentId: "a" },
         ],
-        channels: [],
-        schedules: [],
       },
     });
-    const republished: string[] = [];
-    const edited = await createProfilesService({
-      repo: fake.repo,
-      owner: "owner-1",
-      catalog,
-      seededProvider: shared,
-      fanOut: {
-        republishDefaults: async (agentId) => {
-          republished.push(agentId);
-          return agentId === "agent-2"
-            ? {
-                published: false,
-                reason: "this agent does not carry claude-code",
-              }
-            : { published: true };
-        },
-      },
-    }).update({
-      id: "p1",
-      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030",
-    });
-    expect(republished).toEqual(["agent-1", "agent-2"]);
-    expect(edited.profile.model).toBe(
-      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030",
-    );
-    expect(edited.rejected).toEqual([
-      {
-        agentId: "agent-2",
-        reason: "this agent does not carry claude-code",
-      },
-    ]);
+    const err = await refusal(service(repo).delete("profile-1"));
+    expect(err.message).toContain("1 schedule");
   });
 
-  /** TEST_SCENARIO: an edit no referencing agent can take is put back, so no
-   * new chat is left failing against a profile nothing can run. */
-  it("puts the previous values back when every agent rejects the edit", async () => {
-    const before = row({ id: "p1", seed: null, ...valid });
-    const fake = fakeRepo({
-      rows: [before],
-      usage: {
-        agents: [{ id: "agent-1", slots: ["chat"] }],
-        channels: [],
-        schedules: [],
+  /** TEST_SCENARIO: an edit every referencing agent rejects is put back, so new chats on them do not fail on it (QA D5). */
+  it("puts back an edit no referencing agent can run", async () => {
+    const { repo, writes } = fakeRepo({
+      references: {
+        ...none,
+        agents: [{ id: "a1", chat: "profile-1", platform: null }],
       },
     });
-    const err = await refusal(() =>
-      createProfilesService({
-        repo: fake.repo,
-        owner: "owner-1",
-        catalog,
-        seededProvider: shared,
-        fanOut: {
-          republishDefaults: async () => ({
-            published: false,
-            reason: "Unsupported session setting: effort=ultra-mega",
-          }),
-        },
-      }).update({ id: "p1", settings: { effort: "ultra-mega" } }),
+    const err = await refusal(
+      service(repo, {
+        republish: async () => "effort=ultra is not offered",
+      }).update({
+        id: "profile-1",
+        settings: { effort: "ultra" },
+      }),
     );
-    expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toContain("no agent can run this profile");
-    const kept = fake.rows.find((r) => r.id === "p1");
-    expect(kept?.settings).toEqual(before.settings);
+    expect(err.message).toContain("effort=ultra");
+    expect(writes.updates.at(-1)).toMatchObject({ settings: {} });
   });
 
-  /** TEST_SCENARIO: an edit that lands while the fan-out runs is not undone by
-   * the revert of a rejected one. */
-  it("does not undo a later edit when it reverts a rejected one", async () => {
-    const before = row({ id: "p1", seed: null, ...valid });
-    const fake = fakeRepo({
-      rows: [before],
-      usage: {
-        agents: [{ id: "agent-1", slots: ["chat"] }],
-        channels: [],
-        schedules: [],
+  /** TEST_SCENARIO: a rename changes nothing an agent runs, so it is sent to nobody. */
+  it("sends a rename to no agent", async () => {
+    const { repo } = fakeRepo({
+      references: {
+        ...none,
+        agents: [{ id: "a1", chat: "profile-1", platform: null }],
       },
     });
-    const err = await refusal(() =>
-      createProfilesService({
-        repo: fake.repo,
-        owner: "owner-1",
-        catalog,
-        seededProvider: shared,
-        fanOut: {
-          republishDefaults: async () => {
-            /* TEST_SCENARIO: a second edit lands while the fan-out runs. */
-            await fake.repo.update("owner-1", "p1", {
-              model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2040",
-            });
-            return { published: false, reason: "no agent can run it" };
-          },
-        },
-      }).update({ id: "p1", settings: { effort: "ultra-mega" } }),
-    );
-    expect(err.code).toBe("BAD_REQUEST");
-    const kept = fake.rows.find((r) => r.id === "p1");
-    expect(kept?.model).toBe("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2040");
-  });
-
-  it("fans out to nobody when nothing points at the profile", async () => {
-    const fake = fakeRepo({ rows: [row({ id: "p1", seed: null, ...valid })] });
-    let called = 0;
-    const edited = await createProfilesService({
-      repo: fake.repo,
-      owner: "owner-1",
-      catalog,
-      seededProvider: shared,
-      fanOut: {
-        republishDefaults: async () => {
-          called += 1;
-          return { published: true };
-        },
+    let republished = 0;
+    await service(repo, {
+      republish: async () => {
+        republished += 1;
+        return null;
       },
-    }).update({
-      id: "p1",
-      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030",
-    });
-    expect(called).toBe(0);
-    expect(edited.rejected).toEqual([]);
+    }).update({ id: "profile-1", name: "Renamed" });
+    expect(republished).toBe(0);
   });
 });
 
-describe("profiles service — a rename", () => {
-  it("reaches no agent, since nothing they run changes", async () => {
-    const fake = fakeRepo({
-      rows: [row({ id: "p1", seed: null, name: "Review" })],
-      usage: {
-        agents: [{ id: "agent-1", slots: ["chat"] }],
-        channels: [],
-        schedules: [],
-      },
-    });
-    let called = 0;
-    const edited = await createProfilesService({
-      repo: fake.repo,
-      owner: "owner-1",
-      catalog,
-      seededProvider: shared,
-      fanOut: {
-        republishDefaults: async () => {
-          called += 1;
-          return { published: true };
-        },
-      },
-    }).update({ id: "p1", name: "Reviewed" });
-    expect(called).toBe(0);
-    expect(edited.profile.name).toBe("Reviewed");
+describe("a new agent's default", () => {
+  const owner = (repo: ProfilesRepository) => ({
+    repo,
+    owner: "owner-1",
+    catalog,
+    sharedProvider: true,
+  });
+
+  /** TEST_SCENARIO: a new agent on the seeded profile's harness, granted its provider, starts on Default. */
+  it("binds the seeded profile when the harness and the grant fit", async () => {
+    const { repo, writes } = fakeRepo();
+    await bindDefaultProfile(owner(repo), "agent-1", "claude-code");
+    expect(writes.binds).toEqual(["agent-1"]);
+  });
+
+  /** TEST_SCENARIO: another harness keeps today's first-hello conversion. */
+  it("binds nothing to another harness", async () => {
+    const { repo, writes } = fakeRepo();
+    await bindDefaultProfile(owner(repo), "agent-1", "codex");
+    expect(writes.binds).toEqual([]);
   });
 });

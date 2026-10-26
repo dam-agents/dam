@@ -1,6 +1,6 @@
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
-import type { StoredProfileResolver } from "../profiles/index.js";
+import type { ProfileResolver } from "../profiles/index.js";
 import type {
   DefaultKind,
   HarnessCatalog,
@@ -80,15 +80,14 @@ export function composeHarnessConfigModule(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
-  profiles: StoredProfileResolver;
+  resolveProfile: ProfileResolver;
 }): { service: HarnessConfigService } {
-  const { db, outboxRepo, profiles, ...serviceDeps } = deps;
+  const { db, outboxRepo, ...serviceDeps } = deps;
   const resetRepo = createHarnessConfigResetRepo({ db, ...ETE_BYPASS_RESET });
-  const pairRepo = createSessionPairRepo(db, profiles);
+  const pairRepo = createSessionPairRepo(db, deps.resolveProfile);
   return {
     service: createHarnessConfigService({
       ...serviceDeps,
-      profiles: deps.profiles,
       snapshotRepo: createHarnessConfigSnapshotRepo(db),
       pairRepo,
       eventQueue: createHarnessConfigEventQueue({ db, outboxRepo }),
@@ -108,11 +107,11 @@ export function composeSessionChoicesValidator(deps: {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   firePair: FirePair;
-  profiles: StoredProfileResolver;
+  resolveProfile: ProfileResolver;
 }): SessionChoicesValidator {
   return createSessionChoicesValidator({
     catalog: deps.catalog,
-    pairRepo: createSessionPairRepo(deps.db, deps.profiles),
+    pairRepo: createSessionPairRepo(deps.db, deps.resolveProfile),
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
     getCapabilities: deps.getCapabilities,
     firePair: deps.firePair,
@@ -130,11 +129,11 @@ export function composeFirePair(deps: {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
-  profiles: StoredProfileResolver;
+  resolveProfile: ProfileResolver;
 }): FirePair {
   const resolver = {
     ...deps,
-    pairRepo: createSessionPairRepo(deps.db, deps.profiles),
+    pairRepo: createSessionPairRepo(deps.db, deps.resolveProfile),
   };
   return (agentId, kind, preferred) =>
     resolveFirePair(resolver, agentId, kind, preferred);
@@ -155,10 +154,11 @@ export function composeDefaultConverter(deps: {
   ownerOf: (agentId: string) => Promise<string | undefined>;
   runtimeMutator: RuntimeMutator;
   log: (msg: string) => void;
-  profiles: StoredProfileResolver;
+  resolveProfile: ProfileResolver;
 }): { converter: DefaultConverter; helloSaga: Subscription } {
-  const { db, namespace, ownerOf, runtimeMutator, profiles, ...rest } = deps;
-  const pairRepo = createSessionPairRepo(db, profiles);
+  const { db, namespace, ownerOf, runtimeMutator, resolveProfile, ...rest } =
+    deps;
+  const pairRepo = createSessionPairRepo(db, resolveProfile);
   const publishDefaults = createSessionDefaultsPublisher({
     db,
     pairRepo,

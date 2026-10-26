@@ -266,11 +266,7 @@ export function useSectionSummaries(agent: AgentView | null): {
       ...(agent && { people: peopleSummary(agent.access) }),
       "chat-forms": chatFormsSummary,
       models: line(providersSummary, usageSummary),
-      connections: line(
-        connections,
-        envCount ? environment : undefined,
-        network,
-      ),
+      services: line(connections, envCount ? environment : undefined, network),
       skills,
       automations: line(schedulesSummary, channelsSummary),
     },

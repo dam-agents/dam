@@ -1,13 +1,16 @@
-// TEST_OVERVIEW: A schedule runs on a profile (D92): what a new one starts on, the one field that picks it, and the custom pickers that stand in for a schedule written before profiles.
+// TEST_OVERVIEW: A schedule runs on a profile (D92): what a new one (or a new channel, D91) starts on, the one field that picks it, what a save sends, and the custom pickers that stand in for a schedule written before profiles.
 import type { ProfileWithUsage } from "api-server-api";
 import { createElement, Fragment, type PropsWithChildren } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useForm } from "react-hook-form";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { defaultProfileId } from "../../modules/profiles/lib/default-profile.js";
 import { ScheduleChoicesField } from "../../modules/schedules/forms/schedule-fields.js";
-import { scheduleInheritsChoices } from "../../modules/schedules/forms/schedule-form-schema.js";
-import { schedulePresetProfileId } from "../../modules/schedules/lib/schedule-preset-profile.js";
+import {
+  scheduleChoices,
+  scheduleInheritsChoices,
+} from "../../modules/schedules/forms/schedule-form-schema.js";
 import type { Schedule } from "../../types.js";
 
 const state = vi.hoisted(() => ({
@@ -86,8 +89,6 @@ const profile = (
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
   settings: {},
   seeded: true,
-  createdAt: "",
-  updatedAt: "",
   usage: { agents: 0, channels: 0, schedules: 0 },
   availability: { available: true, reason: null, attachable: false },
   ...overrides,
@@ -142,43 +143,34 @@ beforeEach(() => {
   state.operable = true;
 });
 
-describe("what a new schedule starts on", () => {
-  /** TEST_SCENARIO: the newest schedule's profile wins, and the newest is the last row of the list. */
-  it("takes the most recently created schedule's profile", () => {
-    const profiles = [profile(), profile({ id: "p2", name: "Fast" })];
-    expect(
-      schedulePresetProfileId({
-        schedules: [schedule("p1"), schedule("p2")],
-        profiles,
-        chatProfileId: "p1",
-      }),
-    ).toBe("p2");
-    expect(
-      schedulePresetProfileId({
-        schedules: [schedule("p1")],
-        profiles,
-        chatProfileId: "p2",
-      }),
-    ).toBe("p1");
+describe("what a new schedule or channel starts on", () => {
+  /** TEST_SCENARIO: the newest sibling's profile wins over the chat profile; one the owner no longer holds is passed over, and with none left the seeded Default answers. */
+  it("takes the newest sibling's profile, then the chat profile, then Default", () => {
+    const profiles = [profile(), profile({ id: "p2", seeded: false })];
+    expect(defaultProfileId(profiles, ["p2", "p1"])).toBe("p2");
+    expect(defaultProfileId(profiles, ["gone", "p2"])).toBe("p2");
+    expect(defaultProfileId(profiles, [null, undefined])).toBe("p1");
+    expect(defaultProfileId([], ["gone"])).toBe(null);
   });
+});
 
-  /** TEST_SCENARIO: with no schedule naming one, the chat profile answers; with no profile at all, nothing is preselected. */
-  it("falls back to the chat profile, never to a profile the owner lost", () => {
-    const profiles = [profile(), profile({ id: "p2", name: "Fast" })];
-    expect(
-      schedulePresetProfileId({
-        schedules: [schedule(null)],
-        profiles,
-        chatProfileId: "p2",
-      }),
-    ).toBe("p2");
-    expect(
-      schedulePresetProfileId({
-        schedules: [schedule("gone")],
-        profiles: [],
-        chatProfileId: "gone",
-      }),
-    ).toBe(null);
+describe("what a schedule save sends", () => {
+  /** TEST_SCENARIO: a schedule on a profile sends the profile alone, so the values the form shows, which the profile resolves to, are never taken for a detach; a custom one sends its own values and clears the profile. */
+  it("sends the profile alone, or the values with the profile cleared", () => {
+    const values = {
+      harness: "claude-code",
+      model: "cb/x",
+      settings: { effort: "high", mode: "" },
+    };
+    expect(scheduleChoices({ ...values, profile: "p1" })).toEqual({
+      profile: "p1",
+    });
+    expect(scheduleChoices({ ...values, profile: "" })).toEqual({
+      profile: null,
+      harness: "claude-code",
+      model: "cb/x",
+      settings: { effort: "high" },
+    });
   });
 });
 
@@ -219,17 +211,10 @@ describe("the schedule form's Profile field", () => {
 });
 
 describe("the chat default choice on Custom selection", () => {
-  /** TEST_SCENARIO: the empty choice stays only for a schedule written before
-   * profiles that follows the chat default, so such a row opens and saves
-   * untouched (D123). */
-  it("keeps the empty choice for a schedule that inherits", () => {
+  /** TEST_SCENARIO: the empty choice stays only for a schedule written before profiles that follows the chat default, so such a row opens and saves untouched; a row with a harness or a profile asks for concrete values (D123). */
+  it("keeps the empty choice only for a schedule that inherits", () => {
     expect(scheduleInheritsChoices(schedule(null))).toBe(true);
     expect(scheduleInheritsChoices(undefined)).toBe(false);
-  });
-
-  /** TEST_SCENARIO: a row that carries a harness or a profile asks for concrete
-   * values instead. */
-  it("drops the empty choice once the row has values or a profile", () => {
     expect(
       scheduleInheritsChoices({
         ...schedule(null),

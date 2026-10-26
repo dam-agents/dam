@@ -1,8 +1,5 @@
-import { useProfiles } from "../../../profiles/api/queries.js";
 import { ProfilePicker } from "../../../profiles/components/profile-picker.js";
-import { useProfileAttach } from "../../../profiles/hooks/use-profile-attach.js";
 import { useSetChannelProfile } from "../../api/channel-profile.js";
-import { saveChannelProfile } from "../../lib/channel-profile-save.js";
 
 export type ChannelKey = {
   type: "slack" | "telegram";
@@ -10,13 +7,7 @@ export type ChannelKey = {
   conversationId?: string;
 };
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the profile a channel's turns run on, on the
- * channel's own row (D91): every turn is resolved from it, and a channel that
- * carries none still follows the agent's chat default until someone picks one.
- * A pick whose provider the agent has not been granted attaches it first, so a
- * channel never names a profile its turns would refuse (R3).
- */
+/** UNIT_BOUNDARY_DESCRIPTION: the profile a channel's turns run on, on its own row (D91); a channel that names none still follows the agent's chat default. */
 export function ChannelProfileLine({
   agentId,
   channel,
@@ -28,22 +19,17 @@ export function ChannelProfileLine({
   profileId: string | null;
   readOnly?: boolean;
 }) {
-  const { data: profiles = [] } = useProfiles(agentId);
   const setProfile = useSetChannelProfile(agentId);
-  const { attach, manage } = useProfileAttach(agentId);
-
-  const save = (id: string) => setProfile.mutate({ ...channel, profileId: id });
-
   return (
     <ProfilePicker
+      agentId={agentId}
       label="Runs on"
-      profiles={profiles}
       value={profileId}
       placeholder="the agent's chat default"
       disabled={readOnly || setProfile.isPending}
-      onPick={(profile) => void saveChannelProfile({ profile, attach, save })}
-      onAttach={(profile) => void saveChannelProfile({ profile, attach, save })}
-      onManage={manage}
+      onPick={(profile) =>
+        setProfile.mutate({ ...channel, profileId: profile.id })
+      }
       testId="channel-profile"
     />
   );

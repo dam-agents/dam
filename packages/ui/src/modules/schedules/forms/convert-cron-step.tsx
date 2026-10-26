@@ -13,11 +13,10 @@ import type { ExactCronConversion } from "../lib/cron-conversion.js";
 import { nextRRuleRuns } from "../lib/rrule-runs.js";
 import { TIMEZONE_OPTIONS } from "../lib/schedule-form-options.js";
 import { CRON_TIMEZONE, cronToText } from "../lib/schedule-format.js";
-import type { ScheduleChoicesPayload } from "./cron-schedule-form.js";
+import { scheduleChoices } from "./schedule-form-schema.js";
 
 interface Props {
   schedule: Schedule;
-  choices: ScheduleChoicesPayload;
   conversion: ExactCronConversion;
   onBack: () => void;
   onClose: () => void;
@@ -35,7 +34,6 @@ const RUN_FORMAT: Intl.DateTimeFormatOptions = {
 
 export function ConvertCronStep({
   schedule,
-  choices,
   conversion,
   onBack,
   onClose,
@@ -64,7 +62,7 @@ export function ConvertCronStep({
         task: schedule.task ?? "",
         sessionMode: schedule.sessionMode ?? "fresh",
         precheck: schedule.precheck,
-        ...choices,
+        ...scheduleChoices(schedule),
         sessionTitle: schedule.sessionTitle,
       },
       {

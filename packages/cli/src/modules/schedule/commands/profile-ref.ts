@@ -18,9 +18,7 @@ export async function profileOrExit(
   if (ref === undefined) return null;
   const profile = await deps.findProfile(host, ref);
   if (!profile) {
-    process.stderr.write(
-      `error: unknown profile: ${ref}\nhint: run \`dam profile list\` to see names and ids\n`,
-    );
+    process.stderr.write(`error: unknown profile: ${ref}\n`);
     process.exit(EXIT_INVALID_INPUT);
   }
   return profile.id;

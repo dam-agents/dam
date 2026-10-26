@@ -21,7 +21,7 @@ const sandboxSectionSchema = z.enum([
   "setup",
   "people",
   "models",
-  "connections",
+  "services",
   "skills",
   "automations",
   "environments",
@@ -35,8 +35,9 @@ export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 const LEGACY_SANDBOX_SECTIONS = {
   providers: "models",
   usage: "models",
-  network: "connections",
-  environment: "connections",
+  connections: "services",
+  network: "services",
+  environment: "services",
   channels: "automations",
   schedules: "automations",
 } as const satisfies Record<string, SandboxSection>;

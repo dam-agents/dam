@@ -24,10 +24,10 @@ import type {
 } from "../services/worker-contract.js";
 import {
   AcpSessionLoadError,
+  pairFields,
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
-import type { ChannelPairResolver } from "../services/channel-pair-resolver.js";
-import { ChannelProfileRefusedError } from "../domain/channel-profile-refusal.js";
+import type { ChannelPair } from "./channel-profile.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { getLogger } from "../../../core/logger.js";
 import { channelDeny } from "./channel-authz.js";
@@ -98,8 +98,6 @@ export interface TelegramOwnerChatsPort {
 export interface ChannelConversation {
   id: string;
   title: string;
-  /* UNIT_BOUNDARY_DESCRIPTION: the profile the chat's turns run on (D91); a
-   * worker from before it answers none. */
   profileId?: string | null;
 }
 
@@ -589,8 +587,7 @@ export function createTelegramWorker(deps: {
   botToken: string;
   configuredBotUsername?: string | null;
   makeAcpClient: AcpClientFactory;
-  /* UNIT_BOUNDARY_DESCRIPTION: the pair a fresh session in a Telegram chat starts on, read from that channel's profile (D119). */
-  channelPair?: ChannelPairResolver;
+  channelPair?: ChannelPair;
   state: StateAdapter;
   agents: () => AgentsService;
   conversations: TelegramConversationsPort & TelegramOwnerChatsPort;
@@ -722,37 +719,16 @@ export function createTelegramWorker(deps: {
           );
         }
       }
-      /* UNIT_BOUNDARY_DESCRIPTION: a fresh chat starts on the pair its row's
-       * profile resolves to, named in the meta so the chat's values win over the
-       * agent's default; a resumed chat keeps the values it already runs on
-       * (D94 A). */
-      const channelDecision = deps.channelPair
-        ? await deps.channelPair(agentId, {
-            type: "telegram",
-            conversationId: thread.id,
-          })
-        : { kind: "none" as const };
-      if (channelDecision.kind === "unavailable")
-        throw new ChannelProfileRefusedError(
-          channelDecision.profileName,
-          channelDecision.detail,
-        );
       await acp.sendPrompt(prompt, {
         platformMeta: {
           type: SessionType.ChannelTelegram,
           threadTs: thread.id,
-          ...(channelDecision.kind === "profile" && {
-            harness: channelDecision.pair.harness,
-            ...(channelDecision.pair.provider !== null && {
-              provider: channelDecision.pair.provider,
+          ...pairFields(
+            await deps.channelPair?.(agentId, {
+              type: "telegram",
+              id: thread.id,
             }),
-            ...(channelDecision.pair.model !== null && {
-              model: channelDecision.pair.model,
-            }),
-            ...(channelDecision.pair.settings && {
-              settings: channelDecision.pair.settings,
-            }),
-          }),
+          ),
         },
         ...(onSession ? { onSession } : {}),
       });

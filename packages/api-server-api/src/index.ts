@@ -4,10 +4,6 @@ export type { AgentActing, ApiContext, UserIdentity } from "./context.js";
 export { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
 
 export { ChannelType, type EnvVar } from "./modules/shared.js";
-export type {
-  ChannelsService,
-  SetChannelProfileResult,
-} from "./modules/channels/types.js";
 
 export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
 export type { LiveEventsService } from "./modules/events/types.js";
@@ -73,11 +69,10 @@ export type {
 
 export type {
   HarnessConfigChange,
-  SessionPairReferences,
-  RepublishDefaultsResult,
   HarnessConfigStatus,
   DefaultKind,
   SessionDefaults,
+  SessionDefaultsView,
   SessionPair,
   HarnessConfigService,
   HarnessConfigSnapshot,
@@ -551,34 +546,11 @@ export type { DefaultAccountKindId } from "./modules/connections/preference-grou
 
 export type {
   ProfilesService,
-  ProfileView,
   ProfileWithUsage,
   ProfileUsage,
-  ProfileUsageCounts,
   ProfileCreateInput,
   ProfileUpdateInput,
-  ProfileUnavailableReason,
-  ProfileSlot,
-  ProfileUpdateResult,
-  ProfileAvailability,
-  ProfileListInput,
 } from "./modules/profiles/types.js";
-export {
-  profileSchema,
-  profileViewSchema,
-  profileUsageSchema,
-  profileUsageCountsSchema,
-  profileCreateInputSchema,
-  profileUpdateInputSchema,
-  profileIdInputSchema,
-  profileNameSchema,
-  profileModelSchema,
-  profileSettingsSchema,
-  profileSlotSchema,
-  profileUpdateResultSchema,
-  profileAvailabilitySchema,
-  profileListInputSchema,
-} from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,

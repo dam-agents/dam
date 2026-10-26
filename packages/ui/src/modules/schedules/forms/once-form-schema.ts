@@ -60,30 +60,3 @@ export function onceFormDefaults(existing?: Schedule): OnceFormValues {
 export function onceLocalMoment(v: OnceFormValues): string | undefined {
   return v.when === "at" ? `${v.date}T${v.time}` : undefined;
 }
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the choices a one-time task's update carries. The
- * server replaces the choices it is given, so every one the form shows travels:
- * a task-only edit must not delete the harness, model and settings the task ran
- * on. A task on a profile sends the profile and no inline values, so the
- * reference stays; one on its own values sends them, and a value the user
- * cleared is left out, so the task goes back to the agent's chat default.
- */
-export function onceUpdateChoices(
-  v: Pick<OnceFormValues, "profile" | "harness" | "model" | "settings">,
-): {
-  profile?: string;
-  harness?: string;
-  model?: string;
-  settings?: Record<string, string>;
-} {
-  if (v.profile) return { profile: v.profile };
-  const settings = Object.fromEntries(
-    Object.entries(v.settings).filter(([, value]) => value !== ""),
-  );
-  return {
-    ...(v.harness ? { harness: v.harness } : {}),
-    ...(v.model ? { model: v.model } : {}),
-    ...(Object.keys(settings).length > 0 ? { settings } : {}),
-  };
-}

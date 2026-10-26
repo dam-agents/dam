@@ -8,7 +8,7 @@ import {
 } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient, AcpSessionInfo } from "../../core/acp-client.js";
 import type { AgentWorkspaceFilesFactory } from "../../modules/channels/infrastructure/agent-workspace-files.js";
-import type { ChannelPairResolver } from "../../modules/channels/services/channel-pair-resolver.js";
+import type { ChannelPair } from "../../modules/channels/infrastructure/channel-profile.js";
 import { stubTurnAttendance } from "./turn-attendance.js";
 import { stubWorkspaceFiles } from "./workspace-files.js";
 
@@ -28,7 +28,7 @@ export function slackWorkerHarness(
     settleMs?: number;
     makeAcp?: (base: AcpClient) => AcpClient;
     workspaceFiles?: AgentWorkspaceFilesFactory;
-    channelPair?: ChannelPairResolver;
+    channelPair?: ChannelPair;
   } = {},
 ) {
   const boundChannelId = opts.boundChannelId ?? "C1";

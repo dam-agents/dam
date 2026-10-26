@@ -15,8 +15,6 @@ const KINDS: readonly DefaultKind[] = ["chat", "channel", "scheduled"];
 export interface ProviderUsage {
   kinds: DefaultKind[];
   schedules: string[];
-  /* UNIT_BOUNDARY_DESCRIPTION: the owner's profiles that name this provider and
-   * are in use somewhere, so detaching it says which of them stop running. */
   profiles: string[];
 }
 
@@ -43,12 +41,12 @@ export function useProviderUsage(
       (pair.provider === provider.id || aliasOf(pair.model) === alias);
     const effective = (kind: DefaultKind) =>
       kind === "chat" ? saved?.chat : (saved?.[kind] ?? saved?.chat);
-    const kinds = KINDS.filter((kind) => runsOn(effective(kind)));
+    const kinds = KINDS.filter((kind) => runsOn(saved?.[kind]));
     return {
       kinds,
       schedules: schedules
         .filter((s) =>
-          s.model ? aliasOf(s.model) === alias : kinds.includes("scheduled"),
+          s.model ? aliasOf(s.model) === alias : runsOn(effective("scheduled")),
         )
         .map((s) => s.name),
       profiles: profiles

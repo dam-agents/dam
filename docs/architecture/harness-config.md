@@ -42,6 +42,7 @@ A session may also pick the settings its harness manifest lists under `sessionSe
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
 An agent remembers one **chat default**, which preselects the next session, and two **legacy** pairs, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on, kept for rows written before profiles.
 A pick in a chat saves the chat default, a profile pick saves the reference and not its values, and the subagent slot a reference of its own.
+**Tool approval** (Claude Code's permission mode, Bob's approvals) has its own picker beside the model picker, never a profile's; Plan modes are offered nowhere.
 **An owner's profiles** hold a harness, a provider template, a model and settings; they are edited from a chat's model picker, listed in Settings › Providers, and named by the chat default, by a channel's or a chat's binding and by a schedule.
 The api-server resolves a reference into the pair the runtime is sent, so an edit reaches every run following it while a session that picked keeps its own.
 A channel or schedule naming none follows its kind's legacy pair; picking a profile grants its provider on the agent.
@@ -85,7 +86,7 @@ The runtime sends it again whenever the session is loaded or resumed into a harn
 Settings are sent one at a time, in the order the runtime lists them, each after the harness answered the one before, because a harness reads a setting against the state an earlier one left: a mode is read against the model the session holds.
 A prompt waits for all of them.
 A setting always holds a value: one that neither the session nor its default names runs on the manifest's `default` for the option, which the runtime applies to the session or its process, never on what the harness's own settings file holds.
-Two kinds stay the harness's own: the permission mode, and a setting whose manifest default a person must approve, since such a default would stall every unattended turn; the picker starts those on the agent's configured value, or, for a mode the runtime derives, on the mode it derives, or else the manifest's `default`.
+Two kinds stay the harness's own: the permission mode, and a setting whose manifest default a person must approve, since such a default would stall every unattended turn; their picker starts on the agent's configured value, else the one the runtime derives (below), else the manifest's `default`.
 A default the session's model does not take, such as an effort on Haiku, is not sent.
 The picker offers no unset choice, so a change always names a value the harness applies.
 The Config panel shows only the settings a harness keeps for all its sessions, those two among them; the others are chosen in a session or in its default.
@@ -114,10 +115,10 @@ Only Bob itself runs with the preload: its bootstrap reads the agent-wide choice
 The task store, rules and MCP configuration under `~/.bob` stay shared.
 A runtime without the `sessionSettings` capability keeps the Config panel's harness defaults instead.
 
-The same record holds the session's **platform sub-agent settings** under `platformSubagent.<id>`: a harness, its model, its mode and its config options, which a runtime that reports `platformSubagentSettings` for the session's harness on hello accepts whatever the manifest binds, since they configure another agent ([invocations](invocations.md#spawning)); the Subagents section offers them only then.
+The same record holds the session's **platform sub-agent settings** under `platformSubagent.<id>`: a harness, its model, its mode and its config options, which a runtime that reports `platformSubagentSettings` for the session's harness on hello accepts whatever the manifest binds, since they configure another agent ([invocations](invocations.md#spawning)).
 They join no Harness Lease key and reach no harness; the api-server reads them when the session spawns, and the saved pair and schedules carry them with the rest.
 A mode or config option is checked against the chosen harness's catalog when it is set; the model, and a harness the agent no longer carries, only at spawn, so a stale choice never blocks the session's other settings; a choice the catalog marks `needsApproval` (Claude Code's asking modes, Bob's approvals on ask) is refused, because nobody is there to approve.
-The model picker's **Subagent model** section offers them, behind a *Let the agent pick* toggle that is on by default, as one choice for both kinds of subagent: a profile's harness and model reach the platform sub-agent, and its model reaches the harness's own subagents where the session's harness can run it, with the profile's effort where the harness offers a subagent effort, and otherwise they fall back to the agent's pick.
+One **Subagent model** choice, a profile or a Custom selection, covers both kinds of subagent: its harness and model reach the platform sub-agent, and its model reaches the harness's own subagents where the session's harness can run it, with the profile's effort where the harness offers a subagent effort; otherwise the agent picks.
 
 An unreadable setting is unavailable, not an unset default.
 Pi receives its selected provider and model as command-line options, because its extension loads after startup settings have been read; updating the saved defaults alone would leave the first turn on an earlier provider.

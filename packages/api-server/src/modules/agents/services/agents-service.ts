@@ -575,15 +575,7 @@ export function createAgentsService(deps: {
   defaultHarness?: string;
   telemetry?: boolean;
   storageGate?: StorageGatePort;
-  /* UNIT_BOUNDARY_DESCRIPTION: a new Agent starts on its owner's seeded profile
-   * when that profile fits it, instead of waiting for the first-hello
-   * conversion to write a custom default. */
-  defaultProfileBinder?: {
-    bindDefaultAgentProfile(input: {
-      agentId: string;
-      harness: string;
-    }): Promise<void>;
-  };
+  bindDefaultProfile?: (agentId: string, harness: string) => Promise<void>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -1469,16 +1461,13 @@ export function createAgentsService(deps: {
       }
 
       if (
-        deps.defaultProfileBinder &&
+        deps.bindDefaultProfile &&
         typeof spec.harness === "string" &&
         input.starterKitDefaultModel === undefined &&
         input.environmentOf === undefined
       ) {
-        await deps.defaultProfileBinder
-          .bindDefaultAgentProfile({
-            agentId: infra.id,
-            harness: spec.harness,
-          })
+        await deps
+          .bindDefaultProfile(infra.id, spec.harness)
           .catch((err: unknown) => {
             getLogger().warn(
               { err, agentId: infra.id },
