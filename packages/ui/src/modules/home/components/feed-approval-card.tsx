@@ -95,7 +95,7 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              resolved.startsWith("Denied")
+              resolved.startsWith("Denied") || resolved.startsWith("Stopped")
                 ? "text-destructive"
                 : "text-success",
             )}
@@ -111,7 +111,7 @@ export function FeedApprovalCard({
                 tooltip={allowOnce.tooltip}
                 onClick={() => void act(allowOnce.run, allowOnce.resolvedLabel)}
               >
-                Allow
+                {approval.type === "spend_limit" ? allowOnce.label : "Allow"}
               </Button>
             )}
             <DropdownMenu>
