@@ -18,19 +18,28 @@
 # with no arguments, this file shifts the task's own.
 
 # --- target ---------------------------------------------------------------
+GIVEN_ENVIRONMENT=""
 if [ -n "${usage_environment:-}" ]; then
-  export CLUSTER_ENVIRONMENT="$usage_environment"
+  GIVEN_ENVIRONMENT="$usage_environment"
 fi
 case "${1:-}" in
-  --environment) export CLUSTER_ENVIRONMENT="${2:?--environment needs a name}"; shift 2 ;;
-  --environment=*) export CLUSTER_ENVIRONMENT="${1#--environment=}"; shift ;;
+  --environment) GIVEN_ENVIRONMENT="${2:?--environment needs a name}"; shift 2 ;;
+  --environment=*) GIVEN_ENVIRONMENT="${1#--environment=}"; shift ;;
 esac
+if [ -n "$GIVEN_ENVIRONMENT" ]; then
+  export CLUSTER_ENVIRONMENT="$GIVEN_ENVIRONMENT"
+  # An e2e task given the flag marks the Environment as the lane's, and the
+  # tasks it runs inherit the mark with the variable.
+  [ -z "${E2E_LANE:-}" ] || export E2E_ENVIRONMENT="$GIVEN_ENVIRONMENT"
+fi
+unset GIVEN_ENVIRONMENT
 
 # The e2e lane pins its own VM and the default install; an Environment outranks
 # both below. A CLUSTER_ENVIRONMENT left in the shell would install the lane's
-# values into a business Environment and run the suite there.
-if [ -n "${E2E_LANE:-}" ] && [ -n "${CLUSTER_ENVIRONMENT:-}" ]; then
-  echo "FATAL: the e2e lane runs against its own test cluster, never an Environment, and CLUSTER_ENVIRONMENT=$CLUSTER_ENVIRONMENT is set. Unset it." >&2
+# values into a business Environment and run the suite there, so the lane goes
+# into an Environment only when an e2e task was given --environment.
+if [ -n "${E2E_LANE:-}" ] && [ -n "${CLUSTER_ENVIRONMENT:-}" ] && [ "${E2E_ENVIRONMENT:-}" != "$CLUSTER_ENVIRONMENT" ]; then
+  echo "FATAL: the e2e lane runs in an Environment only when its task is given --environment, and CLUSTER_ENVIRONMENT=$CLUSTER_ENVIRONMENT is set. Unset it, or pass --environment $CLUSTER_ENVIRONMENT." >&2
   exit 1
 fi
 
@@ -327,6 +336,32 @@ k3s_running() {
 e2e_mark() {
   [ -z "${E2E_TIMINGS:-}" ] || printf '%s\t%s\n' "$(date +%s)" "$1" >> "$E2E_TIMINGS"
 }
+
+# The port the e2e lane answers on from this agent: the test cluster's, which
+# e2e:install sets. An Environment takes one of its own (env_e2e_port), so a
+# local lane and several Environments run side by side on one agent.
+E2E_PORT=6555
+
+# e2e_endpoint: where the e2e lane answers from this agent, as E2E_PORT,
+# E2E_BASE_URL and E2E_KEYCLOAK_URL; the kubeconfig the suite acts on the
+# cluster with, as E2E_KUBECONFIG; and the port of the suite's Keycloak login
+# lock, as E2E_LOGIN_LOCK_PORT, one per lane, since each lane has a Keycloak
+# of its own. In an Environment that is its backchannel and its API,
+# forwarded to this agent by env_e2e_forward: a task that calls this closes
+# the forward with env_e2e_forward_close on its way out.
+e2e_endpoint() {
+  E2E_KUBECONFIG="$KUBECONFIG"
+  E2E_LOGIN_LOCK_PORT=47319
+  if [ "$CLUSTER_TARGET" = environment ]; then
+    E2E_PORT="$(env_e2e_port)" || return 1
+    env_e2e_forward "$E2E_PORT" || return 1
+    E2E_KUBECONFIG="$ENV_E2E_KUBECONFIG"
+    E2E_LOGIN_LOCK_PORT=$((47320 + E2E_PORT - E2E_ENV_PORT_MIN))
+  fi
+  E2E_BASE_URL="http://localhost:$E2E_PORT"
+  E2E_KEYCLOAK_URL="http://keycloak.localhost:$E2E_PORT"
+}
+env_e2e_forward_close() { :; }
 
 # What ztunnel logs for an expired mesh cert: its own SVID's, or a waypoint's
 # (it logs the failed HBONE handshake). The ztunnel-cert-watchdog CronJob in

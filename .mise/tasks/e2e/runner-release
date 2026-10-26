@@ -4,6 +4,7 @@
 #MISE dir="{{cwd}}"
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 #USAGE arg "<key>" help="The reboot key the second release declares, which is also its tag; e.g. runner-1-e2e"
+#USAGE flag "--environment <name>" help="Derive it in this agent's Environment of that name"
 # A runner release reaches an owner's machines as a hand-off in place, unless the
 # release declares a reboot key its pod does not run, which rolls the pod and
 # reboots them (see packages/vm-runner/reboot-id and
@@ -20,10 +21,21 @@
 set -euo pipefail
 key="${usage_key:?}"
 name="platform-vm-runner:$key"
-base="$(.mise/tasks/image/resolve import-path vm-runner)"
-[ -e "$base" ] || { echo "e2e:runner-release: no runner image at $base" >&2; exit 1; }
 work="$(TMPDIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}" mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+# An Environment's node pulled the runner image from the registry itself, so
+# the base is that image, pinned by its digest; a runner built here for a
+# change the registry lacks is the build's own output, as on the test cluster.
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+base=""
+if [ "$CLUSTER_TARGET" = environment ]; then
+  ref="$(env_reuse_ref vm-runner)"
+  [ -z "$ref" ] || base="${ref%:*}@$(crane digest "$ref")"
+fi
+if [ -z "$base" ]; then
+  base="$(.mise/tasks/image/resolve import-path vm-runner)"
+  [ -e "$base" ] || { echo "e2e:runner-release: no runner image at $base" >&2; exit 1; }
+fi
 mkdir -p "$work/root/usr/local/libexec/vm-runner"
 printf '%s\n' "$key" > "$work/root/usr/local/libexec/vm-runner/reboot-id"
 mise run image:pack -- "$base" "$work/root" "$work/second" "$name" --layout >&2
