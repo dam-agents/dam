@@ -1235,7 +1235,7 @@ export function ChatView() {
               sessionId={sessionId}
               processesEnabled={processesEnabled}
             />
-            <GettingStartedDock placement="chat" />
+            <GettingStartedDock placement="bar" />
             <SidePanelTabButtons
               tabs={appSidePanelTabs(hiddenTabs)}
               active={classicTab}

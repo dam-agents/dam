@@ -209,7 +209,7 @@ function MainApp() {
               <AppTopBar
                 actions={
                   <>
-                    <GettingStartedDock placement="page" />
+                    <GettingStartedDock placement="bar" />
                     <AppSidePanelButtons withArtifacts />
                   </>
                 }

@@ -5,8 +5,8 @@ Last verified: 2026-10-26
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
-The bell sits in the page's own top corner beside the Get started ring, and opens Approvals as a drawer over the page.
-The ring opens the [Get started](getting-started.md) checklist as a dock under it instead.
+The bell sits in the page's own top corner, and opens Approvals as a drawer over the page.
+The [Get started](getting-started.md) ring floats under the bell and opens its checklist as a dock there instead.
 In an Agent's chat the bell sits in the chat's top bar and opens that same drawer.
 
 ## What Home reads

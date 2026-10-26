@@ -61,15 +61,22 @@ beforeEach(() => {
   fake.tab = null;
 });
 
-// TEST_SCENARIO: the page's corner holds the ring and the bell in the page's own row, so a user reaches Get started and Approvals from the page and the entries never cover its actions.
-it("puts the ring and the bell in the page's own row", () => {
+// TEST_SCENARIO: the page's corner keeps the bell in its own row, and the Get started ring floats under that row, out of its flow and aligned with the bell, so the row keeps no room for the ring and the page scrolls under it.
+it("hangs the ring under the page's corner row", () => {
   const container = rendered(createElement(ClassicPageActions));
   const row = container.firstElementChild;
   expect(row?.className).toContain("sticky");
-  expect(
-    row?.querySelector('[data-testid="getting-started-dock-page"]'),
-  ).not.toBeNull();
   expect(row?.querySelector('[data-testid="panel-buttons"]')).not.toBeNull();
+  const dock = row?.querySelector(
+    '[data-testid="getting-started-dock-corner"]',
+  );
+  expect(dock).not.toBeNull();
+  const layer = dock?.parentElement;
+  expect(layer?.className).toContain("absolute");
+  expect(layer?.className).toContain("top-[46px]");
+  expect(layer?.className).toContain("right-4");
+  expect(layer?.className).toContain("md:right-6");
+  expect(layer?.parentElement).toBe(row);
 });
 
 // TEST_SCENARIO: the approvals tab opens the approvals drawer, and closing it clears the tab, so nothing is left open beside the page.

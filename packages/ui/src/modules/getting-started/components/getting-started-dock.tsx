@@ -18,21 +18,23 @@ import { ChecklistPill } from "./checklist-pill.js";
 import { UnlockCelebration } from "./unlock-celebration.js";
 
 const PANEL_POSITION = {
-  page: "top-[60px] md:top-[48px]",
-  chat: "top-[60px] md:top-[78px]",
+  corner: "top-[82px] right-4 md:right-6",
+  bar: "top-[60px] right-4 md:top-[78px] md:right-6",
 } as const;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Get started checklist. It lists the tasks
  * that unlock the avatar characters, plays the celebration for each unlock the
- * user has not seen, and collapses to a progress ring that floats in the
- * page's top corner beside the approvals bell. A click on the ring is the only
- * thing that opens it; a click elsewhere on the page, Escape, its collapse
- * chevron or Dismiss closes it, so it never holds a button of the page it
- * covers. While it is closed, a count on the ring shows the unlocks it holds.
- * Dismissing it hides it until the next unlock or until the avatar picker asks
- * for it; it is gone once every character is unlocked, until the user resets
- * their onboarding progress.
+ * user has not seen, and collapses to a progress ring. A click on the ring is
+ * the only thing that opens it; a click elsewhere on the page, Escape, its
+ * collapse chevron or Dismiss closes it, so it never holds a button of the
+ * page it covers. While it is closed, a count on the ring shows the unlocks it
+ * holds. Dismissing it hides it until the next unlock or until the avatar
+ * picker asks for it; it is gone once every character is unlocked, until the
+ * user resets their onboarding progress. Where its page puts it decides its
+ * place: in a page's corner it hangs in the band under the approvals bell, and
+ * the open card hangs under the ring; in a top bar both hang under the bar. A
+ * page that scrolls passes under the card either way.
  */
 export function GettingStartedDock({
   placement,
@@ -101,7 +103,7 @@ export function GettingStartedDock({
             ref={panel}
             data-testid="getting-started-dock-layer"
             className={cn(
-              "getting-started-dock fixed right-4 z-raised flex flex-col items-end gap-3 md:right-6",
+              "getting-started-dock fixed z-raised flex flex-col items-end gap-3",
               PANEL_POSITION[placement],
             )}
           >
