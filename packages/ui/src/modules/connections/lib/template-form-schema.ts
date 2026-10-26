@@ -1,12 +1,16 @@
 import type { ConnectionTemplateView } from "api-server-api";
 import { z } from "zod";
 
+import { freeName, type NewNameRule } from "./connection-hierarchy.js";
 import {
   slugifyTemplateName,
   validateConnectionName,
 } from "./connection-name.js";
 
-export function buildTemplateFormSchema(template: ConnectionTemplateView) {
+export function buildTemplateFormSchema(
+  template: ConnectionTemplateView,
+  nameRule: NewNameRule | null = null,
+) {
   const patterns = new Map<string, RegExp>();
   for (const input of template.inputs) {
     if (!input.pattern) continue;
@@ -18,10 +22,13 @@ export function buildTemplateFormSchema(template: ConnectionTemplateView) {
     .object({
       name: z.string(),
       overrideDefaults: z.boolean(),
+      access: z.enum(["narrowed", "full"]),
       fields: z.record(z.string(), z.string()),
     })
     .superRefine((v, ctx) => {
-      const nameError = validateConnectionName(v.name.trim());
+      const nameError =
+        validateConnectionName(v.name.trim()) ??
+        (nameRule?.taken.has(v.name.trim()) ? nameRule.message : null);
       if (nameError)
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -56,14 +63,19 @@ export type TemplateFormValues = z.infer<
 
 export function templateFormDefaults(
   template: ConnectionTemplateView,
+  nameRule: NewNameRule | null = null,
 ): TemplateFormValues {
   const fields: Record<string, string> = {};
   for (const i of template.inputs)
     fields[i.name] =
       !i.secret && i.presetValue !== undefined ? i.presetValue : "";
   return {
-    name: slugifyTemplateName(template.name),
+    name: freeName(
+      slugifyTemplateName(template.name),
+      nameRule?.taken ?? new Set(),
+    ),
     overrideDefaults: false,
+    access: "narrowed",
     fields,
   };
 }

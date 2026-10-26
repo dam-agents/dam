@@ -1,5 +1,7 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
+import { isGrantable, parentNoun } from "./connection-hierarchy.js";
+
 export type CatalogTab = "apps" | "mcp" | "custom-headers";
 
 export const CATALOG_TAB_ORDER: readonly CatalogTab[] = [
@@ -182,7 +184,10 @@ export function catalogTabCounts(
     CATALOG_TAB_ORDER.map((tab) => [tab, 0]),
   ) as Record<CatalogTab, number>;
   for (const [tab, groups] of byTab)
-    counts[tab] = groups.reduce((n, g) => n + g.connections.length, 0);
+    counts[tab] = groups.reduce(
+      (n, g) => n + g.connections.filter(isGrantable).length,
+      0,
+    );
   return counts;
 }
 
@@ -190,6 +195,7 @@ export function connectionKindSubtitle(
   connection: ConnectionView,
   template: ConnectionTemplateView | undefined,
 ): string {
+  if (connection.isParent) return parentNoun(connection);
   if (
     connection.templateId === "github" ||
     connection.templateId === "github-enterprise"
