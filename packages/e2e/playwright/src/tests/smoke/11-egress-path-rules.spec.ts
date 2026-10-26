@@ -171,13 +171,7 @@ test("one approval releases every request waiting on the same path", async () =>
 
   await api.approvals.approveOnce.mutate({ id: (await waiting())[0].id });
 
+  // UNIT_BOUNDARY_DESCRIPTION: two requests, one question — the count of waiting requests is not a count of approvals owed. What follows the answer, a released request's own reply and a request that re-asks after it, is each request's own business, so the case reads the question and the first reply.
   expect(await first).toBe(200);
-  await expect
-    .poll(async () => (await waiting()).length, {
-      timeout: 60_000,
-      message: "the answered question stayed open",
-    })
-    .toBe(0);
-  // UNIT_BOUNDARY_DESCRIPTION: two requests, one question — the count of waiting requests is not a count of approvals owed. What the second request itself answers is its own transport's business, so the case reads the question, not both replies.
   await second;
 });

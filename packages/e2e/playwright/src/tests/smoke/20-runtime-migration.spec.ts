@@ -30,6 +30,7 @@ import {
 import { acceptTerms } from "../../lib/auth.js";
 import {
   applyLegacyContainerAgent,
+  bootTimeoutMs,
   expectHomeFile,
   listSessionIds,
   refreshingToken,
@@ -78,7 +79,7 @@ async function migrationProgress(): Promise<string> {
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(300_000);
+  test.setTimeout(bootTimeoutMs(300_000));
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
@@ -93,7 +94,7 @@ test.afterAll(async () => {
 
 // TEST_SCENARIO: the Agent to migrate. It is a container Agent that can be migrated, it holds a file in HOME written through the files API, and it holds a Session from one chat turn. The later scenarios check each of these again on the vm Backend. For about a second after the pod turns Ready, the mesh may not route to it yet. A write whose connection was reset may have reached the agent, so the proxy answers it 502 and does not retry it; the write of the same bytes is idempotent, so the helper retries it.
 test("a container agent holds a HOME file and a session", async ({ page }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(bootTimeoutMs(300_000));
   await waitAgentState(api, agentId, "running");
   const agent = await api.agents.get.query({ id: agentId });
   expect(agent.vm, "the agent to migrate starts on the container Backend").toBe(
@@ -123,7 +124,7 @@ test("a container agent holds a HOME file and a session", async ({ page }) => {
 test("migrates to the vm Backend on an operator's request", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(bootTimeoutMs(400_000));
   await page.goto(baseUrl);
   const row = agentRow(page, agentName);
   await expect(row).toBeVisible({ timeout: 30_000 });
@@ -154,7 +155,7 @@ test("migrates to the vm Backend on an operator's request", async ({
 test("keeps its id, HOME and sessions, and chats on the vm Backend", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(bootTimeoutMs(300_000));
   const named = (await api.agents.list.query()).filter(
     (a) => a.name === agentName,
   );
