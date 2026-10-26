@@ -436,7 +436,6 @@ export function createSchedulerRunner(
         `fire: one-time schedule ${sched.id} is committed but the poke failed: ${(err as Error).message}; it stays delivering`,
       );
       noteFire("failure", { stage: "poke" });
-      if (lastAttempt) await emitFired(sched, "failure");
       throw err;
     }
     noteFire("success");

@@ -686,6 +686,34 @@ describe("scheduler-runner fire", () => {
     expect(fires).toEqual([{ result: "delivering", nextRun: null }]);
   });
 
+  // TEST_SCENARIO: a one-time fire's poke fails on the last attempt, and the event it committed settles afterwards. That is one fire, so usage must count it once and the audit must not keep a failure beside the success the machine reported: the outcome comes from the event alone, and a poke that fails after the commit leaves the fire delivering.
+  it("reports one outcome for a one-time fire whose poke failed after its commit", async () => {
+    const seen: string[] = [];
+    const sub = events$()
+      .pipe(ofType<ScheduleFired>(EventType.ScheduleFired))
+      .subscribe((event) => seen.push(event.outcome));
+    try {
+      const { runner } = makeDeps({
+        once: true,
+        wakeError: new Error("k8s api unreachable"),
+      });
+
+      await expect(
+        runner.buildFireHandler()(
+          SCHEDULE_ID,
+          new Date("2026-06-12T10:30:00Z"),
+          true,
+        ),
+      ).rejects.toThrow("k8s api unreachable");
+      expect(seen).toEqual([]);
+
+      await runner.recordDelivery(SCHEDULE_ID, "settled");
+      expect(seen).toEqual(["success"]);
+    } finally {
+      sub.unsubscribe();
+    }
+  });
+
   // TEST_SCENARIO: a retry after a failed poke finds the fire already delivering; it owes the Agent only the poke, and a fire that settled or was missed meanwhile is dropped.
   it("re-pokes a committed one-time fire and drops a finished one", async () => {
     const committed = makeDeps({ once: true, onceResult: "delivering" });
