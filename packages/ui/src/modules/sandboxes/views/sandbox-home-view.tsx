@@ -50,7 +50,6 @@ import {
 } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
-import { ConnectionAddressingSection } from "../components/setup/setup-sections.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
@@ -205,7 +204,6 @@ function AgentHome({ agent }: { agent: AgentView }) {
               <ConnectionsSection
                 agentId={agent.id}
                 header={header}
-                leading={<ConnectionAddressingSection agent={agent} />}
                 oauthReturnView={routeToPath({
                   view: "sandbox-home",
                   agentId: agent.id,

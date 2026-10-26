@@ -71,11 +71,11 @@ export function SkillSourceActions({
       <DropdownMenuItem
         disabled={busy}
         onSelect={onRescan}
-        className="h-auto items-start py-2"
+        className={cn(scannedAt && "h-auto items-start py-2")}
       >
-        <Renew size={14} className="mt-0.5 shrink-0" />
+        <Renew size={14} className={cn("shrink-0", scannedAt && "mt-0.5")} />
         <span className="flex-1">
-          Rescan
+          {scannedAt ? "Rescan" : "Re-scan"}
           {scannedAt && (
             <span
               className="mt-0.5 block text-xs text-muted-foreground"

@@ -86,6 +86,7 @@ export function SchedulesPanel({
     <>
       {header()}
       <ListSection
+        label={panel ? "Schedules" : undefined}
         loading={schedulesQuery.isPending}
         error={schedulesQuery.isError && "Couldn't load schedules."}
         isEmpty={upcoming.length === 0}

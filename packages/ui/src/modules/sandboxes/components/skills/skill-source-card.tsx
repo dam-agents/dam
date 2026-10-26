@@ -183,18 +183,16 @@ export function SkillSourceCard({
           {rightToolbar && revalidating && (
             <Spinner size={14} label="Rescanning this source" />
           )}
-          {!revalidating && (
-            <SkillSourceActions
-              source={source}
-              scannedAt={scannedAt}
-              busy={loading || revalidating}
-              onRescan={() => void surface.refreshSource(source.id)}
-              onRemove={onRemove}
-              onHide={onHide}
-              hideBlocker={hideBlocker}
-              hideDisabled={mutationsDisabled}
-            />
-          )}
+          <SkillSourceActions
+            source={source}
+            scannedAt={rightToolbar ? scannedAt : undefined}
+            busy={loading || revalidating}
+            onRescan={() => void surface.refreshSource(source.id)}
+            onRemove={onRemove}
+            onHide={onHide}
+            hideBlocker={hideBlocker}
+            hideDisabled={mutationsDisabled}
+          />
         </div>
       </SkillSourceHeader>
 
