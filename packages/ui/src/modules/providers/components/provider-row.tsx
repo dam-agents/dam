@@ -61,20 +61,27 @@ export function ProviderRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-4 py-2.5",
+        "relative flex items-center gap-3 px-4 py-2.5",
         onOpen && "hover:bg-muted/50",
       )}
     >
+      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included; the spend pill and the harness icons sit above the button, so they keep their own dialog and tooltips. */}
+      {onOpen && (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={label}
+          className="absolute inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        />
+      )}
       <ProviderHead
         type={type}
         templateId={templateId}
         name={name}
         harnesses={harnesses}
-        onOpen={onOpen}
-        label={label}
       />
       {balance}
-      {spend}
+      {spend && <span className="relative flex">{spend}</span>}
       <ConnectionBadge
         connected={connected}
         degraded={degraded}
@@ -89,25 +96,21 @@ export function ProviderRow({
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a provider row's small icon, its name, and the
  * harnesses it runs as small muted icons after the name, each named for a
- * screen reader; a button that opens the provider where the row offers that.
+ * screen reader and saying "Supports <harness>" on hover.
  */
 export function ProviderHead({
   type,
   templateId,
   name,
   harnesses,
-  onOpen,
-  label,
 }: {
   type: ProviderPresetType;
   templateId?: string | undefined;
   name: string;
   harnesses: readonly string[] | undefined;
-  onOpen?: (() => void) | undefined;
-  label?: string;
 }) {
-  const head = (
-    <>
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-3">
       <CardIcon provider={type} templateId={templateId} size="tile-sm" />
       <span className="min-w-0 truncate text-sm font-medium text-foreground">
         {name}
@@ -117,24 +120,10 @@ export function ProviderHead({
           harnesses={harnesses}
           size="xs"
           tooltip={(harness) => `Supports ${harness}`}
-          className="shrink-0 gap-1 text-muted-foreground opacity-70"
+          className="relative shrink-0 gap-1 text-muted-foreground opacity-70"
         />
       )}
-    </>
-  );
-  const className =
-    "flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
-  return onOpen ? (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={label}
-      className={className}
-    >
-      {head}
-    </button>
-  ) : (
-    <span className={className}>{head}</span>
+    </span>
   );
 }
 
