@@ -75,21 +75,25 @@ it("marks a terminal Session with the labelled terminal icon", () => {
   expect(render(true)).not.toContain('aria-label="Terminal"');
 });
 
-// TEST_SCENARIO: the current layout lists the repositories a Session touched under its row; a row that turns them off, as JanUI's two-line sidebar rows do, draws no repository line.
+// TEST_SCENARIO: the current layout lists the repositories a Session has pull requests in under its row; a row that turns them off, as JanUI's two-line sidebar rows do, draws no repository line.
 it("drops the repository line only when asked", () => {
-  expect(render(false)).toContain("Repositories this session touched");
+  expect(render(false)).toContain(
+    "Repositories this session has pull requests in",
+  );
   expect(
     render(false, SessionMode.Chat, { repositoryBadges: false }),
-  ).not.toContain("Repositories this session touched");
+  ).not.toContain("Repositories this session has pull requests in");
 });
 
 // TEST_SCENARIO: a Session lists every repository it committed in, and the tools it runs commit in caches and plugins too; the row badges only those with a pull request, so a Session with none draws no repository line.
 it("badges only the repositories with a pull request", () => {
   const withPullRequest = render(false);
-  expect(withPullRequest).toContain("Repositories this session touched");
+  expect(withPullRequest).toContain(
+    "Repositories this session has pull requests in",
+  );
   expect(withPullRequest).toContain("#7");
   const cache = { name: "cache", path: "/tmp/cache", branch: "main" };
   expect(
     render(false, SessionMode.Chat, {}, [{ ...cache, pullRequest: null }]),
-  ).not.toContain("Repositories this session touched");
+  ).not.toContain("Repositories this session has pull requests in");
 });
