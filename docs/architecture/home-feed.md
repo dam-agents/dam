@@ -152,7 +152,7 @@ A link, a menu item or a deep link to the configuration page opens the chat on t
 The panels carry the page's own sections, so the warning that stops a mistake — a variable that shadows an inherited one — is still read where the value is typed, and revoking a rule still asks before the gateway restarts.
 Who may open an Agent's Environments is edited in its panel, and the model switcher's "set as default" sets the default that the Models panel's provider rows sit beside.
 Not every surface moves: the section list's summaries and warnings, the page's row of ways to use the Agent (CLI, SSH, editor and messenger how-tos) and its "Restart now" bar have no panel, and the chat's empty page and the Processes panel already carry what they said.
-The experiment gives no panel to sleep after idle, to the image update or to the Environments access list; each stays where it already was, outside the panels.
+The experiment gives no panel to sleep after idle or to the image update; each stays where it already was, outside the panels.
 A recurring schedule created in that panel makes the browser add a line in the Agent's voice naming the shortest prompt that would have made that schedule — its cadence, its zone and its whole task, and nothing at all when the form set an advanced field or typed an rrule the presets only partly describe.
 That line is the browser's own: it is not part of the Session record, it is never sent to the Agent, and it goes when the conversation changes or the user writes again.
 A tool call of the platform's own MCP server that created or changed a schedule or a skill carries a card that opens its tab, and a schedule's card also expands that schedule.
