@@ -259,7 +259,7 @@ it("draws JanUI's tiles at the sidebar strip's size", () => {
   expect(order[1]).toBeGreaterThan(order[0]!);
 });
 
-// TEST_SCENARIO: Both bars name every tab in its aria-label; the classic bar's glyphs name it in a hover tooltip, while a tile prints its name under its glyph and needs none.
+// TEST_SCENARIO: Both bars name every tab in its aria-label; the classic bar's glyphs name it in a hover tooltip, while a tile prints its name under its glyph.
 it("names every panel on both bars", () => {
   const railHtml = renderToStaticMarkup(
     createElement(
@@ -278,7 +278,6 @@ it("names every panel on both bars", () => {
       /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
     )?.[0] ?? "";
   expect(tile).toContain('aria-label="Artifacts"');
-  expect(tile).not.toContain("data-state=");
   const classicHtml = renderToStaticMarkup(
     createElement(
       TooltipProvider,

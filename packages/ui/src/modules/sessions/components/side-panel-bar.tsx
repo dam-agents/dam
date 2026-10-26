@@ -178,15 +178,14 @@ export function SidePanelTabButtons({
           )}
         </Button>
       );
-    // UNIT_BOUNDARY_DESCRIPTION: an icon names its panel in a tooltip; a tile prints its name under the glyph, so it keeps a tooltip only while a badge says more than the name.
-    if (rail && tiles && content === label)
-      return (
-        <div key={tab} className="w-full">
-          {control}
-        </div>
-      );
+    // UNIT_BOUNDARY_DESCRIPTION: an icon names its panel in a tooltip; a tile prints its name under the glyph, so its tooltip is hidden while it would only repeat the label, and every tile keeps the same wrapper so a badge appearing does not remount the focused button.
     return (
-      <Tooltip key={tab} content={content} side={rail ? "left" : "bottom"}>
+      <Tooltip
+        key={tab}
+        content={content}
+        side={rail ? "left" : "bottom"}
+        className={rail && tiles && content === label ? "hidden" : undefined}
+      >
         {control}
       </Tooltip>
     );
