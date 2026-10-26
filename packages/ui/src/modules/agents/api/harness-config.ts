@@ -8,7 +8,6 @@ import type {
 import { useRef } from "react";
 
 import { api } from "../../../api.js";
-import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { unavailableModel } from "../../sessions/components/model-settings-snapshot.js";
@@ -23,6 +22,15 @@ import {
 export function useHarnessConfigStatus(agentId: string | null) {
   return useQuery({
     ...trpc.harnessConfig.status.queryOptions(
+      agentId ? { agentId } : skipToken,
+    ),
+    retry: false,
+  });
+}
+
+export function useChatDefault(agentId: string | null) {
+  return useQuery({
+    ...trpc.harnessConfig.sessionPair.queryOptions(
       agentId ? { agentId } : skipToken,
     ),
     retry: false,
@@ -186,11 +194,9 @@ function rememberChatDefault(
   if (!pair) return Promise.resolve();
   return api.harnessConfig.rememberSessionPair
     .mutate({ agentId, kind: "chat", ...pair })
-    .then(() => undefined)
-    .catch((err: unknown) => {
-      emitToast({
-        kind: "error",
-        message: `Couldn't save the default model: ${err instanceof Error ? err.message : String(err)}`,
+    .then(() => {
+      void queryClient.invalidateQueries({
+        queryKey: trpc.harnessConfig.sessionPair.pathKey(),
       });
     });
 }
@@ -198,10 +204,11 @@ function rememberChatDefault(
 export function useApplyHarnessConfig() {
   const rollback = useRef<HarnessConfigRollback | null>(null);
 
-  return useMutation({
-    ...trpc.harnessConfig.set.mutationOptions(),
-    onSuccess: (_data, change) =>
-      rememberChatDefault(change.agentId, change.model),
+  return useMutation<void, Error, HarnessConfigChange & { agentId: string }>({
+    mutationFn: async (change) => {
+      await api.harnessConfig.set.mutate(change);
+      await rememberChatDefault(change.agentId, change.model);
+    },
     meta: {
       errorToast: "Failed to apply model settings",
       invalidates: [trpc.harnessConfig.snapshot.queryKey()],
