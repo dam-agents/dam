@@ -273,10 +273,7 @@ export function SessionPairPicker(props: Props) {
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
   /* UNIT_BOUNDARY_DESCRIPTION: the counts a person judges "Custom selection" by — the harnesses and models this agent can run. */
-  const catalogCounts = {
-    harnesses: harnesses.length,
-    models: groups.reduce((total, group) => total + group.models.length, 0),
-  };
+  const catalogCounts = { harnesses: harnesses.length };
   /* UNIT_BOUNDARY_DESCRIPTION: an unavailable profile is repaired before it is
    * picked: the owner's Connection of its provider is attached to this agent,
    * whose grant refuses a rival alias, and then the pick is made. */

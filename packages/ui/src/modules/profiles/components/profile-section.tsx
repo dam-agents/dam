@@ -9,6 +9,7 @@ import { SectionHeader } from "@/components/ui/list-section";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
+import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { useDeleteProfile, useUpdateProfile } from "../api/mutations.js";
 import { useProfiles } from "../api/queries.js";
 import { profileDetail } from "../lib/profile-detail.js";
@@ -25,6 +26,7 @@ export function ProfileSection() {
   const update = useUpdateProfile();
   const remove = useDeleteProfile();
   const showConfirm = useStore((s) => s.showConfirm);
+  const agents = useAgents().data;
   const [renaming, setRenaming] = useState<string | null>(null);
   const [name, setName] = useState("");
 
@@ -34,20 +36,35 @@ export function ProfileSection() {
   };
   const commitRename = (profile: ProfileWithUsage) => {
     const next = name.trim();
-    setRenaming(null);
-    if (next === "" || next === profile.name) return;
-    update.mutate({ id: profile.id, name: next });
+    if (next === "" || next === profile.name) {
+      setRenaming(null);
+      return;
+    }
+    /* UNIT_BOUNDARY_DESCRIPTION: the field closes only once the server took the
+     * name, so a refused rename keeps what was typed in front of the person who
+     * typed it. */
+    update.mutate(
+      { id: profile.id, name: next },
+      { onSuccess: () => setRenaming(null) },
+    );
   };
   const confirmDelete = async (profile: ProfileWithUsage) => {
     if (uses(profile) > 0) {
       /* UNIT_BOUNDARY_DESCRIPTION: nothing to confirm, so the dialog names what
-       * stands in the way — the schedules and channels by name, not a count —
-       * and offers no Delete the server would refuse. */
-      const detail = await queryClient.fetchQuery(
-        trpc.profiles.usage.queryOptions({ id: profile.id }),
-      );
+       * stands in the way — the agent, schedule or channel by name, not a count
+       * — and offers no Delete the server would refuse. A usage read that fails
+       * still says what it knows from the list, so the click is never a no-op. */
+      const detail = await queryClient
+        .fetchQuery(trpc.profiles.usage.queryOptions({ id: profile.id }))
+        .catch(() => null);
+      const who = detail
+        ? usedBy(
+            detail,
+            (agentId) => findAgent(agents, agentId)?.name ?? agentId,
+          )
+        : `${uses(profile)} place${uses(profile) === 1 ? "" : "s"}`;
       void showConfirm(
-        `It is used by ${usedBy(detail)}. Move ${uses(profile) === 1 ? "it" : "them"} to another profile first.`,
+        `It is used by ${who}. Move ${uses(profile) === 1 ? "it" : "them"} to another profile first.`,
         `“${profile.name}” cannot be deleted`,
         { confirmLabel: "Close" },
       );
@@ -142,12 +159,15 @@ export function ProfileSection() {
 const uses = (profile: ProfileWithUsage): number =>
   profile.usage.agents + profile.usage.channels + profile.usage.schedules;
 
-/** UNIT_BOUNDARY_DESCRIPTION: what points at a profile, named so the owner knows which schedule or channel to move. */
-function usedBy(usage: ProfileUsage): string {
+/** UNIT_BOUNDARY_DESCRIPTION: what points at a profile, named so the owner knows which agent, schedule or channel to move; an agent the list has not loaded yet keeps its id. */
+function usedBy(
+  usage: ProfileUsage,
+  agentName: (agentId: string) => string,
+): string {
   return [
     ...usage.agents.map(
       (agent) =>
-        `the agent default${agent.slots.length > 1 ? "s" : ""} of ${agent.id}`,
+        `${agent.slots.length > 1 ? "the agent defaults" : "the agent default"} of ${agentName(agent.id)}`,
     ),
     ...usage.channels.map((channel) => `the channel ${channel.label}`),
     ...usage.schedules.map((schedule) => `the schedule “${schedule.name}”`),

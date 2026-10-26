@@ -37,7 +37,7 @@ describe("the model configuration", () => {
       createElement(ProfileList, {
         profiles: [profile()],
         current: null,
-        counts: { harnesses: 2, models: 9 },
+        counts: { harnesses: 2 },
         onPick: () => {},
         onCustom: () => {},
         onAttach: () => {},
@@ -47,7 +47,7 @@ describe("the model configuration", () => {
     expect(html).toContain("Model configuration");
     expect(html).toContain("Primary model");
     expect(html).toContain("Custom selection");
-    expect(html).toContain("2 harnesses, 9 models");
+    expect(html).toContain("2 harnesses");
   });
 
   /** TEST_SCENARIO: an unavailable profile keeps its place, disabled and never
@@ -65,7 +65,7 @@ describe("the model configuration", () => {
           }),
         ],
         current: null,
-        counts: { harnesses: 1, models: 1 },
+        counts: { harnesses: 1 },
         onPick: () => {},
         onCustom: () => {},
         onAttach: () => {},
@@ -89,7 +89,7 @@ describe("the model configuration", () => {
           }),
         ],
         current: null,
-        counts: { harnesses: 1, models: 1 },
+        counts: { harnesses: 1 },
         onPick: () => {},
         onCustom: () => {},
         onAttach: () => {},
@@ -115,7 +115,7 @@ describe("the model configuration", () => {
           }),
         ],
         current: null,
-        counts: { harnesses: 1, models: 1 },
+        counts: { harnesses: 1 },
         onPick: () => {},
         onCustom: () => {},
         onAttach: () => {},
