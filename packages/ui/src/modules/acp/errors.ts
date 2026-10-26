@@ -50,6 +50,7 @@ export function isQueueFullError(e: unknown): boolean {
 interface SendErrorDescription {
   message: string;
   hint?: string;
+  needsModel?: boolean;
 }
 
 const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
@@ -73,6 +74,13 @@ export function describeSendError(raw: string): SendErrorDescription {
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
+  if (/this session has no model/i.test(raw)) {
+    return {
+      message: raw,
+      hint: "A run starts on the model saved in the agent's settings, and none is saved for this agent. Picking one there fixes every new session.",
+      needsModel: true,
+    };
+  }
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     if (/credential secret/i.test(raw)) return { message: raw };

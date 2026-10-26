@@ -77,7 +77,14 @@ export const RETIRED_PATHS = new Set([
   "/experiments/new",
 ]);
 
-const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
+const SANDBOX_SECTION_ALIASES: Readonly<Record<string, SandboxSection>> = {
+  providers: "setup",
+};
+
+const sandboxSectionPattern = [
+  ...sandboxSectionSchema.options,
+  ...Object.keys(SANDBOX_SECTION_ALIASES),
+].join("|");
 const sandboxHomeRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
 );
@@ -107,11 +114,14 @@ export function parseRoute(path: string): Route {
   if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
-    const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
+    const segment = sandboxHomeMatch[2];
+    const section = sandboxSectionSchema.safeParse(segment);
     return {
       view: "sandbox-home",
       agentId: decodeSegment(sandboxHomeMatch[1]!),
-      sandboxSection: section.success ? section.data : "setup",
+      sandboxSection: section.success
+        ? section.data
+        : ((segment ? SANDBOX_SECTION_ALIASES[segment] : undefined) ?? "setup"),
     };
   }
   if (path === "/agents/new") return { view: "agent-new" };

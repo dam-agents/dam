@@ -24,6 +24,15 @@ describe("send-error surfacing", () => {
     expect(hint).toMatch(/billing/i);
   });
 
+  // TEST_SCENARIO: the release refuses a run whose agent has no saved model. The old chat says where that model is picked and offers the way there, instead of leaving the router's sentence alone.
+  test("a session with no model points at the agent's model control", () => {
+    const { hint, needsModel } = describeSendError(
+      "This session has no model. Pick one for it, or set the agent's default model on its Providers page.",
+    );
+    expect(needsModel).toBe(true);
+    expect(hint).toMatch(/agent's settings/i);
+  });
+
   test("bare internal error is rewritten to say where to look", () => {
     const { message, hint } = describeSendError("Internal error");
     expect(message).not.toMatch(/internal error/i);

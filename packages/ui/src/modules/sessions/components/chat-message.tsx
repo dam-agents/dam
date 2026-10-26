@@ -18,6 +18,7 @@ type Props = BaseProps & MessageTime;
 
 interface BaseProps {
   message: Message;
+  agentId?: string;
   avatarAgentName?: string;
   userLabel?: string;
   readOnly?: boolean;
@@ -83,6 +84,7 @@ function LoadOlderMarker({
 
 export const ChatMessage = memo(function ChatMessage({
   message,
+  agentId,
   avatarAgentName,
   userLabel = "You",
   readOnly = false,
@@ -190,6 +192,7 @@ export const ChatMessage = memo(function ChatMessage({
       {error && isAssistant && (
         <SendErrorCard
           rawError={error.message}
+          agentId={agentId}
           interrupted={hasAgentContent(message)}
           quiet={!isLast}
         />
