@@ -44,7 +44,8 @@ export type Route =
   | { view: "starter-kits"; category?: StarterKitCategory }
   | { view: "starter-kit"; catalog: string; kit: string }
   | { view: "starter-kit-new"; catalog: string; kit: string }
-  | { view: "artifacts" };
+  | { view: "artifacts" }
+  | { view: "connection-secret" };
 
 export type View = Route["view"];
 
@@ -67,6 +68,16 @@ export function publicAgentPath(agentId: string): string {
   return `/a/${encodeURIComponent(agentId)}`;
 }
 
+export const UNSUPPORTED_PATHS = new Set(["/analytics", "/analytics/"]);
+
+export function isUnsupportedLink(path: string): boolean {
+  return (
+    UNSUPPORTED_PATHS.has(path) ||
+    path === "/starter-kits/linked" ||
+    path.startsWith("/starter-kits/linked/")
+  );
+}
+
 export const RETIRED_PATHS = new Set([
   "/sandboxes",
   "/sandboxes/",
@@ -77,7 +88,14 @@ export const RETIRED_PATHS = new Set([
   "/experiments/new",
 ]);
 
-const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
+const SANDBOX_SECTION_ALIASES: Readonly<Record<string, SandboxSection>> = {
+  providers: "setup",
+};
+
+const sandboxSectionPattern = [
+  ...sandboxSectionSchema.options,
+  ...Object.keys(SANDBOX_SECTION_ALIASES),
+].join("|");
 const sandboxHomeRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
 );
@@ -104,14 +122,19 @@ export function parseRoute(path: string): Route {
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
+  if (isUnsupportedLink(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/connections/secret") return { view: "connection-secret" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
-    const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
+    const segment = sandboxHomeMatch[2];
+    const section = sandboxSectionSchema.safeParse(segment);
     return {
       view: "sandbox-home",
       agentId: decodeSegment(sandboxHomeMatch[1]!),
-      sandboxSection: section.success ? section.data : "setup",
+      sandboxSection: section.success
+        ? section.data
+        : ((segment ? SANDBOX_SECTION_ALIASES[segment] : undefined) ?? "setup"),
     };
   }
   if (path === "/agents/new") return { view: "agent-new" };
@@ -182,6 +205,8 @@ export function routeToPath(route: Route): string {
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}/new`;
     case "artifacts":
       return "/artifacts";
+    case "connection-secret":
+      return "/connections/secret";
     default: {
       const unhandled: never = route;
       return unhandled;

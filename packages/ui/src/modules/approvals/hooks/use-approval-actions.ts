@@ -10,6 +10,10 @@ import type { ApprovalView } from "api-server-api";
 
 import { useStore } from "../../../store.js";
 import {
+  spendLimitAmount,
+  spendLimitScopeLabel,
+} from "../../home/lib/approval-copy.js";
+import {
   useApproveHost,
   useApproveOnce,
   useApprovePermanent,
@@ -60,6 +64,37 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now();
   const hostLabel = row.payload.kind === "ext_authz" ? row.payload.host : null;
   const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
+
+  const spend = row.payload.kind === "spend_limit" ? row.payload : null;
+  const resetAt = new Date(row.expiresAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const spendActions: ApprovalAction[] = spend
+    ? [
+        {
+          id: "allow-once",
+          label: `Continue (+${spendLimitAmount(spend.amountMicros, spend.unit)} today)`,
+          icon: Checkmark,
+          danger: false,
+          disabled: inflight || !live,
+          tooltip: live
+            ? `Raises ${spendLimitScopeLabel(spend.scope).toLowerCase()} by ${spendLimitAmount(spend.amountMicros, spend.unit)}, for the rest of the UTC day (until ${resetAt} your time).`
+            : `The question expired at ${resetAt} your time`,
+          resolvedLabel: "Continued",
+          run: () => direct(() => approveOnce.mutateAsync({ id: row.id })),
+        },
+        {
+          id: "dismiss",
+          label: "Stop for today",
+          icon: Close,
+          danger: true,
+          disabled: inflight || !live,
+          resolvedLabel: "Stopped for today",
+          run: () => direct(() => dismiss.mutateAsync({ id: row.id })),
+        },
+      ]
+    : [];
 
   const confirmed = async (
     confirm: (label: string) => Promise<boolean>,
@@ -155,7 +190,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
   ];
 
   return {
-    actions,
+    actions: spend ? spendActions : actions,
     inflight,
     hostLabel,
     expiredNote:

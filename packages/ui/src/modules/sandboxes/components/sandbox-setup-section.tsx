@@ -104,13 +104,15 @@ export function SandboxSetupSection({ f }: Props) {
         </Inset>
       </section>
 
-      <SandboxSizeSection
-        sizeCpuMilli={f.sizeCpuMilli}
-        sizeMemoryMi={f.sizeMemoryMi}
-        onChange={f.setSize}
-        disabled={f.saving}
-        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
-      />
+      {!agent.vm && (
+        <SandboxSizeSection
+          sizeCpuMilli={f.sizeCpuMilli}
+          sizeMemoryMi={f.sizeMemoryMi}
+          onChange={f.setSize}
+          disabled={f.saving}
+          currentSize={f.sizeRestartsAgent ? agent.size : undefined}
+        />
+      )}
 
       {f.addressingOffered && (
         <ConnectionAddressingSetupSection

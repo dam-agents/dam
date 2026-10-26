@@ -1,3 +1,4 @@
+import { PIN_MODEL_METHOD } from "agent-runtime-api";
 import { SessionMode } from "api-server-api";
 import {
   useCallback,
@@ -16,6 +17,7 @@ import {
   resumeFailureKind,
   type SessionFailureKind,
   type SessionListing,
+  unstoredSessionPrompts,
 } from "../../acp/errors.js";
 import {
   appendUndelivered,
@@ -30,7 +32,6 @@ import { findAgentSession } from "../api/acp-session-ops.js";
 import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
-import { sessionModelFrom } from "../lib/session-model.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
@@ -164,6 +165,12 @@ export function useAcpSession(
         } catch {}
       } catch (e) {
         if (useStore.getState().sessionId !== sid) return;
+        const unstored = unstoredSessionPrompts(e);
+        if (unstored !== null) {
+          setLoadingSession(false);
+          await useStore.getState().reopenUnstoredSession(sid, unstored);
+          return;
+        }
         const kind = await classifyResumeFailure(selectedAgent, sid, e);
         if (useStore.getState().sessionId !== sid) return;
         useStore.getState().setSessionError({ sessionId: sid, kind });
@@ -224,14 +231,17 @@ export function useAcpSession(
       try {
         const live = connectionRef.current ?? (await ensureLive());
         if (!live) throw new Error("the agent is not connected");
-        const result = await live.connection.agent.request(
-          "session/set_config_option",
-          { sessionId: sid, configId: sessionModel.configId, value },
-        );
+        const pinned = (await live.connection.agent.request(PIN_MODEL_METHOD, {
+          sessionId: sid,
+          model: value,
+          follows: null,
+        })) as { model: string | null };
         if (useStore.getState().sessionId !== sid) return;
-        useStore
-          .getState()
-          .setSessionModel(sessionModelFrom(sid, result.configOptions));
+        const shown = useStore.getState().sessionModel;
+        if (shown?.sessionId === sid && pinned.model !== null)
+          useStore
+            .getState()
+            .setSessionModel({ ...shown, current: pinned.model });
       } catch (err) {
         emitToast({
           kind: "error",

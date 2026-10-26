@@ -1,8 +1,11 @@
 import {
   jsonRpcErrorDetails,
+  platformUndeliveredMetaSchema,
+  type PlatformUndeliveredPrompt,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
+import { z } from "zod";
 
 export function describeJsonRpcError(
   message: string,
@@ -50,6 +53,7 @@ export function isQueueFullError(e: unknown): boolean {
 interface SendErrorDescription {
   message: string;
   hint?: string;
+  needsModel?: boolean;
 }
 
 const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
@@ -73,6 +77,13 @@ export function describeSendError(raw: string): SendErrorDescription {
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
+  if (/this session has no model/i.test(raw)) {
+    return {
+      message: raw,
+      hint: "A run starts on the model saved in the agent's settings, and none is saved for this agent. Picking one there fixes every new session.",
+      needsModel: true,
+    };
+  }
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     if (/credential secret/i.test(raw)) return { message: raw };
@@ -100,6 +111,21 @@ export function classifyResumeError(e: unknown): ResumeErrorKind {
   if (/not\s*found/i.test(msg)) return "not-found";
   if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
   return "other";
+}
+
+const unstoredDataSchema = z.object({
+  platform: z.object({
+    unstored: z.literal(true),
+    undelivered: platformUndeliveredMetaSchema,
+  }),
+});
+
+export function unstoredSessionPrompts(
+  e: unknown,
+): PlatformUndeliveredPrompt[] | null {
+  const data = (e as { data?: unknown } | null)?.data;
+  const parsed = unstoredDataSchema.safeParse(data);
+  return parsed.success ? parsed.data.platform.undelivered : null;
 }
 
 export type SessionFailureKind =

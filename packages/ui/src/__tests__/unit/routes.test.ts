@@ -45,6 +45,28 @@ describe("route round-trip", () => {
   });
 });
 
+// TEST_SCENARIO: the release links a session with no default model to the agent's Providers page, and the 0.2.23 model control lives on its setup page, so that section name lands on setup rather than Home.
+describe("a section the release names", () => {
+  it("lands on the old page that holds the same control", () => {
+    expect(parseRoute("/sandboxes/sb-1/providers")).toEqual({
+      view: "sandbox-home",
+      agentId: "sb-1",
+      sandboxSection: "setup",
+    });
+  });
+});
+
+// TEST_SCENARIO: a linked kit and the analytics page belong to the 0.2.24 shell. A link to either lands on Home, and a linked kit must never be read as a kit in a catalog named "linked".
+describe("a link the restored UI cannot open", () => {
+  it.each([
+    "/analytics",
+    "/starter-kits/linked",
+    "/starter-kits/linked/owner/repo",
+  ])("sends %s to Home", (path) => {
+    expect(parseRoute(path)).toEqual({ view: "home" });
+  });
+});
+
 describe("chat route", () => {
   it("carries the session a link points at", () => {
     expect(parseRoute("/chat/agent-1/sess-1")).toEqual({

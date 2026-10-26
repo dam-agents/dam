@@ -8,6 +8,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 
 import type { AgentView } from "../../../types.js";
+import { showStorageFull } from "../../budgets/lib/storage-full.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
@@ -59,7 +60,9 @@ export function CreateAgentInline({ onCreated }: Props) {
     try {
       const agent = await createAgent.mutateAsync(buildCreateAgentInput(draft));
       onCreated(agent);
-    } catch {}
+    } catch (err) {
+      showStorageFull(err);
+    }
   };
 
   return (

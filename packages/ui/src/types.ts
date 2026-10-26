@@ -86,6 +86,7 @@ export interface Message {
   streaming: boolean;
   queued?: boolean;
   promptId?: string;
+  turnId?: string;
   retryWith?: RetryPayload;
   notice?: boolean;
   loadOlderBefore?: string;
@@ -149,10 +150,14 @@ export interface AgentView {
   error?: string;
   stopRequested: boolean;
   disabled?: boolean;
+  harness?: string;
   overBudget: boolean;
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  podTerminationCode?: string;
+  reclaimed?: { at: string; for: "memory" | "compute" };
+  startFailure?: { reason: string; message: string };
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;

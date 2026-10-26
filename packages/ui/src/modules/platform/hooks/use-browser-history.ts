@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import {
+  isUnsupportedLink,
   parseRoute,
   RETIRED_PATHS,
   type Route,
@@ -19,6 +21,13 @@ export function useBrowserHistory(): void {
     const applyRoute = () => {
       if (RETIRED_PATHS.has(window.location.pathname)) {
         window.history.replaceState({}, "", "/");
+      }
+      if (isUnsupportedLink(window.location.pathname)) {
+        window.history.replaceState({}, "", "/");
+        emitToast({
+          kind: "info",
+          message: "That page is not available in this version.",
+        });
       }
       const route = parseRoute(window.location.pathname);
       const wasChat = isChatView(useStore.getState().view);

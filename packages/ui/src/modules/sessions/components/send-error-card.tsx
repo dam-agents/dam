@@ -1,18 +1,27 @@
 import { Warning } from "@carbon/icons-react";
 
+import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../../store.js";
 import { describeSendError } from "../../acp/errors.js";
 
 interface Props {
   rawError: string;
+  agentId?: string;
   interrupted?: boolean;
   quiet?: boolean;
 }
 
-export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
-  const { message, hint } = describeSendError(rawError);
+export function SendErrorCard({
+  rawError,
+  agentId,
+  interrupted,
+  quiet,
+}: Props) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const { message, hint, needsModel } = describeSendError(rawError);
   if (interrupted && quiet) {
     return (
       <p
@@ -44,6 +53,16 @@ export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
         </div>
         {hint && (
           <p className="text-xs text-muted-foreground break-words">{hint}</p>
+        )}
+        {needsModel && agentId && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="self-start"
+            onClick={() => navigateToSandboxHome(agentId, "setup")}
+          >
+            Pick a model
+          </Button>
         )}
       </div>
     </Callout>

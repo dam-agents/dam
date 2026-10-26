@@ -1,13 +1,24 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
 import type { HarnessConfigCurrent } from "agent-runtime-api";
-import type { HarnessConfigChange } from "api-server-api";
+import type {
+  AgentConnections,
+  ConnectionView,
+  HarnessConfigChange,
+} from "api-server-api";
 import { useRef } from "react";
 
+import { api } from "../../../api.js";
+import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { unavailableModel } from "../../sessions/components/model-settings-snapshot.js";
+import { chatDefaultFor } from "../../sessions/lib/chat-default.js";
 import { agentTrpc, agentTrpcHttp } from "../agent-trpc.js";
-import { useAgentLacksLiveUpdates, useIsAgentOperable } from "./queries.js";
+import {
+  agentsKeys,
+  useAgentLacksLiveUpdates,
+  useIsAgentOperable,
+} from "./queries.js";
 
 export function useHarnessConfigStatus(agentId: string | null) {
   return useQuery({
@@ -145,11 +156,52 @@ interface HarnessConfigRollback {
   previous: HarnessConfigCurrent;
 }
 
+function rememberChatDefault(
+  agentId: string,
+  model: string | undefined,
+): Promise<void> {
+  if (model === undefined) return Promise.resolve();
+  const status = queryClient.getQueryData<{ defaultHarness: string | null }>(
+    trpc.harnessConfig.status.queryKey({ agentId }),
+  );
+  const agent = queryClient
+    .getQueryData<{ list: { id: string; harness?: string }[] }>(
+      agentsKeys.listWithChannels(),
+    )
+    ?.list.find((a) => a.id === agentId);
+  const grants = queryClient.getQueryData<AgentConnections>(
+    trpc.connections.getAgentConnections.queryKey({ agentId }),
+  );
+  const pair = chatDefaultFor({
+    harness: status?.defaultHarness ?? agent?.harness,
+    model,
+    grantedConnectionIds: (grants?.connections ?? []).map(
+      (grant) => grant.connectionId,
+    ),
+    connections:
+      queryClient.getQueryData<ConnectionView[]>(
+        trpc.connections.list.queryKey(),
+      ) ?? [],
+  });
+  if (!pair) return Promise.resolve();
+  return api.harnessConfig.rememberSessionPair
+    .mutate({ agentId, kind: "chat", ...pair })
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      emitToast({
+        kind: "error",
+        message: `Couldn't save the default model: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    });
+}
+
 export function useApplyHarnessConfig() {
   const rollback = useRef<HarnessConfigRollback | null>(null);
 
   return useMutation({
     ...trpc.harnessConfig.set.mutationOptions(),
+    onSuccess: (_data, change) =>
+      rememberChatDefault(change.agentId, change.model),
     meta: {
       errorToast: "Failed to apply model settings",
       invalidates: [trpc.harnessConfig.snapshot.queryKey()],

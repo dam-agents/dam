@@ -11,6 +11,7 @@ import {
   StarterKitSetupView,
 } from "./modules/agents/views/agent-create-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import {
   ActivityButton,
   NotificationsPanel,
@@ -54,6 +55,7 @@ export default function App() {
   if (view === "terms") return <TermsView />;
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
+  if (view === "connection-secret") return <ConnectionSecretView />;
   return <MainApp />;
 }
 

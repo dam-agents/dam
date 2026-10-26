@@ -786,6 +786,7 @@ export function ChatView() {
                           <Fragment key={item.message.id}>
                             <ChatMessage
                               message={item.message}
+                              agentId={selectedAgent ?? undefined}
                               avatarAgentName={
                                 avatarsEnabled ? agentView?.name : undefined
                               }
