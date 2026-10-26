@@ -19,17 +19,22 @@ export interface ScheduleRunReport {
  * uses. Only a Session a one-time fire opened carries that event; a person's
  * chat and a recurring fire's Session report nothing, since a failed turn
  * there is theirs and their schedule pays a lost occurrence back itself.
+ * The fire's own turn decides it once: its first turn's end forgets the event,
+ * clean or not, so a message a person sends into that Session later can never
+ * fail the schedule for work that did happen.
  */
 export function createScheduleRunReport(deps: {
   fireEventOf: (sessionId: string) => string | undefined;
+  forgetFireEvent: (sessionId: string) => void;
   reporter: { report(input: EventReportInput): Promise<void> };
   log: (msg: string) => void;
 }): ScheduleRunReport {
   return {
     turnOutcome(sessionId, { error }) {
-      if (error === null) return;
       const eventId = deps.fireEventOf(sessionId);
       if (eventId === undefined) return;
+      deps.forgetFireEvent(sessionId);
+      if (error === null) return;
       const detail = error.slice(0, DETAIL_MAX);
       deps.log(`[schedule-run] ${sessionId}: its run failed: ${detail}`);
       void safeReport(

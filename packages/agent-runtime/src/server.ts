@@ -311,6 +311,7 @@ const invocationWatch = createInvocationWatch({
 });
 const scheduleRunReport = createScheduleRunReport({
   fireEventOf: (sessionId) => sessionMetadata.get(sessionId)?.meta.fireEvent,
+  forgetFireEvent: (sessionId) => sessionMetadata.clearFireEvent(sessionId),
   reporter: {
     report: (input) =>
       harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
