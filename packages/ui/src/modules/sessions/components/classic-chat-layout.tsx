@@ -20,7 +20,7 @@ import { useStore } from "../../../store.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
-import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
+import { ApprovalsDrawer } from "../../home/components/approvals-panel.js";
 import { MobileMenuButton } from "../../platform/components/sidebar/mobile-menu-button.js";
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import {
@@ -58,8 +58,9 @@ function PanelDivider({
  * bar with the Agent's identity and status, a resizable column of Files,
  * Artifacts and Processes sections on the left, the conversation in the
  * middle, and the docked item on the right, beside the conversation. Get
- * started and Approvals open in that right-hand slot from the top bar, and
- * hide the docked item without closing it while they show.
+ * started opens in that right-hand slot from the top bar and hides the docked
+ * item without closing it; Approvals opens as a drawer over the chat, so the
+ * slot keeps whatever it shows.
  */
 export function ClassicChatLayout({
   identity,
@@ -103,6 +104,8 @@ export function ClassicChatLayout({
   const setProcessesSectionOpen = useStore((s) => s.setProcessesSectionOpen);
   const sidePanelMaximized = useStore((s) => s.sidePanelMaximized);
   const setSidePanelMaximized = useStore((s) => s.setSidePanelMaximized);
+  const sidePanelTab = useStore((s) => s.sidePanelTab);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
 
   const [leftW, setLeftW] = useState(() =>
     clampLeftWidth(readPersistedNumber(LEFT_WIDTH_KEY, LEFT_MIN_W)),
@@ -294,7 +297,6 @@ export function ClassicChatLayout({
             {panel === "getting-started" && (
               <GettingStartedPanel className="flex-1" />
             )}
-            {panel === "approvals" && <ApprovalsPanel className="flex-1" />}
             <div
               className={cn(
                 "flex flex-1 min-h-0 flex-col",
@@ -314,6 +316,9 @@ export function ClassicChatLayout({
           </div>
         )}
       </div>
+      {sidePanelTab === "approvals" && (
+        <ApprovalsDrawer onClose={() => setSidePanelTab(null)} />
+      )}
     </>
   );
 }

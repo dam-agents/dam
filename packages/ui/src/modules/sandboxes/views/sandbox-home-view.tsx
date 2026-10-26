@@ -1,6 +1,7 @@
 import type { PendingRestart } from "agent-runtime-api";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
@@ -105,7 +106,12 @@ export function SandboxHomeView() {
 
   return (
     <>
-      <div className="flex flex-col gap-6 md:flex-row md:gap-10 md:pt-5">
+      <div
+        className={cn(
+          "flex flex-col gap-6 md:flex-row md:gap-10",
+          newLayout && "md:pt-5",
+        )}
+      >
         <SandboxSectionNav
           sections={sections}
           header={<SandboxIdentity agent={agent} display={display} />}
