@@ -8,6 +8,7 @@ import {
   PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
+  saysProviderUnavailable,
 } from "api-server-api";
 import { z } from "zod";
 
@@ -71,9 +72,6 @@ interface SendErrorDescription {
   hint?: string;
   kind?: "provider-unavailable";
 }
-
-const PROVIDER_UNAVAILABLE =
-  /\b(?:HTTP\/?[\d.]*|status(?: code)?:?|error:?|failed:?)\s*(?:500|502|503|504|529)\b|overloaded|service unavailable|bad gateway|gateway timeout|upstream connect error|upstream request timeout/i;
 
 const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   [
@@ -157,7 +155,7 @@ export function describeSendError(
     if (raw.startsWith(AUTH_ERROR_HINT)) return { message: raw };
     return { message: raw, hint };
   }
-  if (PROVIDER_UNAVAILABLE.test(raw))
+  if (saysProviderUnavailable(raw))
     return { message: raw, kind: "provider-unavailable" };
   if (/process exited unexpectedly/i.test(raw)) {
     return {

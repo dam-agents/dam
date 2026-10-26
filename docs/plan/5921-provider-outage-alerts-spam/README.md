@@ -136,21 +136,18 @@ The user made these decisions while the plan was discussed:
    A failure from the start of the outage counts once the delay has passed.
 4. **Schedule failures come from the gateway.** A failed call in a schedule Session is the evidence; the agent-runtime does not report a turn's outcome.
 
-### Known limit
+### Pi and Codex
 
-Pi ends a failed turn like a normal one, with the error in its reply text, so its Slack or Telegram turn gets no outage reply.
-The web chat's failed-turn card has the same limit.
-A Pi Agent's scheduled run still counts for the owner's message, because the gateway sees its failed calls.
-Bug [#5929](https://github.com/dam-agents/dam/issues/5929) tracks the fix: Pi's failed turn ends with its error, as on Claude Code.
-Once it lands, slice 01 covers Pi with no extra code.
+Bug [#5929](https://github.com/dam-agents/dam/issues/5929) is fixed: Pi and Codex now fail a turn whose last model call failed, as Claude Code does.
+So slice 01 covers them with no extra code, and the docs name no Pi exception.
 
 ## Sub-issues
 
-| #   | Title                                        | Scope                                                                                                                                  | Depends on |
-| --- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | Slack and Telegram replies name the outage   | Shared "provider down" pattern; failure copy from Provider Status; `provider-unavailable` reason and template on `ChannelTurnRelayed`. | —          |
-| 02  | Owners hear only about failed scheduled runs | Failed-work store fed by gateway calls; schedule Sessions decide; old rules removed; Slack first; message, card and docs copy.         | —          |
-| 03  | Failed ambient turns count too               | `ChannelTurnRelayed` ambient failures feed the failed-work store; copy and docs for the channel reasons.                               | 01, 02     |
+| #   | Title                                        | Scope                                                                                                                                  | Depends on | Done |
+| --- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
+| 01  | Slack and Telegram replies name the outage   | Shared "provider down" pattern; failure copy from Provider Status; `provider-unavailable` reason and template on `ChannelTurnRelayed`. | —          | ✅   |
+| 02  | Owners hear only about failed scheduled runs | Failed-work store fed by gateway calls; schedule Sessions decide; old rules removed; Slack first; message, card and docs copy.         | —          |      |
+| 03  | Failed ambient turns count too               | `ChannelTurnRelayed` ambient failures feed the failed-work store; copy and docs for the channel reasons.                               | 01, 02     |      |
 
 ```mermaid
 flowchart LR

@@ -154,6 +154,7 @@ export type ChannelTurnRelayed = {
   externalActorId?: string;
   outcome: TurnOutcome;
   reason?: string;
+  templateId?: string;
   ambient?: true;
 };
 

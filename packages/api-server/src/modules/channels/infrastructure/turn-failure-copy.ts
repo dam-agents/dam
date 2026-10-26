@@ -1,3 +1,5 @@
+import { jsonRpcErrorDetails, saysProviderUnavailable } from "api-server-api";
+
 import { AcpTurnAbandonedError } from "../../../core/acp-client.js";
 import type { NoDefaultModelError } from "../../harness-config/index.js";
 import { isNoDefaultModelError } from "../../harness-config/index.js";
@@ -8,24 +10,35 @@ import {
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 
-export interface TurnFailure {
-  reason: string;
-  copy: (ctx: { uiBaseUrl: string; agentId: string }) => string;
-}
+export const PROVIDER_UNAVAILABLE_REASON = "provider-unavailable";
+
+export type TurnFailure =
+  | {
+      kind: "plain";
+      reason: string;
+      copy: (ctx: { uiBaseUrl: string; agentId: string }) => string;
+    }
+  | {
+      kind: "provider-unavailable";
+      reason: typeof PROVIDER_UNAVAILABLE_REASON;
+    };
 
 export function classifyTurnFailure(err: unknown): TurnFailure {
   if (isAgentWakeTimeoutError(err))
     return {
+      kind: "plain",
       reason: wakeFailureReasonToken(err.failure),
       copy: () => wakeFailureUserCopy(err.failure),
     };
   if (err instanceof AcpTurnAbandonedError)
     return {
+      kind: "plain",
       reason: turnFailureReasonToken(err),
       copy: () => turnFailureUserCopy(err),
     };
   if (isAgentStoppedError(err))
     return {
+      kind: "plain",
       reason: "agent-stopped",
       copy: () =>
         err.disabled
@@ -34,14 +47,29 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
     };
   if (isNoDefaultModelError(err))
     return {
+      kind: "plain",
       reason: "no-default-model",
       copy: ({ uiBaseUrl, agentId }) =>
         noDefaultModelUserCopy(err, uiBaseUrl, agentId),
     };
+  if (saysProviderUnavailable(errorText(err)))
+    return {
+      kind: "provider-unavailable",
+      reason: PROVIDER_UNAVAILABLE_REASON,
+    };
   return {
+    kind: "plain",
     reason: "acp-error",
     copy: () => "Something went wrong while relaying this message — try again.",
   };
+}
+
+function errorText(err: unknown): string {
+  if (err === null || typeof err !== "object") return String(err);
+  const { message, data } = err as { message?: unknown; data?: unknown };
+  return [message, jsonRpcErrorDetails(data)]
+    .filter((part) => typeof part === "string")
+    .join(" ");
 }
 
 function turnFailureUserCopy(err: AcpTurnAbandonedError): string {

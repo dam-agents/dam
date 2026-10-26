@@ -106,6 +106,17 @@ A reply that streamed other text before it failed keeps its text, and its card s
 Pi and Codex write nothing into the reply while they retry, and fail the turn with the error, so their card shows alone, with Retry.
 The card lives only in the open chat: a reload or a reconnect rebuilds the chat from the transcript, which holds the harness's text and no card.
 
+**Slack and Telegram.** An addressed turn in Slack or Telegram whose error says that the provider is down or overloaded gets a reply that names the cause, by the same rule as the card ([channel turns](channel-turns.md)):
+
+- the provider is degraded: it has had an outage since the start time, in the reader's local time, with its status page where it has one;
+- the fault is on the platform's side: the platform cannot reach model providers;
+- no outage is known: the provider did not respond, and the owner can switch the agent to another provider if it keeps failing.
+
+The provider is the one of the agent's channel default.
+A thread whose model someone picked by hand can run on another provider, and the reply then names the default's provider.
+When the provider or the status cannot be read, the reply says that the model provider did not respond.
+An ambient turn that fails posts nothing.
+
 **The status line.** While the provider of the open session is degraded, a line at the end of the chat, above the message box, says so: while a turn runs, that the provider is not responding and the agent keeps trying; otherwise, since when the provider has had problems and that messages may fail.
 While the fault is on the platform's side, the line says that the platform cannot reach model providers, also when the session's provider is not known.
 The line also shows before a turn fails, so a user who waits on a turn that the harness retries learns the cause early.

@@ -161,7 +161,8 @@ A few observations the diagram glosses over:
   On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure because the provider is down also names the Connection template that the turn ran on.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.
   The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)).
@@ -174,6 +175,7 @@ The probe window is floor-bounded by the egress-approval hold at config load (ra
 The relay abandons a turn on exactly two verdicts — the connection is lost, or the runtime reports the turn gone — and abandoning the relay never touches the work: the harness keeps running detached, and its late reply still lands through the lingering turn record.
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
+A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.
 The failure reason still rides the turn event either way.
 
 An abandoned turn is handed to the **recovery watch**, which polls the session's run status for as long as the runtime reports it alive.

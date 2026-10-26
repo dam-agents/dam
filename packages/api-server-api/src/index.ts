@@ -176,6 +176,7 @@ export type {
   ProviderStatusService,
   ProviderStatusView,
 } from "./modules/provider-status/types.js";
+export { saysProviderUnavailable } from "./modules/provider-status/provider-error.js";
 export type {
   BudgetReserved,
   BudgetStorageFull,

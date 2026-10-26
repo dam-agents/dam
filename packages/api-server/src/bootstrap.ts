@@ -1635,6 +1635,26 @@ export async function bootstrap() {
       : undefined;
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
+  const grantedTemplates = createGrantedConnectionTemplates(db);
+  const fireTemplateOf = async (
+    agentId: string,
+    kind: "scheduled" | "channel",
+    choices: { harness?: string; model?: string },
+  ) => {
+    const pair = await firePair(agentId, kind, choices).catch(
+      (err: unknown) => {
+        if (isNoDefaultModelError(err)) return null;
+        throw err;
+      },
+    );
+    if (pair === null) return null;
+    if (pair === undefined || pair.provider === null) return undefined;
+    return grantedTemplates.templateOf(agentId, pair.provider);
+  };
+  const channelProviderOutage = async (agentId: string) => ({
+    templateId: (await fireTemplateOf(agentId, "channel", {})) ?? null,
+    status: await providerStatus.service.view(),
+  });
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
@@ -1740,6 +1760,7 @@ export async function bootstrap() {
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
         spendHold: channelSpendHold,
+        providerOutage: channelProviderOutage,
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
@@ -1793,6 +1814,7 @@ export async function bootstrap() {
           ownerOf: (agentId) => agentsRepo.getOwner(agentId),
           ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
           spendHold: channelSpendHold,
+          providerOutage: channelProviderOutage,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,
           logLevel: config.logLevel,
@@ -1969,7 +1991,6 @@ export async function bootstrap() {
       (await agentsRepo.get(agentId))?.disabled === true,
   });
 
-  const grantedTemplates = createGrantedConnectionTemplates(db);
   const outageAlerts = composeOutageAlerts({
     db,
     notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
@@ -1993,16 +2014,10 @@ export async function bootstrap() {
         kind === "scheduled" && choices.model
           ? await scheduleModelFor(agentId, choices.model)
           : undefined;
-      const pair = await firePair(agentId, kind, {
+      return fireTemplateOf(agentId, kind, {
         ...(choices.harness && { harness: choices.harness }),
         ...(model && { model }),
-      }).catch((err: unknown) => {
-        if (isNoDefaultModelError(err)) return null;
-        throw err;
       });
-      if (pair === null) return null;
-      if (pair === undefined || pair.provider === null) return undefined;
-      return grantedTemplates.templateOf(agentId, pair.provider);
     },
     uiBaseUrl: config.uiBaseUrl,
     delayMs: config.outageAlertDelayMinutes * 60_000,
