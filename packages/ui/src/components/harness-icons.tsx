@@ -62,11 +62,14 @@ export function HarnessIcons({
   harnesses = HARNESS_ORDER,
   size = "md",
   focusable = size !== "xs",
+  tooltip,
   className,
 }: {
   harnesses?: readonly string[];
   size?: "xs" | "sm" | "md";
   focusable?: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: gives each icon a tooltip that says this, focusable or not; without it, a focusable icon's tooltip is its name. */
+  tooltip?: (label: string) => string;
   className?: string;
 }) {
   if (harnesses.length === 0) return null;
@@ -102,10 +105,10 @@ export function HarnessIcons({
               />
             </span>
           );
-          return !focusable ? (
+          return !focusable && !tooltip ? (
             icon
           ) : (
-            <Tooltip key={name} content={label}>
+            <Tooltip key={name} content={tooltip ? tooltip(label) : label}>
               {icon}
             </Tooltip>
           );

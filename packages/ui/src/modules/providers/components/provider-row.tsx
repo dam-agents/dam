@@ -116,6 +116,7 @@ export function ProviderHead({
         <HarnessIcons
           harnesses={harnesses}
           size="xs"
+          tooltip={(harness) => `Supports ${harness}`}
           className="shrink-0 gap-1 text-muted-foreground opacity-70"
         />
       )}
