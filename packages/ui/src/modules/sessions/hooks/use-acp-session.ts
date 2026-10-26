@@ -180,6 +180,7 @@ export function useAcpSession(
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
     useStore.getState().setRunStarts([]);
+    useStore.getState().setLastOutputAt(null);
     useStore.getState().setAttribution(NO_ATTRIBUTION);
     useStore.getState().setContinuedFrom(null);
     useStore.getState().setSessionError(null);
@@ -195,6 +196,7 @@ export function useAcpSession(
       useStore.getState().setRewriting(null);
       useStore.getState().setHarnessForks(false);
       useStore.getState().setRunStarts([]);
+      useStore.getState().setLastOutputAt(null);
       useStore.getState().setAttribution(NO_ATTRIBUTION);
       useStore.getState().setContinuedFrom(null);
       useStore.getState().setSessionError(null);

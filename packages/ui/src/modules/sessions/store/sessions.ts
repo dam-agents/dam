@@ -73,6 +73,7 @@ export interface SessionsSlice {
   sessionMode: SessionMode | null;
   messages: Message[];
   runStarts: string[];
+  lastOutputAt: string | null;
   attribution: SessionAttribution;
   continuedFrom: PlatformContinuedFrom | null;
   queuedPrompts: QueuedPrompt[];
@@ -105,6 +106,7 @@ export interface SessionsSlice {
   setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
+  setLastOutputAt: (at: string | null) => void;
   setAttribution: (attribution: SessionAttribution) => void;
   addSender: (entry: PlatformSenderEntry) => void;
   addVerdict: (verdict: PlatformVerdict) => void;
@@ -199,6 +201,7 @@ export const createSessionsSlice: StateCreator<
   return {
     sessionId: null,
     runStarts: [],
+    lastOutputAt: null,
     attribution: NO_ATTRIBUTION,
     continuedFrom: null,
     queuedPrompts: [],
@@ -244,6 +247,7 @@ export const createSessionsSlice: StateCreator<
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
     setRunStarts: (list) => set({ runStarts: list }),
+    setLastOutputAt: (at) => set({ lastOutputAt: at }),
     setAttribution: (attribution) => set({ attribution }),
     addSender: (entry) =>
       set((s) => ({
@@ -382,6 +386,7 @@ export const createSessionsSlice: StateCreator<
         sessionMode: null,
         messages: [],
         runStarts: [],
+        lastOutputAt: null,
         attribution: NO_ATTRIBUTION,
         continuedFrom: null,
         queuedPrompts: [],

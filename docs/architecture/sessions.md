@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 ## Session inside the machine
 
@@ -154,8 +154,12 @@ Recovery is always a send the user initiates: an automatic resend cannot know wh
 A prompt already *handed to the harness* is the other side of that split: losing the channel costs the sender only its live view — the turn runs to completion and its output lands in the log for any later viewer.
 Every honest delivery report depends on this split ([channel-turns](channel-turns.md) states it for its surface).
 
-One failure is deliberately **not** detected: an agent alive but permanently stuck emits nothing and is indistinguishable from one thinking hard, so a prompt waits indefinitely.
-Silence after acceptance is timed nowhere — a deadline there fails healthy turns whose first word is merely slow — and telling wedged from slow is a separate problem from delivery.
+One failure is deliberately **not** judged: an agent alive but permanently stuck emits nothing and is indistinguishable from one thinking hard, so a prompt waits indefinitely.
+Silence after acceptance fails nothing and cancels nothing, because a deadline there fails healthy turns whose first word is merely slow.
+The chat **states** the silence instead, once a running turn has gone quiet: how long nothing has come from the agent, and what it is waiting on.
+A live viewer times it from the last agent frame it received; a session opened or reloaded mid-turn starts from the newest frame time the runtime stamped in the replay.
+An open tool call gets only its running time, since the chat already shows the call and a long build that prints nothing is normal; with no tool call open the agent is waiting on the model, and after a few minutes of that the line says it may be stuck.
+A pending approval, a provider outage and a starting agent each have their own line, so the quiet line stays away while they show.
 
 **Surviving memory pressure.** The harness and its tool processes share one memory ceiling, so a runaway command would take the whole agent down with it.
 A machine has no cgroup limit at all: it is bounded by its own memory, read from the kernel's headroom estimate so that reclaimable cache is not mistaken for consumption.
