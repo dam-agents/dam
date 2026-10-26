@@ -65,7 +65,7 @@ A pushed branch is looked up on the remote it tracks.
 That record is per Session and survives the panel being closed and the machine restarting; it is bounded per Session and in total.
 The open pull request of a recorded branch is attached to the record when the panel finds it, when the Session's tool calls settle, and right after a push; a pushed branch is looked up on the remote it tracks, whatever its worktree has checked out since.
 A link once found is kept, so a Session still links its pull request after it is merged.
-Its state is not frozen with it: while someone watches the sessions list, the runtime reads the state of the pull requests the list showed again once a minute, in one query, and a change tells the list to read again.
+Its state is not frozen with it: while someone watches the sessions list, the runtime reads the state of the pull requests the list showed again once a minute, fifty to a query, and a change tells the list to read again.
 A merged pull request is not read again: nothing changes it any more.
 
 The sessions list carries this record as badges of the repositories a Session has a pull request in, each with its number, wherever the clone is — `/tmp` included.
