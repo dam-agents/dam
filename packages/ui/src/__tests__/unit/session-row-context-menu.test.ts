@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: A right click on a Session row opens the same Pin, Rename and Delete menu as its "⋯" button, at the pointer, instead of the browser's own menu.
+// TEST_OVERVIEW: A right click on a Session row opens the same Rename and Delete menu as its "⋯" button, at the pointer, instead of the browser's own menu.
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -47,7 +47,6 @@ it("opens the row's menu on a right click", () => {
         onResume: () => {},
         onRename: () => {},
         onDelete: () => {},
-        onTogglePin: () => {},
       }),
     ),
   );
@@ -62,7 +61,6 @@ it("opens the row's menu on a right click", () => {
     row.dispatchEvent(event);
   });
   expect(event.defaultPrevented).toBe(true);
-  expect(document.body.textContent).toContain("Pin to top");
   expect(document.body.textContent).toContain("Rename session");
   expect(document.body.textContent).toContain("Delete session");
   expect(

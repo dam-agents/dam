@@ -83,7 +83,7 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
             </div>
           )}
         </div>
-        <SidePanelCloseButton corner="-mr-3" />
+        <SidePanelCloseButton />
       </div>
       {error ? (
         <Notice text={listErrorText(error.message)} />

@@ -27,10 +27,7 @@ import { useAgents, useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../hooks/use-sidebar-order-actions.js";
-import {
-  hasChannelActions,
-  SidebarAgentActions,
-} from "./sidebar-agent-actions.js";
+import { SidebarAgentActions } from "./sidebar-agent-actions.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 export function SidebarAgents({
@@ -101,7 +98,6 @@ export function SidebarAgents({
               })
         }
         onOpenPeople={navigate(() => navigateToSandboxHome(agent.id, "people"))}
-        actionCount={hasChannelActions(available) ? 4 : 3}
         filtered={agentFilters.has(agent.id)}
         filter={
           <ActivityFilterMenu
@@ -115,12 +111,9 @@ export function SidebarAgents({
         }
         actions={
           <SidebarAgentActions
-            agent={agent}
-            current={current && !sessionOpen}
             channels={available}
             onNewSession={navigate(() => startSession(agent.id))}
             onConfigure={navigate(() => navigateToSandboxHome(agent.id))}
-            onNavigate={navigate(() => undefined)}
             onBind={setBinding}
           />
         }

@@ -53,7 +53,6 @@ const row = (editors: string[]) =>
         onSelect: () => {},
         onOpenPeople: () => {},
         actions: null,
-        actionCount: 3,
         filter: null,
         filtered: false,
       }),

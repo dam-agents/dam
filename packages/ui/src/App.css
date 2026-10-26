@@ -243,14 +243,6 @@
   --ring: #ffffff;
 }
 
-/* JanUI sets its side chrome apart from the page. */
-:root[data-layout="new"] {
-  --chrome: #fafafa;
-}
-:root.dark[data-layout="new"] {
-  --chrome: #0e0e0e;
-}
-
 @layer base {
   *,
   *::before,

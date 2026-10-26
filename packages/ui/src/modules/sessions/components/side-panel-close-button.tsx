@@ -1,17 +1,10 @@
 import { Close } from "@carbon/icons-react";
-import {
-  createContext,
-  type MouseEvent,
-  type ReactNode,
-  useContext,
-} from "react";
+import { createContext, type MouseEvent, useContext } from "react";
 
 import { Button } from "@/components/ui/button";
-import { RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { RightToolbarTiles } from "./right-toolbar-tiles.js";
 
 const ClosesSidePanel = createContext(true);
 
@@ -22,56 +15,21 @@ const ClosesSidePanel = createContext(true);
  */
 export const SidePanelCloseScope = ClosesSidePanel.Provider;
 
-function ShownWhereItCloses({
-  ownClose,
-  children,
-}: {
-  ownClose: boolean;
-  children: ReactNode;
-}) {
-  const closes = useContext(ClosesSidePanel);
-  return ownClose || closes ? children : null;
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The X that ends every side panel's top bar,
  * behind a vertical border so it does not read as one of the panel's own
  * actions. It closes the whole panel and hands focus to the rail's open tab,
  * which stays on screen; with no rail, as in the classic chat, to the top
- * bar's open tab, or to the main region; a phone hides it, because the
- * full-screen panel there has its own back button, unless the panel keeps a
- * top bar of its own instead. Under the Unified right toolbar experiment it
- * is a 40 px tile of the rail's size rather than the small ghost button,
- * centered in a square cell in the header's top-right corner: from the
- * panel's top down to the header's rule, and from its own border to the
- * panel's edge. Each header pads its row differently, so it passes `corner`,
- * the margins that cancel its padding and put the cell in that corner.
+ * bar's open tab, or to the main region. A section header shows it only where
+ * clearing the side-panel tab closes the panel.
  */
-export function SidePanelCloseButton({
-  onClose,
-  corner,
-}: {
-  onClose?: () => void;
-  corner: string;
-}) {
-  const tiles = useContext(RightToolbarTiles);
-  return <PanelCloseButton onClose={onClose} tiles={tiles} corner={corner} />;
+export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
+  const closes = useContext(ClosesSidePanel);
+  if (onClose === undefined && !closes) return null;
+  return <PanelCloseButton onClose={onClose} />;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the X's chrome and close behavior, told which variant the panel's shell draws so an open panel updates with the Unified right toolbar experiment instead of reading a marker off the root.
-export function PanelCloseButton({
-  onClose,
-  tiles,
-  corner = "",
-}: {
-  onClose?: () => void;
-  tiles: boolean;
-  corner?: string;
-}) {
-  // UNIT_BOUNDARY_DESCRIPTION: JanUI, and any shell whose panel keeps a top bar of its own under the Unified right toolbar experiment, draw no back button over a narrow panel, so those panels keep the X; the layout is read off the root, which does not change without a reload.
-  const newLayout =
-    typeof document !== "undefined" &&
-    document.documentElement.dataset.layout === "new";
+export function PanelCloseButton({ onClose }: { onClose?: () => void }) {
   const close = (e: MouseEvent<HTMLButtonElement>) => {
     const page = e.currentTarget.ownerDocument;
     const bar = e.currentTarget
@@ -87,37 +45,20 @@ export function PanelCloseButton({
     (onClose ?? (() => useStore.getState().setSidePanelTab(null)))();
   };
   return (
-    <ShownWhereItCloses ownClose={onClose !== undefined}>
-      <div
-        className={cn(
-          "flex shrink-0 items-center justify-center border-l border-border",
-          // UNIT_BOUNDARY_DESCRIPTION: 48 wide with its 1 px border and 47 high above a header's 1 px rule, so the area between the border, the rule and the panel's edge is a 47 px square and the 40 px tile sits 3.5 px from each side.
-          tiles ? cn("h-[47px] w-12 self-start", corner) : "self-stretch pl-2",
-          !newLayout && !tiles && "max-md:hidden",
-        )}
+    <div
+      className={cn(
+        "flex shrink-0 items-center justify-center border-l border-border self-stretch pl-2 max-md:hidden",
+      )}
+    >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Close panel"
+        data-testid="side-panel-close"
+        onClick={close}
       >
-        {tiles ? (
-          <button
-            type="button"
-            aria-label="Close panel"
-            data-testid="side-panel-close"
-            className={railTile(false)}
-            onClick={close}
-          >
-            <Close size={RAIL_GLYPH} />
-          </button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Close panel"
-            data-testid="side-panel-close"
-            onClick={close}
-          >
-            <Close size={16} />
-          </Button>
-        )}
-      </div>
-    </ShownWhereItCloses>
+        <Close size={16} />
+      </Button>
+    </div>
   );
 }

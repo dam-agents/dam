@@ -46,7 +46,6 @@ const agentRow = (props: { open: boolean; selected: boolean }) =>
       onSelect: () => {},
       onOpenPeople: () => {},
       actions: null,
-      actionCount: 3,
       filter: null,
       filtered: false,
       ...props,

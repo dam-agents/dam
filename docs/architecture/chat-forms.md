@@ -1,6 +1,6 @@
 # Chat forms
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -54,7 +54,7 @@ In the user's own message the chat shows a short summary — the action's human-
 
 ## Chat form settings per agent
 
-The owner sets, for each agent, how it may use forms, in the agent's Chat forms section; the section is listed while the feature is on, and under the Unified right toolbar experiment it is not offered at all, and the platform-chat-forms skill on the Skills page links to it:
+The owner sets, for each agent, how it may use forms, in the agent's Chat forms section; the section is listed while the feature is on, and the platform-chat-forms skill on the Skills page links to it:
 
 - **Forms** — whenever they help, only to ask for input, or off.
 - **Questions** — the agent decides, all in one form, or one question per form.

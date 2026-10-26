@@ -13,10 +13,6 @@ import type { Message } from "../../types.js";
 
 vi.hoisted(() => vi.stubGlobal("window", new EventTarget()));
 
-vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
-  useUnifiedRightToolbar: () => false,
-}));
-
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
     select({ sessionId: null, pendingPermissions: [] }),

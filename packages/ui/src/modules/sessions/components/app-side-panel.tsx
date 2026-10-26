@@ -6,8 +6,6 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
-import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useOpenSidePanel } from "../hooks/use-open-side-panel.js";
 import {
@@ -35,20 +33,16 @@ export function AppSidePanelButtons({
   const openSidePanel = useOpenSidePanel();
   const desktop = useIsDesktop();
   const view = useStore((s) => s.view);
-  const newLayout = useNewLayout();
-  const rightToolbar = useUnifiedRightToolbar();
   if (desktop && !onDesktop) return null;
   return (
     <SidePanelTabButtons
       tabs={appSidePanelTabs(
         hiddenSidePanelTabs({
           agent: false,
-          artifacts: newLayout || rightToolbar || view === "sandbox-home",
+          artifacts: view === "sandbox-home",
           canOpenBrowser: false,
           changes: false,
           processesEnabled: false,
-          environments: false,
-          configuration: false,
           gettingStarted,
         }),
         withArtifacts,
@@ -67,8 +61,7 @@ export function AppSidePanelButtons({
  * Artifacts, scoped to that Agent with a switch to the whole library. Other
  * pages leave Artifacts to the Artifacts page, whose opened artifact docks
  * here without the interactive bridge, because no chat is open to receive a
- * prompt. With JanUI or the Unified right toolbar experiment on, every
- * page offers Artifacts, listing the whole library.
+ * prompt.
  */
 export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const openArtifactId = useStore((s) =>
@@ -79,24 +72,20 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const view = useStore((s) => s.view);
   const agentId = useStore((s) => s.agentId);
-  const newLayout = useNewLayout();
-  const rightToolbar = useUnifiedRightToolbar();
-  const classic = !newLayout && !rightToolbar;
   const { gettingStarted, ...tabs } = useAppSidePanelTabs();
-  const hidden = hiddenSidePanelTabs({
-    agent: false,
-    artifacts: newLayout || rightToolbar || view === "sandbox-home",
-    canOpenBrowser: false,
-    changes: false,
-    processesEnabled: false,
-    environments: false,
-    configuration: false,
-    gettingStarted,
-  });
-  // UNIT_BOUNDARY_DESCRIPTION: the current layout offers Get started and Approvals as drawers over the page, not as side-panel tabs, so the shell's bar holds only the tabs it still opens; the drawers read the same store tab.
-  const shellHidden = classic
-    ? new Set<SidePanelTab>([...hidden, "getting-started", "approvals"])
-    : hidden;
+  // UNIT_BOUNDARY_DESCRIPTION: Get started and Approvals are drawers over the page, not side-panel tabs, so the shell's bar holds only the tabs it still opens; the drawers read the same store tab.
+  const shellHidden = new Set<SidePanelTab>([
+    ...hiddenSidePanelTabs({
+      agent: false,
+      artifacts: view === "sandbox-home",
+      canOpenBrowser: false,
+      changes: false,
+      processesEnabled: false,
+      gettingStarted,
+    }),
+    "getting-started",
+    "approvals",
+  ]);
   const activeTab =
     view === "artifacts" &&
     openArtifactId !== null &&
@@ -105,8 +94,8 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
       : visibleSidePanelTab(sidePanelTab, NOTHING_DOCKED, shellHidden);
   const dockedShown = openArtifactId !== null && activeTab === "artifacts";
   const dockedKept = openArtifactId !== null && (dockedShown || artifactDirty);
-  // UNIT_BOUNDARY_DESCRIPTION: the current layout keeps the page in the shell's column whatever its panel does, so opening a panel never remounts the page; with nothing to show, the shell draws no column at all and the page takes the whole window.
-  const rail = !classic || activeTab !== null || openArtifactId !== null;
+  // UNIT_BOUNDARY_DESCRIPTION: the page stays in the shell's column whatever its panel does, so opening a panel never remounts the page; with nothing to show, the shell draws no column at all and the page takes the whole window.
+  const rail = activeTab !== null || openArtifactId !== null;
 
   return (
     <SidePanelShell
@@ -130,7 +119,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
         activeTab === "artifacts" &&
         !shellHidden.has("artifacts") && (
           <ChatArtifactsPanel
-            agentId={newLayout || view !== "sandbox-home" ? null : agentId}
+            agentId={view !== "sandbox-home" ? null : agentId}
             open
             className={cn("flex-1", dockedShown && "hidden")}
           />
