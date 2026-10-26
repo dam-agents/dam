@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -91,6 +91,8 @@ Six responsibilities:
   It skips file symlinks and submodules, and fails with `SourceFetchFailed` when a file is over the pinned read's cap or the fetch needs too many requests; it never falls back to the tarball the egress denies.
   Both GitHub fetches go anonymous first and retry authenticated on 404, to distinguish "not found" from "private"; for everything else, shallow-clones via `git`.
   The paired gateway pod injects the owner's GitHub token on the wire when the request hits `api.github.com`.
+  A grant rolls that pod, so a read that fails before GitHub answers is tried again with a doubling delay for about 15 s before it reports `UpstreamUnreachable`.
+  Nothing is replayed after GitHub answers with a status, and a write is never replayed at all, since it may have landed.
   Resolves the named skill's directory from the source's `path/<name>/` when a [path](skills.md#skill-source) is set — or, when that path is itself a skill directory, from the path itself, and then only for the skill it actually holds — else by walking the [Source Roots](skills.md#source-roots) in order (then top-level).
   Resolution follows a symlink-aliased root to the **real directory** — the copy must materialize files, never a link into the throwaway clone — skipping a candidate that resolves outside the clone and refusing a skill directory that is still a symlink.
   Copies the directory into every configured Skill Path, and returns the deterministic `contentHash`.
