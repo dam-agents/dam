@@ -149,6 +149,7 @@ export interface AgentView {
   error?: string;
   stopRequested: boolean;
   disabled?: boolean;
+  harness?: string;
   overBudget: boolean;
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
