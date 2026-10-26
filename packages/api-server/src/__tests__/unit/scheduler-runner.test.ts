@@ -123,6 +123,11 @@ function makeDeps(opts?: {
   const patches: ScheduleStatusPatch[] = [];
   const restored: { previous: string | null; written: string }[] = [];
   const replaced: { expected: string; next: string }[] = [];
+  const wrote: {
+    lastFiredAt?: Date;
+    lastFiredResult?: string | null;
+    nextRun?: Date | null;
+  }[] = [];
   const stamps = createMemoryTtlStore<AgentActivityStamp>(60_000);
 
   const repo = {
@@ -158,6 +163,7 @@ function makeDeps(opts?: {
       },
       tx?: unknown,
     ) {
+      wrote.push(patch);
       if (tx) calls.push(`record:${patch.lastFiredResult}`);
       if (patch.lastFiredAt !== undefined) {
         storedLastRun = WAKE_STAMP;
@@ -267,6 +273,7 @@ function makeDeps(opts?: {
     patches,
     restored,
     replaced,
+    wrote,
   };
 }
 
@@ -749,6 +756,27 @@ describe("scheduler-runner fire", () => {
     expect(replaced).toEqual([
       { expected: "delivering", next: "success" },
       { expected: "delivering", next: "missed" },
+    ]);
+  });
+
+  // TEST_SCENARIO: a one-time fire settles as success, and its turn then dies — the machine went down mid-run. The failure report arrives after the settle, so it must still replace that success with the reason; and it must leave the fire's own moment alone, since the task fired when it fired, not when its failure was reported.
+  it("applies a one-time fire's late failure report to a fire that settled", async () => {
+    const { runner, wrote } = makeDeps({
+      once: true,
+      onceResult: "delivering",
+    });
+
+    await runner.recordDelivery(SCHEDULE_ID, "settled");
+    await runner.recordOnceFailure(
+      SCHEDULE_ID,
+      "the harness exited (signal SIGKILL) mid-turn",
+    );
+
+    expect(wrote).toEqual([
+      {
+        lastFiredResult: "the harness exited (signal SIGKILL) mid-turn",
+        nextRun: null,
+      },
     ]);
   });
 

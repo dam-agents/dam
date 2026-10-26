@@ -6,6 +6,10 @@ export {
   createInvocationWatch,
   type InvocationWatch,
 } from "./services/invocation-watch.js";
+export {
+  createScheduleRunReport,
+  type ScheduleRunReport,
+} from "./services/schedule-run-report.js";
 export { createSubAgentsRunning } from "./infrastructure/sub-agents-running.js";
 export {
   loadManifest,

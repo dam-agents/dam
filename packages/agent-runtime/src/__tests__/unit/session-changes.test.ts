@@ -24,6 +24,7 @@ function fakeStore(): SessionMetadataStore {
     copyAttribution: () => {},
     markUnstored: () => {},
     markStored: () => {},
+    clearFireEvent: () => {},
     all: () => ({}),
     adopt: () => {},
     tombstone: () => {},
