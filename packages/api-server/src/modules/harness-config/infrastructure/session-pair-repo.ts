@@ -22,9 +22,14 @@ import {
 } from "api-server-api";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import {
+  platformSubagentOf,
+  splitPlatformSubagent,
+  withoutPairApproval,
   withPlatformSubagent,
   type GrantedProvider,
 } from "../domain/session-pair.js";
+import { harnessCapability } from "agent-runtime-api";
+import { z } from "zod";
 import type { ProfileResolver } from "../../profiles/index.js";
 
 export interface SessionPairRepo {
@@ -73,10 +78,24 @@ export function createSessionPairRepo(
         scheduled: agentsTable.scheduledSessionPair,
         sessionProfile: agentsTable.sessionProfile,
         platformSubagentProfile: agentsTable.platformSubagentProfile,
+        platformSubagentSettings: agentsTable.platformSubagentSettings,
+        capabilities: agentsTable.runtimeCapabilities,
       })
       .from(agentsTable)
       .where(eq(agentsTable.id, agentId));
     const row = (await (lockIn ? query.for("update") : query))[0];
+    const carried =
+      z
+        .array(harnessCapability)
+        .safeParse(
+          (row?.capabilities as { harnesses?: unknown } | null)?.harnesses,
+        ).data ?? [];
+    const plain = (pair: SessionPair | null) =>
+      pair &&
+      withoutPairApproval(
+        pair,
+        carried.find((h) => h.name === pair.harness)?.harnessConfigCatalog,
+      );
     const chatProfileId = row?.sessionProfile ?? null;
     const resolve = (profileId: string | null | undefined) =>
       profileId ? resolveProfile({ profileId, agentId }) : null;
@@ -90,12 +109,22 @@ export function createSessionPairRepo(
         : null
       : parsePair(row?.chat);
     return {
-      chat:
-        chat && slot?.unavailable === null
-          ? withPlatformSubagent(chat, slot.pair)
-          : chat,
-      channel: parsePair(row?.channel),
-      scheduled: parsePair(row?.scheduled),
+      chat: plain(
+        chat &&
+          withPlatformSubagent(
+            chat,
+            row?.platformSubagentProfile
+              ? slot?.unavailable === null
+                ? platformSubagentOf(slot.pair)
+                : null
+              : ((row?.platformSubagentSettings as Record<
+                  string,
+                  string
+                > | null) ?? null),
+          ),
+      ),
+      channel: plain(parsePair(row?.channel)),
+      scheduled: plain(parsePair(row?.scheduled)),
       chatProfileId,
     };
   }
@@ -113,15 +142,18 @@ export function createSessionPairRepo(
     },
 
     async write(agentId, kind, pair, references) {
+      const [primary, slot] = splitPlatformSubagent(pair);
+      const slotId = references?.platformSubagentProfileId;
       await db
         .update(agentsTable)
         .set(
           match(kind)
             .with("chat", () => ({
-              sessionPair: references?.profileId ? null : pair,
+              sessionPair: references?.profileId ? null : primary,
               sessionProfile: references?.profileId ?? null,
-              ...(references?.platformSubagentProfileId !== undefined && {
-                platformSubagentProfile: references.platformSubagentProfileId,
+              ...(slotId !== undefined && {
+                platformSubagentProfile: slotId,
+                platformSubagentSettings: slotId ? null : slot,
               }),
               defaultModelNote: null,
             }))

@@ -22,8 +22,9 @@ type CatalogOption = NonNullable<
 
 const harnessWide = (harness: HarnessCapability) => (o: CatalogOption) =>
   o.category !== "model" &&
+  o.category !== "mode" &&
+  o.category !== "approvals" &&
   (!harness.sessionSettings?.includes(o.id) ||
-    o.category === "mode" ||
     o.choices.some((c) => c.value === o.default && c.needsApproval));
 
 const harnessCurrentKey = (agentId: string, harness: string) =>
@@ -85,9 +86,8 @@ export function HarnessSettingsSections({
           />
         ))}
         <p className="pt-3 text-2xs leading-snug text-muted-foreground">
-          Settings each harness keeps for all its sessions. The model, effort
-          and other session settings are chosen in each session, or in the
-          defaults on the Providers page.
+          Settings each harness keeps for all its sessions. The model, effort,
+          tool approval and other session settings are chosen in each chat.
         </p>
       </Callout>
     </section>
@@ -162,13 +162,11 @@ function HarnessSettings({
           <OptionField key={group.id} title={group.name}>
             <OptionPicker
               title={`${displayName} ${group.name}`}
-              choices={group.choices
-                .filter((c) => !/(^|#)plan$/.test(c.value))
-                .map((c) => ({
-                  id: c.value,
-                  name: c.name,
-                  description: c.description,
-                }))}
+              choices={group.choices.map((c) => ({
+                id: c.value,
+                name: c.name,
+                description: c.description,
+              }))}
               value={valueOf(group.id) ?? group.default ?? null}
               clearable={false}
               onSelect={(id) => choose(group.id, id)}

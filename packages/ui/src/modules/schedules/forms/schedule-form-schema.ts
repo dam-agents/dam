@@ -158,24 +158,53 @@ export function presetFormValues(
   };
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a schedule's choices as a save sends them: its profile alone, so values it resolves to are never taken for a detach, or its own values with the profile cleared. */
-export function scheduleChoices(v: {
+type ChoiceValues = {
   profile?: string | null;
   harness?: string | null;
   model?: string | null;
   settings?: Record<string, string> | null;
-}) {
+};
+
+/** UNIT_BOUNDARY_DESCRIPTION: a schedule's choices as a save sends them: its profile alone, so values it resolves to are never taken for a detach, or its own values with the profile cleared. A recurring update clears an empty choice with null; a create or a one-time update, whose contract clears what it leaves out, omits it. */
+export function scheduleChoices(
+  v: ChoiceValues,
+  clear: true,
+):
+  | { profile: string }
+  | {
+      profile: null;
+      harness: string | null;
+      model: string | null;
+      settings: Record<string, string> | null;
+    };
+export function scheduleChoices(
+  v: ChoiceValues,
+  clear: false,
+):
+  | { profile: string }
+  | {
+      profile: null;
+      harness?: string;
+      model?: string;
+      settings?: Record<string, string>;
+    };
+export function scheduleChoices(v: ChoiceValues, clear: boolean) {
   if (v.profile) return { profile: v.profile };
-  const harness = v.harness?.trim();
-  const model = v.model?.trim();
   const settings = Object.fromEntries(
     Object.entries(v.settings ?? {}).filter(([, value]) => value !== ""),
   );
+  const values = {
+    harness: v.harness?.trim() || null,
+    model: v.model?.trim() || null,
+    settings: Object.keys(settings).length > 0 ? settings : null,
+  };
   return {
     profile: null,
-    ...(harness ? { harness } : {}),
-    ...(model ? { model } : {}),
-    ...(Object.keys(settings).length > 0 ? { settings } : {}),
+    ...(clear
+      ? values
+      : Object.fromEntries(
+          Object.entries(values).filter(([, value]) => value !== null),
+        )),
   };
 }
 

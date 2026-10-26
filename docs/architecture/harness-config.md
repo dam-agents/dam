@@ -41,8 +41,8 @@ In an existing session, the picker keeps its harness and, on a routed runtime, o
 A session may also pick the settings its harness manifest lists under `sessionSettings`: mode, effort, thinking level, prompt cache or approvals, each a catalog option.
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
 An agent remembers one **chat default**, which preselects the next session, and two **legacy** pairs, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on, kept for rows written before profiles.
-A pick in a chat saves the chat default, a profile pick saves the reference and not its values, and the subagent slot a reference of its own.
-**Tool approval** (Claude Code's permission mode, Bob's approvals) has its own picker beside the model picker, never a profile's; Plan modes are offered nowhere.
+A pick in a chat saves the chat default, whose primary model and subagent slot each hold a profile reference or values of their own, never both.
+**Tool approval** (Claude Code's permission mode, Bob's approvals) is one session's own pick, in its own picker: no default, profile, channel, schedule or Config panel holds one, a session that picks none runs on Auto mode (else Bypass), and Plan modes are offered nowhere.
 **An owner's profiles** hold a harness, a provider template, a model and settings; they are edited from a chat's model picker, listed in Settings › Providers, and named by the chat default, by a channel's or a chat's binding and by a schedule.
 The api-server resolves a reference into the pair the runtime is sent, so an edit reaches every run following it while a session that picked keeps its own.
 A channel or schedule naming none follows its kind's legacy pair; picking a profile grants its provider on the agent.
@@ -86,13 +86,12 @@ The runtime sends it again whenever the session is loaded or resumed into a harn
 Settings are sent one at a time, in the order the runtime lists them, each after the harness answered the one before, because a harness reads a setting against the state an earlier one left: a mode is read against the model the session holds.
 A prompt waits for all of them.
 A setting always holds a value: one that neither the session nor its default names runs on the manifest's `default` for the option, which the runtime applies to the session or its process, never on what the harness's own settings file holds.
-Two kinds stay the harness's own: the permission mode, and a setting whose manifest default a person must approve, since such a default would stall every unattended turn; their picker starts on the agent's configured value, else the one the runtime derives (below), else the manifest's `default`.
+A setting whose manifest default a person must approve stays the harness's own, since such a default would stall every unattended turn; its picker starts on the agent's configured value, else the manifest's `default`.
 A default the session's model does not take, such as an effort on Haiku, is not sent.
 The picker offers no unset choice, so a change always names a value the harness applies.
-The Config panel shows only the settings a harness keeps for all its sessions, those two among them; the others are chosen in a session or in its default.
+The Config panel shows only the settings a harness keeps for all its sessions, such a setting among them; the others are chosen in a session or in its default.
 The platform MCP server tells the agent so, and that editing its settings file does not change its model or effort.
-A session that names no mode starts on the mode the agent's config file names, which the harness reads itself.
-Where that file names none, the runtime derives one from the catalog — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
+A session that names no mode starts on one the runtime derives from the catalog, whatever the agent's config file names — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
 A harness that keeps its own sources of a start mode does not opt in: Pi's ACP mode is its thinking level, which it takes from the resumed session, then a per-model value, then the global default, and Bob's is the persona a Connection pins.
 Claude Code opts in, and its catalog defaults to `auto`, so a chat session starts in auto as its terminal does, and a session on a model that cannot use auto, such as Haiku, starts asking instead.
 The terminal launcher keeps its own fallback, which asks for no model, so a Haiku terminal session still passes `auto`.

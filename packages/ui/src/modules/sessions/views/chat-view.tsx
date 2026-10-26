@@ -400,7 +400,12 @@ export function ChatView() {
   ) => {
     if (!selectedAgent || kind !== "chat") return;
     rememberSessionPair(selectedAgent, pair, "chat", undefined, {
-      profileId: primaryProfileOf(pair, profiles)?.id ?? null,
+      profileId:
+        primaryProfileOf(
+          pair,
+          profiles,
+          harnessStatus?.harnesses?.find((h) => h.name === pair.harness),
+        )?.id ?? null,
       platformSubagentProfileId: subagentProfileOf(pair, profiles)?.id ?? null,
     });
   };
@@ -1265,6 +1270,9 @@ export function ChatView() {
                               },
                             ),
                           )
+                        }
+                        onToolApproval={(change) =>
+                          void configureSession(change)
                         }
                         onNewSession={() => handleNewSession(true)}
                       />

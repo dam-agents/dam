@@ -450,6 +450,7 @@ export const agents = pgTable(
       () => profiles.id,
       { onDelete: "restrict" },
     ),
+    platformSubagentSettings: jsonb("platform_subagent_settings"),
     defaultModelNote: jsonb("default_model_note"),
     skillsSnapshot: jsonb("skills_snapshot"),
     onboardingChecklist: jsonb("onboarding_checklist"),
@@ -459,11 +460,14 @@ export const agents = pgTable(
   },
   (table) => [
     index("agents_owner_idx").on(table.ownerSub),
-    /* UNIT_BOUNDARY_DESCRIPTION: the chat default is a profile reference or an
-     * inline pair, never both, so no reader has to decide which one wins. */
+    /* UNIT_BOUNDARY_DESCRIPTION: each slot of the chat default is a profile reference or values of its own, never both, so no reader has to decide which one wins. */
     check(
       "agents_session_pair_xor_profile",
       sql`${table.sessionProfile} is null or ${table.sessionPair} is null`,
+    ),
+    check(
+      "agents_platform_subagent_xor_profile",
+      sql`${table.platformSubagentProfile} is null or ${table.platformSubagentSettings} is null`,
     ),
   ],
 );

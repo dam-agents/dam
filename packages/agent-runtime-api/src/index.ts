@@ -31,6 +31,8 @@ export {
   sessionSettingsSchema,
   modelConstraintsFor,
   startModeFor,
+  approvalOption,
+  withoutApproval,
   sessionSettingsError,
   SUBAGENT_MODEL_SETTING,
   PLATFORM_SUBAGENT_PREFIX,

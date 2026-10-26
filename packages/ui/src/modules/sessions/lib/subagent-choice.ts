@@ -1,4 +1,5 @@
 import {
+  approvalOption,
   type HarnessCapability,
   isPlatformSubagentSetting,
   SUBAGENT_MODEL_SETTING,
@@ -76,8 +77,8 @@ export function pickProfile(
   models: readonly { name: string }[],
 ): SessionPair {
   const kept = Object.fromEntries(
-    Object.entries(pair?.settings ?? {}).filter(([id]) =>
-      isPlatformSubagentSetting(id),
+    Object.entries(pair?.settings ?? {}).filter(
+      ([id]) => !isProfileSetting(id, capability),
     ),
   );
   return withSubagent(
@@ -93,10 +94,22 @@ export function pickProfile(
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the profile the primary slot holds, by its values; the subagent keys are left out, so a subagent choice never makes the primary read as custom (QA D2). */
+/** UNIT_BOUNDARY_DESCRIPTION: a setting a profile holds: not the subagent slot's, and not tool approval, which is a session's own pick. */
+export function isProfileSetting(
+  id: string,
+  capability: HarnessCapability | undefined,
+): boolean {
+  return (
+    !isPlatformSubagentSetting(id) &&
+    id !== approvalOption(capability?.harnessConfigCatalog)?.id
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the profile the primary slot holds, by its values; neither a subagent choice nor tool approval makes the primary read as custom (QA D2). */
 export function primaryProfileOf(
   pair: SessionPair | null,
   profiles: readonly ProfileWithUsage[],
+  capability: HarnessCapability | undefined,
 ): ProfileWithUsage | null {
   if (pair === null) return null;
   const own = (settings: Readonly<Record<string, string>> | undefined) =>
@@ -104,7 +117,7 @@ export function primaryProfileOf(
       Object.entries(settings ?? {})
         .filter(
           ([id]) =>
-            !isPlatformSubagentSetting(id) &&
+            isProfileSetting(id, capability) &&
             !(SUBAGENT_KEYS as readonly string[]).includes(id),
         )
         .sort(),

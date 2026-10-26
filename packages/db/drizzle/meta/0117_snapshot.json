@@ -1020,6 +1020,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "platform_subagent_settings": {
+          "name": "platform_subagent_settings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "default_model_note": {
           "name": "default_model_note",
           "type": "jsonb",
@@ -1109,6 +1115,10 @@
         "agents_session_pair_xor_profile": {
           "name": "agents_session_pair_xor_profile",
           "value": "\"agents\".\"session_profile\" is null or \"agents\".\"session_pair\" is null"
+        },
+        "agents_platform_subagent_xor_profile": {
+          "name": "agents_platform_subagent_xor_profile",
+          "value": "\"agents\".\"platform_subagent_profile\" is null or \"agents\".\"platform_subagent_settings\" is null"
         }
       },
       "isRLSEnabled": false

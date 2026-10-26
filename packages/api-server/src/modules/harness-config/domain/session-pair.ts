@@ -1,4 +1,9 @@
 import {
+  isPlatformSubagentSetting,
+  withoutApproval,
+  type HarnessConfigCatalog,
+} from "agent-runtime-api";
+import {
   aliasForProviderType,
   parseQualifiedModel,
   resolveDefaultProvider,
@@ -12,19 +17,47 @@ export interface GrantedProvider {
   templateId?: string;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot is its own profile reference (D93) and lends the pair only that profile's harness and model. */
+/** UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot is stored apart from the primary model (D124): a profile reference, which lends only its harness and model (D93), or values of its own. */
+export function platformSubagentOf(slot: SessionPair): Record<string, string> {
+  return {
+    "platformSubagent.harness": slot.harness,
+    ...(slot.model !== null && { "platformSubagent.model": slot.model }),
+  };
+}
+
 export function withPlatformSubagent(
   pair: SessionPair,
-  slot: SessionPair,
+  slot: Record<string, string> | null,
 ): SessionPair {
-  return {
-    ...pair,
-    settings: {
-      ...pair.settings,
-      "platformSubagent.harness": slot.harness,
-      ...(slot.model !== null && { "platformSubagent.model": slot.model }),
-    },
-  };
+  return slot ? { ...pair, settings: { ...pair.settings, ...slot } } : pair;
+}
+
+export function splitPlatformSubagent(
+  pair: SessionPair,
+): [SessionPair, Record<string, string> | null] {
+  const { settings = {}, ...rest } = pair;
+  const own = Object.entries(settings).filter(
+    ([id]) => !isPlatformSubagentSetting(id),
+  );
+  const slot = Object.entries(settings).filter(([id]) =>
+    isPlatformSubagentSetting(id),
+  );
+  return [
+    own.length > 0 ? { ...rest, settings: Object.fromEntries(own) } : rest,
+    slot.length > 0 ? Object.fromEntries(slot) : null,
+  ];
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: tool approval is one session's own pick, so a saved default never holds one and a stored one is never read. */
+export function withoutPairApproval(
+  pair: SessionPair,
+  catalog: HarnessConfigCatalog | undefined,
+): SessionPair {
+  const { settings, ...rest } = pair;
+  const kept = withoutApproval(catalog, settings);
+  return kept && Object.keys(kept).length > 0
+    ? { ...rest, settings: kept }
+    : rest;
 }
 
 export interface SessionPairInputs {

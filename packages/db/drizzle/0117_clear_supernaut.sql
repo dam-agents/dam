@@ -3,8 +3,9 @@
 -- channel's turns and a schedule point at instead of storing a copy.
 -- Additive and referenced by nothing yet: the agent and channel columns are
 -- nullable, so every existing row keeps running on the pair it already holds.
--- The XOR check states the invariant every reader relies on — a chat default is
--- a profile reference or an inline pair, never both — and the restrictive
+-- The XOR checks state the invariant every reader relies on — each slot of a
+-- chat default, the primary model and the platform subagent, is a profile
+-- reference or values of its own, never both — and the restrictive
 -- foreign keys make deleting a referenced profile impossible rather than a
 -- check-then-act race.
 CREATE TABLE "profile_seeds" (
@@ -27,6 +28,7 @@ CREATE TABLE "profiles" (
 --> statement-breakpoint
 ALTER TABLE "agents" ADD COLUMN "session_profile" text;--> statement-breakpoint
 ALTER TABLE "agents" ADD COLUMN "platform_subagent_profile" text;--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "platform_subagent_settings" jsonb;--> statement-breakpoint
 ALTER TABLE "channels" ADD COLUMN "profile_id" text;--> statement-breakpoint
 CREATE UNIQUE INDEX "profiles_owner_name_idx" ON "profiles" USING btree ("owner","name");--> statement-breakpoint
 CREATE UNIQUE INDEX "profiles_owner_seed_idx" ON "profiles" USING btree ("owner","seed") WHERE "profiles"."seed" is not null;--> statement-breakpoint
@@ -34,4 +36,5 @@ CREATE INDEX "profiles_owner_idx" ON "profiles" USING btree ("owner");--> statem
 ALTER TABLE "agents" ADD CONSTRAINT "agents_session_profile_profiles_id_fk" FOREIGN KEY ("session_profile") REFERENCES "public"."profiles"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agents" ADD CONSTRAINT "agents_platform_subagent_profile_profiles_id_fk" FOREIGN KEY ("platform_subagent_profile") REFERENCES "public"."profiles"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "channels" ADD CONSTRAINT "channels_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agents" ADD CONSTRAINT "agents_session_pair_xor_profile" CHECK ("agents"."session_profile" is null or "agents"."session_pair" is null);
+ALTER TABLE "agents" ADD CONSTRAINT "agents_session_pair_xor_profile" CHECK ("agents"."session_profile" is null or "agents"."session_pair" is null);--> statement-breakpoint
+ALTER TABLE "agents" ADD CONSTRAINT "agents_platform_subagent_xor_profile" CHECK ("agents"."platform_subagent_profile" is null or "agents"."platform_subagent_settings" is null);

@@ -27,6 +27,9 @@ import {
   qualifiedPairModel,
   sameModelName,
   resolveSessionPair,
+  platformSubagentOf,
+  splitPlatformSubagent,
+  withoutPairApproval,
   withPlatformSubagent,
 } from "../domain/session-pair.js";
 import { harnessFits } from "../../templates/index.js";
@@ -215,10 +218,13 @@ export function createHarnessConfigService(deps: {
           });
         return resolved.pair;
       };
+      const [, ownSlot] = splitPlatformSubagent(pair);
       if (profileId !== null) pair = await owned(profileId);
       const slotId = references?.platformSubagentProfileId ?? null;
-      if (slotId !== null)
-        pair = withPlatformSubagent(pair, await owned(slotId));
+      pair = withPlatformSubagent(
+        pair,
+        slotId === null ? ownSlot : platformSubagentOf(await owned(slotId)),
+      );
       pair = await validDefaultPair(agentId, pair);
       await deps.pairRepo.write(agentId, kind, pair, references);
       await deps.publishDefaults(agentId);
@@ -282,7 +288,7 @@ export function createHarnessConfigService(deps: {
             (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
           ));
     if (invalid) throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
-    return pair;
+    return withoutPairApproval(pair, harness?.harnessConfigCatalog);
   }
 
   function notifyDefaultChanged(agentId: string): void {

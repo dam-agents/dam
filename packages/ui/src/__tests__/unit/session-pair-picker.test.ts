@@ -513,6 +513,7 @@ describe("session pair model choices", () => {
       renderPicker(),
       renderToStaticMarkup(
         createElement(ModelIndicator, {
+          onToolApproval: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "ibm",
@@ -583,6 +584,7 @@ describe("session pair model choices", () => {
       state.fetching = true;
       const html = renderToStaticMarkup(
         createElement(ModelIndicator, {
+          onToolApproval: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "curve",
@@ -618,6 +620,7 @@ describe("session pair model choices", () => {
       /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(
         renderToStaticMarkup(
           createElement(ModelIndicator, {
+            onToolApproval: () => {},
             agentId: "agent",
             harness: "pi",
             provider: "curve",
@@ -817,6 +820,7 @@ describe("one model list on a runtime that routes by model name", () => {
   it("offers every provider's models to a running session", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
+        onToolApproval: () => {},
         agentId: "agent",
         harness: "pi",
         provider: "ibm",
@@ -840,6 +844,7 @@ describe("one model list on a runtime that routes by model name", () => {
   it("shows the pretty model name under the composer", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
+        onToolApproval: () => {},
         agentId: "agent",
         harness: "pi",
         provider: "curve",
@@ -876,6 +881,7 @@ describe("one model list on a runtime that routes by model name", () => {
     ];
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
+        onToolApproval: () => {},
         agentId: "agent",
         harness: "pi",
         provider: null,

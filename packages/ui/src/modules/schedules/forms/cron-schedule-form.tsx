@@ -135,7 +135,7 @@ export function CronScheduleForm({
         task: draft.task ?? "",
         sessionMode: v.sessionMode,
         precheck: draft.precheck,
-        ...scheduleChoices(draft),
+        ...scheduleChoices(draft, true),
         sessionTitle: draft.sessionTitle,
       },
       {

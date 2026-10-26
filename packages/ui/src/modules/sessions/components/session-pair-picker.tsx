@@ -71,7 +71,7 @@ import { PlatformSubagentSettings } from "./platform-subagent-settings.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
-import { approvalOption, ToolApprovalPicker } from "./tool-approval-picker.js";
+import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
 interface CommonProps {
   agentId: string;
@@ -211,7 +211,7 @@ export function SessionPairPicker(props: Props) {
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
   const models = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
-  const primary = primaryProfileOf(pair, profiles);
+  const primary = primaryProfileOf(pair, profiles, capability);
   const slot = subagentProfileOf(pair, profiles);
   const customSlot = subagentOf(pair);
   const chooseSubagent = (
@@ -228,7 +228,7 @@ export function SessionPairPicker(props: Props) {
     providerTemplate: providers.owned.find((p) => p.id === pair?.provider)
       ?.templateId,
     from: fromProfile,
-    approvalId: approvalOption(capability)?.id,
+    capability,
     onSaved: (profile) => {
       setFromProfile(profile);
       if (pair) choose(pair, { profileId: profile.id });
@@ -574,12 +574,12 @@ export function SessionPairPicker(props: Props) {
       {pair && (
         <ToolApprovalPicker
           capability={capability}
-          settings={{ ...defaults, ...settings }}
+          settings={settings}
           onChange={(changes) =>
-            choose(
-              { ...pair, settings: applySettingChanges(settings, changes) },
-              { profileId: primary?.id ?? null },
-            )
+            setPair(agentId, {
+              ...pair,
+              settings: applySettingChanges(settings, changes),
+            })
           }
         />
       )}

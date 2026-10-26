@@ -72,7 +72,7 @@ export function OnceScheduleForm({
       name: v.name,
       task: v.task,
       timezone: v.timezone,
-      ...scheduleChoices(v),
+      ...scheduleChoices(v, false),
       ...(v.sessionTitle ? { sessionTitle: v.sessionTitle } : {}),
     };
     if (existing) {

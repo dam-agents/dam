@@ -726,7 +726,7 @@ export function createTelegramWorker(deps: {
           ...pairFields(
             await deps.channelPair?.(agentId, {
               type: "telegram",
-              id: thread.id,
+              id: telegramChatOf(thread.id),
             }),
           ),
         },

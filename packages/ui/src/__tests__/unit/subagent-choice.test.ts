@@ -43,6 +43,15 @@ const capability = {
         subagents: true,
         choices: ["low", "high"].map((value) => ({ value, name: value })),
       },
+      {
+        id: "mode",
+        name: "Mode",
+        category: "mode",
+        choices: ["auto", "bypassPermissions"].map((value) => ({
+          value,
+          name: value,
+        })),
+      },
     ],
   },
 } as unknown as HarnessCapability;
@@ -69,9 +78,14 @@ describe("a subagent choice", () => {
     expect(withSubagent(set, null, capability, []).settings).toBeUndefined();
   });
 
-  /** TEST_SCENARIO: a primary profile pick takes the profile's settings and keeps the subagent choice the pair held. */
-  it("survives a primary profile pick", () => {
-    const set = withSubagent(primary, profile(), capability, []);
+  /** TEST_SCENARIO: a primary profile pick takes the profile's settings and keeps the subagent choice and the session's tool approval. */
+  it("survives a primary profile pick, as does tool approval", () => {
+    const set = withSubagent(
+      { ...primary, settings: { mode: "bypassPermissions" } },
+      profile(),
+      capability,
+      [],
+    );
     const next = pickProfile(
       set,
       profile({ id: "p2", settings: {} }),
@@ -81,17 +95,24 @@ describe("a subagent choice", () => {
     expect(next.settings?.["platformSubagent.model"]).toBe(
       "anthropic/claude-sonnet-5-5",
     );
+    expect(next.settings?.mode).toBe("bypassPermissions");
   });
 
-  /** TEST_SCENARIO: the primary still reads as its profile with a subagent choice on the pair, and stops once its own values are tuned (QA D2). */
+  /** TEST_SCENARIO: the primary still reads as its profile with a subagent choice or a tool approval on the pair, and stops once its own values are tuned (QA D2). */
   it("leaves the primary on its profile", () => {
     const own = profile({ model: primary.model!, settings: {} });
-    const set = withSubagent(primary, profile(), capability, []);
-    expect(primaryProfileOf(set, [own])?.id).toBe("p1");
+    const set = withSubagent(
+      { ...primary, settings: { mode: "bypassPermissions" } },
+      profile(),
+      capability,
+      [],
+    );
+    expect(primaryProfileOf(set, [own], capability)?.id).toBe("p1");
     expect(
       primaryProfileOf(
         { ...set, settings: { ...set.settings, effort: "low" } },
         [own],
+        capability,
       ),
     ).toBeNull();
   });

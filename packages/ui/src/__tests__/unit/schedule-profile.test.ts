@@ -155,22 +155,28 @@ describe("what a new schedule or channel starts on", () => {
 });
 
 describe("what a schedule save sends", () => {
-  /** TEST_SCENARIO: a schedule on a profile sends the profile alone, so the values the form shows, which the profile resolves to, are never taken for a detach; a custom one sends its own values and clears the profile. */
+  /** TEST_SCENARIO: a schedule on a profile sends the profile alone, so the values the form shows, which the profile resolves to, are never taken for a detach; a custom one sends its own values and clears the profile, and a recurring update clears an emptied choice with null. */
   it("sends the profile alone, or the values with the profile cleared", () => {
     const values = {
       harness: "claude-code",
       model: "cb/x",
       settings: { effort: "high", mode: "" },
     };
-    expect(scheduleChoices({ ...values, profile: "p1" })).toEqual({
+    expect(scheduleChoices({ ...values, profile: "p1" }, true)).toEqual({
       profile: "p1",
     });
-    expect(scheduleChoices({ ...values, profile: "" })).toEqual({
+    expect(scheduleChoices({ ...values, profile: "" }, false)).toEqual({
       profile: null,
       harness: "claude-code",
       model: "cb/x",
       settings: { effort: "high" },
     });
+    expect(
+      scheduleChoices(
+        { profile: "", harness: "codex", model: "", settings: {} },
+        true,
+      ),
+    ).toEqual({ profile: null, harness: "codex", model: null, settings: null });
   });
 });
 

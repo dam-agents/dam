@@ -44,6 +44,7 @@ import {
   settingDefaults,
 } from "../lib/session-settings.js";
 import {
+  isProfileSetting,
   pickProfile,
   primaryProfileOf,
   SUBAGENT_KEYS,
@@ -55,7 +56,7 @@ import { PlatformSubagentSettings } from "./platform-subagent-settings.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
-import { approvalOption, ToolApprovalPicker } from "./tool-approval-picker.js";
+import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
 interface Props {
   agentId: string;
@@ -69,6 +70,8 @@ interface Props {
   /** UNIT_BOUNDARY_DESCRIPTION: a model, and the settings changes that come with it when a profile is picked. */
   onChoose: (model: string, settings?: Record<string, string>) => void;
   onConfigure: (settings: Record<string, string>) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: a tool-approval pick, which configures this session and is saved nowhere else. */
+  onToolApproval: (settings: Record<string, string>) => void;
   onNewSession: () => void;
 }
 
@@ -83,6 +86,7 @@ export function ModelIndicator({
   turnRunning = false,
   onChoose,
   onConfigure,
+  onToolApproval,
   onNewSession,
 }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -137,7 +141,7 @@ export function ModelIndicator({
   const sessionProfiles = profiles.filter((p) => p.harness === harness);
   const current: SessionPair = { harness, provider, model, settings };
   const listed = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
-  const primary = primaryProfileOf(current, sessionProfiles);
+  const primary = primaryProfileOf(current, sessionProfiles, capability);
   const slot = subagentProfileOf(current, profiles);
   const customSlot = subagentOf(current);
   const subagentChanges = (next: SessionPair) =>
@@ -147,7 +151,7 @@ export function ModelIndicator({
     pair: current,
     providerTemplate: activeProvider?.templateId,
     from: fromProfile,
-    approvalId: approvalOption(capability)?.id,
+    capability,
     onSaved: setFromProfile,
   });
   const showProfiles =
@@ -289,7 +293,9 @@ export function ModelIndicator({
                   setFromProfile(profile);
                   onChoose(profile.model, {
                     ...Object.fromEntries(
-                      Object.keys(settings).map((k) => [k, ""]),
+                      Object.keys(settings)
+                        .filter((k) => isProfileSetting(k, capability))
+                        .map((k) => [k, ""]),
                     ),
                     ...pickProfile(current, profile, capability, listed)
                       .settings,
@@ -404,8 +410,8 @@ export function ModelIndicator({
       </Popover>
       <ToolApprovalPicker
         capability={capability}
-        settings={{ ...defaults, ...settings }}
-        onChange={onConfigure}
+        settings={settings}
+        onChange={onToolApproval}
       />
     </div>
   );

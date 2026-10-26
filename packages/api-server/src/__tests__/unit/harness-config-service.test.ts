@@ -580,3 +580,72 @@ describe("ownership of a profile a caller names", () => {
     });
   });
 });
+
+describe("the chat default's slots", () => {
+  const codexPair = {
+    harness: "codex",
+    provider: "conn-1",
+    model: "openai/gpt-6.1-sol",
+  };
+  const capabilities = {
+    modelRouter: true,
+    defaultHarness: "codex",
+    harnesses: [
+      {
+        name: "codex",
+        harnessConfig: true,
+        sessionModel: true,
+        sessionSettings: ["mode"],
+        platformSubagentSettings: true,
+        harnessConfigCatalog: {
+          options: [
+            {
+              id: "mode",
+              name: "Mode",
+              category: "mode",
+              choices: [
+                { value: "auto", name: "Auto" },
+                { value: "bypassPermissions", name: "Bypass" },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  /** TEST_SCENARIO: a profile primary with a custom subagent keeps the subagent's values beside the reference (D124), and the session's tool approval is never saved (approval is per session only). */
+  it("keeps a custom subagent beside a profile and drops tool approval", async () => {
+    const { service, calls } = makeService({
+      capabilities,
+      granted: [{ id: "conn-1", type: "openai" }],
+      resolved: codexPair,
+    });
+    await service.rememberSessionPair(
+      "agent-1",
+      "chat",
+      {
+        ...codexPair,
+        settings: {
+          mode: "bypassPermissions",
+          "platformSubagent.harness": "codex",
+          "platformSubagent.model": "openai/gpt-6-luna",
+        },
+      },
+      { profileId: "profile-1", platformSubagentProfileId: null },
+    );
+    await service.rememberSessionPair(
+      "agent-1",
+      "chat",
+      { ...codexPair, settings: { mode: "bypassPermissions" } },
+      { platformSubagentProfileId: null },
+    );
+    expect(calls.pairs.map((p) => p.settings)).toEqual([
+      {
+        "platformSubagent.harness": "codex",
+        "platformSubagent.model": "openai/gpt-6-luna",
+      },
+      undefined,
+    ]);
+  });
+});

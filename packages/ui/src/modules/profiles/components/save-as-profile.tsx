@@ -1,5 +1,5 @@
 import { Save } from "@carbon/icons-react";
-import { isPlatformSubagentSetting } from "agent-runtime-api";
+import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 import { useState } from "react";
 
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 
 import { useAgent } from "../../agents/api/queries.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
+import { isProfileSetting } from "../../sessions/lib/subagent-choice.js";
 import { useCreateProfile, useUpdateProfile } from "../api/mutations.js";
 
 /**
@@ -28,15 +29,14 @@ export function useSaveAsProfile({
   pair,
   providerTemplate,
   from,
-  approvalId,
+  capability,
   onSaved,
 }: {
   agentId: string;
   pair: SessionPair | null;
   providerTemplate: string | undefined;
   from: { id: string; name: string } | null;
-  /* UNIT_BOUNDARY_DESCRIPTION: the harness option that holds tool approval, which a profile never carries. */
-  approvalId: string | undefined;
+  capability: HarnessCapability | undefined;
   onSaved: (profile: { id: string; name: string }) => void;
 }) {
   const agent = useAgent(agentId);
@@ -63,8 +63,8 @@ export function useSaveAsProfile({
       providerTemplate,
       model: pair.model ?? "",
       settings: Object.fromEntries(
-        Object.entries(pair.settings ?? {}).filter(
-          ([id]) => !isPlatformSubagentSetting(id) && id !== approvalId,
+        Object.entries(pair.settings ?? {}).filter(([id]) =>
+          isProfileSetting(id, capability),
         ),
       ),
     };

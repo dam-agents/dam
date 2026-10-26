@@ -1,5 +1,5 @@
 import { ChevronDown } from "@carbon/icons-react";
-import type { HarnessCapability } from "agent-runtime-api";
+import { approvalOption, type HarnessCapability } from "agent-runtime-api";
 
 import {
   DropdownMenu,
@@ -15,6 +15,7 @@ import {
  * ask is Accept edits (edits never prompt); Bob keeps it in its approvals
  * option and has no Bypass. A harness with neither (Pi, Codex, Copilot) runs
  * every tool unasked, so it offers Bypass alone. Plan modes are never offered.
+ * A pick is the session's alone; with none, a session runs on Auto mode.
  */
 const APPROVALS = [
   { label: "Always ask", values: ["acceptEdits", "ask"] },
@@ -22,36 +23,28 @@ const APPROVALS = [
   { label: "Bypass", values: ["bypassPermissions"] },
 ] as const;
 
-/** UNIT_BOUNDARY_DESCRIPTION: the harness option that holds tool approval, if it has one. */
-export function approvalOption(capability: HarnessCapability | undefined) {
-  const options = capability?.harnessConfigCatalog?.options ?? [];
-  return (
-    options.find((o) => o.category === "approvals") ??
-    options.find(
-      (o) =>
-        o.category === "mode" &&
-        o.choices.some((c) => c.value === "bypassPermissions"),
-    )
-  );
-}
-
 export function ToolApprovalPicker({
   capability,
   settings,
   onChange,
 }: {
   capability: HarnessCapability | undefined;
+  /* UNIT_BOUNDARY_DESCRIPTION: the session's own settings, never a default's. */
   settings: Readonly<Record<string, string>>;
   onChange: (changes: Record<string, string>) => void;
 }) {
-  const option = approvalOption(capability);
+  const option = approvalOption(capability?.harnessConfigCatalog);
   const choices = APPROVALS.flatMap(({ label, values }) => {
     const choice = option?.choices.find((c) =>
       (values as readonly string[]).includes(c.value),
     );
     return choice ? [{ label, value: choice.value }] : [];
   });
-  const current = option && (settings[option.id] ?? option.default);
+  const current =
+    option &&
+    (settings[option.id] ??
+      option.choices.find((c) => c.value === "auto")?.value ??
+      option.default);
   const label =
     option === undefined
       ? "Bypass"
