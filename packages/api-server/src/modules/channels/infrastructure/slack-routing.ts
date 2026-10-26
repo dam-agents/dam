@@ -27,6 +27,7 @@ export function stripLeadingMentions(text: string): string {
 export function sessionTitleOf(text: string): string {
   return (
     stripLeadingMentions(text)
+      .replace(/^:\s*/, "")
       .split("\n")
       .find((line) => line.trim() !== "")
       ?.trim() ?? ""

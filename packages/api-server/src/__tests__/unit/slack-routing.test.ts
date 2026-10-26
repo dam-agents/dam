@@ -69,6 +69,16 @@ describe("sessionTitleOf", () => {
     ).toBe("check this");
   });
 
+  /**
+   * TEST_SCENARIO: A message handed on from another agent arrives labeled
+   * with its sender, as "<@U123>: text". The title is the text.
+   */
+  it("drops the sender label of a message handed on", () => {
+    expect(sessionTitleOf("<@U123>: can you take this?")).toBe(
+      "can you take this?",
+    );
+  });
+
   it("is empty for a message with nothing but a mention", () => {
     expect(sessionTitleOf("<@U123>")).toBe("");
   });
