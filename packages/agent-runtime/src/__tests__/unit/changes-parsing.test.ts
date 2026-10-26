@@ -528,6 +528,42 @@ describe("pull request finder", () => {
       ["changes-requested", false],
     ]);
   });
+
+  /**
+   * TEST_SCENARIO: A branch's pull request is found waiting for review, then
+   * the state refresh reads it approved. A lookup of the branch within its
+   * time to live answers the newer state, not the one it cached, so the
+   * badge does not turn yellow again.
+   */
+  it("should not answer an older state than the refresh read", async () => {
+    let reviewDecision = "REVIEW_REQUIRED";
+    let clock = 0;
+    const finder = createPullRequestFinder({
+      token: () => "gateway-placeholder",
+      now: () => clock,
+      fetch: async (_input, init) => {
+        const { variables } = JSON.parse(String(init?.body)) as {
+          variables: Record<string, unknown>;
+        };
+        const node = pullRequestNode(12, { reviewDecision });
+        return graphql(
+          "branch" in variables
+            ? { repository: { pullRequests: { nodes: [node] } } }
+            : { p0: { pullRequest: node } },
+        );
+      },
+      log: () => undefined,
+    });
+
+    const first = await finder.find("https://github.com/acme/app", "feat/x");
+    reviewDecision = "APPROVED";
+    clock = 1_000;
+    await finder.states([first!]);
+    const again = await finder.find("https://github.com/acme/app", "feat/x");
+
+    expect(first?.state).toBe("pending");
+    expect(again?.state).toBe("approved");
+  });
 });
 
 function graphql(data: unknown): Response {

@@ -172,15 +172,25 @@ export function createPullRequestFinder(deps: {
     return linkOf(own);
   }
 
+  const readAt = new Map<string, { at: number; link: PullRequestLink }>();
+
+  function newest(at: number, link: PullRequestLink): PullRequestLink {
+    const known = readAt.get(link.url);
+    if (known && known.at > at) return known.link;
+    readAt.set(link.url, { at, link });
+    return link;
+  }
+
   function cached(
     key: string,
     lookUp: () => Promise<PullRequestLink | null>,
   ): Promise<PullRequestLink | null> {
     const entry = cache.get(key);
-    if (entry && now() - entry.at < PULL_REQUEST_TTL_MS) return entry.link;
-    const link = lookUp();
-    cache.set(key, { at: now(), link });
-    return link;
+    const fresh = entry && now() - entry.at < PULL_REQUEST_TTL_MS;
+    const at = fresh ? entry.at : now();
+    const link = fresh ? entry.link : lookUp();
+    if (!fresh) cache.set(key, { at, link });
+    return link.then((found) => found && newest(at, found));
   }
 
   return {
@@ -200,6 +210,7 @@ export function createPullRequestFinder(deps: {
         .map((link) => coordinatesOf(link.url))
         .filter((coordinates) => coordinates !== null);
       if (asked.length === 0) return [];
+      const at = now();
       const variables = Object.fromEntries(
         asked.flatMap(({ owner, repo, number }, i) => [
           [`o${i}`, owner],
@@ -216,7 +227,7 @@ export function createPullRequestFinder(deps: {
         const link = linkOf(
           data?.[`p${i}`]?.pullRequest as PullRequestNode | undefined,
         );
-        return link ? [link] : [];
+        return link ? [newest(at, link)] : [];
       });
     },
   };
