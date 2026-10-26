@@ -34,7 +34,10 @@ const PANEL_POSITION = {
  * user resets their onboarding progress. Where its page puts it decides its
  * place: in a page's corner it hangs in the band under the approvals bell, and
  * the open card hangs under the ring; in a top bar both hang under the bar. A
- * page that scrolls passes under the card either way.
+ * page that scrolls passes under the card either way. The card takes the
+ * keyboard while it is open and gives it back to the ring when it closes, as
+ * the drawer it replaces did; it does not trap the keyboard, because the page
+ * stays reachable and a click there closes it.
  */
 export function GettingStartedDock({
   placement,
@@ -49,13 +52,16 @@ export function GettingStartedDock({
   const setDismissed = useSetChecklistDismissed();
   const startTask = useStartTask();
   const pill = useRef<HTMLDivElement>(null);
+  const ring = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLElement>(null);
 
   const checklist = progress ? deriveChecklist(progress) : null;
   const celebrating = checklist?.celebrating ?? null;
   const visible =
     checklist !== null && !checklist.complete && !checklist.dismissed;
   const open = visible && expanded;
+  const wasOpen = useRef(open);
 
   const close = useCallback(() => setExpanded(false), [setExpanded]);
 
@@ -78,6 +84,13 @@ export function GettingStartedDock({
     };
   }, [open, close]);
 
+  useEffect(() => {
+    if (open === wasOpen.current) return;
+    wasOpen.current = open;
+    if (open) card.current?.focus();
+    else ring.current?.focus();
+  }, [open]);
+
   const finishCelebration = useCallback(() => {
     if (!celebrating) return;
     markSeen.mutate({ task: celebrating.unlock.task });
@@ -91,6 +104,7 @@ export function GettingStartedDock({
   return (
     <div ref={pill}>
       <ChecklistPill
+        ref={ring}
         done={checklist.unlocked.length}
         total={checklist.rows.length}
         unseen={unseen}
@@ -116,9 +130,13 @@ export function GettingStartedDock({
               />
             )}
             <ChecklistPanel
+              ref={card}
               rows={checklist.rows}
               onCollapse={close}
-              onDismiss={() => setDismissed.mutate({ dismissed: true })}
+              onDismiss={() => {
+                close();
+                setDismissed.mutate({ dismissed: true });
+              }}
               onStart={(task) => {
                 close();
                 setMobileScreen("chat");

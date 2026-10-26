@@ -1,5 +1,6 @@
 import { ChevronDown } from "@carbon/icons-react";
 import type { GettingStartedTask } from "api-server-api";
+import type { Ref } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ interface Props {
   onCollapse: () => void;
   onDismiss: () => void;
   onStart: (task: GettingStartedTask) => void;
+  ref?: Ref<HTMLElement>;
 }
 
 export function ChecklistPanel({
@@ -22,16 +24,19 @@ export function ChecklistPanel({
   onCollapse,
   onDismiss,
   onStart,
+  ref,
 }: Props) {
   const { exiting, exit } = useExitAnimation(onDismiss);
   const done = rows.filter((row) => row.reward !== null).length;
   const total = rows.length;
   return (
     <section
+      ref={ref}
       aria-label="Get started"
       data-testid="getting-started-dock"
+      tabIndex={-1}
       className={cn(
-        "flex max-h-[calc(100dvh-10rem)] w-[min(340px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl",
+        "flex max-h-[calc(100dvh-10rem)] w-[min(340px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl focus:outline-hidden",
         "animate-[dock-enter_0.3s_ease-out]",
         exiting && "animate-[dock-exit_0.3s_ease-in_forwards]",
       )}

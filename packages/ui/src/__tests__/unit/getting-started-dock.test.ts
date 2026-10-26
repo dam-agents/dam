@@ -18,7 +18,10 @@ vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({
       checklistExpanded: fake.expanded,
-      setChecklistExpanded: fake.setExpanded,
+      setChecklistExpanded: (expanded: boolean) => {
+        fake.expanded = expanded;
+        fake.setExpanded(expanded);
+      },
       setMobileScreen: () => {},
     }),
 }));
@@ -59,23 +62,34 @@ const ALL_TASKS: AvatarUnlock["task"][] = [
   "connect-slack",
 ];
 
-const roots: { root: Root; container: HTMLElement }[] = [];
+const roots: {
+  root: Root;
+  container: HTMLElement;
+  placement: "corner" | "bar";
+}[] = [];
+
+function dockElement(placement: "corner" | "bar") {
+  return createElement(
+    TooltipProvider,
+    null,
+    createElement(GettingStartedDock, { placement }),
+  );
+}
 
 function rendered(placement: "corner" | "bar"): HTMLElement {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  roots.push({ root, container });
-  act(() =>
-    root.render(
-      createElement(
-        TooltipProvider,
-        null,
-        createElement(GettingStartedDock, { placement }),
-      ),
-    ),
-  );
+  roots.push({ root, container, placement });
+  act(() => root.render(dockElement(placement)));
   return container;
+}
+
+function rerenderAll() {
+  act(() => {
+    for (const { root, placement } of roots)
+      root.render(dockElement(placement));
+  });
 }
 
 function unmountAll() {
@@ -92,9 +106,13 @@ beforeEach(() => {
   fake.progress = { unlocks: [], dismissed: false };
   fake.expanded = false;
   vi.clearAllMocks();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 });
 
-afterEach(unmountAll);
+afterEach(() => {
+  unmountAll();
+  vi.useRealTimers();
+});
 
 // TEST_SCENARIO: a closed checklist shows only the ring, and the ring's click asks for the dock, which no page load and no unlock does on its own.
 it("opens the dock from the ring", () => {
@@ -135,6 +153,36 @@ it("closes the dock on a click outside it", () => {
     );
   });
   expect(fake.setExpanded).not.toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: Dismiss closes the card and clears the open flag, so the next unlock, which clears the dismissal on the server, cannot open a card the user asked to close.
+it("clears the open flag when the user dismisses the checklist", () => {
+  fake.expanded = true;
+  rendered("corner");
+  act(() => {
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Dismiss")
+      ?.click();
+  });
+  expect(fake.setExpanded).not.toHaveBeenCalled();
+  act(() => vi.advanceTimersByTime(300));
+  expect(fake.setExpanded).toHaveBeenCalledWith(false);
+  expect(fake.setDismissed).toHaveBeenCalledWith({ dismissed: true });
+});
+
+// TEST_SCENARIO: the card takes the keyboard when the user opens it, so its rows are next in the tab order, and gives it back to the ring when it closes, so a keyboard user is not dropped at the top of the page. A page that mounts with the dock already open leaves the keyboard where it is.
+it("moves focus into the card and back to the ring", () => {
+  fake.expanded = true;
+  rendered("corner");
+  expect(document.activeElement).not.toBe(inDocument("getting-started-dock"));
+  fake.expanded = false;
+  rerenderAll();
+  fake.expanded = true;
+  rerenderAll();
+  expect(document.activeElement).toBe(inDocument("getting-started-dock"));
+  fake.expanded = false;
+  rerenderAll();
+  expect(document.activeElement).toBe(inDocument("getting-started-ring"));
 });
 
 // TEST_SCENARIO: Escape closes the dock, as it does every other overlay.

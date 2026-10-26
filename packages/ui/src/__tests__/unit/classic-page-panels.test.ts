@@ -6,12 +6,15 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
   tab: null as string | null,
+  desktop: true,
   setTab: (tab: string | null) => {
     fake.tab = tab;
   },
 }));
 
-vi.mock("@/hooks/use-is-desktop", () => ({ useIsDesktop: () => true }));
+vi.mock("@/hooks/use-is-desktop", () => ({
+  useIsDesktop: () => fake.desktop,
+}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({ sidePanelTab: fake.tab, setSidePanelTab: fake.setTab }),
@@ -59,6 +62,7 @@ function rendered(node: ReturnType<typeof createElement>): HTMLElement {
 
 beforeEach(() => {
   fake.tab = null;
+  fake.desktop = true;
 });
 
 // TEST_SCENARIO: the page's corner keeps the bell in its own row, and the Get started ring floats under that row, out of its flow and aligned with the bell, so the row keeps no room for the ring and the page scrolls under it.
@@ -77,6 +81,18 @@ it("hangs the ring under the page's corner row", () => {
   expect(layer?.className).toContain("right-4");
   expect(layer?.className).toContain("md:right-6");
   expect(layer?.parentElement).toBe(row);
+});
+
+// TEST_SCENARIO: a phone's top bar carries the ring, so the page's corner mounts no dock there; two docks would share the open flag, and each would close the other on the next tap.
+it("mounts no second dock on a phone", () => {
+  fake.desktop = false;
+  const container = rendered(createElement(ClassicPageActions));
+  expect(
+    container.querySelector('[data-testid="getting-started-dock-corner"]'),
+  ).toBeNull();
+  expect(
+    container.querySelector('[data-testid="panel-buttons"]'),
+  ).not.toBeNull();
 });
 
 // TEST_SCENARIO: the approvals tab opens the approvals drawer, and closing it clears the tab, so nothing is left open beside the page.

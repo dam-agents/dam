@@ -1,3 +1,5 @@
+import type { Ref } from "react";
+
 import { Badge } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -10,6 +12,7 @@ interface Props {
   unseen: number;
   expanded: boolean;
   onToggle: () => void;
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function ChecklistPill({
@@ -18,6 +21,7 @@ export function ChecklistPill({
   unseen,
   expanded,
   onToggle,
+  ref,
 }: Props) {
   const label = `Get started, ${String(done)} of ${String(total)} done${
     unseen > 0 ? `, ${String(unseen)} new avatar${unseen === 1 ? "" : "s"}` : ""
@@ -25,6 +29,7 @@ export function ChecklistPill({
   return (
     <Tooltip content={label} side="bottom">
       <button
+        ref={ref}
         type="button"
         onClick={onToggle}
         aria-label={label}
