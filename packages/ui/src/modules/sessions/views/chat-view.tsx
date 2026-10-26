@@ -375,8 +375,8 @@ export function ChatView() {
   const sendHarness =
     (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
   const sendCatalog = useHarnessCatalogModels(
-    routed ? selectedAgent : null,
-    sendHarness ?? null,
+    selectedAgent,
+    routed ? (sendHarness ?? null) : null,
   );
   const curveBender = useCurveBender({
     agentId: selectedAgent,

@@ -1,24 +1,30 @@
-import { Edit, TrashCan } from "@carbon/icons-react";
-import type { ProfileWithUsage, SessionPair } from "api-server-api";
+import { useQuery } from "@tanstack/react-query";
+import {
+  DEFAULT_PROFILE_UNDELETABLE,
+  type ProfileWithUsage,
+  type SessionPair,
+} from "api-server-api";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/list-section";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
-import {
-  useOwnerHarnessStatus,
-  useProviderConnections,
-} from "../../sessions/api/session-pair.js";
+import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
 import { SessionPairTrigger } from "../../sessions/components/session-pair-trigger.js";
 import { pairSummary } from "../../sessions/lib/session-settings.js";
 import { isProfileSetting } from "../../sessions/lib/subagent-choice.js";
-import { useDeleteProfile, useUpdateProfile } from "../api/mutations.js";
+import {
+  useDeleteProfile,
+  useSetDefaultProfile,
+  useUpdateProfile,
+} from "../api/mutations.js";
 import { useProfiles } from "../api/queries.js";
 import { profileProviderName } from "../lib/profile-detail.js";
 
@@ -27,6 +33,7 @@ export function ProfileSection() {
   const { data: profiles = [], isPending } = useProfiles();
   const update = useUpdateProfile();
   const remove = useDeleteProfile();
+  const setDefault = useSetDefaultProfile();
   const showConfirm = useStore((s) => s.showConfirm);
   const agents = useAgents().data;
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -104,9 +111,9 @@ export function ProfileSection() {
                 ) : (
                   <p className="truncate font-medium text-foreground">
                     {profile.name}
-                    {profile.seeded && (
+                    {profile.newAgentDefault && (
                       <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        default
+                        Default for new agents
                       </span>
                     )}
                   </p>
@@ -116,23 +123,38 @@ export function ProfileSection() {
               <span className="shrink-0 text-xs text-muted-foreground">
                 {uses(profile) === 0 ? "unused" : `used ${uses(profile)}×`}
               </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={`Rename ${profile.name}`}
-                onClick={() => startRename(profile)}
+              <RowActionsMenu
+                label={`Actions for ${profile.name}`}
+                contentProps={{
+                  onCloseAutoFocus: (e) => e.preventDefault(),
+                }}
               >
-                <Edit size={14} />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={`Delete ${profile.name}`}
-                disabled={remove.isPending}
-                onClick={() => void confirmDelete(profile)}
-              >
-                <TrashCan size={14} />
-              </Button>
+                <DropdownMenuItem onSelect={() => startRename(profile)}>
+                  Rename
+                </DropdownMenuItem>
+                {!profile.newAgentDefault && (
+                  <DropdownMenuItem
+                    disabled={setDefault.isPending}
+                    onSelect={() => setDefault.mutate({ id: profile.id })}
+                  >
+                    Set as default for new agents
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  tone="danger"
+                  disabled={profile.newAgentDefault || remove.isPending}
+                  onSelect={() => void confirmDelete(profile)}
+                >
+                  <span className="flex max-w-64 flex-col">
+                    Delete
+                    {profile.newAgentDefault && (
+                      <span className="text-xs text-muted-foreground">
+                        {DEFAULT_PROFILE_UNDELETABLE}
+                      </span>
+                    )}
+                  </span>
+                </DropdownMenuItem>
+              </RowActionsMenu>
             </li>
           ))}
           {profiles.length === 0 && (
@@ -156,7 +178,7 @@ const uses = (profile: ProfileWithUsage): number =>
  * the profile; a harness picked without a model waits here until one is.
  */
 function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
-  const { data: status } = useOwnerHarnessStatus();
+  const { data: status } = useQuery(trpc.connections.catalog.queryOptions());
   const providers = useProviderConnections(null);
   const update = useUpdateProfile();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
@@ -205,7 +227,6 @@ function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
             pair,
             providerName: profileProviderName(profile),
             onChoose: save,
-            ownerCatalog: true,
           }}
         />
       ) : (

@@ -14,7 +14,11 @@ import { PopoverClose } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-import { type ModelGroup, sameModel } from "../lib/catalog-groups.js";
+import {
+  type ModelGroup,
+  providerLabel,
+  sameModel,
+} from "../lib/catalog-groups.js";
 import {
   familyModelGroups,
   type FamilySection,
@@ -22,28 +26,16 @@ import {
   type ModelOption,
   type OtherSection,
 } from "../lib/model-families.js";
-import { AwakeModelsGate } from "./awake-models-gate.js";
 
 interface Props {
-  agentId: string | null;
-  ownerCatalog?: boolean;
   groups: readonly ModelGroup[];
   current: string | null;
   loading: boolean;
-  waiting?: boolean;
   failed: boolean;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
   onManageProviders: () => void;
 }
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a provider never listed while the catalog is
- * still being polled is waiting for its first listing, which follows a grant
- * by a gateway restart, not failing.
- */
-const firstListing = (group: ModelGroup, waiting: boolean) =>
-  waiting && group.status === "unavailable" && group.listedAt === null;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, grouped by
@@ -52,28 +44,14 @@ const firstListing = (group: ModelGroup, waiting: boolean) =>
  * family under Other.
  */
 export function SessionModelList({
-  agentId,
-  ownerCatalog = false,
-  ...listed
-}: Props) {
-  if (ownerCatalog || !agentId) return <ListedModels {...listed} />;
-  return (
-    <AwakeModelsGate agentId={agentId} className="px-1 py-1">
-      <ListedModels {...listed} />
-    </AwakeModelsGate>
-  );
-}
-
-function ListedModels({
   groups,
   current,
   loading,
-  waiting = false,
   failed,
   onRetry,
   onChoose,
   onManageProviders,
-}: Omit<Props, "agentId">) {
+}: Props) {
   if (groups.length === 0)
     return (
       <>
@@ -117,7 +95,6 @@ function ListedModels({
         other={other}
         current={current}
         loading={loading}
-        waiting={waiting}
         onRetry={onRetry}
         onChoose={onChoose}
       />
@@ -205,14 +182,12 @@ function OtherModelSection({
   other,
   current,
   loading,
-  waiting,
   onRetry,
   onChoose,
 }: {
   other: OtherSection;
   current: string | null;
   loading: boolean;
-  waiting: boolean;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
 }) {
@@ -238,7 +213,7 @@ function OtherModelSection({
             className="px-2 py-1 text-muted-foreground"
           >
             {group.displayName}:{" "}
-            {loading || firstListing(group, waiting) ? (
+            {loading ? (
               <span className="inline-flex items-center gap-1.5">
                 <Spinner size={12} className="text-muted-foreground" />
                 Loading models…
@@ -248,17 +223,16 @@ function OtherModelSection({
             ) : (
               "No models listed."
             )}
-            {group.status === "unavailable" &&
-              !firstListing(group, waiting) && (
-                <Button
-                  variant="link"
-                  size="inline"
-                  className="ml-1"
-                  onClick={onRetry}
-                >
-                  Retry
-                </Button>
-              )}
+            {group.status === "unavailable" && (
+              <Button
+                variant="link"
+                size="inline"
+                className="ml-1"
+                onClick={onRetry}
+              >
+                Retry
+              </Button>
+            )}
           </li>
         ))}
       </ul>
@@ -297,7 +271,7 @@ function ModelRow({
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
           {entry.options.length === 1 && (
             <span className="shrink-0 whitespace-nowrap text-xs font-normal text-muted-foreground">
-              {option.group.displayName}
+              {providerLabel(option.group)}
             </span>
           )}
         </button>
@@ -335,11 +309,11 @@ function ProviderChoice({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          title={selected.group.displayName}
-          aria-label={`Provider for ${label}: ${selected.group.displayName}`}
+          title={providerLabel(selected.group)}
+          aria-label={`Provider for ${label}: ${providerLabel(selected.group)}`}
           className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-normal text-muted-foreground hover:bg-background hover:text-foreground"
         >
-          {selected.group.displayName}
+          {providerLabel(selected.group)}
           <ChevronDown size={12} aria-hidden />
         </button>
       </DropdownMenuTrigger>
@@ -351,7 +325,7 @@ function ProviderChoice({
               value={option.group.connectionId}
               onSelect={() => onPick(option)}
             >
-              {option.group.displayName}
+              {providerLabel(option.group)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

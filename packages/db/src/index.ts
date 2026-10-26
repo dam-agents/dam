@@ -26,6 +26,7 @@ export {
   connectionGrants,
   profiles,
   profileSeeds,
+  profileDefaults,
   agents,
   runtimeStateOutbox,
   runtimeEvents,

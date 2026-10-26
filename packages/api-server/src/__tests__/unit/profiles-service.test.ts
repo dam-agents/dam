@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Profiles are an owner's named presets. A profile names a provider template, so whether it runs on an agent follows from the agent's grants: its own Connection of the template, else an owner's one it may be granted, never one replacing a rival of the same alias. The owner is seeded one Default where the deployment serves the shared provider; a profile in use cannot be deleted; an edit no referencing agent can run is put back.
+// TEST_OVERVIEW: Profiles are an owner's named presets. A profile names a provider template, so whether it runs on an agent follows from the agent's grants: its own Connection of the template, else an owner's one it may be granted, never one replacing a rival of the same alias. An owner with no profile is seeded one Default where the install names it, and every owner has one default for new agents, which a new agent starts on and which cannot be deleted; a profile in use cannot be deleted; an edit no referencing agent can run is put back.
 import { TRPCError } from "@trpc/server";
 import type { AliasedConnection, HarnessCatalog } from "api-server-api";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import type {
 import {
   bindDefaultProfile,
   createProfilesService,
+  newAgentDefault,
   profileResolver,
 } from "../../modules/profiles/services/profiles-service.js";
 
@@ -62,6 +63,7 @@ function fakeRepo(
   } = {},
 ) {
   const rows = opts.rows ?? [profile()];
+  const state: { defaultId?: string } = {};
   const writes = {
     scopes: [] as (readonly string[] | undefined)[],
     seeds: 0,
@@ -78,14 +80,35 @@ function fakeRepo(
       rows.find(
         (r) => r.id === id && (owner === undefined || r.owner === owner),
       ) ?? null,
-    seeded: async () => rows.find((r) => r.seed !== null) ?? null,
+    defaultOf: async () => rows.find((r) => r.id === state.defaultId) ?? null,
+    setDefault: async (
+      _owner: string,
+      id: string,
+      { onlyIfNone = false } = {},
+    ) => {
+      if (!onlyIfNone || state.defaultId === undefined) state.defaultId = id;
+    },
     insert: async () => rows[0]!,
-    update: async (_owner: string, _id: string, patch: Partial<ProfileRow>) => {
+    update: async (
+      _owner: string,
+      id: string,
+      patch: Partial<ProfileRow>,
+      options: { expect?: Date; at?: Date } = {},
+    ) => {
+      const i = rows.findIndex((r) => r.id === id);
+      if (options.expect && rows[i]!.updatedAt !== options.expect) return null;
       writes.updates.push(patch);
+      rows[i] = {
+        ...rows[i]!,
+        ...patch,
+        updatedAt: options.at ?? new Date(rows[i]!.updatedAt.getTime() + 1),
+      };
+      return rows[i];
     },
     deleteIfUnused: async () => opts.references ?? ("deleted" as const),
-    seed: async () => {
+    seed: async (_owner: string, seed: Partial<ProfileRow>) => {
       writes.seeds += 1;
+      rows.push(profile({ ...seed, id: "profile-seeded" }));
     },
     bindChatProfile: async (_owner: string, agentId: string) => {
       writes.binds.push(agentId);
@@ -93,13 +116,13 @@ function fakeRepo(
     ownerConnections: async () => opts.owned ?? [SHARED],
     agentConnections: async () => opts.granted ?? [SHARED],
   } as unknown as ProfilesRepository;
-  return { repo, writes };
+  return { repo, writes, rows, state };
 }
 
 function service(
   repo: ProfilesRepository,
   opts: {
-    sharedProvider?: boolean;
+    seed?: { harness: string; model: string } | null;
     republish?: () => Promise<string | null>;
     agentBinding?: readonly string[] | "*";
   } = {},
@@ -108,7 +131,10 @@ function service(
     repo,
     owner: "owner-1",
     catalog,
-    sharedProvider: opts.sharedProvider ?? true,
+    seed:
+      opts.seed === undefined
+        ? { harness: "pi", model: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017" }
+        : opts.seed,
     agentBinding: opts.agentBinding ?? "*",
     resolve: profileResolver(repo),
     republish: opts.republish ?? (async () => null),
@@ -171,14 +197,54 @@ describe("what a profile runs on, for one agent", () => {
 });
 
 describe("the owner's profiles", () => {
-  /** TEST_SCENARIO: an install that serves no shared CurveBender seeds nothing, so a later configuration still seeds Default (QA D7). */
-  it("seeds Default only where the shared provider is served", async () => {
-    const served = fakeRepo();
-    await service(served.repo).list();
+  /** TEST_SCENARIO: an owner with no profile is given "Default" on the seed the install names, marked as the default for new agents; an install that names none seeds nothing, so a later configuration still seeds (QA D7). */
+  it("seeds Default for an owner with no profile, where the install names one", async () => {
+    const served = fakeRepo({ rows: [] });
+    const listed = await service(served.repo).list();
     expect(served.writes.seeds).toBe(1);
-    const unserved = fakeRepo();
-    await service(unserved.repo, { sharedProvider: false }).list();
+    expect(listed).toEqual([
+      expect.objectContaining({
+        name: "Default",
+        harness: "pi",
+        model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        newAgentDefault: true,
+      }),
+    ]);
+    const unserved = fakeRepo({ rows: [] });
+    await service(unserved.repo, { seed: null }).list();
     expect(unserved.writes.seeds).toBe(0);
+  });
+
+  /** TEST_SCENARIO: an owner who already has profiles gets no "Default"; their oldest becomes the default for new agents. */
+  it("marks the oldest profile of an owner who has some", async () => {
+    const { repo, writes } = fakeRepo({
+      rows: [
+        profile({ id: "old", name: "Old" }),
+        profile({ id: "new", name: "New" }),
+      ],
+    });
+    const listed = await service(repo).list();
+    expect(writes.seeds).toBe(0);
+    expect(listed.map((p) => [p.id, p.newAgentDefault])).toEqual([
+      ["old", true],
+      ["new", false],
+    ]);
+  });
+
+  /** TEST_SCENARIO: the default for new agents cannot be deleted, and the refusal says how to move it; once another profile is the default, it can. */
+  it("refuses to delete the default until another one is set", async () => {
+    const { repo } = fakeRepo({
+      rows: [
+        profile({ id: "old", name: "Old" }),
+        profile({ id: "new", name: "New" }),
+      ],
+    });
+    const svc = service(repo);
+    await svc.list();
+    const err = await refusal(svc.delete("old"));
+    expect(err.message).toContain("Make another profile the default first");
+    await svc.setDefault("new");
+    await expect(svc.delete("old")).resolves.toBeUndefined();
   });
 
   /** TEST_SCENARIO: a key bound to some agents reads usage of those agents only — no other agent's id, channel or schedule leaks into the list or the usage answer. */
@@ -238,6 +304,28 @@ describe("the owner's profiles", () => {
     expect(writes.updates.at(-1)).toMatchObject({ settings: {} });
   });
 
+  /** TEST_SCENARIO: a second edit lands while the first is sent to the agents; every agent rejects the first, and its revert leaves the second edit in place rather than undo an edit that was already answered. */
+  it("keeps an edit that landed while a rejected one was sent", async () => {
+    const { repo, rows } = fakeRepo({
+      references: {
+        ...none,
+        agents: [{ id: "a1", chat: "profile-1", platform: null }],
+      },
+    });
+    await refusal(
+      service(repo, {
+        republish: async () => {
+          await repo.update("owner-1", "profile-1", { name: "Later edit" });
+          return "effort=ultra is not offered";
+        },
+      }).update({ id: "profile-1", settings: { effort: "ultra" } }),
+    );
+    expect(rows[0]).toMatchObject({
+      name: "Later edit",
+      settings: { effort: "ultra" },
+    });
+  });
+
   /** TEST_SCENARIO: a rename changes nothing an agent runs, so it is sent to nobody. */
   it("sends a rename to no agent", async () => {
     const { repo } = fakeRepo({
@@ -262,20 +350,31 @@ describe("a new agent's default", () => {
     repo,
     owner: "owner-1",
     catalog,
-    sharedProvider: true,
+    seed: null,
   });
 
-  /** TEST_SCENARIO: a new agent on the seeded profile's harness, granted its provider, starts on Default. */
-  it("binds the seeded profile when the harness and the grant fit", async () => {
+  /** TEST_SCENARIO: a new agent is granted the owner's Connection of the default profile's template, and once it holds it, its chat default is that profile. */
+  it("starts a new agent on the default profile", async () => {
     const { repo, writes } = fakeRepo();
-    await bindDefaultProfile(owner(repo), "agent-1", "claude-code");
+    const chosen = await newAgentDefault(owner(repo));
+    expect(chosen).toMatchObject({
+      profile: { id: "profile-1", harness: "claude-code" },
+      connectionId: SHARED.id,
+    });
+    await bindDefaultProfile(owner(repo), "agent-1", chosen!.profile);
     expect(writes.binds).toEqual(["agent-1"]);
   });
 
-  /** TEST_SCENARIO: another harness keeps today's first-hello conversion. */
-  it("binds nothing to another harness", async () => {
-    const { repo, writes } = fakeRepo();
-    await bindDefaultProfile(owner(repo), "agent-1", "codex");
+  /** TEST_SCENARIO: a create that named another provider keeps it, and the agent's first hello converts its default as before. */
+  it("binds nothing to an agent without the profile's provider", async () => {
+    const { repo, writes } = fakeRepo({ granted: [OWN_KEY] });
+    await bindDefaultProfile(owner(repo), "agent-1", profile());
     expect(writes.binds).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: an owner who holds no Connection of the default profile's template has nothing to grant, so the harness's provider order decides. */
+  it("offers nothing without a Connection of the template", async () => {
+    const { repo } = fakeRepo({ owned: [OWN_KEY] });
+    expect(await newAgentDefault(owner(repo))).toBeNull();
   });
 });

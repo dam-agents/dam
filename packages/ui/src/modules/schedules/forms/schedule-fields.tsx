@@ -630,7 +630,7 @@ function CustomChoicesField({
     carried[0]?.name ||
     "";
   const { data: catalogModels } = useHarnessCatalogModels(
-    routed && agentId ? agentId : null,
+    agentId || null,
     routed ? harness || null : null,
   );
   const { granted } = useProviderConnections(routed ? agentId : null);
@@ -730,34 +730,32 @@ function CustomChoicesField({
         hint="Each model is named with its provider. The agent's chat default runs on its model for the harness."
         {...(migrationNote ? { error: migrationNote } : {})}
       >
-        <AwakeModelsGate agentId={agentId}>
-          <OptionPicker
-            title="Model"
-            choices={modelChoices}
-            value={modelValue || null}
-            clearable={inheritChoice}
-            placeholder={
-              inheritChoice ? "The agent's chat default" : "Pick a model"
-            }
-            clearedLabel="The agent's chat default"
-            clearedDescription={
-              todayModel ? now(todayModel) : "Follows the agent's chat default"
-            }
-            onSelect={(id) => {
-              modelField.onChange(id ?? "");
-              if (!id && fallback === undefined) return;
-              const current = settingsValue ?? {};
-              const kept = settingsForModel(
-                capability,
-                groups,
-                id || fallback?.model || null,
-                current,
-              );
-              if (Object.keys(kept).length !== Object.keys(current).length)
-                settingsField.onChange(kept);
-            }}
-          />
-        </AwakeModelsGate>
+        <OptionPicker
+          title="Model"
+          choices={modelChoices}
+          value={modelValue || null}
+          clearable={inheritChoice}
+          placeholder={
+            inheritChoice ? "The agent's chat default" : "Pick a model"
+          }
+          clearedLabel="The agent's chat default"
+          clearedDescription={
+            todayModel ? now(todayModel) : "Follows the agent's chat default"
+          }
+          onSelect={(id) => {
+            modelField.onChange(id ?? "");
+            if (!id && fallback === undefined) return;
+            const current = settingsValue ?? {};
+            const kept = settingsForModel(
+              capability,
+              groups,
+              id || fallback?.model || null,
+              current,
+            );
+            if (Object.keys(kept).length !== Object.keys(current).length)
+              settingsField.onChange(kept);
+          }}
+        />
       </FormField>
       {capability?.sessionSettings && capability.sessionSettings.length > 0 && (
         <FormField label="Session settings">

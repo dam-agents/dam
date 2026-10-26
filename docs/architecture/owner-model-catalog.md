@@ -5,7 +5,8 @@ Last verified: 2026-10-26
 ## Overview
 
 The api-server keeps an **owner catalog** beside each agent's catalog: every model provider Connection the owner holds, listed from that Connection's env pins and its stored credential, with no agent involved.
-It is the read behind a picker that has no agent to ask, such as Settings › Profiles, and behind showing models from providers an agent does not have attached.
+It is the read behind every routed picker: Settings › Profiles lists every provider the owner holds, and an agent's picker (`connections.agentCatalog`) lists the agent's granted providers.
+A chat picker also asks for the owner's other providers, which it marks not connected; picking one of their models asks to connect that provider to the agent, warning that the agent can then use all of its models, and grants it before the pick applies.
 
 ## Listing without an agent
 
@@ -28,9 +29,11 @@ This is what lets Settings › Profiles offer effort, mode and Bedrock tiers wit
 
 A good listing is kept in memory for thirty minutes; a failed one keeps the Connection's last good list, marked unavailable, and is retried after ten seconds.
 The first read of a Connection waits for its listing; later stale reads return what is kept and refresh behind the answer.
-Nothing polls: the api-server lists only what a request asks for, and drops the entries of Connections the owner no longer holds.
+Nothing polls: the api-server lists only what a request asks for.
+The kept lists are shared by every owner and keyed by Connection, so a deleted Connection's list stays until the process restarts.
 
 ## Auth
 
-Only a principal unrestricted across the owner's agents reads the catalog; an agent-bound API key is refused, since the catalog spans every Connection the owner holds.
+Only a principal unrestricted across the owner's agents reads the owner-wide catalog; an agent-bound API key is refused, since it spans every Connection the owner holds.
+An agent's catalog takes the agent permission check, so an Agent Editor reads the owner's; it holds the providers not granted to the agent only for an unrestricted principal, so an editor and a bound key see the agent's grants alone.
 The credential stays in the api-server for the length of the listing and is never returned.

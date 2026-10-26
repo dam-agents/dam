@@ -192,8 +192,8 @@ function ScheduleModel({
   const { data: status } = useHarnessConfigStatus(agentId);
   const routed = status?.modelRouter ?? false;
   const { data: catalog } = useHarnessCatalogModels(
-    routed ? agentId : null,
-    harness ?? status?.defaultHarness ?? null,
+    agentId,
+    routed ? (harness ?? status?.defaultHarness ?? null) : null,
   );
   const { data: fallback } = useScheduleDefault(
     routed && !model ? agentId : null,

@@ -424,6 +424,16 @@ export const profileSeeds = pgTable("profile_seeds", {
     .notNull(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: each owner's one default for new agents; the
+ * restrictive foreign key keeps that profile from being deleted while it is
+ * the default. */
+export const profileDefaults = pgTable("profile_defaults", {
+  owner: text("owner").primaryKey(),
+  profileId: text("profile_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "restrict" }),
+});
+
 export const agents = pgTable(
   "agents",
   {

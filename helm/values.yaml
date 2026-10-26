@@ -1260,6 +1260,14 @@ apiServer:
       name: ""
       key: api-key
     apiKey: ""
+  # -- The "Default" profile an owner with no profile is given, and which new
+  # agents start on until the owner picks another default: a harness and an
+  # upstream model id of the shared CurveBender above. Seeded only where
+  # curveBenderDeployment holds a key; empty harness or model seeds nothing,
+  # and an owner's oldest profile becomes their default instead.
+  defaultProfile:
+    harness: pi
+    model: rits/deepseek-ai/DeepSeek-V4.1-Flash-1017
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}

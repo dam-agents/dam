@@ -98,7 +98,14 @@ function setup(
   const writeEnv = vi.fn(async () => {});
   const runtimeBump = vi.fn(async () => 1);
   const defaultProviders = vi.fn(async (): Promise<string[]> => []);
-  const bindDefaultProfile = vi.fn(async () => {});
+  const bind = vi.fn(async (_agentId: string) => {});
+  const defaultProfile = vi.fn(
+    async (): Promise<{
+      harness: string;
+      connectionId: string;
+      bind: typeof bind;
+    } | null> => null,
+  );
   const agents = createAgentsService({
     defaultHarness: "claude-code",
     owner: "owner-1",
@@ -132,7 +139,7 @@ function setup(
       defaultProviders,
       applyAfterCreate: applyGrants,
     },
-    bindDefaultProfile,
+    defaultProfile,
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
     deleteChannelByType: async () => {},
@@ -167,7 +174,8 @@ function setup(
     writeEnv,
     runtimeBump,
     defaultProviders,
-    bindDefaultProfile,
+    defaultProfile,
+    bind,
     connections,
     agents,
   };
@@ -276,56 +284,77 @@ describe("agent creation with a designated provider", () => {
 describe("the default profile a new agent starts on", () => {
   const templates = { default: { image: "platform/default:latest" } };
   const byTemplate = { name: "test-agent", templateId: "default" };
+  const onPi = (bind: ReturnType<typeof setup>["bind"]) => ({
+    harness: "pi",
+    connectionId: "conn-profile",
+    bind,
+  });
 
-  /** TEST_SCENARIO: A create names the harness and the grants it holds, so the
-   * owner's seeded profile is bound only where it actually fits the agent. */
-  it("hands the binder the agent and its harness", async () => {
-    const { caller, bindDefaultProfile } = setup([provider], templates);
+  /** TEST_SCENARIO: An owner's default for new agents decides a new agent's
+   * harness and its one provider in place of the harness's provider order,
+   * and the agent's chat default is bound to it, so a default exists before
+   * the first hello and the onboarding turn has a model to run on (#5578). */
+  it("starts on the default profile, with its provider alone", async () => {
+    const { caller, defaultProfile, defaultProviders, bind, persist } = setup(
+      [provider],
+      templates,
+    );
+    defaultProfile.mockResolvedValue(onPi(bind));
+    defaultProviders.mockResolvedValue(["conn-first-in-order"]);
+    const created = await caller.agents.create(byTemplate);
+    expect(created.grantedConnectionIds).toEqual(["conn-profile"]);
+    expect(persist.mock.calls[0]![0]).toMatchObject({ harness: "pi" });
+    expect(bind).toHaveBeenCalledWith(created.id);
+  });
+
+  /** TEST_SCENARIO: A create that names its harness keeps it; a default
+   * profile on another harness leaves the provider order and the first-hello
+   * conversion as before. */
+  it("leaves an agent on another harness to the provider order", async () => {
+    const { caller, defaultProfile, defaultProviders, bind } = setup(
+      [provider],
+      templates,
+    );
+    defaultProfile.mockResolvedValue(onPi(bind));
+    defaultProviders.mockResolvedValue(["conn-first-in-order"]);
     const created = await caller.agents.create({
       ...byTemplate,
-      providerConnectionId: provider.id,
+      harness: "codex",
     });
-    expect(bindDefaultProfile).toHaveBeenCalledWith(created.id, "claude-code");
+    expect(created.grantedConnectionIds).toEqual(["conn-first-in-order"]);
+    expect(bind).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: A kit that names the model its agent needs decides the
-   * default, so the seeded profile must not stand in for it. */
-  it("stays out of the way when a starter kit names the model", async () => {
-    const { agents, bindDefaultProfile } = setup([provider], templates);
+   * default, and an Environment never starts a session, so neither asks for
+   * the default profile. */
+  it("stays out of a kit that names the model and of an environment", async () => {
+    const { agents, defaultProfile } = setup([provider], templates);
     await agents.create({
       ...byTemplate,
       providerConnectionId: provider.id,
       starterKitDefaultModel: "cb/some-model",
     });
-    expect(bindDefaultProfile).not.toHaveBeenCalled();
-  });
-
-  /** TEST_SCENARIO: An Environment never starts a session, so it takes no
-   * chat default. */
-  it("binds nothing to an environment", async () => {
-    const { agents, bindDefaultProfile } = setup([provider], templates);
     await agents.create({
       ...byTemplate,
       providerConnectionId: provider.id,
       environmentOf: "agent-root",
     });
-    expect(bindDefaultProfile).not.toHaveBeenCalled();
+    expect(defaultProfile).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: A failed binding is not a failed create; the first-hello
    * conversion still gives the agent a default. */
   it("does not fail the create when the binder throws", async () => {
-    const { caller, bindDefaultProfile, persist } = setup(
+    const { caller, defaultProfile, bind, persist } = setup(
       [provider],
       templates,
     );
-    bindDefaultProfile.mockRejectedValueOnce(new Error("boom"));
-    await expect(
-      caller.agents.create({
-        ...byTemplate,
-        providerConnectionId: provider.id,
-      }),
-    ).resolves.toMatchObject({ name: "test-agent" });
+    defaultProfile.mockResolvedValue(onPi(bind));
+    bind.mockRejectedValueOnce(new Error("boom"));
+    await expect(caller.agents.create(byTemplate)).resolves.toMatchObject({
+      name: "test-agent",
+    });
     expect(persist).toHaveBeenCalledOnce();
   });
 });

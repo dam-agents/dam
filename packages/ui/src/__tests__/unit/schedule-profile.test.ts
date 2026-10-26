@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultProfileId } from "../../modules/profiles/lib/default-profile.js";
 import { ScheduleChoicesField } from "../../modules/schedules/forms/schedule-fields.js";
 import {
+  quietHoursChange,
   scheduleChoices,
   scheduleInheritsChoices,
 } from "../../modules/schedules/forms/schedule-form-schema.js";
@@ -88,7 +89,7 @@ const profile = (
   providerTemplate: "curve-bender-deployment",
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
   settings: {},
-  seeded: true,
+  newAgentDefault: true,
   usage: { agents: 0, channels: 0, schedules: 0 },
   availability: { available: true, reason: null, attachable: false },
   ...overrides,
@@ -144,9 +145,9 @@ beforeEach(() => {
 });
 
 describe("what a new schedule or channel starts on", () => {
-  /** TEST_SCENARIO: the newest sibling's profile wins over the chat profile; one the owner no longer holds is passed over, and with none left the seeded Default answers. */
-  it("takes the newest sibling's profile, then the chat profile, then Default", () => {
-    const profiles = [profile(), profile({ id: "p2", seeded: false })];
+  /** TEST_SCENARIO: the newest sibling's profile wins over the chat profile; one the owner no longer holds is passed over, and with none left the owner's default for new agents answers. */
+  it("takes the newest sibling's profile, then the chat profile, then the default for new agents", () => {
+    const profiles = [profile(), profile({ id: "p2", newAgentDefault: false })];
     expect(defaultProfileId(profiles, ["p2", "p1"])).toBe("p2");
     expect(defaultProfileId(profiles, ["gone", "p2"])).toBe("p2");
     expect(defaultProfileId(profiles, [null, undefined])).toBe("p1");
@@ -177,6 +178,24 @@ describe("what a schedule save sends", () => {
         true,
       ),
     ).toEqual({ profile: null, harness: "codex", model: null, settings: null });
+  });
+});
+
+describe("what a schedule edit sends for quiet hours", () => {
+  const night = { startTime: "22:00", endTime: "07:00", enabled: true };
+  const lunch = { startTime: "12:00", endTime: "13:00", enabled: true };
+  /** TEST_SCENARIO: removing a quiet-hours row and saving sends the shorter list; an untouched list is not sent, and an emptied one is sent empty, which clears the stored hours. */
+  it("sends the rows only when they changed", () => {
+    const stored = { quietHours: [night, lunch] };
+    expect(quietHoursChange({ quietHours: [night] }, stored)).toEqual({
+      quietHours: [night],
+    });
+    expect(
+      quietHoursChange({ quietHours: [{ ...night }, { ...lunch }] }, stored),
+    ).toEqual({});
+    expect(quietHoursChange({ quietHours: [] }, stored)).toEqual({
+      quietHours: [],
+    });
   });
 });
 

@@ -103,6 +103,11 @@ export const connectionGetAgentConnectionsInputSchema = z.object({
   agentId: z.string().min(1),
 });
 
+export const connectionAgentCatalogInputSchema = z.object({
+  agentId: z.string().min(1),
+  unattached: z.boolean().optional(),
+});
+
 export const connectionUpdateAgentConnectionsInputSchema = z.object({
   agentId: z.string().min(1),
   grant: z.array(z.string().min(1)).default([]),

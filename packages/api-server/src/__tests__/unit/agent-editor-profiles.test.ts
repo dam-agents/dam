@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The profile set an agent can reference is its owner's. A call made from an agent re-binds the Agent's owner as the acting user, so an Agent Editor lists and changes the owner's profiles and the reference it picks resolves against the owner's set; the editor's own profiles are never the ones a shared agent sees.
+// TEST_OVERVIEW: The profile set an agent can reference is its owner's. A call made from an agent re-binds the Agent's owner as the acting user, so an Agent Editor lists and changes the owner's profiles and the reference it picks resolves against the owner's set; the editor's own profiles are never the ones a shared agent sees, and an editor's model catalog holds the agent's grants alone.
 import { describe, expect, it, vi } from "vitest";
 import type { AgentPermission, ApiContext, UserIdentity } from "api-server-api";
 import { appRouter } from "api-server-api/router";
@@ -49,7 +49,7 @@ const PROFILE = {
   providerTemplate: "curve-bender-deployment",
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
   settings: {},
-  seeded: true,
+  newAgentDefault: true,
   createdAt: "2026-10-20T00:00:00.000Z",
   updatedAt: "2026-10-20T00:00:00.000Z",
   usage: { agents: 1, channels: 0, schedules: 0 },
@@ -72,9 +72,25 @@ function world(user: UserIdentity) {
     update: vi.fn(async () => ({ profile: PROFILE, rejected: [] })),
     delete: vi.fn(async () => undefined),
   };
-  const ownerCtx = { profiles: ownerProfiles } as unknown as ApiContext;
+  const catalogFor: (string | undefined)[] = [];
+  const connections = {
+    modelCatalog: vi.fn(async (agentId?: string) => {
+      catalogFor.push(agentId);
+      return {
+        defaultHarness: "pi",
+        modelRouter: true,
+        harnesses: [],
+        providers: [],
+      };
+    }),
+  };
+  const ownerCtx = {
+    profiles: ownerProfiles,
+    connections,
+  } as unknown as ApiContext;
   const ctx = {
     profiles: ownProfiles,
+    connections,
     user,
     actOnAgent: createActOnAgent({
       user,
@@ -93,6 +109,7 @@ function world(user: UserIdentity) {
     madeFor,
     ownerProfiles,
     ownProfiles,
+    catalogFor,
   };
 }
 
@@ -219,4 +236,33 @@ describe("an Agent Editor and the profile set", () => {
       expect(w.ownProfiles.usage).not.toHaveBeenCalled();
     },
   );
+
+  /** TEST_SCENARIO: an agent's picker may list its owner's providers the
+   * agent is not connected to, but only for the owner signed in: an editor's
+   * and a bound key's catalog keep the agent's own grants. */
+  it("lists unattached providers to the owner alone", async () => {
+    const asOwner = world(person(OWNER, "alice@example.com"));
+    await asOwner.caller.connections.agentCatalog({
+      agentId: AGENT,
+      unattached: true,
+    });
+    const asEditor = world(BOB);
+    await asEditor.caller.connections.agentCatalog({
+      agentId: AGENT,
+      unattached: true,
+    });
+    const asBoundKey = world({
+      ...person(OWNER, "alice@example.com"),
+      agentIds: [AGENT],
+    });
+    await asBoundKey.caller.connections.agentCatalog({
+      agentId: AGENT,
+      unattached: true,
+    });
+    expect([
+      ...asOwner.catalogFor,
+      ...asEditor.catalogFor,
+      ...asBoundKey.catalogFor,
+    ]).toEqual([undefined, AGENT, AGENT]);
+  });
 });

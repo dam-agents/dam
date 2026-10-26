@@ -12,3 +12,6 @@ export const useUpdateProfile = () =>
 
 export const useDeleteProfile = () =>
   useMutation({ ...trpc.profiles.delete.mutationOptions(), meta });
+
+export const useSetDefaultProfile = () =>
+  useMutation({ ...trpc.profiles.setDefault.mutationOptions(), meta });

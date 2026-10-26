@@ -19,5 +19,7 @@ export interface ProfilesService {
   usage(id: string): Promise<ProfileUsage>;
   create(input: ProfileCreateInput): Promise<ProfileWithUsage>;
   update(input: ProfileUpdateInput): Promise<ProfileWithUsage>;
+  /** UNIT_BOUNDARY_DESCRIPTION: makes the profile the owner's one default for new agents. */
+  setDefault(id: string): Promise<void>;
   delete(id: string): Promise<void>;
 }

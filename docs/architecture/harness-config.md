@@ -12,11 +12,11 @@ These are each harness's defaults: writing them recycles only the [Harness Lease
 The model is not among them: each session picks its harness and, per turn, its model, so the Config panel shows the settings of every carried harness and no model setting.
 The runtime applies a session's model inside the live harness through its own per-session call before each prompt and after every cold load ([agent-lifecycle](sessions.md#session-inside-the-machine)), and the [Model Router](#the-model-router) routes every call by that name.
 The runtime advertises its default harness and, per carried harness, the catalog.
-The model list a session or a [schedule](schedules.md#session-choices) picks from is asked per harness and provider over the runtime's tRPC, without spawning anything: the discovered one where the provider lists its own.
+A routed picker, a session's or a [schedule](schedules.md#session-choices)'s, reads its model list from the api-server's [owner catalog](owner-model-catalog.md), so a sleeping agent lists its models too.
 The session picker offers named models, not a generic default-model choice.
 It shows loading, unavailable and empty listings explicitly, with a retry for failed discovery; a failed listing never falls back to the harness's static catalog.
 The catalog remains usable where discovery is not configured.
-Before a session starts, the picker lists every provider the harness accepts, in order: a routed picker groups models by family and ends with a Connect more providers row; the old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
+Before a session starts, the picker lists every provider the harness accepts, in order: a routed picker groups models by family, shows the owner's unattached providers as not connected, and ends with a Connect more providers row; the old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
 A web terminal starts from a row of harness buttons on the agent's General page: a button stores its harness, with the first attached provider it accepts, as the next session pair, and the terminal sends that pair when it connects.
 The empty chat's Browser Terminal card opens a web terminal on the pair the session picker holds.
 With the JanUI experiment on, the empty chat shows the General page's harness buttons in a Web terminal row instead of that card.
@@ -43,9 +43,7 @@ The choice belongs to that session alone and starts with its next turn; it is ke
 An agent remembers one **chat default**, which preselects the next session, and two **legacy** pairs, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on, kept for rows written before profiles.
 A pick in a chat saves the chat default, whose primary model and subagent slot each hold a profile reference or values of their own, never both.
 **Tool approval** (Claude Code's permission mode, Bob's approvals) is one session's own pick, in its own picker: no default, profile, channel, schedule or Config panel holds one, a session that picks none runs on Auto mode (else Bypass), and Plan modes are offered nowhere.
-**An owner's profiles** hold a harness, a provider template, a model and settings; they are saved from a chat's model picker, edited there or with it in Settings › Providers, and named by the chat default, by a channel's or a chat's binding and by a schedule.
-The api-server resolves a reference into the pair the runtime is sent, so an edit reaches every run following it while a session that picked keeps its own.
-A channel or schedule naming none follows its kind's legacy pair; picking a profile grants its provider on the agent.
+An owner's named pairs, the defaults that follow them and a new agent's start are [profiles](profiles.md).
 Home marks a default that is not set or whose provider the agent no longer holds, and so does the agent's Models tile.
 Detaching a provider lists the defaults, channels and schedules that run on it before it goes.
 With none saved, the chat default is the agent's own harness with no provider and no model: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
@@ -184,7 +182,7 @@ Each harness's manifest declares in its `modelRouter` section the dialects it sp
 The catalog is built when the env rail materialises, rebuilt on every env change and on a timer; a failed listing keeps that Connection's last good list, marked unavailable, and never empties another's.
 A failed listing is retried after two seconds, then twice as long each time up to five minutes, and an env change starts that ladder over: a grant also restarts the agent's egress gateway, so the listings that follow it fail until the gateway is back.
 A Connection granted but not yet listed is in the view at once, unavailable and never listed, and every change to the catalog sends the harness-config watch notice.
-A routed harness answers its model list from the catalog; `harnessConfig.catalog` on the runtime's tRPC returns the same view grouped by provider with the metadata.
+A routed harness answers its model list from the catalog; `harnessConfig.catalog` on the runtime's tRPC returns the same view, for the spawn check and the default conversion.
 
 ## The Model Router
 

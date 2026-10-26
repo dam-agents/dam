@@ -298,7 +298,8 @@ export interface ProviderBalance {
 export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
 
-  modelCatalog(): Promise<OwnerModelCatalogView>;
+  /** UNIT_BOUNDARY_DESCRIPTION: every provider Connection the owner holds, or with `agentId` only those granted to that agent. */
+  modelCatalog(agentId?: string): Promise<OwnerModelCatalogView>;
 
   listConnections(): Promise<ConnectionView[]>;
 

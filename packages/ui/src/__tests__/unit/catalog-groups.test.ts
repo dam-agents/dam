@@ -5,7 +5,6 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import {
-  catalogSettled,
   type ModelGroup,
   modelGroups,
   modelIndicatorLabel,
@@ -48,67 +47,6 @@ const catalog = (...providers: CatalogProviderView[]): HarnessCatalogView => ({
   harness: "bob",
   routed: true,
   providers,
-});
-
-describe("catalogSettled", () => {
-  /** TEST_SCENARIO: A grant the pod has not received yet is missing from
-   * the catalog, a revoked provider the pod still lists has not left it yet,
-   * and a provider still listing is unavailable: none is settled. A provider
-   * that serves another harness is unsupported, which is final. With no
-   * grants an empty catalog is the answer; no read yet is not. */
-  it("settles once every granted provider is listed or unsupported", () => {
-    expect(catalogSettled(catalog(), ["conn-ibm"])).toBe(false);
-    expect(catalogSettled(catalog(provider("conn-ibm", "listed")), [])).toBe(
-      false,
-    );
-    expect(
-      catalogSettled(catalog(provider("conn-ibm", "listed")), [
-        "conn-ibm",
-        "conn-cb",
-      ]),
-    ).toBe(false);
-    expect(
-      catalogSettled(catalog(provider("conn-ibm", "unavailable")), [
-        "conn-ibm",
-      ]),
-    ).toBe(false);
-    expect(
-      catalogSettled(
-        catalog(
-          provider("conn-ibm", "listed"),
-          provider("conn-oauth", "unsupported"),
-        ),
-        ["conn-ibm", "conn-oauth"],
-      ),
-    ).toBe(true);
-    expect(catalogSettled(catalog(), [])).toBe(true);
-    expect(catalogSettled(undefined, [])).toBe(false);
-  });
-});
-
-describe("modelGroups", () => {
-  /** TEST_SCENARIO: A provider just attached is granted before the pod has
-   * it, so the catalog does not name it yet; the picker shows it after the
-   * catalog's providers, never listed, rather than dropping it until the
-   * pod catches up. Before the first catalog read there is nothing to show. */
-  it("keeps a granted provider the catalog does not name yet", () => {
-    const granted = [
-      { id: "conn-oai", name: "My OpenAI", type: "openai" as const },
-    ];
-    expect(
-      modelGroups(catalog(provider("conn-ibm", "listed")), granted),
-    ).toMatchObject([
-      { connectionId: "conn-ibm", status: "listed" },
-      {
-        connectionId: "conn-oai",
-        alias: "openai",
-        status: "unavailable",
-        listedAt: null,
-        models: [],
-      },
-    ]);
-    expect(modelGroups(undefined, granted)).toEqual([]);
-  });
 });
 
 describe("sameSideGroups", () => {
@@ -173,11 +111,13 @@ describe("settingsForModel", () => {
     {
       ...modelGroups(catalog(provider("conn-ibm", "listed")))[0]!,
       native: false,
+      attached: true,
       models: [modelOf("ibm/claude-haiku-4-5"), modelOf("ibm/gpt-5.5")],
     },
     {
       ...modelGroups(catalog(provider("conn-bed", "listed")))[0]!,
       native: true,
+      attached: true,
       models: [modelOf("bedrock/sonnet")],
     },
   ];
@@ -221,6 +161,7 @@ describe("modelIndicatorLabel", () => {
         status: "listed" as const,
         listedAt: null,
         native: false,
+        attached: true,
         models: [
           {
             name: "claude/ibm/aws/claude-opus-4-5",

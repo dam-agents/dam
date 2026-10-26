@@ -52,6 +52,13 @@ export const profilesRouter = t.router({
       return ctx.profiles.update(input);
     }),
 
+  setDefault: manageAgentsProcedure
+    .input(profileIdInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      await refuseEditorWrite(ctx, input.agentId);
+      return ctx.profiles.setDefault(input.id);
+    }),
+
   delete: manageAgentsProcedure
     .input(profileIdInputSchema)
     .mutation(async ({ ctx, input }) => {

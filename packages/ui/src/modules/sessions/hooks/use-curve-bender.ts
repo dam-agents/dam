@@ -27,8 +27,8 @@ export function useCurveBender(input: {
   const providers = useProviderConnections(input.agentId);
   const shared = sharedCurveBender(providers.owned);
   const catalog = useHarnessCatalogModels(
-    input.routed && shared ? input.agentId : null,
-    input.session?.harness ?? PI_HARNESS,
+    input.agentId,
+    input.routed && shared ? (input.session?.harness ?? PI_HARNESS) : null,
   );
   const setPair = useStore((s) => s.setNextSessionPair);
 

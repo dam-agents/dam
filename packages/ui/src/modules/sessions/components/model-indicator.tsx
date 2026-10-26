@@ -30,6 +30,7 @@ import {
   useProviderConnections,
   useProviderModels,
 } from "../api/session-pair.js";
+import { useConnectOnPick } from "../hooks/use-connect-on-pick.js";
 import {
   findModel,
   modelGroups,
@@ -38,7 +39,6 @@ import {
 import {
   harnessDisplayName,
   modelProviderLabel,
-  providerOptions,
 } from "../lib/session-pair-options.js";
 import {
   applySettingChanges,
@@ -126,20 +126,14 @@ export function ModelIndicator({
     provider,
   );
   const catalogModels = useHarnessCatalogModels(
-    routed ? agentId : null,
-    harness,
+    agentId,
+    routed ? harness : null,
+    { unattached: true },
   );
-  const fitting = providerOptions(
-    harness,
-    catalog?.harnesses ?? [],
-    granted,
-    owned,
-  ).granted;
   const groups = routed
-    ? modelGroups(catalogModels.data, catalogModels.granted).filter(
-        (g) => !catalog || fitting.some((p) => p.id === g.connectionId),
-      )
+    ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
+  const connectOnPick = useConnectOnPick(agentId);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"profiles" | "custom" | "subagent">(
     "profiles",
@@ -385,14 +379,14 @@ export function ModelIndicator({
                 <BackToProfiles onClick={() => setView("profiles")} />
               )}
               <SessionModelList
-                agentId={agentId}
                 groups={groups}
                 current={model}
                 loading={catalogModels.isLoading}
-                waiting={catalogModels.waiting}
                 failed={catalogModels.isError}
                 onRetry={() => void catalogModels.refetch()}
-                onChoose={(name) => onChoose(name)}
+                onChoose={(name, group) =>
+                  connectOnPick(group, name, () => onChoose(name))
+                }
                 onManageProviders={() =>
                   navigateToSandboxHome(agentId, "models")
                 }

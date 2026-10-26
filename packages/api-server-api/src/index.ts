@@ -72,6 +72,7 @@ export {
   ANTHROPIC_OAUTH_TEMPLATE,
   createModelDiscovery,
   forHarness,
+  harnessCatalogOf,
   layerMetadata,
   listingForTemplate,
   lookupPrice,
@@ -595,6 +596,7 @@ export type {
   ProfileCreateInput,
   ProfileUpdateInput,
 } from "./modules/profiles/types.js";
+export { DEFAULT_PROFILE_UNDELETABLE } from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,

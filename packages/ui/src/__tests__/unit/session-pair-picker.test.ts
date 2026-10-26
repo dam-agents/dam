@@ -91,31 +91,7 @@ const state = vi.hoisted(() => ({
       }
     | undefined,
   chosenModel: vi.fn(),
-  ownerCatalog: undefined as
-    | {
-        harness: string;
-        routed: boolean;
-        providers: {
-          connectionId: string;
-          alias: string;
-          template: string;
-          displayName: string;
-          status: "listed" | "unavailable" | "unsupported";
-          listedAt: string | null;
-          native: boolean;
-          models: {
-            name: string;
-            upstreamId: string;
-            contextWindow: number | null;
-            maxOutputTokens: number | null;
-            reasoning: boolean | null;
-            vision: boolean | null;
-            prices: null;
-            source: { limits: "none"; prices: "none" };
-          }[];
-        }[];
-      }
-    | undefined,
+  grant: vi.fn(async (_id: string) => true),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -268,25 +244,21 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
           ],
         },
   useGrantProvider: () => ({
-    grant: vi.fn(),
+    grant: state.grant,
     revoke: state.revoke,
     pending: false,
   }),
   rememberSessionPair: vi.fn(),
   useHarnessConfigured: () => state.configured,
-  useHarnessCatalogModels: () => ({
+  useHarnessCatalogModels: (agentId: string | null) => ({
+    granted:
+      agentId === null
+        ? null
+        : ["ibm", "curve", ...state.granted.map((g) => g.id)],
     data: state.catalog,
     isLoading: state.loading,
     isError: false,
     operable: state.operable,
-    refetch: state.refetch,
-  }),
-  useOwnerHarnessCatalog: () => ({
-    data: state.ownerCatalog,
-    isLoading: false,
-    isError: false,
-    granted: [],
-    waiting: false,
     refetch: state.refetch,
   }),
   useProviderModels: (_agent: string, _harness: string, provider: string) => {
@@ -340,7 +312,7 @@ describe("the profile view a routed picker opens on", () => {
         providerTemplate: "ibm-litellm",
         model: "ibm/gpt-5.5",
         settings: {},
-        seeded: false,
+        newAgentDefault: false,
         usage: { agents: 1, channels: 0, schedules: 0 },
         availability: { available: true, reason: null, attachable: false },
       },
@@ -351,7 +323,7 @@ describe("the profile view a routed picker opens on", () => {
         providerTemplate: "curve-bender-deployment",
         model: "cb/local",
         settings: {},
-        seeded: false,
+        newAgentDefault: false,
         usage: { agents: 0, channels: 0, schedules: 0 },
         availability: {
           available: false,
@@ -767,89 +739,22 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(state.providersAsked).toEqual([]);
   });
 
-  /** TEST_SCENARIO: A runtime may list a provider the harness does not fit,
-   * as one listing Bob's gateway under Pi does; both menus, a new session's
-   * and a running session's, offer only the providers the harness fits, so a
-   * pick from one is never dropped. Until the harness catalog that says what
-   * fits arrives, the menus keep every group rather than hide them all. */
-  it("hides a provider the harness does not fit", () => {
-    state.catalogLoaded = true;
-    state.granted = [{ id: "bob", name: "Bob Shell", type: "bob" }];
-    state.catalog = {
-      ...routedCatalog,
-      providers: [
-        ...routedCatalog.providers,
-        {
-          connectionId: "bob",
-          alias: "bob",
-          template: "bob",
-          displayName: "Bob Shell",
-          status: "listed" as const,
-          listedAt: null,
-          models: [model("bob", "granite-4-1-8b")],
-        },
-      ],
-    };
-    const picker = () =>
-      renderToStaticMarkup(
-        createElement(SessionPairPicker, {
-          agentId: "agent",
-          defaultHarness: "pi",
-          carried,
-          routed: true,
-          onConnectProviders: state.connectProviders,
-        }),
-      );
-    const indicator = () =>
-      renderToStaticMarkup(
-        createElement(ModelIndicator, {
-          onToolApproval: () => {},
-          agentId: "agent",
-          sessionId: "s1",
-          harness: "pi",
-          provider: "ibm",
-          model: "ibm/gpt-5.5",
-          carried,
-          routed: true,
-          onChoose: vi.fn(),
-          onConfigure: vi.fn(),
-          onNewSession: state.newSession,
-        }),
-      );
-    expect(picker()).toContain('aria-label="GPT"');
-    expect(picker()).not.toContain("bob/granite-4-1-8b");
-    expect(picker()).not.toContain("Bob Shell");
-    expect(indicator()).toContain("GPT 5.5");
-    expect(indicator()).not.toContain("bob/granite-4-1-8b");
-    state.catalogLoaded = false;
-    expect(picker()).toContain("bob/granite-4-1-8b");
-    expect(indicator()).toContain("bob/granite-4-1-8b");
-    state.catalogLoaded = true;
-  });
-
-  /** TEST_SCENARIO: The model list is read from the running agent, so on a
-   * sleeping agent the list gives way to the start button rather than an
-   * empty list, and to "Agent is starting…" once the start is under way. */
-  it("offers to start a sleeping agent instead of an empty model list", () => {
-    const render = () =>
-      renderToStaticMarkup(
-        createElement(SessionPairPicker, {
-          agentId: "agent",
-          defaultHarness: "pi",
-          carried,
-          routed: true,
-          onConnectProviders: state.connectProviders,
-        }),
-      );
+  /** TEST_SCENARIO: The model list comes from the api-server's catalog, not
+   * the running agent, so a sleeping agent still lists its models. */
+  it("lists the models while the agent sleeps", () => {
     state.operable = false;
-    const asleep = render();
-    expect(asleep).toContain("Start agent to edit");
-    expect(asleep).not.toContain("gpt-5.5");
-    state.answerable = true;
-    const starting = render();
-    expect(starting).toContain("Agent is starting…");
-    expect(starting).not.toContain("Start agent to edit");
-    state.answerable = undefined;
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain("GPT");
+    expect(html).not.toContain("Start agent to edit");
+    state.operable = true;
   });
 
   /** TEST_SCENARIO: Known models are grouped by family and size, one entry
@@ -1098,7 +1003,7 @@ describe("the profile a session's pick came from", () => {
         providerTemplate: "curve-bender",
         model: "cb/rits/zai-org/glm-5-3",
         settings: {},
-        seeded: false,
+        newAgentDefault: false,
         usage: { agents: 1, channels: 0, schedules: 0 },
         availability: { available: true, reason: null, attachable: false },
       },
@@ -1147,8 +1052,8 @@ describe("the profile a session's pick came from", () => {
 
 describe("the picker editing a profile in Settings", () => {
   /** TEST_SCENARIO: Settings opens the picker on its Custom screen with no
-   * profile view, Save row or tool approval, and only the providers the
-   * harness fits, and a pick goes to the profile, never to the agent's next
+   * profile view, Save row or tool approval, every provider the owner holds,
+   * and a pick goes to the profile, never to the agent's next
    * session. */
   it("shows the Custom screen and hands a pick to the profile", () => {
     profilesState = [
@@ -1159,28 +1064,12 @@ describe("the picker editing a profile in Settings", () => {
         providerTemplate: "curve-bender",
         model: "cb/rits/zai-org/glm-5-3",
         settings: {},
-        seeded: false,
+        newAgentDefault: false,
         usage: { agents: 1, channels: 0, schedules: 0 },
         availability: { available: true, reason: null, attachable: false },
       },
     ];
-    state.granted = [{ id: "bob", name: "Bob Shell", type: "bob" }];
     state.catalog = {
-      ...routedCatalog,
-      providers: [
-        ...routedCatalog.providers,
-        {
-          connectionId: "bob",
-          alias: "bob",
-          template: "bob",
-          displayName: "Bob Shell",
-          status: "listed" as const,
-          listedAt: null,
-          models: [model("bob", "granite-4-1-8b")],
-        },
-      ],
-    };
-    state.ownerCatalog = {
       harness: "pi",
       routed: true,
       providers: [
@@ -1191,7 +1080,6 @@ describe("the picker editing a profile in Settings", () => {
           displayName: "Curve",
           status: "listed",
           listedAt: null,
-          native: false,
           models: [model("cb", "owner-only")],
         },
       ],
@@ -1217,7 +1105,6 @@ describe("the picker editing a profile in Settings", () => {
               },
               providerName: "Curve",
               onChoose,
-              ownerCatalog: true,
             },
           }),
         ),
@@ -1226,7 +1113,6 @@ describe("the picker editing a profile in Settings", () => {
       expect(text).not.toContain("Primary model");
       expect(text).not.toContain("Use a profile");
       expect(text).not.toContain("Save as a profile");
-      expect(text).not.toContain("granite");
       expect(text).toContain("owner-only");
       expect(
         container.querySelector('[data-testid="tool-approval-picker"]'),
@@ -1244,8 +1130,86 @@ describe("the picker editing a profile in Settings", () => {
     } finally {
       act(() => root.unmount());
       profilesState = [];
-      state.granted = [];
-      state.ownerCatalog = undefined;
+      state.catalog = routedCatalog;
+    }
+  });
+});
+
+describe("a model from a provider the agent is not connected to", () => {
+  /** TEST_SCENARIO: the picker lists an owner's provider the agent does not
+   * hold, marked not connected; picking its model asks to connect it, and
+   * only a confirmed connect grants it and applies the pick. */
+  it("asks to connect the provider, then grants it and applies the pick", async () => {
+    state.catalog = {
+      ...routedCatalog,
+      providers: [
+        ...routedCatalog.providers,
+        {
+          connectionId: "conn-oai",
+          alias: "openai",
+          template: "openai",
+          displayName: "OpenAI",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("openai", "zz-unattached")],
+        },
+      ],
+    };
+    state.chosenModel.mockReset();
+    state.grant.mockClear();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = () =>
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+    const pick = () =>
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find((b) => b.textContent?.includes("zz-unattached"))!
+          .click(),
+      );
+    try {
+      render();
+      expect(container.textContent).toContain("OpenAI (not connected)");
+      const custom = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("Custom selection"),
+      );
+      if (custom) act(() => custom.click());
+
+      state.showConfirm.mockResolvedValueOnce(false);
+      pick();
+      await act(async () => {});
+      expect(state.showConfirm).toHaveBeenLastCalledWith(
+        expect.stringContaining("every model OpenAI offers"),
+        "Connect OpenAI to this agent?",
+        { confirmLabel: "Connect" },
+      );
+      expect(state.grant).not.toHaveBeenCalled();
+      expect(state.chosenModel).not.toHaveBeenCalled();
+
+      state.showConfirm.mockResolvedValueOnce(true);
+      pick();
+      await act(async () => {});
+      expect(state.grant).toHaveBeenCalledWith("conn-oai");
+      expect(state.chosenModel).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({
+          provider: "conn-oai",
+          model: "openai/zz-unattached",
+        }),
+      );
+    } finally {
+      act(() => root.unmount());
+      state.catalog = routedCatalog;
     }
   });
 });

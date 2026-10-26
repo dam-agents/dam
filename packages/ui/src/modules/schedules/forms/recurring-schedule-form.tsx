@@ -14,6 +14,7 @@ import {
 } from "./schedule-fields.js";
 import {
   buildRRuleParts,
+  quietHoursChange,
   scheduleChoices,
   scheduleFormDefaults,
   scheduleFormSchema,
@@ -78,9 +79,7 @@ export function RecurringScheduleForm({
         {
           id: existing.id,
           ...common,
-          ...(form.formState.dirtyFields.quietHours && {
-            quietHours: v.quietHours,
-          }),
+          ...quietHoursChange(v, existing),
           precheck: precheck || null,
           ...scheduleChoices(v, true),
           sessionTitle: sessionTitle || null,

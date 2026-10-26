@@ -1,13 +1,13 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
-import { type HarnessCatalogView, routesSessionPairs } from "agent-runtime-api";
-import type {
-  ConnectionView,
-  DefaultKind,
-  HarnessConfigStatus,
-  HarnessView,
-  OwnerModelCatalogView,
-  SessionPair,
-  SessionView,
+import { routesSessionPairs } from "agent-runtime-api";
+import {
+  type ConnectionView,
+  type DefaultKind,
+  harnessCatalogOf,
+  type HarnessConfigStatus,
+  type HarnessView,
+  type SessionPair,
+  type SessionView,
 } from "api-server-api";
 
 import { api } from "../../../api.js";
@@ -24,7 +24,7 @@ import {
 import { useAgentPageConnections } from "../../connections/api/queries.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
-import { catalogSettled, sameModel } from "../lib/catalog-groups.js";
+import { sameModel } from "../lib/catalog-groups.js";
 import {
   fittingProviders,
   grantedProviderRefs,
@@ -132,134 +132,45 @@ export function useProviderModels(
   return { ...query, operable, answerable };
 }
 
-export function harnessCatalogModelsKey(
-  agentId: string | null,
-  harness: string | null,
-  grantedIds: readonly string[],
-) {
-  return ["harness-catalog-models", agentId, harness, grantedIds] as const;
-}
-
-const CATALOG_POLL_MS = 5_000;
-const CATALOG_POLL_LIMIT = 12;
-
 /**
- * UNIT_BOUNDARY_DESCRIPTION: keyed by the agent's granted providers, so a
- * grant or revoke asks again at once, and polled until the catalog has caught
- * up with them, since a grant reaches the pod a few seconds after it is
- * saved and its first listings wait for the restarted egress gateway. A
- * provider still unavailable after a minute, or a failing read, stops the
- * poll; `waiting` says the poll is still running.
+ * UNIT_BOUNDARY_DESCRIPTION: a harness's model list from the api-server's
+ * catalog, which lists without a running agent. For an agent it holds the
+ * providers granted to it, and with `unattached` every provider the owner
+ * holds, and is keyed by the grants so a grant or revoke asks again at once;
+ * `granted` says which are the agent's. With no agent (Settings › Profiles)
+ * it holds every provider the owner holds, and `granted` is null. A null
+ * harness asks nothing.
  */
 export function useHarnessCatalogModels(
   agentId: string | null,
   harness: string | null,
+  { unattached = false } = {},
 ) {
-  const operable = useIsAgentOperable(agentId);
   const { granted } = useProviderConnections(agentId);
   const grantedIds = granted.map((p) => p.id).sort();
-  const polling = (state: {
-    status: string;
-    dataUpdateCount: number;
-    data: HarnessCatalogView | undefined;
-  }) =>
-    state.status !== "error" &&
-    state.dataUpdateCount < CATALOG_POLL_LIMIT &&
-    !catalogSettled(state.data, grantedIds);
-  const queryKey = harnessCatalogModelsKey(agentId, harness, grantedIds);
   const query = useQuery({
-    queryKey,
+    queryKey:
+      agentId === null
+        ? trpc.connections.catalog.queryKey()
+        : [
+            ...trpc.connections.agentCatalog.queryKey({ agentId, unattached }),
+            grantedIds,
+          ],
     queryFn:
-      agentId && harness && operable
-        ? () => agentTrpc(agentId).harnessConfig.catalog.query({ harness })
-        : skipToken,
-    staleTime: 60_000,
-    refetchInterval: (q) => (polling(q.state) ? CATALOG_POLL_MS : false),
-    retry: 5,
-    retryDelay: 2_000,
-  });
-  return {
-    ...query,
-    operable,
-    granted,
-    waiting:
-      operable &&
-      polling({
-        status: query.status,
-        dataUpdateCount:
-          queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0,
-        data: query.data,
-      }),
-  };
-}
-
-export function ownerHarnessCatalogKey(harness: string | null) {
-  return ["owner-harness-catalog", harness] as const;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a harness's model list from the owner-level
- * catalog, so a picker outside an agent (Settings › Profiles) lists models
- * without borrowing one. The catalog names models as the plain
- * `<alias>/<id>` a session stores; the runtime renders the harness's own
- * spelling when it starts.
- */
-export function useOwnerHarnessStatus() {
-  const query = useQuery({
-    ...trpc.connections.catalog.queryOptions(),
-    staleTime: 60_000,
-    retry: 2,
-  });
-  return {
-    ...query,
-    data: query.data && {
-      defaultHarness: query.data.defaultHarness,
-      modelRouter: query.data.modelRouter,
-      harnesses: query.data.harnesses,
-    },
-  };
-}
-
-export function useOwnerHarnessCatalog(harness: string | null) {
-  const query = useQuery({
-    ...trpc.connections.catalog.queryOptions(),
-    enabled: harness !== null,
+      harness === null
+        ? skipToken
+        : () =>
+            agentId === null
+              ? api.connections.catalog.query()
+              : api.connections.agentCatalog.query({ agentId, unattached }),
     staleTime: 60_000,
     retry: 2,
   });
   return {
     ...query,
     data:
-      query.data && harness ? ownerHarnessView(query.data, harness) : undefined,
-    granted: [] as ProviderConnectionRef[],
-    waiting: false,
-  };
-}
-
-function ownerHarnessView(
-  catalog: OwnerModelCatalogView,
-  harness: string,
-): HarnessCatalogView {
-  return {
-    harness,
-    routed: true,
-    providers: catalog.providers.map((provider) => ({
-      connectionId: provider.connectionId,
-      alias: provider.alias,
-      template: provider.template,
-      displayName: provider.displayName,
-      status: provider.harnesses.includes(harness)
-        ? provider.status
-        : "unsupported",
-      listedAt: provider.listedAt,
-      native:
-        catalog.harnesses
-          .find((h) => h.name === harness)
-          ?.nativeTemplates?.includes(provider.template) ?? false,
-      models: provider.models
-        .filter((model) => model.harnesses.includes(harness))
-        .map(({ harnesses: _harnesses, ...model }) => model),
-    })),
+      query.data && harness ? harnessCatalogOf(query.data, harness) : undefined,
+    granted: agentId === null ? null : grantedIds,
   };
 }
 

@@ -103,7 +103,7 @@ export function composeAgentsModule(deps: {
     AgentsServiceDeps["readSlackLoopGuardDrops"]
   >;
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
-  bindDefaultProfile?: AgentsServiceDeps["bindDefaultProfile"];
+  defaultProfile?: AgentsServiceDeps["defaultProfile"];
   editorEmail: string | null;
   actor?: string;
   resolveUserEmail: (sub: string) => Promise<string | null>;
@@ -145,7 +145,7 @@ export function composeAgentsModule(deps: {
       onboardingChecklists: deps.onboardingChecklists,
       agentServiceStatus: createAgentServiceStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
-      bindDefaultProfile: deps.bindDefaultProfile,
+      defaultProfile: deps.defaultProfile,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: (agentId, agentOwner) =>
         listChannelsByAgent(deps.db, agentOwner)(agentId),

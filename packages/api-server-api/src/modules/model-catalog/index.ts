@@ -42,6 +42,7 @@ export {
   type ModelDiscoverySources,
   type ModelDiscoverySpec,
 } from "./discovery.js";
+export { harnessCatalogOf } from "./harness-view.js";
 export type {
   OwnerModelCatalogView,
   ProviderCatalogModel,

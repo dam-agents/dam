@@ -56,7 +56,8 @@ export const profileViewSchema = z.object({
   providerTemplate: z.string(),
   model: z.string(),
   settings: z.record(z.string(), z.string()),
-  seeded: z.boolean(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's one default for new agents, which cannot be deleted while it is. */
+  newAgentDefault: z.boolean(),
   usage: z.object({ agents: count, channels: count, schedules: count }),
   /* UNIT_BOUNDARY_DESCRIPTION: asked for one agent, whether the profile runs
    * there; `attachable` is a provider the owner holds and the agent does not,
@@ -73,3 +74,6 @@ export const profileViewSchema = z.object({
 export const profileListInputSchema = z
   .object({ agentId: z.string().min(1).optional() })
   .optional();
+
+export const DEFAULT_PROFILE_UNDELETABLE =
+  "This profile is the default for new agents. Make another profile the default first.";

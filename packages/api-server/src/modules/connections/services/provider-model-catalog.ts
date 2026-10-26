@@ -66,6 +66,7 @@ export function createProviderModelCatalog(deps: {
   const now = deps.now ?? (() => new Date());
   const refreshMs = deps.refreshMs ?? REFRESH_MS;
   const shipped = deps.shipped ?? loadShippedHarnessFacts();
+  /* UNIT_BOUNDARY_DESCRIPTION: shared by every owner and keyed by Connection id, so one owner's read never evicts another's lists. A deleted Connection's entry stays until the process restarts: a few KB per Connection ever listed. */
   const kept = new Map<string, KeptListing>();
   const inFlight = new Map<string, Promise<void>>();
 
@@ -186,8 +187,6 @@ export function createProviderModelCatalog(deps: {
 
   return {
     async read(connections, harnesses) {
-      const live = new Set(connections.map((c) => c.id));
-      for (const id of kept.keys()) if (!live.has(id)) kept.delete(id);
       const current = now().getTime();
       const providers = await Promise.all(
         connections.map(

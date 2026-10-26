@@ -1106,9 +1106,18 @@ export function createConnectionsService(deps: {
   }
 
   const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
-    async modelCatalog() {
+    async modelCatalog(agentId) {
+      const owned = await deps.repo.listByOwner(deps.ownerId);
+      const granted =
+        agentId === undefined
+          ? null
+          : new Set(
+              (await deps.repo.listAgentGrants(agentId)).map(
+                (g) => g.connectionId,
+              ),
+            );
       return providerModelCatalog().read(
-        await deps.repo.listByOwner(deps.ownerId),
+        granted ? owned.filter((c) => granted.has(c.id)) : owned,
         deps.harnesses,
       );
     },

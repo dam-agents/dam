@@ -2,10 +2,7 @@ import { Command } from "commander";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TemplateService } from "../template/index.js";
 import type { TokenProvider } from "../auth/index.js";
-import {
-  createAgentTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildAvatarsCommand } from "./commands/avatars.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildCreateInteractiveCommand } from "./commands/create-interactive.js";
@@ -47,15 +44,7 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
     createAgentService({ trpc: opts.buildTrpc(host) });
 
   const createModelsService = (host: string): AgentModelsService =>
-    createAgentModelsService({
-      trpc: opts.buildTrpc(host),
-      agentTrpc: (agentId) =>
-        createAgentTrpcClient({
-          host,
-          agentId,
-          tokenProvider: opts.tokenProvider,
-        }),
-    });
+    createAgentModelsService({ trpc: opts.buildTrpc(host) });
 
   const createUploader = (host: string): AvatarUploader =>
     createAvatarUploader({

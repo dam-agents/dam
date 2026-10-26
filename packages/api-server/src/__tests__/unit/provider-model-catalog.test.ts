@@ -1,15 +1,20 @@
-import type {
-  Connection,
-  HarnessCatalog,
-  HarnessView,
-  ModelDiscovery,
-  PriceTable,
+import {
+  type Connection,
+  type HarnessCatalog,
+  harnessCatalogOf,
+  type HarnessView,
+  type ModelDiscovery,
+  type PriceTable,
 } from "api-server-api";
 import { describe, expect, it } from "vitest";
 import {
   memorySecretStore,
+  newConnectionsStore,
+  serviceHarness,
   type StoredSecret,
 } from "../helpers/connections-service.js";
+import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { createProviderModelCatalog } from "../../modules/connections/services/provider-model-catalog.js";
 import {
   loadShippedHarnessFacts,
@@ -214,6 +219,54 @@ describe("the owner's provider model catalog", () => {
       "bedrock/haiku",
     ]);
     expect(view.providers[0]!.models[0]!.harnesses).toEqual(["claude-code"]);
+  });
+
+  /** TEST_SCENARIO: Bob's gateway speaks a dialect Pi speaks, but the installed harness catalog runs Bob's provider on Bob alone, so Pi is never offered a Bob model and a pick from it cannot be dropped. */
+  it("offers a Bob model to Bob and never to Pi", async () => {
+    const catalog = createProviderModelCatalog({
+      secretStore: memorySecretStore(secrets),
+      discover: observed([{ id: "granite-4-1-8b" }]),
+      table,
+      shipped,
+    });
+    const view = await catalog.read(
+      [connection({ id: "conn-bob", templateId: "bob" })],
+      harnesses,
+    );
+    expect(view.providers[0]!.harnesses).toEqual(["bob"]);
+    expect(harnessCatalogOf(view, "bob").providers[0]!.models).toHaveLength(1);
+    expect(harnessCatalogOf(view, "pi").providers[0]).toMatchObject({
+      status: "unsupported",
+      models: [],
+    });
+  });
+
+  /** TEST_SCENARIO: an agent's picker lists only the providers granted to that agent; the owner's other Connections stay out of its catalog. */
+  it("lists an agent's catalog from its granted connections alone", async () => {
+    const store = newConnectionsStore();
+    for (const id of ["conn-granted", "conn-other"])
+      store.rows.set(id, connection({ id, templateId: "anthropic" }));
+    store.grants.add("conn-granted|agent-1");
+    const read: string[][] = [];
+    const { svc } = serviceHarness({
+      templates: createConnectionTemplateRegistry(buildCatalog()),
+      store,
+      brandName: "Acme",
+      providerModelCatalog: {
+        read: async (connections) => {
+          read.push(connections.map((c) => c.id));
+          return {
+            defaultHarness: "claude-code",
+            modelRouter: true,
+            harnesses: [],
+            providers: [],
+          };
+        },
+      },
+    });
+    await svc.modelCatalog("agent-1");
+    await svc.modelCatalog();
+    expect(read).toEqual([["conn-granted"], ["conn-granted", "conn-other"]]);
   });
 
   it("keeps the last good list when a later listing fails", async () => {

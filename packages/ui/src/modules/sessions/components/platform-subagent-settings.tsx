@@ -8,7 +8,6 @@ import { Select } from "@/components/ui/select";
 import {
   useHarnessCatalog,
   useHarnessCatalogModels,
-  useOwnerHarnessCatalog,
 } from "../api/session-pair.js";
 import { modelGroups } from "../lib/catalog-groups.js";
 import {
@@ -18,7 +17,6 @@ import {
   platformSubagentOptions,
 } from "../lib/platform-subagent-settings.js";
 import { harnessDisplayName } from "../lib/session-pair-options.js";
-import { AwakeModelsGate } from "./awake-models-gate.js";
 
 const AGENT_PICKS = "Agent picks";
 
@@ -29,7 +27,6 @@ const AGENT_PICKS = "Agent picks";
  */
 export function PlatformSubagentSettings({
   agentId,
-  ownerCatalog = false,
   carried,
   settings,
   idPrefix,
@@ -37,7 +34,6 @@ export function PlatformSubagentSettings({
   onChange,
 }: {
   agentId: string | null;
-  ownerCatalog?: boolean;
   carried: readonly HarnessCapability[];
   settings: Readonly<Record<string, string>>;
   idPrefix: string;
@@ -48,31 +44,18 @@ export function PlatformSubagentSettings({
   const harness = choice?.harness ?? null;
   const capability = carried.find((h) => h.name === harness);
   const { data: catalog } = useHarnessCatalog();
-  const catalogModels = useHarnessCatalogModels(
-    ownerCatalog ? null : agentId,
-    harness,
-  );
-  const ownerModels = useOwnerHarnessCatalog(ownerCatalog ? harness : null);
-  const operable = ownerCatalog ? true : catalogModels.operable;
-  const models = modelGroups(
-    ownerCatalog ? ownerModels.data : catalogModels.data,
-    ownerCatalog ? [] : catalogModels.granted,
-  ).flatMap((g) =>
+  const catalogModels = useHarnessCatalogModels(agentId, harness);
+  const models = modelGroups(catalogModels.data).flatMap((g) =>
     g.models.map((m) => ({
       value: m.name,
       name: `${m.upstreamId} · ${g.displayName}`,
     })),
   );
   const options = platformSubagentOptions(capability, choice?.model);
-  const pending = ownerCatalog
-    ? ownerModels.isPending
-    : catalogModels.isLoading || catalogModels.waiting;
-  const failed = ownerCatalog ? ownerModels.isError : catalogModels.isError;
-  const modelsNote = !operable
-    ? null
-    : pending && models.length === 0
+  const modelsNote =
+    catalogModels.isLoading && models.length === 0
       ? "Loading models…"
-      : failed && models.length === 0
+      : catalogModels.isError && models.length === 0
         ? "Couldn't load the models."
         : null;
   const row = (
@@ -123,14 +106,7 @@ export function PlatformSubagentSettings({
           })),
         (value) => platformHarnessChange(settings, value),
       )}
-      {harness && !operable && agentId && (
-        <Fragment key="model">
-          <span className="text-muted-foreground">Model</span>
-          <AwakeModelsGate agentId={agentId} />
-        </Fragment>
-      )}
       {harness &&
-        operable &&
         row("model", "Model", choice?.model ?? "", models, (value) =>
           platformModelChange(
             capability?.harnessConfigCatalog,
@@ -141,16 +117,12 @@ export function PlatformSubagentSettings({
       {harness && modelsNote && (
         <p className="col-span-2 text-muted-foreground">
           {modelsNote}
-          {failed && (
+          {catalogModels.isError && (
             <Button
               variant="link"
               size="inline"
               className="ml-1"
-              onClick={() =>
-                void (ownerCatalog
-                  ? ownerModels.refetch()
-                  : catalogModels.refetch())
-              }
+              onClick={() => void catalogModels.refetch()}
             >
               Retry
             </Button>

@@ -1,18 +1,16 @@
-import type {
-  ConnectionView,
-  DefaultKind,
-  HarnessConfigStatus,
-  ProfileWithUsage,
-  SessionDefaults,
-  SessionPair,
+import {
+  type ConnectionView,
+  type DefaultKind,
+  harnessCatalogOf,
+  type HarnessConfigStatus,
+  type ProfileWithUsage,
+  type SessionDefaults,
+  type SessionPair,
 } from "api-server-api";
 import type { HarnessCatalogView } from "agent-runtime-api";
 import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
-import type {
-  AgentTrpcClient,
-  TrpcClient,
-} from "../../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type { AuthRequiredError, TransportError } from "../domain/errors.js";
 import {
   modelProviders,
@@ -26,7 +24,7 @@ type ModelsResult<T> = Result<T, TransportError | AuthRequiredError>;
  * changes, as the CLI reaches it: the provider Connections granted to the
  * agent, the harnesses its runtime carries, its saved Session Pair defaults
  * (chat, channel, scheduled) and the models its providers list for a
- * harness. Each call is one api-server or agent-runtime procedure, so the
+ * harness. Each call is one api-server procedure, so the
  * server keeps every rule about which pair is valid.
  */
 export interface AgentModelsService {
@@ -57,7 +55,6 @@ export interface AgentModelsService {
 
 export function createAgentModelsService(deps: {
   trpc: TrpcClient;
-  agentTrpc: (agentId: string) => AgentTrpcClient;
 }): AgentModelsService {
   return {
     grantedConnectionIds: (agentId) =>
@@ -98,8 +95,11 @@ export function createAgentModelsService(deps: {
         });
       }),
     catalog: (agentId, harness) =>
-      trpcCall(() =>
-        deps.agentTrpc(agentId).harnessConfig.catalog.query({ harness }),
+      trpcCall(async () =>
+        harnessCatalogOf(
+          await deps.trpc.connections.agentCatalog.query({ agentId }),
+          harness,
+        ),
       ),
   };
 }

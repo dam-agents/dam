@@ -5,6 +5,7 @@ import { createProfilesRepository } from "./infrastructure/profiles-repository.j
 import {
   bindDefaultProfile,
   createProfilesService,
+  newAgentDefault,
   profileResolver,
 } from "./services/profiles-service.js";
 
@@ -18,7 +19,7 @@ export function composeProfilesForOwner(deps: {
   owner: string;
   agentBinding: readonly string[] | "*";
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
-  sharedProvider: boolean;
+  seed: { harness: string; model: string } | null;
   republish: (agentId: string) => Promise<string | null>;
 }) {
   const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
@@ -26,7 +27,7 @@ export function composeProfilesForOwner(deps: {
     repo,
     owner: deps.owner,
     catalog: deps.catalog,
-    sharedProvider: deps.sharedProvider,
+    seed: deps.seed,
   };
   const resolveProfile = profileResolver(repo);
   return {
@@ -37,7 +38,16 @@ export function composeProfilesForOwner(deps: {
       republish: deps.republish,
     }),
     resolveProfile,
-    bindDefaultProfile: (agentId: string, harness: string) =>
-      bindDefaultProfile(owner, agentId, harness),
+    defaultProfile: async () => {
+      const chosen = await newAgentDefault(owner);
+      return (
+        chosen && {
+          harness: chosen.profile.harness,
+          connectionId: chosen.connectionId,
+          bind: (agentId: string) =>
+            bindDefaultProfile(owner, agentId, chosen.profile),
+        }
+      );
+    },
   };
 }

@@ -3,7 +3,7 @@ import {
   aliasForProviderType,
   aliasForTemplateId,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  CURVE_BENDER_WORK_MODEL,
+  DEFAULT_PROFILE_UNDELETABLE,
   displayNameForTemplate,
   harnessFits,
   parseQualifiedModel,
@@ -18,7 +18,6 @@ import {
 import { isUniqueViolation } from "../../../core/db-errors.js";
 import { getLogger } from "../../../core/logger.js";
 import {
-  SEEDED_DEFAULT,
   type ProfileReferences,
   type ProfileRow,
   type ProfilesRepository,
@@ -95,33 +94,64 @@ interface OwnerDeps {
   repo: ProfilesRepository;
   owner: string;
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
-  /* UNIT_BOUNDARY_DESCRIPTION: whether the deployment serves the shared CurveBender the seeded Default runs on; without it nothing is seeded and no marker is claimed, so configuring it later still seeds. */
-  sharedProvider: boolean;
+  /* UNIT_BOUNDARY_DESCRIPTION: the "Default" an owner with no profile is given, on the deployment's shared CurveBender: the harness and the upstream model the install names. Null where the install serves no shared CurveBender or names no seed; then nothing is seeded and no marker is claimed, so configuring it later still seeds. */
+  seed: { harness: string; model: string } | null;
 }
 
-async function seedDefault(deps: OwnerDeps): Promise<void> {
-  if (!deps.sharedProvider) return;
-  await deps.repo.seed(deps.owner, {
-    name: "Default",
-    harness: deps.catalog.default,
-    providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-    model: `${aliasForTemplateId(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!}/${CURVE_BENDER_WORK_MODEL}`,
-    settings: {},
-  });
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: every owner has one default for new agents once
+ * they hold a profile. An owner with none is first given "Default", where the
+ * install names one; otherwise their oldest profile becomes it.
+ */
+async function ensureDefault(deps: OwnerDeps): Promise<ProfileRow | null> {
+  const current = await deps.repo.defaultOf(deps.owner);
+  if (current) return current;
+  let [oldest] = await deps.repo.list(deps.owner);
+  if (!oldest && deps.seed) {
+    await deps.repo.seed(deps.owner, {
+      name: "Default",
+      harness: deps.seed.harness,
+      providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      model: `${aliasForTemplateId(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!}/${deps.seed.model}`,
+      settings: {},
+    });
+    [oldest] = await deps.repo.list(deps.owner);
+  }
+  if (!oldest) return null;
+  await deps.repo.setDefault(deps.owner, oldest.id, { onlyIfNone: true });
+  return deps.repo.defaultOf(deps.owner);
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a new Agent starts on its owner's seeded Default when its harness and granted provider fit; otherwise its first hello converts a default as before. */
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on: the owner's default
+ * for new agents, with the owner's oldest Connection of its template, which
+ * the Agent is granted in place of the harness's provider order. Null while
+ * the owner holds no profile or no such Connection, which leaves the new
+ * Agent to that order and its first hello's conversion.
+ */
+export async function newAgentDefault(
+  deps: OwnerDeps,
+): Promise<{ profile: ProfileRow; connectionId: string } | null> {
+  const profile = await ensureDefault(deps);
+  const connection =
+    profile &&
+    (await deps.repo.ownerConnections(deps.owner)).find(
+      (c) => c.templateId === profile.providerTemplate,
+    );
+  return profile && connection
+    ? { profile, connectionId: connection.id }
+    : null;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a new Agent's chat default is the default profile once it holds a Connection of that profile's template; a create that named another provider keeps its first hello's conversion. */
 export async function bindDefaultProfile(
   deps: OwnerDeps,
   agentId: string,
-  harness: string,
+  profile: ProfileRow,
 ): Promise<void> {
-  await seedDefault(deps);
-  const seeded = await deps.repo.seeded(deps.owner);
-  if (seeded?.harness !== harness) return;
   const granted = await deps.repo.agentConnections(deps.owner, agentId);
-  if (granted.some((c) => c.templateId === seeded.providerTemplate))
-    await deps.repo.bindChatProfile(deps.owner, agentId, seeded.id);
+  if (granted.some((c) => c.templateId === profile.providerTemplate))
+    await deps.repo.bindChatProfile(deps.owner, agentId, profile.id);
 }
 
 export function createProfilesService(
@@ -156,6 +186,7 @@ export function createProfilesService(
   function view(
     row: ProfileRow,
     refs: ProfileReferences,
+    defaultId: string | undefined,
     availability: ProfileWithUsage["availability"] = null,
   ): ProfileWithUsage {
     return {
@@ -165,7 +196,7 @@ export function createProfilesService(
       providerTemplate: row.providerTemplate,
       model: row.model,
       settings: row.settings,
-      seeded: row.seed === SEEDED_DEFAULT,
+      newAgentDefault: row.id === defaultId,
       usage: {
         agents: refs.agents.filter(
           (a) => a.chat === row.id || a.platform === row.id,
@@ -194,7 +225,7 @@ export function createProfilesService(
 
   return {
     async list(input) {
-      await seedDefault(deps);
+      const defaultId = (await ensureDefault(deps))?.id;
       const [rows, refs] = await Promise.all([
         repo.list(owner),
         repo.references(owner, agentIds),
@@ -202,9 +233,9 @@ export function createProfilesService(
       const agentId = input?.agentId;
       return Promise.all(
         rows.map(async (row) => {
-          if (agentId === undefined) return view(row, refs);
+          if (agentId === undefined) return view(row, refs, defaultId);
           const resolved = await deps.resolve({ profileId: row.id, agentId });
-          return view(row, refs, {
+          return view(row, refs, defaultId, {
             available: !resolved?.unavailable || resolved.attachable,
             reason: resolved?.unavailable ?? null,
             attachable: resolved?.attachable ?? false,
@@ -232,7 +263,7 @@ export function createProfilesService(
 
     async create(input) {
       /* UNIT_BOUNDARY_DESCRIPTION: seeded first, so a user-made "Default" cannot take the seed's name. */
-      await seedDefault(deps);
+      const defaultId = (await ensureDefault(deps))?.id;
       validate(input);
       const row = await repo
         .insert(owner, {
@@ -245,15 +276,21 @@ export function createProfilesService(
         .catch((err: unknown) => {
           throw duplicate(err, input.name);
         });
-      return view(row, await repo.references(owner, agentIds, row.id));
+      return view(
+        row,
+        await repo.references(owner, agentIds, row.id),
+        defaultId ?? (await ensureDefault(deps))?.id,
+      );
     },
 
     async update({ id, agentId: _agentId, ...patch }) {
       const current = await owned(id);
       validate({ ...current, ...patch });
-      await repo.update(owner, id, patch).catch((err: unknown) => {
-        throw duplicate(err, patch.name ?? current.name);
-      });
+      const written = await repo
+        .update(owner, id, patch)
+        .catch((err: unknown) => {
+          throw duplicate(err, patch.name ?? current.name);
+        });
       const renameOnly = Object.keys(patch).every((key) => key === "name");
       const { agents } = await repo.references(owner, undefined, id);
       const rejected = renameOnly
@@ -273,13 +310,16 @@ export function createProfilesService(
       /* UNIT_BOUNDARY_DESCRIPTION: an edit no agent that uses the profile can run is put back, or every new chat on them would fail on it (QA D5); a partial rejection keeps the edit, and those agents keep the pair they hold until fixed. */
       if (rejected.length > 0 && rejected.length === agents.length) {
         const { name, harness, providerTemplate, model, settings } = current;
-        await repo.update(owner, id, {
-          name,
-          harness,
-          providerTemplate,
-          model,
-          settings,
-        });
+        /* UNIT_BOUNDARY_DESCRIPTION: the revert is a compare-and-set against the version this call wrote, so an edit that landed while the fan-out ran stays; undoing it would lose a newer edit that was already answered. */
+        await repo.update(
+          owner,
+          id,
+          { name, harness, providerTemplate, model, settings },
+          {
+            expect: written?.updatedAt ?? current.updatedAt,
+            at: current.updatedAt,
+          },
+        );
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `No agent can run this profile: ${rejected[0]!.reason}`,
@@ -287,10 +327,24 @@ export function createProfilesService(
       }
       if (rejected.length > 0)
         getLogger().warn({ profileId: id, rejected }, "profile edit rejected");
-      return view(await owned(id), await repo.references(owner, agentIds, id));
+      return view(
+        await owned(id),
+        await repo.references(owner, agentIds, id),
+        (await repo.defaultOf(owner))?.id,
+      );
+    },
+
+    async setDefault(id) {
+      await owned(id);
+      await repo.setDefault(owner, id);
     },
 
     async delete(id) {
+      if ((await repo.defaultOf(owner))?.id === id)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: DEFAULT_PROFILE_UNDELETABLE,
+        });
       const outcome = await repo.deleteIfUnused(owner, id, agentIds);
       if (outcome === "missing")
         throw new TRPCError({

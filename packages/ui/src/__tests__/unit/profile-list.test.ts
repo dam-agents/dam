@@ -19,7 +19,7 @@ const profile = (
   providerTemplate: "anthropic",
   model: "anthropic/claude-mythos-5-1",
   settings: {},
-  seeded: false,
+  newAgentDefault: false,
   usage: { agents: 0, channels: 0, schedules: 0 },
   availability: { available: true, reason: null, attachable: false },
   ...overrides,

@@ -10,6 +10,7 @@ import {
   inArray,
   isNull,
   or,
+  profileDefaults,
   profileSeeds,
   profiles,
   schedules,
@@ -175,14 +176,28 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
       return rows[0] ? toRow(rows[0]) : null;
     },
 
-    async seeded(owner: string): Promise<ProfileRow | null> {
+    async defaultOf(owner: string): Promise<ProfileRow | null> {
       const rows = await db
-        .select()
-        .from(profiles)
-        .where(
-          and(eq(profiles.owner, owner), eq(profiles.seed, SEEDED_DEFAULT)),
-        );
-      return rows[0] ? toRow(rows[0]) : null;
+        .select({ profile: profiles })
+        .from(profileDefaults)
+        .innerJoin(profiles, eq(profiles.id, profileDefaults.profileId))
+        .where(eq(profileDefaults.owner, owner));
+      return rows[0] ? toRow(rows[0].profile) : null;
+    },
+
+    /** UNIT_BOUNDARY_DESCRIPTION: `onlyIfNone` marks a default only for an owner who has none yet, so two first reads cannot both pick one. */
+    async setDefault(
+      owner: string,
+      profileId: string,
+      { onlyIfNone = false } = {},
+    ): Promise<void> {
+      const insert = db.insert(profileDefaults).values({ owner, profileId });
+      await (onlyIfNone
+        ? insert.onConflictDoNothing()
+        : insert.onConflictDoUpdate({
+            target: profileDefaults.owner,
+            set: { profileId },
+          }));
     },
 
     async insert(owner: string, profile: ProfileWrite): Promise<ProfileRow> {
@@ -193,15 +208,25 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
       return toRow(rows[0]!);
     },
 
+    /** UNIT_BOUNDARY_DESCRIPTION: `expect` makes the write a compare-and-set: it lands only while the row is still the version the caller wrote, so a write that only undoes another one cannot undo a later edit. `at` names the version the row is written as. */
     async update(
       owner: string,
       id: string,
       profile: Partial<ProfileWrite>,
-    ): Promise<void> {
-      await db
+      options: { expect?: Date; at?: Date } = {},
+    ): Promise<ProfileRow | null> {
+      const rows = await db
         .update(profiles)
-        .set({ ...profile, updatedAt: new Date() })
-        .where(and(eq(profiles.owner, owner), eq(profiles.id, id)));
+        .set({ ...profile, updatedAt: options.at ?? new Date() })
+        .where(
+          and(
+            eq(profiles.owner, owner),
+            eq(profiles.id, id),
+            ...(options.expect ? [eq(profiles.updatedAt, options.expect)] : []),
+          ),
+        )
+        .returning();
+      return rows[0] ? toRow(rows[0]) : null;
     },
 
     /** UNIT_BOUNDARY_DESCRIPTION: the profile row is locked while usage is rechecked, so a schedule assigned during the delete (a JSON reference no foreign key guards) is seen or finds the row gone. */

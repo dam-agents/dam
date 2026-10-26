@@ -225,6 +225,24 @@ export function scheduleInheritsChoices(
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: quiet hours travel on an edit only when they
+ * differ from the stored list, as every other choice does: an untouched list
+ * leaves the stored one alone, and one the user emptied clears it. Compared
+ * by value, not by the form's dirty tracking, which misses an added or
+ * removed row unless something read it while rendering.
+ */
+export function quietHoursChange(
+  v: Pick<ScheduleFormValues, "quietHours">,
+  existing: Pick<Schedule, "quietHours">,
+): Partial<Pick<ScheduleFormValues, "quietHours">> {
+  const key = (rows: ScheduleFormValues["quietHours"]) =>
+    JSON.stringify(rows.map((r) => [r.startTime, r.endTime, r.enabled]));
+  return key(v.quietHours) === key(existing.quietHours ?? [])
+    ? {}
+    : { quietHours: v.quietHours };
+}
+
 export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
   const preset: FrequencyPreset = existing?.rrule
     ? detectPreset(existing.rrule)

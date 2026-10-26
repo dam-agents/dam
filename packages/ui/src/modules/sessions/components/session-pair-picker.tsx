@@ -32,10 +32,10 @@ import {
   useHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
-  useOwnerHarnessCatalog,
   useProviderConnections,
   useProviderModels,
 } from "../api/session-pair.js";
+import { useConnectOnPick } from "../hooks/use-connect-on-pick.js";
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useProviderUsage } from "../hooks/use-provider-usage.js";
 import {
@@ -91,13 +91,11 @@ type Props = CommonProps &
         carried: readonly HarnessCapability[];
         defaultHarness: string;
         routed?: boolean;
-        /** UNIT_BOUNDARY_DESCRIPTION: edits a pick held elsewhere (a profile in Settings): the Custom screen alone, and a pick goes to `onChoose`, never to the agent's next session or chat default. `providerName` names a provider the agent does not hold. */
+        /** UNIT_BOUNDARY_DESCRIPTION: edits a pick held elsewhere (a profile in Settings, with no agent): the Custom screen alone, every provider the owner holds, and a pick goes to `onChoose`, never to an agent's next session or chat default. `providerName` names a provider the owner does not hold. */
         edit?: {
           pair: SessionPair;
           providerName: string;
           onChoose: (pair: SessionPair) => void;
-          /** UNIT_BOUNDARY_DESCRIPTION: lists models from the owner-level catalog, not the agent's runtime, for a pick held outside any agent (a profile in Settings); the same catalog supplies the harness capabilities, so `agentId` may be null. */
-          ownerCatalog?: boolean;
         };
       }
   );
@@ -140,10 +138,10 @@ export function SessionPairPicker(props: Props) {
   const setPair = useStore((s) => s.setNextSessionPair);
 
   const connections = useProviderConnections(agentId);
-  const ownerCatalog = edit?.ownerCatalog === true && routed;
-  const providers = ownerCatalog
-    ? { ...connections, granted: connections.owned }
-    : connections;
+  const providers =
+    agentId === null
+      ? { ...connections, granted: connections.owned }
+      : connections;
   const usage = useProviderUsage(agentId);
   const { revoke, pending: revoking } = useGrantProvider(agentId);
   const attachDialog = useAttachProvidersDialog(agentId);
@@ -225,18 +223,14 @@ export function SessionPairPicker(props: Props) {
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
   const catalogModels = useHarnessCatalogModels(
-    ownerCatalog || !routed ? null : agentId,
-    harness,
+    agentId,
+    routed ? harness : null,
+    { unattached: true },
   );
-  const ownerModels = useOwnerHarnessCatalog(ownerCatalog ? harness : null);
   const groups = routed
-    ? modelGroups(
-        ownerCatalog ? ownerModels.data : catalogModels.data,
-        ownerCatalog ? providers.owned : catalogModels.granted,
-      ).filter(
-        (g) => !catalog || offered.granted.some((p) => p.id === g.connectionId),
-      )
+    ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
+  const connectOnPick = useConnectOnPick(agentId);
   const models = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
   const primary = primaryProfileOf(pair, profiles, capability);
   const slot = subagentProfileOf(pair, profiles);
@@ -430,7 +424,6 @@ export function SessionPairPicker(props: Props) {
                 <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 p-2 text-xs">
                   <PlatformSubagentSettings
                     agentId={agentId}
-                    ownerCatalog={ownerCatalog}
                     carried={carried}
                     settings={pair.settings ?? {}}
                     idPrefix="new-session"
@@ -489,8 +482,8 @@ export function SessionPairPicker(props: Props) {
                             </span>
                             {h.displayName}
                             <HarnessModelCount
-                              agentId={routed ? agentId : null}
-                              harness={h.name}
+                              agentId={agentId}
+                              harness={routed ? h.name : null}
                             />
                           </button>
                           {unsupported(h.name) && (
@@ -514,42 +507,29 @@ export function SessionPairPicker(props: Props) {
                   {routed ? (
                     <>
                       <SessionModelList
-                        agentId={agentId}
-                        ownerCatalog={ownerCatalog}
                         groups={groups}
                         current={pair?.model ?? null}
-                        loading={
-                          ownerCatalog
-                            ? ownerModels.isLoading
-                            : catalogModels.isLoading
+                        loading={catalogModels.isLoading}
+                        failed={catalogModels.isError}
+                        onRetry={() => void catalogModels.refetch()}
+                        onChoose={(model, group) =>
+                          connectOnPick(group, model, () => {
+                            const kept = settingsForModel(
+                              capability,
+                              groups,
+                              model,
+                              settings,
+                            );
+                            choose({
+                              harness,
+                              provider: group.connectionId,
+                              model,
+                              ...(Object.keys(kept).length > 0 && {
+                                settings: kept,
+                              }),
+                            });
+                          })
                         }
-                        waiting={ownerCatalog ? false : catalogModels.waiting}
-                        failed={
-                          ownerCatalog
-                            ? ownerModels.isError
-                            : catalogModels.isError
-                        }
-                        onRetry={() =>
-                          void (ownerCatalog
-                            ? ownerModels.refetch()
-                            : catalogModels.refetch())
-                        }
-                        onChoose={(model, group) => {
-                          const kept = settingsForModel(
-                            capability,
-                            groups,
-                            model,
-                            settings,
-                          );
-                          choose({
-                            harness,
-                            provider: group.connectionId,
-                            model,
-                            ...(Object.keys(kept).length > 0 && {
-                              settings: kept,
-                            }),
-                          });
-                        }}
                         onManageProviders={() =>
                           agentId
                             ? navigateToSandboxHome(agentId, "models")
@@ -936,7 +916,7 @@ function HarnessModelCount({
   harness,
 }: {
   agentId: string | null;
-  harness: string;
+  harness: string | null;
 }) {
   const { data } = useHarnessCatalogModels(agentId, harness);
   if (!data) return null;
