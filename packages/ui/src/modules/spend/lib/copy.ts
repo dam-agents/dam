@@ -87,6 +87,40 @@ export function spentOfLimitToday(
   return `${spentOfLimit(spentMicros, amountMicros, unit)} today`;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a provider row's badge reads "spent / limit today", and a Bobcoin amount is written with the unit's short form rather than its name, since the badge has one line to spare.
+export function badgeSpend(
+  spentMicros: number,
+  limitMicros: number | null,
+  unit: SpendUnit,
+): string {
+  const amount = (micros: number) =>
+    unit === "bobcoin"
+      ? `${bareSpend(micros, unit)} Bc`
+      : bareSpend(micros, unit);
+  return limitMicros === null
+    ? `${amount(spentMicros)} today`
+    : `${amount(spentMicros)} / ${amount(limitMicros)} today`;
+}
+
+export function badgeSpendTip(unit: SpendUnit, hasLimit: boolean): string {
+  return match(unit)
+    .with(
+      "usd_list",
+      () =>
+        "Covered by a subscription, so the amount is shown for comparison only. Click to set a limit anyway.",
+    )
+    .with("bobcoin", () =>
+      hasLimit
+        ? "Bobcoins spent today of the daily limit. Click to change it."
+        : "Bobcoins spent today. Click to set a daily limit.",
+    )
+    .otherwise(() =>
+      hasLimit
+        ? "Spent today of the daily limit. Click to change it."
+        : "Spent today. Click to set a daily limit.",
+    );
+}
+
 export function percentOfLimit(
   spentMicros: number,
   effectiveMicros: number,

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: JanUI's Environments tab of an agent's chat side panel lists that agent's Environments as the cards of its Environments section — name, whether it runs, expiry, a link per endpoint that opens in a new tab, and the owner's extend and delete controls — and links to the section, where who may open them is edited; the tab shows only once the agent owns one, so it shows Loading while another agent's list arrives.
+// TEST_OVERVIEW: JanUI's Environments tab of an agent's chat side panel lists that agent's Environments as the cards of its Environments section — name, whether it runs, expiry, a link per endpoint that opens in a new tab, and the owner's extend and delete controls — and edits who may open them in place, above the cards. The tab shows only once the agent owns one, so it shows Loading while another agent's list arrives.
 import type { EnvironmentView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,11 +20,17 @@ vi.mock("../../modules/environments/api/queries.js", () => ({
       isPending: state.pending,
     };
   },
+  useEnvironmentAccessList: () => ({ data: [], isPending: false }),
 }));
 vi.mock("../../modules/environments/api/mutations.js", () => ({
   useExtendEnvironment: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteEnvironment: () => ({ mutate: vi.fn(), isPending: false }),
   useSetEnvironmentAccessList: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+const flags = vi.hoisted(() => ({ rightToolbar: false }));
+
+vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
+  useUnifiedRightToolbar: () => flags.rightToolbar,
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
@@ -73,7 +79,22 @@ it("lists the agent's Environments as their cards", () => {
   expect(html).toContain('href="https://app-pr-42-abcdef.env.example.com"');
   expect(html).toContain('target="_blank"');
   expect(html).toContain('aria-label="Actions for pr-42"');
+  // UNIT_BOUNDARY_DESCRIPTION: JanUI with the experiment off keeps its link to the section, where the access list is edited, exactly as before this branch.
+  expect(html).not.toContain('data-testid="environment-access"');
   expect(html).toContain('data-testid="environments-panel-manage"');
+});
+
+// TEST_SCENARIO: with the Unified right toolbar on there is no configuration page to link to, so the panel edits who may open them in place, above the cards, even before the agent owns one; the empty list says what will appear there.
+it("edits the access list in place with the experiment on", () => {
+  flags.rightToolbar = true;
+  state.environments = [];
+  const empty = render();
+  expect(empty).toContain('data-testid="environment-access"');
+  expect(empty).not.toContain('data-testid="environments-panel-manage"');
+  expect(empty).toContain("No Environments yet");
+  state.environments = [environment];
+  expect(render()).toContain('data-testid="environment-card"');
+  flags.rightToolbar = false;
 });
 
 // TEST_SCENARIO: switching to another vm agent's chat keeps the tab open while that agent's list arrives, so the panel says it is loading rather than closing and reopening.

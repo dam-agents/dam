@@ -115,9 +115,12 @@ export function SidebarAgents({
         }
         actions={
           <SidebarAgentActions
+            agent={agent}
+            current={current && !sessionOpen}
             channels={available}
             onNewSession={navigate(() => startSession(agent.id))}
             onConfigure={navigate(() => navigateToSandboxHome(agent.id))}
+            onNavigate={navigate(() => undefined)}
             onBind={setBinding}
           />
         }

@@ -20,6 +20,9 @@ Icons come from `@carbon/icons-react`.
 | Create agent                                                | `Add`                                                    |
 | Create agent from a starter kit                             | `DataEnrichmentAdd`                                      |
 | Starter kits destination, a starter kit                     | `Gift`                                                   |
+| Channels destination                                        | `LogoSlack`                                              |
+| Skills destination                                          | `ToolsAlt`                                               |
+| Schedules destination                                       | `EventSchedule`                                          |
 | External link, open in new tab                              | `Launch` (only for a link that leaves the app)           |
 | Back                                                        | `ArrowLeft`                                              |
 | Restart agent                                               | `Restart`                                                |
@@ -36,6 +39,8 @@ A button that opens something inside the app carries no `Launch` icon.
 ## Tooltips
 
 Every icon-only button has a tooltip: pass `tooltip=` to `Button`, or wrap a plain element in `Tooltip`.
+That includes the right rail's tiles, which name their panel.
+The side panel's X is the exception: its aria-label names it and it carries no tooltip, because the glyph and its place on the panel's edge already say what it does.
 Do not use a native `title=` on an icon-only button; a `title` that explains why a menu item is disabled stays.
 The "More actions" (`RowActionsMenu`) trigger has no tooltip, only its `aria-label`.
 

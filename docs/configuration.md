@@ -36,10 +36,8 @@ Only such an agent offers the browser panel.
 With it off, a gateway injects a Connection's credential into every request to its host, replacing whatever credential the request carries, unless two Connections compete for the same header.
 Agents created before named connections became the default keep their setting.
 
-It is set per agent:
+It is always on for a new Agent and no user-facing setting changes it: the interface shows no switch, though an Agent created before that still carries the value it was given.
 
-- **Agent settings:** *Inject only into addressed requests* under the agent's setup.
-  Changing it there restarts the agent's gateway.
 - **Starter kit:** `requireConnectionAddress: true` or `false` in `kit.yaml`; a kit that names neither gets the default, on.
 
 Values the platform hands an agent already carry an address.

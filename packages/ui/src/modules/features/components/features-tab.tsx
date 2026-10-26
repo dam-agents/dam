@@ -69,7 +69,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "unified-right-toolbar",
     label: "Unified right toolbar",
     description:
-      "Draw the right-hand icon bar and the panel's top bar on the same tile rhythm as the sidebar rail, in an Agent's chat too, and offer Artifacts on every page. Independent of JanUI.",
+      "Draw the right-hand icon bar and the panel's top bar on the same tile rhythm as the sidebar rail, in an Agent's chat too, and offer Artifacts on every page. In an Agent's chat it also replaces the configuration page with a tile per panel beside the conversation. Independent of JanUI.",
   },
   {
     id: "environments",

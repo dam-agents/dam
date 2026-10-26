@@ -63,6 +63,13 @@ vi.mock("../../modules/home/hooks/use-activity-sessions.js", () => ({
 }));
 vi.mock("../../modules/agents/api/mutations.js", () => ({
   useDeleteAgent: () => ({ mutate: () => {} }),
+  useSetAgentDisabled: () => ({ mutate: () => {}, isPending: false }),
+}));
+vi.mock("../../modules/agents/hooks/use-restart-agent.js", () => ({
+  useRestartAgent: () => ({ restart: () => {} }),
+}));
+vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
+  useUnifiedRightToolbar: () => false,
 }));
 vi.mock("../../modules/agents/hooks/use-confirm-delete-agent.js", () => ({
   useConfirmDeleteAgent: () => async () => false,

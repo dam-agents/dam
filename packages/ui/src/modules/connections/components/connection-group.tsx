@@ -18,6 +18,7 @@ interface Props {
   onManage?: () => void;
   onDelete?: (id: string, name: string) => void;
   deletingId?: string | null;
+  flat?: boolean;
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
@@ -32,10 +33,26 @@ export function ConnectionGroup({
   onManage,
   onDelete,
   deletingId = null,
+  flat = false,
   maintenance,
   onNewChild,
 }: Props) {
   const { provider, connections } = group;
+  const rows = (
+    <ConnectionRows
+      bare
+      connections={connections}
+      templateById={templateById}
+      grant={grant}
+      onManage={onManage}
+      onDelete={onDelete}
+      deletingId={deletingId}
+      maintenance={maintenance}
+      onNewChild={onNewChild}
+    />
+  );
+  // UNIT_BOUNDARY_DESCRIPTION: the Services panel lists every connection in one run, so a group draws no header there and its rows join the others under the one card.
+  if (flat) return <>{rows}</>;
   return (
     <ListGroup
       testId={`connection-group-${provider.id}`}
@@ -56,17 +73,7 @@ export function ConnectionGroup({
         )
       }
     >
-      <ConnectionRows
-        bare
-        connections={connections}
-        templateById={templateById}
-        grant={grant}
-        onManage={onManage}
-        onDelete={onDelete}
-        deletingId={deletingId}
-        maintenance={maintenance}
-        onNewChild={onNewChild}
-      />
+      {rows}
     </ListGroup>
   );
 }

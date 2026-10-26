@@ -25,6 +25,8 @@ import { OffDefaultSchedules } from "./off-default-schedules.js";
 
 const KINDS: readonly DefaultKind[] = ["chat", "channel", "scheduled"];
 
+export type SessionDefaultKind = DefaultKind;
+
 const KIND_HINT: Record<DefaultKind, string> = {
   chat: "New chats start on this.",
   channel: "Slack and Telegram threads run on this.",
@@ -32,14 +34,26 @@ const KIND_HINT: Record<DefaultKind, string> = {
 };
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the agent's three defaults on its Providers
- * page. Channel and scheduled start as "Same as chat" and show the chat
- * values they inherit; switching that off gives them a default of their own,
- * and switching it on again clears it.
+ * UNIT_BOUNDARY_DESCRIPTION: the defaults a page shows for its kind of
+ * session — the chat, channel and scheduled ones on the Providers page, and a
+ * single kind under its own panel. Channel and scheduled start as "Same as
+ * chat" and show the chat values they inherit; switching that off gives them a
+ * default of their own, and switching it on again clears it.
  */
-export function SessionDefaultsSection({ agentId }: { agentId: string }) {
+export function SessionDefaultsSection({
+  agentId,
+  kinds = KINDS,
+  label,
+  hint = true,
+}: {
+  agentId: string;
+  kinds?: readonly DefaultKind[];
+  label?: string;
+  hint?: boolean;
+}) {
   const { data: status } = useHarnessConfigStatus(agentId);
   const operable = useIsAgentOperable(agentId);
+  if (kinds.length === 0) return null;
   if (status && !status.harnesses && !operable)
     return (
       <section className="mt-6">
@@ -50,8 +64,14 @@ export function SessionDefaultsSection({ agentId }: { agentId: string }) {
   if (!routesSessionPairs(status?.harnesses ?? [])) return null;
   return (
     <section className="mt-6 flex flex-col gap-6">
-      {KINDS.map((kind) => (
-        <KindDefault key={`${agentId}:${kind}`} agentId={agentId} kind={kind} />
+      {kinds.map((kind) => (
+        <KindDefault
+          key={`${agentId}:${kind}`}
+          agentId={agentId}
+          kind={kind}
+          label={label}
+          hint={hint}
+        />
       ))}
     </section>
   );
@@ -60,9 +80,13 @@ export function SessionDefaultsSection({ agentId }: { agentId: string }) {
 function KindDefault({
   agentId,
   kind,
+  label,
+  hint,
 }: {
   agentId: string;
   kind: DefaultKind;
+  label?: string;
+  hint: boolean;
 }) {
   const { data: saved } = useSessionDefaults(agentId);
   const { data: chat } = useRememberedPair(agentId);
@@ -85,10 +109,14 @@ function KindDefault({
 
   return (
     <div data-testid={`session-default-${kind}`}>
-      <SectionLabel spaced>{DEFAULT_KIND_TITLE[kind]} sessions</SectionLabel>
-      <p className="-mt-1 mb-3 text-sm text-muted-foreground">
-        {KIND_HINT[kind]}
-      </p>
+      <SectionLabel spaced>
+        {label ?? `${DEFAULT_KIND_TITLE[kind]} sessions`}
+      </SectionLabel>
+      {hint && (
+        <p className="-mt-1 mb-3 text-sm text-muted-foreground">
+          {KIND_HINT[kind]}
+        </p>
+      )}
       {notice && (
         <p
           role="status"

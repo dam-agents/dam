@@ -1,5 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 
+import { SectionHeading } from "@/components/ui/section-heading";
+
 import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgent, useAgentConnections } from "../../agents/api/queries.js";
@@ -26,6 +28,8 @@ interface Props {
   oauthReturnView: string;
   header: SectionHeaderSlot;
   leading?: ReactNode;
+  onGoToChannels?: () => void;
+  panelHeading?: string;
 }
 
 export function ConnectionsSection({
@@ -33,6 +37,8 @@ export function ConnectionsSection({
   oauthReturnView,
   header,
   leading,
+  onGoToChannels,
+  panelHeading,
 }: Props) {
   const connectionsQ = useAgentPageConnections(agentId);
   const access = useAgent(agentId)?.access;
@@ -116,6 +122,13 @@ export function ConnectionsSection({
         </ConnectionAudienceNotice>
       )}
       {leading}
+      {panelHeading && (
+        <SectionHeading
+          label={panelHeading}
+          addLabel="Add connection"
+          onAdd={managesConnections ? () => setCatalogOpen(true) : undefined}
+        />
+      )}
       <GrantedConnectionsPanel
         readOnly={!managesConnections}
         groups={groups}
@@ -128,6 +141,9 @@ export function ConnectionsSection({
           setPreferred.mutate({ agentId, connectionId })
         }
         preferPending={setPreferred.isPending}
+        addRowHidden={panelHeading !== undefined}
+        flush={panelHeading !== undefined}
+        flat={panelHeading !== undefined}
         extraGroups={
           managesConnections &&
           satellites.granted.length > 0 && (
@@ -146,7 +162,8 @@ export function ConnectionsSection({
         <ConnectionCatalogModal
           onGoToChannels={() => {
             setCatalogOpen(false);
-            navigateToSandboxHome(agentId, "channels");
+            if (onGoToChannels) onGoToChannels();
+            else navigateToSandboxHome(agentId, "channels");
           }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{
@@ -157,6 +174,7 @@ export function ConnectionsSection({
           sharing={shareConfirm}
           satelliteGrant={satellites.grantControls}
           oauthReturnView={oauthReturnView}
+          singlePage={panelHeading !== undefined}
         />
       )}
     </>

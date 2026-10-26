@@ -20,14 +20,17 @@ import {
 import { ChannelRow } from "./channel-row.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
 import { SlackLoopGuardNotice } from "./slack-loop-guard-notice.js";
+import { WhisperCard } from "./whisper-card.js";
 
 type ModalTarget = SlackChannel | "new" | null;
 
 export function SlackChannelCard({
   agent,
+  withWhisper = false,
   readOnly = false,
 }: {
   agent: AgentView | undefined;
+  withWhisper?: boolean;
   readOnly?: boolean;
 }) {
   const slackChannels = findSlackChannels(agent);
@@ -54,6 +57,7 @@ export function SlackChannelCard({
         newDisabled={!agent}
         newTestId="slack-connect"
         newLabel="Add Slack channel"
+        addInHeader={withWhisper}
         isEmpty={!agent || slackChannels.length === 0}
         empty="No channels connected yet. Mentions of the bot in a connected channel drive this agent."
         addRow={
@@ -75,6 +79,12 @@ export function SlackChannelCard({
           )
         }
       >
+        {/* UNIT_BOUNDARY_DESCRIPTION: in a panel the whisper switch is one row of the Slack card, since a whisper is a way into this agent's Slack conversations, not a messenger of its own. */}
+        {withWhisper && agent && (
+          <div className="px-4 py-3">
+            <WhisperCard agent={agent} />
+          </div>
+        )}
         {agent &&
           slackChannels.map((channel) => (
             <SlackChannelRow

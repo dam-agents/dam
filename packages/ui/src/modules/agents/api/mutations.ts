@@ -161,16 +161,6 @@ export function useSetAgentEnv() {
   });
 }
 
-export function useSetCredentialInjection() {
-  return useMutation({
-    ...trpc.agents.setCredentialInjection.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Couldn't change how credentials are injected",
-    },
-  });
-}
-
 export function useSetWhisper() {
   return useMutation({
     ...trpc.agents.setWhisper.mutationOptions(),

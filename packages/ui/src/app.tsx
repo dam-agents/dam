@@ -10,9 +10,11 @@ import { cn } from "./lib/utils.js";
 import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
+import { holds } from "./modules/agents/lib/agent-permissions.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { SignInFollowUp } from "./modules/connections/components/sign-in-follow-up.js";
 import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
+import { useFeatures } from "./modules/features/api/queries.js";
 import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
 import { useUnifiedRightToolbar } from "./modules/features/hooks/use-unified-right-toolbar.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
@@ -152,6 +154,18 @@ function MainApp() {
 
   const newLayout = useNewLayout();
   const rightToolbar = useUnifiedRightToolbar();
+  const setUnifiedToolbar = useStore((s) => s.setUnifiedToolbar);
+  // UNIT_BOUNDARY_DESCRIPTION: code that is not a component reads the experiment from the store, so the store takes only the install's answer — never the value this browser stored last — and a link clicked while the flags load keeps opening the page the install says.
+  const flags = useFeatures();
+  useEffect(() => {
+    if (flags.isSuccess)
+      setUnifiedToolbar(flags.data?.["unified-right-toolbar"] === true);
+  }, [flags.isSuccess, flags.data, setUnifiedToolbar]);
+  const selectedAgent = useStore((s) => s.selectedAgent);
+  const selected = useAgent(selectedAgent);
+  const setChatBarred = useStore((s) => s.setChatBarred);
+  const barred = selected !== null && !holds(selected.access, "sessions");
+  useEffect(() => setChatBarred(barred), [barred, setChatBarred]);
   const classic = !newLayout && !rightToolbar;
   useEffect(() => {
     if (newLayout) document.documentElement.dataset.layout = "new";

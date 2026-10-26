@@ -58,7 +58,7 @@ export function EnvironmentsSection({
  * page could not read, and its edits belong to one agent: moving to another
  * agent starts the editor afresh.
  */
-function AccessListEditor({ agentId }: { agentId: string }) {
+export function AccessListEditor({ agentId }: { agentId: string }) {
   const saved = useEnvironmentAccessList(agentId);
   const save = useSetEnvironmentAccessList();
   const [edited, setEdited] = useState<string[] | null>(null);

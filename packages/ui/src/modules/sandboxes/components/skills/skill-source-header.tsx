@@ -1,10 +1,11 @@
-import { Launch, TrashCan, ViewOff } from "@carbon/icons-react";
+import { Launch, Renew, TrashCan, ViewOff } from "@carbon/icons-react";
 import type { SkillSource } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
+import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { repoSlug } from "@/lib/git-source";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +48,7 @@ export function SkillSourceHeader({
 
 export function SkillSourceActions({
   source,
+  scannedAt,
   busy,
   onRescan,
   onRemove,
@@ -55,6 +57,7 @@ export function SkillSourceActions({
   hideDisabled,
 }: {
   source: SkillSource;
+  scannedAt?: string | undefined;
   busy: boolean;
   onRescan: () => void;
   onRemove?: () => void;
@@ -65,8 +68,23 @@ export function SkillSourceActions({
   const canRemove = !source.system && !source.fromTemplate;
   return (
     <RowActionsMenu label="Source actions">
-      <DropdownMenuItem disabled={busy} onSelect={onRescan}>
-        Re-scan
+      <DropdownMenuItem
+        disabled={busy}
+        onSelect={onRescan}
+        className={cn(scannedAt && "h-auto items-start py-2")}
+      >
+        <Renew size={14} className={cn("shrink-0", scannedAt && "mt-0.5")} />
+        <span className="flex-1">
+          {scannedAt ? "Rescan" : "Re-scan"}
+          {scannedAt && (
+            <span
+              className="mt-0.5 block text-xs text-muted-foreground"
+              title={formatTimestamp(scannedAt)}
+            >
+              Scanned {timeAgo(scannedAt)}
+            </span>
+          )}
+        </span>
       </DropdownMenuItem>
       <DropdownMenuItem
         onSelect={() =>

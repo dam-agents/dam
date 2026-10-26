@@ -48,6 +48,7 @@ export function AppSidePanelButtons({
           changes: false,
           processesEnabled: false,
           environments: false,
+          configuration: false,
           gettingStarted,
         }),
         withArtifacts,
@@ -89,6 +90,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
     changes: false,
     processesEnabled: false,
     environments: false,
+    configuration: false,
     gettingStarted,
   });
   // UNIT_BOUNDARY_DESCRIPTION: the current layout offers Get started and Approvals as drawers over the page, not as side-panel tabs, so the shell's bar holds only the tabs it still opens; the drawers read the same store tab.

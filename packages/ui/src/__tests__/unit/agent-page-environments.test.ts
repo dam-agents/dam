@@ -17,6 +17,9 @@ const state = vi.hoisted(() => ({
   enabled: true,
   section: "usage",
   navigateToSandboxHome: vi.fn(),
+  openConfigTab: vi.fn(),
+  flagsLoaded: true,
+  unifiedToolbar: false,
 }));
 
 vi.mock("../../store.js", () => ({
@@ -28,6 +31,7 @@ vi.mock("../../store.js", () => ({
       showConfirm: vi.fn(),
       openAgentSession: vi.fn(),
       navigateToSandboxHome: state.navigateToSandboxHome,
+      openConfigTab: state.openConfigTab,
     }),
 }));
 vi.mock("../../modules/environments/api/queries.js", () => ({
@@ -82,6 +86,12 @@ vi.mock("../../modules/a2ui/hooks/use-chat-forms-enabled.js", () => ({
 }));
 vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
   useNewLayout: () => false,
+}));
+vi.mock("../../modules/features/api/queries.js", () => ({
+  useFeatures: () => ({
+    isSuccess: state.flagsLoaded,
+    data: state.unifiedToolbar ? { "unified-right-toolbar": true } : {},
+  }),
 }));
 vi.mock("../../modules/sandboxes/hooks/use-section-summaries.js", () => ({
   useSectionSummaries: () => ({ summaries: {}, warnings: {} }),
@@ -169,4 +179,17 @@ it("links to the section from the Manage card only while the agent has none", ()
   state.loading = true;
   expect(renderRow()).not.toContain("Choose who may open Environments");
   state.loading = false;
+});
+// TEST_SCENARIO: with the experiment on, a link or a bookmark to the page's section becomes the chat on the panel that holds it, and the page draws nothing; while the flags load, and with the experiment off, the page draws as it always has.
+it("turns a section address into its panel only with the experiment on", () => {
+  state.count = 1;
+  state.flagsLoaded = false;
+  state.unifiedToolbar = false;
+  expect(renderPage("usage")).toContain("Environments");
+
+  state.flagsLoaded = true;
+  expect(renderPage("usage")).toContain("Environments");
+
+  state.unifiedToolbar = true;
+  expect(renderPage("usage")).toBe("");
 });

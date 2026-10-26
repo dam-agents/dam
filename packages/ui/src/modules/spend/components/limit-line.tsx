@@ -2,6 +2,8 @@ import { ChevronDown } from "@carbon/icons-react";
 import type { SpendLimitScope, SpendUnit } from "api-server-api";
 import { useState } from "react";
 
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +24,10 @@ import type { LevelAgent } from "./level-icon.js";
 import { LevelList } from "./level-list.js";
 import { SharedLimitBar } from "./shared-limit-bar.js";
 import { SpendLimitButton } from "./spend-limit-button.js";
-import type { LimitComparison } from "./spend-limit-dialog.js";
+import {
+  type LimitComparison,
+  SpendLimitDialog,
+} from "./spend-limit-dialog.js";
 
 interface Props {
   view: LevelsView;
@@ -33,6 +38,7 @@ interface Props {
   buttonTip: string;
   agentId: string | null;
   agent: LevelAgent | null;
+  compact?: boolean;
   compare?: LimitComparison;
 }
 
@@ -48,9 +54,11 @@ export function LimitLine({
   buttonTip,
   agentId,
   agent,
+  compact = false,
   compare,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [limitOpen, setLimitOpen] = useState(false);
   const { current, others } = view;
   const expandable = others.length > 0;
   const first = others.find(({ level }) => level.stopsFirst)?.level;
@@ -144,18 +152,44 @@ export function LimitLine({
         ) : (
           <div className={SUMMARY}>{summary}</div>
         )}
-        <Tooltip content={buttonTip}>
-          <span>
-            <SpendLimitButton
-              scope={scope}
-              subject={subject}
-              amountMicros={current?.amountMicros ?? null}
-              unit={unit}
-              {...(compare && { compare })}
-            />
-          </span>
-        </Tooltip>
+        {compact ? (
+          // UNIT_BOUNDARY_DESCRIPTION: the panel keeps each row to its spend and folds the limit into the row's ⋯ menu, so a card carries one button instead of two.
+          <RowActionsMenu
+            label="Provider actions"
+            testId="provider-row-actions"
+            dense
+          >
+            <DropdownMenuItem
+              onSelect={() => setLimitOpen(true)}
+              data-testid="provider-set-limit"
+            >
+              Set a limit…
+            </DropdownMenuItem>
+          </RowActionsMenu>
+        ) : (
+          <Tooltip content={buttonTip}>
+            <span>
+              <SpendLimitButton
+                scope={scope}
+                subject={subject}
+                amountMicros={current?.amountMicros ?? null}
+                unit={unit}
+                {...(compare && { compare })}
+              />
+            </span>
+          </Tooltip>
+        )}
       </div>
+      {limitOpen && (
+        <SpendLimitDialog
+          scope={scope}
+          unit={unit}
+          subject={subject}
+          amountMicros={current?.amountMicros ?? null}
+          {...(compare && { compare })}
+          onClose={() => setLimitOpen(false)}
+        />
+      )}
       {open && expandable && (
         <LevelList
           levels={others}

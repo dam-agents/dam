@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { emitToast } from "../../../lib/toast.js";
 import type { Schedule } from "../../../types.js";
 import { useCreateSchedule, useUpdateSchedule } from "../api/mutations.js";
+import type { CreatedSchedule } from "../lib/just-ask.js";
 import { QuietHoursEditor } from "./quiet-hours-editor.js";
 import { ScheduleDialog } from "./schedule-dialog.js";
 import {
@@ -28,6 +29,7 @@ interface Props {
   leadingFields?: ReactNode;
   onClose: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onCreated?: (draft: CreatedSchedule) => void;
 }
 
 export function RecurringScheduleForm({
@@ -38,6 +40,7 @@ export function RecurringScheduleForm({
   leadingFields,
   onClose,
   onDirtyChange,
+  onCreated,
 }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
@@ -77,6 +80,20 @@ export function RecurringScheduleForm({
           ? `Schedule "${v.name}" saved`
           : `Schedule "${v.name}" added`,
       });
+      if (!existing)
+        onCreated?.({
+          rrule: common.rrule,
+          timezone: v.timezone,
+          task: v.task,
+          advanced:
+            precheck !== "" ||
+            sessionTitle !== "" ||
+            harness !== "" ||
+            model !== "" ||
+            hasSettings ||
+            v.quietHours.length > 0 ||
+            v.sessionMode !== "fresh",
+        });
       onClose();
     };
     if (existing) {

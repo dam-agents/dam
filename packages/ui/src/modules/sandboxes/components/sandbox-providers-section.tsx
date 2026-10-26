@@ -10,6 +10,7 @@ import { useAgent } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
+import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
 import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
 import {
   useGrantProvider,
@@ -22,14 +23,21 @@ import { providerHarnesses } from "../../sessions/lib/session-pair-options.js";
 import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
-import { SessionDefaultsSection } from "./session-defaults-section.js";
+import {
+  type SessionDefaultKind,
+  SessionDefaultsSection,
+} from "./session-defaults-section.js";
 
 export function SandboxProvidersSection({
   agentId,
   header,
+  defaultsKinds,
+  compact = false,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
+  defaultsKinds?: readonly SessionDefaultKind[];
+  compact?: boolean;
 }) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -69,37 +77,57 @@ export function SandboxProvidersSection({
           reach a model.
         </EmptyState>
       )}
-      {owned.map((p) => {
-        const attached = granted.some((g) => g.id === p.id);
-        return (
-          <ProviderToggleRow
-            key={p.id}
-            provider={p}
-            harnesses={catalog && providerHarnesses(catalog, p)}
-            checked={attached}
-            disabled={pending || !managesProviders}
-            onCheckedChange={(on) =>
-              on
-                ? void grant(p.id)
-                : void showConfirm(
-                    <DetachProviderMessage name={p.name} usage={usage(p)} />,
-                    `Disconnect ${p.name} from this agent?`,
-                    { kind: "destructive", confirmLabel: "Disconnect" },
-                  ).then((ok) => ok && revoke(p.id))
-            }
-          >
-            {attached && root === null && p.templateId && (
-              <ConnectionSpendLimit
+      {(() => {
+        const rows = owned.map((p) => {
+          const attached = granted.some((g) => g.id === p.id);
+          const onCheckedChange = (on: boolean) =>
+            on
+              ? void grant(p.id)
+              : void showConfirm(
+                  <DetachProviderMessage name={p.name} usage={usage(p)} />,
+                  `Disconnect ${p.name} from this agent?`,
+                  { kind: "destructive", confirmLabel: "Disconnect" },
+                ).then((ok) => ok && revoke(p.id));
+          if (compact)
+            return (
+              <ProviderSpendRow
+                key={p.id}
                 agentId={agentId}
-                connectionId={p.id}
-                connectionName={p.name}
-                templateId={p.templateId}
+                provider={p}
+                checked={attached}
+                disabled={pending || !managesProviders}
+                showSpend={attached && root === null}
+                onCheckedChange={onCheckedChange}
               />
-            )}
-          </ProviderToggleRow>
+            );
+          return (
+            <ProviderToggleRow
+              key={p.id}
+              provider={p}
+              harnesses={catalog && providerHarnesses(catalog, p)}
+              checked={attached}
+              disabled={pending || !managesProviders}
+              onCheckedChange={onCheckedChange}
+            >
+              {attached && root === null && p.templateId && (
+                <ConnectionSpendLimit
+                  agentId={agentId}
+                  connectionId={p.id}
+                  connectionName={p.name}
+                  templateId={p.templateId}
+                />
+              )}
+            </ProviderToggleRow>
+          );
+        });
+        // UNIT_BOUNDARY_DESCRIPTION: the panel's rows are one card with hairlines between them, like the connections above, so a provider takes a line and not a card of its own.
+        return compact ? (
+          <Card className="divide-y divide-border overflow-hidden">{rows}</Card>
+        ) : (
+          rows
         );
-      })}
-      {owned.length > 0 && managesProviders && (
+      })()}
+      {owned.length > 0 && managesProviders && !compact && (
         <Card className="overflow-hidden">
           <AddRow onClick={() => navigateToSettings("providers")}>
             <Settings size={16} className="shrink-0" />
@@ -114,7 +142,7 @@ export function SandboxProvidersSection({
           </AddRow>
         </Card>
       )}
-      <SessionDefaultsSection agentId={agentId} />
+      <SessionDefaultsSection agentId={agentId} kinds={defaultsKinds} />
     </div>
   );
 }
