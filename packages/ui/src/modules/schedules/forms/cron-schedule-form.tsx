@@ -40,6 +40,7 @@ import {
   ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
+import { scheduleInheritsChoices } from "./schedule-form-schema.js";
 
 interface Props {
   agentId: string;
@@ -276,6 +277,7 @@ export function CronScheduleForm({
           agentId={agentId}
           control={control}
           migrationNote={existing.migrationNote}
+          inheritChoice={scheduleInheritsChoices(existing)}
         />
 
         <SchedulePrecheckField

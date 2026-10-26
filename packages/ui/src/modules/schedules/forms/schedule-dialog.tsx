@@ -16,6 +16,7 @@ import {
   ScheduleChoicesField,
   ScheduleSessionTitleField,
 } from "./schedule-fields.js";
+import { scheduleInheritsChoices } from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 type DialogValues = FieldValues & {
@@ -147,6 +148,7 @@ export function ScheduleDialog<T extends DialogValues>({
               agentId={agentId}
               control={control}
               migrationNote={existing?.migrationNote ?? null}
+              inheritChoice={scheduleInheritsChoices(existing)}
             />
             {afterChoices}
             <ScheduleSessionTitleField

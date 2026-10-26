@@ -158,6 +158,23 @@ export function presetFormValues(
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether a schedule follows the agent's chat default
+ * because it was written before profiles — no profile, no harness, no model —
+ * which is the one case where the form keeps the empty choice so the row opens
+ * and saves untouched (D123).
+ */
+export function scheduleInheritsChoices(
+  existing: Schedule | undefined,
+): boolean {
+  return (
+    existing !== undefined &&
+    existing.profile === null &&
+    !existing.harness &&
+    !existing.model
+  );
+}
+
 export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
   const preset: FrequencyPreset = existing?.rrule
     ? detectPreset(existing.rrule)

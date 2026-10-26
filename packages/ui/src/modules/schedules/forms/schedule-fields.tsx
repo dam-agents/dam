@@ -524,10 +524,16 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   agentId,
   control,
   migrationNote,
+  inheritChoice = false,
 }: {
   agentId: string;
   control: Control<T>;
   migrationNote: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the empty choice is offered only where it is the
+   * schedule's own current selection — a schedule written before profiles that
+   * follows the chat default — so such a row opens and saves untouched, and
+   * every other form asks for concrete values (D123). */
+  inheritChoice?: boolean;
 }) {
   const typed = control as unknown as Control<ChoicesControl>;
   const { data: profiles = [] } = useProfiles(agentId);
@@ -542,6 +548,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
         agentId={agentId}
         control={typed}
         migrationNote={migrationNote}
+        inheritChoice={inheritChoice}
       />
     );
   return (
@@ -581,6 +588,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
           agentId={agentId}
           control={typed}
           migrationNote={migrationNote}
+          inheritChoice={inheritChoice}
         />
       )}
     </div>
@@ -598,10 +606,12 @@ function CustomChoicesField({
   agentId,
   control,
   migrationNote,
+  inheritChoice,
 }: {
   agentId: string;
   control: Control<ChoicesControl>;
   migrationNote: string | null;
+  inheritChoice: boolean;
 }) {
   const typed = control as unknown as Control<ChoicesControl>;
   const { data: status } = useHarnessConfigStatus(agentId || null);
@@ -694,8 +704,9 @@ function CustomChoicesField({
     : null;
   const now = (value: string) =>
     sameAsChat ? `Now: ${value}, the agent's chat default` : `Now: ${value}`;
-  const defaultHint =
-    "Left as the agent's chat default, a schedule runs on whatever the agent's chat default is, which a chat's model picker sets.";
+  const defaultHint = inheritChoice
+    ? "This schedule follows the agent's chat default, which a chat's model picker sets. Pick a harness and model to give it values of its own."
+    : "A harness and model of this schedule's own; a profile is the usual way to name them once.";
   return (
     <div className="flex flex-col gap-4">
       <FormField label="Harness" hint={defaultHint}>
@@ -707,8 +718,10 @@ function CustomChoicesField({
               title="Harness"
               choices={harnessChoices}
               value={field.value || null}
-              clearable
-              placeholder="The agent's chat default"
+              clearable={inheritChoice}
+              placeholder={
+                inheritChoice ? "The agent's chat default" : "Pick a harness"
+              }
               clearedLabel="The agent's chat default"
               clearedDescription={
                 fallback?.harness
@@ -737,8 +750,10 @@ function CustomChoicesField({
             title="Model"
             choices={modelChoices}
             value={modelValue || null}
-            clearable
-            placeholder="The agent's chat default"
+            clearable={inheritChoice}
+            placeholder={
+              inheritChoice ? "The agent's chat default" : "Pick a model"
+            }
             clearedLabel="The agent's chat default"
             clearedDescription={
               todayModel ? now(todayModel) : "Follows the agent's chat default"

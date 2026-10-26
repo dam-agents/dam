@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ScheduleChoicesField } from "../../modules/schedules/forms/schedule-fields.js";
+import { scheduleInheritsChoices } from "../../modules/schedules/forms/schedule-form-schema.js";
 import { schedulePresetProfileId } from "../../modules/schedules/lib/schedule-preset-profile.js";
 import type { Schedule } from "../../types.js";
 
@@ -214,5 +215,27 @@ describe("the schedule form's Profile field", () => {
     const html = renderToStaticMarkup(createElement(Field, { profile: "" }));
     expect(html).toContain("Harness");
     expect(html).not.toContain("Custom selection");
+  });
+});
+
+describe("the chat default choice on Custom selection", () => {
+  /** TEST_SCENARIO: the empty choice stays only for a schedule written before
+   * profiles that follows the chat default, so such a row opens and saves
+   * untouched (D123). */
+  it("keeps the empty choice for a schedule that inherits", () => {
+    expect(scheduleInheritsChoices(schedule(null))).toBe(true);
+    expect(scheduleInheritsChoices(undefined)).toBe(false);
+  });
+
+  /** TEST_SCENARIO: a row that carries a harness or a profile asks for concrete
+   * values instead. */
+  it("drops the empty choice once the row has values or a profile", () => {
+    expect(
+      scheduleInheritsChoices({
+        ...schedule(null),
+        harness: "codex",
+      } as Schedule),
+    ).toBe(false);
+    expect(scheduleInheritsChoices(schedule("p1"))).toBe(false);
   });
 });
