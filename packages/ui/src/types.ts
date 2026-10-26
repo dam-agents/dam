@@ -155,6 +155,9 @@ export interface AgentView {
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  podTerminationCode?: string;
+  reclaimed?: { at: string; for: "memory" | "compute" };
+  startFailure?: { reason: string; message: string };
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;

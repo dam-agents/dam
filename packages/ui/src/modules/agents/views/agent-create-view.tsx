@@ -14,6 +14,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import { sizeInMi, slotsFor, slotUnitOf } from "../../budgets/lib/slots.js";
+import { showStorageFull } from "../../budgets/lib/storage-full.js";
 import {
   useAppConnections,
   useConnectionTemplates,
@@ -336,7 +337,9 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
         setRegistryDisclosureOverride(null);
         selectAgent(agent.id);
-      } catch {}
+      } catch (err) {
+        showStorageFull(err);
+      }
       return;
     }
     try {
@@ -358,7 +361,9 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         });
       }
       selectAgent(result.agent.id);
-    } catch {}
+    } catch (err) {
+      showStorageFull(err);
+    }
   };
 
   return (
