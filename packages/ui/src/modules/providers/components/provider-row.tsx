@@ -65,7 +65,7 @@ export function ProviderRow({
         onOpen && "hover:bg-muted/50",
       )}
     >
-      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included; the spend pill sits above the button and keeps its own dialog, and the harness icons sit above it for their tooltips and open the provider too. */}
+      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included. Whatever has a title or an action of its own sits above the button: the spend pill keeps its dialog, and the harness icons, the balance and the status icon show their tooltips and pass a click on. */}
       {onOpen && (
         <button
           type="button"
@@ -81,15 +81,25 @@ export function ProviderRow({
         harnesses={harnesses}
         onOpen={onOpen}
       />
-      {balance}
-      {spend && <span className="relative flex">{spend}</span>}
-      <ConnectionBadge
-        connected={connected}
-        degraded={degraded}
-        keyCheck={keyCheck}
-        checking={!!checking}
-        reason={problemText}
-      />
+      {balance && (
+        <span onClick={onOpen} className="relative min-w-0" data-layer="raised">
+          {balance}
+        </span>
+      )}
+      {spend && (
+        <span className="relative flex" data-layer="raised">
+          {spend}
+        </span>
+      )}
+      <span onClick={onOpen} className="relative flex" data-layer="raised">
+        <ConnectionBadge
+          connected={connected}
+          degraded={degraded}
+          keyCheck={keyCheck}
+          checking={!!checking}
+          reason={problemText}
+        />
+      </span>
     </div>
   );
 }
@@ -122,6 +132,7 @@ export function ProviderHead({
         <span
           onClick={onOpen}
           className={cn("relative flex shrink-0", onOpen && "cursor-pointer")}
+          data-layer="raised"
         >
           <HarnessIcons
             harnesses={harnesses}

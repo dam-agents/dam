@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { type HarnessFamily, PROVIDER_PRESET_TYPES } from "api-server-api";
+import { Window } from "happy-dom";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -174,6 +175,43 @@ describe("harness icons on provider and preset cards", () => {
       expect(html).not.toMatch(/>(Not configured|Configured · Connected)</);
     },
   );
+
+  /** TEST_SCENARIO: the row-wide button that opens a provider covers the row; what has a title or an action of its own (the harness icons, the balance, the spend pill and the status icon with the key check's reason) sits in the raised layer above it, so its title shows and its own action works. */
+  it("keeps whatever has a title or an action above the row's button", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProviderRow, {
+        type: "ibm-litellm",
+        connected: true,
+        harnesses: ALL,
+        keyCheck: {
+          result: "unverified",
+          detail: "HTTP 503",
+          checkedAt: "2026-10-20T09:15:00.000Z",
+        },
+        balance: createElement(ProviderBalance, { connectionId: "proxy" }),
+        spend: createElement("button", { type: "button" }, "$0.00 today"),
+        onOpen() {},
+      }),
+    );
+    const doc = new Window().document;
+    doc.body.innerHTML = html;
+    const raised = (
+      el: { closest: (s: string) => unknown } | null | undefined,
+    ) => !!el?.closest('[data-layer="raised"]');
+    const withText = (selector: string, text: string) =>
+      [...doc.querySelectorAll(selector)].find((el) =>
+        el.textContent.includes(text),
+      );
+    expect(
+      raised(doc.querySelector('[aria-label="Configured · Unverified"]')),
+    ).toBe(true);
+    expect(raised(withText("p", "$12.00 of $100.00 used"))).toBe(true);
+    expect(raised(withText("button", "$0.00 today"))).toBe(true);
+    expect(raised(doc.querySelector('[aria-label="Claude"]'))).toBe(true);
+    expect(
+      html.match(/<button[^>]*aria-label="Edit [^"]*"[^>]*><\/button>/),
+    ).not.toBeNull();
+  });
 
   it("names each compatible harness inline after the provider's name", () => {
     const html = renderToStaticMarkup(
