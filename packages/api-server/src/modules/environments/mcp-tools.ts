@@ -70,6 +70,12 @@ export function registerEnvironmentTools(
       access: environmentAccessSchema
         .optional()
         .describe("Emails, each on your owner's list."),
+      nestedVirtualization: z
+        .boolean()
+        .optional()
+        .describe(
+          "true = it can run VMs itself (opens /dev/kvm), e.g. to install the platform in it. Only when you have nested virtualization yourself; the install and its node may still refuse it, and `list_environments` says why under `nesting`.",
+        ),
     },
     (args) =>
       run(async () =>
@@ -81,6 +87,9 @@ export function registerEnvironmentTools(
             ...(args.storage ? { storage: args.storage } : {}),
             ...(args.access ? { access: args.access } : {}),
             ...(args.expires ? { expiresAt: parseExpiry(args.expires)! } : {}),
+            ...(args.nestedVirtualization
+              ? { nestedVirtualization: true }
+              : {}),
           }),
         ),
       ),
@@ -88,7 +97,7 @@ export function registerEnvironmentTools(
 
   server.tool(
     "list_environments",
-    "List your Environments: name, endpoints and their addresses, who may open them, when they expire, and whether each runs or sleeps.",
+    "List your Environments: name, endpoints and their addresses, who may open them, when they expire, whether each runs or sleeps, and, for one that asked to run VMs, whether it got nested virtualization and why not (`nesting`).",
     {},
     () => run(async () => json(await envs.list())),
   );

@@ -1311,6 +1311,8 @@ export function createAgentsService(deps: {
         spec.environmentOf = input.environmentOf;
         delete spec.harness;
       }
+      if (input.nestedVirtualization)
+        spec.backend = { type: "vm", vm: { nestedVirtualization: true } };
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
 

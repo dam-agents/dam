@@ -51,6 +51,9 @@ export const environmentViewSchema = z.object({
   expiresAt: z.string(),
   createdAt: z.string(),
   state: z.string(),
+  nesting: z
+    .object({ enabled: z.boolean(), reason: z.string().nullable() })
+    .nullable(),
 });
 
 export const environmentIdInputSchema = z.object({ id: z.string().min(1) });

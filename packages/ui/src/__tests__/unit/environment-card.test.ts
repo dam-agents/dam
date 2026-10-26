@@ -31,6 +31,7 @@ const environment: EnvironmentView = {
   expiresAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
   createdAt: new Date().toISOString(),
   state: "running",
+  nesting: null,
 };
 
 function render(access: string[] | null) {

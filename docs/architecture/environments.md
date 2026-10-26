@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-24
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -22,6 +22,11 @@ It is created with nothing that would let it act as its Owning Agent:
 - **No harness.** The machine is told it is an Environment (`PLATFORM_ENVIRONMENT_OF`, set after the owner's own secret, so neither an ordinary Agent's secret can make it one nor the reverse); its runtime starts no chat harness and no session-history workers, and refuses chat and terminal connections.
 - **No connections** and no default model provider, and no egress preset: it holds no credential, and a grant on it is refused.
 - **The platform's default image**, with Docker, k3s and openrc; the software it runs goes inside, as containers or processes.
+- **No nesting, unless it asks.** An Environment created with `nestedVirtualization` asks for it on its Agent (`spec.backend.vm.nestedVirtualization`), so its guest can open `/dev/kvm` and run VMs itself, for example an install of the platform.
+  Only an Owning Agent that asks for nesting itself, or on an install that asks for every agent, may create one, so an Environment never gets more than its owner.
+  The ask is granted as for any Agent: where the install lets its runners nest and the node's KVM allows it.
+  A create the install cannot grant still succeeds, and the Agent's `NestedVirtualization` condition says why; `list_environments` shows it as `nesting`.
+  It is set at create only.
 
 A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints, the access list, and its expiry.
 
@@ -126,8 +131,7 @@ The cluster tasks then act on the Environment's k3s instead of their own host's:
 An Environment holds one install, so it is always the default install: a `--name` or `DAM_INSTALL`, and a worktree's branch, never name it (the skill's [Where and which](../../.agents/skills/cluster-ops/SKILL.md#where-and-which) has the name rule and the per-target table).
 The public URLs are the Environment's `app`, `keycloak`, `share` and `content` endpoints, all on one port; the install stops, naming what to create, when one is missing.
 It runs no mesh, which the Environment's kernel cannot.
-Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`.
-Nothing in the create asks for nesting, so the Environment's machine nests only when the install that owns it sets `controller.agent.harnessTemplateDefaults.nestedVirtualization` and lets its runners nest, on a node whose KVM allows it.
+Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`: the Environment is created with `nestedVirtualization` ([What an Environment is](#what-an-environment-is)).
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
 Beside the chart it installs two pieces the gate needs:
@@ -141,6 +145,7 @@ Beside the chart it installs two pieces the gate needs:
 
 **The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to an Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
+`list_environments` gives each Environment's `nesting`: none for one that did not ask, else whether its machine got it and, when not, the reason.
 
 **The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
 In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.

@@ -73,6 +73,7 @@ const environment: EnvironmentView = {
   expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
   createdAt: new Date().toISOString(),
   state: "running",
+  nesting: null,
 };
 
 describe("the sidebar's Environments", () => {

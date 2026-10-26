@@ -16,6 +16,7 @@ import type {
   OnboardingStep,
   Agent,
   AgentKind,
+  AgentNesting,
   AgentReclaim,
   AgentSpec,
   AgentSpecCR,
@@ -134,6 +135,7 @@ export interface InfraAgent {
   podTerminationCode?: string;
   notReadyMessage?: string;
   startFailure?: AgentStartFailure;
+  nesting?: AgentNesting;
   podRestarts: number;
   podRestartReason?: string;
   signalVersion?: number;
@@ -261,6 +263,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const resourceVersion = obj.metadata?.resourceVersion;
   const generation = obj.metadata?.generation;
   const startFailed = status.conditions?.find((c) => c.type === "StartFailed");
+  const nested = status.conditions?.find(
+    (c) => c.type === "NestedVirtualization",
+  );
   const specStart =
     generation === undefined
       ? undefined
@@ -374,6 +379,13 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       startFailed.message
         ? { reason: startFailed.reason, message: startFailed.message }
         : undefined,
+    ...(nested && {
+      nesting: {
+        enabled: nested.status === "True",
+        reason: nested.reason ?? "",
+        message: nested.message ?? "",
+      },
+    }),
     podRestarts:
       typeof restarts === "number" && Number.isFinite(restarts) && restarts > 0
         ? restarts
@@ -435,6 +447,7 @@ export function assembleAgent(
     podTerminationCode: infra.podTerminationCode,
     notReadyMessage: infra.notReadyMessage,
     ...(infra.startFailure ? { startFailure: infra.startFailure } : {}),
+    ...(infra.nesting ? { nesting: infra.nesting } : {}),
     podRestarts: infra.podRestarts,
     podRestartReason: infra.podRestartReason,
     gatewayFailure: infra.gatewayFailure,

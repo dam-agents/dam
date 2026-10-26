@@ -140,6 +140,13 @@ export interface AgentStartFailure {
   message: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the machine of an Agent that asks for nested virtualization got it, from its NestedVirtualization condition; the message says why not.
+export interface AgentNesting {
+  enabled: boolean;
+  reason: string;
+  message: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -159,6 +166,7 @@ export interface Agent {
   podTerminationCode?: string;
   notReadyMessage?: string;
   startFailure?: AgentStartFailure;
+  nesting?: AgentNesting;
   podRestarts: number;
   podRestartReason?: string;
   gatewayFailure?: string;
@@ -189,6 +197,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;
   environmentOf?: string;
+  nestedVirtualization?: boolean;
 };
 export type AgentUpdateInput = z.infer<typeof agentPatchSchema>;
 

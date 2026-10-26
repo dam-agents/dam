@@ -89,6 +89,7 @@ const environment: EnvironmentView = {
   expiresAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
   createdAt: new Date().toISOString(),
   state: "hibernated",
+  nesting: null,
 };
 
 describe("the Environments section", () => {

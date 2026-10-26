@@ -64,6 +64,7 @@ const environment: EnvironmentView = {
   expiresAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
   createdAt: new Date().toISOString(),
   state: "running",
+  nesting: null,
 };
 
 // TEST_SCENARIO: a running Environment shows as its card, with that it runs, its expiry, its app's link opening in a new tab, and the menu with the extend and delete controls; the tab asks for that agent's Environments and links to its section.

@@ -109,7 +109,6 @@ func TestHydrateCarriesEveryFieldTheControllerReads(t *testing.T) {
 	spec := mustMap(t, agent.Object, "spec")
 	if spec["image"] != "agent:1" ||
 		spec["hibernationTimeout"] != "1h30m0s" ||
-		spec["nestedVirtualization"] != true ||
 		spec["requireConnectionAddress"] != true ||
 		spec["storageSize"] != "30Gi" ||
 		spec["environmentOf"] != "parent" ||
@@ -119,6 +118,9 @@ func TestHydrateCarriesEveryFieldTheControllerReads(t *testing.T) {
 	limits := spec["resources"].(map[string]any)["limits"].(map[string]any)
 	if limits["cpu"] != "2" || limits["memory"] != "4Gi" {
 		t.Fatalf("limits = %v", limits)
+	}
+	if vm := mustMap(t, mustMap(t, spec, "backend"), "vm"); vm["nestedVirtualization"] != true {
+		t.Fatalf("backend = %v", spec["backend"])
 	}
 	if hosts := spec["l7Hosts"].([]any); len(hosts) != 2 || hosts[0] != "a.test" {
 		t.Fatalf("hosts = %v", hosts)

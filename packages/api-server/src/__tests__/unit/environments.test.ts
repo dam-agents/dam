@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner extends and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints, access list and expiry. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
+// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner extends and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints, access list and expiry. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. An Environment runs VMs only when it asks and its owning Agent nests itself, and its list entry says whether its machine got nesting and why not. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
 import { describe, expect, it } from "vitest";
 import {
   listedAgents,
@@ -67,7 +67,9 @@ function fakeAgents(seed: Partial<Agent>[]) {
         name: input.name,
         state: "starting",
         spec: {
-          backend: { type: "vm" },
+          backend: input.nestedVirtualization
+            ? { type: "vm", vm: { nestedVirtualization: true } }
+            : { type: "vm" },
           environmentOf: input.environmentOf,
         },
       } as unknown as Agent;
@@ -85,7 +87,7 @@ function fakeAgents(seed: Partial<Agent>[]) {
       return { ok: true, value: agents.get(id) };
     },
   } as unknown as AgentsService;
-  return { service, created, deleted, woken, disabled };
+  return { service, agents, created, deleted, woken, disabled };
 }
 
 const vmOwning = {
@@ -125,6 +127,28 @@ function setup(
     now: () => NOW,
   });
   return { repo, agents, starts, woken: agents.woken, service, ownerLists };
+}
+
+const nestingOwning = {
+  id: "agent-nesting000000001",
+  name: "platform-dev",
+  spec: { backend: { type: "vm", vm: { nestedVirtualization: true } } },
+} as unknown as Partial<Agent>;
+
+const installNestingOwning = {
+  id: "agent-nesting000000002",
+  name: "every-agent-nests",
+  spec: { backend: { type: "vm" } },
+  nesting: { enabled: true, reason: "Enabled", message: "" },
+} as unknown as Partial<Agent>;
+
+function setNesting(
+  agents: ReturnType<typeof fakeAgents>,
+  id: string,
+  nesting: Agent["nesting"],
+) {
+  const agent = agents.agents.get(id)!;
+  agents.agents.set(id, { ...agent, nesting });
 }
 
 describe("creating an Environment", () => {
@@ -225,6 +249,75 @@ describe("creating an Environment", () => {
         .create({ name: "a", endpoints: [{ name: "app", port: 80 }] }),
     ).rejects.toThrow("db down");
     expect(agents.deleted).toHaveLength(1);
+  });
+});
+
+describe("an Environment that runs VMs", () => {
+  const endpoints = [{ name: "app", port: 4400 }];
+
+  // TEST_SCENARIO: an Owning Agent without nesting cannot give it to an Environment, so an Environment never gets more than its owner; nothing is created.
+  it("is refused to an Owning Agent that does not nest", async () => {
+    const { service, agents } = setup();
+
+    await expect(
+      service
+        .forOwningAgent(vmOwning.id!)
+        .create({ name: "a", endpoints, nestedVirtualization: true }),
+    ).rejects.toThrow(/does not run VMs itself/);
+    expect(agents.created).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: an Owning Agent that nests, by its own ask or because the install asks for every agent, creates an Environment whose Agent asks for nesting; one created without the option asks for nothing.
+  it.each([nestingOwning, installNestingOwning])(
+    "asks for nesting on the Environment's Agent of $name",
+    async (owning) => {
+      const { service, agents } = setup({ agents: [owning] });
+      const mine = service.forOwningAgent(owning.id!);
+
+      await mine.create({ name: "a", endpoints, nestedVirtualization: true });
+      await mine.create({ name: "b", endpoints });
+
+      expect(agents.created[0]).toMatchObject({ nestedVirtualization: true });
+      expect(agents.created[1]).not.toHaveProperty("nestedVirtualization");
+    },
+  );
+
+  // TEST_SCENARIO: list_environments says whether an Environment that asked nests: not yet before its machine reports, the controller's reason when the install or the node refuses it, and enabled once the machine has it. One that never asked shows no nesting.
+  it("shows whether it nests, and why not", async () => {
+    const { service, agents } = setup({ agents: [nestingOwning] });
+    const mine = service.forOwningAgent(nestingOwning.id!);
+    const nested = await mine.create({
+      name: "a",
+      endpoints,
+      nestedVirtualization: true,
+    });
+    const plain = await mine.create({ name: "b", endpoints });
+    const nestingOf = async (id: string) =>
+      (await mine.list()).find((e) => e.id === id)!.nesting;
+
+    expect(nested.nesting).toEqual({
+      enabled: false,
+      reason: "the machine has not been created yet",
+    });
+    setNesting(agents, nested.id, {
+      enabled: false,
+      reason: "NotAllowedByInstall",
+      message: "this install does not let machines nest",
+    });
+    expect(await nestingOf(nested.id)).toEqual({
+      enabled: false,
+      reason: "this install does not let machines nest",
+    });
+    setNesting(agents, nested.id, {
+      enabled: true,
+      reason: "Enabled",
+      message: "",
+    });
+    expect(await nestingOf(nested.id)).toEqual({
+      enabled: true,
+      reason: null,
+    });
+    expect(await nestingOf(plain.id)).toBeNull();
   });
 });
 

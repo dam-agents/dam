@@ -96,6 +96,7 @@ export {
 
 export type {
   Agent,
+  AgentNesting,
   AgentReclaim,
   AgentStartFailure,
   WorkspaceFailure,

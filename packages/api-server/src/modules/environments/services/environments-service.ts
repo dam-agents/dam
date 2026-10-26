@@ -32,6 +32,7 @@ export interface CreateEnvironmentInput {
   expiresAt?: Date;
   start?: string;
   access?: string[];
+  nestedVirtualization?: boolean;
 }
 
 export interface UpdateEnvironmentInput {
@@ -67,6 +68,14 @@ export interface EnvironmentsServiceImpl {
   remove(record: EnvironmentRecord, actor: string): Promise<void>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an Agent asks for nesting itself through its spec, or the install asks for every agent, which shows as the NestedVirtualization condition the controller sets on each Agent that asks.
+function asksToNest(agent: Agent): boolean {
+  return (
+    agent.spec.backend?.vm?.nestedVirtualization === true ||
+    agent.nesting !== undefined
+  );
+}
+
 function refuse(
   message: string,
   code: TRPCError["code"] = "BAD_REQUEST",
@@ -91,6 +100,15 @@ export function createEnvironmentsService(
 ): EnvironmentsServiceImpl {
   const now = deps.now ?? (() => new Date());
 
+  function nesting(agent: Agent | null): EnvironmentView["nesting"] {
+    if (!agent || !asksToNest(agent)) return null;
+    if (agent.nesting?.enabled) return { enabled: true, reason: null };
+    return {
+      enabled: false,
+      reason: agent.nesting?.message || "the machine has not been created yet",
+    };
+  }
+
   function view(
     record: EnvironmentRecord,
     agent: Agent | null,
@@ -107,6 +125,7 @@ export function createEnvironmentsService(
       expiresAt: record.expiresAt.toISOString(),
       createdAt: record.createdAt.toISOString(),
       state: agent?.state ?? "unknown",
+      nesting: nesting(agent),
     };
   }
 
@@ -191,6 +210,11 @@ export function createEnvironmentsService(
           `this agent already holds ${held.length} Environments, the most it may; delete one first`,
           "PRECONDITION_FAILED",
         );
+      if (input.nestedVirtualization && !asksToNest(owning))
+        refuse(
+          "this agent does not run VMs itself, so none of its Environments may: nested virtualization is given to an Environment only when its Owning Agent has it",
+          "FORBIDDEN",
+        );
       const expiresAt = expiry(input.expiresAt);
       if (input.access) await withinOwnerList(owningAgentId, input.access);
       const agent = await deps.agents.create({
@@ -201,6 +225,7 @@ export function createEnvironmentsService(
         egressPreset: "none",
         requireConnectionAddress: true,
         ...(input.storage ? { storage: input.storage } : {}),
+        ...(input.nestedVirtualization ? { nestedVirtualization: true } : {}),
       });
       const record: EnvironmentRecord = {
         agentId: agent.id,
