@@ -1195,6 +1195,7 @@ export function ChatView() {
             onStop={stopAgent}
             onTakeBack={takeBack}
             blockedReason={block?.reason ?? null}
+            harness={sendHarness ?? null}
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)

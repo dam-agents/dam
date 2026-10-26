@@ -45,6 +45,7 @@ import {
 } from "../lib/prompt-delivery.js";
 import { lastOutputAtOf } from "../lib/quiet-turn.js";
 import { pairMeta } from "../lib/session-pair-options.js";
+import { lastReportedCommands } from "../lib/skill-commands.js";
 import {
   clearUndelivered,
   forgetUndelivered,
@@ -497,6 +498,8 @@ export function useAcpConnection(
           .setLastOutputAt(
             lastOutputAtOf(updates, useStore.getState().lastOutputAt),
           );
+        const commands = lastReportedCommands(collector.updates);
+        if (commands) useStore.getState().setReportedCommands(sid, commands);
         useStore.getState().setAttribution({
           senders: senders.success ? senders.data : [],
           verdicts: verdicts.success ? verdicts.data : [],

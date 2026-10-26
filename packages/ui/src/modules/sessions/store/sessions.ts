@@ -27,6 +27,7 @@ import { acpSessionsKeys } from "../api/keys.js";
 import { removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
+import type { SkillCommand } from "../lib/skill-commands.js";
 import {
   clearUndelivered,
   readUndelivered,
@@ -36,6 +37,11 @@ import {
 const TOOL_ACTIVITY_EXPANDED_STORAGE_KEY = "platform-tool-activity-expanded";
 
 export type RewriteMode = "rewind" | "fork";
+
+export interface ReportedCommands {
+  sessionId: string;
+  commands: SkillCommand[];
+}
 
 export type ChatRequest =
   | { kind: "open"; sessionId: string; mode: SessionMode | null }
@@ -77,6 +83,7 @@ export interface SessionsSlice {
   attribution: SessionAttribution;
   continuedFrom: PlatformContinuedFrom | null;
   queuedPrompts: QueuedPrompt[];
+  reportedCommands: ReportedCommands | null;
   harnessForks: boolean;
   harnessSteers: boolean;
   rewriting: Rewriting | null;
@@ -113,6 +120,7 @@ export interface SessionsSlice {
   setTurnSender: (sender: Sender | null) => void;
   setContinuedFrom: (copy: PlatformContinuedFrom | null) => void;
   setQueuedPrompts: (items: QueuedPrompt[]) => void;
+  setReportedCommands: (sessionId: string, commands: SkillCommand[]) => void;
   setHarnessForks: (forks: boolean) => void;
   setHarnessSteers: (steers: boolean) => void;
   setRewriting: (rewriting: Rewriting | null) => void;
@@ -205,6 +213,7 @@ export const createSessionsSlice: StateCreator<
     attribution: NO_ATTRIBUTION,
     continuedFrom: null,
     queuedPrompts: [],
+    reportedCommands: null,
     harnessForks: false,
     harnessSteers: false,
     rewriting: null,
@@ -272,6 +281,8 @@ export const createSessionsSlice: StateCreator<
       set((s) => ({ attribution: { ...s.attribution, turnSender: sender } })),
     setContinuedFrom: (copy) => set({ continuedFrom: copy }),
     setQueuedPrompts: (items) => set({ queuedPrompts: items }),
+    setReportedCommands: (sessionId, commands) =>
+      set({ reportedCommands: { sessionId, commands } }),
     setHarnessForks: (forks) => set({ harnessForks: forks }),
     setHarnessSteers: (steers) => set({ harnessSteers: steers }),
     setRewriting: (rewriting) => set({ rewriting }),
@@ -390,6 +401,7 @@ export const createSessionsSlice: StateCreator<
         attribution: NO_ATTRIBUTION,
         continuedFrom: null,
         queuedPrompts: [],
+        reportedCommands: null,
         rewriting: null,
         rewritePending: null,
         sessionError: null,
