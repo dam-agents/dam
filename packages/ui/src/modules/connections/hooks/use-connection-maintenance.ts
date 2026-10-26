@@ -18,14 +18,27 @@ export function useConnectionMaintenance() {
     setEditingScope(connection);
   };
 
+  const signInActions = (
+    connection: ConnectionView,
+  ): RowMaintenanceActions => ({
+    onReauthenticate: () => void reauthenticate(connection),
+    busy: busyId === (connection.parentId ?? connection.id),
+  });
+
   const rowActions = (
     connection: ConnectionView,
   ): RowMaintenanceActions | undefined => {
     switch (connection.authKind) {
       case "oauth":
+        if (connection.parentId)
+          return {
+            ...signInActions(connection),
+            ...(connection.status !== "pending"
+              ? { onEditScope: () => openEditScope(connection) }
+              : {}),
+          };
         return {
-          onReauthenticate: () => void reauthenticate(connection),
-          busy: busyId === connection.id,
+          ...signInActions(connection),
           ...(connection.hasClientSecret
             ? { onUpdateCredential: () => openUpdate(connection) }
             : {}),
@@ -38,6 +51,10 @@ export function useConnectionMaintenance() {
       case "sigv4":
         return { onUpdateCredential: () => openUpdate(connection) };
       case "github-app":
+        if (connection.isParent)
+          return { onUpdateCredential: () => openUpdate(connection) };
+        if (connection.parentId)
+          return { onEditScope: () => openEditScope(connection) };
         return {
           onUpdateCredential: () => openUpdate(connection),
           onEditScope: () => openEditScope(connection),

@@ -8,7 +8,7 @@ import type {
   RowMaintenanceActions,
 } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
-import { ConnectionRowCard } from "./connection-row-card.js";
+import { ConnectionRows } from "./connection-rows.js";
 
 interface Props {
   group: CatalogProviderGroup;
@@ -21,6 +21,7 @@ interface Props {
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
+  onNewChild?: (parent: ConnectionView) => void;
 }
 
 export function ConnectionGroup({
@@ -32,6 +33,7 @@ export function ConnectionGroup({
   onDelete,
   deletingId = null,
   maintenance,
+  onNewChild,
 }: Props) {
   const { provider, connections } = group;
   return (
@@ -54,19 +56,17 @@ export function ConnectionGroup({
         )
       }
     >
-      {connections.map((c) => (
-        <ConnectionRowCard
-          key={c.id}
-          bare
-          connection={c}
-          template={templateById.get(c.templateId)}
-          grant={grant?.(c)}
-          onManage={onManage}
-          onDelete={onDelete && (() => onDelete(c.id, c.name))}
-          deleting={deletingId === c.id}
-          maintenance={maintenance?.(c)}
-        />
-      ))}
+      <ConnectionRows
+        bare
+        connections={connections}
+        templateById={templateById}
+        grant={grant}
+        onManage={onManage}
+        onDelete={onDelete}
+        deletingId={deletingId}
+        maintenance={maintenance}
+        onNewChild={onNewChild}
+      />
     </ListGroup>
   );
 }

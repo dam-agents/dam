@@ -1,6 +1,7 @@
 import type {
   ConnectionCreateInput,
   ConnectionTemplateView,
+  ConnectionView,
 } from "api-server-api";
 import { useRef, useState } from "react";
 
@@ -31,11 +32,13 @@ export function useTemplateCreateSubmit({
   popupOAuth,
   oauthReturnView,
   onCreated,
+  onSignedIn,
 }: {
   template: ConnectionTemplateView;
   popupOAuth?: boolean;
   oauthReturnView?: string;
   onCreated: (id: string) => void;
+  onSignedIn?: (parent: ConnectionView) => void;
 }) {
   const create = useCreateConnection();
   const discover = useDiscoverMcp();
@@ -51,27 +54,43 @@ export function useTemplateCreateSubmit({
     } catch {}
   };
 
+  const signedIn = (parent: ConnectionView) => {
+    if (onSignedIn) onSignedIn(parent);
+    else
+      emitToast({
+        kind: "success",
+        message: `Signed in. Make a connection from ${parent.name} on the Connections page to give it to an agent.`,
+      });
+  };
+
+  const unreadable = () => {
+    void invalidateConnections();
+    fail(
+      "Authorized, but the new connection couldn't be read, so nothing was added. Find it on the Connections page.",
+    );
+  };
+
   const settlePopup = async (result: OAuthPopupResult) => {
     const id = pendingIdRef.current;
     pendingIdRef.current = null;
     setAuthorizing(false);
     if (!id) return;
-    const succeed = () => {
-      void invalidateConnections();
-      onCreated(id);
-    };
-    if (result.ok) {
-      succeed();
+    let conn: ConnectionView | null;
+    try {
+      conn = await api.connections.get.query({ id });
+    } catch {
+      if (result.ok) unreadable();
+      else fail(result.message ?? "Authorization was cancelled.");
       return;
     }
-    try {
-      const conn = await api.connections.get.query({ id });
-      if (conn?.status === "active") {
-        succeed();
-        return;
-      }
-    } catch {
-      fail(result.message ?? "Authorization was cancelled.");
+    if (conn && (result.ok || conn.status === "active")) {
+      void invalidateConnections();
+      if (conn.isParent) signedIn(conn);
+      else onCreated(id);
+      return;
+    }
+    if (result.ok) {
+      unreadable();
       return;
     }
     await discardPending(id);

@@ -56,13 +56,24 @@ export interface ConnectionService {
     targetId?: number;
     repositoryIds?: string;
     permissions?: string;
+    fullAccess?: boolean;
   }): Promise<ConnResult<void>>;
   updateGitHubAppScope(input: {
     id: string;
     repositories?: string;
     repositoryIds?: string;
     permissions?: string;
+    fullAccess?: boolean;
   }): Promise<ConnResult<void>>;
+  createFromParent(input: {
+    parentId: string;
+    name: string;
+    fullAccess?: boolean;
+    targetId?: number;
+    repositories?: string;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<ConnResult<{ id: string }>>;
 }
 
 export function createConnectionService(deps: {
@@ -173,6 +184,11 @@ export function createConnectionService(deps: {
       return trpcCall(async () => {
         await deps.trpc.connections.updateGitHubAppScope.mutate(input);
       });
+    },
+    async createFromParent(input) {
+      return trpcCall(() =>
+        deps.trpc.connections.createFromParent.mutate(input),
+      );
     },
   };
 }

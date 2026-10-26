@@ -9,7 +9,11 @@ import {
 } from "../../shared/exit-codes.js";
 import { pollUntil } from "../../shared/poll.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { resolveConnectionRef } from "../domain/connection-ref.js";
+import {
+  resolveConnectionRef,
+  unresolvedConnectionRef,
+} from "../domain/connection-ref.js";
+import { parentLabel, parentOf } from "../domain/github-parent.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const POLL_INTERVAL_MS = 2000;
@@ -43,6 +47,8 @@ export function buildReauthCommand(deps: {
       "\nRe-authentication keeps the connection's identity and every sandbox\n" +
         "grant; only its tokens are replaced. Use it when a connection shows\n" +
         "expired, or to re-consent after its template gained scopes.\n" +
+        "A connection made from a GitHub sign-in signs in again for the sign-in,\n" +
+        "which renews every connection made from it.\n" +
         "\nExamples:\n" +
         "  dam connection reauth github\n" +
         "  dam connection reauth conn-61cc7b9137b0 --no-browser\n" +
@@ -73,27 +79,32 @@ export function buildReauthCommand(deps: {
         exitOnServiceError(listed, host);
         const match = resolveConnectionRef(listed.value, ref);
         if (!match) {
-          process.stderr.write(
-            `error: no connection with id or name '${ref}'\n`,
-          );
-          process.stderr.write(
-            "hint: run `dam connection list` to see ids and names\n",
-          );
+          process.stderr.write(unresolvedConnectionRef(listed.value, ref));
           process.exit(EXIT_INVALID_INPUT);
         }
+        const parent = parentOf(listed.value, match);
         if (match.authKind !== "oauth") {
           process.stderr.write(
             `error: '${match.name}' uses ${match.authKind} auth, which has no login flow\n`,
           );
           process.stderr.write(
-            `hint: replace its stored credential with \`dam connection update ${match.name}\`\n`,
+            parent
+              ? `hint: replace the key of the ${parentLabel(parent)} it was made from with \`dam connection update ${parent.id}\`\n`
+              : `hint: replace its stored credential with \`dam connection update ${match.name}\`\n`,
           );
           process.exit(EXIT_INVALID_INPUT);
         }
+        const target = parent ?? match;
+        if (parent && !json) {
+          process.stderr.write(
+            `${match.name} was made from the ${parentLabel(parent)} ${parent.name} (${parent.id}); ` +
+              "signing in again for it renews every connection made from it.\n",
+          );
+        }
 
-        const connectedAtBefore = match.connectedAt;
+        const connectedAtBefore = target.connectedAt;
 
-        const started = await svc.startOAuth(match.id);
+        const started = await svc.startOAuth(target.id);
         exitOnServiceError(started, host);
         const { authUrl } = started.value;
 
@@ -110,7 +121,7 @@ export function buildReauthCommand(deps: {
         }
         process.stderr.write("Waiting for authorization…\n");
 
-        const landed = await pollUntil(() => svc.getConnection(match.id), {
+        const landed = await pollUntil(() => svc.getConnection(target.id), {
           timeoutSeconds,
           intervalMs: POLL_INTERVAL_MS,
           until: (res) =>
@@ -128,11 +139,11 @@ export function buildReauthCommand(deps: {
 
         if (json) {
           process.stdout.write(
-            `${JSON.stringify({ ok: true, id: match.id, name: match.name })}\n`,
+            `${JSON.stringify({ ok: true, id: target.id, name: target.name })}\n`,
           );
         } else {
           process.stdout.write(
-            `✓ Re-authenticated ${match.name} (${match.id}).\n`,
+            `✓ Re-authenticated ${target.name} (${target.id}).\n`,
           );
         }
         process.exit(EXIT_SUCCESS);
