@@ -63,12 +63,16 @@ function fakeRepo(
 ) {
   const rows = opts.rows ?? [profile()];
   const writes = {
+    scopes: [] as (readonly string[] | undefined)[],
     seeds: 0,
     updates: [] as Partial<ProfileRow>[],
     binds: [] as string[],
   };
   const repo = {
-    references: async () => opts.references ?? none,
+    references: async (_owner: string, agentIds?: readonly string[]) => {
+      writes.scopes.push(agentIds);
+      return opts.references ?? none;
+    },
     list: async () => rows,
     get: async (id: string, owner?: string) =>
       rows.find(
@@ -97,6 +101,7 @@ function service(
   opts: {
     sharedProvider?: boolean;
     republish?: () => Promise<string | null>;
+    agentBinding?: readonly string[] | "*";
   } = {},
 ) {
   return createProfilesService({
@@ -104,7 +109,7 @@ function service(
     owner: "owner-1",
     catalog,
     sharedProvider: opts.sharedProvider ?? true,
-    agentBinding: "*",
+    agentBinding: opts.agentBinding ?? "*",
     resolve: profileResolver(repo),
     republish: opts.republish ?? (async () => null),
   });
@@ -174,6 +179,15 @@ describe("the owner's profiles", () => {
     const unserved = fakeRepo();
     await service(unserved.repo, { sharedProvider: false }).list();
     expect(unserved.writes.seeds).toBe(0);
+  });
+
+  /** TEST_SCENARIO: a key bound to some agents reads usage of those agents only — no other agent's id, channel or schedule leaks into the list or the usage answer. */
+  it("narrows usage to the agents a bound key may see", async () => {
+    const { repo, writes } = fakeRepo();
+    const bound = service(repo, { agentBinding: ["agent-a"] });
+    await bound.list();
+    await bound.usage("profile-1");
+    expect(writes.scopes).toEqual([["agent-a"], ["agent-a"]]);
   });
 
   /** TEST_SCENARIO: a model of another provider than the profile's template would run on a provider nobody chose. */

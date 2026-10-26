@@ -74,7 +74,7 @@ export function ProfilePicker({
           <ChevronDown size={12} aria-hidden className="shrink-0" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-1">
+      <PopoverContent align="start" className="w-80 p-1">
         <ProfileChoices
           profiles={profiles}
           selectedId={value}
