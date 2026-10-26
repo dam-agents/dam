@@ -14,6 +14,7 @@ import {
   Help,
   Home,
   NewTab,
+  Notification,
   OverflowMenuVertical,
   Settings,
   Time,
@@ -100,6 +101,7 @@ export function IconRail({
   const setView = useStore((s) => s.setView);
   const expandedNav = useStore((s) => s.sidebarExpanded);
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
+  const toggleNotifications = useStore((s) => s.toggleNotifications);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToAgentLanding = useStore((s) => s.navigateToAgentLanding);
@@ -150,6 +152,10 @@ export function IconRail({
 
   const now = useNow(60_000);
   const { items: notifItems, agents: notifAgents } = useNotifications();
+  const needsYouCount = useMemo(
+    () => notifItems.filter(isNeedsYou).length,
+    [notifItems],
+  );
   const feedItems = useMemo(
     () => notifItems.filter((i) => !isNeedsYou(i)),
     [notifItems],
