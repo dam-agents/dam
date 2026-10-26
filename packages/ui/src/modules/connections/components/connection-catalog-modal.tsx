@@ -20,6 +20,7 @@ import {
   filterGroupsByAccepts,
 } from "../lib/catalog-providers.js";
 import type { ConnectionAudience } from "../lib/connection-audience.js";
+import { childrenOf } from "../lib/connection-hierarchy.js";
 import type { NamedConnection } from "../lib/connection-label.js";
 import {
   grantBlockedReason,
@@ -27,6 +28,7 @@ import {
   grantSkippedMessage,
 } from "../lib/grant-rivals.js";
 import type { RowGrantControls } from "./catalog-connection-row.js";
+import { CatalogCreateChildPane } from "./catalog-create-child-pane.js";
 import { CatalogCreatePane } from "./catalog-create-pane.js";
 import { McpCreatePane } from "./catalog-mcp-create-pane.js";
 import {
@@ -43,7 +45,8 @@ const MCP_PROVIDER_ID = "mcp-server";
 type Pane =
   | { kind: "browse" }
   | { kind: "create"; providerId: string }
-  | { kind: "create-mcp" };
+  | { kind: "create-mcp" }
+  | { kind: "create-child"; parent: ConnectionView };
 
 export interface ConnectionSharing {
   notice: ConnectionAudience | null;
@@ -149,8 +152,12 @@ export function ConnectionCatalogModal({
   }, [allGroups, initialProviderId, initialTemplateId]);
 
   const handleDelete = async (id: string, name: string) => {
-    if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))
-      sandbox.onToggleGrant(id, false);
+    const children = childrenOf(id, connectionsQ.data ?? NO_CONNECTIONS);
+    if (!(await confirmAndDelete(id, name)) || !sandbox) return;
+    const revoked = [id, ...children.map((c) => c.id)].filter((deleted) =>
+      sandbox.grantedIds.has(deleted),
+    );
+    if (revoked.length > 0) sandbox.onRevoke(revoked);
   };
 
   const confirmShare = async (connection?: NamedConnection) =>
@@ -238,8 +245,15 @@ export function ConnectionCatalogModal({
           initialTemplateId={initialTemplateId}
           onBack={() => setPane({ kind: "browse" })}
           onCreated={onCreated}
+          onSignedIn={(parent) => setPane({ kind: "create-child", parent })}
         />
       ) : null
+    ) : pane.kind === "create-child" ? (
+      <CatalogCreateChildPane
+        parent={pane.parent}
+        onBack={() => setPane({ kind: "browse" })}
+        onCreated={onCreated}
+      />
     ) : pane.kind === "create-mcp" ? (
       <McpCreatePane
         templateById={templateById}
@@ -305,6 +319,9 @@ export function ConnectionCatalogModal({
                   deletingId={deletingId}
                   maintenance={maintenance.rowActions}
                   onGoToChannels={onGoToChannels}
+                  onNewChild={(parent) =>
+                    setPane({ kind: "create-child", parent })
+                  }
                 />
               ))}
               {(singlePage || activeTab === "mcp") &&

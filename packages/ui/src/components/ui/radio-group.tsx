@@ -75,6 +75,7 @@ interface RadioGroupCardProps extends Omit<
   label: string;
   description?: string;
   testId?: string;
+  tone?: "default" | "danger";
   children?: React.ReactNode;
 }
 
@@ -82,14 +83,22 @@ function RadioGroupCard({
   label,
   description,
   testId,
+  tone = "default",
   className,
   children,
   "aria-describedby": describedBy,
   ...props
 }: RadioGroupCardProps) {
   const descriptionId = React.useId();
+  const danger = tone === "danger";
   return (
-    <div className={cn("rounded-lg border border-border", className)}>
+    <div
+      className={cn(
+        "rounded-lg border",
+        danger ? "border-danger" : "border-border",
+        className,
+      )}
+    >
       <RadioGroupPrimitive.Item
         aria-label={label}
         aria-describedby={
@@ -102,7 +111,14 @@ function RadioGroupCard({
         {...props}
       >
         <span className="flex flex-1 flex-col gap-0.5">
-          <span className="text-md font-medium text-foreground">{label}</span>
+          <span
+            className={cn(
+              "text-md font-medium",
+              danger ? "text-danger" : "text-foreground",
+            )}
+          >
+            {label}
+          </span>
           {description && (
             <span id={descriptionId} className="text-sm text-muted-foreground">
               {description}
@@ -114,7 +130,14 @@ function RadioGroupCard({
         </span>
       </RadioGroupPrimitive.Item>
       {children != null && (
-        <div className="border-t border-border p-4">{children}</div>
+        <div
+          className={cn(
+            "border-t p-4",
+            danger ? "border-danger" : "border-border",
+          )}
+        >
+          {children}
+        </div>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import type {
   SecretlessConnectionCreateInput,
   SecretRequestDestination,
   SecretRequestField,
+  SecretRequestView,
 } from "api-server-api";
 import { match } from "ts-pattern";
 import {
@@ -17,6 +18,18 @@ import {
   sigv4Target,
 } from "./build-connection.js";
 import type { ConnectionTemplate } from "./connection-template.js";
+import { parseGitHubAppScope } from "./github-app-scope.js";
+
+export function githubAppAccessOf(
+  input: Extract<SecretlessConnectionCreateInput, { authKind: "github-app" }>,
+): NonNullable<SecretRequestView["githubAppAccess"]> {
+  if (input.fullAccess) return { fullAccess: true };
+  try {
+    return parseGitHubAppScope(input);
+  } catch {
+    return {};
+  }
+}
 
 export type SecretRequestAuthKind = Extract<
   ConnectionAuthKind,

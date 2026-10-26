@@ -8,7 +8,10 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { resolveConnectionRef } from "../domain/connection-ref.js";
+import {
+  resolveConnectionRef,
+  unresolvedConnectionRef,
+} from "../domain/connection-ref.js";
 import { credentialCheckSummary } from "../domain/credential-check.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
@@ -52,10 +55,7 @@ export function buildTestCommand(deps: {
       exitOnServiceError(listed, host);
       const match = resolveConnectionRef(listed.value, ref);
       if (!match) {
-        process.stderr.write(`error: no connection with id or name '${ref}'\n`);
-        process.stderr.write(
-          "hint: run `dam connection list` to see ids and names\n",
-        );
+        process.stderr.write(unresolvedConnectionRef(listed.value, ref));
         process.exit(EXIT_INVALID_INPUT);
       }
 

@@ -9,13 +9,13 @@ import { githubAppInstallUrl } from "../lib/github-app-install-url.js";
 
 type InstallHintConnection = Pick<
   ConnectionView,
-  "templateId" | "host" | "appSlug" | "status"
+  "templateId" | "host" | "appSlug" | "status" | "parentId"
 >;
 
 export function activeInstallUrl(
   connection: InstallHintConnection,
 ): string | null {
-  if (connection.status !== "active") return null;
+  if (connection.status !== "active" || connection.parentId) return null;
   return githubAppInstallUrl(connection);
 }
 

@@ -155,6 +155,8 @@ function makeRepoFake(initial: Connection) {
     },
     listByOwner: async (ownerId) =>
       [...rows.values()].filter((c) => c.ownerId === ownerId),
+    listChildren: async (parentId) =>
+      [...rows.values()].filter((c) => c.parentId === parentId),
     listByOwnerOldestFirst: async (ownerId) =>
       [...rows.values()].filter((c) => c.ownerId === ownerId),
     get: async (id, ownerId) => {
@@ -189,6 +191,11 @@ function makeRepoFake(initial: Connection) {
 const templates = createConnectionTemplateRegistry(
   buildCatalog({ github: { clientId: "Iv1.client", clientSecret: "shh" } }),
 );
+
+const NO_CHILDREN = {
+  listChildren: async () => [],
+  updateAuth: async () => {},
+};
 
 function refreshingEngine(): OAuthEngine {
   return {
@@ -382,6 +389,7 @@ describe("GitHub user token scoping — renewal", () => {
       githubAppEngine: engine,
       templates,
       secretStore: store,
+      children: NO_CHILDREN,
     });
 
     expect(out.expiresAt).toBe(NOW_SEC + 1800);
@@ -417,6 +425,7 @@ describe("GitHub user token scoping — renewal", () => {
         githubAppEngine: engine,
         templates,
         secretStore: store,
+        children: NO_CHILDREN,
       }),
     ).rejects.toMatchObject({ oauthError: "invalid_grant" });
 
@@ -439,6 +448,7 @@ describe("GitHub user token scoping — renewal", () => {
       githubAppEngine: engine,
       templates,
       secretStore: store,
+      children: NO_CHILDREN,
     });
 
     expect(calls).toHaveLength(0);

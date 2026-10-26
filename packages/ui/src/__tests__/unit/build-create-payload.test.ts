@@ -5,6 +5,7 @@ import {
   buildCreatePayload,
   type CreateFormValues,
 } from "../../modules/connections/lib/build-create-payload.js";
+import { NO_APP_SCOPE } from "../../modules/connections/lib/github-app-scope-fields.js";
 
 const GITHUB_APP_TEMPLATE: ConnectionTemplateView = {
   id: "github-app",
@@ -50,8 +51,11 @@ const GITHUB_ENTERPRISE_APP_PRESET_TEMPLATE: ConnectionTemplateView = {
   ],
 };
 
-function values(fields: Record<string, string>): CreateFormValues {
-  return { name: "my-connection", fields, overrideDefaults: false };
+function values(
+  fields: Record<string, string>,
+  access: CreateFormValues["access"] = "full",
+): CreateFormValues {
+  return { name: "my-connection", fields, overrideDefaults: false, access };
 }
 
 describe("buildCreatePayload (github-app)", () => {
@@ -67,10 +71,12 @@ describe("buildCreatePayload (github-app)", () => {
       appId: "1",
       installationId: "2",
       privateKey: "pem",
+      fullAccess: true,
     });
   });
 
-  it("carries the scope fields when the user fills them", () => {
+  // TEST_SCENARIO: full access is sent as its own flag, never as an installation with no scope, and it drops any repository or permission the form still holds from the narrowed choice.
+  it("sends full access without the scope fields", () => {
     const payload = buildCreatePayload(
       GITHUB_APP_SCOPED_TEMPLATE,
       values({
@@ -80,6 +86,25 @@ describe("buildCreatePayload (github-app)", () => {
         repositories: "docs",
         permissions: "contents:read",
       }),
+    );
+    expect(payload).toMatchObject({ fullAccess: true });
+    expect(payload).not.toHaveProperty("repositories");
+    expect(payload).not.toHaveProperty("permissions");
+  });
+
+  it("carries the scope fields when the user fills them", () => {
+    const payload = buildCreatePayload(
+      GITHUB_APP_SCOPED_TEMPLATE,
+      values(
+        {
+          appId: "1",
+          installationId: "2",
+          privateKey: "pem",
+          repositories: "docs",
+          permissions: "contents:read",
+        },
+        "narrowed",
+      ),
     );
     expect(payload).toEqual({
       templateId: "github-app",
@@ -93,19 +118,22 @@ describe("buildCreatePayload (github-app)", () => {
     });
   });
 
-  it("omits the scope fields when the user leaves them blank", () => {
+  // TEST_SCENARIO: a narrowed choice with nothing chosen would store an installation no agent can use, so the form refuses it and names both ways out.
+  it("refuses a narrowed choice with nothing chosen", () => {
     const payload = buildCreatePayload(
       GITHUB_APP_SCOPED_TEMPLATE,
-      values({
-        appId: "1",
-        installationId: "2",
-        privateKey: "pem",
-        repositories: "   ",
-        permissions: "",
-      }),
+      values(
+        {
+          appId: "1",
+          installationId: "2",
+          privateKey: "pem",
+          repositories: "   ",
+          permissions: "",
+        },
+        "narrowed",
+      ),
     );
-    expect(payload).not.toHaveProperty("repositories");
-    expect(payload).not.toHaveProperty("permissions");
+    expect(payload).toEqual({ error: NO_APP_SCOPE });
   });
 
   it("rejects an empty required host with an inline error, not a passthrough", () => {

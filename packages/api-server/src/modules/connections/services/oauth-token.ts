@@ -13,6 +13,10 @@ import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import { earliestExpiry } from "../domain/github-user-token-scope.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
+import {
+  rederiveGitHubChildren,
+  type ChildTokenDeps,
+} from "./github-children.js";
 
 export type OAuthAuth = Extract<ConnectionAuthConfig, { kind: "oauth" }>;
 
@@ -66,6 +70,7 @@ export async function refreshOAuthAccessToken(opts: {
   githubAppEngine: GitHubAppEngine;
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
+  children: ChildTokenDeps["repo"];
 }): Promise<{ expiresAt: number | undefined }> {
   const { conn, auth, secretStore } = opts;
   const connectionRef = `connection:${conn.id}:${conn.templateId}`;
@@ -97,6 +102,20 @@ export async function refreshOAuthAccessToken(opts: {
 
   const fields: Record<string, string> = { access_token: next.accessToken };
   if (next.refreshToken) fields.refresh_token = next.refreshToken;
+  if (conn.isParent) {
+    await secretStore.putFields(auth.accessTokenRef, fields);
+    const expiresAt = await rederiveGitHubChildren(
+      {
+        repo: opts.children,
+        secretStore,
+        githubAppEngine: opts.githubAppEngine,
+      },
+      conn,
+      next,
+      clientSecret,
+    );
+    return { expiresAt };
+  }
   if (!scope) {
     await secretStore.putFields(auth.accessTokenRef, {
       ...fields,

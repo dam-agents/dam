@@ -1,14 +1,17 @@
 import type { ConnectionTemplateInput } from "api-server-api";
 import { useEffect, useRef } from "react";
-import { type Control, useWatch } from "react-hook-form";
+import { type Control, Controller, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useProbeGitHubAppInstallation } from "../api/mutations.js";
+import { fullAccessReach } from "../lib/github-access.js";
 import {
+  appScopeFieldsChosen,
   canProbe,
+  NO_APP_SCOPE,
   type PermissionLevel,
   readPermissions,
   readRepositoryIds,
@@ -16,6 +19,7 @@ import {
   writeRepositoryIds,
 } from "../lib/github-app-scope-fields.js";
 import type { TemplateFormValues } from "../lib/template-form-schema.js";
+import { GithubAccessChoice } from "./github-access-choice.js";
 import {
   PermissionSection,
   RepositorySection,
@@ -104,15 +108,8 @@ export function GithubAppScopePicker({
     });
   };
 
-  return (
-    <div className="flex flex-col gap-3">
-      <SectionLabel>Limit this connection</SectionLabel>
-      <p className="text-sm text-muted-foreground">
-        By default the connection can do everything the app installation can.
-        Read the installation to narrow it to the repositories and permissions
-        this agent actually needs.
-      </p>
-
+  const narrowedFields = (
+    <>
       <div className="flex items-center gap-3">
         <Button
           type="button"
@@ -180,6 +177,39 @@ export function GithubAppScopePicker({
       ) : (
         fallbackInputs.map((input) => textInput(input.name))
       )}
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionLabel>What this connection reaches</SectionLabel>
+      <Controller
+        control={control}
+        name="access"
+        render={({ field }) => (
+          <GithubAccessChoice
+            value={field.value}
+            onChange={field.onChange}
+            narrowedLabel="Choose repositories and permissions"
+            fullAccessReach={fullAccessReach({ authKind: "github-app" })}
+            testIdPrefix="github-app"
+          >
+            <p className="text-sm text-muted-foreground">
+              Read the installation to choose the repositories and permissions
+              agents get through this connection.
+            </p>
+            {narrowedFields}
+            {!appScopeFieldsChosen(fields) && (
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="github-app-scope-needed"
+              >
+                {NO_APP_SCOPE}
+              </p>
+            )}
+          </GithubAccessChoice>
+        )}
+      />
     </div>
   );
 }

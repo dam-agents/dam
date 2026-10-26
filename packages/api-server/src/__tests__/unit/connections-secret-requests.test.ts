@@ -44,6 +44,7 @@ function world(
     grants?: Record<string, string[]>;
     createFromTemplate?: (input: ConnectionCreateInput) => Promise<string>;
     check?: CredentialCheck;
+    saved?: Partial<ConnectionView>;
   } = {},
 ) {
   const clock = opts.clock ?? { now: 1_000_000 };
@@ -64,10 +65,18 @@ function world(
     get: async (id: string, owner: string) =>
       opts.connections?.find((c) => c.id === id && c.ownerId === owner) ?? null,
     listAgentsForConnection: async (id: string) => opts.grants?.[id] ?? [],
+    listChildren: async (parentId: string) =>
+      opts.connections?.filter((c) => c.parentId === parentId) ?? [],
     listConnectionsForAgent: async () => [],
   };
   const getConnection = vi.fn(async (id: string) =>
-    opts.check ? ({ id, check: opts.check } as ConnectionView) : null,
+    opts.check || opts.saved
+      ? ({
+          id,
+          ...(opts.check ? { check: opts.check } : {}),
+          ...opts.saved,
+        } as ConnectionView)
+      : null,
   );
   const forOwner = (ownerId: string) =>
     createSecretRequestsService({
@@ -527,6 +536,108 @@ describe("secret requests an agent makes", () => {
     ).toMatchObject({ status: "saved", granted: false });
     expect(await agent.status(ticket.requestId)).toMatchObject({
       granted: false,
+    });
+  });
+
+  // TEST_SCENARIO: an agent may ask for a GitHub App connection narrowed to repositories and permissions, which the page shows; asked for none, the owner's save keeps the installation alone, which no agent can hold, so the agent is told it got nothing.
+  it("shows the App access an agent asks for and grants no installation", async () => {
+    const w = world({ saved: { isParent: true } });
+    const agent = w.forAgent("alice", "agent-1");
+    const alice = w.forOwner("alice");
+
+    const narrowed = await agent.requestNew({
+      templateId: "github-app",
+      name: "my-app",
+      inputs: {
+        appId: "1",
+        installationId: "2",
+        repositories: "docs",
+        permissions: "contents:read",
+      },
+    });
+    expect((await alice.get(narrowed.requestId))?.githubAppAccess).toEqual({
+      repositories: ["docs"],
+      permissions: { contents: "read" },
+    });
+
+    const bare = await agent.requestNew({
+      templateId: "github-app",
+      name: "my-app",
+      inputs: { appId: "1", installationId: "2" },
+    });
+    expect((await alice.get(bare.requestId))?.githubAppAccess).toEqual({});
+    expect(
+      await alice.submit({
+        requestId: bare.requestId,
+        fields: { privateKey: "pem" },
+      }),
+    ).toMatchObject({ status: "saved", granted: false });
+    expect(w.updateAgentConnections).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: full access to a GitHub App installation is the owner's choice, so an agent asking for it is refused.
+  it("refuses an agent's request for full access", async () => {
+    const agent = world().forAgent("alice", "agent-1");
+    await expect(
+      agent.request({
+        action: "create",
+        connection: {
+          templateId: "github-app",
+          name: "my-app",
+          authKind: "github-app",
+          appId: "1",
+          installationId: "2",
+          fullAccess: true,
+        },
+      }),
+    ).rejects.toThrow(/only your owner/);
+  });
+
+  // TEST_SCENARIO: a connection made from a GitHub App installation mints with the installation's key, so a new key is asked for on the installation, not on the connection.
+  it("refuses a new key for a connection made from an installation", async () => {
+    const child = {
+      id: "conn-child",
+      ownerId: "alice",
+      templateId: "github-app",
+      name: "my-app",
+      parentId: "conn-parent",
+      auth: { kind: "github-app" },
+    } as Connection;
+    const w = world({ connections: [child] });
+    await expect(
+      w.forOwner("alice").request({ action: "update", connectionId: child.id }),
+    ).rejects.toThrow(/replace the key on the installation/);
+  });
+
+  // TEST_SCENARIO: a new key for a GitHub App installation re-mints the token of every connection made from it, so the page names the agents that hold those connections, not the installation's own grants, which it never has.
+  it("names the agents of the connections made from an installation", async () => {
+    const installation = {
+      id: "conn-parent",
+      ownerId: "alice",
+      templateId: "github-app",
+      name: "my-app",
+      isParent: true,
+      contributions: [],
+      auth: { kind: "github-app" },
+    } as unknown as Connection;
+    const child = {
+      ...installation,
+      id: "conn-child",
+      isParent: undefined,
+      parentId: "conn-parent",
+    } as unknown as Connection;
+    const w = world({
+      connections: [installation, child],
+      grants: { "conn-child": ["agent-1"] },
+    });
+    const alice = w.forOwner("alice");
+    const ticket = await alice.request({
+      action: "update",
+      connectionId: "conn-parent",
+    });
+    expect(await alice.get(ticket.requestId)).toMatchObject({
+      isParent: true,
+      grantedAgents: [{ id: "agent-1", name: "reviewer" }],
     });
   });
 

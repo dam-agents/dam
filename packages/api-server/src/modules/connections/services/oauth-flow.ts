@@ -21,6 +21,8 @@ import type { XactLock } from "../../../core/xact-lock.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import { oauthProviderFor } from "./oauth-token.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
+import { rederiveGitHubChildren } from "./github-children.js";
+import { withoutParentScope } from "../domain/github-parent.js";
 import { recordAccountLabel } from "./account-label.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -64,6 +66,13 @@ export function createOAuthFlowService(deps: {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `connection auth kind is ${conn.auth.kind}; not OAuth`,
+        });
+      }
+      if (conn.parentId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "This connection is renewed by the GitHub sign-in it was made from. Sign in again on the sign-in.",
         });
       }
       const provider = await oauthProviderFor({
@@ -132,6 +141,30 @@ export function createOAuthFlowService(deps: {
         if (tokens.refreshToken && fresh.auth.refreshTokenRef) {
           fields.refresh_token = tokens.refreshToken;
         }
+        if (fresh.isParent) {
+          await deps.secretStore.putFields(fresh.auth.accessTokenRef, fields);
+          const expiresAt = await rederiveGitHubChildren(
+            {
+              repo: deps.repo,
+              secretStore: deps.secretStore,
+              githubAppEngine: deps.githubAppEngine,
+            },
+            fresh,
+            tokens,
+            provider.clientSecret,
+          );
+          await deps.repo.updateAuth(conn.id, {
+            ...withoutParentScope(
+              fresh,
+              withoutRefreshFailureMarker(fresh.auth),
+            ),
+            connectedAt: Math.floor(Date.now() / 1000),
+            scopes:
+              tokens.scopes ?? pending.provider.scopes ?? fresh.auth.scopes,
+            ...(expiresAt !== undefined ? { expiresAt } : {}),
+          });
+          return;
+        }
         const scope = fresh.auth.githubUserTokenScope;
         await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
           ...fields,
@@ -183,7 +216,7 @@ export function createOAuthFlowService(deps: {
           reauth: isReauth,
         },
       });
-      if (!isReauth) {
+      if (!isReauth && !conn.isParent) {
         emit({
           type: EventType.ConnectionCreated,
           actorSub: pending.ctx.ownerId,
@@ -193,10 +226,15 @@ export function createOAuthFlowService(deps: {
         });
       }
 
-      if (template?.id === "github") {
-        await applyGitHubIdentity(conn, tokens.accessToken, deps);
+      const madeFrom = conn.isParent
+        ? await deps.repo.listChildren(conn.id)
+        : [];
+      for (const each of [conn, ...madeFrom]) {
+        if (template?.id === "github") {
+          await applyGitHubIdentity(each, tokens.accessToken, deps);
+        }
+        await recordAccountLabel(each, tokens.accessToken, deps);
       }
-      await recordAccountLabel(conn, tokens.accessToken, deps);
 
       return {
         connectionId: pending.ctx.connectionId,

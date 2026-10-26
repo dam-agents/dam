@@ -8,7 +8,7 @@ import type {
   RowMaintenanceActions,
 } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
-import { ConnectionRowCard } from "./connection-row-card.js";
+import { ConnectionRows } from "./connection-rows.js";
 
 interface Props {
   group: CatalogProviderGroup;
@@ -22,6 +22,7 @@ interface Props {
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
+  onNewChild?: (parent: ConnectionView) => void;
 }
 
 export function ConnectionGroup({
@@ -34,21 +35,22 @@ export function ConnectionGroup({
   deletingId = null,
   flat = false,
   maintenance,
+  onNewChild,
 }: Props) {
   const { provider, connections } = group;
-  const rows = connections.map((c) => (
-    <ConnectionRowCard
-      key={c.id}
+  const rows = (
+    <ConnectionRows
       bare
-      connection={c}
-      template={templateById.get(c.templateId)}
-      grant={grant?.(c)}
+      connections={connections}
+      templateById={templateById}
+      grant={grant}
       onManage={onManage}
-      onDelete={onDelete && (() => onDelete(c.id, c.name))}
-      deleting={deletingId === c.id}
-      maintenance={maintenance?.(c)}
+      onDelete={onDelete}
+      deletingId={deletingId}
+      maintenance={maintenance}
+      onNewChild={onNewChild}
     />
-  ));
+  );
   // UNIT_BOUNDARY_DESCRIPTION: the Services panel lists every connection in one run, so a group draws no header there and its rows join the others under the one card.
   if (flat) return <>{rows}</>;
   return (

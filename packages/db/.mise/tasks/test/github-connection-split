@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+#MISE description="Check the split of GitHub sign-ins and App installations into parents using temporary tables in the local cluster"
+set -euo pipefail
+repo="$(git rev-parse --show-toplevel)"
+{
+  cat <<'SQL'
+BEGIN;
+CREATE TEMP TABLE connections (
+  id text PRIMARY KEY, owner text, template_id text, name text,
+  inputs jsonb, auth jsonb, contributions jsonb,
+  parent_id text REFERENCES connections (id) ON DELETE CASCADE,
+  is_parent boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (owner, name, is_parent)
+);
+CREATE TEMP TABLE connection_grants (agent_id text, connection_id text);
+CREATE TEMP TABLE runtime_state_outbox (agent_id text, version int, last_enqueued_at timestamptz);
+INSERT INTO connections (id, owner, template_id, name, inputs, auth, contributions) VALUES
+  ('conn-narrowed', 'u', 'github', 'github', '{"accountLabel":"octocat"}',
+   '{"kind":"oauth","clientId":"Iv1","scopes":[],"tokenUrl":"https://github.com/t","authorizationUrl":"https://github.com/a","connectedAt":1,"expiresAt":2,"refreshTokenRef":{"path":"s1","field":"refresh_token"},"accessTokenRef":{"path":"s1","field":"access_token"},"clientSecretRef":{"path":"s1","field":"client_secret"},"githubUserTokenScope":{"targetId":42}}',
+   '[{"kind":"egress-inject","host":"api.github.com"}]'),
+  ('conn-full', 'u', 'github-enterprise', 'ghe', '{}',
+   '{"kind":"oauth","clientId":"Iv1","scopes":[],"tokenUrl":"https://ghe.example/t","authorizationUrl":"https://ghe.example/a","connectedAt":1,"expiresAt":2,"refreshBackoff":{"failures":1,"nextAttempt":3},"refreshTokenRef":{"path":"s2","field":"refresh_token"},"accessTokenRef":{"path":"s2","field":"access_token"}}',
+   '[]'),
+  ('conn-pending', 'u', 'github', 'github-2', '{}',
+   '{"kind":"oauth","clientId":"Iv1","scopes":[],"tokenUrl":"https://github.com/t","authorizationUrl":"https://github.com/a","refreshTokenRef":{"path":"s3","field":"refresh_token"},"accessTokenRef":{"path":"s3","field":"access_token"}}',
+   '[]'),
+  ('conn-app', 'u', 'github-app', 'app', '{"repositories":"docs"}',
+   '{"kind":"github-app","appId":"1","installationId":"2","apiBaseUrl":"https://api.github.com","privateKeyRef":{"path":"s4","field":"private_key"},"accessTokenRef":{"path":"s4","field":"access_token"},"expiresAt":5,"connectedAt":1,"repositories":["docs"]}',
+   '[]'),
+  ('conn-app-full', 'u', 'github-enterprise-app', 'app-2', '{}',
+   '{"kind":"github-app","appId":"1","installationId":"3","apiBaseUrl":"https://ghe.example/api/v3","privateKeyRef":{"path":"s5","field":"private_key"},"accessTokenRef":{"path":"s5","field":"access_token"},"expiresAt":5,"refreshFailedAt":4}',
+   '[]'),
+  ('conn-pat', 'u', 'github-pat', 'pat', '{}', '{"kind":"header","valueRef":{"path":"s6","field":"value"}}', '[]');
+INSERT INTO connection_grants VALUES ('a', 'conn-narrowed'), ('a', 'conn-pending'), ('b', 'conn-app'), ('c', 'conn-pat');
+INSERT INTO runtime_state_outbox VALUES ('a', 5, NULL), ('b', 3, NULL), ('c', 7, NULL);
+SQL
+  cat "$repo/packages/db/drizzle/0118_split_github_connections.sql"
+  cat <<'SQL'
+;
+DO $$
+DECLARE
+  parent_of_narrowed text := 'conn-' || substr(md5('conn-narrowed:parent'), 1, 12);
+  parent_of_app text := 'conn-' || substr(md5('conn-app:parent'), 1, 12);
+BEGIN
+  ASSERT (SELECT count(*) = 10 FROM connections), 'Expected four new parents beside the six rows';
+  ASSERT (SELECT is_parent AND parent_id IS NULL FROM connections WHERE id = 'conn-pending'), 'An unfinished sign-in must become a parent alone';
+  ASSERT (SELECT count(*) = 0 FROM connections WHERE parent_id = 'conn-pending'), 'An unfinished sign-in gets no connection';
+  ASSERT (SELECT count(*) = 0 FROM connection_grants WHERE connection_id = 'conn-pending'), 'A parent keeps no grant';
+  ASSERT (SELECT version = 6 AND last_enqueued_at IS NOT NULL FROM runtime_state_outbox WHERE agent_id = 'a'), 'The agent of a removed grant is delivered again';
+  ASSERT (SELECT version = 3 FROM runtime_state_outbox WHERE agent_id = 'b'), 'An agent whose grants stay is not delivered again';
+
+  ASSERT (SELECT parent_id = parent_of_narrowed AND NOT is_parent AND name = 'github' FROM connections WHERE id = 'conn-narrowed'), 'The connection keeps its id and name under its new parent';
+  ASSERT (SELECT is_parent AND name = 'github' AND inputs = '{"accountLabel":"octocat"}'::jsonb FROM connections WHERE id = parent_of_narrowed), 'The parent takes the name and inputs';
+  ASSERT (SELECT auth -> 'refreshTokenRef' IS NOT NULL AND auth -> 'githubUserTokenScope' = '{"targetId":42}'::jsonb AND auth -> 'expiresAt' IS NOT NULL FROM connections WHERE id = parent_of_narrowed), 'The sign-in keeps the refresh token, its expiry and, for an older api-server during the rollout, the scope';
+  ASSERT (SELECT auth -> 'refreshTokenRef' IS NULL AND auth #>> '{accessTokenRef,field}' = 'scoped_token' AND auth -> 'githubUserTokenScope' IS NOT NULL AND auth -> 'fullAccess' IS NULL FROM connections WHERE id = 'conn-narrowed'), 'A narrowed connection keeps its scope and moves its token to scoped_token';
+  ASSERT (SELECT (auth ->> 'fullAccess')::boolean AND auth -> 'refreshBackoff' IS NULL FROM connections WHERE id = 'conn-full'), 'An unnarrowed sign-in connection says full access';
+  ASSERT (SELECT count(*) = 1 FROM connection_grants WHERE connection_id = 'conn-narrowed' AND agent_id = 'a'), 'The connection keeps its agents';
+
+  ASSERT (SELECT is_parent AND auth -> 'repositories' IS NULL AND auth -> 'expiresAt' IS NULL AND auth -> 'privateKeyRef' IS NOT NULL AND inputs = '{}'::jsonb FROM connections WHERE id = parent_of_app), 'The installation keeps its key and drops the scope and the token expiry';
+  ASSERT (SELECT parent_id = parent_of_app AND auth -> 'repositories' = '["docs"]'::jsonb AND auth -> 'fullAccess' IS NULL AND auth -> 'privateKeyRef' IS NOT NULL FROM connections WHERE id = 'conn-app'), 'A narrowed App connection keeps its scope and key reference';
+  ASSERT (SELECT (auth ->> 'fullAccess')::boolean AND auth -> 'refreshFailedAt' IS NOT NULL FROM connections WHERE id = 'conn-app-full'), 'An unnarrowed App connection says full access and keeps its expiry state';
+  ASSERT (SELECT parent_id IS NULL AND NOT is_parent FROM connections WHERE id = 'conn-pat'), 'Other templates are untouched';
+END $$;
+ROLLBACK;
+SQL
+} | mise run //:cluster:kubectl -- exec -i platform-postgres-0 -- psql -U platform -d platform -v ON_ERROR_STOP=1

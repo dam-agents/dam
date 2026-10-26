@@ -147,6 +147,16 @@ export function useUpdateGitHubAppScope() {
   });
 }
 
+export function useCreateConnectionFromParent() {
+  return useMutation({
+    ...trpc.connections.createFromParent.mutationOptions(),
+    meta: {
+      invalidates: [trpc.connections.list.queryKey()],
+      suppressErrorToast: true,
+    },
+  });
+}
+
 export function useProbeGitHubUserToken() {
   return useMutation({
     ...trpc.connections.probeGitHubUserTokenForConnection.mutationOptions(),

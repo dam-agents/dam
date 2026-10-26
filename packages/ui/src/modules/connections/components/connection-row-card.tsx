@@ -18,6 +18,7 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
+  onNewChild?: () => void;
   bare?: boolean;
 }
 
@@ -30,6 +31,7 @@ export function ConnectionRowCard({
   deleting,
   maintenance,
   onRemove,
+  onNewChild,
   bare = false,
 }: Props) {
   const needsInstall = activeInstallUrl(connection) !== null;
@@ -51,6 +53,7 @@ export function ConnectionRowCard({
         deleting={deleting}
         maintenance={maintenance}
         onRemove={onRemove}
+        onNewChild={onNewChild}
       />
     </div>
   );

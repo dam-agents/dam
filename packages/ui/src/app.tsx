@@ -12,6 +12,7 @@ import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toas
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { holds } from "./modules/agents/lib/agent-permissions.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { SignInFollowUp } from "./modules/connections/components/sign-in-follow-up.js";
 import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import { useFeatures } from "./modules/features/api/queries.js";
 import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
@@ -219,6 +220,7 @@ function MainApp() {
         </div>
         {kitBrowserOpen && <BrowseKitsModal />}
         <MobileNavDrawer />
+        <SignInFollowUp />
         <DialogOverlay />
         <ConnectionBanner />
       </>
@@ -277,6 +279,7 @@ function MainApp() {
       {kitBrowserOpen && <BrowseKitsModal />}
       {classic && <ClassicPagePanels />}
       <MobileNavDrawer />
+      <SignInFollowUp />
       <DialogOverlay />
       <ConnectionBanner />
     </div>

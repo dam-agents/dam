@@ -3,10 +3,11 @@ import type { ConnectionStatus, ConnectionView } from "api-server-api";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRowActions } from "./connection-row-actions.js";
+import { ConnectionRowDetail } from "./connection-row-detail.js";
+import { FullAccessMark } from "./full-access-mark.js";
 
 export interface RowGrantControls {
   granted: boolean;
@@ -41,6 +42,7 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
+  onNewChild?: () => void;
 }
 
 export function CatalogConnectionRow({
@@ -53,6 +55,7 @@ export function CatalogConnectionRow({
   deleting = false,
   maintenance,
   onRemove,
+  onNewChild,
 }: Props) {
   return (
     <div
@@ -75,6 +78,7 @@ export function CatalogConnectionRow({
           <Badge variant="muted" className="min-w-0 font-normal" title={tag}>
             <span className="truncate">{tag}</span>
           </Badge>
+          <FullAccessMark connection={connection} />
           {connection.status !== "active" && (
             <Badge variant={STATUS_PRESENTATION[connection.status].variant}>
               {STATUS_PRESENTATION[connection.status].label}
@@ -98,6 +102,7 @@ export function CatalogConnectionRow({
           onManage={onManage}
           onDelete={onDelete}
           deleting={deleting}
+          onNewChild={onNewChild}
         />
         {onRemove && (
           <Button
@@ -112,18 +117,7 @@ export function CatalogConnectionRow({
           </Button>
         )}
       </div>
-      {connection.accountLabel && (
-        <p
-          className={cn(
-            "mt-0.5 truncate text-xs text-muted-foreground",
-            iconSlug && "pl-6",
-          )}
-          title={connection.accountLabel}
-          data-testid={`catalog-connection-account-${connection.id}`}
-        >
-          Acts as {connection.accountLabel}
-        </p>
-      )}
+      <ConnectionRowDetail connection={connection} indented={!!iconSlug} />
     </div>
   );
 }

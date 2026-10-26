@@ -1,4 +1,4 @@
-import type { ConnectionTemplateView } from "api-server-api";
+import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ interface Props {
   initialTemplateId?: string;
   onBack: () => void;
   onCreated: (id: string) => void;
+  onSignedIn: (parent: ConnectionView) => void;
 }
 
 export function CatalogCreatePane({
@@ -26,6 +27,7 @@ export function CatalogCreatePane({
   initialTemplateId,
   onBack,
   onCreated,
+  onSignedIn,
 }: Props) {
   const templates = group.templates;
   const [selectedId, setSelectedId] = useState(
@@ -104,6 +106,7 @@ export function CatalogCreatePane({
         popupOAuth
         oauthReturnView={oauthReturnView}
         onCreated={onCreated}
+        onSignedIn={onSignedIn}
         onCancel={onBack}
         initialName={editedName}
         onNameChange={setEditedName}

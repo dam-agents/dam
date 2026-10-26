@@ -1,29 +1,29 @@
+import type { FullAccessChoice, GithubAccess } from "./github-access.js";
 import {
   type PermissionLevel,
   writePermissions,
   writeRepositoryIds,
 } from "./github-app-scope-fields.js";
 
-export const EVERY_ACCOUNT = "every-account";
-
-export function userTokenScopePayload(
-  id: string,
-  selection: {
-    targetId: number | null;
-    repositoryIds: ReadonlySet<number>;
-    permissions: Record<string, PermissionLevel>;
-  },
-): {
-  id: string;
-  targetId?: number;
+export interface UserTokenScopeChoice {
+  targetId: number;
   repositoryIds?: string;
   permissions?: string;
-} {
-  if (selection.targetId === null) return { id };
+}
+
+export function userTokenScopeChoice(selection: {
+  access: GithubAccess;
+  targetId: number | null;
+  repositoryIds: ReadonlySet<number>;
+  permissions: Record<string, PermissionLevel>;
+}): FullAccessChoice | UserTokenScopeChoice | null {
+  if (selection.access === "full") return { fullAccess: true };
+  if (selection.targetId === null) return null;
+  const repositoryIds = writeRepositoryIds([...selection.repositoryIds]);
+  const permissions = writePermissions(selection.permissions);
   return {
-    id,
     targetId: selection.targetId,
-    repositoryIds: writeRepositoryIds([...selection.repositoryIds]),
-    permissions: writePermissions(selection.permissions),
+    ...(repositoryIds ? { repositoryIds } : {}),
+    ...(permissions ? { permissions } : {}),
   };
 }
