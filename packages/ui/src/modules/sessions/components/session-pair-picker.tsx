@@ -32,6 +32,7 @@ import {
   useHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
+  useOwnerHarnessCatalog,
   useProviderConnections,
   useProviderModels,
 } from "../api/session-pair.js";
@@ -75,7 +76,7 @@ import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
 interface CommonProps {
-  agentId: string;
+  agentId: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
@@ -95,6 +96,8 @@ type Props = CommonProps &
           pair: SessionPair;
           providerName: string;
           onChoose: (pair: SessionPair) => void;
+          /** UNIT_BOUNDARY_DESCRIPTION: lists models from the owner-level catalog, not the agent's runtime, for a pick held outside any agent (a profile in Settings); the same catalog supplies the harness capabilities, so `agentId` may be null. */
+          ownerCatalog?: boolean;
         };
       }
   );
@@ -120,7 +123,9 @@ export function SessionPairPicker(props: Props) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
-  const picked = useStore((s) => s.nextSessionPair[agentId] ?? null);
+  const picked = useStore((s) =>
+    agentId ? (s.nextSessionPair[agentId] ?? null) : null,
+  );
   const chosen = edit ? null : picked;
   const firstView = edit ? "custom" : "profiles";
   const [view, setView] = useState<"profiles" | "custom" | "subagent">(
@@ -134,7 +139,11 @@ export function SessionPairPicker(props: Props) {
   const manageProviders = newLayout;
   const setPair = useStore((s) => s.setNextSessionPair);
 
-  const providers = useProviderConnections(agentId);
+  const connections = useProviderConnections(agentId);
+  const ownerCatalog = edit?.ownerCatalog === true && routed;
+  const providers = ownerCatalog
+    ? { ...connections, granted: connections.owned }
+    : connections;
   const usage = useProviderUsage(agentId);
   const { revoke, pending: revoking } = useGrantProvider(agentId);
   const attachDialog = useAttachProvidersDialog(agentId);
@@ -208,6 +217,7 @@ export function SessionPairPicker(props: Props) {
     },
   ) => {
     if (edit) return edit.onChoose(chosenPair);
+    if (!agentId) return;
     setPair(agentId, chosenPair);
     if (routed)
       rememberSessionPair(agentId, chosenPair, "chat", undefined, references);
@@ -215,11 +225,15 @@ export function SessionPairPicker(props: Props) {
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
   const catalogModels = useHarnessCatalogModels(
-    routed ? agentId : null,
+    ownerCatalog || !routed ? null : agentId,
     harness,
   );
+  const ownerModels = useOwnerHarnessCatalog(ownerCatalog ? harness : null);
   const groups = routed
-    ? modelGroups(catalogModels.data, catalogModels.granted).filter(
+    ? modelGroups(
+        ownerCatalog ? ownerModels.data : catalogModels.data,
+        ownerCatalog ? providers.owned : catalogModels.granted,
+      ).filter(
         (g) => !catalog || offered.granted.some((p) => p.id === g.connectionId),
       )
     : [];
@@ -236,7 +250,7 @@ export function SessionPairPicker(props: Props) {
       platformSubagentProfileId,
     });
   const saveAs = useSaveAsProfile({
-    agentId,
+    agentId: agentId ?? null,
     pair,
     providerTemplate: providers.owned.find((p) => p.id === pair?.provider)
       ?.templateId,
@@ -345,7 +359,7 @@ export function SessionPairPicker(props: Props) {
           {showProfiles ? (
             <div className="p-1">
               <ModelConfiguration
-                agentId={agentId}
+                agentId={agentId ?? null}
                 profiles={profiles}
                 customHint={`${harnesses.length} harness${harnesses.length === 1 ? "" : "es"}`}
                 primary={{
@@ -416,6 +430,7 @@ export function SessionPairPicker(props: Props) {
                 <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 p-2 text-xs">
                   <PlatformSubagentSettings
                     agentId={agentId}
+                    ownerCatalog={ownerCatalog}
                     carried={carried}
                     settings={pair.settings ?? {}}
                     idPrefix="new-session"
@@ -500,12 +515,25 @@ export function SessionPairPicker(props: Props) {
                     <>
                       <SessionModelList
                         agentId={agentId}
+                        ownerCatalog={ownerCatalog}
                         groups={groups}
                         current={pair?.model ?? null}
-                        loading={catalogModels.isLoading}
-                        waiting={catalogModels.waiting}
-                        failed={catalogModels.isError}
-                        onRetry={() => void catalogModels.refetch()}
+                        loading={
+                          ownerCatalog
+                            ? ownerModels.isLoading
+                            : catalogModels.isLoading
+                        }
+                        waiting={ownerCatalog ? false : catalogModels.waiting}
+                        failed={
+                          ownerCatalog
+                            ? ownerModels.isError
+                            : catalogModels.isError
+                        }
+                        onRetry={() =>
+                          void (ownerCatalog
+                            ? ownerModels.refetch()
+                            : catalogModels.refetch())
+                        }
                         onChoose={(model, group) => {
                           const kept = settingsForModel(
                             capability,
@@ -523,11 +551,13 @@ export function SessionPairPicker(props: Props) {
                           });
                         }}
                         onManageProviders={() =>
-                          navigateToSandboxHome(agentId, "models")
+                          agentId
+                            ? navigateToSandboxHome(agentId, "models")
+                            : onConnectProviders()
                         }
                       />
                     </>
-                  ) : (
+                  ) : agentId ? (
                     <OldRuntimeProviderSections
                       agentId={agentId}
                       harness={harness}
@@ -549,7 +579,7 @@ export function SessionPairPicker(props: Props) {
                         choose(withSettings({ harness, provider: id, model }))
                       }
                     />
-                  )}
+                  ) : null}
                 </div>
               )}
             </>
@@ -592,7 +622,11 @@ export function SessionPairPicker(props: Props) {
               <PopoverClose asChild>
                 <button
                   type="button"
-                  onClick={() => navigateToSandboxHome(agentId, "models")}
+                  onClick={() =>
+                    agentId
+                      ? navigateToSandboxHome(agentId, "models")
+                      : onConnectProviders()
+                  }
                   className="underline underline-offset-2 hover:text-foreground"
                 >
                   Configure providers and defaults
@@ -606,12 +640,13 @@ export function SessionPairPicker(props: Props) {
         <ToolApprovalPicker
           capability={capability}
           settings={settings}
-          onChange={(changes) =>
+          onChange={(changes) => {
+            if (!agentId) return;
             setPair(agentId, {
               ...pair,
               settings: applySettingChanges(settings, changes),
-            })
-          }
+            });
+          }}
         />
       )}
     </div>

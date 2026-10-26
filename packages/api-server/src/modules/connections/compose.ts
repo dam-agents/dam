@@ -6,6 +6,7 @@ import {
   type SecretRequestsService,
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
+import { getLogger } from "../../core/logger.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
 import { readConnectionTemplateIds } from "./infrastructure/connection-template-ids.js";
@@ -38,6 +39,7 @@ import {
   createProviderModelCatalog,
   type ProviderModelCatalog,
 } from "./services/provider-model-catalog.js";
+import { loadShippedHarnessFacts } from "./infrastructure/shipped-harness-manifests.js";
 import {
   createContributionFanOut,
   type FanOutPort,
@@ -144,6 +146,9 @@ export function composeConnectionsAtBoot(
     accountLabelBackfill,
     providerModelCatalog: createProviderModelCatalog({
       secretStore: opts.secretStore,
+      shipped: loadShippedHarnessFacts({
+        log: (m) => getLogger().warn(m),
+      }),
     }),
   };
 }

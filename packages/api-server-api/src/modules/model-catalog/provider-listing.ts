@@ -118,6 +118,8 @@ export function listingForTemplate(
         spec: {
           urlEnv: ["BOB_DEFAULT_GATEWAY_URL"],
           tokenEnv: ["BOBSHELL_API_KEY"],
+          credentialHeader: "authorization",
+          credentialPrefix: "Apikey ",
           headers: { "user-agent": BOB_LISTING_USER_AGENT },
           path: "/inference/v1/model/info",
           shape: "litellm-model-info",

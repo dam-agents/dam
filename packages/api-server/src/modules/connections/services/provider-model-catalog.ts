@@ -23,8 +23,14 @@ import {
 import { VENDORED_PRICE_TABLE } from "api-server-api/model-prices";
 import { getLogger } from "../../../core/logger.js";
 import type { SecretStore } from "../../secret-store/index.js";
+import {
+  harnessCapabilityOf,
+  loadShippedHarnessFacts,
+  type ShippedHarnessFacts,
+} from "../infrastructure/shipped-harness-manifests.js";
 
 const REFRESH_MS = 30 * 60_000;
+const FAILED_REFRESH_MS = 10_000;
 
 interface KeptListing {
   status: ProviderListingStatus;
@@ -53,11 +59,13 @@ export function createProviderModelCatalog(deps: {
   table?: PriceTable;
   now?: () => Date;
   refreshMs?: number;
+  shipped?: Record<string, ShippedHarnessFacts>;
 }): ProviderModelCatalog {
   const discover = deps.discover ?? createModelDiscovery({ log: logListing });
   const table = deps.table ?? VENDORED_PRICE_TABLE;
   const now = deps.now ?? (() => new Date());
   const refreshMs = deps.refreshMs ?? REFRESH_MS;
+  const shipped = deps.shipped ?? loadShippedHarnessFacts();
   const kept = new Map<string, KeptListing>();
   const inFlight = new Map<string, Promise<void>>();
 
@@ -158,6 +166,24 @@ export function createProviderModelCatalog(deps: {
     return started;
   };
 
+  const nativeModels = (
+    template: string,
+    harnessNames: readonly string[],
+  ): { upstreamId: string; harnesses: string[] }[] => {
+    const byModel = new Map<string, string[]>();
+    for (const harness of harnessNames) {
+      const native = shipped[harness]?.native;
+      if (!native?.templates.includes(template)) continue;
+      for (const upstreamId of native.models) {
+        byModel.set(upstreamId, [...(byModel.get(upstreamId) ?? []), harness]);
+      }
+    }
+    return [...byModel].map(([upstreamId, harnesses]) => ({
+      upstreamId,
+      harnesses,
+    }));
+  };
+
   return {
     async read(connections, harnesses) {
       const live = new Set(connections.map((c) => c.id));
@@ -183,16 +209,44 @@ export function createProviderModelCatalog(deps: {
                 .map((h) => h.name),
             };
             const listing = listingForTemplate(connection.templateId);
-            if (!listing)
+            if (!listing) {
+              const native = nativeModels(
+                connection.templateId,
+                base.harnesses,
+              );
+              if (native.length === 0)
+                return {
+                  ...base,
+                  status: "unsupported",
+                  listedAt: null,
+                  models: [],
+                };
               return {
                 ...base,
-                status: "unsupported",
+                status: "listed",
                 listedAt: null,
-                models: [],
+                models: native.map((model) => ({
+                  name: renderName(
+                    { alias, upstreamId: model.upstreamId },
+                    undefined,
+                  ),
+                  upstreamId: model.upstreamId,
+                  contextWindow: null,
+                  maxOutputTokens: null,
+                  reasoning: null,
+                  vision: null,
+                  prices: null,
+                  source: { limits: "none", prices: "none" },
+                  harnesses: model.harnesses,
+                })),
               };
+            }
             const cached = kept.get(connection.id);
             if (!cached) await ensure(connection, listing);
-            else if (current - cached.fetchedAt > refreshMs)
+            else if (
+              current - cached.fetchedAt >
+              (cached.status === "unavailable" ? FAILED_REFRESH_MS : refreshMs)
+            )
               void ensure(connection, listing);
             const known = kept.get(connection.id);
             const entries = known?.entries ?? [];
@@ -219,7 +273,26 @@ export function createProviderModelCatalog(deps: {
           },
         ),
       );
-      return { providers: providers.filter((p) => p !== null) };
+      const capabilities = harnesses.harnesses.map((h) => {
+        const facts = shipped[h.name];
+        return (
+          (facts && harnessCapabilityOf(facts)) || {
+            name: h.name,
+            harnessConfig: false,
+            sessionModel: false,
+          }
+        );
+      });
+      return {
+        defaultHarness: harnesses.default,
+        modelRouter:
+          capabilities.length > 0 &&
+          harnesses.harnesses.every(
+            (h) => shipped[h.name]?.modelRouter === true,
+          ),
+        harnesses: capabilities,
+        providers: providers.filter((p) => p !== null),
+      };
     },
   };
 }

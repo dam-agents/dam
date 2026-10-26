@@ -23,7 +23,7 @@ interface Request {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: asks which of the owner's providers to attach to an agent before a harness can run on it, listing only providers that harness accepts, each as the row the agent's Providers page shows. Nothing is attached until the owner turns at least one on and confirms. Two providers of one kind cannot both be attached, so switching one on locks the others of its kind. While the grant runs the dialog cannot be dismissed, so a confirmed attach always reaches its caller. ask() resolves to the attached ids, or null when the owner cancels, the grant fails or the host goes away.
-export function useAttachProvidersDialog(agentId: string): {
+export function useAttachProvidersDialog(agentId: string | null): {
   ask: (
     harness: string,
     providers: readonly ProviderConnectionRef[],

@@ -25,7 +25,8 @@ import {
 import { AwakeModelsGate } from "./awake-models-gate.js";
 
 interface Props {
-  agentId: string;
+  agentId: string | null;
+  ownerCatalog?: boolean;
   groups: readonly ModelGroup[];
   current: string | null;
   loading: boolean;
@@ -50,7 +51,12 @@ const firstListing = (group: ModelGroup, waiting: boolean) =>
  * providers of a model picked on the entry itself, and models of no known
  * family under Other.
  */
-export function SessionModelList({ agentId, ...listed }: Props) {
+export function SessionModelList({
+  agentId,
+  ownerCatalog = false,
+  ...listed
+}: Props) {
+  if (ownerCatalog || !agentId) return <ListedModels {...listed} />;
   return (
     <AwakeModelsGate agentId={agentId} className="px-1 py-1">
       <ListedModels {...listed} />

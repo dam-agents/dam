@@ -19,6 +19,7 @@ export const modelDiscoverySpec = modelListing.extend({
   urlEnv: z.array(z.string().min(1)).nonempty(),
   tokenEnv: z.array(z.string().min(1)).optional(),
   credentialHeader: z.enum(["authorization", "x-api-key"]).optional(),
+  credentialPrefix: z.string().min(1).optional(),
   headers: z.record(z.string().min(1), z.string()).optional(),
   redirectEnv: z.array(z.string().min(1)).optional(),
   pinEnv: z.array(z.string().min(1)).optional(),
@@ -52,12 +53,13 @@ function credentialHeaders(
     .find((value) => !!value);
   const extra = spec.headers ?? {};
   if (!token) return extra;
+  const bearer = `${spec.credentialPrefix ?? "Bearer "}${token}`;
   const credential: Record<string, string> =
     spec.credentialHeader === "x-api-key"
       ? { "x-api-key": token }
       : spec.credentialHeader === "authorization"
-        ? { authorization: `Bearer ${token}` }
-        : { authorization: `Bearer ${token}`, "x-api-key": token };
+        ? { authorization: bearer }
+        : { authorization: bearer, "x-api-key": token };
   return { ...extra, ...credential };
 }
 

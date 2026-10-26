@@ -5,6 +5,7 @@ import type {
   DefaultKind,
   HarnessConfigStatus,
   HarnessView,
+  OwnerModelCatalogView,
   SessionPair,
   SessionView,
 } from "api-server-api";
@@ -192,16 +193,89 @@ export function useHarnessCatalogModels(
   };
 }
 
+export function ownerHarnessCatalogKey(harness: string | null) {
+  return ["owner-harness-catalog", harness] as const;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a harness's model list from the owner-level
+ * catalog, so a picker outside an agent (Settings › Profiles) lists models
+ * without borrowing one. The catalog names models as the plain
+ * `<alias>/<id>` a session stores; the runtime renders the harness's own
+ * spelling when it starts.
+ */
+export function useOwnerHarnessStatus() {
+  const query = useQuery({
+    ...trpc.connections.catalog.queryOptions(),
+    staleTime: 60_000,
+    retry: 2,
+  });
+  return {
+    ...query,
+    data: query.data && {
+      defaultHarness: query.data.defaultHarness,
+      modelRouter: query.data.modelRouter,
+      harnesses: query.data.harnesses,
+    },
+  };
+}
+
+export function useOwnerHarnessCatalog(harness: string | null) {
+  const query = useQuery({
+    ...trpc.connections.catalog.queryOptions(),
+    enabled: harness !== null,
+    staleTime: 60_000,
+    retry: 2,
+  });
+  return {
+    ...query,
+    data:
+      query.data && harness ? ownerHarnessView(query.data, harness) : undefined,
+    granted: [] as ProviderConnectionRef[],
+    waiting: false,
+  };
+}
+
+function ownerHarnessView(
+  catalog: OwnerModelCatalogView,
+  harness: string,
+): HarnessCatalogView {
+  return {
+    harness,
+    routed: true,
+    providers: catalog.providers.map((provider) => ({
+      connectionId: provider.connectionId,
+      alias: provider.alias,
+      template: provider.template,
+      displayName: provider.displayName,
+      status: provider.harnesses.includes(harness)
+        ? provider.status
+        : "unsupported",
+      listedAt: provider.listedAt,
+      native:
+        catalog.harnesses
+          .find((h) => h.name === harness)
+          ?.nativeTemplates?.includes(provider.template) ?? false,
+      models: provider.models
+        .filter((model) => model.harnesses.includes(harness))
+        .map(({ harnesses: _harnesses, ...model }) => model),
+    })),
+  };
+}
+
 export function harnessConfigCurrentKey(agentId: string, harness: string) {
   return ["harness-config-current", agentId, harness] as const;
 }
 
-export function useHarnessConfigured(agentId: string, harness: string | null) {
+export function useHarnessConfigured(
+  agentId: string | null,
+  harness: string | null,
+) {
   const operable = useIsAgentOperable(agentId);
   return useQuery({
-    queryKey: harnessConfigCurrentKey(agentId, harness ?? ""),
+    queryKey: harnessConfigCurrentKey(agentId ?? "", harness ?? ""),
     queryFn:
-      operable && harness
+      agentId && operable && harness
         ? () => agentTrpc(agentId).harnessConfig.current.query({ harness })
         : skipToken,
     staleTime: 60_000,

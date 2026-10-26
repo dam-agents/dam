@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -32,7 +32,7 @@ Until the agent has reported the harnesses it carries, as a new agent has not be
 Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
 Until the harness catalog arrives, the picker label is a loader, never a raw harness name.
 A session the UI starts holds the pair it sent until the agent lists the session, so the composer names that pair from the first moment.
-Every model picker reads its list from the running agent, never from the stored snapshot: while the agent sleeps, the picker gives way to a "Start agent to edit" button, then "Agent is starting…" once woken, and lists the models when the agent answers.
+Every chat model picker reads its list from the running agent, never from the stored snapshot: while the agent sleeps, the picker gives way to a "Start agent to edit" button, then "Agent is starting…" once woken, and lists the models when the agent answers.
 This holds for the session picker, the schedule form and the platform sub-agent model; nothing wakes the agent on its own.
 In an existing session, the picker keeps its harness and, on a routed runtime, offers every granted provider's models: another harness needs a new session, which the picker links to, and context moves over only through a file the agent saves.
 

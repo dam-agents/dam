@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -306,6 +306,7 @@ It prefixes every gateway call with its own service path, and that prefix is not
 What the endpoint has to offer for this to work is the OpenAI-shaped chat-completion route, a model-information route reporting a non-empty model list (Bob treats an empty list as an error), and no region hint of its own — a gateway answering the profile route with one would redirect Bob's inference calls off the configured host.
 Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since a session's model is a qualified name the router routes.
 The [model catalog](harness-config.md#the-model-catalog) lists the endpoint's models under the Connection's alias, through the OpenAI model list since the key is refused the model-information route, and a session picks one per turn.
+The [owner model catalog](owner-model-catalog.md) lists the same models without an agent, reading the stored key in the api-server itself.
 Every harness reaches the endpoint through the [Model Router](harness-config.md#the-model-router), which sends the Connection's placeholder.
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
 GPT models cache on their own.

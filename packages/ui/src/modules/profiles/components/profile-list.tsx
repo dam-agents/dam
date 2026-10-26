@@ -30,7 +30,7 @@ export function ModelConfiguration({
   customHint,
   onAgentPicks,
 }: {
-  agentId: string;
+  agentId: string | null;
   profiles: readonly ProfileWithUsage[];
   primary: ProfileSlot;
   subagent: ProfileSlot;

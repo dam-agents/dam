@@ -1,6 +1,7 @@
 import type {
   CatalogModelView,
   CatalogProviderStatus,
+  HarnessCapability,
 } from "agent-runtime-api";
 import type { ProviderAlias } from "../connections/providers.js";
 
@@ -20,5 +21,8 @@ export interface ProviderCatalogView {
 }
 
 export interface OwnerModelCatalogView {
+  defaultHarness: string;
+  modelRouter: boolean;
+  harnesses: HarnessCapability[];
   providers: ProviderCatalogView[];
 }

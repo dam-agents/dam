@@ -236,9 +236,11 @@ export function createConnectionsService(deps: {
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
 }): ConnectionsService & ManagedProviderConnections {
-  const providerModelCatalog =
-    deps.providerModelCatalog ??
-    createProviderModelCatalog({ secretStore: deps.secretStore });
+  let catalog: ProviderModelCatalog | undefined;
+  const providerModelCatalog = () =>
+    (catalog ??=
+      deps.providerModelCatalog ??
+      createProviderModelCatalog({ secretStore: deps.secretStore }));
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
 
@@ -1105,7 +1107,7 @@ export function createConnectionsService(deps: {
 
   const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
     async modelCatalog() {
-      return providerModelCatalog.read(
+      return providerModelCatalog().read(
         await deps.repo.listByOwner(deps.ownerId),
         deps.harnesses,
       );

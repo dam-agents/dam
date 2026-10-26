@@ -38,10 +38,7 @@ export function lookupPrice(
   upstreamId: string,
 ): PriceTableEntry | null {
   const segments = upstreamId.split("/");
-  const candidates = [
-    upstreamId,
-    segments[segments.length - 1] ?? upstreamId,
-  ];
+  const candidates = [upstreamId, segments[segments.length - 1] ?? upstreamId];
   const profile = BEDROCK_PROFILE.exec(candidates[1]!);
   if (profile?.[1]) candidates.push(profile[1]);
   for (const candidate of candidates) {

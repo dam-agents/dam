@@ -23,7 +23,7 @@ export function SessionSettingsControls({
   disabled = false,
   onChange,
 }: {
-  agentId: string;
+  agentId: string | null;
   carried: readonly HarnessCapability[];
   capability: HarnessCapability | undefined;
   model: string | null;

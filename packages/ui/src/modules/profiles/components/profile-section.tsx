@@ -1,5 +1,4 @@
 import { Edit, TrashCan } from "@carbon/icons-react";
-import { useQuery } from "@tanstack/react-query";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import { useState } from "react";
 
@@ -10,9 +9,11 @@ import { SectionHeader } from "@/components/ui/list-section";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
-import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
-import { useProviderConnections } from "../../sessions/api/session-pair.js";
+import {
+  useOwnerHarnessStatus,
+  useProviderConnections,
+} from "../../sessions/api/session-pair.js";
 import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
 import { SessionPairTrigger } from "../../sessions/components/session-pair-trigger.js";
 import { pairSummary } from "../../sessions/lib/session-settings.js";
@@ -110,10 +111,7 @@ export function ProfileSection() {
                     )}
                   </p>
                 )}
-                <ProfileValues
-                  profile={profile}
-                  fallbackAgent={agents?.list[0]?.id ?? null}
-                />
+                <ProfileValues profile={profile} />
               </div>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {uses(profile) === 0 ? "unused" : `used ${uses(profile)}×`}
@@ -153,32 +151,20 @@ const uses = (profile: ProfileWithUsage): number =>
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a profile's values on the chat picker's Custom
- * screen. Models are listed by an agent's runtime, so the picker borrows an
- * agent that uses the profile, else the owner's first; with none it only
- * shows the values. A pick updates the profile; a harness picked without a
- * model waits here until one is.
+ * screen. Models and harness settings come from the owner-level catalog, so
+ * no agent is needed; until it loads it only shows the values. A pick updates
+ * the profile; a harness picked without a model waits here until one is.
  */
-function ProfileValues({
-  profile,
-  fallbackAgent,
-}: {
-  profile: ProfileWithUsage;
-  fallbackAgent: string | null;
-}) {
-  const { data: usage } = useQuery({
-    ...trpc.profiles.usage.queryOptions({ id: profile.id }),
-    enabled: profile.usage.agents > 0,
-  });
-  const agentId = usage?.agents[0]?.id ?? fallbackAgent;
-  const { data: status } = useHarnessConfigStatus(agentId);
-  const providers = useProviderConnections(agentId);
+function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
+  const { data: status } = useOwnerHarnessStatus();
+  const providers = useProviderConnections(null);
   const update = useUpdateProfile();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const [draft, setDraft] = useState<SessionPair | null>(null);
   const pair: SessionPair = draft ?? {
     harness: profile.harness,
     provider:
-      providers.granted.find((p) => p.templateId === profile.providerTemplate)
+      providers.owned.find((p) => p.templateId === profile.providerTemplate)
         ?.id ?? null,
     model: profile.model,
     settings: profile.settings,
@@ -208,9 +194,9 @@ function ProfileValues({
   };
   return (
     <div className="-ml-3 flex min-w-0 flex-col">
-      {agentId && status?.harnesses ? (
+      {status?.harnesses?.length ? (
         <SessionPairPicker
-          agentId={agentId}
+          agentId={null}
           carried={status.harnesses}
           defaultHarness={status.defaultHarness ?? profile.harness}
           routed={status.modelRouter}
@@ -219,6 +205,7 @@ function ProfileValues({
             pair,
             providerName: profileProviderName(profile),
             onChoose: save,
+            ownerCatalog: true,
           }}
         />
       ) : (

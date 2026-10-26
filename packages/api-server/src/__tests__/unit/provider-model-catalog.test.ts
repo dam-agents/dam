@@ -11,6 +11,10 @@ import {
   type StoredSecret,
 } from "../helpers/connections-service.js";
 import { createProviderModelCatalog } from "../../modules/connections/services/provider-model-catalog.js";
+import {
+  loadShippedHarnessFacts,
+  type ShippedHarnessFacts,
+} from "../../modules/connections/infrastructure/shipped-harness-manifests.js";
 
 const SECRET_PATH = "connection:anthropic";
 const CREDENTIAL = "sk-ant-test";
@@ -35,6 +39,36 @@ const harnesses: Pick<HarnessCatalog, "default" | "harnesses"> = {
     harness("bob", ["bob"]),
   ],
 };
+
+const shipped: Record<string, ShippedHarnessFacts> = Object.fromEntries(
+  harnesses.harnesses.map((h) => [
+    h.name,
+    {
+      name: h.name,
+      modelRouter: true,
+      harnessConfig: true,
+      sessionModel: true,
+      sessionSettings: ["mode", "effort"],
+      derivedStartMode: ["mode"],
+      catalog: {
+        options: [
+          {
+            id: "effort",
+            name: "Effort",
+            category: "thought_level",
+            choices: [{ value: "high", name: "High" }],
+          },
+        ],
+      },
+      ...(h.name === "claude-code" && {
+        native: {
+          templates: ["bedrock"],
+          models: ["fable", "opus", "sonnet", "haiku"],
+        },
+      }),
+    },
+  ]),
+);
 
 const table: PriceTable = {
   source: { url: "test", commit: "test", fetchedAt: "2026-10-26" },
@@ -103,12 +137,19 @@ describe("the owner's provider model catalog", () => {
         ])(spec, env);
       },
       table,
+      shipped,
     });
     const view = await catalog.read(
       [connection({ id: "conn-1", templateId: "anthropic" })],
       harnesses,
     );
 
+    expect(view.defaultHarness).toBe("claude-code");
+    expect(view.modelRouter).toBe(true);
+    expect(view.harnesses.find((h) => h.name === "claude-code")).toMatchObject({
+      sessionSettings: ["mode", "effort"],
+      nativeTemplates: ["bedrock"],
+    });
     expect(view.providers).toHaveLength(1);
     expect(view.providers[0]).toMatchObject({
       connectionId: "conn-1",
@@ -135,6 +176,7 @@ describe("the owner's provider model catalog", () => {
       secretStore: memorySecretStore(secrets),
       discover: observed([]),
       table,
+      shipped,
     });
     const view = await catalog.read(
       [connection({ id: "conn-github", templateId: "github" })],
@@ -153,6 +195,7 @@ describe("the owner's provider model catalog", () => {
         return { status: "not-configured" };
       },
       table,
+      shipped,
     });
     const view = await catalog.read(
       [connection({ id: "conn-bedrock", templateId: "bedrock" })],
@@ -161,10 +204,16 @@ describe("the owner's provider model catalog", () => {
 
     expect(listed).toBe(false);
     expect(view.providers[0]).toMatchObject({
-      status: "unsupported",
+      status: "listed",
       harnesses: ["claude-code"],
-      models: [],
     });
+    expect(view.providers[0]!.models.map((m) => m.name)).toEqual([
+      "bedrock/fable",
+      "bedrock/opus",
+      "bedrock/sonnet",
+      "bedrock/haiku",
+    ]);
+    expect(view.providers[0]!.models[0]!.harnesses).toEqual(["claude-code"]);
   });
 
   it("keeps the last good list when a later listing fails", async () => {
@@ -185,6 +234,7 @@ describe("the owner's provider model catalog", () => {
             };
       },
       table,
+      shipped,
       now: () => new Date(at),
       refreshMs: 1_000,
     });
@@ -212,11 +262,30 @@ describe("the owner's provider model catalog", () => {
         return { status: "observed", via: "x", models: [], entries: [] };
       },
       table,
+      shipped,
     });
     const connections = [connection({ id: "conn-1", templateId: "anthropic" })];
     await catalog.read(connections, harnesses);
     await catalog.read(connections, harnesses);
 
     expect(calls).toBe(1);
+  });
+});
+
+describe("the shipped harness manifests", () => {
+  it("carries the settings catalog and the native tiers from the agent manifests", () => {
+    const facts = loadShippedHarnessFacts();
+
+    expect(Object.keys(facts).sort()).toEqual(
+      expect.arrayContaining(["claude-code", "codex", "pi", "bob", "copilot"]),
+    );
+    expect(facts["claude-code"]?.native).toEqual({
+      templates: ["bedrock"],
+      models: ["fable", "opus", "sonnet", "haiku"],
+    });
+    expect(
+      facts["codex"]?.catalog?.options.some((o) => o.id === "effort"),
+    ).toBe(true);
+    expect(facts["claude-code"]?.sessionSettings).toContain("effort");
   });
 });

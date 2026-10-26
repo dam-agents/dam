@@ -91,6 +91,31 @@ const state = vi.hoisted(() => ({
       }
     | undefined,
   chosenModel: vi.fn(),
+  ownerCatalog: undefined as
+    | {
+        harness: string;
+        routed: boolean;
+        providers: {
+          connectionId: string;
+          alias: string;
+          template: string;
+          displayName: string;
+          status: "listed" | "unavailable" | "unsupported";
+          listedAt: string | null;
+          native: boolean;
+          models: {
+            name: string;
+            upstreamId: string;
+            contextWindow: number | null;
+            maxOutputTokens: number | null;
+            reasoning: boolean | null;
+            vision: boolean | null;
+            prices: null;
+            source: { limits: "none"; prices: "none" };
+          }[];
+        }[];
+      }
+    | undefined,
 }));
 
 vi.mock("../../store.js", () => ({
@@ -254,6 +279,14 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
     isLoading: state.loading,
     isError: false,
     operable: state.operable,
+    refetch: state.refetch,
+  }),
+  useOwnerHarnessCatalog: () => ({
+    data: state.ownerCatalog,
+    isLoading: false,
+    isError: false,
+    granted: [],
+    waiting: false,
     refetch: state.refetch,
   }),
   useProviderModels: (_agent: string, _harness: string, provider: string) => {
@@ -1147,6 +1180,22 @@ describe("the picker editing a profile in Settings", () => {
         },
       ],
     };
+    state.ownerCatalog = {
+      harness: "pi",
+      routed: true,
+      providers: [
+        {
+          connectionId: "curve",
+          alias: "cb",
+          template: "curve-bender",
+          displayName: "Curve",
+          status: "listed",
+          listedAt: null,
+          native: false,
+          models: [model("cb", "owner-only")],
+        },
+      ],
+    };
     state.chosenModel.mockReset();
     const onChoose = vi.fn();
     const container = document.createElement("div");
@@ -1155,7 +1204,7 @@ describe("the picker editing a profile in Settings", () => {
       act(() =>
         root.render(
           createElement(SessionPairPicker, {
-            agentId: "agent",
+            agentId: null,
             defaultHarness: "pi",
             carried,
             routed: true,
@@ -1168,6 +1217,7 @@ describe("the picker editing a profile in Settings", () => {
               },
               providerName: "Curve",
               onChoose,
+              ownerCatalog: true,
             },
           }),
         ),
@@ -1177,6 +1227,7 @@ describe("the picker editing a profile in Settings", () => {
       expect(text).not.toContain("Use a profile");
       expect(text).not.toContain("Save as a profile");
       expect(text).not.toContain("granite");
+      expect(text).toContain("owner-only");
       expect(
         container.querySelector('[data-testid="tool-approval-picker"]'),
       ).toBeNull();
@@ -1194,6 +1245,7 @@ describe("the picker editing a profile in Settings", () => {
       act(() => root.unmount());
       profilesState = [];
       state.granted = [];
+      state.ownerCatalog = undefined;
     }
   });
 });

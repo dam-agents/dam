@@ -92,7 +92,7 @@ describe("createModelDiscovery", () => {
       "https://api.us-east.bob.ibm.com/inference/v1/model/info",
     );
     expect(headers[0]?.["user-agent"]).toMatch(/bob/);
-    expect(headers[0]?.authorization).toBe("Bearer platform:conn:bob");
+    expect(headers[0]?.authorization).toBe("Apikey platform:conn:bob");
   });
 
   // TEST_SCENARIO: Anthropic's model list answers a subscription (OAuth) token as a bearer with the OAuth beta flag, from Anthropic's own host when the layer names none.

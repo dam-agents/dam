@@ -32,7 +32,7 @@ export function useSaveAsProfile({
   capability,
   onSaved,
 }: {
-  agentId: string;
+  agentId: string | null;
   pair: SessionPair | null;
   providerTemplate: string | undefined;
   from: { id: string; name: string } | null;
@@ -47,6 +47,7 @@ export function useSaveAsProfile({
   const [error, setError] = useState<string | null>(null);
   const saving = create.isPending || update.isPending;
   if (
+    !agentId ||
     !pair?.model ||
     providerTemplate === undefined ||
     (agent !== null && !isOwnAgent(agent))
