@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -389,6 +389,15 @@ A snapshot never drives reconciliation; it is not evidence about the current dis
 A row is a ghost only on evidence from one moment that the agent has **cleanly applied** the current version ([runtime channel](runtime-delivery.md#the-runtime-channel)) — a failed apply settles without applying — and only once the row is old enough to have been delivered at all, an age that every write to the row renews.
 The delete and its re-delivery bump commit together, or the agent keeps an applied hash naming a set that no longer exists.
 The cost is an out-of-band deletion noticed one read later.
+
+### Skill commands in chat
+
+The chat input reads `state` too: a `/` at the start of a line lists the skills the agent can run, and a pick puts `/<skill-name> ` in the prompt.
+It lists skills only for a harness that runs a prompt starting with `/<skill-name>` as that skill — Claude Code today.
+Beside them it lists what the harness itself reported for the Session on screen, in the ACP `available_commands_update` it sends after a session setup and whenever its list changes; the Session Transcript keeps that update, so a load whose replay reaches back to it lists it again.
+A harness that runs no skill commands offers only what it reported, so the list never names a command its harness would not run.
+A Codex skill comes reported as `$<name>`, which Codex runs as a mention, so a pick inserts `$<name> ` and not a slash.
+A sleeping agent lists its recorded snapshot, and reading it does not wake the agent.
 
 ## Persistence touchpoints
 
