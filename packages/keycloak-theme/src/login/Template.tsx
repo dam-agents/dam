@@ -6,7 +6,6 @@ import { useEffect } from "react";
 
 import { cn } from "../lib/cn.js";
 import { useApplyThemeScript } from "./hooks/use-apply-theme-script.js";
-import { useRotatingNameMeaning } from "./hooks/use-rotating-name-meaning.js";
 import type { I18n } from "./i18n.js";
 import type { KcContext } from "./KcContext.js";
 
@@ -27,9 +26,6 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
   const { realm, message, isAppInitiatedAction } = kcContext;
 
   useApplyThemeScript();
-  const nameMeaning = useRotatingNameMeaning(
-    kcContext.properties.PLATFORM_BRAND_NAME_MEANINGS,
-  );
 
   useEffect(() => {
     document.title =
@@ -53,14 +49,9 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
     <div className="min-h-screen bg-background">
       <div className="flex min-h-screen flex-col justify-center px-6 py-12 md:px-[12.5%]">
         <div className="w-full max-w-[601px]">
-          {nameMeaning && (
-            <p
-              key={nameMeaning}
-              className="text-base font-semibold tracking-tight motion-safe:animate-fade-in md:text-xl"
-            >
-              {nameMeaning}
-            </p>
-          )}
+          <p className="text-base font-semibold tracking-tight md:text-xl">
+            Deploy Agents Massively
+          </p>
           <h1 className="mt-3 text-5xl leading-[1.78] font-light tracking-[-0.03em] md:text-[64px] md:leading-[114px]">
             {headerNode}
           </h1>
