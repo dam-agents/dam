@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Uninstall this worktree's install (its chart, agents and data), leaving the others alone"
 #MISE raw=true
+#USAGE flag "--environment <name>" help="Refused: an Environment's install goes with the Environment"
 #USAGE flag "--name <name>" help="Remove this install instead of this worktree's"
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"

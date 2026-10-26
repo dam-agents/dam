@@ -7,6 +7,7 @@ set -eo pipefail
 eval "components=($usage_component)"
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+cluster_require_install || exit 1
 
 # The agents the cluster has deployed, from its ConfigMaps: their entries in
 # the harness-templates ConfigMap (one CM keyed by "<name>.yaml"), plus the

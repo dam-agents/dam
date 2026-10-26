@@ -1,15 +1,23 @@
 # Sourced by the cluster:* and e2e:* tasks: the one place that names the
-# cluster they act on. CLUSTER_ENVIRONMENT picks one of this agent's
-# Environments, whose k3s is reached over the Environment Link
-# (cluster-environment.sh); a task takes it as a leading
-# `--environment <name>` too. Otherwise LIMA_INSTANCE picks the lima VM (the
-# e2e tasks pin platform-k3s-test), and IS_SANDBOX means k3s runs on this host.
-# CLUSTER_TARGET says which of the three it is: environment, host or lima.
+# cluster they act on, and the install on it. It resolves two axes, once:
+#
+#   target  which cluster: `environment:<name>` (--environment, or the
+#           CLUSTER_ENVIRONMENT variable a nested `mise run` hands down), `host`
+#           (this machine, IS_SANDBOX), or `lima` (the LIMA_INSTANCE VM).
+#           CLUSTER_TARGET says which.
+#   install which install on it: --name, else DAM_INSTALL, else a linked
+#           worktree's branch slug. A cluster that holds one install never takes
+#           a name: the repo's own checkout, a sandbox host, and an Environment
+#           (which holds one install by product design).
+#
+# The `Where and which` section of the cluster-ops skill carries the tables.
 . "$(dirname "${BASH_SOURCE[0]}")/root.sh"
 
 # A task that declares the flag in #USAGE gets it from mise. One that parses
 # no arguments of its own takes it first, before what it passes on: sourced
 # with no arguments, this file shifts the task's own.
+
+# --- target ---------------------------------------------------------------
 if [ -n "${usage_environment:-}" ]; then
   export CLUSTER_ENVIRONMENT="$usage_environment"
 fi
@@ -18,14 +26,53 @@ case "${1:-}" in
   --environment=*) export CLUSTER_ENVIRONMENT="${1#--environment=}"; shift ;;
 esac
 
-# The install's name: several installs of the chart can live on one cluster, one
-# per worktree, and every cluster:* task acts on this worktree's. --name/DAM_INSTALL
-# names it; otherwise a linked worktree derives it from its branch, and the
-# repo's own checkout is the default install, which keeps main's names and port
-# (no per-worktree migration for a single-checkout developer). The default is
-# the empty name, not `default`: release, namespace and URLs stay what they were.
-cluster_install_name() {
-  if [ -n "${DAM_INSTALL:-}" ]; then printf '%s' "$DAM_INSTALL"; return 0; fi
+# The e2e lane pins its own VM and the default install; an Environment outranks
+# both below. A CLUSTER_ENVIRONMENT left in the shell would install the lane's
+# values into a business Environment and run the suite there.
+if [ -n "${E2E_LANE:-}" ] && [ -n "${CLUSTER_ENVIRONMENT:-}" ]; then
+  echo "FATAL: the e2e lane runs against its own test cluster, never an Environment, and CLUSTER_ENVIRONMENT=$CLUSTER_ENVIRONMENT is set. Unset it." >&2
+  exit 1
+fi
+
+export LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+if [ -n "${CLUSTER_ENVIRONMENT:-}" ]; then
+  export CLUSTER_TARGET=environment
+elif [ -n "${IS_SANDBOX:-}" ]; then
+  export CLUSTER_TARGET=host
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+else
+  export CLUSTER_TARGET=lima
+  export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+fi
+export CLUSTER_TARGET
+
+# --- install --------------------------------------------------------------
+# What the flags and variables said, before the target decides whether a name
+# applies at all.
+CLUSTER_INSTALL_GIVEN=""
+CLUSTER_INSTALL_ORIGIN=""
+if [ -n "${usage_name:-}" ]; then
+  CLUSTER_INSTALL_GIVEN="$usage_name"
+  CLUSTER_INSTALL_ORIGIN="--name"
+fi
+case "${1:-}" in
+  --name) CLUSTER_INSTALL_GIVEN="${2:?--name needs a name}"; CLUSTER_INSTALL_ORIGIN="--name"; shift 2 ;;
+  --name=*) CLUSTER_INSTALL_GIVEN="${1#--name=}"; CLUSTER_INSTALL_ORIGIN="--name"; shift ;;
+esac
+if [ -z "$CLUSTER_INSTALL_GIVEN" ] && [ -n "${DAM_INSTALL:-}" ]; then
+  CLUSTER_INSTALL_GIVEN="$DAM_INSTALL"
+  CLUSTER_INSTALL_ORIGIN="DAM_INSTALL"
+fi
+# `default` is how a worktree or a pinned lane says the default install by name,
+# which is the empty name; the target rules below read it as `default`.
+
+# worktree_install_name: the name a linked worktree's branch gives its install.
+# One worktree holds one install, so two agents in two worktrees never land on
+# one by surprise, and the repo's own checkout keeps the default install, which
+# keeps main's names and port (no migration for a single-checkout developer).
+# The default is the empty name, not `default`: release, namespace and URLs stay
+# what they were.
+cluster_worktree_install_name() {
   local dir common branch
   dir="$(git -C "$MISE_CONFIG_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 0
   common="$(git -C "$MISE_CONFIG_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
@@ -47,15 +94,39 @@ cluster_install_name() {
   printf '%s' "$slug"
 }
 
-if [ -n "${usage_name:-}" ]; then
-  export CLUSTER_INSTALL="$usage_name"
-fi
-case "${1:-}" in
-  --name) export CLUSTER_INSTALL="${2:?--name needs a name}"; shift 2 ;;
-  --name=*) export CLUSTER_INSTALL="${1#--name=}"; shift ;;
+case "$CLUSTER_TARGET" in
+  environment)
+    # An Environment is one agent's cluster and holds one install: its endpoints
+    # name one address set, so a second install there would have nowhere to
+    # publish. A branch slug never reaches it, and a name is refused rather than
+    # dropped, since a caller that passed one meant another install.
+    if [ -n "$CLUSTER_INSTALL_GIVEN" ] && [ "$CLUSTER_INSTALL_GIVEN" != default ]; then
+      echo "FATAL: an Environment holds one install, so '$CLUSTER_INSTALL_GIVEN' ($CLUSTER_INSTALL_ORIGIN) does not apply: 'cluster:install -- --environment $CLUSTER_ENVIRONMENT' always installs the default install there. Drop the name." >&2
+      exit 1
+    fi
+    CLUSTER_INSTALL=""
+    CLUSTER_INSTALL_ORIGIN=""
+    ;;
+  host)
+    # A sandbox host is this agent's own machine, and its k3s goes with it.
+    if [ -n "$CLUSTER_INSTALL_GIVEN" ] && [ "$CLUSTER_INSTALL_GIVEN" != default ]; then
+      echo "FATAL: a sandbox host's cluster is this agent's own and holds one install, so '$CLUSTER_INSTALL_GIVEN' ($CLUSTER_INSTALL_ORIGIN) does not apply here." >&2
+      exit 1
+    fi
+    CLUSTER_INSTALL=""
+    CLUSTER_INSTALL_ORIGIN="sandbox"
+    ;;
+  *)
+    if [ -n "$CLUSTER_INSTALL_GIVEN" ]; then
+      CLUSTER_INSTALL="$CLUSTER_INSTALL_GIVEN"
+    else
+      CLUSTER_INSTALL="$(cluster_worktree_install_name)"
+      if [ -n "$CLUSTER_INSTALL" ]; then CLUSTER_INSTALL_ORIGIN="branch"; else CLUSTER_INSTALL_ORIGIN="repository checkout"; fi
+    fi
+    ;;
 esac
-export CLUSTER_INSTALL="${CLUSTER_INSTALL:-$(cluster_install_name)}"
 [ "$CLUSTER_INSTALL" != default ] || CLUSTER_INSTALL=""
+export CLUSTER_INSTALL CLUSTER_INSTALL_ORIGIN
 if [ -n "$CLUSTER_INSTALL" ]; then
   case "$CLUSTER_INSTALL" in
     [a-z0-9]*) ;;
@@ -103,11 +174,12 @@ cluster_install_port() {
 }
 
 # install_url: where this install answers from this host. Empty when it is not
-# installed.
+# installed, and empty is a success: the caller prints nothing for it.
 install_url() {
   local p
-  p="$(cluster_install_port)"
-  [ -n "$p" ] && printf 'http://localhost:%s' "$p"
+  p="$(cluster_install_port)" || return 0
+  [ -n "$p" ] || return 0
+  printf 'http://localhost:%s' "$p"
 }
 
 # traefik_entrypoint_port [fixed-port] [insecure]: adds this install's entrypoint
@@ -207,20 +279,6 @@ install_image_tags() {
 }
 export -f install_image_tags
 
-export LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-if [ -n "${CLUSTER_ENVIRONMENT:-}" ]; then
-  export CLUSTER_TARGET=environment
-  . "$(dirname "${BASH_SOURCE[0]}")/cluster-environment.sh"
-  # Every task but the install, which starts k3s first, finds the API here.
-  env_tunnel || true
-elif [ -n "${IS_SANDBOX:-}" ]; then
-  export CLUSTER_TARGET=host
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-else
-  export CLUSTER_TARGET=lima
-  export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
-fi
-
 # node_sh <command>...: runs one command as root on the k3s node, with this
 # shell's stdin: on this host, in the lima VM, or on the Environment.
 node_sh() {
@@ -283,3 +341,51 @@ prune_dangling_images() {
   local prune='k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r k3s crictl rmi >/dev/null 2>&1 || true'
   node_sh bash -c "$prune"
 }
+
+# cluster_announce: the resolution as one line — which cluster, which install,
+# and where each came from — so a task never acts on a cluster the caller did not
+# mean without saying so. On stderr: cluster:kubeconfig, cluster:kubectl and
+# cluster:installs feed scripts, and their stdout stays what it was.
+cluster_announce() {
+  local where install addr
+  case "$CLUSTER_TARGET" in
+    environment) where="environment $CLUSTER_ENVIRONMENT" ;;
+    host) where=host ;;
+    *) where="lima $LIMA_INSTANCE" ;;
+  esac
+  install="${CLUSTER_INSTALL:-default}"
+  [ -z "$CLUSTER_INSTALL_ORIGIN" ] || install="$install ($CLUSTER_INSTALL_ORIGIN)"
+  # An Environment's public address comes from its endpoints, which only the
+  # install reads; it prints them. Everywhere else the port is in the cluster's
+  # Traefik config, and empty until the install exists.
+  addr=""
+  [ "$CLUSTER_TARGET" = environment ] || addr="$(install_url 2>/dev/null)"
+  printf '→ %s · install %s%s\n' "$where" "$install" "${addr:+ · $addr}" >&2
+}
+
+# cluster_require_install: refuses unless this install's release exists on the
+# cluster. cluster:build and cluster:helm act on an install and create none, so
+# a name that nothing installed would otherwise fail deep in kubectl.
+cluster_require_install() {
+  helm status "$CLUSTER_RELEASE" -n "$CLUSTER_NAMESPACE" >/dev/null 2>&1 && return 0
+  echo "FATAL: no install '$CLUSTER_RELEASE' in namespace '$CLUSTER_NAMESPACE' on this $CLUSTER_TARGET cluster. Run 'mise run cluster:install' first; 'mise run cluster:installs -- --all' lists what is there." >&2
+  return 1
+}
+
+# Once per process tree: a task that hands on to another cluster task (helm,
+# e2e:install, build and its import) says the resolution once, not once a step.
+if [ -z "${CLUSTER_ANNOUNCED:-}" ] && [ -z "${CLUSTER_RESOLVE_ONLY:-}" ]; then
+  cluster_announce
+  export CLUSTER_ANNOUNCED=1
+fi
+
+# The link and its tunnel last, so a task's first output is the resolution
+# above: opening the link takes seconds, and says so when the Environment is
+# not there. check:cluster-resolve reads this file for the target and the name
+# alone — the link is not its business, and its sandbox writes nothing outside
+# the checkout.
+if [ "$CLUSTER_TARGET" = environment ] && [ -z "${CLUSTER_RESOLVE_ONLY:-}" ]; then
+  . "$(dirname "${BASH_SOURCE[0]}")/cluster-environment.sh"
+  # Every task but the install, which starts k3s first, finds the API here.
+  env_tunnel || true
+fi

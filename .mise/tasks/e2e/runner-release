@@ -2,7 +2,7 @@
 #MISE description="Derive and load a second VM runner release image: the lane's runner image, declaring a reboot key of its own"
 #MISE hide=true
 #MISE dir="{{cwd}}"
-#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default" }
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 #USAGE arg "<key>" help="The reboot key the second release declares, which is also its tag; e.g. runner-1-e2e"
 # A runner release reaches an owner's machines as a hand-off in place, unless the
 # release declares a reboot key its pod does not run, which rolls the pod and

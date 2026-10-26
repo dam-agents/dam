@@ -24,17 +24,63 @@ Every `cluster:*` task honors `LIMA_INSTANCE` (default `platform-k3s`) to target
 
 Services are at `*.localhost:4444` (Traefik, auto-forwarded by lima); `*.localtest.me:4444` is an alias.
 
+## Where and which
+
+Every `cluster:*` and `e2e:*` task resolves two things before it does anything, in [`.mise/lib/cluster.sh`](../../../.mise/lib/cluster.sh), and says them as its first line (on stderr, so a task's stdout stays parseable):
+
+```
+→ lima platform-k3s · install profiles (branch) · http://localhost:4400
+→ environment pr-123 · install default
+```
+
+- **The target** — which cluster: `environment:<name>` with `--environment <name>` (or a `CLUSTER_ENVIRONMENT` already in the shell), `host` with `IS_SANDBOX` (k3s on this machine), otherwise `lima`, the `LIMA_INSTANCE` VM (default `platform-k3s`; the e2e lane pins `platform-k3s-test`).
+- **The install** — which install on that cluster: `--name <name>`, else `DAM_INSTALL`, else a linked worktree's branch slug.
+
+The line names where each part came from: the flag, the variable, the branch, the repository's own checkout, or the sandbox.
+Every task that declares flags declares both `--environment` and `--name`, so mise never rejects one of them: `mise run cluster:status --environment pr-123`, `mise run cluster:build -- --name sidebar api-server`.
+
+### The name rule
+
+| Target                          | Install                                                                     | Where the name comes from                                |
+| ------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------- |
+| lima, the repository's checkout | `default`                                                                   | nothing to name: that checkout owns it                   |
+| lima, a linked worktree         | the branch slug: `[a-z0-9-]`, at most 20, never `default`, never `*-agents` | the branch; `--name` or `DAM_INSTALL` overrides it       |
+| lima, `--name`/`DAM_INSTALL`    | that name; `default` joins the default install                              | the flag or the variable                                 |
+| host (`IS_SANDBOX`)             | `default`                                                                   | a sandbox is this agent's own cluster; a name is refused |
+| environment:`<name>`            | `default`                                                                   | an Environment holds one install; a name is refused      |
+
+An explicit `--name`/`DAM_INSTALL` is refused when it is longer than 20 characters, holds anything but `[a-z0-9-]`, or ends in `-agents` (its namespace `platform-<name>` would be another install's `platform-<name>-agents`); a branch whose slug would do either is refused the same way, so pass `--name`.
+A name is fixed once the install exists, so a new branch in one worktree is a second install, not a rename.
+`DAM_INSTALL=default` in a worktree joins the default install.
+
+### What each target and install gets
+
+|                     | lima, `default`                           | lima, named                                                            | host (`IS_SANDBOX`) | environment:`<name>`                                                                                   |
+| ------------------- | ----------------------------------------- | ---------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
+| Port                | 4444                                      | the first free one of 4400–4499                                        | 4444                | the ingress on `--backchannel-port` (4444), the endpoints' bridge on their own port                    |
+| Host names          | `*.localhost`, `*.localtest.me`           | the same, on the install's port                                        | the same            | the Environment's `app`/`keycloak`/`share`/`content` endpoints; `--backchannel` adds a `localhost` set |
+| Image tags          | `:latest`                                 | `platform-<component>:<name>`                                          | `:latest`           | `:latest`, and a component the registry has is pulled by the node, not built here                      |
+| Host runner (a Mac) | 4600, `~/.local/state/platform-vm-runner` | 4601–4699, a directory of its own                                      | none: runner pods   | none: runner pods, and the Mac's runner is never touched                                               |
+| Mesh                | the cluster's                             | follows the cluster's; `--no-mesh` is refused while the dataplane runs | the cluster's       | always none: the Environment's kernel cannot run ambient                                               |
+| CRDs                | re-applied on every run                   | only the ones the cluster lacks                                        | re-applied          | re-applied: it is the cluster's only install                                                           |
+| ClickStack          | allowed                                   | refused: the operators are cluster-scoped                              | allowed             | allowed                                                                                                |
+| Node and API        | the lima VM                               | the lima VM                                                            | this host           | `ssh env-<name>` over the Environment Link, the API through a tunnel                                   |
+
+**Guards**, so a wrong target fails loudly instead of acting on something else:
+
+- the `e2e:*` tasks refuse a set `CLUSTER_ENVIRONMENT`: the lane pins its own VM and the default install, and an Environment would outrank both;
+- `cluster:build` and `cluster:helm` refuse an install that is not on the cluster, and name `cluster:install`;
+- `cluster:uninstall`, `cluster:delete` and `cluster:host-runner` refuse the targets they cannot act on: an Environment's install goes with the Environment, and a host runner serves a lima VM;
+- `cluster:installs --all` lists every install on the target cluster, its namespace, address, status and — on a Mac — its host runner; `cluster:installs --environment <name>` shows that Environment's install in the same columns.
+
 ## Several installs on one cluster
 
-The cluster holds one install per worktree.
+On a lima cluster several installs live side by side, one per worktree; the name rule and the flags are in [Where and which](#where-and-which) above.
 Each install is a Helm release `platform-<name>` in namespace `platform-<name>`, with agent namespace `platform-<name>-agents`, its own port, its own images tagged `platform-<component>:<name>`, its own ClusterIssuers and CA secrets, and — on a Mac — its own host runner.
-The **name** is `.mise/lib/cluster.sh`'s: `--name`, else `DAM_INSTALL`, else the slug of the worktree's branch (so an agent in a worktree gets its own install without passing anything).
 The repository's own checkout is the **default** install and keeps the old names — release `platform`, namespace `default`, agents in `platform-agents`, port 4444, images `:latest` — and so does the e2e lane (`DAM_INSTALL=default` in the `e2e:*` tasks, on its own VM).
 A *linked* worktree never gets the default install, `main` included: only the repository's own checkout owns `default`, so two checkouts cannot land on one install by accident.
-`DAM_INSTALL=default` in a worktree joins the default install.
-An explicit `--name`/`DAM_INSTALL` is refused when it is longer than 20 characters, holds anything but `[a-z0-9-]`, or ends in `-agents` (its namespace `platform-<name>` would be another install's `platform-<name>-agents`); a branch whose slug would do either is refused the same way, so pass `--name`.
 
-- `mise run cluster:install` (or `cluster:helm`, `cluster:build`) — all install-aware; `--name <name>` names another one.
+- `mise run cluster:install` (or `cluster:helm`, `cluster:build`) — all install-aware; `--name <name>` names another one, and `build`/`helm` need one that exists.
 - `mise run cluster:installs -- --all` — every install, its namespace, its address and status, plus every host runner.
 - `mise run cluster:uninstall` — removes this worktree's install only: its runner, its entrypoint, its agent namespace, the chart, the PVCs, its namespace, the runner PriorityClass the chart keeps and its CA secrets.
 - `mise run cluster:status` — this worktree's pods (and the install list).
@@ -88,7 +134,8 @@ An agent on the vm backend installs DAM into one of its own [Environments](../..
    A second run upgrades in place, as on lima.
 3. **Open it** at the `app` address the install prints, signed in as the owner or someone on the agent's list.
 
-Every `cluster:*` task takes `--environment <name>` first to act on the Environment instead of this host's cluster: `cluster:kubectl -- --environment <name> get pods`, `cluster:helm -- --environment <name>`, `cluster:status -- --environment <name>`, `cluster:shell -- --environment <name> <cmd>`, `cluster:build --environment <name> api-server`.
+Every `cluster:*` task takes `--environment <name>` to act on the Environment instead of this host's cluster: `cluster:kubectl -- --environment <name> get pods`, `cluster:helm -- --environment <name>`, `cluster:status --environment <name>`, `cluster:shell -- --environment <name> <cmd>`, `cluster:build --environment <name> api-server`.
+An Environment holds one install, so the install there is always the default one and `--name` is refused ([Where and which](#where-and-which)); the worktree's branch plays no part.
 The link stays open for ten idle minutes after the last task, and while it is open neither machine sleeps.
 
 What it installs beside the chart:
