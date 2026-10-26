@@ -635,13 +635,33 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
 
 describe("appendInterruptedNotice", () => {
   test("appends one notice bubble when a turn was interrupted", () => {
-    const out = appendInterruptedNotice(
-      [userMsg("u1", "hi")],
-      "2026-09-07T00:00:00Z",
-    );
+    const out = appendInterruptedNotice([userMsg("u1", "hi")], {
+      inFlight: false,
+      interruptedAt: "2026-09-07T00:00:00Z",
+    });
     expect(out).toHaveLength(2);
     expect(out[1].notice).toBe(true);
     expect(out[1].parts[0]).toMatchObject({ kind: "text" });
+  });
+
+  // TEST_SCENARIO: the runtime now says whether a Sleep, restart or move cut the turn, which is not the crash the old notice named. A turn still running says nothing at all.
+  test("says a stop cut the turn, and stays quiet about a turn in flight", () => {
+    const stopped = appendInterruptedNotice([], {
+      inFlight: false,
+      interruptedAt: "2026-09-07T00:00:00Z",
+      interruptedByStop: true,
+    });
+    expect(stopped[0].parts[0]).toMatchObject({ kind: "text" });
+    expect((stopped[0].parts[0] as { text: string }).text).toMatch(
+      /was stopped/,
+    );
+    const inFlight = [userMsg("u1", "hi")];
+    expect(
+      appendInterruptedNotice(inFlight, {
+        inFlight: true,
+        interruptedAt: "2026-09-07T00:00:00Z",
+      }),
+    ).toBe(inFlight);
   });
 
   test("no-op when the session was not interrupted", () => {
