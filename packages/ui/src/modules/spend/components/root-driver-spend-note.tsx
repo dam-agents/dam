@@ -14,7 +14,7 @@ export function RootDriverSpendNote({
       <Button
         variant="link"
         size="inline"
-        onClick={() => navigateToSandboxHome(root.id, "models")}
+        onClick={() => navigateToSandboxHome(root.id, "usage")}
       >
         {root.name}
       </Button>

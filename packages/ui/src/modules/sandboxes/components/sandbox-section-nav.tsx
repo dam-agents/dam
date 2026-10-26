@@ -1,19 +1,20 @@
-import {
-  Cognitive,
-  Locked,
-  WarningAltFilled,
-  WifiController,
-} from "@carbon/icons-react";
+import { Locked, WarningAltFilled } from "@carbon/icons-react";
 import {
   Briefcase,
   CalendarEvent,
   type CarbonPictogramType,
   CloudComputing,
+  ConnectApplications,
+  FinanceAndSupplyChain,
+  FoundationModel,
+  Keystores,
+  Network_02,
   Robot,
+  Slack,
   Teammates,
   UserInterface,
 } from "@carbon/pictograms-react";
-import { type ComponentType, type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 import { Tabs } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -21,12 +22,10 @@ import { cn } from "@/lib/utils";
 
 import type { SandboxSection } from "../../platform/lib/routes.js";
 
-type IconProps = { "aria-hidden"?: boolean };
-
 interface SectionEntry {
   section: SandboxSection;
   title: string;
-  pictogram: CarbonPictogramType | ComponentType<IconProps>;
+  pictogram: CarbonPictogramType;
   description?: string;
 }
 
@@ -45,18 +44,46 @@ export const SECTIONS: SectionEntry[] = [
       "People who can change and use this agent with you. You stay its owner.",
   },
   {
-    section: "models",
-    pictogram: (props: IconProps) => <Cognitive size={64} {...props} />,
-    title: "Models",
+    section: "providers",
+    pictogram: FoundationModel,
+    title: "Providers",
     description:
-      "What this agent runs on, which providers it may reach a model through, and what it spends.",
+      "Choose which of your connected LLM providers this agent can use.",
   },
   {
-    section: "services",
-    pictogram: (props: IconProps) => <WifiController size={64} {...props} />,
-    title: "Services",
+    section: "connections",
+    pictogram: ConnectApplications,
+    title: "Connections",
     description:
-      "What this agent can reach: connections to MCP servers and external services like GitHub, its environment variables, and the network rules behind them.",
+      "Connections let your agent talk to MCP servers and external services like GitHub.",
+  },
+  {
+    section: "network",
+    pictogram: Network_02,
+    title: "Network access",
+    description:
+      "Rules decide which outbound HTTP requests this agent can make. The most-specific rule wins. Without a matching rule, the request needs your approval on Home.",
+  },
+  {
+    section: "environment",
+    pictogram: Keystores,
+    title: "Environment vars",
+    description:
+      "Variables are sent to the agent as plain text, so never add secrets here. Use them for non-sensitive configuration only. Store secrets in Connections.",
+  },
+  {
+    section: "channels",
+    pictogram: Slack,
+    title: "Channels",
+    description:
+      "Channels let people message this agent from Slack or Telegram.",
+  },
+  {
+    section: "chat-forms",
+    pictogram: UserInterface,
+    title: "Chat forms",
+    description:
+      "How this agent may use forms, choices and cards in its web chat replies.",
   },
   {
     section: "skills",
@@ -66,11 +93,10 @@ export const SECTIONS: SectionEntry[] = [
       "Skills are reusable instructions your agent loads when a task needs them.",
   },
   {
-    section: "automations",
+    section: "schedules",
     pictogram: CalendarEvent,
-    title: "Automations",
-    description:
-      "When this agent acts without you: its schedules, and the Slack and Telegram channels it answers in.",
+    title: "Schedules",
+    description: "Schedules let your agent run tasks periodically.",
   },
   {
     section: "environments",
@@ -80,11 +106,11 @@ export const SECTIONS: SectionEntry[] = [
       "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It controls them; you decide who may open them.",
   },
   {
-    section: "chat-forms",
-    pictogram: UserInterface,
-    title: "Chat forms",
+    section: "usage",
+    pictogram: FinanceAndSupplyChain,
+    title: "Usage",
     description:
-      "How this agent may use forms, choices and cards in its web chat replies.",
+      "What this agent spends on models, including the sub-agents it started, and its spend limit.",
   },
 ];
 

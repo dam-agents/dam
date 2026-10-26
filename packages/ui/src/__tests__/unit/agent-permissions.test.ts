@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A Shared Agent's page tells an Agent Editor up front which sections only the owner changes. A section carries a lock when the viewer holds none of the Agent Permissions it needs; a section where they hold some, like Models, is not locked. With today's editor permissions that is People, and nothing else. The owner holds every permission, so their page has no lock. Notices name the owner by email, or a former user when the account is gone.
+// TEST_OVERVIEW: A Shared Agent's page tells an Agent Editor up front which sections only the owner changes. A section carries a lock when the viewer holds none of the Agent Permissions it needs; a section where they hold some, like Providers, is not locked. With today's editor permissions that is People, Connections and Channels, and nothing else. The owner holds every permission, so their page has no lock. Notices name the owner by email, or a former user when the account is gone.
 import { AGENT_PERMISSIONS, type AgentAccess } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -42,9 +42,9 @@ const lockedFor = (access: AgentAccess) =>
   SECTIONS.map((e) => e.section).filter((s) => isLockedSection(access, s));
 
 describe("locked sections", () => {
-  // TEST_SCENARIO: AC-5. An editor sees a lock on People, and on no other section; the merged Models, Connections and Automations sections each hold work they may do.
+  // TEST_SCENARIO: AC-5. An editor sees a lock on People, Connections and Channels, and on no other section.
   it("locks only the owner's sections for an editor", () => {
-    expect(lockedFor(EDITOR)).toEqual(["people"]);
+    expect(lockedFor(EDITOR)).toEqual(["people", "connections", "channels"]);
   });
 
   // TEST_SCENARIO: AC-10. The owner's page is unchanged: no section carries a lock.
@@ -66,7 +66,7 @@ describe("locked sections", () => {
         }),
       ),
     );
-    expect(html.match(/data-testid="section-lock"/g)).toHaveLength(1);
+    expect(html.match(/data-testid="section-lock"/g)).toHaveLength(3);
     expect(html).toContain("Only the owner changes this");
   });
 });

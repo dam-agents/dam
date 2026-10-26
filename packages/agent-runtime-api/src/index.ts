@@ -64,6 +64,7 @@ export {
   resultObjectTexts,
   terminalOutputPart,
   toolNameOf,
+  toolServerOf,
   toolOutputTexts,
 } from "./modules/sessions/tool-output.js";
 

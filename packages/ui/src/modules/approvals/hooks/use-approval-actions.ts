@@ -248,6 +248,6 @@ export function useApprovalActions(
       row.status === "expired" && row.type === "ext_authz"
         ? "The original request already failed. Always allow writes a rule that future retries match."
         : null,
-    openSettings: () => navigateToSandboxHome(row.agentId, "services"),
+    openSettings: () => navigateToSandboxHome(row.agentId, "network"),
   };
 }

@@ -254,27 +254,25 @@ export function useSectionSummaries(agent: AgentView | null): {
       ].join(" · ")
     : undefined;
 
-  /* UNIT_BOUNDARY_DESCRIPTION: one line per tile, joined from the panels the
-   * tile holds: what the agent runs on and spends, what it can reach, and when
-   * it acts without its owner. */
-  const line = (...parts: (string | undefined)[]) =>
-    parts.filter(Boolean).join(" · ");
-
   return {
     summaries: {
       setup,
       ...(agent && { people: peopleSummary(agent.access) }),
       "chat-forms": chatFormsSummary,
-      models: line(providersSummary, usageSummary),
-      services: line(connections, envCount ? environment : undefined, network),
+      providers: providersSummary,
+      connections,
+      network,
+      environment,
+      channels: channelsSummary,
       skills,
-      automations: line(schedulesSummary, channelsSummary),
+      schedules: schedulesSummary,
+      usage: usageSummary,
     },
     warnings:
       missingProvider && !configStatus?.harnesses
-        ? { models: NO_PROVIDER_WARNING }
+        ? { providers: NO_PROVIDER_WARNING }
         : defaultNotice
-          ? { models: defaultModelHeadline(defaultNotice) }
+          ? { providers: defaultModelHeadline(defaultNotice) }
           : {},
   };
 }

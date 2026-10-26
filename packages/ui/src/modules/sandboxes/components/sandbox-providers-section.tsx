@@ -2,7 +2,6 @@ import { Settings } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddRow } from "@/components/ui/list-section";
 
@@ -11,7 +10,7 @@ import { useAgent } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
-import { ProviderGrantRow } from "../../providers/components/provider-grant-row.js";
+import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
 import {
   useGrantProvider,
   useHarnessCatalog,
@@ -20,7 +19,6 @@ import {
 import { DetachProviderMessage } from "../../sessions/components/detach-provider-message.js";
 import { useProviderUsage } from "../../sessions/hooks/use-provider-usage.js";
 import { providerHarnesses } from "../../sessions/lib/session-pair-options.js";
-import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
 
@@ -34,9 +32,9 @@ export function SandboxProvidersSection({
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
   const { owned, granted, loaded } = useProviderConnections(agentId);
-  const { revoke, pending } = useGrantProvider(agentId);
-  const catalog = useHarnessCatalog().data?.harnesses;
+  const { grant, revoke, pending } = useGrantProvider(agentId);
   const root = useRootDriver(agentId);
+  const catalog = useHarnessCatalog().data?.harnesses;
   const usage = useProviderUsage(agentId);
   const access = useAgent(agentId)?.access;
   const managesProviders = !access || holds(access, "connections");
@@ -69,48 +67,36 @@ export function SandboxProvidersSection({
           reach a model.
         </EmptyState>
       )}
-      {owned.map((p) => {
-        const attached = granted.some((g) => g.id === p.id);
-        return (
-          <ProviderGrantRow
-            key={p.id}
-            provider={p}
-            harnesses={catalog && providerHarnesses(catalog, p)}
-            /* UNIT_BOUNDARY_DESCRIPTION: a provider the agent does not hold is
-             * granted by picking a profile that runs on it, so the row says
-             * that instead of offering a second way to grant one (D105). */
-            note={attached ? undefined : "Not used by this agent yet"}
-            actionsLabel={attached ? `Detach ${p.name}` : undefined}
-            actions={
-              attached &&
-              managesProviders && (
-                <DropdownMenuItem
-                  tone="danger"
-                  disabled={pending}
-                  onSelect={() =>
-                    void showConfirm(
-                      <DetachProviderMessage name={p.name} usage={usage(p)} />,
-                      `Detach ${p.name} from this agent?`,
-                      { kind: "destructive", confirmLabel: "Detach" },
-                    ).then((ok) => ok && revoke(p.id))
-                  }
-                >
-                  Detach
-                </DropdownMenuItem>
-              )
-            }
-          >
-            {attached && root === null && p.templateId && (
-              <ConnectionSpendLimit
+      {owned.length > 0 && (
+        <Card className="divide-y divide-border overflow-hidden">
+          {owned.map((p) => {
+            const attached = granted.some((g) => g.id === p.id);
+            return (
+              <ProviderSpendRow
+                key={p.id}
                 agentId={agentId}
-                connectionId={p.id}
-                connectionName={p.name}
-                templateId={p.templateId}
+                provider={p}
+                harnesses={catalog && providerHarnesses(catalog, p)}
+                checked={attached}
+                disabled={pending || !managesProviders}
+                showSpend={attached && root === null}
+                onCheckedChange={(on) =>
+                  on
+                    ? void grant(p.id)
+                    : void showConfirm(
+                        <DetachProviderMessage
+                          name={p.name}
+                          usage={usage(p)}
+                        />,
+                        `Disconnect ${p.name} from this agent?`,
+                        { kind: "destructive", confirmLabel: "Disconnect" },
+                      ).then((ok) => ok && revoke(p.id))
+                }
               />
-            )}
-          </ProviderGrantRow>
-        );
-      })}
+            );
+          })}
+        </Card>
+      )}
       {owned.length > 0 && managesProviders && (
         <Card className="overflow-hidden">
           <AddRow onClick={() => navigateToSettings("providers")}>

@@ -20,3 +20,20 @@ export function environmentsTabShown({
 }): boolean {
   return newLayout && environmentsShown(shown);
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the unified toolbar offers the panel:
+ * once the agent owns one, or while an explicitly opened panel (the Manage
+ * row's access list, before the first Environment exists) is the one on screen.
+ */
+export function environmentsPanelShown({
+  open,
+  ...shown
+}: {
+  enabled: boolean;
+  count: number | undefined;
+  open: boolean;
+}): boolean {
+  if (environmentsShown(shown)) return true;
+  return open && shown.enabled;
+}

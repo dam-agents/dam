@@ -15,7 +15,10 @@ import { HarnessIcons } from "../../components/harness-icons.js";
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { CardIcon } from "../../modules/providers/components/card-icon.js";
 import { ProviderBalance } from "../../modules/providers/components/provider-balance.js";
-import { ProviderRow } from "../../modules/providers/components/provider-row.js";
+import {
+  HarnessSupport,
+  ProviderRow,
+} from "../../modules/providers/components/provider-row.js";
 
 vi.mock("../../modules/providers/api/queries.js", () => ({
   useProviderBalance: () => ({
@@ -148,7 +151,7 @@ describe("harness icons on provider and preset cards", () => {
   );
 
   it.each([true, false])(
-    "labels each compatible harness when connected=%s",
+    "reads one line per provider when connected=%s, harnesses in its tooltip",
     (connected) => {
       const html = renderToStaticMarkup(
         createElement(ProviderRow, {
@@ -161,9 +164,7 @@ describe("harness icons on provider and preset cards", () => {
           onOpen() {},
         }),
       );
-      expect(html).toContain("Supports:");
-      expect(html).toContain("size-5");
-      expect(html).not.toContain("Chat and Responses APIs");
+      expect(html).not.toContain("Supports:");
       if (connected) {
         expect(html).toContain("$12.00 of $100.00 used");
         expect(html).toContain(">Configured · Connected<");
@@ -171,13 +172,19 @@ describe("harness icons on provider and preset cards", () => {
         expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
         expect(html).toContain(">Not configured<");
       }
-      for (const name of ["Bob", "Claude", "Codex", "Pi"])
-        expect(html).toContain(`role="img" aria-label="${name}"`);
-      expect(html).not.toContain("tabindex");
     },
   );
 
-  it("keeps the harness icons focusable on a row that is not a button", () => {
+  it("lists each compatible harness in the row's tooltip", () => {
+    const html = renderToStaticMarkup(
+      createElement(HarnessSupport, { harnesses: ALL }),
+    );
+    expect(html).toContain("Supports:");
+    for (const name of ["Bob", "Claude", "Codex", "Pi"])
+      expect(html).toContain(`role="img" aria-label="${name}"`);
+  });
+
+  it("keeps a row that is not a button focusable, so its tooltip opens", () => {
     const html = renderToStaticMarkup(
       createElement(ProviderRow, {
         type: "anthropic",
@@ -185,34 +192,23 @@ describe("harness icons on provider and preset cards", () => {
         harnesses: ["claude-code"],
       }),
     );
-    expect(html).toContain('role="img" aria-label="Claude" tabindex="0"');
+    expect(html).toContain('tabindex="0"');
   });
 
   it.each([{ harnesses: undefined }, { harnesses: [] }])(
     "does not invent compatibility when the catalog is missing or empty (%s)",
     ({ harnesses }) => {
       const html = renderToStaticMarkup(
-        createElement(ProviderRow, {
-          type: "anthropic",
-          connected: false,
-          harnesses,
-          onOpen() {},
-        }),
+        createElement(HarnessSupport, { harnesses }),
       );
       expect(html).toContain(harnesses ? "None" : "Compatibility unavailable");
       expect(html).not.toContain('aria-label="Claude"');
-      expect(html).not.toContain('aria-label="Pi"');
     },
   );
 
   it("does not advertise unsupported harnesses", () => {
     const html = renderToStaticMarkup(
-      createElement(ProviderRow, {
-        type: "anthropic",
-        connected: true,
-        harnesses: ["claude-code"],
-        onOpen() {},
-      }),
+      createElement(HarnessSupport, { harnesses: ["claude-code"] }),
     );
     expect(html).toContain('aria-label="Claude"');
     for (const name of ["Bob", "Codex", "Pi"])

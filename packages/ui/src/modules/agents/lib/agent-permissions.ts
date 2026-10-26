@@ -6,12 +6,16 @@ const SECTION_PERMISSIONS: Record<SandboxSection, readonly AgentPermission[]> =
   {
     setup: ["settings", "lifecycle", "delete"],
     people: ["editors"],
-    models: ["connections", "spendLimits", "settings"],
-    services: ["connections", "credentialInjection", "egressRules", "envVars"],
+    providers: ["connections", "spendLimits", "settings"],
+    connections: ["connections", "credentialInjection"],
+    network: ["egressRules"],
+    environment: ["envVars"],
+    channels: ["channels"],
     "chat-forms": ["chatForms"],
     skills: ["skills", "skillSources", "skillPublish"],
-    automations: ["schedules", "channels"],
+    schedules: ["schedules"],
     environments: ["environments"],
+    usage: ["spendLimits"],
   };
 
 export function holds(

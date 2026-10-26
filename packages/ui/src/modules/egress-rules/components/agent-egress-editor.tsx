@@ -17,10 +17,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardButton } from "@/components/ui/card-button";
 import { DisclosureToggle } from "@/components/ui/disclosure";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ListGroup } from "@/components/ui/list-group";
 import { ListSection } from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { Select } from "@/components/ui/select";
 
 import { getUser } from "../../../auth.js";
@@ -68,9 +75,11 @@ const EMPTY_DRAFT: RuleDraft = {
 export function AgentEgressEditor({
   agentId,
   header,
+  compact = false,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
+  compact?: boolean;
 }) {
   const {
     data: rules = EMPTY,
@@ -83,7 +92,7 @@ export function AgentEgressEditor({
   const [adding, setAdding] = useState(false);
   const [choosingPreset, setChoosingPreset] = useState(false);
   const [query, setQuery] = useState("");
-  const [presetOpen, setPresetOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => groupRules(rules, query), [rules, query]);
   const { data: connections } = useAgentPageConnections(agentId);
   const connectionNames = useMemo(
@@ -107,26 +116,56 @@ export function AgentEgressEditor({
   return (
     <>
       {header()}
-      <div className="mb-3 flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setAdding(true)}
-          data-testid="egress-rule-new"
+      {compact ? (
+        <SectionHeading
+          label="Network access"
+          count={isLoading || isError ? undefined : rules.length}
         >
-          <Add size={16} />
-          Create rule
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setChoosingPreset(true)}
-          data-testid="egress-preset-open"
-        >
-          Apply preset
-        </Button>
-      </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Add network access"
+                tooltip="Add network access"
+                data-testid="egress-add"
+              >
+                <Add size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setAdding(true)}>
+                New rule…
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setChoosingPreset(true)}>
+                Apply preset…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SectionHeading>
+      ) : (
+        <div className="mb-3 flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAdding(true)}
+            data-testid="egress-rule-new"
+          >
+            <Add size={16} />
+            Create rule
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setChoosingPreset(true)}
+            data-testid="egress-preset-open"
+          >
+            Apply preset
+          </Button>
+        </div>
+      )}
       <ListSection
+        className={compact ? "mb-0" : undefined}
         loading={isLoading}
         error={isError && "Couldn't load the rules."}
         isEmpty={rules.length === 0}
@@ -150,23 +189,43 @@ export function AgentEgressEditor({
           </p>
         )}
         {groups.map((g) => {
-          const collapsible = g.key === "preset" && !query.trim();
-          const open = !collapsible || presetOpen;
+          // UNIT_BOUNDARY_DESCRIPTION: only the groups whose rules come from somewhere else fold — a connection's rules repeat what the Connections section already lists, and a preset's are a hundred lines of someone else's defaults — while the reader's own rules and a kit's stay open; a search shows every match.
+          const collapsible =
+            !query.trim() && (g.key === "connection" || g.key === "preset");
+          const open = !collapsible || (openGroups[g.key] ?? false);
           return (
             <ListGroup
               key={g.key}
-              title={`${RULE_GROUP_TITLE[g.key]} (${g.rules.length})`}
+              title={
+                g.key === "preset"
+                  ? `Preset: ${presetTitle(g.rules)} (${g.rules.length})`
+                  : `${RULE_GROUP_TITLE[g.key]} (${g.rules.length})`
+              }
               testId={`egress-group-${g.key}`}
               accessory={
-                collapsible && (
-                  <DisclosureToggle
-                    open={open}
-                    onToggle={() => setPresetOpen(!open)}
-                    className="ml-auto text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    {open ? "Hide" : "Show"}
-                  </DisclosureToggle>
-                )
+                <div className="ml-auto flex items-center gap-2">
+                  {g.key === "preset" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      data-testid="egress-preset-change"
+                      onClick={() => setChoosingPreset(true)}
+                    >
+                      Change
+                    </Button>
+                  )}
+                  {collapsible && (
+                    <DisclosureToggle
+                      open={open}
+                      onToggle={() =>
+                        setOpenGroups((prev) => ({ ...prev, [g.key]: !open }))
+                      }
+                      className="text-sm text-muted-foreground hover:text-foreground"
+                    >
+                      {open ? "Hide" : "Show"}
+                    </DisclosureToggle>
+                  )}
+                </div>
               }
             >
               {open &&
@@ -209,6 +268,13 @@ export function AgentEgressEditor({
       )}
     </>
   );
+}
+
+function presetTitle(rules: readonly EgressRuleView[]): string {
+  const raw = rules[0]?.source.startsWith("preset:")
+    ? rules[0].source.slice("preset:".length)
+    : "";
+  return PRESETS.find((p) => p.value === raw)?.title ?? raw;
 }
 
 const PRESETS: { value: EgressPreset; title: string; description: string }[] = [

@@ -387,7 +387,7 @@ export function ModelIndicator({
                   connectOnPick(group, name, () => onChoose(name))
                 }
                 onManageProviders={() =>
-                  navigateToSandboxHome(agentId, "models")
+                  navigateToSandboxHome(agentId, "providers")
                 }
               />
             </div>

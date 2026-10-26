@@ -32,7 +32,9 @@ export type Action = ActionText &
       }
   );
 
-const ROW = "flex w-full items-center gap-3 px-4 py-3 text-left";
+// UNIT_BOUNDARY_DESCRIPTION: a row wraps its trailing control under the text when the surface is narrow, which the configuration panels are at their 280 px minimum, so no button is ever clipped.
+const ROW =
+  "flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-left";
 const CLICKABLE =
   "transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
@@ -171,7 +173,7 @@ function StaticRow({
   ...text
 }: ActionText & { children: ReactNode }) {
   return (
-    <div id={id} className={cn(ROW, "scroll-mt-24 flex-wrap sm:flex-nowrap")}>
+    <div id={id} className={cn(ROW, "scroll-mt-24")}>
       <RowText {...text} className="min-w-40" />
       {children}
     </div>

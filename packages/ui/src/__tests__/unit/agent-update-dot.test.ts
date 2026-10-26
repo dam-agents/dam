@@ -15,11 +15,26 @@ vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({ navigateToSandboxHome: () => {}, setView: () => {} }),
 }));
+vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
+  useUnifiedRightToolbar: () => false,
+}));
+vi.mock("../../modules/agents/hooks/use-update-sandbox.js", () => ({
+  useUpdateSandbox: () => ({ updateOne: vi.fn(), updatingId: null }),
+}));
+vi.mock(
+  "../../modules/agents/components/update-available-action.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    UpdateAvailableAction: () => null,
+  }),
+);
 
 const { AgentUpdateDot } =
   await import("../../modules/agents/components/update-available-action.js");
 const { AgentMenuItems } =
   await import("../../modules/platform/components/sidebar-v2/agent-row-actions.js");
+const { agentMenuEntries } =
+  await import("../../modules/agents/lib/agent-menu.js");
 
 const update = { fromImage: "sandbox:1", toImage: "sandbox:2" };
 
@@ -59,8 +74,12 @@ describe("an Agent's actions menu", () => {
               name: "Herbert",
               templateUpdate: updateAvailable ? update : null,
             } as AgentView,
+            entries: agentMenuEntries(false),
             onConfigure: () => {},
+            onRename: () => {},
             onRemove: () => {},
+            onToggleDisabled: () => {},
+            onRestart: () => {},
             menu,
           }) as ReactElement<{ children: ReactNode }>
         ).props.children;
@@ -75,8 +94,12 @@ describe("an Agent without an update", () => {
   it("offers no Update item", () => {
     const items = AgentMenuItems({
       agent: { id: "a", name: "Herbert", templateUpdate: null } as AgentView,
+      entries: agentMenuEntries(false),
       onConfigure: () => {},
+      onRename: () => {},
       onRemove: () => {},
+      onToggleDisabled: () => {},
+      onRestart: () => {},
       menu: "dropdown",
     });
     expect(hasUpdateItem(items)).toBe(false);

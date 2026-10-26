@@ -3,9 +3,8 @@ import type { ReactNode } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
-import { Card, CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
-import { CardButton } from "@/components/ui/card-button";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip } from "@/components/ui/tooltip";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -23,11 +22,16 @@ interface Props {
   keyCheck?: ProviderKeyCheck | null;
   checking?: boolean;
   balance?: ReactNode;
+  spend?: ReactNode;
   onOpen?: () => void;
   connectedAction?: string;
-  footer?: ReactNode;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one provider in Settings, on a single line as on
+ * an agent's page: a small icon, its name, its balance and spend pills, and the
+ * badge that says where it stands. The icon and name open it.
+ */
 export function ProviderRow({
   type,
   templateId,
@@ -38,9 +42,9 @@ export function ProviderRow({
   keyCheck,
   checking,
   balance,
+  spend,
   onOpen,
   connectedAction = "Edit",
-  footer,
 }: Props) {
   const name = givenName ?? providerName(type);
   const problem =
@@ -52,80 +56,104 @@ export function ProviderRow({
           : "Could not verify the key"
       } on ${formatTimestamp(problem.checkedAt)} (${problem.detail})`
     : null;
-  const body = (
-    <>
-      <CardIcon provider={type} templateId={templateId} />
-      <div className="min-w-0 flex-1">
-        <div className="flex h-8 items-center gap-2">
-          <p
-            className="truncate text-base font-medium text-foreground"
-            title={name}
-          >
-            {name}
-          </p>
-          <ConnectionBadge
-            connected={connected}
-            degraded={degraded}
-            keyCheck={keyCheck}
-            checking={!!checking}
-            reason={problemText}
-          />
-        </div>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-xs text-muted-foreground">Supports:</span>
-            {harnesses?.length ? (
-              <HarnessIcons
-                harnesses={harnesses}
-                size="sm"
-                focusable={!onOpen}
-                className="text-muted-foreground opacity-70"
-              />
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                {harnesses ? "None" : "Compatibility unavailable"}
-              </span>
-            )}
-          </div>
-          <div className="min-w-0 text-right">{balance}</div>
-        </div>
-      </div>
-    </>
-  );
-  const layout = "flex w-full items-start gap-3 p-4";
   const label = connected
     ? `${connectedAction} ${name}${problemText ? `, ${problemText}` : ""}`
     : `Connect ${name}`;
-
-  if (footer) {
-    return (
-      <Card className="overflow-hidden">
-        {onOpen ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            aria-label={label}
-            className={cn(layout, ROW_HEAD_BUTTON)}
-          >
-            {body}
-          </button>
-        ) : (
-          <div className={layout}>{body}</div>
-        )}
-        <div className="mx-4 border-t border-border py-3">{footer}</div>
-      </Card>
-    );
-  }
-  return onOpen ? (
-    <CardButton onClick={onOpen} aria-label={label} className={layout}>
-      {body}
-    </CardButton>
-  ) : (
-    <div className={cn(CARD_SURFACE, layout)}>{body}</div>
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 px-4 py-2.5",
+        onOpen && "hover:bg-muted/50",
+      )}
+    >
+      <ProviderHead
+        type={type}
+        templateId={templateId}
+        name={name}
+        harnesses={harnesses}
+        onOpen={onOpen}
+        label={label}
+      />
+      {balance}
+      {spend}
+      <ConnectionBadge
+        connected={connected}
+        degraded={degraded}
+        keyCheck={keyCheck}
+        checking={!!checking}
+        reason={problemText}
+      />
+    </div>
   );
 }
 
-const ROW_HEAD_BUTTON = `text-left ${CARD_HOVER} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a provider row's small icon and name, with the
+ * harnesses it runs in their tooltip; a button that opens the provider where
+ * the row offers that, else a focusable span so the tooltip still opens.
+ */
+export function ProviderHead({
+  type,
+  templateId,
+  name,
+  harnesses,
+  onOpen,
+  label,
+}: {
+  type: ProviderPresetType;
+  templateId?: string | undefined;
+  name: string;
+  harnesses: readonly string[] | undefined;
+  onOpen?: (() => void) | undefined;
+  label?: string;
+}) {
+  const head = (
+    <>
+      <CardIcon provider={type} templateId={templateId} size="tile-sm" />
+      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+        {name}
+      </span>
+    </>
+  );
+  const className =
+    "flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
+  return (
+    <Tooltip content={<HarnessSupport harnesses={harnesses} />}>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={label}
+          className={className}
+        >
+          {head}
+        </button>
+      ) : (
+        <span tabIndex={0} className={className}>
+          {head}
+        </span>
+      )}
+    </Tooltip>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: which harnesses a provider runs, as the tooltip of its row; a missing catalog says so rather than inventing compatibility. */
+export function HarnessSupport({
+  harnesses,
+}: {
+  harnesses: readonly string[] | undefined;
+}) {
+  return (
+    <span className="flex flex-wrap items-center gap-2 text-xs">
+      Supports:
+      {harnesses?.length ? (
+        <HarnessIcons harnesses={harnesses} size="sm" className="flex-wrap" />
+      ) : (
+        <span>{harnesses ? "None" : "Compatibility unavailable"}</span>
+      )}
+    </span>
+  );
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the one pill that says where a provider row
@@ -147,7 +175,7 @@ function ConnectionBadge({
   checking: boolean;
   reason: string | null;
 }) {
-  const pill = "ml-auto shrink-0 gap-1.5";
+  const pill = "shrink-0 gap-1.5";
   if (!connected)
     return (
       <Badge variant="muted" className={pill}>
@@ -191,5 +219,5 @@ function ConnectionBadge({
 }
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
-  return <Card className="h-[92px] animate-pulse" />;
+  return <div className="h-[49px] animate-pulse bg-muted/40" />;
 };

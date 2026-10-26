@@ -57,11 +57,16 @@ function repositoriesPhrase(
   return `${count} ${count === 1 ? "repository" : "repositories"}`;
 }
 
+export type PermissionsStyle = "count" | "list";
+
 function permissionsPhrase(
   permissions: Record<string, string> | undefined,
+  style: PermissionsStyle,
 ): string {
   const names = Object.keys(permissions ?? {}).sort();
   if (names.length === 0) return "all permissions";
+  if (style === "count")
+    return `${names.length} ${names.length === 1 ? "permission" : "permissions"}`;
   return names.map((name) => `${name}: ${permissions![name]}`).join(", ");
 }
 
@@ -72,6 +77,7 @@ type ScopedConnection = Pick<
 
 export function connectionScopeSummary(
   connection: ScopedConnection,
+  style: PermissionsStyle = "count",
 ): string | null {
   if (connection.fullAccess) return null;
   const userScope = connection.githubUserToken?.scope;
@@ -82,13 +88,13 @@ export function connectionScopeSummary(
         userScope.repositoryNames,
         userScope.repositoryIds?.length ?? 0,
       ),
-      permissionsPhrase(userScope.permissions),
+      permissionsPhrase(userScope.permissions, style),
     ].join(" · ");
   }
   const appScope = connection.githubAppScope;
   if (!appScope) return null;
   const installedOn = connection.check?.installedOn;
-  const scope = appScopePhrase(appScope, connection.check?.repositories);
+  const scope = appScopePhrase(appScope, connection.check?.repositories, style);
   return installedOn ? `${installedOn} · ${scope}` : scope;
 }
 
@@ -99,11 +105,12 @@ export function appScopePhrase(
     permissions?: Record<string, string>;
   },
   reachedNames?: readonly string[],
+  style: PermissionsStyle = "list",
 ): string {
   const idCount = scope.repositoryIds?.length ?? 0;
   const names = scope.repositories ?? (idCount > 0 ? reachedNames : undefined);
   return [
     repositoriesPhrase(names, idCount),
-    permissionsPhrase(scope.permissions),
+    permissionsPhrase(scope.permissions, style),
   ].join(" · ");
 }

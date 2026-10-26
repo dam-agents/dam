@@ -60,6 +60,7 @@ const state = vi.hoisted(() => ({
   } | null,
   configured: undefined as
     { mode: string | null; configOptions: Record<string, string> } | undefined,
+  followsDefaults: false,
   showConfirm: vi.fn(),
   revoke: vi.fn(),
   buttons: {} as Record<string, () => void>,
@@ -129,7 +130,9 @@ vi.mock("@/components/ui/tooltip", () => ({
 }));
 
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
-  useHarnessConfigStatus: () => ({ data: { followsDefaults: false } }),
+  useHarnessConfigStatus: () => ({
+    data: { followsDefaults: state.followsDefaults },
+  }),
 }));
 
 vi.mock("../../modules/agents/api/queries.js", () => ({
@@ -203,6 +206,23 @@ vi.mock("../../modules/profiles/api/mutations.js", () => ({
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
+  samePair: (
+    a: {
+      harness: string;
+      provider?: string | null;
+      model?: string | null;
+    } | null,
+    b: {
+      harness: string;
+      provider?: string | null;
+      model?: string | null;
+    } | null,
+  ) =>
+    !!a &&
+    !!b &&
+    a.harness === b.harness &&
+    a.provider === b.provider &&
+    a.model === b.model,
   useHarnessCatalog: () => ({
     data: state.catalogLoaded && {
       harnesses: [
@@ -393,8 +413,8 @@ describe("session pair model choices", () => {
     expect(html).not.toContain("Static model");
     expect(html).not.toContain("New session runs on");
     expect(html).not.toContain('aria-label="Close"');
-    expect(html).toContain("Configure providers and defaults");
-    expect(html).not.toContain("Set as default");
+    // UNIT_BOUNDARY_DESCRIPTION: the last row holds the two acts on the default and nothing else, so no provider shortcut sits there.
+    expect(html).not.toContain("Configure providers and defaults");
     expect(html).toContain('aria-label="Disconnect IBM"');
     expect(html).toContain('aria-label="Session settings"');
     expect(html).not.toContain("Harness default");

@@ -32,7 +32,7 @@ export function DefaultModelNotice({ agentId }: { agentId: string }) {
         variant="link"
         size="inline"
         className="text-xs"
-        onClick={() => navigateToSandboxHome(agentId, "models")}
+        onClick={() => navigateToSandboxHome(agentId, "providers")}
       >
         {defaultModelAction(notice)}
       </Button>

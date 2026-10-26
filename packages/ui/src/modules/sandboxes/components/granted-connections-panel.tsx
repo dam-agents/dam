@@ -25,7 +25,10 @@ interface Props {
   title?: string;
   leading?: React.ReactNode;
   extraGroups?: React.ReactNode;
+  addRowHidden?: boolean;
   readOnly?: boolean;
+  flush?: boolean;
+  flat?: boolean;
 }
 
 export function GrantedConnectionsPanel({
@@ -40,7 +43,10 @@ export function GrantedConnectionsPanel({
   title,
   leading,
   extraGroups,
+  addRowHidden = false,
   readOnly = false,
+  flush = false,
+  flat = false,
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
@@ -58,6 +64,7 @@ export function GrantedConnectionsPanel({
       )}
       {leading && <div className="mb-4">{leading}</div>}
       <ListSection
+        className={flush ? "mb-0" : undefined}
         label={title}
         isEmpty={groups.length === 0 && !extraGroups}
         empty="No connections added to this agent yet."
@@ -65,7 +72,8 @@ export function GrantedConnectionsPanel({
         newLabel="Add connection"
         newTestId="open-connection-catalog"
         addRow={
-          !readOnly && (
+          !readOnly &&
+          !addRowHidden && (
             <AddRow onClick={onOpenCatalog} testId="open-connection-catalog">
               <Add size={16} className="shrink-0" />
               <div className="min-w-0 flex-1">
@@ -86,7 +94,8 @@ export function GrantedConnectionsPanel({
             key={group.provider.id}
             group={group}
             templateById={templateById}
-            showCount
+            showCount={!flat}
+            flat={flat}
             grant={
               readOnly
                 ? undefined

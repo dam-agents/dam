@@ -1,7 +1,7 @@
 import type { PendingRestart } from "agent-runtime-api";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
-import { SectionHeader } from "@/components/ui/list-section";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -25,16 +25,17 @@ import {
 } from "../../environments/api/queries.js";
 import { EnvironmentsSection } from "../../environments/components/environments-section.js";
 import { environmentsShown } from "../../environments/lib/environments-tab.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { configRedirectTab } from "../../sessions/lib/side-panel.js";
 import { AgentManagementActions } from "../components/agent-management-actions.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
-import { FoldedSection } from "../components/folded-section.js";
 import { PeopleSection } from "../components/people-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import {
@@ -49,20 +50,34 @@ import {
 } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
-import { ConnectionAddressingSection } from "../components/setup/setup-sections.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
-  "models",
-  "services",
-  "automations",
+  "providers",
+  "connections",
+  "network",
+  "environment",
+  "schedules",
   "environments",
 ]);
 
 export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
+  const section = useStore((s) => s.sandboxSection);
+  const openConfigTab = useStore((s) => s.openConfigTab);
+  // UNIT_BOUNDARY_DESCRIPTION: only the install's answer moves the page, never the last value this browser stored, so a bookmark does not bounce to the chat while the flags load — or after the user turned the experiment off.
+  const features = useFeatures();
+  const rightToolbar =
+    features.isSuccess && features.data?.["unified-right-toolbar"] === true;
   const agentsQuery = useAgents();
   const agent = agentId ? findAgent(agentsQuery.data, agentId) : null;
+  // UNIT_BOUNDARY_DESCRIPTION: with the experiment on this page has no surface of its own, so a deep link or a bookmark replaces itself with the chat and opens the panel that holds the section; every knob keeps its home there. A reader who may not use the Agent's Sessions keeps this page, since the chat route sends them straight back here and the two would loop.
+  useEffect(() => {
+    const tab = configRedirectTab(rightToolbar, section);
+    if (!agentId || tab === null) return;
+    if (agent !== null && !holds(agent.access, "sessions")) return;
+    openConfigTab(agentId, tab);
+  }, [rightToolbar, agentId, section, openConfigTab, agent]);
 
   const agentInaccessible = useIsAgentInaccessible(agentId);
   usePublicAgentFallback(agentId, agentInaccessible);
@@ -87,6 +102,9 @@ function AgentHome({ agent }: { agent: AgentView }) {
   const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const openAgentSession = useStore((s) => s.openAgentSession);
+  const features = useFeatures();
+  const rightToolbar =
+    features.isSuccess && features.data?.["unified-right-toolbar"] === true;
 
   const display = useResolvedAgentDisplay(agent);
   const newLayout = useNewLayout();
@@ -119,14 +137,17 @@ function AgentHome({ agent }: { agent: AgentView }) {
   const header: SectionHeaderSlot = (actions) => (
     <SandboxHomeHeader
       agent={agent}
-      showUpdate={!newLayout}
       title={sectionEntry?.title ?? ""}
       description={sectionEntry?.description}
       pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
       actions={actions}
+      showUpdate={!newLayout}
     />
   );
 
+  // UNIT_BOUNDARY_DESCRIPTION: with the experiment on the page has no surface of its own except People, which no panel renders yet, and except the page of a reader who may not use the Agent's Sessions, for whom it is the only surface left.
+  if (rightToolbar && section !== "people" && holds(agent.access, "sessions"))
+    return null;
   if (!display) return null;
 
   return (
@@ -158,58 +179,41 @@ function AgentHome({ agent }: { agent: AgentView }) {
             </>
           ) : section === "people" ? (
             <PeopleSection agent={agent} />
-          ) : section === "models" ? (
-            <>
-              {header()}
-              <SandboxProvidersSection agentId={agent.id} header={() => null} />
-              <div className="mt-10">
-                <SectionHeader label="Spending" />
-                <SandboxUsageSection agentId={agent.id} />
-              </div>
-            </>
+          ) : section === "providers" ? (
+            <SandboxProvidersSection agentId={agent.id} header={header} />
+          ) : section === "network" ? (
+            <AgentEgressEditor agentId={agent.id} header={header} />
+          ) : section === "environment" ? (
+            <EnvTab agent={agent} header={header} />
+          ) : section === "channels" ? (
+            <SandboxChannelsSection agentId={agent.id} />
           ) : section === "chat-forms" ? (
             <ChatFormSettings agentId={agent.id} />
           ) : section === "skills" ? (
             <SandboxSkillsSection agent={agent} />
-          ) : section === "automations" ? (
-            <>
-              <SchedulesPanel
-                agentId={agent.id}
-                header={header}
-                onResumeSession={(sessionId) =>
-                  openAgentSession(agent.id, sessionId)
-                }
-              />
-              <div className="mt-8">
-                <SandboxChannelsSection agentId={agent.id} />
-              </div>
-            </>
+          ) : section === "schedules" ? (
+            <SchedulesPanel
+              agentId={agent.id}
+              header={header}
+              onResumeSession={(sessionId) =>
+                openAgentSession(agent.id, sessionId)
+              }
+            />
           ) : section === "environments" ? (
             <EnvironmentsSection agentId={agent.id} header={header} />
+          ) : section === "usage" ? (
+            <SandboxUsageSection agentId={agent.id} />
           ) : (
             <>
               <ConnectionsSection
                 agentId={agent.id}
                 header={header}
-                leading={<ConnectionAddressingSection agent={agent} />}
                 oauthReturnView={routeToPath({
                   view: "sandbox-home",
                   agentId: agent.id,
-                  sandboxSection: "services",
+                  sandboxSection: "connections",
                 })}
               />
-              <FoldedSection
-                title="Environment variables"
-                testId="connections-env-vars"
-              >
-                <EnvTab agent={agent} header={() => null} />
-              </FoldedSection>
-              <FoldedSection
-                title="Network access"
-                testId="connections-network"
-              >
-                <AgentEgressEditor agentId={agent.id} header={() => null} />
-              </FoldedSection>
             </>
           )}
         </div>

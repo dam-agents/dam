@@ -99,7 +99,7 @@ The card names the provider of the session:
 - the fault is on the platform's side: the platform cannot reach model providers, and neither the provider nor the setup is the cause;
 - the card saw an outage that has ended: the provider works again, and the user can retry now.
 
-The card's actions are Retry, where the message can be sent again; Switch provider, which opens the agent's Models section; the provider's own status page, while the provider is degraded and has one; and Raw error, which shows the original error text.
+The card's actions are Retry, where the message can be sent again; Switch provider, which opens the agent's Providers section; the provider's own status page, while the provider is degraded and has one; and Raw error, which shows the original error text.
 Claude Code writes its own copy of the error as reply text before the turn fails; a reply that holds nothing but that copy is the failure itself, so the chat shows the card in its place and the copy only under Raw error.
 Retry then sends the same prompt again as a new message, and the failed exchange stays above it.
 A reply that streamed other text before it failed keeps its text, and its card says that the response was interrupted and has no Retry.

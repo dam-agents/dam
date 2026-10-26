@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider whose template has a key check is connected. One pill on each row carries both states: "Not configured" for a provider the owner does not hold, else "Configured" with what the key is doing — "Verifying" while the check runs, "Connected" when it works or was never checked, "Key rejected" when the provider refused it, named in the row's accessible name, "Unverified" when the provider could not say, and "Degraded" while its template has an outage.
+// TEST_OVERVIEW: Settings / Providers rechecks the keys on every visit and offers no button for it. One pill on each row carries both states: "Not configured" for a provider the owner does not hold, else "Configured" with what the key is doing — "Verifying" while the check runs, "Connected" when it works or was never checked, "Key rejected" when the provider refused it, named in the row's accessible name, "Unverified" when the provider could not say, and "Degraded" while its template has an outage.
 import type { ProviderKeyCheck } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -27,7 +27,10 @@ const state = vi.hoisted(() => ({
 
 vi.mock("../../brand.js", () => ({ getBrand: () => ({ name: "Acme" }) }));
 vi.mock("../../modules/spend/components/all-agents-provider-limit.js", () => ({
-  AllAgentsProviderLimit: () => null,
+  AllAgentsSpendBadge: () => null,
+}));
+vi.mock("@/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: unknown }) => children,
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: { showConfirm: () => void }) => unknown) =>
@@ -97,18 +100,13 @@ describe("provider key recheck", () => {
     state.itemsByTemplate = new Map();
   });
 
-  // TEST_SCENARIO: with no provider connected there is no key to check, so no Recheck button shows.
-  it("offers no recheck without a connected provider", () => {
+  // TEST_SCENARIO: the keys are checked on every visit, so the section offers no Recheck button, with providers connected or not.
+  it("offers no Recheck button", () => {
     expect(render()).not.toContain("Recheck");
-  });
-
-  // TEST_SCENARIO: one Recheck button serves the whole section, however many providers are connected.
-  it("shows one Recheck button for the section", () => {
     state.items = new Map([
       ["anthropic", { id: "c1", conn: { templateId: "anthropic" } }],
-      ["openai", { id: "c2", conn: { templateId: "openai" } }],
     ]);
-    expect(render().match(/Recheck keys/g)).toHaveLength(1);
+    expect(render()).not.toContain("Recheck");
   });
 
   // TEST_SCENARIO: a key that worked at its last check reads Connected, with a check mark saying it works right now beside the harnesses it supports.
@@ -191,18 +189,7 @@ describe("provider key recheck", () => {
     expect(row).not.toContain("Verifying");
   });
 
-  // TEST_SCENARIO: the deployment CurveBender's key is not the user's to check, so an install holding only it gets no Recheck button, since a recheck could never change its row.
-  it("offers no recheck when no connected provider has a key check", () => {
-    state.itemsByTemplate = new Map([
-      [
-        "curve-bender-deployment",
-        { id: "c3", conn: { templateId: "curve-bender-deployment" } },
-      ],
-    ]);
-    expect(render()).not.toContain("Recheck");
-  });
-
-  // TEST_SCENARIO: while the recheck runs, the button is disabled and reads Rechecking, and each checkable row's pill says it is verifying, whatever its last result was.
+  // TEST_SCENARIO: while the recheck of a visit runs, each checkable row's pill says it is verifying, whatever its last result was.
   it("shows progress while the recheck runs", () => {
     state.pending = true;
     state.items = new Map([
@@ -222,7 +209,6 @@ describe("provider key recheck", () => {
       ],
     ]);
     const html = render();
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Rechecking…/);
     const row = rowOf(html, "Edit Anthropic");
     expect(row).toContain("Configured · Verifying");
     expect(row).not.toContain("Configured · Key rejected");

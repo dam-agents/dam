@@ -6,8 +6,9 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Card } from "@/components/ui/card";
 
-import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
+import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
 import { useGrantProvider, useHarnessCatalog } from "../api/session-pair.js";
 import { attachableProviders } from "../lib/catalog-groups.js";
 import {
@@ -98,21 +99,25 @@ function AttachProvidersDialog({
         onClose={onCancel}
         closeDisabled={pending}
       />
-      <DialogBody className="flex flex-col gap-3">
-        {request.providers.map((p) => (
-          <ProviderToggleRow
-            key={p.id}
-            provider={p}
-            harnesses={catalog && providerHarnesses(catalog, p)}
-            checked={selected.includes(p.id)}
-            disabled={pending || blocked(p)}
-            onCheckedChange={(on) =>
-              setSelected((s) =>
-                on ? [...s, p.id] : s.filter((id) => id !== p.id),
-              )
-            }
-          />
-        ))}
+      <DialogBody>
+        <Card className="divide-y divide-border overflow-hidden">
+          {request.providers.map((p) => (
+            <ProviderSpendRow
+              key={p.id}
+              agentId={null}
+              provider={p}
+              harnesses={catalog && providerHarnesses(catalog, p)}
+              showSpend={false}
+              checked={selected.includes(p.id)}
+              disabled={pending || blocked(p)}
+              onCheckedChange={(on) =>
+                setSelected((s) =>
+                  on ? [...s, p.id] : s.filter((id) => id !== p.id),
+                )
+              }
+            />
+          ))}
+        </Card>
       </DialogBody>
       <DialogActions
         onCancel={onCancel}

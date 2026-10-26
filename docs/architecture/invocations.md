@@ -71,7 +71,7 @@ External skills are applied the way kit apply applies them, after the target is 
 **Provider Inheritance.** A target runs on one of its Driver's model providers; a spawn never names one.
 The platform takes the provider connections granted to the Driver and gives the target the one its model names, else the first in its harness's home order that its harness can run on.
 A harness whose providers none of the Driver's match is refused before anything is created, since the target could not make its first model call and the Driver would get a failed run instead of a refused spawn.
-The refusal names the providers that would do, by their Settings names, and the fix: pick a profile that runs on one the owner already holds, which grants it on the agent's Models section, else connect one in Settings first.
+The refusal names the providers that would do, by their Settings names, and the fix: pick a profile that runs on one the owner already holds, which grants it on the agent's Providers section, else connect one in Settings first.
 `list_harnesses` tells the same ahead of a spawn, by the same rule: each harness with the provider a spawn naming no model runs on there, or the refusal a spawn there would get.
 An image target declares nothing, so nothing is narrowed.
 

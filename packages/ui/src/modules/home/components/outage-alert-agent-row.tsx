@@ -34,7 +34,7 @@ export function OutageAlertAgentRow({
         <Button
           variant="link"
           size="inline"
-          onClick={() => navigateToSandboxHome(agent.agentId, "models")}
+          onClick={() => navigateToSandboxHome(agent.agentId, "providers")}
           className="shrink-0 text-sm"
         >
           Switch provider

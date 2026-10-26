@@ -535,7 +535,7 @@ export function SessionPairPicker(props: Props) {
                         }
                         onManageProviders={() =>
                           agentId
-                            ? navigateToSandboxHome(agentId, "models")
+                            ? navigateToSandboxHome(agentId, "providers")
                             : onConnectProviders()
                         }
                       />
@@ -600,23 +600,6 @@ export function SessionPairPicker(props: Props) {
                 {saveAs.row}
               </div>
             )}
-          {!routed && (
-            <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
-              <PopoverClose asChild>
-                <button
-                  type="button"
-                  onClick={() =>
-                    agentId
-                      ? navigateToSandboxHome(agentId, "models")
-                      : onConnectProviders()
-                  }
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  Configure providers and defaults
-                </button>
-              </PopoverClose>
-            </div>
-          )}
         </PopoverContent>
       </Popover>
       {pair && !edit && (
