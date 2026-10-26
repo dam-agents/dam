@@ -7,6 +7,7 @@ import { createActiveTurnStore } from "../../modules/acp/infrastructure/active-t
 import { createSessionMetadataStore } from "../../modules/acp/infrastructure/session-metadata-store.js";
 import {
   INTERRUPTION_NOTICE,
+  MAX_RESUME_ATTEMPTS,
   STOPPED_NOTICE,
   recoverInterruptedTurns,
 } from "../../modules/acp/services/interrupted-turn-recovery.js";
@@ -30,30 +31,41 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
   const backend = createFileDocumentStoreBackend(dir);
+  const sessionMetadata = createSessionMetadataStore(backend);
   const resumed: string[] = [];
   const tasks: string[] = [];
+  const fresh: { meta: unknown; unattended: boolean | undefined }[] = [];
+  const bound: { scheduleId: string; sessionId: string }[] = [];
+  let minted = 0;
   const triggerDriver: TriggerSessionDriver = {
-    start({ task, resumeSessionId }) {
+    start({ task, resumeSessionId, platformMeta, unattended }) {
       if (resumeSessionId) {
         resumed.push(resumeSessionId);
         tasks.push(task);
         onResume(resumeSessionId);
+      } else {
+        fresh.push({ meta: platformMeta, unattended });
+        tasks.push(task);
       }
-      return Promise.resolve({
-        sessionId: resumeSessionId ?? "fresh",
-        openedOn: null,
-      });
+      const sessionId = resumeSessionId ?? `fresh-${String(++minted)}`;
+      if (!resumeSessionId) sessionMetadata.set(sessionId, platformMeta ?? {});
+      return Promise.resolve({ sessionId, openedOn: null });
     },
   };
   return {
     backend,
+    sessionMetadata,
     resumed,
     tasks,
+    fresh,
+    bound,
     recover: (store: ReturnType<typeof createActiveTurnStore>) =>
       recoverInterruptedTurns({
         store,
-        sessionMetadata: createSessionMetadataStore(backend),
+        sessionMetadata,
         triggerDriver,
+        bindScheduleSession: (scheduleId, sessionId) =>
+          bound.push({ scheduleId, sessionId }),
         log: () => {},
       }),
   };
@@ -140,5 +152,124 @@ describe("interrupted-turn recovery", () => {
     expect(STOPPED_NOTICE).toContain("put to sleep");
     expect(STOPPED_NOTICE).not.toContain("memory");
     expect(STOPPED_NOTICE).toContain("Nobody rejected it");
+  });
+
+  /**
+   * TEST_SCENARIO: a schedule fires on a hibernated agent and the machine then
+   * goes down while the new Session runs its first turn. A harness stores a
+   * Session only during its first turn, so there is nothing to resume: the
+   * fire's task must run anyway, unattended, in a fresh Session that keeps the
+   * dead one's schedule metadata.
+   */
+  it("runs a scheduled fire's cut first turn again in a fresh session", async () => {
+    const world = recoveryWorld();
+    const meta = {
+      mode: "chat",
+      type: "schedule_once",
+      scheduleId: "sched-1",
+      model: "aws/claude-opus-5-5",
+    };
+    world.sessionMetadata.set("sched-run", meta);
+    world.sessionMetadata.markUnstored("sched-run");
+    createActiveTurnStore(world.backend).record("sched-run", {
+      id: "prompt-1",
+      recordedAt: new Date().toISOString(),
+      blocks: [
+        { type: "text", text: "append the current date to ~/qa-sched.txt" },
+      ],
+      droppedAttachments: [],
+    });
+
+    await world.recover(createActiveTurnStore(world.backend));
+
+    expect(world.resumed).toEqual([]);
+    expect(world.tasks).toEqual(["append the current date to ~/qa-sched.txt"]);
+    expect(world.fresh).toEqual([{ meta, unattended: true }]);
+    expect(world.sessionMetadata.get("fresh-1")?.meta).toEqual(meta);
+    expect(world.sessionMetadata.isTombstoned("sched-run")).toBe(true);
+    expect(world.bound).toEqual([
+      { scheduleId: "sched-1", sessionId: "fresh-1" },
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: a scheduled fire's re-run kills the machine again on every
+   * boot, as a repeating out-of-memory kill does. Each re-run starts a new
+   * Session, so the chain must carry the attempts that were spent, or it
+   * repeats the fire's side effects on every boot for good.
+   */
+  it("stops re-running a fire whose re-run dies on every boot", async () => {
+    const backend = createFileDocumentStoreBackend(dir);
+    const sessionMetadata = createSessionMetadataStore(backend);
+    const prompt = {
+      id: "prompt-1",
+      recordedAt: new Date().toISOString(),
+      blocks: [
+        { type: "text" as const, text: "append the current date to the file" },
+      ],
+      droppedAttachments: [],
+    };
+    sessionMetadata.set("sched-run", {
+      mode: "chat",
+      type: "schedule_once",
+      scheduleId: "sched-1",
+    });
+    sessionMetadata.markUnstored("sched-run");
+    createActiveTurnStore(backend).record("sched-run", prompt);
+
+    let booted = createActiveTurnStore(backend);
+    const reran: string[] = [];
+    const triggerDriver: TriggerSessionDriver = {
+      start({ platformMeta, resumeSessionId }) {
+        if (resumeSessionId)
+          return Promise.resolve({
+            sessionId: resumeSessionId,
+            openedOn: null,
+          });
+        const sessionId = `rerun-${String(reran.length + 1)}`;
+        reran.push(sessionId);
+        sessionMetadata.set(sessionId, platformMeta ?? {});
+        sessionMetadata.markUnstored(sessionId);
+        booted.record(sessionId, prompt);
+        return Promise.resolve({ sessionId, openedOn: null });
+      },
+    };
+
+    for (let boot = 0; boot < MAX_RESUME_ATTEMPTS + 3; boot++) {
+      booted = createActiveTurnStore(backend);
+      await recoverInterruptedTurns({
+        store: booted,
+        sessionMetadata,
+        triggerDriver,
+        log: () => {},
+      });
+    }
+
+    expect(reran).toHaveLength(MAX_RESUME_ATTEMPTS);
+  });
+
+  /**
+   * TEST_SCENARIO: a scheduled Session the harness has stored is cut on a
+   * later turn. It is resumed as it always was: the harness has it, and the
+   * resumed turn continues the conversation the task built.
+   */
+  it("still resumes a scheduled session the harness stored", async () => {
+    const world = recoveryWorld();
+    world.sessionMetadata.set("sched-run", {
+      mode: "chat",
+      type: "schedule_cron",
+      scheduleId: "sched-1",
+    });
+    createActiveTurnStore(world.backend).record("sched-run", {
+      id: "prompt-1",
+      recordedAt: new Date().toISOString(),
+      blocks: [{ type: "text", text: "check the queue" }],
+      droppedAttachments: [],
+    });
+
+    await world.recover(createActiveTurnStore(world.backend));
+
+    expect(world.resumed).toEqual(["sched-run"]);
+    expect(world.fresh).toEqual([]);
   });
 });

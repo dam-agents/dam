@@ -32,6 +32,7 @@ export interface ActiveTurnStore {
   remove(sessionId: string): void;
   promptOf(sessionId: string): PlatformUndeliveredPrompt | undefined;
   bumpAttempts(sessionId: string): void;
+  carryAttempts(sessionId: string, attempts: number): void;
   markStopped(): void;
   leftovers(): ActiveTurnMarker[];
 }
@@ -75,14 +76,17 @@ export function createActiveTurnStore(
   });
   const inherited = new Set(Object.keys(store.read().sessions));
   const resuming = new Set<string>();
+  const chains = new Map<string, number>();
 
   return {
     record(sessionId, prompt) {
       inherited.delete(sessionId);
       const { sessions } = store.read();
-      const attempts = resuming.delete(sessionId)
-        ? (sessions[sessionId]?.attempts ?? 0)
-        : 0;
+      const carried = chains.get(sessionId);
+      chains.delete(sessionId);
+      const attempts =
+        carried ??
+        (resuming.delete(sessionId) ? (sessions[sessionId]?.attempts ?? 0) : 0);
       store.write({
         sessions: {
           ...sessions,
@@ -97,6 +101,7 @@ export function createActiveTurnStore(
     remove(sessionId) {
       inherited.delete(sessionId);
       resuming.delete(sessionId);
+      chains.delete(sessionId);
       const { sessions } = store.read();
       if (sessions[sessionId] === undefined) return;
       const next = { ...sessions };
@@ -115,6 +120,19 @@ export function createActiveTurnStore(
         sessions: {
           ...sessions,
           [sessionId]: { ...existing, attempts: existing.attempts + 1 },
+        },
+      });
+    },
+    carryAttempts(sessionId, attempts) {
+      if (attempts <= 0) return;
+      chains.set(sessionId, attempts);
+      const { sessions } = store.read();
+      const existing = sessions[sessionId];
+      if (existing === undefined) return;
+      store.write({
+        sessions: {
+          ...sessions,
+          [sessionId]: { ...existing, attempts },
         },
       });
     },

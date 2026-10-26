@@ -1,3 +1,4 @@
+import { SessionType, type PlatformUndeliveredPrompt } from "api-server-api";
 import type { ActiveTurnStore } from "../infrastructure/active-turn-store.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { TriggerSessionDriver } from "./trigger-session-driver.js";
@@ -39,6 +40,17 @@ export const STOPPED_NOTICE = [
 
 export const MAX_RESUME_ATTEMPTS = 5;
 
+const SCHEDULED_SESSION_TYPES: readonly string[] = [
+  SessionType.ScheduleCron,
+  SessionType.ScheduleOnce,
+];
+
+function promptText(prompt: PlatformUndeliveredPrompt): string {
+  return prompt.blocks
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("\n\n");
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: On boot, resumes every Session whose turn an
  * abnormal pod death interrupted, so work continues unattended instead of
@@ -64,11 +76,17 @@ export const MAX_RESUME_ATTEMPTS = 5;
  * Each marker is looked up again just before its own resume, because resuming
  * the ones before it takes time, and a Session a person starts using in that
  * window belongs to their turn, not to recovery.
+ * A scheduled Session the harness never stored cannot be resumed at all — the
+ * harness has no such conversation — so the task its marker kept runs again in
+ * a fresh unattended Session of the same schedule instead. That is how a fire
+ * whose machine went down on its first turn still does its work, where the
+ * person who would otherwise retry it never exists.
  */
 export async function recoverInterruptedTurns(deps: {
   store: ActiveTurnStore;
   sessionMetadata: SessionMetadataStore;
   triggerDriver: TriggerSessionDriver;
+  bindScheduleSession?: (scheduleId: string, sessionId: string) => void;
   log: (msg: string) => void;
 }): Promise<void> {
   for (const { sessionId } of deps.store.leftovers()) {
@@ -87,6 +105,35 @@ export async function recoverInterruptedTurns(deps: {
     }
     if (deps.sessionMetadata.isTombstoned(marker.sessionId)) {
       deps.store.remove(marker.sessionId);
+      continue;
+    }
+    const entry = deps.sessionMetadata.get(marker.sessionId);
+    const task = marker.prompt ? promptText(marker.prompt) : "";
+    if (
+      entry?.unstored === true &&
+      task !== "" &&
+      SCHEDULED_SESSION_TYPES.includes(entry.meta.type ?? "")
+    ) {
+      deps.store.bumpAttempts(marker.sessionId);
+      try {
+        const { sessionId: rerun } = await deps.triggerDriver.start({
+          task,
+          platformMeta: entry.meta,
+          unattended: true,
+        });
+        deps.store.carryAttempts(rerun, marker.attempts + 1);
+        deps.sessionMetadata.tombstone(marker.sessionId);
+        deps.store.remove(marker.sessionId);
+        if (entry.meta.scheduleId)
+          deps.bindScheduleSession?.(entry.meta.scheduleId, rerun);
+        deps.log(
+          `ran the cut first turn of ${marker.sessionId} again in ${rerun}`,
+        );
+      } catch (err) {
+        deps.log(
+          `failed to re-run the cut first turn of ${marker.sessionId}: ${(err as Error).message}`,
+        );
+      }
       continue;
     }
     deps.store.bumpAttempts(marker.sessionId);

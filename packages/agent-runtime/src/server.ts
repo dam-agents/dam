@@ -642,6 +642,11 @@ function scheduleRecovery(): void {
       store: activeTurns,
       sessionMetadata,
       triggerDriver,
+      bindScheduleSession: (scheduleId, sessionId) =>
+        runtimeChannel.triggerStateStore.setSessionForSchedule(
+          scheduleId,
+          sessionId,
+        ),
       log: (msg) => process.stderr.write(`[recovery] ${msg}\n`),
     });
   }, 5_000).unref();
