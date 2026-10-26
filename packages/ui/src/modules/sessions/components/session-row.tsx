@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { useAgent } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
+import { badgeRepositories } from "../../changes/lib/pull-request-links.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
   amountsLabel,
@@ -95,6 +96,7 @@ export function SessionRow({
   const mainRef = useRef<HTMLButtonElement>(null);
   const startedBy = useSenderNames(s.agentId).otherName(s.startedBy);
   const metaId = useId();
+  const badges = badgeRepositories(s.repositories);
   const afterMenu = useRef<(() => void) | null>(null);
 
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -277,8 +279,8 @@ export function SessionRow({
                 </>
               )}
             </span>
-            {s.repositories && s.repositories.length > 0 && (
-              <SessionRepositoryBadges repositories={s.repositories} />
+            {badges.length > 0 && (
+              <SessionRepositoryBadges repositories={badges} />
             )}
           </div>
         </div>

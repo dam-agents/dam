@@ -1,6 +1,6 @@
 # Agent changes
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -43,7 +43,7 @@ Notices are throttled; each one only tells the viewer to read the list again.
 
 ## Sessions and their repositories
 
-agent-runtime records the repositories a Session worked in, from one signal: the git commands that record work on a branch — a commit, a merge, a rebase, a cherry-pick, a pull, a push.
+agent-runtime records the repositories a Session worked in, from one signal: the git commands that record work on a branch — a commit, a merge, a rebase, a cherry-pick, a push.
 Edits are not read: how a harness edits a file differs between harnesses, and a shell command names no file at all, while a commit is the same on every harness.
 Work not committed yet links no Session until it is; the panel still lists its repository with its changes.
 
@@ -53,6 +53,7 @@ The runtime reads a file once its process has exited, keeps the command's name, 
 Its watch sees a trace created, at the start of a git process, not finished, so while one is unfinished it looks again every second: a commit that waits on an editor or a slow hook links when it exits.
 The trace also carries the command line, which can hold a commit message or a credential passed on it; the runtime never logs or keeps any of it.
 A command that only reads (`status`, `log`) or switches branches records nothing, and neither does one that failed.
+Nor does a pull, or the merge or rebase it starts as a git process of its own: it brings in work done elsewhere, and the tools an agent runs pull their caches and plugin repositories, which the Session never worked in.
 
 git records only the environment variables it is told to, and those name the Session.
 A terminal Session's processes carry the platform's own Session id; a harness sets its own on the shell commands of a chat Session — `CLAUDE_CODE_SESSION_ID` on Claude Code, `CODEX_THREAD_ID` on Codex, `PI_SESSION_ID` on Pi — each the same id the runtime knows the Session by.
@@ -64,7 +65,8 @@ That record is per Session and survives the panel being closed and the machine r
 The open pull request of a recorded branch is attached to the record when the panel finds it, when the Session's tool calls settle, and right after a push; a pushed branch is looked up on the remote it tracks, whatever its worktree has checked out since.
 A link once found is kept, so a Session still links its pull request after it is merged.
 
-The sessions list carries this record as badges of the repositories a Session touched, each with its pull request.
+The sessions list carries this record as badges of the repositories a Session has a pull request in, each with its number, wherever the clone is — `/tmp` included.
+A repository the Session only committed in shows no badge: the tools an agent runs commit in repositories of their own too, so a badge without a pull request tells the user nothing.
 Two badges of one repository add their branch, or the worktree's directory when the branch is the same, so they are told apart without hovering.
 The panel uses it to open on the Change Set the Session committed in last, and to group the list: *changed in this Session* first, then other repositories with changes, then clean ones.
 When the agent goes on to commit in another Change Set, the panel stays where the user is and marks the other one with a new-changes dot.

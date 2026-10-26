@@ -22,7 +22,10 @@ export function sessionEnvVarsOf(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the git commands that record work on a branch.
  * A command that only reads, such as status or log, links nothing, and
- * neither does checkout: switching to a branch is not working on it.
+ * neither does checkout: switching to a branch is not working on it. Nor
+ * does a pull, nor the merge or rebase it starts: it brings in work done
+ * elsewhere, and the tools an agent runs pull their caches and plugins in
+ * repositories the Session never works in.
  */
 export const RECORDING_COMMANDS = new Set([
   "commit",
@@ -31,7 +34,6 @@ export const RECORDING_COMMANDS = new Set([
   "cherry-pick",
   "revert",
   "am",
-  "pull",
   "push",
 ]);
 
@@ -46,6 +48,7 @@ interface TraceEvent {
   event?: unknown;
   sid?: unknown;
   name?: unknown;
+  hierarchy?: unknown;
   worktree?: unknown;
   param?: unknown;
   value?: unknown;
@@ -62,14 +65,16 @@ const isString = (value: unknown): value is string =>
  * trace also carries the full command line, which can hold a commit message
  * or a credential passed on it; that is never read, so it never leaves this
  * function. A child git process a command starts (a hook, maintenance) has a
- * trace of its own and is judged on its own. A command with no Session
- * variable is still returned: its Session is decided by agent-runtime.
+ * trace of its own and is judged on its own, except that the merge or rebase
+ * a pull starts records nothing, as the pull does not. A command with no
+ * Session variable is still returned: its Session is decided by agent-runtime.
  */
 export function gitCommandOf(
   trace: string,
   sessionEnvVars: readonly string[],
 ): GitCommand | null {
   let name: string | null = null;
+  let startedByPull = false;
   let worktree: string | null = null;
   let exitCode: number | null = null;
   let topLevel: string | null = null;
@@ -85,8 +90,12 @@ export function gitCommandOf(
     if (!isString(event.sid)) continue;
     topLevel ??= event.sid;
     if (event.sid !== topLevel) continue;
-    if (event.event === "cmd_name" && isString(event.name)) name = event.name;
-    else if (event.event === "def_repo" && isString(event.worktree))
+    if (event.event === "cmd_name" && isString(event.name)) {
+      name = event.name;
+      startedByPull =
+        isString(event.hierarchy) &&
+        event.hierarchy.split("/").slice(0, -1).includes("pull");
+    } else if (event.event === "def_repo" && isString(event.worktree))
       worktree ??= event.worktree;
     else if (
       event.event === "def_param" &&
@@ -98,7 +107,7 @@ export function gitCommandOf(
       exitCode = event.code;
   }
   if (name === null || worktree === null || exitCode !== 0) return null;
-  if (!RECORDING_COMMANDS.has(name)) return null;
+  if (!RECORDING_COMMANDS.has(name) || startedByPull) return null;
   const sessionId =
     sessionEnvVars
       .map((key) => params.get(key))

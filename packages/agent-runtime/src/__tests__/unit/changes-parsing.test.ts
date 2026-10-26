@@ -315,6 +315,28 @@ describe("git trace", () => {
   });
 
   /**
+   * TEST_SCENARIO: A pull brings in work done elsewhere, so it records
+   * nothing, and neither does the merge or rebase it starts as a process of
+   * its own; a merge or rebase the agent runs itself still records.
+   */
+  it("should give nothing for a pull or the merge it starts", () => {
+    const params = { CLAUDE_CODE_SESSION_ID: "s1" };
+    const startedBy = (parent: string, name: string) =>
+      trace(name, { params }).replace(
+        `"hierarchy":"${name}"`,
+        `"hierarchy":"${parent}/${name}"`,
+      );
+
+    expect(commandOf(trace("pull", { params }))).toBeNull();
+    expect(commandOf(startedBy("pull", "merge"))).toBeNull();
+    expect(commandOf(startedBy("pull", "rebase"))).toBeNull();
+    expect(commandOf(trace("merge", { params }))?.name).toBe("merge");
+    expect(commandOf(startedBy("_run_dashed_", "rebase"))?.name).toBe(
+      "rebase",
+    );
+  });
+
+  /**
    * TEST_SCENARIO: The trace configuration writes one file per git process
    * into a directory and records only the Session variables.
    */
