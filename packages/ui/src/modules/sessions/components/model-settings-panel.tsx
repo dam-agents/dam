@@ -49,11 +49,17 @@ export function ModelSettingsPanel({
     modelsPaired,
   } = useResolvedHarnessConfig(agentId);
   const catalog = status?.catalog ?? null;
-  if (!agentId || !catalog || catalog.options.length === 0) return null;
+  if (!agentId || !catalog) return null;
 
   const valueOf = (field: string): string | null => draft.valueOf(field);
 
   const shownModel = valueOf("model");
+  const modelGroupOffered = catalog.options.some(
+    (group) => group.id === "model",
+  );
+  const wantsModelGroup =
+    !modelGroupOffered && (catalog.options.length > 0 || shownModel !== null);
+  if (catalog.options.length === 0 && !wantsModelGroup) return null;
   const constraints =
     (shownModel && catalog.modelConstraints?.[shownModel]) || undefined;
 
@@ -69,7 +75,18 @@ export function ModelSettingsPanel({
     }
   };
 
-  const groups = catalog.options
+  const options = wantsModelGroup
+    ? [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          choices: current?.availableModels ?? [],
+        },
+        ...catalog.options,
+      ]
+    : catalog.options;
+  const groups = options
     .filter((group) => group.subagents !== true)
     .map((group) => {
       const source =
