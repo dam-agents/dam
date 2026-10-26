@@ -1583,6 +1583,14 @@ function SidebarChecklist({ expanded }: { expanded: boolean }) {
   const ctx = useInstantStart();
   const { done, total, celebrating, finished } = useChecklistState();
   const [open, setOpen] = useState(false);
+  const prevCelebrating = useRef(false);
+
+  useEffect(() => {
+    if (celebrating && !prevCelebrating.current) {
+      setOpen(true);
+    }
+    prevCelebrating.current = !!celebrating;
+  }, [celebrating]);
 
   if (!ctx?.firstLanding || finished) return null;
 
@@ -1619,10 +1627,10 @@ function SidebarChecklist({ expanded }: { expanded: boolean }) {
         side="right"
         align="end"
         sideOffset={8}
-        className="w-[340px] p-0"
+        className="relative w-[340px] overflow-visible p-0"
       >
         {celebrating && (
-          <div className="absolute bottom-full left-0 right-0 mb-2 flex justify-center">
+          <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2">
             <ChecklistCelebration />
           </div>
         )}

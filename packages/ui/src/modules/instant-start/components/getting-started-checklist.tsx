@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import { useStore } from "../../../store.js";
 import { CatchStyles } from "../../agents/components/catch-styles.js";
 import {
   CHAR_NAMES,
@@ -25,14 +23,21 @@ import {
 
 export { ProgressRing };
 
+let checklistInitialized = false;
+
 export function useChecklistState() {
   const { caught, rewards, working, celebrating, collected } =
     useCharacterUnlocks();
 
   useEffect(() => {
+    if (checklistInitialized) return;
+    checklistInitialized = true;
     resetCharacterUnlocks();
     const t = setTimeout(() => completeQuest(FIRST_AGENT_QUEST_ID), 50);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      checklistInitialized = false;
+    };
   }, []);
 
   const inFlight = celebrating?.name ?? null;
@@ -90,8 +95,7 @@ export function ChecklistCelebration() {
 }
 
 export function ChecklistPopoverContent({ onClose }: { onClose?: () => void }) {
-  const { done, total, rows, crew, collected, celebrating, finished } =
-    useChecklistState();
+  const { done, total, rows, crew, collected, finished } = useChecklistState();
 
   if (finished) return null;
 
