@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 ## Session inside the machine
 
@@ -176,7 +176,10 @@ The runtime reports such a request to the api-server the moment no engaged chann
 It reports how every permission request it held ended, watched or not: the answer it accepted, which settles the row whoever wrote it, or its end when the request is dropped.
 Dropping covers both the ten-minute wait and a session reset, so a row never outlives the question it describes.
 The api-server records it as a pending tool approval at once, so Home and the approvals bell show it with the time the agent asked, not first when someone opens the session; a verdict given there answers it, the session still unwatched ([home-feed](home-feed.md#what-home-reads)).
-A harness that leaves a cold re-attach unanswered — whichever verb it advertised for one — is wedged: that request's frames are suppressed and the process is recycled when work drains.
+A cold re-attach, whichever verb the harness advertised for one, has a load budget, which a harness's image can lengthen when it spawns or loads slowly, as Bob's does.
+Past it the waiting clients get the timeout and the request's frames are suppressed, but the harness gets as long again to answer late: one that does stays up, with every call it still owes, such as a new chat on the same process.
+Until the late answer comes, a prompt or setting for that Session is refused, and an open of it waits and loads it once the harness is free.
+A harness that misses that second budget too is wedged, and the process is recycled when work drains.
 
 One further condition holds that reap back: **background work the session reports**.
 While a session reports work still running, the runtime keeps it open, and busy while that work is kept, so neither the reap nor the [idle checker](agent-lifecycle.md#hibernate) ends the work underneath it.
