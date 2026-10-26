@@ -207,7 +207,10 @@ import {
   type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
-import { primaryProfileOf, subagentProfileOf } from "../lib/subagent-choice.js";
+import {
+  subagentProfileOf,
+  subagentSaveReferences,
+} from "../lib/subagent-choice.js";
 import {
   dividerLabel,
   setupMessageOf,
@@ -398,10 +401,17 @@ export function ChatView() {
    * from its profile. */
   const rememberSessionChoice = (pair: SessionPair) => {
     if (!selectedAgent) return;
-    rememberSessionPair(selectedAgent, pair, "chat", undefined, {
-      profileId: primaryProfileOf(pair, profiles)?.id ?? null,
-      platformSubagentProfileId: subagentProfileOf(pair, profiles)?.id ?? null,
-    });
+    rememberSessionPair(
+      selectedAgent,
+      pair,
+      "chat",
+      undefined,
+      subagentSaveReferences({
+        pair,
+        slot: subagentProfileOf(pair, profiles),
+        profiles,
+      }),
+    );
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
