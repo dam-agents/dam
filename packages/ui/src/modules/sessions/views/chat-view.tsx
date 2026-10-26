@@ -1051,7 +1051,10 @@ function CurveBenderBudget({
     <Popover defaultOpen>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent side="top" align="end" className="w-64 p-3">
-        <p className="text-sm font-medium text-foreground">{popover.title}</p>
+        <div className="flex items-center gap-1.5">
+          <img src="/curvebender-logo.svg" alt="" className="size-4" />
+          <p className="text-sm font-medium text-foreground">{popover.title}</p>
+        </div>
         <p className="mt-1 text-xs text-muted-foreground">{popover.body}</p>
         <button
           type="button"

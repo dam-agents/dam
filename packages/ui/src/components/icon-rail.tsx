@@ -46,12 +46,6 @@ import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
-import { useInstantStart } from "../modules/instant-start/context.js";
-import {
-  ChecklistPopoverContent,
-  ProgressRing,
-  useChecklistState,
-} from "../modules/instant-start/components/getting-started-checklist.js";
 import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
 import { timeAgo } from "../lib/format-time.js";
@@ -60,6 +54,13 @@ import { useAgentsList } from "../modules/agents/api/queries.js";
 import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
 import { resolveAgentDisplay } from "../modules/agents/utils/agent-resolver.js";
 import { ConnectionIcon } from "../modules/connections/components/connection-icon.js";
+import {
+  ChecklistCelebration,
+  ChecklistPopoverContent,
+  ProgressRing,
+  useChecklistState,
+} from "../modules/instant-start/components/getting-started-checklist.js";
+import { useInstantStart } from "../modules/instant-start/context.js";
 import { useNotifications } from "../modules/notifications/api/queries.js";
 import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
 import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
@@ -1580,7 +1581,7 @@ export function IconRail({
 
 function SidebarChecklist({ expanded }: { expanded: boolean }) {
   const ctx = useInstantStart();
-  const { done, total, finished } = useChecklistState();
+  const { done, total, celebrating, finished } = useChecklistState();
   const [open, setOpen] = useState(false);
 
   if (!ctx?.firstLanding || finished) return null;
@@ -1596,13 +1597,9 @@ function SidebarChecklist({ expanded }: { expanded: boolean }) {
           : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
-      <div className="flex size-4 items-center justify-center">
-        <ProgressRing done={done} total={total} size={16} />
-      </div>
+      <ProgressRing done={done} total={total} size={16} />
       {expanded && (
-        <span className="truncate text-sm font-medium">
-          Get started
-        </span>
+        <span className="truncate text-sm font-medium">Get started</span>
       )}
     </button>
   );
@@ -1624,6 +1621,11 @@ function SidebarChecklist({ expanded }: { expanded: boolean }) {
         sideOffset={8}
         className="w-[340px] p-0"
       >
+        {celebrating && (
+          <div className="absolute bottom-full left-0 right-0 mb-2 flex justify-center">
+            <ChecklistCelebration />
+          </div>
+        )}
         <ChecklistPopoverContent onClose={() => setOpen(false)} />
       </PopoverContent>
     </Popover>

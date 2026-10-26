@@ -73,12 +73,24 @@ export function useChecklistState() {
   };
 }
 
-export function ChecklistPopoverContent({
-  onClose,
-}: {
-  onClose?: () => void;
-}) {
-  const { done, total, rows, crew, collected, celebrating, variant, finished } =
+export function ChecklistCelebration() {
+  const { celebrating, variant } = useChecklistState();
+  if (!celebrating) return null;
+  return (
+    <>
+      <CatchStyles />
+      <CatchCelebration
+        key={celebrating.name}
+        name={celebrating.name}
+        variant={variant}
+        onFinished={endCelebration}
+      />
+    </>
+  );
+}
+
+export function ChecklistPopoverContent({ onClose }: { onClose?: () => void }) {
+  const { done, total, rows, crew, collected, celebrating, finished } =
     useChecklistState();
 
   if (finished) return null;
@@ -86,14 +98,6 @@ export function ChecklistPopoverContent({
   return (
     <>
       <CatchStyles />
-      {celebrating && (
-        <CatchCelebration
-          key={celebrating.name}
-          name={celebrating.name}
-          variant={variant}
-          onFinished={endCelebration}
-        />
-      )}
       <ChecklistPanel
         done={done}
         total={total}
