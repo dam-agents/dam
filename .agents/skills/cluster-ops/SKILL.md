@@ -45,7 +45,8 @@ One Lima port-forward rule carries that whole range to this host (`etc/lima/k3s.
 The cluster's one `HelmChartConfig traefik` holds an entrypoint per install (`platform`, `platform-<name>`), merged rather than overwritten: `traefik_entrypoint_port` re-reads it and writes it back with a compare-and-swap on the object's `resourceVersion`, so two installs starting at once take two ports and neither drops the other's entrypoint; that config is also the only record of which port is whose (`cluster:installs` reads it).
 Each install's Ingress names its entrypoint (`ingress.annotations.traefik.ingress.kubernetes.io/router.entrypoints`), because Traefik attaches a router with no entrypoints to all of them.
 A named install also sets `router.priority=1000`: an Ingress installed before the annotation existed — the default install's, until its next `cluster:install` — still claims `Host(localhost)` on every entrypoint, and Traefik breaks that tie by rule length.
-With every install annotated, the priority decides nothing.
+Traefik gives every router an Ingress makes that Ingress's priority, so the host-less catch-all rule (`ingress.catchAllAppHost`) has an Ingress of its own.
+`cluster:install` gives it `ingress.catchAllPriority=100` on a named install: the explicit hosts (1000) win over the catch-all, and the catch-all wins over the rule-length priority of a stale Ingress, so `keycloak.localhost` is Keycloak and `dam.localhost` reaches this install rather than the default one.
 
 **Per-install image tags.**
 A tag is node-wide state, so a named install aliases every local image it imports (`k3s ctr -n k8s.io images tag`), names its values' `platform-*` images `:<name>`, and stages its agent images under that reference.
