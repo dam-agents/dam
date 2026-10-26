@@ -146,8 +146,9 @@ function AgentHome({ agent }: { agent: AgentView }) {
     />
   );
 
-  // UNIT_BOUNDARY_DESCRIPTION: with the experiment on the page has no surface of its own except People, which no panel renders yet.
-  if (rightToolbar && section !== "people") return null;
+  // UNIT_BOUNDARY_DESCRIPTION: with the experiment on the page has no surface of its own except People, which no panel renders yet, and except the page of a reader who may not use the Agent's Sessions, for whom it is the only surface left.
+  if (rightToolbar && section !== "people" && holds(agent.access, "sessions"))
+    return null;
   if (!display) return null;
 
   return (
