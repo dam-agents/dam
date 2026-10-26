@@ -1207,7 +1207,10 @@ describe("a model from a provider the agent is not connected to", () => {
       );
     try {
       render();
-      expect(container.textContent).toContain("OpenAI (not connected)");
+      expect(container.innerHTML).toMatch(
+        /OpenAI<svg[^>]*aria-label="not connected"/,
+      );
+      expect(container.textContent).not.toContain("(not connected)");
       const custom = [...container.querySelectorAll("button")].find((b) =>
         b.textContent?.includes("Custom selection"),
       );

@@ -1,4 +1,4 @@
-import { Add, ChevronDown } from "@carbon/icons-react";
+import { Add, ChevronDown, ErrorOutline } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -269,8 +269,11 @@ function ModelRow({
       >
         <span className="min-w-0 flex-1 truncate">{entry.label}</span>
         {entry.options.length === 1 && (
-          <span className="shrink-0 whitespace-nowrap text-xs font-normal text-muted-foreground">
-            {providerLabel(option.group)}
+          <span
+            title={providerLabel(option.group)}
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-normal text-muted-foreground"
+          >
+            <ProviderName group={option.group} />
           </span>
         )}
       </button>
@@ -311,7 +314,7 @@ function ProviderChoice({
           aria-label={`Provider for ${label}: ${providerLabel(selected.group)}`}
           className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-normal text-muted-foreground hover:bg-background hover:text-foreground"
         >
-          {providerLabel(selected.group)}
+          <ProviderName group={selected.group} />
           <ChevronDown size={12} aria-hidden />
         </button>
       </DropdownMenuTrigger>
@@ -323,11 +326,29 @@ function ProviderChoice({
               value={option.group.connectionId}
               onSelect={() => onPick(option)}
             >
-              {providerLabel(option.group)}
+              <span className="flex items-center gap-1">
+                <ProviderName group={option.group} />
+              </span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a provider's name in the model list, with an outlined error icon, named for a screen reader, when the agent is not connected to it. */
+function ProviderName({ group }: { group: ModelGroup }) {
+  return (
+    <>
+      {group.displayName}
+      {!group.attached && (
+        <ErrorOutline
+          size={12}
+          aria-label="not connected"
+          className="shrink-0"
+        />
+      )}
+    </>
   );
 }
