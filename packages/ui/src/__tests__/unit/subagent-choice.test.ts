@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: One subagent choice drives both kinds of subagent. A platform sub-agent is another agent and takes the choice's harness and model; a native sub-agent runs inside the primary harness and takes the model only where that harness can run it, with the effort the harness offers. A primary pick keeps the subagent choice, and a subagent choice never makes the primary read as custom (QA D2).
+// TEST_OVERVIEW: One subagent choice drives both kinds of subagent. A platform sub-agent is another agent and takes the choice's harness, model and settings; a native sub-agent runs inside the primary harness and takes the model only where that harness can run it, with the effort the harness offers. A primary pick keeps the subagent choice, and a subagent choice never makes the primary read as custom (QA D2). The subagent slot's Custom screen edits it as a pair of its own, without tool approval.
 import type { HarnessCapability } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,10 @@ import { describe, expect, it } from "vitest";
 import {
   pickProfile,
   primaryProfileOf,
+  settingChanges,
+  subagentPair,
   withSubagent,
+  withSubagentPair,
 } from "../../modules/sessions/lib/subagent-choice.js";
 
 const profile = (
@@ -57,11 +60,12 @@ const capability = {
 } as unknown as HarnessCapability;
 
 describe("a subagent choice", () => {
-  /** TEST_SCENARIO: on the primary harness the native subagent takes the model and the effort; on another harness only a model the agent lists, else the agent picks; no choice clears every key. */
+  /** TEST_SCENARIO: the platform sub-agent takes the profile's settings, so its effort is prefilled (QA R3); on the primary harness the native subagent takes the model and the effort; on another harness only a model the agent lists, else the agent picks; no choice clears every key. */
   it("gives the native subagent only what the primary harness can run", () => {
     expect(withSubagent(primary, profile(), capability, []).settings).toEqual({
       "platformSubagent.harness": "claude-code",
       "platformSubagent.model": "anthropic/claude-sonnet-5-5",
+      "platformSubagent.effort": "high",
       subagentModel: "anthropic/claude-sonnet-5-5",
       subagentEffort: "high",
     });
@@ -73,6 +77,7 @@ describe("a subagent choice", () => {
     expect(withSubagent(primary, codex, capability, []).settings).toEqual({
       "platformSubagent.harness": "codex",
       "platformSubagent.model": "openai/gpt-6.1-sol",
+      "platformSubagent.effort": "high",
     });
     const set = withSubagent(primary, profile(), capability, []);
     expect(withSubagent(set, null, capability, []).settings).toBeUndefined();
@@ -115,5 +120,56 @@ describe("a subagent choice", () => {
         capability,
       ),
     ).toBeNull();
+  });
+
+  /** TEST_SCENARIO: the subagent slot reads as a pair of its own for the Custom screen, with no mode even where one was stored (QA R2), and a pick there replaces every platform sub-agent value; a harness picked without a model holds only the harness. */
+  it("edits the subagent slot as a pair, without tool approval", () => {
+    const stored: SessionPair = {
+      ...primary,
+      settings: {
+        mode: "auto",
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": "anthropic/claude-sonnet-5-5",
+        "platformSubagent.mode": "bypassPermissions",
+        "platformSubagent.effort": "low",
+      },
+    };
+    expect(subagentPair(stored)).toEqual({
+      harness: "claude-code",
+      provider: null,
+      model: "anthropic/claude-sonnet-5-5",
+      settings: { effort: "low" },
+    });
+    const picked = withSubagentPair(
+      stored,
+      {
+        harness: "codex",
+        provider: "conn-2",
+        model: "openai/gpt-6.1-sol",
+        settings: { effort: "high" },
+      },
+      capability,
+      [],
+    );
+    expect(picked.settings).toEqual({
+      mode: "auto",
+      "platformSubagent.harness": "codex",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+      "platformSubagent.effort": "high",
+    });
+    expect(
+      withSubagentPair(
+        stored,
+        { harness: "pi", provider: null, model: null },
+        capability,
+        [],
+      ).settings,
+    ).toEqual({ mode: "auto", "platformSubagent.harness": "pi" });
+    expect(settingChanges(stored.settings!, picked.settings!)).toEqual({
+      "platformSubagent.harness": "codex",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+      "platformSubagent.mode": "",
+      "platformSubagent.effort": "high",
+    });
   });
 });

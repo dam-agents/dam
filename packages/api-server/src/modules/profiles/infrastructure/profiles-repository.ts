@@ -269,22 +269,27 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
       });
     },
 
+    /** UNIT_BOUNDARY_DESCRIPTION: a new agent's row is written by the agent-created saga, which can run after the create returns, so the bind inserts it when it is not there yet; the saga's upsert keeps the reference. False when the agent already holds a chat default. */
     async bindChatProfile(
       owner: string,
       agentId: string,
       profileId: string,
-    ): Promise<void> {
-      await db
-        .update(agents)
-        .set({ sessionProfile: profileId })
-        .where(
-          and(
-            eq(agents.id, agentId),
-            eq(agents.ownerSub, pseudo.hashSub(owner)),
+    ): Promise<boolean> {
+      const ownerSub = pseudo.hashSub(owner);
+      const bound = await db
+        .insert(agents)
+        .values({ id: agentId, ownerSub, sessionProfile: profileId })
+        .onConflictDoUpdate({
+          target: agents.id,
+          set: { sessionProfile: profileId },
+          setWhere: and(
+            eq(agents.ownerSub, ownerSub),
             isNull(agents.sessionProfile),
             isNull(agents.sessionPair),
           ),
-        );
+        })
+        .returning({ id: agents.id });
+      return bound.length > 0;
     },
 
     ownerConnections(owner: string): Promise<AliasedConnection[]> {

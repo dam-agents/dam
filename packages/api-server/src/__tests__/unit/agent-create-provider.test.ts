@@ -8,6 +8,11 @@ import type {
 } from "api-server-api";
 import { appRouter } from "api-server-api/router";
 import { markTermsProven } from "api-server-api/trpc";
+import {
+  configureLogger,
+  getLogger,
+  type LogLevel,
+} from "../../core/logger.js";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
@@ -98,7 +103,7 @@ function setup(
   const writeEnv = vi.fn(async () => {});
   const runtimeBump = vi.fn(async () => 1);
   const defaultProviders = vi.fn(async (): Promise<string[]> => []);
-  const bind = vi.fn(async (_agentId: string) => {});
+  const bind = vi.fn(async (_agentId: string): Promise<string | null> => null);
   const defaultProfile = vi.fn(
     async (): Promise<{
       harness: string;
@@ -344,19 +349,42 @@ describe("the default profile a new agent starts on", () => {
   });
 
   /** TEST_SCENARIO: A failed binding is not a failed create; the first-hello
-   * conversion still gives the agent a default. */
-  it("does not fail the create when the binder throws", async () => {
-    const { caller, defaultProfile, bind, persist } = setup(
-      [provider],
-      templates,
-    );
-    defaultProfile.mockResolvedValue(onPi(bind));
-    bind.mockRejectedValueOnce(new Error("boom"));
-    await expect(caller.agents.create(byTemplate)).resolves.toMatchObject({
-      name: "test-agent",
-    });
-    expect(persist).toHaveBeenCalledOnce();
-  });
+   * conversion still gives the agent a default, and the log says why the
+   * agent missed the default profile, whether the binder threw or declined. */
+  it.each([
+    ["throws", () => Promise.reject(new Error("boom")), "boom"],
+    [
+      "declines",
+      () => Promise.resolve("the agent already holds a chat default"),
+      "the agent already holds a chat default",
+    ],
+  ])(
+    "does not fail the create, and logs why, when the binder %s",
+    async (_how, outcome, reason) => {
+      const lines: string[] = [];
+      const level = getLogger().level as LogLevel;
+      configureLogger({ level: "warn", write: (line) => lines.push(line) });
+      try {
+        const { caller, defaultProfile, bind, persist } = setup(
+          [provider],
+          templates,
+        );
+        defaultProfile.mockResolvedValue(onPi(bind));
+        bind.mockImplementationOnce(outcome);
+        await expect(caller.agents.create(byTemplate)).resolves.toMatchObject({
+          name: "test-agent",
+        });
+        expect(persist).toHaveBeenCalledOnce();
+        expect(
+          lines
+            .map((line) => JSON.parse(line) as { reason?: string; msg: string })
+            .find((entry) => entry.msg.includes("default profile")),
+        ).toMatchObject({ reason });
+      } finally {
+        configureLogger({ level });
+      }
+    },
+  );
 });
 
 describe("the harness and default provider a new agent gets", () => {

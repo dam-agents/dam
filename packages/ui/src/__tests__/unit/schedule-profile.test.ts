@@ -30,6 +30,11 @@ vi.mock("@/components/ui/popover", () => {
   };
 });
 
+vi.mock("../../store.js", () => ({
+  useStore: (select: (store: unknown) => unknown) =>
+    select({ showConfirm: vi.fn(), navigateToSandboxHome: vi.fn() }),
+}));
+
 vi.mock("../../modules/profiles/api/queries.js", () => ({
   useProfiles: () => ({ data: state.profiles }),
 }));
@@ -51,6 +56,7 @@ vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
 
 vi.mock("@/components/ui/tooltip", () => ({
   HintTooltip: ({ children }: PropsWithChildren) => children,
+  Tooltip: ({ children }: PropsWithChildren) => children,
 }));
 
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
@@ -69,9 +75,10 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({ data: { harnesses: [] } }),
-  useHarnessCatalogModels: () => ({ data: [], granted: [] }),
+  useHarnessCatalogModels: () => ({ data: undefined, granted: [] }),
   useHarnessConfigured: () => undefined,
-  useProviderConnections: () => ({ granted: [] }),
+  useGrantProvider: () => ({ grant: vi.fn(), pending: false }),
+  useProviderConnections: () => ({ granted: [], owned: [] }),
   useSessionDefaults: () => ({
     data: { chat: null, channel: null, scheduled: null },
   }),
@@ -130,7 +137,13 @@ interface Choices {
   profile: string;
 }
 
-function Field({ profile: value }: { profile: string }) {
+function Field({
+  profile: value,
+  inheritChoice = false,
+}: {
+  profile: string;
+  inheritChoice?: boolean;
+}) {
   const { control } = useForm<Choices>({
     defaultValues: { harness: "", model: "", settings: {}, profile: value },
   });
@@ -138,6 +151,7 @@ function Field({ profile: value }: { profile: string }) {
     agentId: "a1",
     control,
     migrationNote: null,
+    inheritChoice,
   });
 }
 
@@ -212,22 +226,28 @@ describe("the schedule form's Profile field", () => {
     expect(html).not.toContain("Harness");
   });
 
-  /** TEST_SCENARIO: a schedule with its own values reads as a custom selection, and the pickers it needs are there. */
+  /** TEST_SCENARIO: a schedule with its own values reads as a custom selection on the chat's Custom screen, its harness list included (QA R11). */
   it("reads a schedule of its own values as Custom selection", () => {
     state.profiles = [profile()];
     const html = renderToStaticMarkup(createElement(Field, { profile: "" }));
     expect(html).toContain("Custom selection");
-    expect(html).toContain("Harness");
+    expect(html).toContain('aria-label="Harness"');
   });
 
-  /** TEST_SCENARIO: a schedule of its own values leaves them at the agent's chat
-   * default, which is what an empty choice means now that nothing writes a
-   * scheduled default (D90/D92). */
-  it("names the empty choice the agent's chat default, not a scheduled default", () => {
+  /** TEST_SCENARIO: a schedule written before profiles that follows the
+   * agent's chat default says so, which is what its empty values mean now
+   * that nothing writes a scheduled default (D90/D92); a new one does not
+   * offer it (D123). */
+  it("names the empty choice the agent's chat default, only where it is the row's own", () => {
     state.profiles = [profile()];
-    const html = renderToStaticMarkup(createElement(Field, { profile: "" }));
-    expect(html).toContain("The agent&#x27;s chat default");
-    expect(html).not.toContain("Scheduled default");
+    const follows = renderToStaticMarkup(
+      createElement(Field, { profile: "", inheritChoice: true }),
+    );
+    expect(follows).toContain("follows the agent&#x27;s chat default");
+    expect(follows).not.toContain("Scheduled default");
+    expect(
+      renderToStaticMarkup(createElement(Field, { profile: "" })),
+    ).not.toContain("chat default");
   });
 
   /** TEST_SCENARIO: an install with no profile at all keeps the pickers alone, so nothing new blocks a schedule. */

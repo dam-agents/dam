@@ -5,11 +5,13 @@ import type {
   HarnessCatalog,
   OwnerModelCatalogView,
 } from "api-server-api";
+import { createDb, type Db } from "db";
 import { describe, expect, it } from "vitest";
-import type {
-  ProfileReferences,
-  ProfileRow,
-  ProfilesRepository,
+import {
+  createProfilesRepository,
+  type ProfileReferences,
+  type ProfileRow,
+  type ProfilesRepository,
 } from "../../modules/profiles/infrastructure/profiles-repository.js";
 import {
   bindDefaultProfile,
@@ -116,6 +118,7 @@ function fakeRepo(
     },
     bindChatProfile: async (_owner: string, agentId: string) => {
       writes.binds.push(agentId);
+      return true;
     },
     ownerConnections: async () => opts.owned ?? [SHARED],
     agentConnections: async () => opts.granted ?? [SHARED],
@@ -407,6 +410,46 @@ describe("the owner's profiles", () => {
   });
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a Db that renders each statement and answers it
+ * as Postgres would for an empty `agents` table: a grant read lists `granted`,
+ * an UPDATE of `agents` finds no row, and an INSERT into it adds the row.
+ */
+function agentsTableDb(granted: readonly AliasedConnection[]) {
+  const render = createDb("postgresql://unused:unused@127.0.0.1:1/unused");
+  void render.sql.end({ timeout: 0 });
+  const agentRows = new Map<string, unknown>();
+  const answer = (query: { sql: string; params: unknown[] }): unknown[] => {
+    if (query.sql.startsWith("select")) return [...granted];
+    if (query.sql.startsWith('update "agents"')) return [];
+    if (query.sql.startsWith('insert into "agents"')) {
+      const [id, , profileId] = query.params;
+      agentRows.set(String(id), profileId);
+      return [{ id }];
+    }
+    throw new Error(`unexpected statement: ${query.sql}`);
+  };
+  const wrap = (value: unknown): unknown => {
+    if (typeof value !== "object" || value === null) return value;
+    return new Proxy(value, {
+      get(target, key) {
+        const builder = target as {
+          toSQL?: () => { sql: string; params: unknown[] };
+        };
+        if (key === "then" && builder.toSQL)
+          return (resolve: (rows: unknown[]) => void) =>
+            resolve(answer(builder.toSQL!()));
+        const member = Reflect.get(target, key) as unknown;
+        return typeof member === "function"
+          ? (...args: unknown[]) =>
+              wrap((member as (...a: unknown[]) => unknown).apply(target, args))
+          : member;
+      },
+    });
+  };
+  return { db: wrap(render.db) as Db, agentRows };
+}
+
 describe("a new agent's default", () => {
   const owner = (repo: ProfilesRepository) => ({
     repo,
@@ -427,11 +470,25 @@ describe("a new agent's default", () => {
     expect(writes.binds).toEqual(["agent-1"]);
   });
 
-  /** TEST_SCENARIO: a create that named another provider keeps it, and the agent's first hello converts its default as before. */
+  /** TEST_SCENARIO: a create that named another provider keeps it, and the agent's first hello converts its default as before; the binder says why. */
   it("binds nothing to an agent without the profile's provider", async () => {
     const { repo, writes } = fakeRepo({ granted: [OWN_KEY] });
-    await bindDefaultProfile(owner(repo), "agent-1", profile());
+    expect(await bindDefaultProfile(owner(repo), "agent-1", profile())).toMatch(
+      /holds no curve-bender-deployment Connection/,
+    );
     expect(writes.binds).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: the agent's row is written by the agent-created saga, which can run after the create returns, so the bind through the real repository still leaves the new agent's chat default on the profile when that row does not exist yet (QA R1: an UPDATE of the missing row bound nothing). */
+  it("binds a new agent whose row the saga has not written yet", async () => {
+    const { db, agentRows } = agentsTableDb([SHARED]);
+    const repo = createProfilesRepository(db, {
+      hashSub: (raw: string) => raw,
+    } as never);
+    expect(
+      await bindDefaultProfile(owner(repo), "agent-new", profile()),
+    ).toBeNull();
+    expect(agentRows.get("agent-new")).toBe("profile-1");
   });
 
   /** TEST_SCENARIO: an owner who holds no Connection of the default profile's template has nothing to grant, so the harness's provider order decides. */

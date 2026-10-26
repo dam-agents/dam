@@ -35,6 +35,8 @@ interface Props {
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
   onManageProviders: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the list sits in a form or a dialog, not a popover, so leaving it closes nothing. */
+  inline?: boolean;
 }
 
 /**
@@ -51,6 +53,7 @@ export function SessionModelList({
   onRetry,
   onChoose,
   onManageProviders,
+  inline = false,
 }: Props) {
   if (groups.length === 0)
     return (
@@ -77,7 +80,10 @@ export function SessionModelList({
             "No models available."
           )}
         </p>
-        <ConnectMoreProviders onManageProviders={onManageProviders} />
+        <ConnectMoreProviders
+          onManageProviders={onManageProviders}
+          inline={inline}
+        />
       </>
     );
   const { families, other } = familyModelGroups(groups);
@@ -98,7 +104,10 @@ export function SessionModelList({
         onRetry={onRetry}
         onChoose={onChoose}
       />
-      <ConnectMoreProviders onManageProviders={onManageProviders} />
+      <ConnectMoreProviders
+        onManageProviders={onManageProviders}
+        inline={inline}
+      />
     </>
   );
 }
@@ -109,21 +118,22 @@ export function SessionModelList({
  */
 function ConnectMoreProviders({
   onManageProviders,
+  inline,
 }: {
   onManageProviders: () => void;
+  inline: boolean;
 }) {
-  return (
-    <PopoverClose asChild>
-      <button
-        type="button"
-        onClick={onManageProviders}
-        className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <Add size={14} aria-hidden />
-        Connect more providers
-      </button>
-    </PopoverClose>
+  const row = (
+    <button
+      type="button"
+      onClick={onManageProviders}
+      className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+      <Add size={14} aria-hidden />
+      Connect more providers
+    </button>
   );
+  return inline ? row : <PopoverClose asChild>{row}</PopoverClose>;
 }
 
 function FamilyModelSection({

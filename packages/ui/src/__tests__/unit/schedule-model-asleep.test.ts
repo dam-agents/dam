@@ -24,6 +24,11 @@ vi.mock("@/components/ui/tooltip", () => ({
   HintTooltip: ({ children }: { children: ReactNode }) => children,
 }));
 
+vi.mock("../../store.js", () => ({
+  useStore: (select: (store: unknown) => unknown) =>
+    select({ showConfirm: vi.fn(), navigateToSandboxHome: vi.fn() }),
+}));
+
 vi.mock("../../modules/profiles/api/queries.js", () => ({
   useProfiles: () => ({ data: [] }),
 }));
@@ -102,6 +107,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
     operable: state.operable,
   }),
   useHarnessConfigured: () => undefined,
+  useGrantProvider: () => ({ grant: vi.fn(), pending: false }),
   useProviderConnections: () => ({
     granted: [{ id: "oai", name: "OpenAI", type: "openai" }],
     owned: [],
@@ -143,11 +149,11 @@ describe("the schedule form's model on a sleeping agent", () => {
     state.comingUp = false;
   });
 
-  // TEST_SCENARIO: On a routed runtime the catalog needs no running agent, so a sleeping agent's schedule lists its harness and models, with no start button.
+  // TEST_SCENARIO: On a routed runtime the catalog needs no running agent, so a sleeping agent's schedule lists its harness and models on the chat's Custom screen, with no start button.
   it("lists the models of a sleeping agent on a routed runtime", () => {
     const asleep = render();
     expect(asleep).toContain('aria-label="Harness"');
-    expect(asleep).toContain('aria-label="Model"');
+    expect(asleep).toContain('aria-label="GPT"');
     expect(asleep).not.toContain("Start agent to edit");
   });
 
@@ -182,7 +188,7 @@ describe("the schedule form's model on a sleeping agent", () => {
   it("shows the model picker once the agent is up", () => {
     state.operable = true;
     const html = render();
-    expect(html).toContain('aria-label="Model"');
+    expect(html).toContain('aria-label="Harness"');
     expect(html).not.toContain("Start agent to edit");
   });
 });

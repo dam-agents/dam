@@ -188,15 +188,18 @@ export async function newAgentDefault(
     : null;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a new Agent's chat default is the default profile once it holds a Connection of that profile's template; a create that named another provider keeps its first hello's conversion. */
+/** UNIT_BOUNDARY_DESCRIPTION: a new Agent's chat default is the default profile once it holds a Connection of that profile's template; a create that named another provider keeps its first hello's conversion. Answers why it did not bind, null when it did. */
 export async function bindDefaultProfile(
   deps: OwnerDeps,
   agentId: string,
   profile: ProfileRow,
-): Promise<void> {
+): Promise<string | null> {
   const granted = await deps.repo.agentConnections(deps.owner, agentId);
-  if (granted.some((c) => c.templateId === profile.providerTemplate))
-    await deps.repo.bindChatProfile(deps.owner, agentId, profile.id);
+  if (!granted.some((c) => c.templateId === profile.providerTemplate))
+    return `the agent holds no ${profile.providerTemplate} Connection`;
+  return (await deps.repo.bindChatProfile(deps.owner, agentId, profile.id))
+    ? null
+    : "the agent already holds a chat default";
 }
 
 export function createProfilesService(

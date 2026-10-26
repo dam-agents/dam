@@ -191,7 +191,7 @@ vi.mock("../../modules/profiles/api/queries.js", () => ({
 }));
 
 vi.mock("../../modules/profiles/lib/profile-detail.js", () => ({
-  profileDetail: () => "",
+  profileSummary: () => "",
   profileProviderName: () => "",
 }));
 
@@ -339,7 +339,9 @@ describe("the profile view a routed picker opens on", () => {
   });
 
   /** TEST_SCENARIO: an owner with no profile still gets the profile view when
-   * the model name is clicked, Custom selection its only row in each slot. */
+   * the model name is clicked, Custom selection its only row in the primary
+   * slot, and the subagent slot marked on Let the agent pick, so one row of
+   * each slot is always the selected one (QA R9). */
   it("opens on the profile view with no profile, Custom selection alone", () => {
     profilesState = [];
     const html = renderToStaticMarkup(
@@ -353,12 +355,15 @@ describe("the profile view a routed picker opens on", () => {
     );
     expect(html).toContain("Primary model");
     expect(html).toContain("Subagent model");
-    expect(html.match(/Custom selection/g)).toHaveLength(1);
+    expect(html.match(/Custom selection/g)).toHaveLength(2);
+    expect(html).toMatch(
+      /aria-current="true"[^>]*><span[^>]*>Let the agent pick/,
+    );
     expect(html).not.toContain("No profiles yet");
     expect(html).not.toContain('aria-label="Harness"');
   });
 
-  /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on them: a primary-model section, a subagent section behind its toggle, each ending in Custom selection; an unavailable profile is disabled with its reason and the one action that would fix it. */
+  /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on them: a primary-model section, a subagent section led by Let the agent pick, each ending in Custom selection; an unavailable profile is disabled with its reason and the one action that would fix it. */
   it("lists the profiles under both headings, and disables the unavailable one", () => {
     state.chosen = {
       harness: "pi",
@@ -1053,7 +1058,9 @@ describe("the profile save on a shared agent", () => {
 describe("the profile a session's pick came from", () => {
   /** TEST_SCENARIO: A profile picked in one session makes its Save row
    * Update that profile; after a switch to another session, the row saves a
-   * new profile instead of overwriting the first session's. */
+   * new profile instead of overwriting the first session's. A routed session
+   * that names no Connection still gets the row, from its model's provider
+   * (QA R10). */
   it("does not carry the picked profile into another session", () => {
     profilesState = [
       {
@@ -1079,7 +1086,7 @@ describe("the profile a session's pick came from", () => {
             agentId: "agent",
             sessionId,
             harness: "pi",
-            provider: "curve",
+            provider: sessionId === "s2" ? null : "curve",
             model: "cb/rits/zai-org/glm-5-3",
             carried,
             routed: true,
@@ -1378,9 +1385,10 @@ describe("a harness picked without a model", () => {
 
 describe("the profile a new chat's pick came from", () => {
   /** TEST_SCENARIO: a profile picked for one agent's next chat makes the Save
-   * row Update that profile; once the picker shows another agent, whose pick
-   * never came from it, the row saves a new profile instead of writing that
-   * agent's pick into the first one. */
+   * row Update that profile, beside Save as a new profile, so a pick can still
+   * fork it (QA R4); once the picker shows another agent, whose pick never
+   * came from it, the row saves a new profile instead of writing that agent's
+   * pick into the first one. */
   it("does not carry the picked profile to another agent", async () => {
     profilesState = [
       {
@@ -1425,6 +1433,7 @@ describe("the profile a new chat's pick came from", () => {
       click("Fast review");
       click("Custom selection");
       expect(container.textContent).toContain("Update “Fast review”");
+      expect(container.textContent).toContain("Save as a new profile");
       render("agent-b");
       expect(container.textContent).toContain("Save as a profile");
       expect(container.textContent).not.toContain("Update “Fast review”");

@@ -33,7 +33,6 @@ import {
   useProviderConnections,
   useProviderModels,
 } from "../api/session-pair.js";
-import { useConnectOnPick } from "../hooks/use-connect-on-pick.js";
 import {
   findModel,
   modelGroups,
@@ -43,22 +42,19 @@ import {
   harnessDisplayName,
   modelProviderLabel,
 } from "../lib/session-pair-options.js";
-import {
-  applySettingChanges,
-  pairSummary,
-  settingDefaults,
-} from "../lib/session-settings.js";
+import { pairSummary, settingDefaults } from "../lib/session-settings.js";
 import {
   isProfileSetting,
   pickProfile,
   primaryProfileOf,
-  SUBAGENT_KEYS,
+  settingChanges,
   subagentOf,
+  subagentPair,
   subagentProfileOf,
   withSubagent,
+  withSubagentPair,
 } from "../lib/subagent-choice.js";
-import { PlatformSubagentSettings } from "./platform-subagent-settings.js";
-import { SessionModelList } from "./session-model-list.js";
+import { CustomPairScreen } from "./custom-pair-screen.js";
 import { PairSummary, SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
@@ -136,7 +132,6 @@ export function ModelIndicator({
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
-  const connectOnPick = useConnectOnPick(agentId);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"profiles" | "custom" | "subagent">(
     "profiles",
@@ -153,11 +148,14 @@ export function ModelIndicator({
   const slot = subagentProfileOf(current, profiles);
   const customSlot = subagentOf(current);
   const subagentChanges = (next: SessionPair) =>
-    Object.fromEntries(SUBAGENT_KEYS.map((k) => [k, next.settings?.[k] ?? ""]));
+    settingChanges(settings, next.settings ?? {});
   const saveAs = useSaveAsProfile({
     agentId,
     pair: current,
-    providerTemplate: activeProvider?.templateId,
+    providerTemplate: owned.find(
+      (p) =>
+        p.id === (findModel(groups, model)?.group.connectionId ?? provider),
+    )?.templateId,
     from: fromProfile,
     capability,
     onSaved: setFromProfile,
@@ -297,6 +295,7 @@ export function ModelIndicator({
             <ModelConfiguration
               agentId={agentId}
               profiles={sessionProfiles}
+              carried={carried}
               customHint={harnessName ?? harness}
               primary={{
                 selectedId: primary?.id ?? null,
@@ -343,46 +342,55 @@ export function ModelIndicator({
               }
             />
           ) : view === "subagent" ? (
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-xs">
+            <div
+              aria-label="Subagent model"
+              className="-mx-1 flex flex-col gap-2"
+            >
               <BackToProfiles onClick={() => setView("profiles")} />
-              <PlatformSubagentSettings
+              <CustomPairScreen
                 agentId={agentId}
                 carried={carried}
-                settings={settings}
-                idPrefix="session"
-                disabled={false}
-                onChange={(changes) => {
-                  const next = {
-                    ...current,
-                    settings: applySettingChanges(settings, changes),
-                  };
-                  onConfigure({
-                    ...changes,
-                    ...subagentChanges(
-                      withSubagent(next, subagentOf(next), capability, listed),
+                harnesses={carried
+                  .filter((h) => h.harnessConfigCatalog)
+                  .map((h) => h.name)}
+                pair={subagentPair(current)}
+                defaultHarness={harness}
+                subagent
+                onChoose={(sub) =>
+                  onConfigure(
+                    subagentChanges(
+                      withSubagentPair(current, sub, capability, listed),
                     ),
-                  });
-                }}
+                  )
+                }
+                onManageProviders={() =>
+                  navigateToSandboxHome(agentId, "providers")
+                }
               />
             </div>
           ) : routed ? (
             <div
               aria-label="Models for this session"
-              className="-mx-1 flex max-h-72 flex-col gap-2 overflow-y-auto"
+              className="-mx-1 flex flex-col gap-2"
             >
               <BackToProfiles onClick={() => setView("profiles")} />
-              <SessionModelList
-                groups={groups}
-                current={model}
-                loading={catalogModels.isLoading}
-                failed={catalogModels.isError}
-                onRetry={() => void catalogModels.refetch()}
-                onChoose={(name, group) =>
-                  connectOnPick(group, name, () => onChoose(name))
-                }
+              <CustomPairScreen
+                agentId={agentId}
+                carried={carried}
+                harnesses={null}
+                pair={current}
+                defaultHarness={harness}
+                onChoose={(next) => {
+                  const changes = settingChanges(settings, next.settings ?? {});
+                  if (next.model !== null && next.model !== model)
+                    onChoose(next.model, changes);
+                  else if (Object.keys(changes).length > 0)
+                    onConfigure(changes);
+                }}
                 onManageProviders={() =>
                   navigateToSandboxHome(agentId, "providers")
                 }
+                foot={saveAs.row}
               />
             </div>
           ) : (
@@ -397,30 +405,25 @@ export function ModelIndicator({
               onChoose={onChoose}
             />
           )}
-          {routed && view === "custom" && saveAs.row && (
-            <div className="border-t border-border pt-2">{saveAs.row}</div>
+          {!routed && capability?.sessionSettings && (
+            <div className="border-t border-border pt-2 empty:hidden">
+              <SessionSettingsControls
+                agentId={agentId}
+                carried={carried}
+                capability={capability}
+                model={model}
+                settings={settings}
+                defaults={defaults}
+                modelChoices={sameSideGroups(groups, model).flatMap((g) =>
+                  g.models.map((m) => ({
+                    value: m.name,
+                    name: `${m.upstreamId} · ${g.displayName}`,
+                  })),
+                )}
+                onChange={onConfigure}
+              />
+            </div>
           )}
-          {!showProfiles &&
-            view !== "subagent" &&
-            capability?.sessionSettings && (
-              <div className="border-t border-border pt-2 empty:hidden">
-                <SessionSettingsControls
-                  agentId={agentId}
-                  carried={carried}
-                  capability={capability}
-                  model={model}
-                  settings={settings}
-                  defaults={defaults}
-                  modelChoices={sameSideGroups(groups, model).flatMap((g) =>
-                    g.models.map((m) => ({
-                      value: m.name,
-                      name: `${m.upstreamId} · ${g.displayName}`,
-                    })),
-                  )}
-                  onChange={onConfigure}
-                />
-              </div>
-            )}
         </PopoverContent>
       </Popover>
       <ToolApprovalPicker

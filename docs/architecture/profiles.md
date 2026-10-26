@@ -6,7 +6,8 @@ Last verified: 2026-10-26
 
 A **profile** is one owner's named harness, provider template, model and settings, usable on all their agents.
 It names the kind of provider, not one Connection, so it runs on whatever Connection of that template the agent holds; a rival Connection of the same alias never stands in for it.
-Profiles are saved from a chat's model picker (Save as a profile, Update) and edited there or in Settings › Providers › Profiles, whose rows open the same picker on its Custom selection, listing models from the [owner catalog](owner-model-catalog.md).
+Profiles are saved from a chat's model picker (Save as a profile, or on a pick that came from one Update beside Save as a new profile) or made with New profile in Settings › Providers › Profiles, and edited in a chat or in that list, whose rows open the same picker on its Custom selection, listing models from the [owner catalog](owner-model-catalog.md).
+Custom selection is one screen wherever a pick is made: a new or running chat's primary model and subagent slot, a profile in Settings and a schedule's own values; none of them holds tool approval.
 
 ## What follows a profile
 
@@ -24,3 +25,4 @@ An install without the shared CurveBender, or with either value empty, gives "De
 An owner who already has profiles gets no "Default"; their oldest becomes the default.
 A new agent on the default template takes the default's harness unless its create names one, and then, on that harness, is granted the default's provider alone in place of the harness's provider order, and its chat default is the profile.
 The default exists before the agent's first `hello`, so a starter kit's onboarding turn has a model to run on; a kit that names its own model, an Environment and an agent on another harness keep the provider order and the first-hello conversion.
+A create that cannot start the agent on the default logs why, and the agent falls back to that conversion.

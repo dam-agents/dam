@@ -1,7 +1,6 @@
 import {
   Add,
   ChevronLeft,
-  Information,
   Unlink,
   WarningAltFilled,
 } from "@carbon/icons-react";
@@ -9,7 +8,6 @@ import type { HarnessCapability } from "agent-runtime-api";
 import type { DefaultKind, SessionPair } from "api-server-api";
 import { useState } from "react";
 
-import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
 import { labelVariants } from "@/components/ui/label";
 import {
@@ -38,7 +36,6 @@ import {
   useProviderConnections,
   useProviderModels,
 } from "../api/session-pair.js";
-import { useConnectOnPick } from "../hooks/use-connect-on-pick.js";
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useProviderUsage } from "../hooks/use-provider-usage.js";
 import {
@@ -46,7 +43,6 @@ import {
   findModel,
   modelGroups,
   sameModel,
-  sameSideGroups,
 } from "../lib/catalog-groups.js";
 import { DEFAULT_KIND_LABEL, DEFAULT_KIND_TITLE } from "../lib/default-kind.js";
 import {
@@ -61,19 +57,19 @@ import {
   applySettingChanges,
   pairSummary,
   settingDefaults,
-  settingsForModel,
 } from "../lib/session-settings.js";
 import {
   pickProfile,
   primaryProfileOf,
   subagentOf,
+  subagentPair,
   subagentProfileOf,
   withSubagent,
+  withSubagentPair,
 } from "../lib/subagent-choice.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
+import { CustomPairScreen, HarnessList } from "./custom-pair-screen.js";
 import { DetachProviderMessage } from "./detach-provider-message.js";
-import { PlatformSubagentSettings } from "./platform-subagent-settings.js";
-import { SessionModelList } from "./session-model-list.js";
 import { PairSummary, SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
@@ -223,7 +219,6 @@ export function SessionPairPicker(props: Props) {
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
-  const connectOnPick = useConnectOnPick(agentId);
   const models = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
   const primary = primaryProfileOf(pair, profiles, capability);
   const slot = subagentProfileOf(pair, profiles);
@@ -239,8 +234,12 @@ export function SessionPairPicker(props: Props) {
   const saveAs = useSaveAsProfile({
     agentId: agentId ?? null,
     pair,
-    providerTemplate: providers.owned.find((p) => p.id === pair?.provider)
-      ?.templateId,
+    providerTemplate: providers.owned.find(
+      (p) =>
+        p.id ===
+        (findModel(groups, pair?.model ?? null)?.group.connectionId ??
+          pair?.provider),
+    )?.templateId,
     from: fromProfile,
     capability,
     onSaved: (profile) => {
@@ -319,6 +318,11 @@ export function SessionPairPicker(props: Props) {
 
   /* UNIT_BOUNDARY_DESCRIPTION: a routed picker always opens on its profile view, with Custom selection its only row while the owner has no profile. */
   const showProfiles = routed && !edit && view === "profiles";
+  const runnable = harnesses.filter((h) => !unsupported(h.name)).length;
+  const manageProviders = () =>
+    agentId
+      ? navigateToSandboxHome(agentId, "providers")
+      : onConnectProviders();
 
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -340,7 +344,9 @@ export function SessionPairPicker(props: Props) {
         <PopoverContent
           side="top"
           align="start"
-          aria-label="New session harness and model"
+          aria-label={
+            edit ? "Profile harness and model" : "New session harness and model"
+          }
           className="flex w-[340px] flex-col gap-2 p-1 text-sm"
         >
           {showProfiles ? (
@@ -348,7 +354,8 @@ export function SessionPairPicker(props: Props) {
               <ModelConfiguration
                 agentId={agentId ?? null}
                 profiles={profiles}
-                customHint={`${harnesses.length} harness${harnesses.length === 1 ? "" : "es"}`}
+                carried={carried}
+                customHint={`${runnable} harness${runnable === 1 ? "" : "es"}`}
                 primary={{
                   selectedId: primary?.id ?? null,
                   custom:
@@ -416,176 +423,100 @@ export function SessionPairPicker(props: Props) {
                 </button>
               )}
               {view === "subagent" && pair ? (
-                <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 p-2 text-xs">
-                  <PlatformSubagentSettings
-                    agentId={agentId}
-                    carried={carried}
-                    settings={pair.settings ?? {}}
-                    idPrefix="new-session"
-                    disabled={false}
-                    onChange={(changes) => {
-                      const next = {
-                        ...pair,
-                        settings: applySettingChanges(
-                          pair.settings ?? {},
-                          changes,
-                        ),
-                      };
-                      chooseSubagent(
-                        withSubagent(
-                          next,
-                          subagentOf(next),
-                          capability,
-                          models,
-                        ),
-                        null,
-                      );
-                    }}
-                  />
-                </div>
+                <CustomPairScreen
+                  agentId={agentId}
+                  carried={carried}
+                  harnesses={carried
+                    .filter((h) => h.harnessConfigCatalog)
+                    .map((h) => h.name)}
+                  pair={subagentPair(pair)}
+                  defaultHarness={pair.harness}
+                  subagent
+                  onChoose={(sub) =>
+                    chooseSubagent(
+                      withSubagentPair(pair, sub, capability, models),
+                      null,
+                    )
+                  }
+                  onManageProviders={manageProviders}
+                />
+              ) : routed ? (
+                <CustomPairScreen
+                  agentId={agentId}
+                  carried={carried}
+                  harnesses={names}
+                  pair={pair}
+                  defaultHarness={defaultHarness}
+                  onChoose={(next) => choose(next)}
+                  onManageProviders={manageProviders}
+                  foot={!edit && saveAs.row}
+                />
               ) : (
-                <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
-                  {harnesses.length > 0 && (
-                    <ul
-                      role="group"
-                      aria-label="Harness"
-                      className="flex flex-col"
-                    >
-                      {harnesses.map((h) => (
-                        <li key={h.name} className="flex items-center">
-                          <button
-                            type="button"
-                            disabled={unsupported(h.name)}
-                            aria-pressed={h.name === harness}
-                            onClick={() =>
-                              choose({
-                                harness: h.name,
-                                provider:
-                                  providerOptions(
-                                    h.name,
-                                    views,
-                                    providers.granted,
-                                    providers.owned,
-                                  ).granted[0]?.id ?? null,
-                                model: null,
-                              })
-                            }
-                            className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50 aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
-                          >
-                            <span className="text-muted-foreground">
-                              <HarnessIcons harnesses={[h.name]} size="xs" />
-                            </span>
-                            {h.displayName}
-                            <HarnessModelCount
-                              agentId={agentId}
-                              harness={routed ? h.name : null}
-                            />
-                          </button>
-                          {unsupported(h.name) && (
-                            <Tooltip
-                              content={`${h.displayName} does not support any of the LLM providers you have configured.`}
-                            >
-                              <span
-                                tabIndex={0}
-                                aria-label={`Why ${h.displayName} is unavailable`}
-                                className="px-2 text-muted-foreground"
-                              >
-                                <Information size={14} />
-                              </span>
-                            </Tooltip>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <hr className="border-border" />
-                  {routed ? (
-                    <>
-                      <SessionModelList
-                        groups={groups}
-                        current={pair?.model ?? null}
-                        loading={catalogModels.isLoading}
-                        failed={catalogModels.isError}
-                        onRetry={() => void catalogModels.refetch()}
-                        onChoose={(model, group) =>
-                          connectOnPick(group, model, () => {
-                            const kept = settingsForModel(
-                              capability,
-                              groups,
-                              model,
-                              settings,
-                            );
-                            choose({
-                              harness,
-                              provider: group.connectionId,
-                              model,
-                              ...(Object.keys(kept).length > 0 && {
-                                settings: kept,
-                              }),
-                            });
+                <>
+                  <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
+                    {harnesses.length > 0 && (
+                      <HarnessList
+                        agentId={agentId}
+                        names={names}
+                        current={harness}
+                        counted={false}
+                        unsupported={unsupported}
+                        onPick={(name) =>
+                          choose({
+                            harness: name,
+                            provider:
+                              providerOptions(
+                                name,
+                                views,
+                                providers.granted,
+                                providers.owned,
+                              ).granted[0]?.id ?? null,
+                            model: null,
                           })
                         }
-                        onManageProviders={() =>
-                          agentId
-                            ? navigateToSandboxHome(agentId, "providers")
-                            : onConnectProviders()
+                      />
+                    )}
+                    <hr className="border-border" />
+                    {agentId && (
+                      <OldRuntimeProviderSections
+                        agentId={agentId}
+                        harness={harness}
+                        carried={carried}
+                        sections={sections}
+                        attached={attached}
+                        pair={pair}
+                        pending={pending}
+                        harnessName={harnessName(harness)}
+                        onDisconnect={confirmDisconnect}
+                        onAttach={attach}
+                        onChoose={(id, model) =>
+                          choose(withSettings({ harness, provider: id, model }))
                         }
                       />
-                    </>
-                  ) : agentId ? (
-                    <OldRuntimeProviderSections
-                      agentId={agentId}
-                      harness={harness}
-                      carried={carried}
-                      sections={sections}
-                      attached={attached}
-                      pair={pair}
-                      pending={pending}
-                      harnessName={harnessName(harness)}
-                      onDisconnect={confirmDisconnect}
-                      onAttach={attach}
-                      onChoose={(id, model) =>
-                        choose(withSettings({ harness, provider: id, model }))
-                      }
-                    />
-                  ) : null}
-                </div>
+                    )}
+                  </div>
+                  {pair && (
+                    <div className="border-t border-border px-2 pt-2 empty:hidden">
+                      <SessionSettingsControls
+                        agentId={agentId}
+                        carried={carried}
+                        capability={capability}
+                        model={pair.model}
+                        settings={settings}
+                        defaults={defaults}
+                        onChange={(changes) =>
+                          choose({
+                            ...pair,
+                            settings: applySettingChanges(settings, changes),
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
-          {pair && !showProfiles && view !== "subagent" && (
-            <div className="border-t border-border px-2 pt-2 empty:hidden">
-              <SessionSettingsControls
-                agentId={agentId}
-                carried={carried}
-                capability={capability}
-                model={pair.model}
-                settings={settings}
-                defaults={defaults}
-                modelChoices={sameSideGroups(groups, pair.model).flatMap((g) =>
-                  g.models.map((m) => ({
-                    value: m.name,
-                    name: `${m.upstreamId} · ${g.displayName}`,
-                  })),
-                )}
-                onChange={(changes) =>
-                  choose({
-                    ...pair,
-                    settings: applySettingChanges(settings, changes),
-                  })
-                }
-              />
-            </div>
-          )}
-          {routed &&
-            !edit &&
-            !showProfiles &&
-            view !== "subagent" &&
-            saveAs.row && (
-              <div className="border-t border-border px-2 pt-2">
-                {saveAs.row}
-              </div>
-            )}
         </PopoverContent>
       </Popover>
       {pair && !edit && (
@@ -878,25 +809,5 @@ function ModelChoice({
     >
       {label}
     </button>
-  );
-}
-
-function HarnessModelCount({
-  agentId,
-  harness,
-}: {
-  agentId: string | null;
-  harness: string | null;
-}) {
-  const { data } = useHarnessCatalogModels(agentId, harness);
-  if (!data) return null;
-  const count = data.providers.reduce(
-    (total, provider) => total + provider.models.length,
-    0,
-  );
-  return (
-    <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-      {count} {count === 1 ? "model" : "models"}
-    </span>
   );
 }

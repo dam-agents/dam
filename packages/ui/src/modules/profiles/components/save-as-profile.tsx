@@ -1,4 +1,4 @@
-import { Save } from "@carbon/icons-react";
+import { Add, Save } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 import { useState } from "react";
@@ -19,10 +19,11 @@ import { useCreateProfile, useUpdateProfile } from "../api/mutations.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the foot of the full picker: "Save as a profile"
- * names the pick, and "Update {name}" writes it back to the profile it came
- * from (D95 B). Not offered on a shared agent, whose editor uses the owner's
- * profiles and never changes them. The dialog renders outside the picker's
- * popover, which an outside click closes.
+ * names the pick, and on a pick that came from a profile "Update {name}"
+ * writes it back to that profile beside "Save as a new profile" (D95 B). Not
+ * offered on a shared agent, whose editor uses the owner's profiles and never
+ * changes them. The dialog renders outside the picker's popover, which an
+ * outside click closes.
  */
 export function useSaveAsProfile({
   agentId,
@@ -42,7 +43,7 @@ export function useSaveAsProfile({
   const agent = useAgent(agentId);
   const create = useCreateProfile();
   const update = useUpdateProfile();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<"create" | "update" | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const saving = create.isPending || update.isPending;
@@ -54,6 +55,7 @@ export function useSaveAsProfile({
   )
     return { row: null, dialog: null };
 
+  const updating = open === "update" ? from : null;
   const save = () => {
     const trimmed = name.trim();
     if (trimmed === "") return setError("Give the profile a name.");
@@ -71,47 +73,62 @@ export function useSaveAsProfile({
     };
     const done = {
       onSuccess: (saved: { id: string; name: string }) => {
-        setOpen(false);
+        setOpen(null);
         onSaved(saved);
       },
       onError: (err: { message: string }) => setError(err.message),
     };
-    if (from)
+    if (updating)
       update.mutate(
-        { id: from.id, ...body },
+        { id: updating.id, ...body },
         {
           ...done,
-          onSuccess: () => done.onSuccess({ id: from.id, name: trimmed }),
+          onSuccess: () => done.onSuccess({ id: updating.id, name: trimmed }),
         },
       );
     else create.mutate(body, done);
   };
+  const ask = (mode: "create" | "update") => {
+    setName(mode === "update" ? (from?.name ?? "") : "");
+    setError(null);
+    setOpen(mode);
+  };
+  const action =
+    "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground";
 
   return {
     row: (
-      <button
-        type="button"
-        onClick={() => {
-          setName(from?.name ?? "");
-          setError(null);
-          setOpen(true);
-        }}
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <Save size={14} aria-hidden />
-        {from ? `Update “${from.name}”` : "Save as a profile"}
-      </button>
+      <div className="flex flex-col">
+        {from && (
+          <button
+            type="button"
+            onClick={() => ask("update")}
+            className={action}
+          >
+            <Save size={14} aria-hidden />
+            {`Update “${from.name}”`}
+          </button>
+        )}
+        <button type="button" onClick={() => ask("create")} className={action}>
+          {from ? (
+            <Add size={14} aria-hidden />
+          ) : (
+            <Save size={14} aria-hidden />
+          )}
+          {from ? "Save as a new profile" : "Save as a profile"}
+        </button>
+      </div>
     ),
     dialog: open && (
-      <Modal onClose={() => setOpen(false)}>
+      <Modal onClose={() => setOpen(null)}>
         <DialogHeader
-          onClose={() => setOpen(false)}
+          onClose={() => setOpen(null)}
           closeDisabled={saving}
-          title={from ? `Update “${from.name}”` : "Save as a profile"}
+          title={updating ? `Update “${updating.name}”` : "Save as a profile"}
         />
         <DialogBody>
           <p className="mb-3 text-sm text-muted-foreground">
-            {from
+            {updating
               ? "Every chat default, channel and schedule that uses this profile takes these values."
               : "Name this harness, model and settings, then point your defaults, channels and schedules at it."}
           </p>
@@ -127,9 +144,9 @@ export function useSaveAsProfile({
           </FormField>
         </DialogBody>
         <DialogActions
-          onCancel={() => setOpen(false)}
+          onCancel={() => setOpen(null)}
           cancelDisabled={saving}
-          label={from ? "Update profile" : "Save profile"}
+          label={updating ? "Update profile" : "Save profile"}
           pendingLabel="Saving…"
           pending={saving}
           onSubmit={save}

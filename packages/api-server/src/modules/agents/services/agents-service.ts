@@ -575,11 +575,11 @@ export function createAgentsService(deps: {
   defaultHarness?: string;
   telemetry?: boolean;
   storageGate?: StorageGatePort;
-  /** UNIT_BOUNDARY_DESCRIPTION: the owner's default for new agents: its harness, the Connection a new Agent on that harness is granted in place of the harness's provider order, and the binding of the Agent's chat default to it; null while the owner has none to offer. */
+  /** UNIT_BOUNDARY_DESCRIPTION: the owner's default for new agents: its harness, the Connection a new Agent on that harness is granted in place of the harness's provider order, and the binding of the Agent's chat default to it, which answers why it did not bind; null while the owner has none to offer. */
   defaultProfile?: () => Promise<{
     harness: string;
     connectionId: string;
-    bind: (agentId: string) => Promise<void>;
+    bind: (agentId: string) => Promise<string | null>;
   } | null>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -1486,12 +1486,16 @@ export function createAgentsService(deps: {
       }
 
       if (startsOnProfile) {
-        await startsOnProfile.bind(infra.id).catch((err: unknown) => {
-          getLogger().warn(
-            { err, agentId: infra.id },
-            "agent create: binding the default profile failed; its first hello converts the default as before",
+        const missed = await startsOnProfile
+          .bind(infra.id)
+          .catch((err: unknown) =>
+            err instanceof Error ? err.message : String(err),
           );
-        });
+        if (missed)
+          getLogger().warn(
+            { agentId: infra.id, reason: missed },
+            "agent create: the new agent does not start on the default profile; its first hello converts the default instead",
+          );
       }
 
       const agent = assembleAgent(

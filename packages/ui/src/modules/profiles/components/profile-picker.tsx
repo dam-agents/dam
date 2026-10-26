@@ -9,9 +9,10 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useProfiles } from "../api/queries.js";
 import { useProfileAttach } from "../hooks/use-profile-attach.js";
-import { profileDetail } from "../lib/profile-detail.js";
+import { profileSummary } from "../lib/profile-detail.js";
 import { CustomRow, ProfileChoices } from "./profile-list.js";
 
 /**
@@ -43,6 +44,7 @@ export function ProfilePicker({
 }) {
   const { data: profiles = [] } = useProfiles(agentId);
   const { attach, manage } = useProfileAttach(agentId);
+  const carried = useHarnessConfigStatus(agentId || null).data?.harnesses ?? [];
   const [open, setOpen] = useState(false);
   const selected = profiles.find((p) => p.id === value) ?? null;
   const pick = (profile: ProfileWithUsage) => {
@@ -57,7 +59,14 @@ export function ProfilePicker({
           aria-label={label}
           disabled={disabled}
           data-testid={testId}
-          title={selected ? profileDetail(selected) : undefined}
+          title={
+            selected
+              ? profileSummary(
+                  selected,
+                  carried.find((h) => h.name === selected.harness),
+                )
+              : undefined
+          }
           className="flex max-w-full items-center gap-1.5 rounded px-1.5 py-0.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
         >
           <span className="truncate">
@@ -77,6 +86,7 @@ export function ProfilePicker({
       <PopoverContent align="start" className="w-80 p-1">
         <ProfileChoices
           profiles={profiles}
+          carried={carried}
           selectedId={value}
           onPick={pick}
           onAttach={(profile) =>

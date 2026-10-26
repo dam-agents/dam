@@ -1,11 +1,13 @@
 import { Checkmark, ChevronRight, Settings } from "@carbon/icons-react";
+import type { HarnessCapability } from "agent-runtime-api";
 import type { ProfileWithUsage } from "api-server-api";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { PairSummary } from "../../sessions/components/session-pair-trigger.js";
 import { useProfileAttach } from "../hooks/use-profile-attach.js";
-import { profileDetail } from "../lib/profile-detail.js";
+import { profileSummary } from "../lib/profile-detail.js";
 
 export interface ProfileSlot {
   selectedId: string | null;
@@ -18,14 +20,16 @@ export interface ProfileSlot {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what a chat picker opens on: the profiles for the
- * primary model and for subagents, each ending in Custom selection. A profile
- * that cannot run on the agent stays listed, disabled, with its reason and the
- * one action that fixes it; picking one whose provider the owner holds grants
- * it first.
+ * primary model and for subagents, each ending in Custom selection, the
+ * subagent slot led by Let the agent pick, so one row of each slot is always
+ * the marked one. A profile that cannot run on the agent stays listed,
+ * disabled, with its reason and the one action that fixes it; picking one
+ * whose provider the owner holds grants it first.
  */
 export function ModelConfiguration({
   agentId,
   profiles,
+  carried,
   primary,
   subagent,
   customHint,
@@ -33,6 +37,7 @@ export function ModelConfiguration({
 }: {
   agentId: string | null;
   profiles: readonly ProfileWithUsage[];
+  carried: readonly HarnessCapability[];
   primary: ProfileSlot;
   subagent: ProfileSlot;
   customHint: string;
@@ -44,6 +49,7 @@ export function ModelConfiguration({
       {profiles.length > 0 && (
         <ProfileChoices
           profiles={profiles}
+          carried={carried}
           selectedId={slot.selectedId}
           onPick={slot.onPick}
           onAttach={(profile) =>
@@ -60,11 +66,7 @@ export function ModelConfiguration({
       />
     </>
   );
-  const [revealed, setRevealed] = useState(
-    subagent.selectedId !== null || subagent.custom !== null,
-  );
-  const agentPicks =
-    subagent.selectedId === null && subagent.custom === null && !revealed;
+  const agentPicks = subagent.selectedId === null && subagent.custom === null;
   return (
     <div className="flex flex-col">
       <SectionHeading
@@ -84,18 +86,19 @@ export function ModelConfiguration({
       </SectionHeading>
       {choices(primary)}
       <SectionHeading>Subagent model</SectionHeading>
-      <label className="flex items-center gap-2 px-2 py-1 text-sm text-foreground">
-        <input
-          type="checkbox"
-          checked={agentPicks}
-          onChange={(e) => {
-            setRevealed(!e.target.checked);
-            if (e.target.checked) onAgentPicks();
-          }}
-        />
-        Let the agent pick
-      </label>
-      {!agentPicks && choices(subagent)}
+      <button
+        type="button"
+        aria-current={agentPicks || undefined}
+        onClick={onAgentPicks}
+        className={cn(
+          "flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left hover:bg-muted",
+          agentPicks && "bg-muted font-medium",
+        )}
+      >
+        <span className="truncate text-foreground">Let the agent pick</span>
+        {agentPicks && <Checkmark size={16} aria-hidden className="shrink-0" />}
+      </button>
+      {choices(subagent)}
     </div>
   );
 }
@@ -119,12 +122,14 @@ function SectionHeading({
 
 export function ProfileChoices({
   profiles,
+  carried,
   selectedId,
   onPick,
   onAttach,
   onManage,
 }: {
   profiles: readonly ProfileWithUsage[];
+  carried: readonly HarnessCapability[];
   selectedId: string | null;
   onPick: (profile: ProfileWithUsage) => void;
   onAttach: (profile: ProfileWithUsage) => void;
@@ -145,6 +150,10 @@ export function ProfileChoices({
           reason: null,
         };
         const selected = profile.id === selectedId;
+        const summary = profileSummary(
+          profile,
+          carried.find((h) => h.name === profile.harness),
+        );
         return (
           <li
             key={profile.id}
@@ -157,15 +166,25 @@ export function ProfileChoices({
               type="button"
               aria-current={selected || undefined}
               disabled={!available}
-              title={reason ?? profileDetail(profile)}
+              title={reason ?? summary}
               onClick={() => (attachable ? onAttach(profile) : onPick(profile))}
               className="flex min-w-0 flex-1 flex-col px-2 py-1 text-left disabled:pointer-events-none disabled:opacity-60"
             >
-              <span className={cn("truncate", selected && "font-medium")}>
+              <span
+                className={cn(
+                  "truncate",
+                  selected && "font-medium",
+                  (!available || attachable) && "text-muted-foreground",
+                )}
+              >
                 {profile.name}
               </span>
-              <span className="truncate text-xs text-muted-foreground">
-                {reason ?? profileDetail(profile)}
+              <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                {reason ? (
+                  <span className="whitespace-normal">{reason}</span>
+                ) : (
+                  <PairSummary harness={profile.harness} label={summary} />
+                )}
               </span>
             </button>
             {!available || attachable ? (

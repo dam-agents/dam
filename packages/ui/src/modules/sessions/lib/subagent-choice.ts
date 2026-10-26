@@ -2,6 +2,8 @@ import {
   approvalOption,
   type HarnessCapability,
   isPlatformSubagentSetting,
+  PLATFORM_SUBAGENT_PREFIX,
+  platformSubagentChoice,
   SUBAGENT_MODEL_SETTING,
 } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
@@ -19,11 +21,12 @@ type SubagentPick = Pick<ProfileWithUsage, "harness" | "model"> & {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one subagent choice drives both kinds of
- * subagent. A platform sub-agent is another agent, so it takes the harness and
- * the model. A native sub-agent runs inside the primary harness, so it takes
- * the model only where that harness keeps `subagentModel` and can run it (the
- * same harness, or a model the agent lists for it), with the choice's effort
- * where the harness offers it; otherwise the agent picks. Null clears both.
+ * subagent. A platform sub-agent is another agent, so it takes the harness,
+ * the model and the choice's own settings. A native sub-agent runs inside the
+ * primary harness, so it takes the model only where that harness keeps
+ * `subagentModel` and can run it (the same harness, or a model the agent lists
+ * for it), with the choice's effort where the harness offers it; otherwise the
+ * agent picks. Null clears both.
  */
 export function withSubagent(
   pair: SessionPair,
@@ -34,13 +37,18 @@ export function withSubagent(
   const { settings: current = {}, ...rest } = pair;
   const settings = Object.fromEntries(
     Object.entries(current).filter(
-      ([id]) => !(SUBAGENT_KEYS as readonly string[]).includes(id),
+      ([id]) =>
+        !(SUBAGENT_KEYS as readonly string[]).includes(id) &&
+        !isPlatformSubagentSetting(id),
     ),
   );
   const keeps = (id: string) =>
     capability?.sessionSettings?.includes(id) === true;
   const effort = choice?.settings?.effort;
   if (choice) {
+    for (const [id, value] of Object.entries(choice.settings ?? {}))
+      if (!(SUBAGENT_KEYS as readonly string[]).includes(id))
+        settings[`${PLATFORM_SUBAGENT_PREFIX}${id}`] = value;
     settings["platformSubagent.harness"] = choice.harness;
     settings["platformSubagent.model"] = choice.model;
     if (
@@ -67,6 +75,51 @@ export function subagentOf(pair: SessionPair | null): SubagentPick | null {
   const harness = pair?.settings?.["platformSubagent.harness"];
   const model = pair?.settings?.["platformSubagent.model"];
   return harness && model ? { harness, model } : null;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the subagent slot as the pair the Custom screen edits: its harness (the primary's until one is picked), its model and its own settings; mode is never among them, since tool approval is a session's own pick. */
+export function subagentPair(pair: SessionPair | null): SessionPair | null {
+  if (pair === null) return null;
+  const choice = platformSubagentChoice(pair.settings ?? {});
+  return {
+    harness: choice?.harness ?? pair.harness,
+    provider: null,
+    model: choice?.model ?? null,
+    settings: { ...choice?.configOptions },
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a Custom screen pick for the subagent slot, written into the session's pair; a harness picked without a model waits for its model, holding only the harness. */
+export function withSubagentPair(
+  pair: SessionPair,
+  sub: SessionPair,
+  capability: HarnessCapability | undefined,
+  models: readonly { name: string }[],
+): SessionPair {
+  if (sub.model !== null)
+    return withSubagent(
+      pair,
+      { harness: sub.harness, model: sub.model, settings: sub.settings ?? {} },
+      capability,
+      models,
+    );
+  const cleared = withSubagent(pair, null, capability, models);
+  return {
+    ...cleared,
+    settings: { ...cleared.settings, "platformSubagent.harness": sub.harness },
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the setting changes that turn one pair's settings into another's, a removed one as the empty value that unsets it. */
+export function settingChanges(
+  before: Readonly<Record<string, string>>,
+  after: Readonly<Record<string, string>>,
+): Record<string, string> {
+  return Object.fromEntries(
+    [...new Set([...Object.keys(before), ...Object.keys(after)])]
+      .filter((id) => before[id] !== after[id])
+      .map((id) => [id, after[id] ?? ""]),
+  );
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: a primary profile pick takes the profile's settings, keeps the subagent choice and re-applies it for the harness it lands on. */

@@ -17,6 +17,7 @@ import {
   defaultModelStopsRuns,
 } from "../../home/lib/default-model-copy.js";
 import { useProfiles } from "../../profiles/api/queries.js";
+import { StoredPairSummary } from "../../sessions/components/stored-pair-summary.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
@@ -173,10 +174,19 @@ export function ScheduleCard({
               (schedule.harness || schedule.model) && (
                 <>
                   <span aria-hidden>·</span>
-                  <span className="truncate">
-                    {[schedule.harness, schedule.model]
-                      .filter(Boolean)
-                      .join(" · ")}
+                  <span className="flex min-w-0 items-center gap-1">
+                    {schedule.harness && schedule.model ? (
+                      <StoredPairSummary
+                        agentId={schedule.agentId}
+                        harness={schedule.harness}
+                        model={schedule.model}
+                        settings={schedule.settings ?? {}}
+                      />
+                    ) : (
+                      <span className="truncate">
+                        {schedule.harness ?? schedule.model}
+                      </span>
+                    )}
                   </span>
                 </>
               )
