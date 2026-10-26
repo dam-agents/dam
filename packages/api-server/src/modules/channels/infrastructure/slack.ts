@@ -183,6 +183,7 @@ import {
   peerTaggedBy,
   routeMention,
   senderReaches,
+  sessionTitleOf,
   type RosterEntry,
 } from "./slack-routing.js";
 import type { SlackSender } from "./slack-sender.js";
@@ -2762,6 +2763,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
+    title: string;
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
     onWaking?: () => void;
@@ -2776,6 +2778,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const platformMeta = {
       type: SessionType.ChannelSlack,
       threadTs: args.threadKey,
+      title: args.title,
     };
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
       await agents().ensureReady(args.instanceName, {
@@ -2838,6 +2841,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     instanceName: string;
     channel: string;
     threadTs: string;
+    title: string;
     messages: AddressedMessage[];
     actorSub: string | null;
     externalActorId?: string;
@@ -3029,6 +3033,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await runSessionTurn({
         instanceName,
         threadKey,
+        title: ctx.title,
         legacyThreadKey: ctx.threadTs,
         onReady: () => {
           restartsAtStart = readRestarts(instanceName);
@@ -5304,6 +5309,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       instanceName: args.instanceName,
       channel: args.channel,
       threadTs: args.threadTs,
+      title: sessionTitleOf(args.messages[0]!.text),
       messages: args.messages.map((message) => ({
         ...message,
         text:
@@ -5346,6 +5352,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     replyThreadTs: string;
     eventTs: string;
     hasThread: boolean;
+    title: string;
     messages: Array<{ text: string; eventTs: string; slackUserId?: string }>;
     images: FetchedImage[];
     files: FetchedFile[];
@@ -5446,6 +5453,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       runSessionTurn({
         instanceName: args.instanceName,
         threadKey: args.threadKey,
+        title: args.title,
         ...(args.legacyThreadKey
           ? { legacyThreadKey: args.legacyThreadKey }
           : {}),
@@ -5740,8 +5748,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             replyThreadTs: inThread ? threadTs : last.eventTs,
             eventTs: last.eventTs,
             hasThread: inThread,
-            messages: shown.map(({ text, eventTs, slackUserId }) => ({
-              text,
+            title: sessionTitleOf(shown[0]!.text),
+            messages: shown.map(({ text, speaker, eventTs, slackUserId }) => ({
+              text: `${speaker}: ${text}`,
               eventTs,
               slackUserId,
             })),
@@ -5860,9 +5869,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const withheldNote = renderWithheldNote(failures);
 
     const speaker = await speakerOf(sender);
-    const text = `${speaker}: ${event.text}${withheldNote}`;
     enqueueAmbient(event.channel, event.threadTs ?? null, {
-      text,
+      text: event.text + withheldNote,
       eventTs: event.ts,
       slackUserId,
       sender,
