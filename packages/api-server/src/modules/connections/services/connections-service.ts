@@ -18,6 +18,7 @@ import {
   type ConnectionTemplateView,
   type ConnectionView,
   type Contribution,
+  type GitHubUserTokenScope,
   type CredentialCheck,
   type CredentialCheckPolicy,
   credentialExpiresSoon,
@@ -57,6 +58,17 @@ import {
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
+import {
+  childAuthOf,
+  childScopeOf,
+  hasAppScope,
+  isGrantable,
+  splitsIntoParent,
+  withScope,
+  withoutParentScope,
+  withoutScope,
+  type ChildScope,
+} from "../domain/github-parent.js";
 import {
   gitHubUserTokenApiBase,
   parseGitHubUserTokenScope,
@@ -117,6 +129,11 @@ import {
   type OAuthAuth,
 } from "./oauth-token.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
+import {
+  childUserToken,
+  describedUserTokenScope,
+  writeChildToken,
+} from "./github-children.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import {
   mintUnderLock,
@@ -173,6 +190,20 @@ function assertNoUnaddressableRival(
       });
     }
   }
+}
+
+function parentKindOf(conn: Connection): string {
+  return conn.auth.kind === "github-app"
+    ? "GitHub App installation"
+    : "GitHub sign-in";
+}
+
+function assertGrantable(conn: Connection): void {
+  if (isGrantable(conn)) return;
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `'${conn.name}' is a ${parentKindOf(conn)}, which no agent can hold: give the agent a connection made from it`,
+  });
 }
 
 /**
@@ -333,7 +364,9 @@ export function createConnectionsService(deps: {
         ? {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
             ...(appSlug ? { appSlug } : {}),
-            ...(conn.auth.kind === "oauth" && conn.auth.clientSecretRef
+            ...(conn.auth.kind === "oauth" &&
+            conn.auth.clientSecretRef &&
+            !conn.parentId
               ? { hasClientSecret: true }
               : {}),
             ...(conn.auth.connectedAt
@@ -343,10 +376,11 @@ export function createConnectionsService(deps: {
                   ).toISOString(),
                 }
               : {}),
-            ...(conn.auth.kind === "github-app"
+            ...(conn.auth.kind === "github-app" && !conn.isParent
               ? githubAppScopeView(conn.auth)
               : {}),
             ...(conn.auth.kind === "oauth" &&
+            !conn.isParent &&
             supportsGitHubUserTokenScope(conn.templateId)
               ? {
                   githubUserToken: conn.auth.githubUserTokenScope
@@ -371,6 +405,12 @@ export function createConnectionsService(deps: {
       ...(keyCheck ? { keyCheck } : {}),
       ...(check ? { check } : {}),
       ...oauthExtras,
+      ...(conn.parentId ? { parentId: conn.parentId } : {}),
+      ...(conn.isParent ? { isParent: true as const } : {}),
+      ...((conn.auth.kind === "oauth" || conn.auth.kind === "github-app") &&
+      conn.auth.fullAccess
+        ? { fullAccess: true as const }
+        : {}),
       ...(provider
         ? { provider: { ...provider, preferred: conn.id === preferredId } }
         : {}),
@@ -622,6 +662,255 @@ export function createConnectionsService(deps: {
     if (rotated) await recordGitHubAppCheck(conn, rotated);
   }
 
+  function refuseOnChild(conn: Connection): void {
+    if (!conn.parentId) return;
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        conn.auth.kind === "github-app"
+          ? "This connection mints its token with the private key of the GitHub App installation it was made from. Replace the key on the installation."
+          : "This connection is renewed by the GitHub sign-in it was made from. Change the credential on the sign-in.",
+    });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: an installation's private key is proven before
+   * it is stored, by minting a token for the whole installation that is
+   * revoked again, since the installation injects nothing of its own. Every
+   * connection made from it then mints a fresh token with the new key; one
+   * that GitHub refuses keeps its current token until the refresh loop tries
+   * again, so a rotation never costs the others their access.
+   */
+  async function rotateInstallationKey(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "github-app" }>,
+    rawPrivateKey: string,
+  ): Promise<void> {
+    const privateKeyPem = await rejectIfInvalid(async () =>
+      normalizePrivateKeyPem(rawPrivateKey),
+    );
+    const connectionRef = `connection:${conn.id}:${conn.templateId}`;
+    const minted = await rejectIfInvalid(() =>
+      mintGitHubAppToken(deps.githubAppEngine, {
+        connectionRef,
+        auth,
+        privateKeyPem,
+      }),
+    );
+    let check: CredentialCheck;
+    try {
+      check = stampCheck(
+        conn.templateId,
+        conn.id,
+        await describeGitHubAppToken(deps.githubAppEngine, {
+          connectionRef,
+          auth,
+          privateKeyPem,
+          accessToken: minted.accessToken,
+        }),
+      );
+    } finally {
+      await deps.githubAppEngine.revokeInstallationToken({
+        apiBaseUrl: auth.apiBaseUrl,
+        accessToken: minted.accessToken,
+      });
+    }
+    await deps.connectionLock(gitHubAppMintLockKey(conn.id), async () => {
+      await deps.secretStore.putFields(auth.privateKeyRef, {
+        [auth.privateKeyRef.field]: privateKeyPem,
+      });
+      const fresh = await deps.repo.getById(conn.id);
+      if (fresh?.auth.kind === "github-app") {
+        await deps.repo.updateAuth(
+          conn.id,
+          withoutRefreshFailureMarker(fresh.auth),
+        );
+      }
+    });
+    await deps.repo.mergeInputs(conn.id, {
+      [CREDENTIAL_CHECK_INPUT_KEY]: check,
+    });
+    for (const child of await deps.repo.listChildren(conn.id)) {
+      if (child.auth.kind !== "github-app") continue;
+      try {
+        await mintUnderLock(
+          child,
+          child.auth,
+          {
+            ...writerDeps(gitHubAppMintLockKey(child.id)),
+            standDownOnKindChangeOnly: true,
+          },
+          async (fresh, freshAuth) => {
+            const token = await mintGitHubAppToken(deps.githubAppEngine, {
+              connectionRef: `connection:${child.id}:${child.templateId}`,
+              auth: freshAuth,
+              privateKeyPem,
+            });
+            await writeToken(
+              deps.secretStore,
+              fresh,
+              freshAuth,
+              token.accessToken,
+            );
+            return renewedAuth(freshAuth, token.expiresAt);
+          },
+        );
+      } catch (err) {
+        securityLog("warn", "connection.child_token_failed", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: child.id,
+          result: "failure",
+          detail: {
+            parentId: conn.id,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+    }
+  }
+
+  function refuseOnParent(conn: Connection): void {
+    if (!conn.isParent) return;
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `'${conn.name}' is a ${parentKindOf(conn)}, which reaches everything it can. Change a connection made from it, or make a new one.`,
+    });
+  }
+
+  async function lowerParentExpiry(
+    parent: Connection,
+    expiresAt: number | undefined,
+  ): Promise<void> {
+    if (parent.auth.kind !== "oauth" || expiresAt === undefined) return;
+    if (
+      parent.auth.expiresAt !== undefined &&
+      parent.auth.expiresAt <= expiresAt
+    ) {
+      return;
+    }
+    await deps.repo.updateAuth(parent.id, { ...parent.auth, expiresAt });
+  }
+
+  async function rescopeSignInConnection(
+    conn: Connection,
+    scope: ChildScope,
+  ): Promise<void> {
+    const parent = await parentOf(conn);
+    await deps.connectionLock(connectionRefreshLockKey(parent.id), async () => {
+      const [freshParent, fresh] = await Promise.all([
+        deps.repo.get(parent.id, deps.ownerId),
+        deps.repo.get(conn.id, deps.ownerId),
+      ]);
+      if (freshParent?.auth.kind !== "oauth" || fresh?.auth.kind !== "oauth") {
+        return;
+      }
+      const parentAuth = freshParent.auth;
+      const userToken = await readGitHubUserToken(parentAuth);
+      const next = withScope(withoutRefreshFailureMarker(fresh.auth), scope);
+      const minted = await rejectIfInvalid(async () =>
+        childUserToken(
+          deps,
+          fresh,
+          next,
+          { accessToken: userToken, expiresAt: parentAuth.expiresAt },
+          await resolveOAuthClientSecret({
+            conn: freshParent,
+            auth: parentAuth,
+            templates: deps.templates,
+            secretStore: deps.secretStore,
+          }),
+        ),
+      );
+      await writeChildToken(deps.secretStore, fresh, next, minted.accessToken);
+      const narrowed = next.githubUserTokenScope;
+      const stored: OAuthAuth = {
+        ...next,
+        ...(narrowed
+          ? {
+              githubUserTokenScope: await describedUserTokenScope(
+                deps.githubAppEngine,
+                `connection:${conn.id}:${conn.templateId}`,
+                parentAuth,
+                narrowed,
+                userToken,
+                minted.accountLogin,
+              ),
+            }
+          : {}),
+      };
+      delete stored.expiresAt;
+      await deps.repo.updateAuth(conn.id, {
+        ...stored,
+        ...(minted.expiresAt !== undefined
+          ? { expiresAt: minted.expiresAt }
+          : {}),
+      });
+      await lowerParentExpiry(freshParent, minted.expiresAt);
+    });
+  }
+
+  async function rescopeLegacySignIn(
+    conn: Connection,
+    scope: GitHubUserTokenScope | undefined,
+  ): Promise<void> {
+    await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
+      const fresh = await deps.repo.get(conn.id, deps.ownerId);
+      if (!fresh || fresh.auth.kind !== "oauth") return;
+      const auth = fresh.auth;
+      const accessToken = await readGitHubUserToken(auth);
+      const scoped = scope
+        ? await rejectIfInvalid(async () =>
+            scopeGitHubUserToken(deps.githubAppEngine, {
+              connectionRef: `connection:${conn.id}:${conn.templateId}`,
+              auth,
+              scope,
+              clientSecret: await resolveOAuthClientSecret({
+                conn: fresh,
+                auth,
+                templates: deps.templates,
+                secretStore: deps.secretStore,
+              }),
+              accessToken,
+            }),
+          )
+        : undefined;
+
+      await deps.secretStore.putFields(
+        auth.accessTokenRef,
+        buildConnectionSdsFields(
+          fresh.contributions,
+          scoped?.accessToken ?? accessToken,
+        ),
+      );
+
+      const nextAuth: OAuthAuth = { ...withoutRefreshFailureMarker(auth) };
+      delete nextAuth.githubUserTokenScope;
+      if (scope) {
+        nextAuth.githubUserTokenScope = scoped?.accountLogin
+          ? { ...scope, targetLogin: scoped.accountLogin }
+          : scope;
+      }
+      if (scoped?.expiresAt !== undefined) {
+        nextAuth.expiresAt = scoped.expiresAt;
+      }
+      await deps.repo.updateAuth(conn.id, nextAuth);
+    });
+  }
+
+  async function retireSharedToken(conn: Connection): Promise<void> {
+    if (conn.auth.kind !== "oauth" && conn.auth.kind !== "github-app") return;
+    const ref = conn.auth.accessTokenRef;
+    await deps.secretStore.putFields(ref, {
+      [ref.field]: "",
+      ...buildConnectionSdsFields(
+        conn.contributions,
+        CONNECTION_TOKEN_PLACEHOLDER,
+      ),
+    });
+  }
+
   async function rotateOAuthClientSecret(
     conn: Connection,
     auth: Extract<Connection["auth"], { kind: "oauth" }>,
@@ -649,9 +938,10 @@ export function createConnectionsService(deps: {
           githubAppEngine: deps.githubAppEngine,
           templates: deps.templates,
           secretStore: deps.secretStore,
+          children: deps.repo,
         });
         await deps.repo.updateAuth(conn.id, {
-          ...withoutRefreshFailureMarker(fresh.auth),
+          ...withoutParentScope(fresh, withoutRefreshFailureMarker(fresh.auth)),
           expiresAt: next.expiresAt,
         });
       });
@@ -1070,6 +1360,7 @@ export function createConnectionsService(deps: {
       const currentIds = new Set(current.map((c) => c.connectionId));
       const desiredIds = new Set(deduped);
       const toGrant = deduped.filter((id) => !currentIds.has(id));
+      for (const id of toGrant) assertGrantable(ownedById.get(id)!);
       const toRevoke = current
         .map((c) => c.connectionId)
         .filter((id) => !desiredIds.has(id));
@@ -1103,6 +1394,250 @@ export function createConnectionsService(deps: {
         allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
       });
     });
+  }
+
+  async function requireParent(id: string): Promise<Connection> {
+    const parent = await deps.repo.get(id, deps.ownerId);
+    if (!parent) throw new TRPCError({ code: "NOT_FOUND" });
+    if (!parent.isParent) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Connections are made only from a GitHub sign-in or a GitHub App installation.",
+      });
+    }
+    return parent;
+  }
+
+  async function parentOf(child: Connection): Promise<Connection> {
+    const parent = child.parentId
+      ? await deps.repo.get(child.parentId, deps.ownerId)
+      : null;
+    if (!parent) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `The ${parentKindOf(child)} '${child.name}' was made from is gone.`,
+      });
+    }
+    return parent;
+  }
+
+  function childScopeOrReject(
+    input: Parameters<typeof childScopeOf>[0],
+  ): ChildScope {
+    try {
+      return childScopeOf(input);
+    } catch (err) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: err instanceof Error ? err.message : "Invalid scope.",
+      });
+    }
+  }
+
+  function firstAppChildScope(
+    input: Extract<ConnectionCreateInput, { authKind: "github-app" }>,
+  ): ChildScope | null {
+    let appScope: ReturnType<typeof parseGitHubAppScope>;
+    try {
+      appScope = parseGitHubAppScope(input);
+    } catch (err) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: err instanceof Error ? err.message : "Invalid scope.",
+      });
+    }
+    if (!input.fullAccess && !hasAppScope(appScope)) return null;
+    return childScopeOrReject({ fullAccess: input.fullAccess, appScope });
+  }
+
+  async function insertChild(
+    record: Connection,
+    secretPath: string,
+    token: string,
+  ): Promise<void> {
+    await putConnectionSecret(
+      record.id,
+      record.templateId,
+      secretPath,
+      {
+        access_token: token,
+        ...buildConnectionSdsFields(record.contributions, token),
+      },
+      record.contributions,
+    );
+    try {
+      await deps.repo.insert(record);
+    } catch (err) {
+      await deps.secretStore.delete({ path: secretPath }).catch(() => {});
+      if (isUniqueViolation(err)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `A connection named "${record.name}" already exists. Names must be unique per user.`,
+        });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a connection made from a GitHub sign-in or a
+   * GitHub App installation gets its own per-Connection Secret holding only
+   * its own token, so siblings never share an injected value. A sign-in's
+   * connection gets the token GitHub derives from the sign-in's user token for
+   * its scope, or the user token itself for full access; it is made under the
+   * sign-in's refresh lock, so a renewal that rotates the user token sees it.
+   * An installation's connection mints its own installation token with the
+   * installation's private key, which stays in the installation's Secret.
+   */
+  async function createChild(
+    parent: Connection,
+    name: string,
+    scope: ChildScope,
+  ): Promise<string> {
+    if (deriveStatus(parent) === "pending") {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "This GitHub sign-in has not finished. Sign in first, then choose what a connection from it reaches.",
+      });
+    }
+    const id = `conn-${randomBytes(6).toString("hex")}`;
+    const ref = deps.secretStore.mintRef({
+      owner: deps.ownerId,
+      purpose: `connection:${parent.templateId}`,
+    });
+    const connectedAt = Math.floor(Date.now() / 1000);
+    let childAuth: ReturnType<typeof childAuthOf>;
+    try {
+      childAuth = childAuthOf(
+        parent.auth,
+        scope,
+        { ...ref, field: "access_token" },
+        connectedAt,
+      );
+    } catch (err) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: err instanceof Error ? err.message : "Invalid scope.",
+      });
+    }
+    const inputs: Record<string, unknown> = { ...parent.inputs, name };
+    delete inputs[CREDENTIAL_CHECK_INPUT_KEY];
+    const base = {
+      id,
+      ownerId: deps.ownerId,
+      templateId: parent.templateId,
+      name,
+      contributions: parent.contributions,
+      parentId: parent.id,
+    };
+    const connectionRef = `connection:${id}:${parent.templateId}`;
+
+    if (childAuth.kind === "oauth") {
+      const oauthChild = childAuth;
+      await deps.connectionLock(
+        connectionRefreshLockKey(parent.id),
+        async () => {
+          const fresh = await deps.repo.get(parent.id, deps.ownerId);
+          if (!fresh || fresh.auth.kind !== "oauth") {
+            throw new TRPCError({ code: "NOT_FOUND" });
+          }
+          const parentAuth = fresh.auth;
+          const userToken = await readGitHubUserToken(parentAuth);
+          const minted = await rejectIfInvalid(async () =>
+            childUserToken(
+              deps,
+              { id, templateId: parent.templateId },
+              oauthChild,
+              { accessToken: userToken, expiresAt: parentAuth.expiresAt },
+              await resolveOAuthClientSecret({
+                conn: fresh,
+                auth: parentAuth,
+                templates: deps.templates,
+                secretStore: deps.secretStore,
+              }),
+            ),
+          );
+          const narrowed = oauthChild.githubUserTokenScope;
+          const auth: OAuthAuth = {
+            ...oauthChild,
+            ...(narrowed
+              ? {
+                  githubUserTokenScope: await describedUserTokenScope(
+                    deps.githubAppEngine,
+                    connectionRef,
+                    parentAuth,
+                    narrowed,
+                    userToken,
+                    minted.accountLogin,
+                  ),
+                }
+              : {}),
+            ...(minted.expiresAt !== undefined
+              ? { expiresAt: minted.expiresAt }
+              : {}),
+          };
+          await insertChild(
+            { ...base, inputs, auth },
+            ref.path,
+            minted.accessToken,
+          );
+          await lowerParentExpiry(fresh, minted.expiresAt);
+        },
+      );
+    } else {
+      const appChild = childAuth;
+      const privateKeyPem = await readPrivateKey(appChild);
+      const minted = await rejectIfInvalid(() =>
+        mintGitHubAppToken(deps.githubAppEngine, {
+          connectionRef,
+          auth: appChild,
+          privateKeyPem,
+        }),
+      );
+      const check = stampCheck(
+        parent.templateId,
+        id,
+        await describeGitHubAppToken(deps.githubAppEngine, {
+          connectionRef,
+          auth: appChild,
+          privateKeyPem,
+          accessToken: minted.accessToken,
+        }),
+      );
+      await insertChild(
+        {
+          ...base,
+          inputs: { ...inputs, [CREDENTIAL_CHECK_INPUT_KEY]: check },
+          auth: { ...appChild, expiresAt: minted.expiresAt },
+        },
+        ref.path,
+        minted.accessToken,
+      );
+    }
+
+    securityLog("info", "connection.create", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      target: id,
+      result: "success",
+      detail: {
+        templateId: parent.templateId,
+        authKind: childAuth.kind,
+        parentId: parent.id,
+        fullAccess: "fullAccess" in scope,
+      },
+    });
+    emit({
+      type: EventType.ConnectionCreated,
+      actorSub: deps.ownerId,
+      connectionKey: id,
+      templateId: parent.templateId,
+      kind: "oauth_app",
+    });
+    return id;
   }
 
   const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
@@ -1322,6 +1857,7 @@ export function createConnectionsService(deps: {
       const granted = (await deps.repo.listByOwner(deps.ownerId)).filter((c) =>
         wanted.has(c.id),
       );
+      granted.forEach(assertGrantable);
       assertNoUnaddressableRival(granted, granted);
     },
 
@@ -1390,9 +1926,19 @@ export function createConnectionsService(deps: {
           await rotateClientSecret(conn, conn.auth, singleValueOf(credential));
           break;
         case "github-app":
-          await rotatePrivateKey(conn, conn.auth, singleValueOf(credential));
+          refuseOnChild(conn);
+          if (conn.isParent) {
+            await rotateInstallationKey(
+              conn,
+              conn.auth,
+              singleValueOf(credential),
+            );
+          } else {
+            await rotatePrivateKey(conn, conn.auth, singleValueOf(credential));
+          }
           break;
         case "oauth":
+          refuseOnChild(conn);
           await rotateOAuthClientSecret(
             conn,
             conn.auth,
@@ -1423,10 +1969,36 @@ export function createConnectionsService(deps: {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return;
 
-      const affectedAgents = await deps.repo.listAgentsForConnection(id);
+      const children = conn.isParent
+        ? await deps.repo.listChildren(conn.id)
+        : [];
+      const removed = [conn, ...children];
+      const affectedAgents = [
+        ...new Set(
+          (
+            await Promise.all(
+              removed.map((c) => deps.repo.listAgentsForConnection(c.id)),
+            )
+          ).flat(),
+        ),
+      ];
 
-      const secretPath = connectionSecretPath(conn.auth);
-      if (secretPath) await deps.secretStore.delete({ path: secretPath });
+      const parent = conn.parentId
+        ? await deps.repo.get(conn.parentId, deps.ownerId)
+        : null;
+      const secretPaths = new Set(
+        removed.flatMap((c) => connectionSecretPath(c.auth) ?? []),
+      );
+      if (
+        parent &&
+        connectionSecretPath(parent.auth) === connectionSecretPath(conn.auth)
+      ) {
+        await retireSharedToken(conn);
+        secretPaths.clear();
+      }
+      for (const path of secretPaths) {
+        await deps.secretStore.delete({ path });
+      }
 
       await deps.repo.delete(id, deps.ownerId);
 
@@ -1434,7 +2006,7 @@ export function createConnectionsService(deps: {
         const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
         const allOwnerConnectionIds = new Set([
           ...ownerConnsAfter.map((c) => c.id),
-          id,
+          ...removed.map((c) => c.id),
         ]);
         await fanOutToAgents(
           conn.id,
@@ -1454,16 +2026,20 @@ export function createConnectionsService(deps: {
         detail: {
           templateId: conn.templateId,
           authKind: conn.auth.kind,
-          secretsDeleted: secretPath ? 1 : 0,
+          secretsDeleted: secretPaths.size,
           affectedAgents: affectedAgents.length,
+          ...(children.length > 0
+            ? { connectionsRemoved: children.length }
+            : {}),
         },
       });
-      if (deriveStatus(conn) !== "pending") {
+      for (const c of removed) {
+        if (c.isParent || deriveStatus(c) === "pending") continue;
         emit({
           type: EventType.ConnectionRemoved,
           actorSub: deps.ownerId,
-          connectionKey: conn.id,
-          templateId: conn.templateId,
+          connectionKey: c.id,
+          templateId: c.templateId,
           kind: template?.category === "mcp" ? "mcp" : "oauth_app",
         });
       }
@@ -1623,13 +2199,23 @@ export function createConnectionsService(deps: {
         ),
       );
 
+      const isParent = splitsIntoParent(template.id, built.auth.kind);
+      const firstChild =
+        isParent && effectiveInput.authKind === "github-app"
+          ? firstAppChildScope(effectiveInput)
+          : null;
+
       const id = input.id ?? `conn-${randomBytes(6).toString("hex")}`;
       const contributions = built.contributions.map((c): Contribution =>
         c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
       );
       const secretPath = connectionSecretPath(built.auth);
 
-      let auth = built.auth;
+      let auth =
+        isParent &&
+        (built.auth.kind === "oauth" || built.auth.kind === "github-app")
+          ? withoutScope(built.auth)
+          : built.auth;
       const mintFirstToken = async (
         current: TokenAuth,
         credential: {
@@ -1691,7 +2277,44 @@ export function createConnectionsService(deps: {
       }
 
       let appCheck: CredentialCheck | null = null;
-      if (auth.kind === "github-app") {
+      if (auth.kind === "github-app" && isParent) {
+        const appAuth = auth;
+        const privateKeyPem = secretPath
+          ? built.secrets.get(secretPath)?.["private_key"]
+          : undefined;
+        if (!privateKeyPem) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `template ${template.id}: missing privateKey`,
+          });
+        }
+        const connectionRef = `connection:${id}:${template.id}`;
+        const minted = await rejectIfInvalid(() =>
+          mintGitHubAppToken(deps.githubAppEngine, {
+            connectionRef,
+            auth: appAuth,
+            privateKeyPem,
+          }),
+        );
+        try {
+          appCheck = stampCheck(
+            template.id,
+            id,
+            await describeGitHubAppToken(deps.githubAppEngine, {
+              connectionRef,
+              auth: appAuth,
+              privateKeyPem,
+              accessToken: minted.accessToken,
+            }),
+          );
+        } finally {
+          await deps.githubAppEngine.revokeInstallationToken({
+            apiBaseUrl: appAuth.apiBaseUrl,
+            accessToken: minted.accessToken,
+          });
+        }
+        auth = { ...appAuth, connectedAt: Math.floor(Date.now() / 1000) };
+      } else if (auth.kind === "github-app") {
         const appAuth = auth;
         let minted: { privateKeyPem: string; accessToken: string } | undefined;
         auth = await mintFirstToken(
@@ -1763,8 +2386,9 @@ export function createConnectionsService(deps: {
       holdUnlessPassed(credentialCheck, policy);
 
       if (secretPath) {
+        const injected = isParent ? [] : contributions;
         const placeholderSds = buildConnectionSdsFields(
-          contributions,
+          injected,
           CONNECTION_TOKEN_PLACEHOLDER,
         );
         await putConnectionSecret(
@@ -1772,7 +2396,7 @@ export function createConnectionsService(deps: {
           template.id,
           secretPath,
           { ...placeholderSds, ...(built.secrets.get(secretPath) ?? {}) },
-          contributions,
+          injected,
         );
       }
 
@@ -1782,7 +2406,9 @@ export function createConnectionsService(deps: {
         templateId: template.id,
         name: connectionName,
         inputs: {
-          ...stripSecretsFromInputs(input),
+          ...(isParent
+            ? withoutScopeInputs(stripSecretsFromInputs(input))
+            : stripSecretsFromInputs(input)),
           ...sharedKbInputs,
           ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
           ...(credentialCheck
@@ -1793,6 +2419,7 @@ export function createConnectionsService(deps: {
         },
         auth,
         contributions,
+        ...(isParent ? { isParent: true as const } : {}),
       };
       try {
         await deps.repo.insert(record);
@@ -1819,7 +2446,7 @@ export function createConnectionsService(deps: {
         result: "success",
         detail: { templateId: template.id, authKind: built.auth.kind },
       });
-      if (built.auth.kind !== "oauth") {
+      if (built.auth.kind !== "oauth" && !isParent) {
         emit({
           type: EventType.ConnectionCreated,
           actorSub: deps.ownerId,
@@ -1831,7 +2458,57 @@ export function createConnectionsService(deps: {
       if (headerValue) {
         await recordAccountLabel(record, headerValue, deps);
       }
+      if (firstChild) {
+        try {
+          return await createChild(record, connectionName, firstChild);
+        } catch (err) {
+          await service.deleteConnection(id).catch(() => {});
+          throw err;
+        }
+      }
       return id;
+    },
+
+    async createFromParent(input): Promise<string> {
+      const parent = await requireParent(input.parentId);
+      let scope: ChildScope;
+      if (parent.auth.kind === "oauth") {
+        if (input.repositories) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "A GitHub sign-in narrows to repositories by id. Choose them with repositoryIds.",
+          });
+        }
+        let userTokenScope: ReturnType<typeof parseGitHubUserTokenScope>;
+        try {
+          userTokenScope = parseGitHubUserTokenScope(input);
+        } catch (err) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: err instanceof Error ? err.message : "Invalid scope.",
+          });
+        }
+        scope = childScopeOrReject({
+          fullAccess: input.fullAccess,
+          userTokenScope,
+        });
+      } else {
+        if (input.targetId !== undefined) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "A GitHub App installation reaches one account already; it takes no account to narrow to.",
+          });
+        }
+        scope = childScopeOrReject({
+          fullAccess: input.fullAccess,
+          appScope: await rejectIfInvalid(async () =>
+            parseGitHubAppScope(input),
+          ),
+        });
+      }
+      return createChild(parent, input.name, scope);
     },
 
     async discoverMcp(input): Promise<{ auth: "oauth" | "none" }> {
@@ -1891,10 +2568,20 @@ export function createConnectionsService(deps: {
 
     async updateGitHubAppScope(input) {
       const { conn, auth } = await requireGitHubAppConnection(input.id);
+      refuseOnParent(conn);
       const privateKeyPem = await readPrivateKey(auth);
 
-      const scope = parseGitHubAppScope(input);
-      let scoped: Parameters<typeof recordGitHubAppCheck>[1] | undefined;
+      const parsed = await rejectIfInvalid(async () =>
+        parseGitHubAppScope(input),
+      );
+      const childScope = conn.parentId
+        ? childScopeOrReject({ fullAccess: input.fullAccess, appScope: parsed })
+        : null;
+      const scoped = (current: typeof auth): typeof auth =>
+        childScope
+          ? withScope(current, childScope)
+          : { ...withoutScope(current), ...parsed };
+      let checked: Parameters<typeof recordGitHubAppCheck>[1] | undefined;
       await mintUnderLock(
         conn,
         auth,
@@ -1903,9 +2590,7 @@ export function createConnectionsService(deps: {
           standDownOnKindChangeOnly: true,
         },
         async (fresh, freshAuth) => {
-          const { repositories, repositoryIds, permissions, ...rest } =
-            freshAuth;
-          const next = { ...rest, ...scope };
+          const next = scoped(freshAuth);
           const token = await rejectIfInvalid(() =>
             mintGitHubAppToken(deps.githubAppEngine, {
               connectionRef: `connection:${conn.id}:${conn.templateId}`,
@@ -1919,7 +2604,7 @@ export function createConnectionsService(deps: {
             freshAuth,
             token.accessToken,
           );
-          scoped = {
+          checked = {
             auth: next,
             privateKeyPem,
             accessToken: token.accessToken,
@@ -1927,7 +2612,7 @@ export function createConnectionsService(deps: {
           return renewedAuth(next, token.expiresAt);
         },
       );
-      if (scoped) await recordGitHubAppCheck(conn, scoped);
+      if (checked) await recordGitHubAppCheck(conn, checked);
 
       securityLog("info", "connection.scope_update", {
         category: "credential",
@@ -1937,22 +2622,28 @@ export function createConnectionsService(deps: {
         result: "success",
         detail: {
           templateId: conn.templateId,
-          repositories: scope.repositories?.length ?? 0,
-          repositoryIds: scope.repositoryIds?.length ?? 0,
-          permissions: Object.keys(scope.permissions ?? {}).length,
+          fullAccess: childScope !== null && "fullAccess" in childScope,
+          repositories: parsed.repositories?.length ?? 0,
+          repositoryIds: parsed.repositoryIds?.length ?? 0,
+          permissions: Object.keys(parsed.permissions ?? {}).length,
         },
       });
     },
 
     async probeGitHubUserTokenForConnection(input) {
-      const { conn, auth } = await requireGitHubUserTokenConnection(
+      const { conn } = await requireGitHubUserTokenConnection(
         input.connectionId,
       );
-      const accessToken = await readGitHubUserToken(auth);
+      const source = conn.parentId ? await parentOf(conn) : conn;
+      if (source.auth.kind !== "oauth") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED" });
+      }
+      const accessToken = await readGitHubUserToken(source.auth);
+      const apiBaseUrl = gitHubUserTokenApiBase(source.auth.host);
       return rejectIfInvalid(() =>
         deps.githubAppEngine.readUserInstallations({
-          id: `connection:${conn.id}:${conn.templateId}`,
-          apiBaseUrl: gitHubUserTokenApiBase(auth.host),
+          id: `connection:${source.id}:${source.templateId}`,
+          apiBaseUrl,
           accessToken,
         }),
       );
@@ -1960,6 +2651,7 @@ export function createConnectionsService(deps: {
 
     async updateGitHubUserTokenScope(input) {
       const { conn } = await requireGitHubUserTokenConnection(input.id);
+      refuseOnParent(conn);
       let scope: ReturnType<typeof parseGitHubUserTokenScope>;
       try {
         scope = parseGitHubUserTokenScope(input);
@@ -1970,48 +2662,17 @@ export function createConnectionsService(deps: {
         });
       }
 
-      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
-        const fresh = await deps.repo.get(conn.id, deps.ownerId);
-        if (!fresh || fresh.auth.kind !== "oauth") return;
-        const auth = fresh.auth;
-        const accessToken = await readGitHubUserToken(auth);
-        const scoped = scope
-          ? await rejectIfInvalid(async () =>
-              scopeGitHubUserToken(deps.githubAppEngine, {
-                connectionRef: `connection:${conn.id}:${conn.templateId}`,
-                auth,
-                scope,
-                clientSecret: await resolveOAuthClientSecret({
-                  conn: fresh,
-                  auth,
-                  templates: deps.templates,
-                  secretStore: deps.secretStore,
-                }),
-                accessToken,
-              }),
-            )
-          : undefined;
-
-        await deps.secretStore.putFields(
-          auth.accessTokenRef,
-          buildConnectionSdsFields(
-            fresh.contributions,
-            scoped?.accessToken ?? accessToken,
-          ),
+      if (conn.parentId) {
+        await rescopeSignInConnection(
+          conn,
+          childScopeOrReject({
+            fullAccess: input.fullAccess,
+            userTokenScope: scope,
+          }),
         );
-
-        const nextAuth: OAuthAuth = { ...withoutRefreshFailureMarker(auth) };
-        delete nextAuth.githubUserTokenScope;
-        if (scope) {
-          nextAuth.githubUserTokenScope = scoped?.accountLogin
-            ? { ...scope, targetLogin: scoped.accountLogin }
-            : scope;
-        }
-        if (scoped?.expiresAt !== undefined) {
-          nextAuth.expiresAt = scoped.expiresAt;
-        }
-        await deps.repo.updateAuth(conn.id, nextAuth);
-      });
+      } else {
+        await rescopeLegacySignIn(conn, scope);
+      }
 
       securityLog("info", "connection.scope_update", {
         category: "credential",
@@ -2274,6 +2935,21 @@ const SHARE_AGENT_INPUT_KEY = "sharedKbAgentId";
 function rememberedInput(conn: Connection, key: string): string | null {
   const value = conn.inputs[key];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+const SCOPE_INPUT_KEYS = [
+  "repositories",
+  "repositoryIds",
+  "permissions",
+  "fullAccess",
+];
+
+function withoutScopeInputs(
+  inputs: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(inputs).filter(([k]) => !SCOPE_INPUT_KEYS.includes(k)),
+  );
 }
 
 function stripSecretsFromInputs(input: {

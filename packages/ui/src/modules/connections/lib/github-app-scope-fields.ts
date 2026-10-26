@@ -1,3 +1,5 @@
+import type { FullAccessChoice, GithubAccess } from "./github-access.js";
+
 const PERMISSION_LEVELS = ["read", "write", "admin"] as const;
 export type PermissionLevel = (typeof PERMISSION_LEVELS)[number];
 
@@ -54,4 +56,37 @@ export function canProbe(
   const needed = ["appId", "installationId", "privateKey"];
   if (hostRequired) needed.push("host");
   return needed.every((k) => (fields[k] ?? "").trim().length > 0);
+}
+
+export const NO_APP_SCOPE =
+  "Choose at least one repository or permission, or pick full access.";
+
+export interface AppScopeChoice {
+  repositories?: string;
+  repositoryIds?: string;
+  permissions?: string;
+}
+
+export function appScopeChoice(selection: {
+  access: GithubAccess;
+  repositories: readonly string[];
+  repositoryIds: readonly number[];
+  permissions: Record<string, PermissionLevel>;
+}): FullAccessChoice | AppScopeChoice | null {
+  if (selection.access === "full") return { fullAccess: true };
+  const repositories = selection.repositories.join(" ");
+  const repositoryIds = writeRepositoryIds(selection.repositoryIds);
+  const permissions = writePermissions(selection.permissions);
+  if (!repositories && !repositoryIds && !permissions) return null;
+  return {
+    ...(repositories ? { repositories } : {}),
+    ...(repositoryIds ? { repositoryIds } : {}),
+    ...(permissions ? { permissions } : {}),
+  };
+}
+
+export function appScopeFieldsChosen(fields: Record<string, string>): boolean {
+  return ["repositories", "repositoryIds", "permissions"].some(
+    (name) => (fields[name] ?? "").trim().length > 0,
+  );
 }

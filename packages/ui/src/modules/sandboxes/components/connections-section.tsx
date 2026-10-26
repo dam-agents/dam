@@ -68,13 +68,20 @@ export function ConnectionsSection({
       ),
     [agentConnectionsQ.data],
   );
+  const grantedNow = () =>
+    agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [];
+  const revokeGrants = (ids: readonly string[]) =>
+    setConnections.mutate({
+      agentId,
+      connectionIds: grantedNow().filter((x) => !ids.includes(x)),
+    });
   const toggleGrant = (id: string, on: boolean) => {
-    const current =
-      agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [];
-    const next = on
-      ? [...new Set([...current, id])]
-      : current.filter((x) => x !== id);
-    setConnections.mutate({ agentId, connectionIds: next });
+    if (on)
+      setConnections.mutate({
+        agentId,
+        connectionIds: [...new Set([...grantedNow(), id])],
+      });
+    else revokeGrants([id]);
   };
 
   const granted = useMemo(
@@ -142,7 +149,11 @@ export function ConnectionsSection({
             navigateToSandboxHome(agentId, "automations");
           }}
           onClose={() => setCatalogOpen(false)}
-          sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
+          sandbox={{
+            grantedIds,
+            onToggleGrant: toggleGrant,
+            onRevoke: revokeGrants,
+          }}
           sharing={shareConfirm}
           satelliteGrant={satellites.grantControls}
           oauthReturnView={oauthReturnView}

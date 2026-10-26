@@ -202,6 +202,7 @@ const githubAppCreateInput = z.object({
   repositories: z.string().optional(),
   permissions: z.string().optional(),
   repositoryIds: z.string().optional(),
+  fullAccess: z.boolean().optional(),
 });
 
 export const connectionProbeGitHubAppInputSchema = z.object({
@@ -221,6 +222,17 @@ export const connectionUpdateGitHubAppScopeInputSchema = z.object({
   repositories: z.string().optional(),
   repositoryIds: z.string().optional(),
   permissions: z.string().optional(),
+  fullAccess: z.boolean().optional(),
+});
+
+export const connectionCreateFromParentInputSchema = z.object({
+  parentId: z.string().min(1),
+  name: connectionNameSchema,
+  fullAccess: z.boolean().optional(),
+  targetId: z.number().int().positive().optional(),
+  repositories: z.string().optional(),
+  repositoryIds: z.string().optional(),
+  permissions: z.string().optional(),
 });
 
 export const connectionProbeGitHubUserTokenInputSchema = z.object({
@@ -232,6 +244,7 @@ export const connectionUpdateGitHubUserTokenScopeInputSchema = z.object({
   targetId: z.number().int().positive().optional(),
   repositoryIds: z.string().optional(),
   permissions: z.string().optional(),
+  fullAccess: z.boolean().optional(),
 });
 
 const noneCreateInput = z.object({

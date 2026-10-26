@@ -14,6 +14,7 @@ import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
 import { createXactLock, type XactLock } from "../../../core/xact-lock.js";
 import { createConnectionsRepository } from "../infrastructure/connections-repository.js";
+import { withoutParentScope } from "../domain/github-parent.js";
 import {
   mintUnderLock,
   renewedAuth,
@@ -72,6 +73,7 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
       const due = await createConnectionsRepository(deps.db).listDue(skewSec);
       for (const conn of due) {
         if (conn.auth.kind === "oauth" && !conn.auth.refreshTokenRef) continue;
+        if (conn.auth.kind === "github-app" && conn.isParent) continue;
         const state =
           "refreshBackoff" in conn.auth ? conn.auth.refreshBackoff : undefined;
         if (state && startedAt < state.nextAttempt * 1000) {
@@ -267,8 +269,9 @@ async function refreshOne(
         githubAppEngine: deps.githubAppEngine,
         templates: deps.templates,
         secretStore: deps.secretStore,
+        children: createConnectionsRepository(deps.db),
       });
-      return renewedAuth(freshAuth, next.expiresAt);
+      return renewedAuth(withoutParentScope(fresh, freshAuth), next.expiresAt);
     },
   );
 }

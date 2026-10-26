@@ -1,15 +1,18 @@
 import { Add } from "@carbon/icons-react";
 import { ConnectApplications } from "@carbon/pictograms-react";
+import type { ConnectionView } from "api-server-api";
 import { useState } from "react";
 
 import { AddRow, ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
+import { emitToast } from "@/lib/toast";
 
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
 import { useRemoveSatelliteWithConfirm } from "../../satellites/hooks/use-remove-satellite.js";
 import { useAppConnections } from "../api/queries.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
+import { ConnectionCreateChildDialog } from "../components/connection-create-child-dialog.js";
 import { ConnectionGroup } from "../components/connection-group.js";
 import { ConnectionMaintenanceDialog } from "../components/connection-update-credential-dialog.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
@@ -23,6 +26,7 @@ export function ConnectionsView() {
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [childOf, setChildOf] = useState<ConnectionView | null>(null);
 
   const { populated: groups, templateById } = useCatalogGroups(
     connectionsQ.data ?? [],
@@ -69,6 +73,7 @@ export function ConnectionsView() {
             onDelete={(id, name) => void confirmAndDelete(id, name)}
             deletingId={deletingId}
             maintenance={maintenance.rowActions}
+            onNewChild={setChildOf}
           />
         ))}
         {satellites.length > 0 && (
@@ -85,6 +90,17 @@ export function ConnectionsView() {
       )}
 
       <ConnectionMaintenanceDialog maintenance={maintenance} />
+
+      {childOf && (
+        <ConnectionCreateChildDialog
+          parent={childOf}
+          onClose={() => setChildOf(null)}
+          onCreated={() => {
+            setChildOf(null);
+            emitToast({ kind: "success", message: "Connection created." });
+          }}
+        />
+      )}
     </div>
   );
 }

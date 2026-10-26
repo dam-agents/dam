@@ -68,12 +68,26 @@ export async function issueSecretRequest(
         `an agent may ask only for a secret that goes to the hosts ${template.name} presets; ask your owner to connect it in Settings → Connections`,
       );
     }
+    if (
+      agentId &&
+      input.connection.authKind === "github-app" &&
+      input.connection.fullAccess
+    ) {
+      throw badRequest(
+        "only your owner can give a connection full access to a GitHub App installation; ask for repositories and permissions instead",
+      );
+    }
   } else {
     const conn = await deps.repo.get(input.connectionId, deps.ownerId);
     if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
     if (!isSecretRequestAuthKind(conn.auth.kind)) {
       throw badRequest(
         `a ${conn.auth.kind} connection takes no secret on this page`,
+      );
+    }
+    if (conn.parentId) {
+      throw badRequest(
+        `'${conn.name}' mints its token with the private key of the GitHub App installation it was made from; replace the key on the installation`,
       );
     }
     if (

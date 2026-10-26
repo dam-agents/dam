@@ -1,19 +1,20 @@
 import { Add } from "@carbon/icons-react";
-import type { ConnectionTemplateView } from "api-server-api";
-import type { ConnectionView } from "api-server-api";
+import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
 import { SlackAccountExplainer } from "@/components/channel-connection-explainer";
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
+import { isGrantable } from "../lib/connection-hierarchy.js";
 import type { RowMaintenanceActions } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
-import { ConnectionRowCard } from "./connection-row-card.js";
+import { ConnectionRows } from "./connection-rows.js";
 
 export interface SandboxGrantControls {
   grantedIds: ReadonlySet<string>;
   onToggleGrant: (id: string, on: boolean) => void;
+  onRevoke: (ids: readonly string[]) => void;
 }
 
 interface Props {
@@ -28,6 +29,7 @@ interface Props {
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
   onGoToChannels?: () => void;
+  onNewChild?: (parent: ConnectionView) => void;
 }
 
 export function CatalogProviderCard({
@@ -40,6 +42,7 @@ export function CatalogProviderCard({
   deletingId,
   maintenance,
   onGoToChannels,
+  onNewChild,
 }: Props) {
   const { provider, templates, connections } = group;
 
@@ -84,23 +87,25 @@ export function CatalogProviderCard({
       </header>
       {connections.length > 0 ? (
         <div className="flex flex-col gap-3 p-4">
-          {connections.map((c) => (
-            <ConnectionRowCard
-              key={c.id}
-              connection={c}
-              template={templateById.get(c.templateId)}
-              grant={
-                sandbox && {
-                  granted: sandbox.grantedIds.has(c.id),
-                  onToggle: (on) => sandbox.onToggleGrant(c.id, on),
-                  blockedReason: grantBlockedReason?.(c),
-                }
-              }
-              onDelete={() => onDelete(c.id, c.name)}
-              deleting={deletingId === c.id}
-              maintenance={maintenance?.(c)}
-            />
-          ))}
+          <ConnectionRows
+            connections={connections}
+            templateById={templateById}
+            grant={
+              sandbox &&
+              ((c) =>
+                isGrantable(c)
+                  ? {
+                      granted: sandbox.grantedIds.has(c.id),
+                      onToggle: (on) => sandbox.onToggleGrant(c.id, on),
+                      blockedReason: grantBlockedReason?.(c),
+                    }
+                  : undefined)
+            }
+            onDelete={onDelete}
+            deletingId={deletingId}
+            maintenance={maintenance}
+            onNewChild={onNewChild}
+          />
         </div>
       ) : (
         <div className="flex flex-col items-start gap-3 px-4 py-4">

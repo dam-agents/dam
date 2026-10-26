@@ -311,21 +311,36 @@ Creating one, rotating its credential, and removing it are `dam connection conne
 `dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
 Without `--yes` it names the agents that would lose the connection.
 
-A grant gives the agent everything the connection reaches, so limit a GitHub connection before you grant it.
-This works for a GitHub sign-in (`github`, `github-enterprise`) and for a GitHub App connection:
+A GitHub sign-in (`github`, `github-enterprise`) or a GitHub App installation (`github-app`, `github-enterprise-app`) holds the credential, and no agent is ever granted one.
+Agents are granted the connections made from it, each with its own scope: an account, repositories and permissions.
+`dam connection list` shows each sign-in or installation with the connections made from it underneath; in `--json` it has `"isParent": true`, and each connection made from it has a `parentId`.
+A sign-in and its first connection often share a name, and that name means the connection, except after `--from`: elsewhere, name the sign-in or installation by its id.
+
+A grant gives the agent everything the connection reaches, so choose what a GitHub connection reaches when you make it:
 
 ```sh
 dam connection connect github --account acme --repositories api,web --permissions contents:read,pull_requests:write
+dam connection connect github-app --app-id 123456 --installation-id 987654 --repositories api
+dam connection connect --from github --account acme --repositories docs --name github-docs
 dam connection scope github --json
 dam connection scope github --repositories api
-dam connection scope github --clear
 ```
 
+Without a scope, `dam connection connect github` keeps the sign-in alone and shows what it reaches; then make its connection with `--from`.
+`dam connection connect --from <sign-in-id>` makes another connection next to those the sign-in or installation has, instead of replacing one.
+`--full-access` gives a connection everything its sign-in or installation reaches: every account, repository and permission.
+Pass it only when the user asks for that, and tell them what it reaches.
+`dam connection list` marks such a connection `FULL ACCESS`, and in `--json` its `scope` is `{ "restricted": false, "fullAccess": true }`.
+
 `dam connection scope <connection>` with no flags changes nothing: it shows the current scope and, under `available`, the accounts, repositories and permissions you can choose from.
-A flag you leave out keeps that part of the scope; `--clear` removes the limit.
-A narrowed sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.
-`dam connection list --json` shows each GitHub connection's `scope`: `{ "restricted": false }` means it reaches everything the sign-in or installation can.
+A flag you leave out keeps that part of the scope.
+A connection made from a sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.
 A GitHub App is checked again with a token minted for the new scope: after a change with `--repositories` or `--permissions`, read the `check` in the `--json` output.
+
+`dam connection disconnect <sign-in-id>` removes the sign-in or installation and every connection made from it.
+Without `--yes` it names each of those connections and the agents that lose it: show the user that list before you pass `--yes`.
+`dam connection reauth <connection>` signs in again for the connection's sign-in, which renews every connection made from it.
+An installation's private key is replaced with `dam connection update <installation-id>`.
 
 When a DAM agent's calls with a connection fail, for example GitHub answers `401 Bad credentials`, check the stored credential before you look elsewhere:
 

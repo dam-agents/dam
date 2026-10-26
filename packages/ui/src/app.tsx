@@ -11,6 +11,7 @@ import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { SignInFollowUp } from "./modules/connections/components/sign-in-follow-up.js";
 import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
 import { useUnifiedRightToolbar } from "./modules/features/hooks/use-unified-right-toolbar.js";
@@ -205,6 +206,7 @@ function MainApp() {
         </div>
         {kitBrowserOpen && <BrowseKitsModal />}
         <MobileNavDrawer />
+        <SignInFollowUp />
         <DialogOverlay />
         <ConnectionBanner />
       </>
@@ -263,6 +265,7 @@ function MainApp() {
       {kitBrowserOpen && <BrowseKitsModal />}
       {classic && <ClassicPagePanels />}
       <MobileNavDrawer />
+      <SignInFollowUp />
       <DialogOverlay />
       <ConnectionBanner />
     </div>

@@ -6,6 +6,7 @@ import {
   type SecretRequestView,
 } from "api-server-api";
 import { type FormEvent, type ReactNode, useState } from "react";
+import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -21,9 +22,15 @@ import {
   credentialCheckDetails,
   destinationDetail,
   destinationLabel,
+  grantFailedCopy,
   heldCheckCopy,
   readSecretRequestId,
+  savesParentOnly,
   secretRequestErrorCopy,
+  type SecretRequestReach,
+  secretRequestReach,
+  secretRequestSubjectLabel,
+  secretRequestUsedBy,
 } from "../lib/secret-request.js";
 
 const requestId = readSecretRequestId(window.location.search);
@@ -51,7 +58,13 @@ export function ConnectionSecretView() {
     );
   }
   if (done?.kind === "saved") {
-    return <SavedPage check={done.check} granted={done.granted} />;
+    return (
+      <SavedPage
+        check={done.check}
+        granted={done.granted}
+        grantFailed={done.grantFailed}
+      />
+    );
   }
   if (done?.kind === "cancelled") {
     return (
@@ -73,18 +86,22 @@ export function ConnectionSecretView() {
 }
 
 type Outcome =
-  | { kind: "saved"; check?: CredentialCheck; granted?: boolean }
+  | {
+      kind: "saved";
+      check?: CredentialCheck;
+      granted?: boolean;
+      grantFailed: string;
+    }
   | { kind: "cancelled" };
 
-function GrantFailed({ granted }: { granted?: boolean }) {
+function GrantFailed({ granted, copy }: { granted?: boolean; copy: string }) {
   if (granted !== false) return null;
   return (
     <span
       className="mb-3 block text-warning-fg"
       data-testid="secret-request-not-granted"
     >
-      The agent that asked for it did not get it. Grant the connection in the
-      agent's Connections section.
+      {copy}
     </span>
   );
 }
@@ -92,9 +109,11 @@ function GrantFailed({ granted }: { granted?: boolean }) {
 function SavedPage({
   check,
   granted,
+  grantFailed,
 }: {
   check?: CredentialCheck;
   granted?: boolean;
+  grantFailed: string;
 }) {
   if (check && check.status !== "passed") {
     return (
@@ -102,7 +121,7 @@ function SavedPage({
         title="Secret saved without a passing check"
         icon={<WarningAlt size={24} className="text-warning-fg" />}
       >
-        <GrantFailed granted={granted} />
+        <GrantFailed granted={granted} copy={grantFailed} />
         {check.reason ? `${check.reason}. ` : ""}The command that opened this
         page reports it too. Replace the secret once you have a working one.
       </Terminal>
@@ -136,7 +155,7 @@ function SavedPage({
           ))}
         </span>
       )}
-      <GrantFailed granted={granted} />
+      <GrantFailed granted={granted} copy={grantFailed} />
       You can close this page. The command that opened it reports the result.
     </Terminal>
   );
@@ -175,6 +194,7 @@ function SecretForm({
           }
           onDone({
             kind: "saved",
+            grantFailed: grantFailedCopy(view),
             ...(result.check ? { check: result.check } : {}),
             ...(result.granted !== undefined
               ? { granted: result.granted }
@@ -323,7 +343,7 @@ function HeldCheck({ check }: { check: CredentialCheck }) {
 
 function Summary({ view }: { view: SecretRequestView }) {
   const rows: [string, ReactNode][] = [
-    ["Connection", view.connectionName],
+    [secretRequestSubjectLabel(view), view.connectionName],
     ["Type", view.templateName],
     [
       view.destinations.length === 1 ? "Sent to" : "Sent to these hosts",
@@ -358,30 +378,20 @@ function Summary({ view }: { view: SecretRequestView }) {
       ),
     ]);
   }
+  const reach = secretRequestReach(view);
+  if (reach) rows.push(["Reaches", <ReachValue key="reach" reach={reach} />]);
   if (view.envNames.length > 0) {
     rows.push([
       "Agents see",
       <span key="env">
+        {savesParentOnly(view) && "Through the connections made from it: "}
         <span className="font-mono">{view.envNames.join(", ")}</span>, holding a
         placeholder, never the secret
       </span>,
     ]);
   }
-  if (view.action === "update") {
-    rows.push([
-      "Used by",
-      view.grantedAgents.length > 0
-        ? view.grantedAgents.map((a) => a.name).join(", ")
-        : "no agent yet",
-    ]);
-  } else {
-    rows.push([
-      "Used by",
-      view.requestedBy
-        ? `${view.requestedBy.name}, once you save`
-        : "no agent until you grant it",
-    ]);
-  }
+  const usedBy = secretRequestUsedBy(view);
+  rows.push([usedBy.label, usedBy.text]);
   return (
     <dl
       className="mt-6 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-3 text-sm"
@@ -395,6 +405,28 @@ function Summary({ view }: { view: SecretRequestView }) {
       ))}
     </dl>
   );
+}
+
+function ReachValue({ reach }: { reach: SecretRequestReach }) {
+  return match(reach)
+    .with({ kind: "installation-only" }, () => (
+      <span data-testid="secret-request-reach">
+        The installation only. Before an agent can use it, make a connection
+        from it on the Connections page and choose what that connection reaches.
+      </span>
+    ))
+    .with({ kind: "full-access" }, ({ text }) => (
+      <span
+        className="font-medium text-danger"
+        data-testid="secret-request-reach"
+      >
+        {text}
+      </span>
+    ))
+    .with({ kind: "scope" }, ({ text }) => (
+      <span data-testid="secret-request-reach">{text}</span>
+    ))
+    .exhaustive();
 }
 
 function Page({

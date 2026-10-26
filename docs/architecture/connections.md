@@ -121,16 +121,7 @@ The issuer URL is optional — when omitted it is discovered from the API host's
 The same background loop that refreshes OAuth tokens re-mints it before expiry using the stored client secret.
 One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire.
 
-A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret.
-The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token at create and again before each expiry.
-When GitHub refuses the mint or the installation read, the error names the input at fault — an App ID with no app behind it, a private key of another app, an installation the app does not have — from GitHub's status and message, so the user knows which value to fix.
-The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token.
-
-A **GitHub sign-in** made through a GitHub App holds a user token rather than an installation token, and narrows the same way: to one account the app is installed on, optionally further to chosen repositories and permissions there.
-The user token and its refresh token stay at rest; what injects is a scoped token GitHub derives from the user token, authorized by the app's client secret, and re-derived after every refresh, at re-consent, and when the subset is edited.
-GitHub rotates the refresh token on each use, so the new one is stored before the derivation — a subset GitHub refuses parks the Connection as expired without costing it the ability to renew, and never falls back to injecting the unscoped token.
-A narrowed token still never does more than the user could.
-The subset is chosen after sign-in, against the installations and repositories the user token itself reaches, since before consent there is nothing to read.
+A **GitHub App** installation and a **GitHub sign-in** made through a GitHub App are *parents*: they hold the credential and no Agent holds them; an Agent holds a Connection made from one, with its own scope, or full access named on purpose, and its own token ([github-connections](github-connections.md)).
 
 A Connection that acts as a person rather than as the Agent records **whose account** it acts as, so the product can name that person wherever the Connection is listed.
 The platform asks the provider with the Connection's own credential (Slack, GitHub and the Google services today) when the credential first works: at the OAuth callback, at create for a token, and again on every re-consent or rotation, since a new credential may belong to someone else.
@@ -142,6 +133,7 @@ Connect and disconnect raise domain events, recorded as [Activity Events](usage-
 A connect fires wherever the Connection actually reaches its connected state — at creation for the modes that complete synchronously, and at the authorization callback for OAuth, which is the only mode that cannot finish in one step.
 Emitting at both points would double-count OAuth; emitting only at the callback leaves every other mode invisible.
 A connection abandoned before that state raises neither event, so removals cannot outnumber connects.
+A parent raises neither event either: the Connections made from it do, when made and when removed, also when they go with their parent.
 The event names the provider, not just the grant, because the Connection record is destroyed on disconnect and a grant identifier alone would die with it.
 
 ### Contribution
@@ -197,16 +189,10 @@ Platform-written values already carry an address, so the agent's own clients are
 A Connection with no credential of the agent's own is reachable only through its path prefix.
 Only such an agent offers the [browser panel](browser-panel.md), whose user browses through the agent's gateway.
 
-**Several GitHub accounts.** `gh` takes a host rather than a URL and reads one `GH_TOKEN` ahead of its own config, so two GitHub Connections on one host cannot both hand the Agent that env.
-When an Agent holds two or more, the platform stops contributing `GH_TOKEN` for them and writes gh's own multi-account hosts file instead: one account per Connection, named after the Connection, each under its token placeholder.
-The Agent switches with `gh auth switch`, and `git` follows the active account through gh's credential helper, so both identities work from one shell.
-The account active on delivery is the grant the user marked **preferred** on the Agent — chosen from the Agent's connections panel, at most one per group: a GitHub host is one group, and an Agent's storage Connections form another (below) — or, absent a choice, the earliest grant, which is the account the Agent already acted as.
+**Default accounts.** Where an Agent holds several Connections of one group — a GitHub host is one group, and an Agent's storage Connections form another (below) — the account active on delivery is the grant the user marked **preferred** on the Agent, chosen from the Agent's connections panel, at most one per group, or, absent a choice, the earliest grant, which is the account the Agent already acted as.
 Every state push re-asserts that default, so a switch the Agent made itself lasts until the next push.
 Ordering, the default and the account names are one rule for every kind of Connection with a default account; a kind says only how its Connections group and how a name is spelled for its tool, and the connections panel offers every group's choice in one callout.
-The commit identity git uses follows that default too: the active account's name and email when it has one — an account that signed in with a token or as an App has none — and switching with gh changes which account authenticates, not whom the commits name.
-Because the env is gone, the platform states gh's availability explicitly in that case, and the runtime's own GitHub client reads the active token from the same file.
-The Agent learns all of this from a skill every agent image ships, `platform-github`: how to list its accounts, how to switch or act as one for a single command, and what the gateway's refusal means.
-A GitHub Enterprise Server is a separate case: `gh` reads `GH_ENTERPRISE_TOKEN` for such a host and never `GH_TOKEN`, which it reserves for github.com and `ghe.com` tenants, so a Connection to an Enterprise Server hands the Agent `GH_ENTERPRISE_TOKEN` and never competes with a github.com account for one env.
+How two GitHub accounts share one host, through gh's own hosts file, is on [github-connections](github-connections.md#several-github-accounts).
 
 Two limits follow.
 First, an address exists only where the platform writes one or the Agent can send one.
@@ -438,7 +424,7 @@ They flow independently.
 | ------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Postgres `connections`    | Connection records                                                               | The unified model's own table.                                                                                                                                              |
 | Postgres `egress_rules`   | `egress-allow`, `egress-inject` and `egress-sign` Contributions joined per grant | Existing table; same as today. All three kinds produce the same allow row; `egress-inject`'s credential and `egress-sign`'s signing step ride a separate gateway-side rail. |
-| K8s Secret per Connection | Auth credentials (refresh tokens, api-keys, HMAC key pairs)                      | Owner-label-scoped; mounted into the paired gateway pod, never into the machine.                                                                                            |
+| K8s Secret per Connection | Auth credentials (refresh tokens, api-keys, HMAC key pairs)                      | Owner-label-scoped; mounted into the paired gateway pod, never into the machine. A parent's holds its credential; a Connection made from it holds only its own token.       |
 
 ## Invariants
 

@@ -117,6 +117,8 @@ export function serviceHarness(opts: {
       },
       get: async (id) => rows.get(id) ?? null,
       listByOwner: async () => [...rows.values()],
+      listChildren: async (parentId) =>
+        [...rows.values()].filter((c) => c.parentId === parentId),
       listByOwnerOldestFirst: async () => [...rows.values()],
       updateContributions: async (id, contributions) =>
         void rows.set(id, { ...rows.get(id)!, contributions }),
