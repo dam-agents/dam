@@ -112,6 +112,7 @@ export function ConfigSidePanel({
                 }}
               />
               <div className="mt-8">
+                <SectionHeading label="Channels" />
                 <SandboxChannelsSection agentId={agentId} compact />
               </div>
             </>
