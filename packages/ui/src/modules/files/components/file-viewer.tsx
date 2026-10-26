@@ -267,7 +267,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             )}
           </>
         )}
-        <SidePanelCloseButton corner="-mr-4" />
+        <SidePanelCloseButton />
       </div>
       {platformInstructions && (
         <p className="px-4 py-2 border-b border-border text-xs text-muted-foreground">

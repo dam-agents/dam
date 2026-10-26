@@ -19,7 +19,6 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useStore } from "../../../store.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { DirContents } from "./dir-contents.js";
 import {
@@ -44,7 +43,6 @@ export function FilesPanel({
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
   const controller = useFilesPanelController({ open, onOpenFile });
-  const newLayout = useNewLayout();
   const showHiddenFiles = useStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
   const hiddenFilesLabel = showHiddenFiles
@@ -102,8 +100,7 @@ export function FilesPanel({
       onToggle={onToggle}
       headerRight={headerActions}
       className={className}
-      // UNIT_BOUNDARY_DESCRIPTION: under JanUI the Files tab is the whole of the panel, so the rule that divided it from the section above it would draw a line nothing else has.
-      headerClassName={newLayout ? undefined : "border-t border-border"}
+      headerClassName="border-t border-border"
       style={style}
       ref={ref}
     >

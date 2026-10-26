@@ -101,7 +101,6 @@ export function SidebarAgents({
               })
         }
         onOpenPeople={navigate(() => navigateToSandboxHome(agent.id, "people"))}
-        actionCount={hasChannelActions(available) ? 4 : 3}
         filtered={agentFilters.has(agent.id)}
         filter={
           <ActivityFilterMenu
@@ -113,14 +112,12 @@ export function SidebarAgents({
             stopPropagation
           />
         }
+        actionCount={hasChannelActions(available) ? 4 : 3}
         actions={
           <SidebarAgentActions
-            agent={agent}
-            current={current && !sessionOpen}
             channels={available}
             onNewSession={navigate(() => startSession(agent.id))}
             onConfigure={navigate(() => navigateToSandboxHome(agent.id))}
-            onNavigate={navigate(() => undefined)}
             onBind={setBinding}
           />
         }

@@ -22,22 +22,13 @@ import { keepFirstSessionPages } from "../../sessions/api/queries.js";
 
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
-const SIDEBAR_V2_PINNED_STORAGE_KEY = "platform-sidebar-v2-pinned";
 const SIDEBAR_SESSION_FILTER_STORAGE_KEY = "platform-session-filter";
-
-export type SidebarGroupBy = "agents" | "all";
 
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
-  sidebarGroupBy: SidebarGroupBy;
-  setSidebarGroupBy: (groupBy: SidebarGroupBy) => void;
-  sidebarTreeToggled: ReadonlyMap<string, boolean>;
-  setSidebarTreeToggled: (toggled: ReadonlyMap<string, boolean>) => void;
-  sidebarTreeOpenAgent: string | null;
-  setSidebarTreeOpenAgent: (agentId: string | null) => void;
   sidebarShowHibernating: boolean;
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgentOpen: Readonly<Record<string, boolean>>;
@@ -46,8 +37,6 @@ export interface SidebarSlice {
   setSidebarWakeDecided: (agentId: string, decided: boolean) => void;
   mobileNavOpen: boolean;
   setMobileNavOpen: (open: boolean) => void;
-  sidebarPinned: boolean;
-  setSidebarPinned: (pinned: boolean) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -91,14 +80,6 @@ export const createSidebarSlice: StateCreator<
     writeStoredSessionFilter(filters);
     set({ sidebarActivityFilters: filters });
   },
-  sidebarGroupBy: "agents",
-  setSidebarGroupBy: (groupBy) => set({ sidebarGroupBy: groupBy }),
-  sidebarTreeToggled: new Map(),
-  setSidebarTreeToggled: (toggled) => set({ sidebarTreeToggled: toggled }),
-  sidebarTreeOpenAgent: null,
-  setSidebarTreeOpenAgent: (agentId) => {
-    if (agentId) set({ sidebarTreeOpenAgent: agentId });
-  },
   sidebarShowHibernating: readPersistedFlag(
     SIDEBAR_HIBERNATING_STORAGE_KEY,
     false,
@@ -125,9 +106,4 @@ export const createSidebarSlice: StateCreator<
     }),
   mobileNavOpen: false,
   setMobileNavOpen: (open) => set({ mobileNavOpen: open }),
-  sidebarPinned: readPersistedFlag(SIDEBAR_V2_PINNED_STORAGE_KEY, true),
-  setSidebarPinned: (pinned) => {
-    writePersistedFlag(SIDEBAR_V2_PINNED_STORAGE_KEY, pinned);
-    set({ sidebarPinned: pinned });
-  },
 });

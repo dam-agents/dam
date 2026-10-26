@@ -204,7 +204,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
           </>
         )}
         <FullPageButton fullPage={fullPage} onToggle={toggleFullPage} />
-        <SidePanelCloseButton corner="-mr-4" />
+        <SidePanelCloseButton />
       </div>
 
       <div className="min-h-0 flex-1">

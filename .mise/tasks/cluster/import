@@ -2,6 +2,7 @@
 #MISE description="Import image tars, or OCI layouts, into the cluster's k3s"
 #MISE hide=true
 #USAGE flag "--environment <name>" help="Import into this agent's Environment of that name"
+#USAGE flag "--name <name>" help="Import for this install (default: this worktree's)"
 #USAGE arg "<image>..." var=#true help="An image tar, or the OCI layout image:resolve import-path names for an image built here"
 set -euo pipefail
 eval "images=($usage_image)"

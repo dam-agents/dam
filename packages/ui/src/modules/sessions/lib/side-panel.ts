@@ -1,16 +1,9 @@
-import type { SandboxSection } from "../../platform/lib/routes.js";
-
 export type SidePanelTab =
   | "files"
   | "changes"
   | "artifacts"
   | "browser"
   | "processes"
-  | "environments"
-  | "models"
-  | "services"
-  | "skills"
-  | "automations"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -39,8 +32,6 @@ export type SidePanelAvailability = {
   canOpenBrowser: boolean;
   changes: boolean;
   processesEnabled: boolean;
-  environments: boolean;
-  configuration: boolean;
   gettingStarted: boolean;
 };
 
@@ -54,11 +45,6 @@ export function hiddenSidePanelTabs(
     delegation: available.agent,
     browser: available.agent && available.canOpenBrowser,
     processes: available.agent && available.processesEnabled,
-    environments: available.agent && available.environments,
-    models: available.agent && available.configuration,
-    services: available.agent && available.configuration,
-    skills: available.agent && available.configuration,
-    automations: available.agent && available.configuration,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
@@ -94,58 +80,6 @@ export function visibleSidePanelTab(
       return tab;
   }
 }
-
-export type ConfigurationTab = Extract<
-  SidePanelTab,
-  "models" | "services" | "skills" | "automations" | "environments"
->;
-
-/* UNIT_BOUNDARY_DESCRIPTION: each of the page's sections opens the tile that
- * holds it, so an address the page had still lands on what it named: General,
- * Chat forms and Usage open Models, which owns the providers and the spending;
- * the channels and the schedules share Automations. */
-const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
-  setup: "models",
-  people: "models",
-  providers: "models",
-  connections: "services",
-  network: "services",
-  environment: "services",
-  "chat-forms": "models",
-  channels: "automations",
-  skills: "skills",
-  schedules: "automations",
-  environments: "environments",
-  usage: "models",
-};
-
-export function configTabForSection(section: SandboxSection): ConfigurationTab {
-  return SECTION_TAB[section];
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: which panel a configuration address opens, or
- * none: only the install's flag turns the page's own address into the panel
- * that holds its section, so a browser that last stored the experiment on
- * never redirects a page the install says is off. People arrived after the
- * panels did and no panel renders it, so under the flag that one section keeps
- * the page of its own rather than bouncing to a panel that would drop it.
- */
-export function configRedirectTab(
-  flag: boolean,
-  section: SandboxSection,
-): ConfigurationTab | null {
-  if (section === "people") return null;
-  return flag ? configTabForSection(section) : null;
-}
-
-export const CONFIGURATION_TABS: readonly ConfigurationTab[] = [
-  "models",
-  "services",
-  "skills",
-  "automations",
-  "environments",
-];
 
 export type SidePanelSelection =
   | { kind: "collapse" }

@@ -2,6 +2,7 @@
 #MISE description="Forward an Environment's backchannel port to this agent, so its browser opens the install there"
 #MISE raw=true
 #USAGE flag "--environment <name>" required=#true help="This agent's Environment that cluster:install --backchannel installed into"
+#USAGE flag "--name <name>" help="Not used: an Environment holds one install, the default one"
 #USAGE flag "--port <port>" default="4444" help="The backchannel's port, the same on both ends: it is part of every address the browser sends"
 # Runs until stopped, so start it in the background. The forward is an SSH
 # link of its own, apart from the cluster tasks' control master, so it stays

@@ -7,8 +7,6 @@ export const featureIdSchema = z.enum([
   "processes",
   "chat-forms",
   "custom-avatars",
-  "new-layout",
-  "unified-right-toolbar",
   "environments",
 ]);
 

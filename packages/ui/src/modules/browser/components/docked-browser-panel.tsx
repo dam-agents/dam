@@ -172,7 +172,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             Clear browser data
           </DropdownMenuItem>
         </RowActionsMenu>
-        <SidePanelCloseButton corner="-mr-3" />
+        <SidePanelCloseButton />
         {stream.page.loading && (
           <span
             aria-hidden

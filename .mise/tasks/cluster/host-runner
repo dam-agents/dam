@@ -8,6 +8,14 @@
 # port of its own, and the machines the owner's agents live in.
 set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+# The runner serves this Mac's lima VM, whose pods reach the Mac's loopback at
+# 192.168.5.2. A sandbox cluster runs its runners in the cluster, and an
+# Environment's node reaches nothing on this Mac: cluster:install picks the
+# runner pods for both, and nothing here applies.
+if [ "$CLUSTER_TARGET" != lima ]; then
+  echo "FATAL: the host runner serves a lima cluster, not a $CLUSTER_TARGET one; there is nothing for it to serve. cluster:install runs its agents on runner pods there." >&2
+  exit 1
+fi
 . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
 B="$HOST_RUNNER_BASE"
 R="$HOST_RUNNER_DIR"

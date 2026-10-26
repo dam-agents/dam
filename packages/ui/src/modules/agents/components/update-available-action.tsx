@@ -6,33 +6,10 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import { useReleaseNotesUrl } from "../hooks/use-release-notes-url.js";
 import { ReleaseNotesLink } from "./release-notes-link.js";
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the mark that an Agent has a newer sandbox to move to, drawn beside its name and its actions wherever the reader can reach that Agent.
- */
-export function AgentUpdateDot({
-  available,
-  className,
-}: {
-  available: boolean;
-  className?: string;
-}) {
-  if (!available) return null;
-  return (
-    <span
-      role="img"
-      aria-label="Update available"
-      title="Update available"
-      data-testid="agent-update-dot"
-      className={cn("size-2 shrink-0 rounded-full bg-warning", className)}
-    />
-  );
-}
 
 interface Props {
   agent: AgentView;

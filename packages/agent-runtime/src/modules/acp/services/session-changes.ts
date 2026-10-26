@@ -82,6 +82,11 @@ export function notifyingSessionMetadataStore(
     markUnstored: (sessionId) => store.markUnstored(sessionId),
     markStored: (sessionId) => store.markStored(sessionId),
 
+    clearFireEvent(sessionId) {
+      store.clearFireEvent(sessionId);
+      changes.notify();
+    },
+
     set(sessionId, meta) {
       store.set(sessionId, meta);
       changes.notify();

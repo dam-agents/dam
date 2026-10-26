@@ -7,6 +7,7 @@ import {
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { isOutputFrame } from "../lib/quiet-turn.js";
+import { reportedCommandsOf } from "../lib/skill-commands.js";
 
 export function useAcpUpdateHandler(
   onSessionReset: (sessionId: string) => void,
@@ -77,6 +78,12 @@ export function useAcpUpdateHandler(
       }
 
       if (kind === "config_option_update") return;
+      if (kind === "available_commands_update") {
+        useStore
+          .getState()
+          .setReportedCommands(sessionId, reportedCommandsOf(update));
+        return;
+      }
       if (inFlight?.takeBack) return;
 
       setMessages((prev) => applyUpdate(prev, update, frame));

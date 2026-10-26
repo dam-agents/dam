@@ -1,19 +1,4 @@
 import { Locked, WarningAltFilled } from "@carbon/icons-react";
-import {
-  Briefcase,
-  CalendarEvent,
-  type CarbonPictogramType,
-  CloudComputing,
-  ConnectApplications,
-  FinanceAndSupplyChain,
-  FoundationModel,
-  Keystores,
-  Network_02,
-  Robot,
-  Slack,
-  Teammates,
-  UserInterface,
-} from "@carbon/pictograms-react";
 import { type ReactNode, useEffect, useRef } from "react";
 
 import { Tabs } from "@/components/ui/tabs";
@@ -25,89 +10,76 @@ import type { SandboxSection } from "../../platform/lib/routes.js";
 interface SectionEntry {
   section: SandboxSection;
   title: string;
-  pictogram: CarbonPictogramType;
   description?: string;
 }
 
 export const SECTIONS: SectionEntry[] = [
   {
     section: "setup",
-    pictogram: Robot,
     title: "General",
     description: "Use and manage this agent.",
   },
   {
     section: "people",
-    pictogram: Teammates,
     title: "People",
     description:
       "People who can change and use this agent with you. You stay its owner.",
   },
   {
     section: "providers",
-    pictogram: FoundationModel,
     title: "Providers",
     description:
       "Choose which of your connected LLM providers this agent can use.",
   },
   {
     section: "connections",
-    pictogram: ConnectApplications,
     title: "Connections",
     description:
       "Connections let your agent talk to MCP servers and external services like GitHub.",
   },
   {
     section: "network",
-    pictogram: Network_02,
     title: "Network access",
     description:
       "Rules decide which outbound HTTP requests this agent can make. The most-specific rule wins. Without a matching rule, the request needs your approval on Home.",
   },
   {
     section: "environment",
-    pictogram: Keystores,
     title: "Environment vars",
     description:
       "Variables are sent to the agent as plain text, so never add secrets here. Use them for non-sensitive configuration only. Store secrets in Connections.",
   },
   {
     section: "channels",
-    pictogram: Slack,
     title: "Channels",
     description:
       "Channels let people message this agent from Slack or Telegram.",
   },
   {
     section: "chat-forms",
-    pictogram: UserInterface,
     title: "Chat forms",
     description:
       "How this agent may use forms, choices and cards in its web chat replies.",
   },
   {
     section: "skills",
-    pictogram: Briefcase,
     title: "Skills",
     description:
       "Skills are reusable instructions your agent loads when a task needs them.",
   },
   {
     section: "schedules",
-    pictogram: CalendarEvent,
     title: "Schedules",
     description: "Schedules let your agent run tasks periodically.",
   },
   {
     section: "environments",
-    pictogram: CloudComputing,
     title: "Environments",
     description:
       "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It controls them; you decide who may open them.",
   },
   {
     section: "usage",
-    pictogram: FinanceAndSupplyChain,
     title: "Usage",
     description:
       "What this agent spends on models, including the sub-agents it started, and its spend limit.",

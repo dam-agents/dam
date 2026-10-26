@@ -58,12 +58,6 @@ const suite: NamedProject[] = [
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
   },
-  {
-    name: "new-layout",
-    testMatch: /26-.*\.spec\.ts$/,
-    dependencies: ["chain", "own-agents"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
   ...(full
     ? [
         {
@@ -108,10 +102,10 @@ const suite: NamedProject[] = [
 
 const prSkip =
   process.env.E2E_SCOPE === "pr"
-    ? new RegExp("\\/(12|18|19|21|23|25|26|27)-")
+    ? new RegExp("\\/(12|18|19|21|23|25|27)-")
     : undefined;
 
-const prEmpty = new Set(["new-layout", "agent-machine"]);
+const prEmpty = new Set(["agent-machine"]);
 
 const agentMachine: NamedProject = {
   name: "agent-machine",

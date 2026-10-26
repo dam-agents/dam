@@ -8,32 +8,3 @@ export function environmentsShown({
 }): boolean {
   return enabled && (count ?? 0) > 0;
 }
-
-// UNIT_BOUNDARY_DESCRIPTION: an agent's chat offers its Environments as a side panel tab only under JanUI, with the feature on, and once it owns at least one; the current layout keeps them in the sidebar instead.
-export function environmentsTabShown({
-  newLayout,
-  ...shown
-}: {
-  newLayout: boolean;
-  enabled: boolean;
-  count: number | undefined;
-}): boolean {
-  return newLayout && environmentsShown(shown);
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: whether the unified toolbar offers the panel:
- * once the agent owns one, or while an explicitly opened panel (the Manage
- * row's access list, before the first Environment exists) is the one on screen.
- */
-export function environmentsPanelShown({
-  open,
-  ...shown
-}: {
-  enabled: boolean;
-  count: number | undefined;
-  open: boolean;
-}): boolean {
-  if (environmentsShown(shown)) return true;
-  return open && shown.enabled;
-}

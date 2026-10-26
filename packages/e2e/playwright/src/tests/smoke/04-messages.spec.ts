@@ -32,7 +32,7 @@ test("exchange messages with the agent", async ({ page }) => {
     await openAgentChat(page, agentName, agentId);
   });
 
-  await test.step("with JanUI off, the chat view keeps its top bar, which holds the bell, and has no icon bar", async () => {
+  await test.step("the chat view keeps its top bar, which holds the bell, and has no icon bar", async () => {
     const bell = page.getByTestId("side-panel-tab-approvals");
     await expect(bell).toBeVisible();
     await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
