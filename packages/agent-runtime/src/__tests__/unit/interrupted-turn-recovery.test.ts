@@ -7,6 +7,7 @@ import { createActiveTurnStore } from "../../modules/acp/infrastructure/active-t
 import { createSessionMetadataStore } from "../../modules/acp/infrastructure/session-metadata-store.js";
 import {
   INTERRUPTION_NOTICE,
+  MAX_RESUME_ATTEMPTS,
   STOPPED_NOTICE,
   recoverInterruptedTurns,
 } from "../../modules/acp/services/interrupted-turn-recovery.js";
@@ -192,6 +193,62 @@ describe("interrupted-turn recovery", () => {
     expect(world.bound).toEqual([
       { scheduleId: "sched-1", sessionId: "fresh-1" },
     ]);
+  });
+
+  /**
+   * TEST_SCENARIO: a scheduled fire's re-run kills the machine again on every
+   * boot, as a repeating out-of-memory kill does. Each re-run starts a new
+   * Session, so the chain must carry the attempts that were spent, or it
+   * repeats the fire's side effects on every boot for good.
+   */
+  it("stops re-running a fire whose re-run dies on every boot", async () => {
+    const backend = createFileDocumentStoreBackend(dir);
+    const sessionMetadata = createSessionMetadataStore(backend);
+    const prompt = {
+      id: "prompt-1",
+      recordedAt: new Date().toISOString(),
+      blocks: [
+        { type: "text" as const, text: "append the current date to the file" },
+      ],
+      droppedAttachments: [],
+    };
+    sessionMetadata.set("sched-run", {
+      mode: "chat",
+      type: "schedule_once",
+      scheduleId: "sched-1",
+    });
+    sessionMetadata.markUnstored("sched-run");
+    createActiveTurnStore(backend).record("sched-run", prompt);
+
+    let booted = createActiveTurnStore(backend);
+    const reran: string[] = [];
+    const triggerDriver: TriggerSessionDriver = {
+      start({ platformMeta, resumeSessionId }) {
+        if (resumeSessionId)
+          return Promise.resolve({
+            sessionId: resumeSessionId,
+            openedOn: null,
+          });
+        const sessionId = `rerun-${String(reran.length + 1)}`;
+        reran.push(sessionId);
+        sessionMetadata.set(sessionId, platformMeta ?? {});
+        sessionMetadata.markUnstored(sessionId);
+        booted.record(sessionId, prompt);
+        return Promise.resolve({ sessionId, openedOn: null });
+      },
+    };
+
+    for (let boot = 0; boot < MAX_RESUME_ATTEMPTS + 3; boot++) {
+      booted = createActiveTurnStore(backend);
+      await recoverInterruptedTurns({
+        store: booted,
+        sessionMetadata,
+        triggerDriver,
+        log: () => {},
+      });
+    }
+
+    expect(reran).toHaveLength(MAX_RESUME_ATTEMPTS);
   });
 
   /**

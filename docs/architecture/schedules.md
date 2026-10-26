@@ -168,6 +168,7 @@ The session model differs by schedule mode (a one-time schedule is fresh, or lan
   A schedule that names no choices of its own runs that session on the scheduled default, and the session follows it from its next fire ([sessions](sessions.md#session-inside-the-machine)).
 
 The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`, or `schedule_once` for a one-time schedule) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the agent's home disk.
+Boot recovery moves that binding when it re-runs a continuous schedule's cut first turn in a fresh session, so the next fire continues the session that holds the work instead of one it retired.
 Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh.
 Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session.
 Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.

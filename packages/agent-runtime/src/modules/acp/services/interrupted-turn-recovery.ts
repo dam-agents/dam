@@ -121,6 +121,7 @@ export async function recoverInterruptedTurns(deps: {
           platformMeta: entry.meta,
           unattended: true,
         });
+        deps.store.carryAttempts(rerun, marker.attempts + 1);
         deps.sessionMetadata.tombstone(marker.sessionId);
         deps.store.remove(marker.sessionId);
         if (entry.meta.scheduleId)
