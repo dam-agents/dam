@@ -115,6 +115,7 @@ export function ConnectionsSection({
         }
         preferPending={setPreferred.isPending}
         addRowHidden={panelHeading !== undefined}
+        flush={panelHeading !== undefined}
         extraGroups={
           managesConnections &&
           satellites.granted.length > 0 && (

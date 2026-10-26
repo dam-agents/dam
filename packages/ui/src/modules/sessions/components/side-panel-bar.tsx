@@ -2,7 +2,6 @@ import {
   Branch,
   type CarbonIconType,
   Cloud,
-  ContainerServices,
   DocumentAttachment,
   EventSchedule,
   Folder,
@@ -12,6 +11,7 @@ import {
   PricingQuickProposal,
   Task,
   ToolsAlt,
+  WifiController,
   Wikis,
 } from "@carbon/icons-react";
 import type { ReactNode } from "react";
@@ -50,7 +50,7 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "processes", label: "Processes", icon: Gears },
   { tab: "agent", label: "Spending", icon: PricingQuickProposal },
   { tab: "environments", label: "Environments", icon: Cloud },
-  { tab: "services", label: "Services", icon: ContainerServices },
+  { tab: "services", label: "Services", icon: WifiController },
   { tab: "channels", label: "Channels", icon: LogoSlack },
   { tab: "skills", label: "Skills", icon: ToolsAlt },
   { tab: "schedules", label: "Schedules", icon: EventSchedule },

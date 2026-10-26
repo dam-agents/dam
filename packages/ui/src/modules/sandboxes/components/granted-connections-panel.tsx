@@ -27,6 +27,7 @@ interface Props {
   extraGroups?: React.ReactNode;
   addRowHidden?: boolean;
   readOnly?: boolean;
+  flush?: boolean;
 }
 
 export function GrantedConnectionsPanel({
@@ -43,6 +44,7 @@ export function GrantedConnectionsPanel({
   extraGroups,
   addRowHidden = false,
   readOnly = false,
+  flush = false,
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
@@ -60,6 +62,7 @@ export function GrantedConnectionsPanel({
       )}
       {leading && <div className="mb-4">{leading}</div>}
       <ListSection
+        className={flush ? "mb-0" : undefined}
         label={title}
         isEmpty={groups.length === 0 && !extraGroups}
         empty="No connections added to this agent yet."

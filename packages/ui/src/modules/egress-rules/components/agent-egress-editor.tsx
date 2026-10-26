@@ -92,7 +92,7 @@ export function AgentEgressEditor({
   const [adding, setAdding] = useState(false);
   const [choosingPreset, setChoosingPreset] = useState(false);
   const [query, setQuery] = useState("");
-  const [presetOpen, setPresetOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => groupRules(rules, query), [rules, query]);
   const { data: connections } = useAgentPageConnections(agentId);
   const connectionNames = useMemo(
@@ -186,23 +186,42 @@ export function AgentEgressEditor({
           </p>
         )}
         {groups.map((g) => {
-          const collapsible = g.key === "preset" && !query.trim();
-          const open = !collapsible || presetOpen;
+          // UNIT_BOUNDARY_DESCRIPTION: a search shows every matching rule, so the groups only fold while the reader is not searching, and both start folded: the connections' rules repeat what the Connections section already lists.
+          const collapsible = !query.trim();
+          const open = !collapsible || (openGroups[g.key] ?? false);
           return (
             <ListGroup
               key={g.key}
-              title={`${RULE_GROUP_TITLE[g.key]} (${g.rules.length})`}
+              title={
+                g.key === "preset"
+                  ? `Preset: ${presetTitle(g.rules)} (${g.rules.length})`
+                  : `${RULE_GROUP_TITLE[g.key]} (${g.rules.length})`
+              }
               testId={`egress-group-${g.key}`}
               accessory={
-                collapsible && (
-                  <DisclosureToggle
-                    open={open}
-                    onToggle={() => setPresetOpen(!open)}
-                    className="ml-auto text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    {open ? "Hide" : "Show"}
-                  </DisclosureToggle>
-                )
+                <div className="ml-auto flex items-center gap-2">
+                  {g.key === "preset" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      data-testid="egress-preset-change"
+                      onClick={() => setChoosingPreset(true)}
+                    >
+                      Change
+                    </Button>
+                  )}
+                  {collapsible && (
+                    <DisclosureToggle
+                      open={open}
+                      onToggle={() =>
+                        setOpenGroups((prev) => ({ ...prev, [g.key]: !open }))
+                      }
+                      className="text-sm text-muted-foreground hover:text-foreground"
+                    >
+                      {open ? "Hide" : "Show"}
+                    </DisclosureToggle>
+                  )}
+                </div>
               }
             >
               {open &&
@@ -245,6 +264,13 @@ export function AgentEgressEditor({
       )}
     </>
   );
+}
+
+function presetTitle(rules: readonly EgressRuleView[]): string {
+  const raw = rules[0]?.source.startsWith("preset:")
+    ? rules[0].source.slice("preset:".length)
+    : "";
+  return PRESETS.find((p) => p.value === raw)?.title ?? raw;
 }
 
 const PRESETS: { value: EgressPreset; title: string; description: string }[] = [
