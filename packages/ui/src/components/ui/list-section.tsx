@@ -119,7 +119,10 @@ export function ListSection({
               {error}
             </p>
           ) : isEmpty ? (
-            <EmptyState bordered={false} action={newButton(newTestId)}>
+            <EmptyState
+              bordered={false}
+              action={addInHeader ? undefined : newButton(newTestId)}
+            >
               {empty}
             </EmptyState>
           ) : (

@@ -307,12 +307,14 @@ export function ConnectionCatalogModal({
                   onGoToChannels={onGoToChannels}
                 />
               ))}
-              {activeTab === "mcp" && showSatellites && !narrowed && (
-                <CatalogSatellitesPane
-                  satellites={satellites}
-                  grant={grantSatellite}
-                />
-              )}
+              {(singlePage || activeTab === "mcp") &&
+                showSatellites &&
+                !narrowed && (
+                  <CatalogSatellitesPane
+                    satellites={satellites}
+                    grant={grantSatellite}
+                  />
+                )}
             </div>
           )}
           {createPane}
