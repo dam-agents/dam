@@ -224,6 +224,7 @@ function SecretForm({
             }}
             error={i === 0 ? submit.error?.message : undefined}
             autoFocus={i === 0}
+            disabled={pending}
           />
         ))}
         {held && <HeldCheck check={held} />}

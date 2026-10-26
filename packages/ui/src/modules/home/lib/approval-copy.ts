@@ -42,5 +42,6 @@ export function spendLimitScopeLabel(scope: SpendLimitScope): string {
 }
 
 export function spendLimitDetail(payload: SpendLimitPayload): string {
-  return `${spendLimitScopeLabel(payload.scope)} reached ${spendLimitAmount(payload.amountMicros, payload.unit)} today`;
+  const reached = payload.amountMicros * (payload.extensions + 1);
+  return `${spendLimitScopeLabel(payload.scope)} reached ${spendLimitAmount(reached, payload.unit)} today`;
 }

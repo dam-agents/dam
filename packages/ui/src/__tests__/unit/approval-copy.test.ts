@@ -19,11 +19,17 @@ const payload = {
 };
 
 describe("a spend-limit approval", () => {
-  // TEST_SCENARIO: the question names the limit it is about and the amount, so nobody approves more spend believing it is one request.
+  // TEST_SCENARIO: the question names the limit it is about and the amount, so nobody approves more spend believing it is one request. A limit extended once already stands at twice its base, and the question must say that.
   it("says whose limit it is and how much it is", () => {
     expect(spendLimitDetail(payload)).toBe(
+      "Your limit for all agents reached $20.00 today",
+    );
+    expect(spendLimitDetail({ ...payload, extensions: 0 })).toBe(
       "Your limit for all agents reached $10.00 today",
     );
+    expect(
+      spendLimitDetail({ ...payload, unit: "bobcoin", extensions: 2 }),
+    ).toBe("Your limit for all agents reached 30.00 Bobcoins today");
     expect(
       approvalDetail({
         id: "a1",
@@ -31,7 +37,7 @@ describe("a spend-limit approval", () => {
         type: "spend_limit",
         payload,
       } as Parameters<typeof approvalDetail>[0]),
-    ).toBe("Your limit for all agents reached $10.00 today");
+    ).toBe("Your limit for all agents reached $20.00 today");
   });
 
   // TEST_SCENARIO: the three scopes read as the person sees them, and Bobcoins are not printed with a dollar sign.

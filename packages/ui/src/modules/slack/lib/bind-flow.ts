@@ -3,6 +3,14 @@ export function readFlowIdFromSearch(search: string): string | null {
   return flow && flow.length > 0 ? flow : null;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a bind link names a flow the server remembers for a while. A query that succeeded with no flow means the link outlived it, which is a terminal page, not an empty picker.
+export function flowIsGone(flow: {
+  isSuccess: boolean;
+  data: unknown;
+}): boolean {
+  return flow.isSuccess && !flow.data;
+}
+
 export function readCallbackErrorFromSearch(search: string): string | null {
   return new URLSearchParams(search).get("error");
 }

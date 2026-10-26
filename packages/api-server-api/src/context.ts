@@ -63,6 +63,8 @@ export interface UserIdentity {
   isOperator?: boolean;
 }
 
+export type VmAgentSizing = "spec" | "pool";
+
 export interface ApiContext {
   templates: TemplatesService;
   harnesses: HarnessCatalog;
@@ -107,6 +109,7 @@ export interface ApiContext {
   user: UserIdentity;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
+  vmAgentSizing: VmAgentSizing;
   featureModes: FeatureModes;
   telemetryBackend: boolean;
 }

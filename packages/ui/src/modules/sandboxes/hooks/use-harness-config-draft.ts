@@ -2,10 +2,15 @@ import type { HarnessConfigChange } from "api-server-api";
 import { useEffect, useState } from "react";
 
 import { useResolvedHarnessConfig } from "../../agents/api/harness-config.js";
+import type { ChatDefaultView } from "../lib/chat-model-field.js";
+import { modelIsDirty, shownModel } from "../lib/chat-model-field.js";
 
 type Edits = Readonly<Record<string, string | null>>;
 
-export function useHarnessConfigDraft(agentId: string | null) {
+export function useHarnessConfigDraft(
+  agentId: string | null,
+  chatDefault: ChatDefaultView | undefined,
+) {
   const { values: live } = useResolvedHarnessConfig(agentId);
   const [edits, setEdits] = useState<Edits>({});
   const [submitted, setSubmitted] = useState<Edits>({});
@@ -16,7 +21,7 @@ export function useHarnessConfigDraft(agentId: string | null) {
   }, [agentId]);
 
   const liveValue = (field: string): string | null => {
-    if (field === "model") return live?.model ?? null;
+    if (field === "model") return shownModel(chatDefault, live?.model ?? null);
     if (field === "mode") return live?.mode ?? null;
     const v = live?.configOptions[field];
     return typeof v === "string" ? v : null;
@@ -40,8 +45,10 @@ export function useHarnessConfigDraft(agentId: string | null) {
   const set = (field: string, value: string | null) =>
     setEdits((prev) => ({ ...prev, [field]: value }));
 
-  const changed = Object.entries(edits).filter(
-    ([field, value]) => value !== settledValue(field),
+  const changed = Object.entries(edits).filter(([field, value]) =>
+    field === "model"
+      ? modelIsDirty(chatDefault, value, settledValue(field))
+      : value !== settledValue(field),
   );
 
   const valueOf = (field: string): string | null =>

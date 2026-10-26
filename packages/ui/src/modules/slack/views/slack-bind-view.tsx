@@ -13,6 +13,7 @@ import {
   type BindErrorCopy,
   bindErrorCopy,
   callbackErrorCopy,
+  flowIsGone,
   readCallbackErrorFromSearch,
   readFlowIdFromSearch,
 } from "../lib/bind-flow.js";
@@ -54,6 +55,9 @@ export function SlackBindView() {
   }
   if (error?.terminal) {
     return <TerminalError copy={error} />;
+  }
+  if (flowIsGone(flow)) {
+    return <TerminalError copy={bindErrorCopy("BAD_REQUEST", brandShort)} />;
   }
 
   const pick = (agent: AgentView) => {

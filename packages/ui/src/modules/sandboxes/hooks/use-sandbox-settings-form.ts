@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { useStore } from "../../../store.js";
+import { useChatDefault } from "../../agents/api/harness-config.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import {
@@ -12,6 +13,7 @@ import {
   useEgressRulesForAgent,
 } from "../../egress-rules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import { chatDefaultView } from "../lib/chat-model-field.js";
 import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 import {
   type SandboxSettingsStatus,
@@ -76,7 +78,11 @@ export function useSandboxSettingsForm() {
 
   const net = useStagedNetworkAccess(agentId);
 
-  const harnessDraft = useHarnessConfigDraft(agentId);
+  const chatDefault = useChatDefault(agentId);
+  const harnessDraft = useHarnessConfigDraft(
+    agentId,
+    chatDefaultView(chatDefault.data),
+  );
 
   const [formReady, setFormReady] = useState(false);
   const baselinedRef = useRef(false);

@@ -49,11 +49,17 @@ export function ModelSettingsPanel({
     modelsPaired,
   } = useResolvedHarnessConfig(agentId);
   const catalog = status?.catalog ?? null;
-  if (!agentId || !catalog || catalog.options.length === 0) return null;
+  if (!agentId || !catalog) return null;
 
   const valueOf = (field: string): string | null => draft.valueOf(field);
 
   const shownModel = valueOf("model");
+  const modelGroupOffered = catalog.options.some(
+    (group) => group.id === "model",
+  );
+  const wantsModelGroup =
+    !modelGroupOffered && (catalog.options.length > 0 || shownModel !== null);
+  if (catalog.options.length === 0 && !wantsModelGroup) return null;
   const constraints =
     (shownModel && catalog.modelConstraints?.[shownModel]) || undefined;
 
@@ -69,41 +75,56 @@ export function ModelSettingsPanel({
     }
   };
 
-  const groups = catalog.options.map((group) => {
-    const source =
-      group.id === "model" && current?.availableModels?.length
-        ? current.availableModels
-        : group.choices;
-    const allowed = group.id === "model" ? undefined : constraints?.[group.id];
-    const choices: Choice[] = source
-      .filter((c) => !allowed || allowed.includes(c.value))
-      .map((c) => ({
-        id: c.value,
-        name: c.name,
-        description: c.description,
-      }));
-    const cur = valueOf(group.id);
-    if (cur && !choices.some((c) => c.id === cur)) {
-      choices.push({
-        id: cur,
-        name: cur,
-        description: source.some((c) => c.value === cur)
-          ? "Not available for the current model"
-          : "Set directly in the config file",
-      });
-    }
-    if (choices.length === 0) return null;
-    return (
-      <OptionGroup
-        key={group.id}
-        title={group.name}
-        choices={choices}
-        value={cur}
-        disabled={disabled}
-        onSelect={(id) => change(group.id, id)}
-      />
-    );
-  });
+  const options = wantsModelGroup
+    ? [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          choices: current?.availableModels ?? [],
+        },
+        ...catalog.options,
+      ]
+    : catalog.options;
+  const groups = options
+    .filter((group) => group.subagents !== true)
+    .map((group) => {
+      const source =
+        group.id === "model" && current?.availableModels?.length
+          ? current.availableModels
+          : group.choices;
+      const allowed =
+        group.id === "model" ? undefined : constraints?.[group.id];
+      const choices: Choice[] = source
+        .filter((c) => !allowed || allowed.includes(c.value))
+        .map((c) => ({
+          id: c.value,
+          name: c.name,
+          description: c.description,
+        }));
+      const cur = valueOf(group.id);
+      if (cur && !choices.some((c) => c.id === cur)) {
+        choices.push({
+          id: cur,
+          name: cur,
+          description: source.some((c) => c.value === cur)
+            ? "Not available for the current model"
+            : "Set directly in the config file",
+        });
+      }
+      if (choices.length === 0) return null;
+      return (
+        <OptionGroup
+          key={group.id}
+          title={group.name}
+          choices={choices}
+          value={cur}
+          disabled={disabled}
+          allowCleared={!(group.id === "model" && status?.modelRouter)}
+          onSelect={(id) => change(group.id, id)}
+        />
+      );
+    });
 
   const note = (
     <p className="pt-3 text-[11px] leading-snug text-muted-foreground">
@@ -140,11 +161,13 @@ function OptionGroup({
   value,
   disabled = false,
   onSelect,
+  allowCleared = true,
 }: {
   title: string;
   choices: Choice[];
   value: string | null;
   disabled?: boolean;
+  allowCleared?: boolean;
   onSelect: (id: string | null) => void;
 }) {
   const selected = value === null ? null : choices.find((c) => c.id === value);
@@ -171,12 +194,14 @@ function OptionGroup({
           align="start"
           className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
         >
-          <OptionItem
-            label={CLEARED_LABEL}
-            description={CLEARED_DESCRIPTION}
-            active={value === null}
-            onSelect={() => onSelect(null)}
-          />
+          {allowCleared && (
+            <OptionItem
+              label={CLEARED_LABEL}
+              description={CLEARED_DESCRIPTION}
+              active={value === null}
+              onSelect={() => onSelect(null)}
+            />
+          )}
           {choices.map((c) => (
             <OptionItem
               key={c.id}
