@@ -187,6 +187,8 @@ A connection's credential, new or rotated, the agent never sees: it runs `connec
 Since the agent cannot check that secret itself, the outcome carries the server's [credential check](connections.md#connection) where the template has one, and `dam connection test` runs it again on the stored credential, so the agent can tell a broken token from a working one.
 The CLI warns when a checked token expires within a day, and `dam connection list` shows each checked credential's expiry.
 A GitHub App connection's check names the bot it acts as and the repositories it reaches, and `dam connection scope` reports the check of the new scope.
+A GitHub sign-in or App installation is a parent no agent holds ([github-connections](github-connections.md)), and the CLI follows the UI there: `connect` ends in a connection made from it only with a scope or an explicit full access, and otherwise keeps the parent alone and shows what it reaches; `connect --from` adds another connection beside those it has; `list` shows each parent with its connections underneath and marks full access; and removing a parent first names its connections and the agents that lose them.
+A name a parent shares with its first connection means the connection, so the agent's usual references keep naming what it holds.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 
