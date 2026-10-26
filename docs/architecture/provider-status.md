@@ -74,8 +74,7 @@ A periodic job runs every 60 seconds in one replica.
 It reads the window, computes the state of each template with its start time, and writes one snapshot to Redis that expires after three minutes.
 When the job stops, the snapshot expires and the status becomes unknown.
 A new outage shows after up to about two minutes: the one-minute bucket, the job, and the poll of the screen.
-The snapshot also keeps, per degraded template, every payer with a failed call to it since the outage started, because the window forgets a payer after about six minutes; the status query never returns them.
-After each run, the job hands the evaluated state to the [outage alerts](#outage-alerts): every degraded template with its failed payers, and the evidence that a template answers again.
+After each run, the job hands the evaluated state to the [outage alerts](#outage-alerts): every degraded template, and the evidence that a template answers again.
 
 ## The query
 
@@ -137,28 +136,28 @@ On a narrow screen it shows only its lead and the close button.
 
 ## Outage alerts
 
-A schedule or a channel runs an agent while nobody watches, so its owner does not meet the outage on a screen.
-An outage alert tells the owner of the affected agents in a Slack direct message ([channels](channels.md)) when an outage lasts longer than a delay, and again when the provider works again.
-The delay is one platform setting, 15 minutes by default; an outage that ends earlier sends nothing.
-The owners told are the owners of two kinds of agents, and the message says for each agent why it is affected.
-An agent with a failed call to the template since the outage started is affected because its calls failed.
-An agent that runs unattended is affected by each kind of its work that fires on the template, also without a failed call: a daily schedule that fires after the outage started, or a channel agent that nobody wrote to yet, will fail too.
-An agent runs unattended by the rule of the [default-model notices](home-feed.md#default-model-notices): an enabled schedule, a bound Slack Channel or a bound Telegram chat; sub-agents are left out.
-A schedule fires on its own harness and model or else on the agent's scheduled default, and a channel turn on the agent's channel default; both fall back to the chat default ([harness configuration](harness-config.md)).
-So one agent's schedule and its channel can run on different providers.
-Work that would not fire at all, because no default model is set or no granted provider fits, does not count, and a one-time schedule that continues its session keeps that session's choices, so it is never named.
-These are resolved only once the outage has lasted the delay.
+A user who meets an outage in the chat, or in a Slack or Telegram reply, learns the cause there ([screens](#screens)).
+A schedule runs an agent while nobody watches, so an outage alert tells the owner when such work failed in an outage that lasts longer than a delay, and again when the provider works again.
+The delay is one platform setting, 15 minutes by default; an outage that ends earlier sends nothing, and a failure from the start of the outage counts once the delay has passed.
+An outage that failed no unattended work sends nothing, whatever schedules and channels the agents have.
+
+Failed unattended work is a scheduled run that made a failed call to the template since the outage started.
+The gateway's call record names the calling agent and the Session that the agent stamped on the call ([spend limits](spend-limits.md)), and the call failed by the rule of [the gateway signal](#the-gateway-signal).
+The api-server does not learn the outcome of a scheduled run, because the run's event settles once its prompt is submitted, so the gateway's failed call is the evidence.
+Each replica records the failed calls with a Session that it sees, per template in Redis, for a day.
+Once an outage has lasted the delay, the job looks up their Sessions in the [Session directory](metrics.md#session-directory) and keeps the scheduled ones: a failed call in a chat or a channel Session does not count.
+A run that retried and then succeeded still counts, and a Session that the directory cannot read counts at a later run.
 A disabled or deleted agent is left out.
 
 The alerts react to the state of each run on the replica that ran the job, so each run is the delay's clock, and a lost run changes nothing, because the next one repeats the whole state.
 Each owner has one alert per template, told or recovered, written with a compare-and-set before the message goes out: two runs never send the same message twice, and a send that fails is lost, not repeated.
-An owner who was told gets nothing more until the alert recovers, also when more of their agents become affected or the start time changes because the snapshot expired.
-An owner who becomes affected later in an outage gets their first message then.
+An owner who was told gets no new message until the alert recovers, also when the start time changes because the snapshot expired.
+When more of their agents fail in the same outage, the stored alert names them too, without a message, so the card and the recovery message list every agent to check.
 While the fault is on the platform's side, an outage that only failed calls show sends no new message, because the provider can be innocent; that fault is the operator's to fix.
 
 A told alert recovers only on evidence that the template answers again: a call in the window that did not fail, or, for an outage that a public source reported, that source answering again without reporting it.
 A proxy's readiness does not say that its models answer, so it never ends an outage that failed calls showed.
 Provider Status drops a template that nobody calls, and that alone does not end an alert: when no agent calls the provider again, the alert stays told and no recovery message goes out.
 One outage sends one message and one recovery message, with no reminders.
-The same messages also go to each private Telegram chat that the owner bound to one of their own agents, with times in UTC, and never to a group or a business chat ([channels](channels.md)).
-A user who never linked Slack and bound no private chat gets no message; every owner also sees the alert as a card in the Approvals panel ([home-feed](home-feed.md#outage-alerts)).
+Each message goes to the owner's Slack direct message ([channels](channels.md)); only when it reaches nobody in Slack does it go to each private Telegram chat that the owner bound to one of their own agents, with times in UTC, and never to a group or a business chat.
+Every owner also sees the alert as a card in the Approvals panel ([home-feed](home-feed.md#outage-alerts)).

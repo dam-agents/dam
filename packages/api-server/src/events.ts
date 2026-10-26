@@ -270,6 +270,8 @@ export type GatewayCallEnded = {
   status: number | null;
   refusedByGate: boolean;
   endedAt: Date;
+  callingAgentId: string;
+  sessionId: string | null;
 };
 
 export type ProviderStatusEvaluated = {
@@ -280,7 +282,6 @@ export type ProviderStatusEvaluated = {
     reason: ProviderOutageReason;
     since: Date;
     statusPageUrl: string | null;
-    failedPayers: readonly string[];
   }[];
   damSide: { since: Date } | null;
   answering: readonly string[];

@@ -26,8 +26,8 @@ export function outageAlertCopy(
     headline: `${provider} is not responding`,
     detail:
       count === 1
-        ? `Since ${since}. 1 of your agents uses it and can fail until it works again.`
-        : `Since ${since}. ${count} of your agents use it and can fail until it works again.`,
+        ? `Since ${since}. Work that ran on its own failed for 1 of your agents.`
+        : `Since ${since}. Work that ran on its own failed for ${count} of your agents.`,
   };
 }
 
@@ -37,8 +37,7 @@ export function outageAlertDismissHint(provider: string): string {
 
 function affectedByLabel(reason: OutageAlertAffectedBy): string {
   return match(reason)
-    .with("failed-calls", () => "Calls failed")
-    .with("schedule", () => "Schedule")
+    .with("schedule", () => "Scheduled run failed")
     .with("slack", () => "Slack channel")
     .with("telegram", () => "Telegram chat")
     .exhaustive();

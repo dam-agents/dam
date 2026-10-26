@@ -69,8 +69,7 @@ function noticeOf(write: (style: TextStyle) => string[]): AlertNotice {
 
 function affectedByLabel(reason: OutageAlertAffectedBy): string {
   return match(reason)
-    .with("failed-calls", () => "calls failed")
-    .with("schedule", () => "schedule")
+    .with("schedule", () => "scheduled run failed")
     .with("slack", () => "Slack channel")
     .with("telegram", () => "Telegram chat")
     .exhaustive();
@@ -98,9 +97,9 @@ export function outageMessage(
   return noticeOf((style) => {
     const provider = style.text(providerName);
     return [
-      `${provider} has had problems since ${style.time(alert.since)}. These agents of yours use it, and they can fail until it works again:`,
+      `${provider} has had an outage since ${style.time(alert.since)}. Work that ran on its own failed for these agents of yours:`,
       ...agentLines(alert.agents, style),
-      `Wait, or switch an agent to another provider: ${homeUrl}`,
+      `Runs that failed do not run again. Wait, or switch an agent to another provider: ${homeUrl}`,
       ...(alert.statusPageUrl
         ? [`${provider} status: ${alert.statusPageUrl}`]
         : []),

@@ -146,7 +146,7 @@ So slice 01 covers them with no extra code, and the docs name no Pi exception.
 | #   | Title                                        | Scope                                                                                                                                  | Depends on | Done |
 | --- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
 | 01  | Slack and Telegram replies name the outage   | Shared "provider down" pattern; failure copy from Provider Status; `provider-unavailable` reason and template on `ChannelTurnRelayed`. | —          | ✅   |
-| 02  | Owners hear only about failed scheduled runs | Failed-work store fed by gateway calls; schedule Sessions decide; old rules removed; Slack first; message, card and docs copy.         | —          |      |
+| 02  | Owners hear only about failed scheduled runs | Failed-work store fed by gateway calls; schedule Sessions decide; old rules removed; Slack first; message, card and docs copy.         | —          | ✅   |
 | 03  | Failed ambient turns count too               | `ChannelTurnRelayed` ambient failures feed the failed-work store; copy and docs for the channel reasons.                               | 01, 02     |      |
 
 ```mermaid

@@ -184,7 +184,6 @@ import {
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
   createInitializationPairResolver,
-  createUnattendedAgentsReader,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -1636,25 +1635,24 @@ export async function bootstrap() {
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
   const grantedTemplates = createGrantedConnectionTemplates(db);
-  const fireTemplateOf = async (
-    agentId: string,
-    kind: "scheduled" | "channel",
-    choices: { harness?: string; model?: string },
-  ) => {
-    const pair = await firePair(agentId, kind, choices).catch(
+  const channelTemplateOf = async (agentId: string) => {
+    const pair = await channelFirePair(agentId, "channel").catch(
       (err: unknown) => {
         if (isNoDefaultModelError(err)) return null;
         throw err;
       },
     );
-    if (pair === null) return null;
-    if (pair === undefined || pair.provider === null) return undefined;
-    return grantedTemplates.templateOf(agentId, pair.provider);
+    return pair?.provider
+      ? grantedTemplates.templateOf(agentId, pair.provider)
+      : null;
   };
-  const channelProviderOutage = async (agentId: string) => ({
-    templateId: (await fireTemplateOf(agentId, "channel", {})) ?? null,
-    status: await providerStatus.service.view(),
-  });
+  const channelProviderOutage = async (agentId: string) => {
+    const [templateId, status] = await Promise.all([
+      channelTemplateOf(agentId),
+      providerStatus.service.view(),
+    ]);
+    return { templateId, status };
+  };
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
@@ -1993,6 +1991,7 @@ export async function bootstrap() {
 
   const outageAlerts = composeOutageAlerts({
     db,
+    redis: sharedRedis,
     notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
     describeAgent: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
@@ -2000,25 +1999,8 @@ export async function bootstrap() {
         ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
         : null;
     },
-    unattendedCandidates: createUnattendedAgentsReader(db),
-    enabledSchedules: async (agentIds) =>
-      (await schedulesBoot.repo.listEnabledByAgents(agentIds)).map((s) => ({
-        agentId: s.agentId,
-        continuesSession:
-          s.spec.type === "once" && s.spec.origin?.mode === "continue",
-        harness: s.spec.harness,
-        model: s.spec.model,
-      })),
-    fireTemplate: async (agentId, kind, choices) => {
-      const model =
-        kind === "scheduled" && choices.model
-          ? await scheduleModelFor(agentId, choices.model)
-          : undefined;
-      return fireTemplateOf(agentId, kind, {
-        ...(choices.harness && { harness: choices.harness }),
-        ...(model && { model }),
-      });
-    },
+    sessionCategories: (agentIds, sessionIds) =>
+      sessionDirectory.categorize(agentIds, sessionIds),
     uiBaseUrl: config.uiBaseUrl,
     delayMs: config.outageAlertDelayMinutes * 60_000,
   });
