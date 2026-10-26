@@ -1,12 +1,13 @@
 # Home feed
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
-The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, which takes its room from the page.
-In an Agent's chat with the JanUI and Unified right toolbar experiments both off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
+With either the JanUI or the Unified right toolbar experiment on, the bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, which takes its room from the page.
+With both experiments off there is no icon bar: the bell sits in the page's own top corner beside the Get started ring, and opens Approvals as a drawer over the page.
+In an Agent's chat with both experiments off, the bell sits in the chat's top bar and opens that same drawer.
 
 ## What Home reads
 
@@ -16,6 +17,7 @@ Three sources sit behind the feed, and they are deliberately different kinds of 
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
 A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and shows in the Agent's chat beside its held network requests.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
+Its card offers only the choices the harness offered for that request: a verdict reaches the harness as the option of its kind, and one with no such option would cancel the tool call, so a request with no "always" option, such as Bob's writes to its own settings, offers no "Always allow" or "Always deny".
 The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.
 Both use the same row id, so a client that engages later joins the row and it keeps the time the agent asked.
 The runtime reports the end of every permission request it held, watched or not: an answer settles the row on the verdict the harness actually got — the runtime accepts one answer, so it, not the path that wrote the row, decides what the record says — and a request it dropped unanswered — its ten-minute wait ran out, or the session was reset ([sessions](sessions.md)) — expires it.
@@ -132,7 +134,7 @@ Home becomes a dashboard of cards built from the record, the Agents list and the
 ## The Unified right toolbar experiment
 
 The **Unified right toolbar experiment** is an [experimental feature](features.md) of its own, independent of JanUI: it changes the right-hand icon bar and the top bar of the panel that bar opens, and leaves the rest of the shell to whichever layout the page uses.
-With it off, the right edge keeps the classic icon column, a 49 px bar of 48 px buttons under a 48 px panel header.
+With it off under JanUI, the right edge keeps the classic icon column, a 49 px bar of 48 px buttons under a 48 px panel header.
 With it on, the bar is 56 px wide and draws one column of 40 px tiles 8 px from the top, spaced 14 px apart, with the same muted fill and hairline for the item the user is on, the same hover shade, the same 8 px squircles and the same accent focus outline as the sidebar rail.
 Its tiles name their panel in a tooltip as they hover, the same words as the button's accessible name, and the open panel's header repeats it.
 A count badge keeps its place on the icon's top-right corner.
@@ -163,7 +165,7 @@ The right side is the flag's either way: an Agent's chat draws the rail too, wit
 The chat's own bar goes with that column, so a wide window reads as JanUI's chat does and nothing repeats the Agent's name; it comes back there only while the status has a badge to show.
 A phone keeps that bar, carrying the navigation button, the running count and the buttons that open the panel, since the rail waits for a panel there.
 JanUI decides only the shell around it: whether the navigation is the tree or the classic sidebar, whether a page outside a chat has a bar above it, and whether a narrow screen's overlay starts at the left rail or at the screen's edge — a page with no rail there shows the overlay at its own edge, with the rail inside the panel.
-With the toolbar off, a chat without JanUI keeps its classic column of sections and opens the browser, changes, Get started and Approvals from its top bar.
+With the toolbar off, a chat without JanUI keeps its classic column of sections and opens the browser, changes and Get started from its top bar, and Approvals as a drawer over the chat.
 While JanUI is on as well, the navigation counts the bar this flag draws when it decides whether the page has room for the pane.
 With both experiments on, the page reads as one surface: the sidebar rail and the right rail draw the same tile.
 

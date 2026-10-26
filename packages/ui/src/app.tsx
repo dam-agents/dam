@@ -19,6 +19,10 @@ import { useUnifiedRightToolbar } from "./modules/features/hooks/use-unified-rig
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
+import {
+  ClassicPageActions,
+  ClassicPagePanels,
+} from "./modules/platform/components/classic-page-panels.js";
 import { AppTopBar } from "./modules/platform/components/sidebar/app-top-bar.js";
 import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-nav-drawer.js";
 import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
@@ -161,6 +165,7 @@ function MainApp() {
   const setChatBarred = useStore((s) => s.setChatBarred);
   const barred = selected !== null && !holds(selected.access, "sessions");
   useEffect(() => setChatBarred(barred), [barred, setChatBarred]);
+  const classic = !newLayout && !rightToolbar;
   useEffect(() => {
     if (newLayout) document.documentElement.dataset.layout = "new";
     else delete document.documentElement.dataset.layout;
@@ -228,12 +233,13 @@ function MainApp() {
           <main
             id="main"
             tabIndex={-1}
-            className="flex flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] outline-none"
+            className="flex flex-1 min-w-0 flex-col overflow-y-auto [scrollbar-gutter:stable] outline-none"
           >
             {/* UNIT_BOUNDARY_DESCRIPTION: JanUI's rail is the whole of the navigation and its right rail the whole of the panel, so the bar that stands in for both on a phone has nothing left to do there. */}
             {!desktop && !newLayout && (
               <AppTopBar actions={<AppSidePanelButtons withArtifacts />} />
             )}
+            {classic && <ClassicPageActions />}
             <div
               className={cn(
                 "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
@@ -269,6 +275,7 @@ function MainApp() {
         </AppSidePanelHost>
       </div>
       {kitBrowserOpen && <BrowseKitsModal />}
+      {classic && <ClassicPagePanels />}
       <MobileNavDrawer />
       <DialogOverlay />
       <ConnectionBanner />

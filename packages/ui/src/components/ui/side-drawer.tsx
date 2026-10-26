@@ -1,9 +1,11 @@
+import { Close } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
 import { useBodyScrollLock, useFocusTrap } from "../modal.js";
+import { Button } from "./button";
 
 const TRANSITION_MS = 150;
 
@@ -82,5 +84,38 @@ export function SideDrawer({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The bar at the top of a drawer: the drawer's name
+ * and the X that closes it, with the drawer's own actions between them. It is
+ * the height of a side panel's header, so the two overlays read alike.
+ */
+export function SideDrawerHeader({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-border pl-4 pr-2">
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      <div className="flex items-center gap-2">
+        {children}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Close ${title.toLowerCase()}`}
+          tooltip={`Close ${title.toLowerCase()}`}
+          onClick={onClose}
+        >
+          <Close size={16} />
+        </Button>
+      </div>
+    </div>
   );
 }

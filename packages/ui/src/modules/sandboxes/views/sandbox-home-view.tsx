@@ -2,6 +2,7 @@ import type { PendingRestart } from "agent-runtime-api";
 import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
@@ -152,7 +153,12 @@ function AgentHome({ agent }: { agent: AgentView }) {
 
   return (
     <>
-      <div className="flex flex-col gap-6 md:flex-row md:gap-10 md:pt-5">
+      <div
+        className={cn(
+          "flex flex-col gap-6 md:flex-row md:gap-10",
+          newLayout && "md:pt-5",
+        )}
+      >
         <SandboxSectionNav
           sections={sections}
           header={<SandboxIdentity agent={agent} display={display} />}

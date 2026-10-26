@@ -156,6 +156,7 @@ export interface PlatformSessionMeta {
   threadTs?: string;
   createdAt?: string;
   customTitle?: string;
+  title?: string;
 }
 
 export interface AcpSessionInfo {

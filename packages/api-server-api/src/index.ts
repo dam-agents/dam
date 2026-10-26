@@ -768,6 +768,7 @@ export {
 export type { EgressProposalInput } from "./modules/approvals/schemas.js";
 export {
   acpNativeRowId,
+  answerableOption,
   permissionOptionKindsOf,
   recordedOptionsOf,
   recordedToolOf,

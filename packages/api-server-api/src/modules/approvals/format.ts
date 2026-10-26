@@ -48,6 +48,18 @@ export const TOOL_CALL_ID_MAX = 512;
 export const PERMISSION_OPTIONS_MAX = 16;
 export const RPC_ID_MAX = 4096;
 
+export function answerableOption(
+  options: readonly AcpPermissionOption[],
+  kind: AcpPermissionOptionKind,
+  opts?: { idsWhole?: boolean },
+): AcpPermissionOption | undefined {
+  return options.find(
+    (o) =>
+      o.kind === kind &&
+      (opts?.idsWhole === true || o.optionId.length < TOOL_CALL_ID_MAX),
+  );
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What a permission request's tool call becomes in
  * a recorded row. The chat relay and the agent-runtime both write that row, so

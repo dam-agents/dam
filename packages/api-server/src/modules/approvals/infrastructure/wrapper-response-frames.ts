@@ -1,5 +1,5 @@
 import type { Sender } from "agent-runtime-api";
-import { TOOL_CALL_ID_MAX } from "api-server-api";
+import { answerableOption } from "api-server-api";
 import type {
   AcpPermissionOption,
   AcpPermissionOptionKind,
@@ -38,13 +38,7 @@ export function pickOptionId(
         : verdict === "allow"
           ? "allow_always"
           : "allow_once";
-  return (
-    options.find(
-      (o) =>
-        o.kind === want &&
-        (opts?.idsWhole === true || o.optionId.length < TOOL_CALL_ID_MAX),
-    )?.optionId ?? null
-  );
+  return answerableOption(options, want, opts)?.optionId ?? null;
 }
 
 export function verdictOfOutcome(

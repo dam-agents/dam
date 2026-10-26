@@ -334,6 +334,17 @@ describe("slack ambient inbound", () => {
     );
   });
 
+  it("ambient on: names the message it reads, without its speaker, as the session's title", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "hello there");
+    await h.settled(() => h.sendOpts.length === 1);
+
+    const opts = h.sendOpts[0]!;
+    expect("platformMeta" in opts && opts.platformMeta?.title).toBe(
+      "hello there",
+    );
+  });
+
   it("ambient on: a thread reply keeps the thread's own session key and reply target", async () => {
     const pending: Array<(v: string) => void> = [];
     const h = harness({

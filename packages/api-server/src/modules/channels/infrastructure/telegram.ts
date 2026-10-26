@@ -737,6 +737,7 @@ export function createTelegramWorker(deps: {
         platformMeta: {
           type: SessionType.ChannelTelegram,
           threadTs: thread.id,
+          title: messages[0]!.text,
         },
         ...(onSession ? { onSession } : {}),
       });
