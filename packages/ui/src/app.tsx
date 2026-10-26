@@ -2,7 +2,6 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
-import { GlobalBanner } from "./components/global-banner.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
@@ -115,7 +114,6 @@ function MainApp() {
     return (
       <>
         <div className="flex flex-col h-full bg-background overflow-hidden">
-          {!isMock && <GlobalBanner />}
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <IconRail hideMobileBar />
             <div className="relative z-content flex-1 min-w-0">
@@ -134,7 +132,6 @@ function MainApp() {
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      {!isMock && <GlobalBanner />}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">

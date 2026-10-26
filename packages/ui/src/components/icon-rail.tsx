@@ -427,50 +427,95 @@ export function IconRail({
         <div
           className={cn(
             "flex shrink-0 items-center px-2 pt-2",
-            expandedNav ? "w-full justify-between gap-2" : "justify-center",
+            expandedNav ? "w-full justify-between gap-2" : "flex-col gap-1",
           )}
         >
-          {expandedNav && (
-            <button
-              type="button"
-              onClick={sandboxes.navigate}
-              aria-label={getBrand().name}
-              className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <BrandLogo />
-            </button>
-          )}
-          <Tooltip
-            content={expandedNav ? "Collapse navigation" : "Expand navigation"}
-            side="right"
-          >
-            <button
-              type="button"
-              onClick={() => setExpandedNav(!expandedNav)}
-              aria-label={
-                expandedNav ? "Collapse navigation" : "Expand navigation"
-              }
-              aria-expanded={expandedNav}
-              className={cn(
-                "group relative flex items-center justify-center rounded-lg transition-colors hover:bg-muted hover:text-foreground",
-                expandedNav
-                  ? "p-1.5 text-muted-foreground"
-                  : "h-10 w-10 text-foreground/80",
-              )}
-            >
-              {expandedNav ? (
-                <ChevronLeft size={16} />
-              ) : (
-                <>
-                  <BrandLogo className="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
+          {expandedNav ? (
+            <>
+              <button
+                type="button"
+                onClick={sandboxes.navigate}
+                aria-label={getBrand().name}
+                className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <BrandLogo />
+              </button>
+              <div className="flex items-center gap-0.5">
+                <Tooltip content="Notifications" side="bottom">
+                  <button
+                    type="button"
+                    onClick={toggleNotifications}
+                    aria-label={
+                      needsYouCount > 0
+                        ? `Notifications, ${needsYouCount} need attention`
+                        : "Notifications"
+                    }
+                    className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Notification size={16} />
+                    {needsYouCount > 0 && (
+                      <Badge
+                        variant="default"
+                        className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
+                      >
+                        {needsYouCount > 9 ? "9+" : needsYouCount}
+                      </Badge>
+                    )}
+                  </button>
+                </Tooltip>
+                <Tooltip content="Collapse navigation" side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedNav(false)}
+                    aria-label="Collapse navigation"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                </Tooltip>
+              </div>
+            </>
+          ) : (
+            <>
+              <Tooltip content="Expand navigation" side="right">
+                <button
+                  type="button"
+                  onClick={() => setExpandedNav(true)}
+                  aria-label="Expand navigation"
+                  aria-expanded={false}
+                  className="group relative flex h-10 w-10 items-center justify-center rounded-lg text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <BrandLogo className="transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
                   <ChevronRight
                     size={16}
                     className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
                   />
-                </>
-              )}
-            </button>
-          </Tooltip>
+                </button>
+              </Tooltip>
+              <Tooltip content="Notifications" side="right">
+                <button
+                  type="button"
+                  onClick={toggleNotifications}
+                  aria-label={
+                    needsYouCount > 0
+                      ? `Notifications, ${needsYouCount} need attention`
+                      : "Notifications"
+                  }
+                  className="relative flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Notification size={16} />
+                  {needsYouCount > 0 && (
+                    <Badge
+                      variant="default"
+                      className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
+                    >
+                      {needsYouCount > 9 ? "9+" : needsYouCount}
+                    </Badge>
+                  )}
+                </button>
+              </Tooltip>
+            </>
+          )}
         </div>
         <div className="mt-px shrink-0 flex flex-col gap-px px-2">
           <RailItem {...sandboxes} expanded={expandedNav} />
@@ -625,7 +670,11 @@ export function IconRail({
                                 if (clickVariant === 0) {
                                   if (expandedAgentIds.has(agent.id)) {
                                     setAgentSessionCounts((c) =>
-                                      Object.fromEntries(Object.entries(c).filter(([k]) => k !== agent.id)),
+                                      Object.fromEntries(
+                                        Object.entries(c).filter(
+                                          ([k]) => k !== agent.id,
+                                        ),
+                                      ),
                                     );
                                   }
                                   toggleSidebarAgent(agent.id);
@@ -643,7 +692,11 @@ export function IconRail({
                                   if (clickVariant === 0) {
                                     if (expandedAgentIds.has(agent.id)) {
                                       setAgentSessionCounts((c) =>
-                                        Object.fromEntries(Object.entries(c).filter(([k]) => k !== agent.id)),
+                                        Object.fromEntries(
+                                          Object.entries(c).filter(
+                                            ([k]) => k !== agent.id,
+                                          ),
+                                        ),
                                       );
                                     }
                                     toggleSidebarAgent(agent.id);
