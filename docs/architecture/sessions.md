@@ -30,6 +30,8 @@ Each session is an append-only in-memory log (≤2 MB soft cap; inline image and
 Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them.
 Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented.
 From a session-history provider that source can also supply the harness's own name for the prompt a reply answered — the prompt id by which [agent-telemetry](agent-telemetry.md#progressive-disclosure) joins a reply to its Turn once the Session is loaded.
+A harness can send the same output twice: Claude Code answers a local command such as `/context` with no model call, and its adapter sends the output once from the command's reply and again from the turn's result, as a second agent message.
+So in a prompt turn whose prompt is one text block starting with `/`, an agent message whose whole text, trailing white space aside, is that of the message just before it, with no thought or tool call between them, never enters the log, and the output shows once, live and on every load.
 
 The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns.
 A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen.

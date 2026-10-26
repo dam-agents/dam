@@ -108,6 +108,7 @@ import {
 } from "./pending-agent-requests.js";
 import { createAutonomousTurns } from "./autonomous-turns.js";
 import { createHarnessActivity } from "./harness-activity.js";
+import { createLocalCommandEchoes } from "./local-command-echoes.js";
 import type { HarnessStatePort } from "../../domain/harness-state.js";
 import {
   createPromptScheduler,
@@ -369,6 +370,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ),
   });
 
+  const localCommandEchoes = createLocalCommandEchoes();
+
   const heldRuns = new Map<
     string,
     { promptId: string | null; stopReason: string | null; cancelled: boolean }
@@ -440,6 +443,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       autonomousTurns.end(sessionId);
       finishHeldRun(sessionId);
       generating.add(sessionId);
+      localCommandEchoes.start(sessionId, typed);
       const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
@@ -1091,6 +1095,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     harnessActivity.clear();
     promptScheduler.clear();
     autonomousTurns.clear();
+    localCommandEchoes.clear();
     runTextBuffers.clear();
     openToolCalls.clear();
     generating.clear();
@@ -1800,6 +1805,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     harnessColdSessions.add(sessionId);
     appliedSettings.delete(sessionId);
     autonomousTurns.end(sessionId);
+    localCommandEchoes.end(sessionId);
     transcript.forget(sessionId);
     openToolCalls.delete(sessionId);
     generating.delete(sessionId);
@@ -1963,6 +1969,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
     autonomousTurns.end(sessionId);
+    localCommandEchoes.end(sessionId);
     transcript.forget(sessionId);
     openToolCalls.delete(sessionId);
     generating.delete(sessionId);
@@ -2180,6 +2187,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (turnEnded) {
             openToolCalls.delete(sid);
             generating.delete(sid);
+            localCommandEchoes.end(sid);
             deps.sessionMetadata?.markStored(sid);
           }
           for (const follower of steered)
@@ -2247,7 +2255,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (
         orphanedHarnessLoads.has(sessionId) ||
         rehydratingSessions.has(sessionId) ||
-        isNoResponseFiller(frame)
+        isNoResponseFiller(frame) ||
+        localCommandEchoes.isEcho(sessionId, frame)
       ) {
         return;
       }
