@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -16,6 +16,7 @@ Three sources sit behind the feed, and they are deliberately different kinds of 
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
 A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and shows in the Agent's chat beside its held network requests.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
+Its card offers only the choices the harness offered for that request: a verdict reaches the harness as the option of its kind, and one with no such option would cancel the tool call, so a request with no "always" option, such as Bob's writes to its own settings, offers no "Always allow" or "Always deny".
 The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.
 Both use the same row id, so a client that engages later joins the row and it keeps the time the agent asked.
 The runtime reports the end of every permission request it held, watched or not: an answer settles the row on the verdict the harness actually got — the runtime accepts one answer, so it, not the path that wrote the row, decides what the record says — and a request it dropped unanswered — its ten-minute wait ran out, or the session was reset ([sessions](sessions.md)) — expires it.

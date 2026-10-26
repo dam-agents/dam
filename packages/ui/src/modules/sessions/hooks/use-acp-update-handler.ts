@@ -6,6 +6,7 @@ import {
   withoutQueuedSends,
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
+import { isOutputFrame } from "../lib/quiet-turn.js";
 
 export function useAcpUpdateHandler(
   onSessionReset: (sessionId: string) => void,
@@ -27,6 +28,8 @@ export function useAcpUpdateHandler(
     return (update: AcpUpdate, sessionId: string, frame?: FrameMeta) => {
       const viewing = useStore.getState().sessionId;
       if (viewing !== null && viewing !== sessionId) return;
+      if (isOutputFrame(update))
+        useStore.getState().setLastOutputAt(new Date().toISOString());
       const pending = useStore.getState().rewritePending;
       const inFlight = pending?.sessionId === sessionId ? pending : null;
 

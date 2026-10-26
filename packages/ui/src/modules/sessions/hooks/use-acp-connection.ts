@@ -43,6 +43,7 @@ import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
+import { lastOutputAtOf } from "../lib/quiet-turn.js";
 import { pairMeta } from "../lib/session-pair-options.js";
 import {
   clearUndelivered,
@@ -491,6 +492,11 @@ export function useAcpConnection(
             ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
         useStore.getState().setQueuedPrompts(queue.success ? queue.data : []);
+        useStore
+          .getState()
+          .setLastOutputAt(
+            lastOutputAtOf(updates, useStore.getState().lastOutputAt),
+          );
         useStore.getState().setAttribution({
           senders: senders.success ? senders.data : [],
           verdicts: verdicts.success ? verdicts.data : [],

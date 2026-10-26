@@ -153,6 +153,7 @@ import { NewSessionOptions } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { ProviderStatusLine } from "../components/provider-status-line.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
+import { QuietTurnLine } from "../components/quiet-turn-line.js";
 import {
   RewritableMessage,
   RewriteMarker,
@@ -1124,6 +1125,9 @@ export function ChatView() {
                   busy={busy}
                   claimed={delegationOwners}
                 />
+              )}
+              {!agentStarting && (
+                <QuietTurnLine templateId={sessionTemplateId} />
               )}
               <QueuedPrompts onFileClick={openFileHandler} />
               {telemetryEnabled && sessionTurns.isError && (

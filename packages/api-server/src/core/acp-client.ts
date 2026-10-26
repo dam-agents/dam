@@ -160,6 +160,7 @@ export interface PlatformSessionMeta {
   provider?: string;
   model?: string;
   settings?: Record<string, string>;
+  title?: string;
 }
 
 export interface AcpSessionInfo {

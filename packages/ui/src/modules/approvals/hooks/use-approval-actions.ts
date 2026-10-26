@@ -19,6 +19,7 @@ import {
   useDenyForever,
   useDismissApproval,
 } from "../api/mutations.js";
+import { offeredByAgent } from "../lib/agent-options.js";
 import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
 
 export type ApprovalActionId =
@@ -230,11 +231,17 @@ export function useApprovalActions(
   const actions = match(row.type)
     .with("spend_limit", () => spendLimitActions)
     .with("egress_proposal", () => proposalActions)
-    .otherwise(() => egressActions);
+    .otherwise(() => egressActions)
+    .filter((action) => offeredByAgent(row, action.id));
+  const preferred: ApprovalActionId =
+    row.type === "egress_proposal" ? "allow-permanent" : "allow-once";
 
   return {
     actions,
-    primary: row.type === "egress_proposal" ? "allow-permanent" : "allow-once",
+    primary:
+      actions.find((action) => action.id === preferred)?.id ??
+      actions.find((action) => !action.danger)?.id ??
+      preferred,
     inflight,
     hostLabel,
     expiredNote:

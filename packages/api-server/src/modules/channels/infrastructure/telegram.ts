@@ -749,6 +749,7 @@ export function createTelegramWorker(deps: {
               id: telegramChatOf(thread.id),
             }),
           ),
+          title: messages[0]!.text,
         },
         ...(onSession ? { onSession } : {}),
       });
