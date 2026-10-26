@@ -176,9 +176,10 @@ export function IconRail({
     defaultActivityFilter,
   );
   const [showAllAgents, setShowAllAgents] = useState(false);
-  const agentOrder = useStore((s) => s.sidebarAgentOrder);
-  const reorderAgents = useStore((s) => s.reorderSidebarAgents);
-  const expandedAgentIds = useStore((s) => s.expandedSidebarAgents);
+  const agentOrder = useStore((s) => s.sidebarAgentOrder) ?? [];
+  const reorderAgents = useStore((s) => s.reorderSidebarAgents) ?? (() => {});
+  const expandedAgentIds =
+    useStore((s) => s.expandedSidebarAgents) ?? new Set<string>();
   const toggleSidebarAgent = useStore((s) => s.toggleSidebarAgent);
   const expandSidebarAgent = useStore((s) => s.expandSidebarAgent);
   const activeSessionId = useStore((s) => s.sidebarActiveSessionId);

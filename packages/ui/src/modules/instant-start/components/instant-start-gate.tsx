@@ -2,9 +2,10 @@ import type { ReactNode } from "react";
 
 import { CatchStyles } from "../../agents/components/catch-styles.js";
 import {
-  CatchCelebration,
-} from "../../avatar-sheet/getting-started-checklist.js";
-import { endCelebration, useCharacterUnlocks } from "../../agents/lib/character-unlocks.js";
+  endCelebration,
+  useCharacterUnlocks,
+} from "../../agents/lib/character-unlocks.js";
+import { CatchCelebration } from "../../avatar-sheet/getting-started-checklist.js";
 import { useInstantStart } from "../context.js";
 import { InstantStartDebugControls } from "./debug-controls.js";
 

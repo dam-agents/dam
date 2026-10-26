@@ -5,8 +5,6 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { GlobalBanner } from "./components/global-banner.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
-import { InstantStartProvider } from "./modules/instant-start/context.js";
-import { InstantStartGate } from "./modules/instant-start/components/instant-start-gate.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
 import { FlowScreen, NavFlows } from "./mock/nav-flows.js";
@@ -18,6 +16,8 @@ import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
+import { InstantStartGate } from "./modules/instant-start/components/instant-start-gate.js";
+import { InstantStartProvider } from "./modules/instant-start/context.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { NotificationsPanel } from "./modules/notifications/components/notifications-panel.js";
 import { useApprovalToasts } from "./modules/notifications/hooks/use-approval-toasts.js";
@@ -61,7 +61,7 @@ export default function App() {
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
   if (view === "nav-flows") return <NavFlows />;
-if (view === "flow-screen") return <FlowScreen />;
+  if (view === "flow-screen") return <FlowScreen />;
   return (
     <InstantStartProvider>
       <MainApp />
@@ -188,4 +188,3 @@ function MainApp() {
     </div>
   );
 }
-

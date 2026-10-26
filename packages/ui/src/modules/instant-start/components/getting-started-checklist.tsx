@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+
 import { CatchStyles } from "../../agents/components/catch-styles.js";
 import {
   CHAR_NAMES,
