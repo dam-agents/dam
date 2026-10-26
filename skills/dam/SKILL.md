@@ -71,8 +71,19 @@ Compare the version at the top of this page with what `dam --version` prints:
 
 ### Point it at the server
 
-`dam auth status` lists the servers the CLI knows and which one is active.
+`dam auth status --json` lists the servers the CLI has signed in to, which one is active, and whether each session is `valid` or `expired`.
 If none is configured, ask the user for the address of their DAM deployment (the URL they open the web app at) — it is not a secret.
+
+To make another saved server the active one, without signing in again:
+
+```sh
+dam auth switch https://dam.example.com
+```
+
+It takes the URL with or without a trailing slash, or just the host name.
+A server the CLI has not signed in to exits with code 2 and lists the saved ones: sign in there with `dam auth login --server <url>`.
+When the session there expired, the server still becomes active, and the command says to run `dam auth login`.
+For one command against another saved server, without changing the active one, add `--server <url>` to that command.
 
 ### Sign in
 

@@ -13,6 +13,8 @@ import type {
 } from "../domain/errors.js";
 import { nextFlowStep, type DeviceFlowFailure } from "../domain/flow.js";
 import type { HostAuth } from "../domain/host-auth.js";
+import { matchSavedServer } from "../domain/saved-server.js";
+import { normalizeServerUrl } from "../../shared/server-url.js";
 import type { AuthStore, HostUrl } from "../infrastructure/auth-store.js";
 import type { AuthEnvReader } from "../infrastructure/auth-env-reader.js";
 import type { AuthConfigProbe } from "../infrastructure/auth-config-probe.js";
@@ -52,6 +54,8 @@ export interface LogoutOk {
   revokeWarning?: string;
 }
 
+export type SessionState = "valid" | "expired" | "unchecked" | "env";
+
 export interface StatusEntry {
   host: HostUrl;
   issuer: string;
@@ -59,7 +63,8 @@ export interface StatusEntry {
   source: "env" | "file";
   isActive: boolean;
   expiresAt?: Date;
-  sessionExpired: boolean;
+  session: SessionState;
+  uncheckedReason?: string;
 }
 
 export interface StatusReport {
@@ -89,10 +94,28 @@ export type LogoutError = { kind: "auth-store"; detail: string };
 
 export type StatusError = { kind: "auth-store"; detail: string };
 
+export interface SwitchOk {
+  host: HostUrl;
+  session: SessionState;
+  uncheckedReason?: string;
+  warnings: ReadonlyArray<string>;
+}
+
+export type SwitchError =
+  | { kind: "auth-store"; detail: string }
+  | { kind: "config"; detail: string }
+  | { kind: "unknown-server"; input: string; saved: ReadonlyArray<HostUrl> }
+  | {
+      kind: "ambiguous-server";
+      input: string;
+      candidates: ReadonlyArray<HostUrl>;
+    };
+
 export interface AuthService {
   login(input: LoginInput): Promise<Result<LoginOk, LoginError>>;
   logout(host: HostUrl): Promise<Result<LogoutOk, LogoutError>>;
   status(): Promise<Result<StatusReport, StatusError>>;
+  switchTo(server: string): Promise<Result<SwitchOk, SwitchError>>;
 }
 
 export interface AuthServiceDeps {
@@ -176,7 +199,9 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
   const sleepMs = deps.sleepMs ?? ((ms) => sleep(ms));
 
   const checkSavedSession = async (host: HostUrl): Promise<SavedSession> => {
-    const token = await deps.savedTokenProvider.getSavedAccessToken(host);
+    const token = await deps.savedTokenProvider.getSavedAccessToken(host, {
+      keepExpired: true,
+    });
     if (token.ok) return { kind: "valid" };
     switch (token.error.kind) {
       case "not-logged-in":
@@ -193,6 +218,14 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
 
   return {
     async login(input) {
+      input = {
+        ...input,
+        host: normalizeServerUrl(input.host),
+        persistServer:
+          input.persistServer === undefined
+            ? undefined
+            : normalizeServerUrl(input.persistServer),
+      };
       const cfg = await deps.authConfigProbe.probe(input.host);
       if (!cfg.ok) {
         return err({
@@ -201,7 +234,10 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         });
       }
       const warnings: string[] = [];
-      const movedTo = cfg.value.movedTo;
+      const movedTo =
+        cfg.value.movedTo === undefined
+          ? undefined
+          : normalizeServerUrl(cfg.value.movedTo);
       if (movedTo !== undefined) {
         warnings.push(
           `${input.host} redirects to ${movedTo}; logged in there and saved it as the server`,
@@ -367,7 +403,8 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       }
     },
 
-    async logout(host) {
+    async logout(rawHost) {
+      const host = normalizeServerUrl(rawHost);
       const stored = await deps.authStore.read();
       if (!stored.ok) {
         return err({ kind: "auth-store", detail: stored.error.reason });
@@ -403,7 +440,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
     },
 
     async status() {
-      let stored = await deps.authStore.read();
+      const stored = await deps.authStore.read();
       if (!stored.ok) {
         return err({ kind: "auth-store", detail: stored.error.reason });
       }
@@ -411,31 +448,40 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       const activeHost = cfg.ok ? cfg.value.server : undefined;
       const envToken = deps.authEnvReader.damToken();
 
-      let activeSession: SavedSession | undefined;
-      if (
-        activeHost !== undefined &&
-        envToken === undefined &&
-        stored.value.has(activeHost)
-      ) {
-        activeSession = await checkSavedSession(activeHost);
-        if (activeSession.kind === "valid") {
-          const refreshed = await deps.authStore.read();
-          if (refreshed.ok) stored = refreshed;
-        }
+      const sessions = new Map<HostUrl, SavedSession>();
+      for (const host of stored.value.keys()) {
+        if (host === activeHost && envToken !== undefined) continue;
+        sessions.set(host, await checkSavedSession(host));
       }
+      const refreshed = await deps.authStore.read();
+      const current = refreshed.ok ? refreshed.value : stored.value;
 
       const entries: StatusEntry[] = [];
-      for (const [host, entry] of stored.value) {
+      for (const [host, saved] of stored.value) {
+        const entry = current.get(host) ?? saved;
         const isActive = host === activeHost;
-        const shadowed = isActive && envToken !== undefined;
+        const session = sessions.get(host);
+        if (session === undefined) {
+          entries.push({
+            host,
+            issuer: ENV_ISSUER_PLACEHOLDER,
+            username: ENV_USERNAME_PLACEHOLDER,
+            source: "env",
+            isActive,
+            session: "env",
+          });
+          continue;
+        }
         entries.push({
           host,
-          issuer: shadowed ? ENV_ISSUER_PLACEHOLDER : entry.issuer,
-          username: shadowed ? ENV_USERNAME_PLACEHOLDER : entry.username,
-          source: shadowed ? "env" : "file",
+          issuer: entry.issuer,
+          username: entry.username,
+          source: "file",
           isActive,
-          expiresAt: shadowed ? undefined : entry.expiresAt,
-          sessionExpired: isActive && activeSession?.kind === "expired",
+          expiresAt: entry.expiresAt,
+          session: session.kind,
+          uncheckedReason:
+            session.kind === "unchecked" ? session.reason : undefined,
         });
       }
 
@@ -450,23 +496,65 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           username: ENV_USERNAME_PLACEHOLDER,
           source: "env",
           isActive: true,
-          sessionExpired: false,
+          session: "env",
         });
       }
 
       const activeEntry = entries.find((e) => e.isActive);
-      const activeHostValid =
-        activeEntry !== undefined &&
-        (activeEntry.source === "env" || activeSession?.kind === "valid");
-
       return ok({
         activeHost,
         entries,
-        activeHostValid,
+        activeHostValid:
+          activeEntry?.session === "env" || activeEntry?.session === "valid",
+        uncheckedReason: activeEntry?.uncheckedReason,
+      });
+    },
+
+    async switchTo(server) {
+      const stored = await deps.authStore.read();
+      if (!stored.ok) {
+        return err({ kind: "auth-store", detail: stored.error.reason });
+      }
+      const saved = [...stored.value.keys()];
+      const match = matchSavedServer(server, saved);
+      if (match.kind === "unknown") {
+        return err({ kind: "unknown-server", input: server, saved });
+      }
+      if (match.kind === "ambiguous") {
+        return err({
+          kind: "ambiguous-server",
+          input: server,
+          candidates: match.candidates,
+        });
+      }
+      const host = match.host;
+
+      const written = await deps.configService.set("server", host);
+      if (!written.ok) {
+        return err({ kind: "config", detail: written.error.reason });
+      }
+
+      const warnings: string[] = [];
+      const resolved = await deps.configService.getResolved({});
+      if (resolved.ok && resolved.value.server !== host) {
+        warnings.push(
+          `the active server is still ${resolved.value.server}; update DAM_SERVER to ${host}`,
+        );
+      }
+      if (deps.authEnvReader.damToken() !== undefined) {
+        warnings.push(
+          "DAM_TOKEN is set; commands use it instead of the saved sign-in until you unset it",
+        );
+        return ok({ host, session: "env", warnings });
+      }
+
+      const session = await checkSavedSession(host);
+      return ok({
+        host,
+        session: session.kind,
         uncheckedReason:
-          activeSession?.kind === "unchecked"
-            ? activeSession.reason
-            : undefined,
+          session.kind === "unchecked" ? session.reason : undefined,
+        warnings,
       });
     },
   };

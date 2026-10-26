@@ -141,6 +141,32 @@ describe("TokenProvider — claim 5: DAM_TOKEN precedence", () => {
     if (!r.ok) expect(r.error.kind).toBe("session-expired");
   });
 
+  /**
+   * TEST_SCENARIO: `dam auth status` and `dam auth switch` only look at a
+   * saved session. When its refresh token is dead they report it expired but
+   * keep the entry, so the server stays listed and can still be made active.
+   */
+  it("getSavedAccessToken with keepExpired reports an expired session and keeps its entry", async () => {
+    const store = makeStore([
+      [HOST, makeAuth(new Date(NOW.getTime() + 30_000).toISOString())],
+    ]);
+    const tp = createTokenProvider({
+      authStore: store,
+      authEnvReader: envReader(undefined),
+      tokenEndpointClient: refreshClient(
+        ok({ kind: "error", error: "invalid_grant" }),
+      ),
+      hostMetadata: metadataResolver(),
+      now: () => NOW,
+    });
+
+    const r = await tp.getSavedAccessToken(HOST, { keepExpired: true });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("session-expired");
+    expect(store.removes).toBe(0);
+    expect(store.state.has(HOST)).toBe(true);
+  });
+
   it("DAM_TOKEN empty string treated as unset (falls through to Auth Store)", async () => {
     const store = makeStore([[HOST, makeAuth("2027-01-01T00:00:00Z")]]);
     const tp = createTokenProvider({
