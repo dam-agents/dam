@@ -30,6 +30,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +87,7 @@ import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-gr
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { useInstantStart } from "../../instant-start/context.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import {
@@ -118,12 +124,6 @@ import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { Terminal } from "../components/terminal.js";
-import { FreeBudgetBanner } from "../../instant-start/components/free-budget-banner.js";
-import {
-  KitSuggestionsEmpty,
-  KitSuggestionsCompact,
-} from "../../instant-start/components/kit-suggestions-empty.js";
-import { useInstantStart } from "../../instant-start/context.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -143,7 +143,6 @@ const ConfigureAgentModal = lazy(() =>
 );
 
 export function ChatView() {
-  const instantStart = useInstantStart();
   const selectedAgent = useStore((s) => s.selectedAgent);
   const { data: agentsData } = useAgents();
   const agents = agentsData?.list ?? [];
@@ -215,7 +214,7 @@ export function ChatView() {
       null)
     : null;
   const goBack = useStore((s) => s.goBack);
-  const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToAgentLanding = useStore((s) => s.navigateToAgentLanding);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToKnowledgeBaseConfig = useStore(
     (s) => s.navigateToKnowledgeBaseConfig,
@@ -226,11 +225,11 @@ export function ChatView() {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
-  const toggleNotifications = useStore((s) => s.toggleNotifications);
 
   const [configureSection, setConfigureSection] =
     useState<SandboxSection | null>(null);
   const [autoOpenProvider, setAutoOpenProvider] = useState(false);
+  const instantStart = useInstantStart();
 
   const isMock = import.meta.env.VITE_MOCK === "true";
 
@@ -265,6 +264,7 @@ export function ChatView() {
   }, []);
 
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
+  const toggleNotifications = useStore((s) => s.toggleNotifications);
 
   const [rightW, setRightW] = useState<number | null>(
     () => Number(localStorage.getItem("platform-file-w")) || null,
@@ -305,18 +305,6 @@ export function ChatView() {
     idle: chatIdle,
     sendPrompt,
   });
-
-  const wrappedSendPrompt = useCallback(
-    (text: string, attachments?: unknown[]) => {
-      if (instantStart && !instantStart.connectedProviderType) {
-        instantStart.addBudgetUsage(
-          Math.round((0.3 + Math.random() * 0.7) * 100) / 100,
-        );
-      }
-      sendPrompt(text, attachments as never);
-    },
-    [sendPrompt, instantStart],
-  );
 
   const defaultPlaceholder = useRotatingPlaceholder(getDefaultExamples());
 
@@ -586,12 +574,14 @@ export function ChatView() {
       />
     );
 
-  const statusDot = !isDemo && (
-    <span
-      aria-hidden
-      className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-    />
-  );
+  const statusDot = isMock
+    ? null
+    : !isDemo && (
+        <span
+          aria-hidden
+          className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+        />
+      );
 
   const { available: browserAvailable } = useBrowserAvailable();
   const canOpenBrowser = isMock || browserAvailable;
@@ -689,7 +679,7 @@ export function ChatView() {
             onNewChat={
               isMock
                 ? () => {
-                    if (selectedAgent) selectAgent(selectedAgent);
+                    if (selectedAgent) navigateToAgentLanding(selectedAgent);
                   }
                 : undefined
             }
@@ -765,22 +755,6 @@ export function ChatView() {
                             appears here as soon as it&apos;s up.
                           </p>
                         </div>
-                      ) : isMock ? (
-                        <div className="flex flex-1 flex-col items-center justify-center text-center">
-                          <p className="text-base font-bold text-foreground mb-2">
-                            Start a new session
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Send a message to begin or open a new session in:
-                          </p>
-                          {selectedAgent && (
-                            <NewSessionLauncher
-                              agentId={selectedAgent}
-                              agentName={selectedAgentName ?? ""}
-                              onNewTerminal={handleNewTerminal}
-                            />
-                          )}
-                        </div>
                       ) : (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
@@ -804,7 +778,7 @@ export function ChatView() {
                         message={m}
                         isLast={mi === messages.length - 1}
                         hasPendingPermission={hasPendingPermission}
-                        onRetry={wrappedSendPrompt}
+                        onRetry={sendPrompt}
                         onFileClick={openFileHandler}
                         onLoadOlder={loadOlderKeepingScroll}
                       />
@@ -828,38 +802,22 @@ export function ChatView() {
                 {agentView && isExperimentSandbox(agentView) && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
-                      <ExperimentPromptChips busy={busy} onSend={wrappedSendPrompt} />
+                      <ExperimentPromptChips busy={busy} onSend={sendPrompt} />
                     </ChatColumn>
                   </div>
                 )}
-                {instantStart && (
-                  <div className="mb-3">
-                    <ChatColumn className="px-4 md:px-8">
-                      <FreeBudgetBanner onConfigureProvider={() => { setConfigureSection("setup"); setAutoOpenProvider(true); }} />
-                    </ChatColumn>
-                  </div>
-                )}
-                {instantStart?.budgetExhausted &&
-                !instantStart.providerAdded ? (
-                  <ChatColumn className="px-4 md:px-8">
-                    <div className="flex h-12 items-center justify-center rounded-lg border border-border bg-muted/50 text-sm text-muted-foreground">
-                      Chat disabled — connect a provider to continue
-                    </div>
-                  </ChatColumn>
-                ) : (
-                  <ChatInputArea
-                    textareaRef={textareaRef}
-                    busy={busy}
-                    loadingSession={loadingSession}
-                    onSend={wrappedSendPrompt}
-                    onStop={stopAgent}
-                    rotatingPlaceholder={rotatingPlaceholder}
-                    onConfigureSection={
-                      selectedAgent ? setConfigureSection : undefined
-                    }
-                    onScrollToMessage={handleScrollToMessage}
-                  />
-                )}
+                <ChatInputArea
+                  textareaRef={textareaRef}
+                  busy={busy}
+                  loadingSession={loadingSession}
+                  onSend={sendPrompt}
+                  onStop={stopAgent}
+                  rotatingPlaceholder={rotatingPlaceholder}
+                  onConfigureSection={
+                    selectedAgent ? setConfigureSection : undefined
+                  }
+                  onScrollToMessage={handleScrollToMessage}
+                />
                 {!hasPendingPermission && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
@@ -878,6 +836,16 @@ export function ChatView() {
                             }
                           />
                         )}
+                        {instantStart &&
+                          !instantStart.connectedProviderType && (
+                            <CurveBenderBudget
+                              instantStart={instantStart}
+                              onConfigure={() => {
+                                setConfigureSection("setup");
+                                setAutoOpenProvider(false);
+                              }}
+                            />
+                          )}
                       </div>
                     </ChatColumn>
                   </div>
@@ -976,7 +944,7 @@ export function ChatView() {
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
+      ) : !isMock && selectedAgent && !agentInaccessible && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}
@@ -991,7 +959,10 @@ export function ChatView() {
             agentId={selectedAgent}
             initialSection={configureSection}
             autoOpenProvider={autoOpenProvider}
-            onClose={() => { setConfigureSection(null); setAutoOpenProvider(false); }}
+            onClose={() => {
+              setConfigureSection(null);
+              setAutoOpenProvider(false);
+            }}
           />
         </Suspense>
       )}
@@ -1025,6 +996,72 @@ function ChatHeaderStatus({
         <ContributionFailuresBadge failures={agent.contributionFailures} />
       )}
     </>
+  );
+}
+
+function CurveBenderBudget({
+  instantStart,
+  onConfigure,
+}: {
+  instantStart: NonNullable<ReturnType<typeof useInstantStart>>;
+  onConfigure: () => void;
+}) {
+  const { freeBudget, budgetExhausted, firstLanding } = instantStart;
+  const pct = Math.round(
+    ((freeBudget.limit - freeBudget.used) / freeBudget.limit) * 100,
+  );
+  const isLow = !budgetExhausted && pct <= 10;
+
+  const popover = budgetExhausted
+    ? {
+        title: "Budget up",
+        body: "Your free budget has been used up. Change your provider to keep going.",
+      }
+    : isLow
+      ? {
+          title: "10% Remaining budget",
+          body: "You’re running low on free budget. Change your provider before it runs out.",
+        }
+      : firstLanding
+        ? {
+            title: "CurveBender budget",
+            body: "You’ve been given free budget to get started. You can switch to your own provider any time.",
+          }
+        : null;
+
+  const label = budgetExhausted ? "Budget used up" : `${pct}% remaining`;
+
+  const trigger = (
+    <button
+      type="button"
+      onClick={onConfigure}
+      className={cn(
+        "ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground",
+        isLow || budgetExhausted ? "text-warning" : "text-muted-foreground",
+      )}
+    >
+      <img src="/curvebender-logo.svg" alt="" className="size-3.5" />
+      {label}
+    </button>
+  );
+
+  if (!popover) return trigger;
+
+  return (
+    <Popover defaultOpen>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent side="top" align="end" className="w-64 p-3">
+        <p className="text-sm font-medium text-foreground">{popover.title}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{popover.body}</p>
+        <button
+          type="button"
+          onClick={onConfigure}
+          className="mt-2 text-xs font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          Change provider &rarr;
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
 

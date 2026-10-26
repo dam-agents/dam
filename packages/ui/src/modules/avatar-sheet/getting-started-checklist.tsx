@@ -1,8 +1,8 @@
 import {
   ArrowRight,
   CheckmarkFilled,
-  ChevronDown,
   ChevronUp,
+  Close,
   Information,
 } from "@carbon/icons-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
@@ -68,15 +68,29 @@ export interface QuestRowData {
   state: QuestRowState;
 }
 
-export function ProgressRing({ done, total }: { done: number; total: number }) {
+export function ProgressRing({
+  done,
+  total,
+  size,
+}: {
+  done: number;
+  total: number;
+  size?: number;
+}) {
   const r = 10;
   const step = 360 / total;
   const point = (deg: number) => {
     const rad = (deg * Math.PI) / 180;
     return `${14 + r * Math.cos(rad)} ${14 + r * Math.sin(rad)}`;
   };
+  const px = size ? `${size}px` : undefined;
   return (
-    <svg viewBox="0 0 28 28" className="size-7 shrink-0" aria-hidden>
+    <svg
+      viewBox="0 0 28 28"
+      className={cn("shrink-0", !size && "size-7")}
+      style={size ? { width: px, height: px } : undefined}
+      aria-hidden
+    >
       {Array.from({ length: total }, (_, i) => {
         const start = -90 + i * step + 9;
         const end = start + step - 18;
@@ -225,6 +239,7 @@ export function ChecklistPanel({
   showAvatars = true,
   revealAvatars,
   onCollapse,
+  embedded,
 }: {
   done: number;
   total: number;
@@ -233,9 +248,15 @@ export function ChecklistPanel({
   showAvatars?: boolean;
   revealAvatars?: boolean;
   onCollapse?: () => void;
+  embedded?: boolean;
 }) {
   return (
-    <div className="w-[340px] overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+    <div
+      className={cn(
+        "w-[340px] overflow-hidden",
+        !embedded && "rounded-lg border border-border bg-card shadow-xl",
+      )}
+    >
       <div
         className={cn(
           "flex items-center gap-3 px-4 pt-3.5",
@@ -253,10 +274,10 @@ export function ChecklistPanel({
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Collapse checklist"
+          aria-label="Close checklist"
           onClick={onCollapse}
         >
-          <ChevronDown size={16} />
+          <Close size={16} />
         </Button>
       </div>
 

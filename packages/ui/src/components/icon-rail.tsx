@@ -4,24 +4,26 @@ import {
   Bot,
   type CarbonIconType,
   Checkmark,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Close,
-  Diagram,
   Filter,
+  Folders,
   Gift,
   Help,
   Home,
   NewTab,
-  Notification,
   OverflowMenuVertical,
-  Reset,
   Settings,
   Time,
   TrashCan,
+  View,
+  ViewOff,
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,26 +46,47 @@ import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
+import { useInstantStart } from "../modules/instant-start/context.js";
+import {
+  ChecklistPopoverContent,
+  ProgressRing,
+  useChecklistState,
+} from "../modules/instant-start/components/getting-started-checklist.js";
 import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
 import { timeAgo } from "../lib/format-time.js";
-import {
-  AgentClickVariantPicker,
-  useAgentClickVariant,
-} from "../mock/agent-click-variants.js";
+import { useAgentClickVariant } from "../mock/agent-click-variants.js";
 import { useAgentsList } from "../modules/agents/api/queries.js";
 import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
 import { resolveAgentDisplay } from "../modules/agents/utils/agent-resolver.js";
+import { ConnectionIcon } from "../modules/connections/components/connection-icon.js";
 import { useNotifications } from "../modules/notifications/api/queries.js";
 import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
 import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
-import { SidebarBudget } from "../modules/instant-start/components/free-budget-banner.js";
 import { useStore } from "../store.js";
-import { BrandLogo } from "./brand-logo.js";
+import type { AgentView } from "../types.js";
 import { stateDotClass, stateLabel } from "./status-indicator.js";
 
 const SIDEBAR_ACTIVITY_PAGE = 5;
 const AGENT_SESSION_PAGE = 5;
+
+function applySidebarOrder<T extends { id: string }>(
+  agents: readonly T[],
+  order: string[],
+): T[] {
+  if (order.length === 0) return [...agents];
+  const byId = new Map(agents.map((a) => [a.id, a]));
+  const ordered: T[] = [];
+  for (const id of order) {
+    const agent = byId.get(id);
+    if (agent) {
+      ordered.push(agent);
+      byId.delete(id);
+    }
+  }
+  for (const agent of byId.values()) ordered.push(agent);
+  return ordered;
+}
 
 interface Destination {
   label: string;
@@ -85,52 +108,38 @@ export function IconRail({
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToAgentLanding = useStore((s) => s.navigateToAgentLanding);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const selectedAgent = useStore((s) => s.selectedAgent);
-
-  const toggleNotifications = useStore((s) => s.toggleNotifications);
-
-  const isMock = import.meta.env.VITE_MOCK === "true";
-
-  const { items: bellItems } = useNotifications();
-  const needsYouCount = bellItems.filter(isNeedsYou).length;
 
   const sandboxes: Destination = {
     label: "Home",
     icon: Home,
     active: view === "home",
     badge: 0,
-    navigate: () => {
-      setView("home");
-    },
+    navigate: () => setView("home"),
   };
   const starterKits: Destination = {
     label: "Starter Kits",
     icon: Gift,
     active: view === "presets",
     badge: 0,
-    navigate: () => {
-      setView("presets");
-    },
+    navigate: () => setView("presets"),
   };
 
   const artifacts: Destination = {
     label: "Artifacts",
-    icon: Diagram,
+    icon: Folders,
     active: view === "artifacts",
     badge: 0,
-    navigate: () => {
-      setView("artifacts");
-    },
+    navigate: () => setView("artifacts"),
   };
   const settings: Destination = {
     label: "Settings",
     icon: Settings,
     active: view === "settings",
     badge: 0,
-    navigate: () => {
-      navigateToSettings();
-    },
+    navigate: () => navigateToSettings(),
   };
 
   const agents = useAgentsList();
@@ -156,18 +165,27 @@ export function IconRail({
     for (const a of notifAgents) map.set(a.id, a.name);
     return map;
   }, [notifAgents]);
+  const agentById = useMemo(
+    () => new Map(agents.map((a) => [a.id, a])),
+    [agents],
+  );
 
   const [activityCount, setActivityCount] = useState(SIDEBAR_ACTIVITY_PAGE);
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
     defaultActivityFilter,
   );
   const [showAllAgents, setShowAllAgents] = useState(false);
+  const agentOrder = useStore((s) => s.sidebarAgentOrder);
+  const reorderAgents = useStore((s) => s.reorderSidebarAgents);
   const expandedAgentIds = useStore((s) => s.expandedSidebarAgents);
   const toggleSidebarAgent = useStore((s) => s.toggleSidebarAgent);
   const expandSidebarAgent = useStore((s) => s.expandSidebarAgent);
   const activeSessionId = useStore((s) => s.sidebarActiveSessionId);
   const setSidebarActiveSession = useStore((s) => s.setSidebarActiveSession);
   const [scopedAgentId, setScopedAgentId] = useState<string | null>(null);
+  const [excludedAgentIds, setExcludedAgentIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const clickVariant = useAgentClickVariant((s) => s.variant);
   const scopedAgent = scopedAgentId
     ? (agents.find((a) => a.id === scopedAgentId) ?? null)
@@ -176,17 +194,30 @@ export function IconRail({
     setScopedAgentId(id);
     setActivityCount(SIDEBAR_ACTIVITY_PAGE);
   };
+  const toggleExcluded = (id: string) => {
+    setExcludedAgentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setActivityCount(SIDEBAR_ACTIVITY_PAGE);
+  };
   const [agentSessionCounts, setAgentSessionCounts] = useState<
     Record<string, number>
   >({});
+
   useEffect(() => {
     setScopedAgentId(null);
-    useStore.setState({ expandedSidebarAgents: new Set() });
+    setExcludedAgentIds(new Set());
+    if (!import.meta.env.VITE_MOCK)
+      useStore.setState({ expandedSidebarAgents: new Set() });
   }, [clickVariant]);
   useEffect(() => {
-    const newId = (window as any).__lastMockSessionId as string | undefined;
+    const w = window as unknown as Record<string, unknown>;
+    const newId = w.__lastMockSessionId as string | undefined;
     if (!newId || !selectedAgent || view !== "chat") return;
-    delete (window as any).__lastMockSessionId;
+    delete w.__lastMockSessionId;
     setSidebarActiveSession(newId);
     expandSidebarAgent(selectedAgent);
   }, [selectedAgent, view, setSidebarActiveSession, expandSidebarAgent]);
@@ -269,7 +300,76 @@ export function IconRail({
       }),
     [agents, restartingIds, pausingIds],
   );
-  const visibleAgents = showAllAgents ? agents : activeAgents;
+  const visibleAgents = useMemo(
+    () => applySidebarOrder(showAllAgents ? agents : activeAgents, agentOrder),
+    [agents, activeAgents, showAllAgents, agentOrder],
+  );
+
+  const [draggedAgentId, setDraggedAgentId] = useState<string | null>(null);
+  const [dropTargetAgentId, setDropTargetAgentId] = useState<string | null>(
+    null,
+  );
+  const [dropPos, setDropPos] = useState<"above" | "below" | null>(null);
+
+  const handleAgentDragStart = useCallback(
+    (e: React.DragEvent, agentId: string) => {
+      setDraggedAgentId(agentId);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", agentId);
+      if (e.currentTarget instanceof HTMLElement) {
+        e.currentTarget.style.opacity = "0.4";
+      }
+    },
+    [],
+  );
+
+  const handleAgentDragEnd = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "";
+    }
+    setDraggedAgentId(null);
+    setDropTargetAgentId(null);
+    setDropPos(null);
+  }, []);
+
+  const handleAgentDragOver = useCallback(
+    (e: React.DragEvent, agentId: string) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (agentId === draggedAgentId) {
+        setDropTargetAgentId(null);
+        setDropPos(null);
+        return;
+      }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      setDropTargetAgentId(agentId);
+      setDropPos(e.clientY < midY ? "above" : "below");
+    },
+    [draggedAgentId],
+  );
+
+  const handleAgentDrop = useCallback(
+    (e: React.DragEvent, targetId: string) => {
+      e.preventDefault();
+      if (!draggedAgentId || draggedAgentId === targetId) return;
+      const currentOrder = visibleAgents.map((a) => a.id);
+      const fromIndex = currentOrder.indexOf(draggedAgentId);
+      if (fromIndex === -1) return;
+      const newOrder = currentOrder.filter((id) => id !== draggedAgentId);
+      let toIndex = newOrder.indexOf(targetId);
+      if (toIndex === -1) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      if (e.clientY >= rect.top + rect.height / 2) toIndex += 1;
+      newOrder.splice(toIndex, 0, draggedAgentId);
+      reorderAgents(newOrder);
+      setDraggedAgentId(null);
+      setDropTargetAgentId(null);
+      setDropPos(null);
+    },
+    [draggedAgentId, visibleAgents, reorderAgents],
+  );
+
   const focusIndex = Math.max(
     0,
     visibleAgents.findIndex((a) => a.id === scopedAgentId),
@@ -291,13 +391,16 @@ export function IconRail({
       feedItems.filter((item) => matchesActivityFilter(item, activityFilter)),
     [feedItems, activityFilter],
   );
-  const filteredFeed = useMemo(
-    () =>
-      scopedAgentId
-        ? globalFilteredFeed.filter((item) => item.agentId === scopedAgentId)
-        : globalFilteredFeed,
-    [globalFilteredFeed, scopedAgentId],
-  );
+  const filteredFeed = useMemo(() => {
+    let result = globalFilteredFeed;
+    if (scopedAgentId) {
+      result = result.filter((item) => item.agentId === scopedAgentId);
+    }
+    if (excludedAgentIds.size > 0) {
+      result = result.filter((item) => !excludedAgentIds.has(item.agentId));
+    }
+    return result;
+  }, [globalFilteredFeed, scopedAgentId, excludedAgentIds]);
   const visibleActivity = filteredFeed.slice(0, activityCount);
   const hasMoreActivity = activityCount < filteredFeed.length;
 
@@ -327,49 +430,55 @@ export function IconRail({
         )}
         data-testid="app-sidebar"
       >
-        {isMock && (
-          <div
-            className={cn(
-              "shrink-0 flex items-center pt-2 pb-1",
-              expandedNav ? "px-3 justify-between" : "justify-center",
-            )}
+        <div
+          className={cn(
+            "flex shrink-0 items-center px-2 pt-2",
+            expandedNav ? "w-full justify-between gap-2" : "justify-center",
+          )}
+        >
+          {expandedNav && (
+            <button
+              type="button"
+              onClick={sandboxes.navigate}
+              aria-label={getBrand().name}
+              className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <BrandLogo />
+            </button>
+          )}
+          <Tooltip
+            content={expandedNav ? "Collapse navigation" : "Expand navigation"}
+            side="right"
           >
-            {expandedNav ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setView("home")}
-                  title={getBrand().name}
-                  aria-label={getBrand().name}
-                  className="rounded-lg p-1 text-foreground/80 cursor-pointer"
-                >
-                  <BrandLogo />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExpandedNav(false)}
-                  title="Collapse sidebar"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-muted"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setExpandedNav(true)}
-                title="Expand sidebar"
-                className="group relative flex h-[34px] w-[34px] items-center justify-center rounded-lg p-1 text-foreground/80 cursor-pointer"
-              >
-                <BrandLogo className="group-hover:invisible" />
-                <span className="absolute inset-0 hidden group-hover:flex items-center justify-center text-muted-foreground">
-                  <ChevronRight size={16} />
-                </span>
-              </button>
-            )}
-          </div>
-        )}
-        <div className="mt-1.5 shrink-0 flex flex-col gap-px px-2">
+            <button
+              type="button"
+              onClick={() => setExpandedNav(!expandedNav)}
+              aria-label={
+                expandedNav ? "Collapse navigation" : "Expand navigation"
+              }
+              aria-expanded={expandedNav}
+              className={cn(
+                "group relative flex items-center justify-center rounded-lg transition-colors hover:bg-muted hover:text-foreground",
+                expandedNav
+                  ? "p-1.5 text-muted-foreground"
+                  : "h-10 w-10 text-foreground/80",
+              )}
+            >
+              {expandedNav ? (
+                <ChevronLeft size={16} />
+              ) : (
+                <>
+                  <BrandLogo className="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
+                  <ChevronRight
+                    size={16}
+                    className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+                  />
+                </>
+              )}
+            </button>
+          </Tooltip>
+        </div>
+        <div className="mt-px shrink-0 flex flex-col gap-px px-2">
           <RailItem {...sandboxes} expanded={expandedNav} />
           <RailItem {...artifacts} expanded={expandedNav} />
           <RailItem {...starterKits} expanded={expandedNav} />
@@ -392,18 +501,35 @@ export function IconRail({
                   )}
                 >
                   <SectionLabel>Agents</SectionLabel>
-                  <Tooltip content="Create agent" side="right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setView("agent-new");
-                      }}
-                      aria-label="Create agent"
-                      className="flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <Add size={16} />
-                    </button>
-                  </Tooltip>
+                  <DropdownMenu>
+                    <Tooltip content="Create agent" side="right">
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="Create agent"
+                          className="flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        >
+                          <Add size={16} />
+                        </button>
+                      </DropdownMenuTrigger>
+                    </Tooltip>
+                    <DropdownMenuContent align="start" className="w-52">
+                      <DropdownMenuItem onClick={() => setView("agent-new")}>
+                        <Add
+                          size={16}
+                          className="shrink-0 text-muted-foreground"
+                        />
+                        Create from scratch
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setView("packs")}>
+                        <Gift
+                          size={16}
+                          className="shrink-0 text-muted-foreground"
+                        />
+                        Start from a kit
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 <div className="flex flex-col gap-px px-2">
                   {visibleAgents.map((agent, agentIndex) => {
@@ -427,6 +553,7 @@ export function IconRail({
                     const isFocused = focusing && agent.id === scopedAgentId;
                     const folded = focusing && !isFocused;
                     const isSelected =
+                      !import.meta.env.VITE_MOCK &&
                       !!activeSessionId &&
                       agentSessions.some(
                         (s) =>
@@ -440,11 +567,24 @@ export function IconRail({
                       <div
                         key={agent.id}
                         inert={folded}
+                        draggable={!folded}
+                        onDragStart={(e) => handleAgentDragStart(e, agent.id)}
+                        onDragEnd={handleAgentDragEnd}
+                        onDragOver={(e) => handleAgentDragOver(e, agent.id)}
+                        onDrop={(e) => handleAgentDrop(e, agent.id)}
                         className={cn(
-                          "grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none",
+                          "relative grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none",
                           folded
                             ? "grid-rows-[0fr] opacity-0"
                             : "grid-rows-[1fr] opacity-100",
+                          dropTargetAgentId === agent.id &&
+                            draggedAgentId !== null &&
+                            dropPos === "above" &&
+                            "before:absolute before:inset-x-2 before:top-0 before:z-10 before:h-0.5 before:rounded-full before:bg-primary",
+                          dropTargetAgentId === agent.id &&
+                            draggedAgentId !== null &&
+                            dropPos === "below" &&
+                            "after:absolute after:inset-x-2 after:bottom-0 after:z-10 after:h-0.5 after:rounded-full after:bg-primary",
                         )}
                         style={{
                           transitionDelay: `${Math.min(Math.abs(agentIndex - focusIndex), 6) * 35}ms`,
@@ -456,19 +596,9 @@ export function IconRail({
                             isFocused ? "overflow-visible" : "overflow-hidden",
                           )}
                         >
-                          {isMock ? (
-                            <div className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5">
-                              <AgentAvatar
-                                agentId={agent.id}
-                                state={display.state}
-                                className="!size-6"
-                              />
-                              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-                                {agent.name}
-                              </span>
-                            </div>
-                          ) : isFocused ? (
+                          {isFocused ? (
                             <FocusedAgentCard
+                              agent={agent}
                               name={agent.name}
                               display={display}
                               sessionCount={agentSessions.length}
@@ -476,9 +606,7 @@ export function IconRail({
                                 agentSessions.filter((x) => x.type === "unread")
                                   .length
                               }
-                              onNewChat={() => {
-                                selectAgent(agent.id);
-                              }}
+                              onNewChat={() => navigateToAgentLanding(agent.id)}
                               onClose={() => setScope(null)}
                             />
                           ) : (
@@ -488,10 +616,13 @@ export function IconRail({
                               onClick={() => {
                                 if (clickVariant === 0) {
                                   if (expandedAgentIds.has(agent.id)) {
-                                    setAgentSessionCounts((c) => {
-                                      const { [agent.id]: _, ...rest } = c;
-                                      return rest;
-                                    });
+                                    setAgentSessionCounts((c) =>
+                                      Object.fromEntries(
+                                        Object.entries(c).filter(
+                                          ([k]) => k !== agent.id,
+                                        ),
+                                      ),
+                                    );
                                   }
                                   toggleSidebarAgent(agent.id);
                                 } else {
@@ -507,10 +638,13 @@ export function IconRail({
                                   e.preventDefault();
                                   if (clickVariant === 0) {
                                     if (expandedAgentIds.has(agent.id)) {
-                                      setAgentSessionCounts((c) => {
-                                        const { [agent.id]: _, ...rest } = c;
-                                        return rest;
-                                      });
+                                      setAgentSessionCounts((c) =>
+                                        Object.fromEntries(
+                                          Object.entries(c).filter(
+                                            ([k]) => k !== agent.id,
+                                          ),
+                                        ),
+                                      );
                                     }
                                     toggleSidebarAgent(agent.id);
                                   } else {
@@ -525,6 +659,9 @@ export function IconRail({
                               className={cn(
                                 "group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
                                 isSelected && "bg-muted",
+                                clickVariant === 6 &&
+                                  excludedAgentIds.has(agent.id) &&
+                                  "opacity-40",
                               )}
                             >
                               <AgentAvatar
@@ -535,33 +672,76 @@ export function IconRail({
                               <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                                 {agent.name}
                               </span>
-                              {hasUnread && !isSelected && (
-                                <span
-                                  aria-label="Unread sessions"
-                                  className="absolute top-1/2 right-3 size-2 -translate-y-1/2 rounded-full bg-accent group-hover/agent:invisible group-focus-within/agent:invisible"
-                                />
-                              )}
-                              <span
-                                className={cn(
-                                  "flex shrink-0 items-center gap-0.5 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100",
-                                  isSelected ? "opacity-100" : "opacity-0",
+                              {hasUnread &&
+                                !isSelected &&
+                                clickVariant !== 6 && (
+                                  <span
+                                    aria-label="Unread sessions"
+                                    className="absolute top-1/2 right-3 size-2 -translate-y-1/2 rounded-full bg-accent group-hover/agent:invisible group-focus-within/agent:invisible"
+                                  />
                                 )}
-                              >
-                                <Tooltip content="New chat" side="right">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      selectAgent(agent.id);
-                                    }}
-                                    className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                                    aria-label={`New chat with ${agent.name}`}
+                              {clickVariant === 6 ? (
+                                <span className="flex shrink-0 items-center gap-0.5">
+                                  <Tooltip
+                                    content={
+                                      excludedAgentIds.has(agent.id)
+                                        ? "Show in activity"
+                                        : "Hide from activity"
+                                    }
+                                    side="right"
                                   >
-                                    <NewTab size={16} />
-                                  </button>
-                                </Tooltip>
-                                <AgentOverflowMenu display={display} />
-                              </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleExcluded(agent.id);
+                                      }}
+                                      className={cn(
+                                        "rounded p-0.5 transition-colors",
+                                        excludedAgentIds.has(agent.id)
+                                          ? "text-muted-foreground/50 hover:text-foreground"
+                                          : "text-muted-foreground opacity-0 group-hover/agent:opacity-100 hover:text-foreground",
+                                      )}
+                                      aria-label={
+                                        excludedAgentIds.has(agent.id)
+                                          ? `Show ${agent.name} in activity`
+                                          : `Hide ${agent.name} from activity`
+                                      }
+                                    >
+                                      {excludedAgentIds.has(agent.id) ? (
+                                        <ViewOff size={16} />
+                                      ) : (
+                                        <View size={16} />
+                                      )}
+                                    </button>
+                                  </Tooltip>
+                                </span>
+                              ) : (
+                                <span
+                                  className={cn(
+                                    "flex shrink-0 items-center gap-0.5 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100",
+                                    isSelected ? "opacity-100" : "opacity-0",
+                                  )}
+                                >
+                                  <Tooltip content="New chat" side="right">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigateToAgentLanding(agent.id);
+                                      }}
+                                      className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                                      aria-label={`New chat with ${agent.name}`}
+                                    >
+                                      <NewTab size={16} />
+                                    </button>
+                                  </Tooltip>
+                                  <AgentOverflowMenu
+                                    agent={agent}
+                                    display={display}
+                                  />
+                                </span>
+                              )}
                             </div>
                           )}
                           {isExpanded &&
@@ -720,6 +900,72 @@ export function IconRail({
               </div>
             )}
 
+            {clickVariant === 7 && agents.length > 0 && hasActivity && (
+              <div className="mt-4 px-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {agents.map((agent) => {
+                    const isExcluded = excludedAgentIds.has(agent.id);
+                    const isFocused = scopedAgentId === agent.id;
+                    return (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => {
+                          if (isFocused) {
+                            setScope(null);
+                          } else if (isExcluded) {
+                            toggleExcluded(agent.id);
+                          } else {
+                            setScope(agent.id);
+                          }
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          if (isFocused) setScope(null);
+                          toggleExcluded(agent.id);
+                        }}
+                        className={cn(
+                          "flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors",
+                          isFocused
+                            ? "border-accent bg-accent/10 text-accent"
+                            : isExcluded
+                              ? "border-border bg-background text-muted-foreground/40 line-through"
+                              : "border-border bg-background text-foreground hover:bg-muted",
+                        )}
+                      >
+                        <span className="truncate">{agent.name}</span>
+                        {isFocused && (
+                          <Close
+                            size={12}
+                            className="shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setScope(null);
+                            }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                  {(scopedAgentId || excludedAgentIds.size > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScope(null);
+                        setExcludedAgentIds(new Set());
+                      }}
+                      className="flex h-7 items-center rounded-full px-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 px-1 text-[11px] text-muted-foreground/60">
+                  Click to focus · Right-click to exclude
+                </p>
+              </div>
+            )}
+
             {hasActivity && (
               <div className="mt-6 pb-4">
                 <div ref={activitySentinelRef} className="h-0" />
@@ -731,7 +977,7 @@ export function IconRail({
                       : "border-b border-transparent",
                   )}
                 >
-                  {clickVariant === 1 && scopedAgent ? (
+                  {(clickVariant === 1 || clickVariant === 6) && scopedAgent ? (
                     <button
                       type="button"
                       onClick={() => setScope(null)}
@@ -840,6 +1086,130 @@ export function IconRail({
                     </div>
                   </div>
                 )}
+                {clickVariant === 6 &&
+                  !scopedAgent &&
+                  excludedAgentIds.size > 0 && (
+                    <div className="-mt-1 mb-3 flex items-center gap-1.5 px-5">
+                      <span className="text-xs text-muted-foreground">
+                        {excludedAgentIds.size} agent
+                        {excludedAgentIds.size > 1 ? "s" : ""} hidden
+                      </span>
+                      <span className="text-xs text-muted-foreground">·</span>
+                      <button
+                        type="button"
+                        onClick={() => setExcludedAgentIds(new Set())}
+                        className="text-xs text-accent hover:text-accent/80"
+                      >
+                        Show all
+                      </button>
+                    </div>
+                  )}
+                {clickVariant === 8 && (
+                  <div className="-mt-1 mb-3 px-5">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex h-8 w-full items-center justify-between rounded-lg border px-3 text-sm transition-colors hover:bg-muted",
+                            scopedAgentId || excludedAgentIds.size > 0
+                              ? "border-accent/30 bg-accent/5 text-foreground"
+                              : "border-border bg-background text-muted-foreground",
+                          )}
+                        >
+                          <span className="min-w-0 truncate">
+                            {scopedAgent
+                              ? `Only: ${scopedAgent.name}`
+                              : excludedAgentIds.size > 0
+                                ? `${agents.length - excludedAgentIds.size} of ${agents.length} agents`
+                                : "All agents"}
+                          </span>
+                          <ChevronDown size={16} className="shrink-0 ml-1" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="start"
+                        side="bottom"
+                        className="w-[280px] p-1"
+                      >
+                        <div className="flex items-center justify-between px-2 py-1.5">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Show activity from
+                          </span>
+                          {(scopedAgentId || excludedAgentIds.size > 0) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setScope(null);
+                                setExcludedAgentIds(new Set());
+                              }}
+                              className="text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          {agents.map((agent) => {
+                            const isOnly = scopedAgentId === agent.id;
+                            const isExcluded = excludedAgentIds.has(agent.id);
+                            return (
+                              <div
+                                key={agent.id}
+                                className="group/scope flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-muted"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isExcluded) {
+                                      toggleExcluded(agent.id);
+                                    } else {
+                                      toggleExcluded(agent.id);
+                                    }
+                                    if (scopedAgentId) setScope(null);
+                                  }}
+                                  className={cn(
+                                    "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+                                    isExcluded
+                                      ? "border-border bg-background"
+                                      : "border-accent bg-accent text-white",
+                                  )}
+                                >
+                                  {!isExcluded && <Checkmark size={12} />}
+                                </button>
+                                <span
+                                  className={cn(
+                                    "min-w-0 flex-1 truncate text-sm",
+                                    isExcluded
+                                      ? "text-muted-foreground"
+                                      : "text-foreground",
+                                  )}
+                                >
+                                  {agent.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExcludedAgentIds(new Set());
+                                    setScope(isOnly ? null : agent.id);
+                                  }}
+                                  className={cn(
+                                    "shrink-0 rounded px-1.5 py-0.5 text-xs transition-colors",
+                                    isOnly
+                                      ? "bg-accent/10 text-accent"
+                                      : "text-muted-foreground opacity-0 group-hover/scope:opacity-100 hover:bg-muted hover:text-foreground",
+                                  )}
+                                >
+                                  {isOnly ? "Only" : "Only"}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                )}
                 {visibleActivity.length === 0 && (
                   <p className="px-5 py-2 text-sm text-muted-foreground">
                     No matching activity
@@ -860,11 +1230,19 @@ export function IconRail({
                       ? (item.session.title ?? "Session")
                       : "";
                     const agent = agentNameMap.get(item.agentId) ?? "Agent";
+                    const activityAgent = agentById.get(item.agentId);
+                    const activityDisplay = activityAgent
+                      ? resolveAgentDisplay(
+                          activityAgent,
+                          restartingIds,
+                          pausingIds,
+                        )
+                      : undefined;
                     const meta = item.at ? timeAgo(item.at, now) : "";
                     const isSlack = hasSession && !!item.session.threadTs;
                     const isSchedule = hasSession && !!item.session.scheduleId;
                     const slackChannel = isSlack
-                      ? ((item.session as Record<string, unknown>)
+                      ? ((item.session as unknown as Record<string, unknown>)
                           .slackChannel as string | undefined)
                       : undefined;
                     return (
@@ -916,6 +1294,13 @@ export function IconRail({
                           )}
                         </span>
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          {!scopedAgentId && activityDisplay && (
+                            <AgentAvatar
+                              agentId={item.agentId}
+                              state={activityDisplay.state}
+                              className="!size-3.5 shrink-0"
+                            />
+                          )}
                           <span className="min-w-0 truncate">
                             {scopedAgentId
                               ? meta
@@ -1102,6 +1487,14 @@ export function IconRail({
                           : "";
                         const agentName =
                           agentNameMap.get(item.agentId) ?? "Agent";
+                        const compactAgent = agentById.get(item.agentId);
+                        const compactDisplay = compactAgent
+                          ? resolveAgentDisplay(
+                              compactAgent,
+                              restartingIds,
+                              pausingIds,
+                            )
+                          : undefined;
                         const isRunning = item.type === "running";
                         const isUnread = item.type === "unread";
                         return (
@@ -1128,9 +1521,18 @@ export function IconRail({
                                 <span className="ml-auto size-2 shrink-0 rounded-full bg-accent" />
                               )}
                             </span>
-                            <span className="text-xs text-muted-foreground">
-                              {agentName}
-                              {item.at ? ` · ${timeAgo(item.at, now)}` : ""}
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              {compactDisplay && (
+                                <AgentAvatar
+                                  agentId={item.agentId}
+                                  state={compactDisplay.state}
+                                  className="!size-3.5 shrink-0"
+                                />
+                              )}
+                              <span className="min-w-0 truncate">
+                                {agentName}
+                                {item.at ? ` · ${timeAgo(item.at, now)}` : ""}
+                              </span>
                             </span>
                           </button>
                         );
@@ -1151,13 +1553,13 @@ export function IconRail({
           </>
         )}
 
+        <SidebarChecklist expanded={expandedNav} />
         <div className="shrink-0 pb-2 pt-1">
           <div className="flex flex-col gap-px px-2">
-            <SidebarBudget expanded={expandedNav} />
             <RailLink
               label="Documentation"
               icon={Help}
-              href={isMock ? "#" : DOCS_URL}
+              href={DOCS_URL}
               expanded={expandedNav}
             />
             <RailItem {...settings} expanded={expandedNav} />
@@ -1173,6 +1575,58 @@ export function IconRail({
         </nav>
       )}
     </>
+  );
+}
+
+function SidebarChecklist({ expanded }: { expanded: boolean }) {
+  const ctx = useInstantStart();
+  const { done, total, finished } = useChecklistState();
+  const [open, setOpen] = useState(false);
+
+  if (!ctx?.firstLanding || finished) return null;
+
+  const trigger = (
+    <button
+      type="button"
+      onClick={() => setOpen(!open)}
+      className={cn(
+        "flex h-[34px] w-full items-center gap-3 rounded-lg px-3 transition-colors",
+        open
+          ? "text-primary bg-muted"
+          : "text-foreground/80 hover:text-foreground hover:bg-muted",
+      )}
+    >
+      <div className="flex size-4 items-center justify-center">
+        <ProgressRing done={done} total={total} size={16} />
+      </div>
+      {expanded && (
+        <span className="truncate text-sm font-medium">
+          Get started
+        </span>
+      )}
+    </button>
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        {expanded ? (
+          trigger
+        ) : (
+          <Tooltip content="Get started" side="right">
+            {trigger}
+          </Tooltip>
+        )}
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="end"
+        sideOffset={8}
+        className="w-[340px] p-0"
+      >
+        <ChecklistPopoverContent onClose={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1510,7 +1964,18 @@ function ActivityFilterMenu({
 
 type AgentDisplay = ReturnType<typeof resolveAgentDisplay>;
 
-function AgentOverflowMenu({ display }: { display: AgentDisplay }) {
+function AgentOverflowMenu({
+  agent,
+  display,
+}: {
+  agent: AgentView;
+  display: AgentDisplay;
+}) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const hasKnowledge = !!agent.kbTemplateId;
+  const hasSlack = true;
+  const hasTelegram = true;
+  const neverHibernates = agent.hibernationTimeoutMin === 0;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1519,12 +1984,68 @@ function AgentOverflowMenu({ display }: { display: AgentDisplay }) {
           size="icon-xs"
           className="text-muted-foreground hover:text-foreground"
           onClick={(e) => e.stopPropagation()}
-          aria-label="More actions"
+          aria-label="Agent actions"
         >
           <OverflowMenuVertical size={16} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => navigateToSandboxHome(agent.id)}>
+          Configure agent
+        </DropdownMenuItem>
+        {hasKnowledge && (
+          <DropdownMenuItem
+            onSelect={() => navigateToSandboxHome(agent.id, "setup")}
+          >
+            Share knowledge base
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        {hasSlack && (
+          <DropdownMenuItem>
+            <ConnectionIcon iconSlug="slack" alt="" size={16} />
+            Add to Slack channel
+          </DropdownMenuItem>
+        )}
+        {hasTelegram && (
+          <DropdownMenuItem>
+            <ConnectionIcon iconSlug="telegram" alt="" size={16} />
+            Add to Telegram chat
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        {display.state === "running" && (
+          <>
+            <DropdownMenuItem className="h-auto py-2">
+              <span className="flex max-w-72 flex-col gap-0.5">
+                <span>Stop</span>
+                <span className="whitespace-normal text-xs text-muted-foreground">
+                  Wakes only when a schedule fires or you start it
+                </span>
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="h-auto py-2"
+              disabled={neverHibernates}
+            >
+              <span className="flex max-w-72 flex-col gap-0.5">
+                <span className="flex items-center gap-2">
+                  Pause
+                  {neverHibernates && (
+                    <Badge variant="muted" size="sm">
+                      Unavailable
+                    </Badge>
+                  )}
+                </span>
+                <span className="whitespace-normal text-xs text-muted-foreground">
+                  Wakes on any action (a schedule firing, a message arriving, or
+                  you opening a chat)
+                </span>
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {display.powerAction === "start" ? (
           <DropdownMenuItem>
             {display.state === "over_budget" ? "Start" : "Wake"}
@@ -1534,22 +2055,15 @@ function AgentOverflowMenu({ display }: { display: AgentDisplay }) {
             Restart
           </DropdownMenuItem>
         )}
-        {display.state === "running" && (
-          <>
-            <DropdownMenuItem>Pause — wakes on next use</DropdownMenuItem>
-            <DropdownMenuItem>Stop — until started again</DropdownMenuItem>
-          </>
-        )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem tone="danger">
-          <TrashCan size={13} /> Delete agent
-        </DropdownMenuItem>
+        <DropdownMenuItem tone="danger">Delete agent</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 function FocusedAgentCard({
+  agent,
   name,
   display,
   sessionCount,
@@ -1557,6 +2071,7 @@ function FocusedAgentCard({
   onNewChat,
   onClose,
 }: {
+  agent: AgentView;
   name: string;
   display: AgentDisplay;
   sessionCount: number;
@@ -1570,7 +2085,7 @@ function FocusedAgentCard({
         <span
           className={cn(
             "size-2 shrink-0 rounded-full",
-            stateDotClass(display.state),
+            stateDotClass[display.state],
           )}
         />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
@@ -1586,7 +2101,7 @@ function FocusedAgentCard({
             <NewTab size={16} />
           </button>
         </Tooltip>
-        <AgentOverflowMenu display={display} />
+        <AgentOverflowMenu agent={agent} display={display} />
         <span className="mx-0.5 h-4 w-px bg-border" />
         <Tooltip content="Show all activity (Esc)" side="right">
           <button

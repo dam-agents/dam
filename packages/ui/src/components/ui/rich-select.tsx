@@ -31,7 +31,6 @@ interface Props<T extends string> {
   disabled?: boolean;
   invalid?: boolean;
   testId?: string;
-  defaultOpen?: boolean;
 }
 
 export function RichSelect<T extends string>({
@@ -43,11 +42,10 @@ export function RichSelect<T extends string>({
   disabled = false,
   invalid = false,
   testId,
-  defaultOpen,
 }: Props<T>) {
   const selected = options.find((o) => o.value === value);
   return (
-    <DropdownMenu defaultOpen={defaultOpen}>
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"

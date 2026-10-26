@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 import type { ProviderPresetType } from "../../types.js";
 
@@ -25,6 +25,7 @@ export interface InstantStartState {
   connectedProviderType: ProviderPresetType | null;
   setConnectedProviderType: (v: ProviderPresetType | null) => void;
   addBudgetUsage: (amount: number) => void;
+  setBudgetUsed: (v: number) => void;
 }
 
 const BUDGET_LIMIT = 20.0;
@@ -89,8 +90,17 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
       connectedProviderType,
       setConnectedProviderType,
       addBudgetUsage,
+      setBudgetUsed,
     }),
-    [freeBudget, budgetExhausted, providerAdded, agentCreated, firstLanding, curveBenderEnabled, connectedProviderType],
+    [
+      freeBudget,
+      budgetExhausted,
+      providerAdded,
+      agentCreated,
+      firstLanding,
+      curveBenderEnabled,
+      connectedProviderType,
+    ],
   );
 
   return (

@@ -76,6 +76,7 @@ export function PlusMenuPopover({
   const [panel, setPanel] = useState<Panel>("menu");
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [createScheduleOpen, setCreateScheduleOpen] = useState(false);
 
   const maintenance = useConnectionMaintenance();
 
@@ -164,10 +165,6 @@ export function PlusMenuPopover({
                   onOpenPanel={setPanel}
                   hasConfigureSection={!!onConfigureSection}
                   connectionCount={granted.length}
-                  connectionHasBroken={granted.some(
-                    (c) =>
-                      c.status === "expired" || c.status === "disconnected",
-                  )}
                 />
               </div>
               <div className="w-[360px] shrink-0 max-h-[60vh] overflow-y-auto">
@@ -206,8 +203,8 @@ export function PlusMenuPopover({
                       handleOpenChange(false);
                     }}
                     onSetup={() => {
-                      onConfigureSection?.("schedules");
                       handleOpenChange(false);
+                      setTimeout(() => setCreateScheduleOpen(true), 150);
                     }}
                   />
                 )}
@@ -245,6 +242,13 @@ export function PlusMenuPopover({
           onClose={() => setAddSourceOpen(false)}
           onCreate={async () => null}
           onCreateSkills={async () => ({ ok: true as const })}
+        />
+      )}
+      {createScheduleOpen && (
+        <ScheduleFormModal
+          agentId={agentId ?? undefined}
+          onClose={() => setCreateScheduleOpen(false)}
+          onSaved={() => setCreateScheduleOpen(false)}
         />
       )}
       <ConnectionMaintenanceDialog maintenance={maintenance} />
@@ -292,14 +296,12 @@ function MenuRoot({
   onOpenPanel,
   hasConfigureSection,
   connectionCount,
-  connectionHasBroken,
 }: {
   agentId: string | null;
   onAttachFile: () => void;
   onOpenPanel: (p: Panel) => void;
   hasConfigureSection: boolean;
   connectionCount: number;
-  connectionHasBroken: boolean;
 }) {
   const skillCount = useSkillCount(agentId);
   const scheduleCount = useScheduleCount(agentId);
@@ -325,7 +327,6 @@ function MenuRoot({
           <MenuRow
             label="Connections"
             badge={connectionCount > 0 ? `${connectionCount}` : undefined}
-            badgeDanger={connectionHasBroken}
             kitTag={kitTags.connections}
             onClick={() => onOpenPanel("connections")}
           />
@@ -338,13 +339,11 @@ function MenuRoot({
 function MenuRow({
   label,
   badge,
-  badgeDanger,
   kitTag,
   onClick,
 }: {
   label: string;
   badge?: string;
-  badgeDanger?: boolean;
   kitTag?: "included" | "setup";
   onClick: () => void;
 }) {
@@ -368,14 +367,7 @@ function MenuRow({
         </span>
       )}
       {badge && (
-        <span
-          className={cn(
-            "shrink-0 rounded-md px-2 py-0.5 text-sm",
-            badgeDanger
-              ? "bg-danger-light text-danger"
-              : "bg-muted text-muted-foreground",
-          )}
-        >
+        <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-sm text-muted-foreground">
           {badge}
         </span>
       )}
@@ -576,7 +568,7 @@ function SchedulesPanel({
       )}
       <div className="sticky bottom-0 flex items-center justify-between border-t border-border bg-background px-3 py-2.5">
         <Button variant="outline" size="sm" onClick={onSetup}>
-          <Add size={16} /> Add schedule
+          <Add size={16} /> Create schedule
         </Button>
         <button
           onClick={onDescribe}
