@@ -185,8 +185,25 @@ export function createSchedulerRunner(
     nextRun: null,
   });
 
-  const firedHarness = new WeakMap<Schedule, string>();
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: which harness a fire ran on, keyed by schedule
+   * and remembered across the fire: a one-time fire's outcome is emitted when
+   * its event settles, minutes later and from a row read afresh, so it cannot
+   * ride the object the fire built. Bounded to the newest 1 000 fires of this
+   * process; past that the outcome falls back to the agent's own harness, and a
+   * column on the schedule would be the upgrade if that ever matters.
+   */
+  const firedHarness = new Map<string, string>();
+  const FIRED_HARNESS_CAP = 1_000;
   const earlyWake = new WeakMap<Schedule, ActivityStamp>();
+
+  function rememberFiredHarness(scheduleId: string, harness: string): void {
+    firedHarness.delete(scheduleId);
+    firedHarness.set(scheduleId, harness);
+    if (firedHarness.size <= FIRED_HARNESS_CAP) return;
+    const oldest = firedHarness.keys().next();
+    if (!oldest.done) firedHarness.delete(oldest.value);
+  }
 
   async function triggerPayload(
     sched: Schedule,
@@ -241,7 +258,7 @@ export function createSchedulerRunner(
           "no model provider granted to this agent can run its harness; grant one to run this schedule",
       });
     if (pair) {
-      firedHarness.set(sched, pair.harness);
+      rememberFiredHarness(sched.id, pair.harness);
       payload.harness = pair.harness;
       if (pair.provider !== null) payload.provider = pair.provider;
       if (pair.model !== null) payload.model = pair.model;
@@ -279,6 +296,7 @@ export function createSchedulerRunner(
   ): Promise<void> {
     try {
       const ownerSub = await deps.repo.getOwnerById(sched.id);
+      const harness = firedHarness.get(sched.id);
       if (ownerSub) {
         emit({
           type: EventType.ScheduleFired,
@@ -287,9 +305,7 @@ export function createSchedulerRunner(
           ownerSub,
           mode: sched.spec.sessionMode ?? "fresh",
           outcome,
-          ...(firedHarness.has(sched) && {
-            harness: firedHarness.get(sched),
-          }),
+          ...(harness !== undefined && { harness }),
         });
       }
     } catch (err) {
@@ -435,11 +451,9 @@ export function createSchedulerRunner(
         `fire: one-time schedule ${sched.id} is committed but the poke failed: ${(err as Error).message}; it stays delivering`,
       );
       noteFire("failure", { stage: "poke" });
-      if (lastAttempt) await emitFired(sched, "failure");
       throw err;
     }
     noteFire("success");
-    await emitFired(sched, "success");
   }
 
   async function fire(
@@ -725,18 +739,23 @@ export function createSchedulerRunner(
         OnceResult.Delivering,
         outcome,
       );
-      if (changed) await emitChanged(sched.agentId, scheduleId);
-      else
+      if (!changed) {
         log(
           `delivery: one-time schedule ${scheduleId} is at ${sched.status?.lastResult ?? "no result"}, not ${OnceResult.Delivering}; ${outcome} dropped`,
         );
+        return;
+      }
+      await emitChanged(sched.agentId, scheduleId);
+      await emitFired(
+        sched,
+        outcome === OnceResult.Success ? "success" : "failure",
+      );
     },
 
     async recordOnceFailure(scheduleId, reason): Promise<void> {
       const sched = await deps.repo.getById(scheduleId);
       if (sched?.spec.type !== "once") return;
       await deps.repo.writeStatus(scheduleId, {
-        lastFiredAt: now(),
         lastFiredResult: reason,
         nextRun: null,
       });

@@ -50,21 +50,16 @@ export function SandboxIdentity({ agent, display }: Props) {
 export type SectionHeaderSlot = (actions?: ReactNode) => ReactNode;
 
 export function SandboxHomeHeader({
+  agent,
   title,
   description,
-  pictogram,
   actions,
-  agent,
-  showUpdate = false,
+  showUpdate = true,
 }: {
+  agent: AgentView;
   title: string;
   description?: string;
-  pictogram?: ReactNode;
   actions?: ReactNode;
-  agent?: AgentView;
-  /* UNIT_BOUNDARY_DESCRIPTION: without the new sidebar there is no row menu to
-   * carry the image update, so the page header keeps it (S2); with it, the row
-   * menu is the one place an Agent moves. */
   showUpdate?: boolean;
 }) {
   const { updateOne, updatingId } = useUpdateSandbox();
@@ -72,10 +67,9 @@ export function SandboxHomeHeader({
     <PageHeader
       title={title}
       description={description}
-      pictogram={pictogram}
       actions={
         <>
-          {showUpdate && agent && (
+          {showUpdate && (
             <UpdateAvailableAction
               agent={agent}
               pending={updatingId === agent.id}

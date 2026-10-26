@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-23
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -82,8 +82,7 @@ The runtime scans every few seconds while someone watches, every quarter minute 
 The user's decisions — the keep switch and Stop — go through the same surface.
 Field-level contract: [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 The chat view shows the inventory behind the `processes` [experimental feature](features.md).
-With both the `new-layout` and `unified-right-toolbar` experiments off it is a Processes section beside Files and Artifacts, in the column beside the conversation, and a row's output opens in the panel docked beside the conversation, the way a file does.
-With either on it is a Processes tab of the side panel, beside Artifacts, Files, Changes and Browser, and a row's output opens in that tab, the way a file opens in the Files tab.
+It is a Processes section beside Files and Artifacts, in the column beside the conversation, and a row's output opens in the panel docked beside the conversation, the way a file does.
 Either way the output follows the file while the process runs.
 Running rows are grouped by their effect on the agent: active turns, the work keeping the agent awake, and the work that stops at hibernation (on an Always on agent the last two are one group, since nothing stops there).
 Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which says in one line what the row does, and is disabled on an Always on agent, and changing it moves the row to the other group.

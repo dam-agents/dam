@@ -1,57 +1,32 @@
 import {
-  AiLabel,
-  Automatic,
   Branch,
   type CarbonIconType,
-  Cloud,
-  DocumentAttachment,
   Folder,
   Gears,
   Notification,
   Task,
-  ToolsAlt,
-  WifiController,
   Wikis,
 } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  RAIL_BADGE,
-  RAIL_COLUMN,
-  RAIL_GAP,
-  RAIL_GLYPH,
-  railTile,
-} from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the tiled rail is the Unified right toolbar's own surface, so its Artifacts tile draws the document icon whatever shell the page has; every other button that opens the panel, and every artifact link and list, keeps the layout's own icon.
 export const SIDE_PANEL_TABS: readonly {
   tab: SidePanelTab;
   label: string;
   icon: CarbonIconType;
-  tileIcon?: CarbonIconType;
 }[] = [
-  {
-    tab: "artifacts",
-    label: "Artifacts",
-    icon: ArtifactIcon,
-    tileIcon: DocumentAttachment,
-  },
+  { tab: "artifacts", label: "Artifacts", icon: ArtifactIcon },
   { tab: "files", label: "Files", icon: Folder },
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
-  { tab: "environments", label: "Environments", icon: Cloud },
-  { tab: "models", label: "Models", icon: AiLabel },
-  { tab: "services", label: "Services", icon: WifiController },
-  { tab: "skills", label: "Skills", icon: ToolsAlt },
-  { tab: "automations", label: "Automations", icon: Automatic },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
@@ -81,46 +56,17 @@ export function SidePanelTabButtons({
   badges = {},
   icons = {},
   placement = "rail",
-  tiles = false,
 }: SidePanelTabProps & {
   tabs: readonly (typeof SIDE_PANEL_TABS)[number][];
   placement?: "rail" | "top-bar";
-  tiles?: boolean;
 }) {
   const rail = placement === "rail";
-  return tabs.map(({ tab, label, icon: Icon, tileIcon }) => {
-    const TileIcon = tileIcon ?? Icon;
+  return tabs.map(({ tab, label, icon: Icon }) => {
     const badge = badges[tab];
     const shown = badge && badge.count > 0 ? badge : null;
     const content = shown?.label ?? label;
-    const control =
-      rail && tiles ? (
-        <button
-          type="button"
-          aria-label={shown?.label ?? label}
-          aria-pressed={active === tab}
-          data-testid={`side-panel-tab-${tab}`}
-          className={railTile(active === tab)}
-          onClick={() => onSelect(tab)}
-        >
-          {icons[tab] ?? <TileIcon size={RAIL_GLYPH} />}
-          {shown && (
-            <span
-              data-testid={`side-panel-badge-${tab}`}
-              className={cn(
-                RAIL_BADGE,
-                shown.tone === "warning"
-                  ? "bg-warning"
-                  : shown.tone === "neutral"
-                    ? "bg-muted-foreground"
-                    : "bg-accent",
-              )}
-            >
-              {shown.count > 9 ? "9+" : shown.count}
-            </span>
-          )}
-        </button>
-      ) : (
+    return (
+      <Tooltip key={tab} content={content} side={rail ? "left" : "bottom"}>
         <Button
           variant="ghost"
           size={rail ? "icon" : "icon-sm"}
@@ -159,11 +105,6 @@ export function SidePanelTabButtons({
             </Badge>
           )}
         </Button>
-      );
-    // UNIT_BOUNDARY_DESCRIPTION: every icon in the bar names its panel in a tooltip, the tiled rail's too, since a tile's glyph alone does not say which panel it opens.
-    return (
-      <Tooltip key={tab} content={content} side={rail ? "left" : "bottom"}>
-        {control}
       </Tooltip>
     );
   });
@@ -183,25 +124,17 @@ export function appSidePanelTabs(
 export function SidePanelBar({
   hidden,
   className,
-  tiles = false,
   ...props
 }: SidePanelTabProps & {
   hidden: ReadonlySet<SidePanelTab>;
   className?: string;
-  tiles?: boolean;
 }) {
-  const appTabs = appSidePanelTabs(hidden);
   return (
     <nav
       aria-label="Side panel"
       data-testid="side-panel-bar"
       className={cn(
-        tiles
-          ? cn(
-              "w-14 min-h-0 shrink-0 overflow-y-auto border-l border-border bg-chrome",
-              RAIL_COLUMN,
-            )
-          : "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
+        "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
         className,
       )}
     >
@@ -209,31 +142,10 @@ export function SidePanelBar({
         tabs={SIDE_PANEL_TABS.filter(
           ({ tab }) => !APP_TABS.has(tab) && !hidden.has(tab),
         )}
-        tiles={tiles}
         {...props}
       />
-      <div
-        className={cn(
-          "mt-auto flex flex-col",
-          tiles && cn("items-center", RAIL_GAP),
-        )}
-      >
-        {tiles ? (
-          <>
-            <SidePanelTabButtons
-              tabs={appTabs.filter((t) => t.tab !== "approvals")}
-              tiles
-              {...props}
-            />
-            <SidePanelTabButtons
-              tabs={appTabs.filter((t) => t.tab === "approvals")}
-              tiles
-              {...props}
-            />
-          </>
-        ) : (
-          <SidePanelTabButtons tabs={appTabs} {...props} />
-        )}
+      <div className="mt-auto flex flex-col">
+        <SidePanelTabButtons tabs={appSidePanelTabs(hidden)} {...props} />
       </div>
     </nav>
   );

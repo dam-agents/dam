@@ -26,8 +26,6 @@ describe("feature modes", () => {
         "advanced-connections": "experimental",
         "chat-forms": "experimental",
         "custom-avatars": "experimental",
-        "new-layout": "experimental",
-        "unified-right-toolbar": "experimental",
         environments: "experimental",
       },
     });

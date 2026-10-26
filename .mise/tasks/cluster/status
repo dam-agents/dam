@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #MISE description="Show cluster and pod status (--watch refreshes every 2s)"
 #MISE raw=true
-# --environment <name> first shows one of this agent's Environments.
+#USAGE flag "--environment <name>" help="Show this agent's Environment of that name instead of this host's cluster"
 #USAGE flag "--name <name>" help="Show this install instead of this worktree's"
+#USAGE flag "-w --watch" help="Refresh every 2s"
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
@@ -33,12 +34,12 @@ kubectl -n \"$CLUSTER_AGENT_NAMESPACE\" get pods 2>/dev/null || true
 
 case "${1:-}" in
   --watch|-w)
-    tput civis 2>/dev/null
+    tput civis 2>/dev/null || true
     trap 'tput cnorm 2>/dev/null; exit' INT TERM
     while true; do
-      tput home 2>/dev/null
+      tput home 2>/dev/null || true
       eval "$STATUS_CMD" | sed $'s/$/\033[K/'
-      tput ed 2>/dev/null
+      tput ed 2>/dev/null || true
       sleep 0.5
     done
     ;;

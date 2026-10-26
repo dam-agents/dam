@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-24
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -123,6 +123,7 @@ Its host names differ from the public ones, which the chart and the api-server b
 
 `mise run cluster:install -- --environment <name>` installs or upgrades the platform in an Environment from a checkout, the same way every time (the `cluster-ops` skill has the steps).
 The cluster tasks then act on the Environment's k3s instead of their own host's: the node over the link, the API through a tunnel the tasks open and reuse.
+An Environment holds one install, so it is always the default install: a `--name` or `DAM_INSTALL`, and a worktree's branch, never name it (the skill's [Where and which](../../.agents/skills/cluster-ops/SKILL.md#where-and-which) has the name rule and the per-target table).
 The public URLs are the Environment's `app`, `keycloak`, `share` and `content` endpoints, all on one port; the install stops, naming what to create, when one is missing.
 It runs no mesh, which the Environment's kernel cannot.
 Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`.
@@ -147,8 +148,6 @@ The section is in the page's section navigation only once the agent has an Envir
 While the agent has none, the Manage card of its General section links to the section, because the list of people can be set before the first Environment exists and is the list that first Environment inherits.
 What an Environment runs, its Startup Items and their output, is not shown there yet.
 The sidebar lists an agent's Environments under it, once it is expanded and only once it has one: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
-With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead, once the agent has one: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls.
-Who may open them is edited in that tab under the Unified right toolbar, where no configuration page holds the list, and a link to the section otherwise.
 The owner creates none there; the agent does.
 Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the list that decides whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up.
 

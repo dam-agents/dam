@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Show the installs on the cluster: names, namespaces, addresses, runners"
 #MISE raw=true
+#USAGE flag "--environment <name>" help="List the install on this agent's Environment of that name"
 #USAGE flag "--name <name>" help="Only this install"
 #USAGE flag "--all" help="Every install on the cluster"
 set -eo pipefail
@@ -44,7 +45,9 @@ echo "=== Runners ==="
 kubectl get deploy,ds -A -l app.kubernetes.io/component=vm-runner -o custom-columns='KIND:.kind,NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.readyReplicas' 2>/dev/null ||
   echo "no runner workloads"
 # On a Mac each install runs its own host runner, in a directory and on a port
-# of its own; `instance` records the VM it serves.
+# of its own; `instance` records the VM it serves. Only a lima cluster has one:
+# a sandbox and an Environment run their runners in the cluster.
+[ "$CLUSTER_TARGET" = lima ] || exit 0
 . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
 for d in "$HOST_RUNNER_BASE" "$HOST_RUNNER_BASE"/*/; do
   [ -f "$d/instance" ] || continue

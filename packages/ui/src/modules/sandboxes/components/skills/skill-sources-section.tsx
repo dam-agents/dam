@@ -19,7 +19,6 @@ export function SkillSourcesSection({
   onToggleAll,
   onRemove,
   onManageConnections,
-  panel = false,
 }: {
   readOnly: boolean;
   surface: SkillsSurface;
@@ -30,7 +29,6 @@ export function SkillSourcesSection({
   onToggleAll: (source: SkillSource, on: boolean, scope?: Skill[]) => void;
   onRemove?: (source: SkillSource) => void;
   onManageConnections: (() => void) | undefined;
-  panel?: boolean;
 }) {
   const { sources, sourcesLoaded, hiddenSources, sets } = surface;
   const { searching, shownSources } = derived;
@@ -51,7 +49,6 @@ export function SkillSourcesSection({
           </Button>
         )
       }
-      addInHeader={panel}
       addRow={onAddSource && <AddSourceRow onClick={onAddSource} />}
       isEmpty={sourcesLoaded && sources.length === 0}
       empty={

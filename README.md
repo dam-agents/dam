@@ -139,10 +139,13 @@ Open [localhost:4444](http://localhost:4444) and log in with `dev` / `dev`.
 
 ### Several installs in one local cluster
 
-The cluster is one per machine, and every worktree gets an install of its own on it, in its own namespace, with its own agents, database, Keycloak and port.
+On a lima cluster every worktree gets an install of its own, in its own namespace, with its own agents, database, Keycloak and port.
 The install's **name** comes from the worktree's branch, so `mise run cluster:install` in two worktrees installs twice instead of upgrading once.
 Each install answers on a port of its own — the first free one of 4400–4499, which one Lima port-forward rule carries to this host — and the repository's own checkout is the default install at [localhost:4444](http://localhost:4444), so nothing changes for a single checkout.
 On a Mac each install also runs its own VM runner, so agents boot in every install.
+
+A sandbox host and an Environment hold one install, the default one; `cluster:install -- --environment <name>` installs into an Environment and refuses a name.
+The [cluster-ops skill's Where and which](.agents/skills/cluster-ops/SKILL.md#where-and-which) has the name rule and what each target gets.
 
 ```sh
 mise run cluster:install                      # this worktree's install, named after its branch

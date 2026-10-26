@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+#MISE description="Cluster tooling resolves one target and one install, and a worktree's name never reaches an Environment"
+#MISE sources=[".mise/lib/cluster.sh", ".mise/tasks/cluster/*", ".mise/tasks/check/cluster-resolve"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# Two axes, one resolver: --environment picks which cluster, --name/DAM_INSTALL
+# picks which install on it. A cluster that holds one install never takes a name:
+# the repo's own checkout, a sandbox host, and an Environment. The rows below are
+# the name rule of the cluster-ops skill's "Where and which" section. The
+# Environment rows are the bug this check exists for: a worktree's branch used to
+# become the install name under --environment, and the install then refused, or
+# acted on namespaces that do not exist there.
+set -euo pipefail
+
+LIB="$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+unset IS_SANDBOX DAM_INSTALL CLUSTER_ENVIRONMENT E2E_LANE CLUSTER_ANNOUNCED usage_environment usage_name
+fail=0
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+# One repo and one linked worktree: the two checkouts the rule tells apart.
+git init -q -b main "$work/repo"
+git -C "$work/repo" -c user.email=check@example.com -c user.name=check commit -q --allow-empty -m init
+git -C "$work/repo" worktree add -q -b fix/cluster-tooling "$work/wt"
+REPO="$work/repo"
+WT="$work/wt"
+
+# resolve <checkout> [arg...]: what a task's own run of the resolver produces, as
+# `target|install|origin`. A case puts DAM_INSTALL, IS_SANDBOX or a usage_*
+# variable in front, the way a shell or mise hands it over.
+resolve() {
+  local dir="$1"
+  shift
+  (
+    set -- "$@"
+    # shellcheck disable=SC1090
+    MISE_CONFIG_ROOT="$dir" CLUSTER_RESOLVE_ONLY=1 . "$LIB"
+    printf '%s|%s|%s\n' "$CLUSTER_TARGET" "${CLUSTER_INSTALL:-default}" "$CLUSTER_INSTALL_ORIGIN"
+  )
+}
+
+expect() { # <what> <target|install|origin> <checkout> [arg...]
+  local what="$1" want="$2" dir="$3" got
+  shift 3
+  got="$(resolve "$dir" "$@")" || { echo "FAIL: $what: the resolver failed" >&2; fail=1; return; }
+  [ "$got" = "$want" ] || { echo "FAIL: $what: got '$got', want '$want'" >&2; fail=1; }
+}
+
+refuses() { # <what> <message fragment> <checkout> [arg...]
+  local what="$1" want="$2" dir="$3" out rc=0
+  shift 3
+  out="$(resolve "$dir" "$@" 2>&1)" || rc=$?
+  if [ "$rc" = 0 ]; then
+    echo "FAIL: $what: resolved instead of refusing: $out" >&2
+    fail=1
+    return
+  fi
+  case "$out" in
+    *"$want"*) ;;
+    *) echo "FAIL: $what: the refusal does not say '$want': $out" >&2; fail=1 ;;
+  esac
+}
+
+# --- lima: the name rule ---------------------------------------------------
+expect "lima, the repository's own checkout" "lima|default|repository checkout" "$REPO"
+expect "lima, a worktree's branch" "lima|fix-cluster-tooling|branch" "$WT"
+expect "lima, --name" "lima|sidebar|--name" "$WT" --name sidebar
+expect "lima, --name=<value>" "lima|sidebar|--name" "$WT" --name=sidebar
+usage_name=sidebar expect "lima, --name from mise" "lima|sidebar|--name" "$WT"
+DAM_INSTALL=profiles expect "lima, DAM_INSTALL" "lima|profiles|DAM_INSTALL" "$WT"
+DAM_INSTALL=profiles expect "lima, --name beats DAM_INSTALL" "lima|sidebar|--name" "$WT" --name sidebar
+DAM_INSTALL=default expect "lima, a pinned default" "lima|default|DAM_INSTALL" "$WT"
+expect "lima, an explicit default" "lima|default|--name" "$WT" --name default
+
+# --- host: a sandbox is this agent's own cluster, and goes with it ----------
+IS_SANDBOX=1 expect "host, a sandbox" "host|default|sandbox" "$REPO"
+IS_SANDBOX=1 refuses "host, a name" "holds one install" "$REPO" --name profiles
+
+# --- environment: one install, and never a worktree's name -----------------
+expect "environment, from a worktree" "environment|default|" "$WT" --environment pr-123
+expect "environment, --environment=<name>" "environment|default|" "$REPO" --environment=pr-123
+usage_environment=pr-123 expect "environment, from mise" "environment|default|" "$WT"
+expect "environment, a pinned default name" "environment|default|" "$WT" --environment pr-123 --name default
+refuses "environment, a --name" "holds one install" "$WT" --environment pr-123 --name profiles
+DAM_INSTALL=profiles refuses "environment, a DAM_INSTALL" "holds one install" "$WT" --environment pr-123
+E2E_LANE=1 CLUSTER_ENVIRONMENT=pr-123 refuses "the e2e lane in an Environment" "never an Environment" "$WT"
+E2E_LANE=1 refuses "the e2e lane with the flag" "never an Environment" "$WT" --environment pr-123
+
+# --- every task that declares flags declares both --------------------------
+# mise validates a declared task's flags before the script runs, so a task that
+# documents one of the two and not the other rejects the other outright.
+for f in "$MISE_CONFIG_ROOT"/.mise/tasks/cluster/*; do
+  grep -q '^#USAGE ' "$f" || continue
+  for flag in environment name; do
+    grep -q "^#USAGE flag \"--$flag" "$f" || {
+      echo "FAIL: ${f#"$MISE_CONFIG_ROOT/"}: declares #USAGE flags but not --$flag, so mise rejects it" >&2
+      fail=1
+    }
+  done
+done
+
+exit "$fail"

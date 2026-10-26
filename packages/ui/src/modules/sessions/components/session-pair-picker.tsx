@@ -83,7 +83,6 @@ interface CommonProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
-  newLayout?: boolean;
 }
 
 type Props = CommonProps &
@@ -111,13 +110,7 @@ type Props = CommonProps &
  * row that leads to the agent's Providers page.
  */
 export function SessionPairPicker(props: Props) {
-  const {
-    agentId,
-    open,
-    onOpenChange,
-    onConnectProviders,
-    newLayout = false,
-  } = props;
+  const { agentId, open, onOpenChange, onConnectProviders } = props;
   const carried = props.pending ? [] : props.carried;
   const routed = props.pending ? false : (props.routed ?? false);
   const edit = props.pending ? undefined : props.edit;
@@ -134,7 +127,6 @@ export function SessionPairPicker(props: Props) {
   );
   const [fromProfile, setFromProfile] = usePickedProfile(agentId ?? "");
   const { data: profiles = [] } = useProfiles(agentId);
-  const manageProviders = newLayout;
   const setPair = useStore((s) => s.setNextSessionPair);
 
   const connections = useProviderConnections(agentId);
@@ -545,18 +537,12 @@ export function SessionPairPicker(props: Props) {
                       agentId={agentId}
                       harness={harness}
                       carried={carried}
-                      sections={
-                        manageProviders
-                          ? sections.filter((p) => attached(p.id))
-                          : sections
-                      }
+                      sections={sections}
                       attached={attached}
                       pair={pair}
                       pending={pending}
                       harnessName={harnessName(harness)}
-                      {...(!manageProviders && {
-                        onDisconnect: confirmDisconnect,
-                      })}
+                      onDisconnect={confirmDisconnect}
                       onAttach={attach}
                       onChoose={(id, model) =>
                         choose(withSettings({ harness, provider: id, model }))

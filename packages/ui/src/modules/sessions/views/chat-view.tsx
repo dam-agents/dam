@@ -16,12 +16,10 @@ import {
   useState,
 } from "react";
 
-import { stateDotClass } from "@/components/status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
 
 import { useNow } from "../../../hooks/use-now.js";
 import { queryClient } from "../../../query-client.js";
@@ -66,20 +64,17 @@ import { ContributionGapNotice } from "../../agents/components/contribution-gap-
 import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
-import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
-import { AgentUpdateDot } from "../../agents/components/update-available-action.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
-import { isOwnAgent, isSharedAgent } from "../../agents/lib/agent-editors.js";
+import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
 import { startsInChat } from "../../agents/lib/agent-start.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
@@ -87,20 +82,8 @@ import { DockedChangesPanel } from "../../changes/components/docked-changes-pane
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
-import {
-  useEnvironments,
-  useEnvironmentsEnabled,
-} from "../../environments/api/queries.js";
-import { EnvironmentsPanel } from "../../environments/components/environments-panel.js";
-import {
-  environmentsPanelShown,
-  environmentsTabShown,
-} from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
-import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
-import { FilesPanel } from "../../files/components/files-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
@@ -111,14 +94,10 @@ import {
 } from "../../invocations/components/delegation-owners.js";
 import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
-import { MobileMenuButton } from "../../platform/components/sidebar/mobile-menu-button.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
 import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
-import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
-import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
-import { processesBadgeTone } from "../../processes/lib/process-summary.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
@@ -139,8 +118,6 @@ import {
   useHarnessCatalogModels,
   useProviderConnections,
 } from "../api/session-pair.js";
-import { AgentChangeCards } from "../components/agent-change-card.js";
-import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -148,15 +125,10 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
 import { ClassicChatLayout } from "../components/classic-chat-layout.js";
 import {
-  ConfigSidePanel,
-  isConfigPanelTab,
-} from "../components/config-side-panel.js";
-import {
   ContinuedFromPrelude,
   ContinuedFromUnavailable,
 } from "../components/continued-from-prelude.js";
 import { CurveBenderAlert } from "../components/curve-bender-alert.js";
-import { JustAskHint } from "../components/just-ask-hint.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionOptions } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
@@ -172,10 +144,8 @@ import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SetupInstructionsCard } from "../components/setup-instructions-card.js";
 import {
   appSidePanelTabs,
-  SIDE_PANEL_TABS,
   SidePanelTabButtons,
 } from "../components/side-panel-bar.js";
-import { SidePanelShell } from "../components/side-panel-shell.js";
 import { Terminal } from "../components/terminal.js";
 import { ThreadDivider } from "../components/thread-divider.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
@@ -215,9 +185,6 @@ import {
   dockedItemTab,
   hiddenSidePanelTabs,
   maximizableView,
-  selectSidePanelTab,
-  type SidePanelTab,
-  visibleSidePanelTab,
 } from "../lib/side-panel.js";
 import { primaryProfileOf, subagentProfileOf } from "../lib/subagent-choice.js";
 import {
@@ -308,30 +275,11 @@ export function ChatView() {
   const closeBrowser = useStore((s) => s.setOpenBrowser);
   const toggleChanges = useToggleChanges();
   const processesEnabled = useProcessesEnabled();
-  const newLayout = useNewLayout();
-  const rightToolbar = useUnifiedRightToolbar();
-  const environmentsEnabled = useEnvironmentsEnabled();
-  const environments = useEnvironments(
-    environmentsEnabled ? selectedAgent : null,
-    { poll: false },
-  );
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
-  const runningProcesses = useRunningProcesses(
-    processesEnabled ? selectedAgent : null,
-  );
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const openAgentSession = useStore((s) => s.openAgentSession);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
-  const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
-  const justAskHint = useStore((s) => s.justAskHint);
-  const dismissJustAskHint = useStore((s) => s.dismissJustAskHint);
-  // UNIT_BOUNDARY_DESCRIPTION: the hint is the browser's own line about one schedule in one conversation, so it goes when the conversation changes or the user writes again, rather than trailing every session of the Agent.
-  useEffect(
-    () => dismissJustAskHint(),
-    [selectedAgent, sessionId, dismissJustAskHint],
-  );
   const hasPendingPermission = useHasPendingPermission();
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
@@ -783,26 +731,9 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
-    // UNIT_BOUNDARY_DESCRIPTION: the experiment offers the Environments panel once the agent owns one, and while its access list is open before that; every other shell keeps the tab it had, which waits for neither.
-    environments: rightToolbar
-      ? environmentsPanelShown({
-          enabled: environmentsEnabled,
-          count: environments.data?.length,
-          open: sidePanelTab === "environments",
-        })
-      : environmentsTabShown({
-          newLayout,
-          enabled: environmentsEnabled,
-          count: environments.data?.length,
-        }) ||
-        (environments.isLoading && sidePanelTab === "environments"),
-    configuration: rightToolbar,
     gettingStarted,
   });
-  const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
   const dockedTab = dockedItemTab(docked);
-  const dockedShown = dockedTab !== null && dockedTab === activeTab;
-  const dockedKept = dockedTab !== null && (dockedShown || draftDocked);
   const classicTab = classicAppTab(sidePanelTab, hiddenTabs);
   const shownClassicPanel = classicPanel(
     sidePanelTab,
@@ -826,15 +757,6 @@ export function ChatView() {
     });
   const browserToggle = classicToggle("browser");
   const changesToggle = classicToggle("changes");
-  const onSidePanelTab = (tab: SidePanelTab) => {
-    const selection = selectSidePanelTab(tab, activeTab, docked);
-    if (selection.kind === "collapse") setSidePanelTab(null);
-    else if (selection.kind === "show") setSidePanelTab(selection.tab);
-    else if (!selectedAgent) return;
-    else if (selection.kind === "open-changes")
-      void toggleChanges(selectedAgent);
-    else void openBrowser(selectedAgent);
-  };
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
@@ -844,10 +766,6 @@ export function ChatView() {
     resetSession();
     goBack();
   }, [resetSession, goBack]);
-
-  const dotColor = agentDisplay
-    ? stateDotClass[agentDisplay.state]
-    : "bg-warning";
 
   const lastMessage = shown[shown.length - 1];
   const statusLineInThread =
@@ -967,35 +885,16 @@ export function ChatView() {
                             avatar={agentView.avatar}
                             size={96}
                             mood={avatarMood(agentDisplay?.state, agentView)}
-                            className={cn(
-                              !newLayout &&
-                                "transition-opacity group-hover:opacity-80",
-                            )}
+                            className="transition-opacity group-hover:opacity-80"
                           />
                         )}
                         <span className="mt-3 flex items-center gap-2">
-                          <span
-                            className={cn(
-                              "text-xl font-bold text-foreground",
-                              !newLayout &&
-                                "underline-offset-4 group-hover:underline",
-                            )}
-                          >
+                          <span className="text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
                             {selectedAgentName}
                           </span>
-                          {newLayout && agentView && (
-                            <AgentUpdateDot
-                              available={!!agentView.templateUpdate}
-                            />
-                          )}
                         </span>
                       </button>
                     </h2>
-                    {newLayout && agentView && isSharedAgent(agentView) && (
-                      <div className="mb-3 flex justify-center">
-                        <SharedAgentBadge access={agentView.access} />
-                      </div>
-                    )}
                     <p className="text-sm text-muted-foreground">
                       {sessionsElsewhere
                         ? "Send a message to begin or open a new session in:"
@@ -1004,7 +903,6 @@ export function ChatView() {
                     {agentView && (
                       <NewSessionOptions
                         agent={agentView}
-                        newLayout={newLayout}
                         onNewTerminal={handleNewTerminal}
                       />
                     )}
@@ -1153,18 +1051,6 @@ export function ChatView() {
               {!agentStarting && (
                 <QuietTurnLine templateId={sessionTemplateId} />
               )}
-              {rightToolbar &&
-                justAskHint &&
-                justAskHint.agentId === selectedAgent &&
-                justAskHint.sessionId === sessionId &&
-                agentView && (
-                  <JustAskHint
-                    hint={justAskHint}
-                    agentName={agentView.name}
-                    avatar={agentView.avatar}
-                    onDismiss={dismissJustAskHint}
-                  />
-                )}
               <QueuedPrompts onFileClick={openFileHandler} />
               {telemetryEnabled && sessionTurns.isError && (
                 <p className="py-1 text-2xs text-muted-foreground/70">
@@ -1210,13 +1096,11 @@ export function ChatView() {
             textareaRef={textareaRef}
             busy={busy}
             loadingSession={loadingSession}
-            onSend={(text, attachments) => {
-              dismissJustAskHint();
-              return sendPrepared(text, attachments);
-            }}
+            onSend={sendPrepared}
             onStop={stopAgent}
             onTakeBack={takeBack}
             blockedReason={block?.reason ?? null}
+            harness={sendHarness ?? null}
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)
@@ -1238,7 +1122,6 @@ export function ChatView() {
                       open={pairPickerOpen}
                       onOpenChange={setPairPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
-                      newLayout={newLayout}
                     />
                   ) : (
                     <SessionPairPicker
@@ -1363,229 +1246,83 @@ export function ChatView() {
         />
       )}
       {}
-      {newLayout || rightToolbar ? (
-        <SidePanelShell
-          mainClassName="@container/chat"
-          activeTab={activeTab}
-          hiddenTabs={hiddenTabs}
-          onSelectTab={onSidePanelTab}
-          icons={appTabs.icons}
-          badges={{
-            ...appTabs.badges,
-            ...(runningProcesses && {
-              processes: {
-                count: runningProcesses.running,
-                label: `Processes, ${String(runningProcesses.running)} running`,
-                tone: processesBadgeTone(runningProcesses),
-              },
-            }),
-          }}
-          dockedShown={dockedShown}
-          dockedKept={dockedKept}
-          mobileTitle={selectedAgentName}
-          mobileBackLabel="Back to chat"
-          panel={
-            <>
-              {!dockedShown && activeTab === "files" && (
-                <FilesPanel
-                  open
-                  className="flex-1"
-                  onOpenFile={openFileHandler}
-                />
-              )}
-              {activeTab === "artifacts" && (
-                <ChatArtifactsPanel
-                  key={selectedAgent}
-                  agentId={selectedAgent}
-                  open
-                  className={cn("flex-1", dockedShown && "hidden")}
-                />
-              )}
-              {!dockedShown && activeTab === "processes" && (
-                <ProcessesPanel
-                  agentId={selectedAgent}
-                  alwaysOn={agentView?.hibernationTimeoutMin === 0}
-                  open
-                  className="flex-1"
-                />
-              )}
-              {activeTab === "environments" && selectedAgent && (
-                <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
-              )}
-              {isConfigPanelTab(activeTab) && selectedAgent && agentView && (
-                <ConfigSidePanel
-                  key={`${selectedAgent}:${activeTab}`}
-                  tab={activeTab}
-                  agent={agentView}
-                  agentId={selectedAgent}
-                  onResumeSession={(id) => openAgentSession(selectedAgent, id)}
-                />
-              )}
-            </>
-          }
-          dock={dockPanel}
-        >
-          <h1 className="sr-only">
-            {[selectedAgentName, sessionView?.title]
-              .filter(Boolean)
-              .join(" · ")}
-          </h1>
-          {!newLayout && (
-            // UNIT_BOUNDARY_DESCRIPTION: the tabbed panel leaves the chat without a bar of its own on a wide window, as JanUI's chat has none, so that bar appears there only while the status has a badge to show; a phone keeps it, because the rail waits for a panel there and the navigation button has nowhere else to go.
-            <header
-              data-testid="chat-top-bar"
-              className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex"
-            >
-              <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
-                <MobileMenuButton />
-                <span
-                  aria-hidden
-                  className={cn(
-                    "h-2 w-2 shrink-0 rounded-full",
-                    // UNIT_BOUNDARY_DESCRIPTION: the avatar already carries the state, so the dot marks only a chat whose Agent has not loaded yet.
-                    agentView && "hidden",
-                    dotColor,
-                  )}
-                />
-                <button
-                  type="button"
-                  onClick={handleConfigureSandbox}
-                  aria-label={`Configure ${selectedAgentName ?? "agent"}`}
-                  className="flex min-w-0 items-center gap-2"
-                >
-                  {agentView && (
-                    <AgentAvatar
-                      name={agentView.name}
-                      avatar={agentView.avatar}
-                      size={28}
-                      mood={avatarMood(agentDisplay?.state, agentView)}
-                    />
-                  )}
-                </button>
-              </div>
-              <div
-                data-chat-status
-                className="flex shrink-0 items-center gap-2"
-              >
-                {agentView && isSharedAgent(agentView) && (
-                  <SharedAgentBadge access={agentView.access} />
-                )}
-                <ChatHeaderStatus
-                  selectedAgent={selectedAgent}
-                  agent={agentView}
-                  busy={busy}
-                  connectionState={connectionState}
-                  sessionId={sessionId}
-                  processesEnabled={processesEnabled}
-                />
-              </div>
-              <div className="flex shrink-0 items-center gap-1 md:hidden">
-                {processesEnabled && (
-                  <ProcessesIndicator agentId={selectedAgent} />
-                )}
-                <SidePanelTabButtons
-                  tabs={SIDE_PANEL_TABS.filter(
-                    ({ tab }) => tab === "artifacts" || tab === "files",
-                  )}
-                  active={null}
-                  onSelect={(tab) => {
-                    setSidePanelTab(tab);
-                    setMobileScreen("files");
-                  }}
-                  placement="top-bar"
-                />
-                <AppSidePanelButtons />
-              </div>
-            </header>
-          )}
-          <div className="empty:hidden">{notices}</div>
-          <AgentChangeCards.Provider value={rightToolbar}>
-            {conversation}
-          </AgentChangeCards.Provider>
-        </SidePanelShell>
-      ) : (
-        <ClassicChatLayout
-          identity={
-            <ClassicChatIdentity
+      <ClassicChatLayout
+        identity={
+          <ClassicChatIdentity
+            agent={agentView}
+            agentId={selectedAgent}
+            name={selectedAgentName}
+            display={agentDisplay}
+            canOpenBrowser={canOpenBrowser}
+            canShowChanges={changesAvailable}
+            browserOpen={browserToggle.pressed}
+            changesOpen={changesToggle.pressed}
+            onToggleBrowser={() => {
+              if (!selectedAgent) return;
+              if (browserToggle.click === "close") closeBrowser(null);
+              else if (browserToggle.click === "open")
+                void openBrowser(selectedAgent);
+              else revealDock();
+            }}
+            onToggleChanges={() => {
+              if (!selectedAgent) return;
+              if (changesToggle.click === "close") void toggleChanges(null);
+              else if (changesToggle.click === "open")
+                void toggleChanges(selectedAgent);
+              else revealDock();
+            }}
+            onConfigure={handleConfigureSandbox}
+          />
+        }
+        status={
+          <>
+            {processesEnabled && <ProcessesIndicator agentId={selectedAgent} />}
+            <ChatHeaderStatus
+              selectedAgent={selectedAgent}
               agent={agentView}
-              agentId={selectedAgent}
-              name={selectedAgentName}
-              display={agentDisplay}
-              canOpenBrowser={canOpenBrowser}
-              canShowChanges={changesAvailable}
-              browserOpen={browserToggle.pressed}
-              changesOpen={changesToggle.pressed}
-              onToggleBrowser={() => {
-                if (!selectedAgent) return;
-                if (browserToggle.click === "close") closeBrowser(null);
-                else if (browserToggle.click === "open")
-                  void openBrowser(selectedAgent);
-                else revealDock();
-              }}
-              onToggleChanges={() => {
-                if (!selectedAgent) return;
-                if (changesToggle.click === "close") void toggleChanges(null);
-                else if (changesToggle.click === "open")
-                  void toggleChanges(selectedAgent);
-                else revealDock();
-              }}
-              onConfigure={handleConfigureSandbox}
+              busy={busy}
+              connectionState={connectionState}
+              sessionId={sessionId}
+              processesEnabled={processesEnabled}
             />
-          }
-          status={
-            <>
-              {processesEnabled && (
-                <ProcessesIndicator agentId={selectedAgent} />
-              )}
-              <ChatHeaderStatus
-                selectedAgent={selectedAgent}
-                agent={agentView}
-                busy={busy}
-                connectionState={connectionState}
-                sessionId={sessionId}
-                processesEnabled={processesEnabled}
-              />
-              <SidePanelTabButtons
-                tabs={appSidePanelTabs(hiddenTabs)}
-                active={classicTab}
-                onSelect={(tab) =>
-                  setSidePanelTab(tab === classicTab ? null : tab)
-                }
-                placement="top-bar"
-                {...appTabs}
-              />
-            </>
-          }
-          notices={notices}
-          agentId={selectedAgent}
-          agentName={selectedAgentName}
-          alwaysOn={agentView?.hibernationTimeoutMin === 0}
-          processesEnabled={processesEnabled}
-          onOpenFile={openFileHandler}
-          panel={shownClassicPanel}
-          dockHiddenOnPhone={dockHiddenOnPhone}
-          dock={dockPanel}
-          maximizable={
-            shownClassicPanel === "dock"
-              ? maximizableView(
-                  dockedTab,
-                  true,
-                  shownDock?.kind === "file" ? shownDock.path : null,
-                  shownDock?.kind === "artifact" ? shownDock.id : null,
-                )
-              : null
-          }
-          onClosePanel={() => {
-            setPhoneHiddenDock(dockedItem);
-            setSidePanelTab(null);
-            setMobileScreen("chat");
-          }}
-        >
-          <AgentChangeCards.Provider value={rightToolbar}>
-            {conversation}
-          </AgentChangeCards.Provider>
-        </ClassicChatLayout>
-      )}
+            <SidePanelTabButtons
+              tabs={appSidePanelTabs(hiddenTabs)}
+              active={classicTab}
+              onSelect={(tab) =>
+                setSidePanelTab(tab === classicTab ? null : tab)
+              }
+              placement="top-bar"
+              {...appTabs}
+            />
+          </>
+        }
+        notices={notices}
+        agentId={selectedAgent}
+        agentName={selectedAgentName}
+        alwaysOn={agentView?.hibernationTimeoutMin === 0}
+        processesEnabled={processesEnabled}
+        onOpenFile={openFileHandler}
+        panel={shownClassicPanel}
+        dockHiddenOnPhone={dockHiddenOnPhone}
+        dock={dockPanel}
+        maximizable={
+          shownClassicPanel === "dock"
+            ? maximizableView(
+                dockedTab,
+                true,
+                shownDock?.kind === "file" ? shownDock.path : null,
+                shownDock?.kind === "artifact" ? shownDock.id : null,
+              )
+            : null
+        }
+        onClosePanel={() => {
+          setPhoneHiddenDock(dockedItem);
+          setSidePanelTab(null);
+          setMobileScreen("chat");
+        }}
+      >
+        {conversation}
+      </ClassicChatLayout>
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />

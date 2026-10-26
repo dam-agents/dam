@@ -28,13 +28,12 @@ The Agent whose create is that first meeting does not count.
 
 ## In the browser
 
-The UI shows the checklist as the **Get started** panel, a panel like any other on the right edge: with the [JanUI experiment](home-feed.md#the-janui-experiment) or the Unified right toolbar on, its icon, a progress ring, sits in the icon bar above the approvals bell on every page, and in an Agent's chat with either of them, and opens and closes the panel the way the other icons open theirs.
-With both experiments off, the ring sits in the page's own top corner beside the approvals bell and opens the checklist as a drawer over the page.
+The UI shows the checklist as the **Get started** panel, a panel like any other on the right edge: its icon, a progress ring, sits in the page's own top corner beside the approvals bell and opens the checklist as a drawer over the page.
 A side panel takes its room from the page, as every side panel does, so it never covers the page's buttons, and it shares their width, resize handle, close X and phone behavior.
 A drawer covers the page behind a dimmed backdrop and holds the keyboard until it closes, from its X, Escape or the backdrop.
 Every side panel's top bar ends with that X, behind a vertical border; it closes the panel.
-In an Agent's chat with both experiments off, the X shows only where it closes something: on Get started and a docked delegation, while Approvals is a drawer with an X of its own.
-On a phone the ring sits in the page's top bar and a side panel fills the screen under a back button, with the X hidden; a drawer fills it under its own X; with either experiment on the panel has no bar of its own and keeps its X, from the left rail to the right one under JanUI, and across the whole width under the toolbar alone.
+In an Agent's chat the X shows only where it closes something: on Get started and a docked delegation, while Approvals is a drawer with an X of its own.
+On a phone the ring sits in the page's top bar and a side panel fills the screen under a back button, with the X hidden; a drawer fills it under its own X.
 The phone's Back gesture closes that full-screen panel and returns to the page under it, or first closes a dialog open above the panel.
 The panel opens only when the user asks for it.
 An unlock the user has not seen puts a count on the ring instead of opening the panel.

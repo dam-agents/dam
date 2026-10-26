@@ -1,9 +1,4 @@
 import { Asleep, Light, Logout, Screen } from "@carbon/icons-react";
-import {
-  ColorContrast,
-  FoundationModel,
-  UserProfile,
-} from "@carbon/pictograms-react";
 import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -20,7 +15,6 @@ import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import { useOperatorAvailability } from "../../operator/api/queries.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
@@ -126,15 +120,9 @@ export function SettingsView() {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const user = getUser();
-  const newLayout = useNewLayout();
 
   return (
-    <div
-      className={cn(
-        "flex gap-6 md:gap-10 flex-col md:flex-row",
-        newLayout && "md:pt-5",
-      )}
-    >
+    <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
       <div ref={tabStrip} className="contents">
         <Tabs
           ariaLabel="Settings sections"
@@ -152,7 +140,6 @@ export function SettingsView() {
         {activeTab === "appearance" && (
           <div>
             <PageHeader
-              pictogram={<ColorContrast aria-hidden />}
               title="Appearance"
               description="Choose how the interface looks."
             />
@@ -199,7 +186,6 @@ export function SettingsView() {
         {activeTab === "account" && (
           <div>
             <PageHeader
-              pictogram={<UserProfile aria-hidden />}
               title="Account"
               description="See who you are signed in as, and sign out."
             />
@@ -230,7 +216,6 @@ export function SettingsView() {
           <div>
             <div>
               <PageHeader
-                pictogram={<FoundationModel aria-hidden />}
                 title="Providers"
                 description="Connect an LLM provider to give agents access to its models."
               />

@@ -977,7 +977,7 @@ describe("one model list on a runtime that routes by model name", () => {
   });
 });
 
-describe("JanUI's picker and the default's editor", () => {
+describe("the picker's provider rows", () => {
   beforeEach(() => {
     state.models = {};
     state.loading = false;
@@ -1005,17 +1005,14 @@ describe("JanUI's picker and the default's editor", () => {
 
   /** TEST_SCENARIO: The routed model list ends with one Connect more
    * providers row that leads to the Providers page; the separate attach
-   * rows, the manage-providers row and the disconnect controls are gone,
-   * in both layouts. */
+   * rows, the manage-providers row and the disconnect controls are gone. */
   it("offers one Connect more providers row", () => {
-    for (const props of [{ newLayout: true }, {}]) {
-      const html = render(props);
-      expect(html).toContain("Connect more providers");
-      expect(html).not.toContain("Disconnect IBM");
-      expect(html).not.toContain("Attach this provider");
-      expect(html).not.toContain("Manage providers");
-      expect(html).not.toContain("Configure providers and defaults");
-    }
+    const html = render({});
+    expect(html).toContain("Connect more providers");
+    expect(html).not.toContain("Disconnect IBM");
+    expect(html).not.toContain("Attach this provider");
+    expect(html).not.toContain("Manage providers");
+    expect(html).not.toContain("Configure providers and defaults");
   });
 });
 

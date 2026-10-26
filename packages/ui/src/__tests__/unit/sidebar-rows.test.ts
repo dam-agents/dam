@@ -34,7 +34,11 @@ const agent = {
   access: { role: "owner", editors: [] },
 } as unknown as AgentView;
 
-const agentRow = (props: { open: boolean; selected: boolean }) =>
+const agentRow = (props: {
+  open: boolean;
+  selected: boolean;
+  actionCount?: 3 | 4;
+}) =>
   renderToStaticMarkup(
     createElement(SidebarAgentRow, {
       agent,
@@ -102,6 +106,12 @@ describe("unread markers", () => {
       'aria-current="page"',
     );
     expect(agentRow({ open: true, selected: true })).toContain("pr-[86px]");
+  });
+
+  it("TEST_SCENARIO: an Agent with a channel kebab reserves room for four controls", () => {
+    const html = agentRow({ open: true, selected: true, actionCount: 4 });
+    expect(html).toContain("pr-[112px]");
+    expect(html).not.toContain("pr-[86px]");
   });
 });
 

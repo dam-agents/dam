@@ -26,9 +26,12 @@ import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
+import { useCommandMenu } from "../hooks/use-command-menu.js";
 import { usePromptHistory } from "../hooks/use-prompt-history.js";
+import { useSkillCommands } from "../hooks/use-skill-commands.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
 import { ChatColumn } from "./chat-column.js";
+import { CommandMenu } from "./command-menu.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -41,6 +44,7 @@ export interface ChatInputProps {
   onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
   onBlockedClick?: () => void;
+  harness?: string | null;
 }
 
 export function ChatInput({
@@ -52,6 +56,7 @@ export function ChatInput({
   onTakeBack,
   blockedReason,
   onBlockedClick,
+  harness = null,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -189,6 +194,19 @@ export function ChatInput({
     [key, setDraft, textareaRef],
   );
   const promptHistory = usePromptHistory(recallPrompt);
+  const commands = useSkillCommands(agentId, sessionId, harness);
+  const applyCommand = useCallback(
+    (text: string) => {
+      if (key) setDraft(key, { text });
+    },
+    [key, setDraft],
+  );
+  const commandMenu = useCommandMenu({
+    commands: blockedReason ? [] : commands,
+    text: input,
+    textareaRef,
+    apply: applyCommand,
+  });
 
   const send = useCallback(() => {
     if (!key || loadingSession || blockedReason) return;
@@ -210,6 +228,10 @@ export function ChatInput({
   ]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (commandMenu.onKeyDown(e)) {
+      e.preventDefault();
+      return;
+    }
     if (!isMobile() && promptHistory.navigate(e)) {
       e.preventDefault();
       return;
@@ -249,8 +271,9 @@ export function ChatInput({
           }}
         />
         <div
-          className={`flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
+          className={`relative flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
         >
+          <CommandMenu menu={commandMenu} />
           {attachments.length > 0 && (
             <div className="flex gap-2 flex-wrap px-3 pt-3">
               {attachments.map((a, i) => (
@@ -278,8 +301,10 @@ export function ChatInput({
               ref={textareaRef}
               className={`flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0${blockedReason && onBlockedClick ? " cursor-pointer" : ""}`}
               value={input}
+              {...commandMenu.inputProps}
               onChange={(e) => {
                 promptHistory.reset();
+                commandMenu.track(e.target);
                 if (key) setDraft(key, { text: e.target.value });
               }}
               onKeyDown={onKeyDown}

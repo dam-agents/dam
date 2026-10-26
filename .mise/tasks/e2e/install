@@ -2,7 +2,7 @@
 #MISE description="Provision or upgrade the e2e test cluster: mock agents only, e2e control API on"
 #MISE hide=true
 #MISE raw=true
-#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default" }
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
