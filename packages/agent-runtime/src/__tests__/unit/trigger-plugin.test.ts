@@ -133,6 +133,30 @@ describe("trigger plugin", () => {
     });
   });
 
+  /** TEST_SCENARIO: a one-time fire's session dies before or during its turn, and nothing else can retry it. The session must name the event that fired it, so the runtime can report that turn's failure back to the schedule. A recurring fire keeps no such name: its next occurrence pays a lost one back. */
+  it("stamps a one-time fire's event so its run can report back", async () => {
+    const { driver, calls } = fakeDriver();
+    const stateStore: TriggerStateStore = {
+      getSessionForSchedule: () => undefined,
+      setSessionForSchedule: vi.fn(),
+      clearSessionForSchedule: vi.fn(),
+    };
+    const handler = handlerFor({ driver, stateStore }, "trigger");
+
+    await handler({ scheduleId: "sch-once", task: "do it", once: true }, ctx);
+    await handler({ scheduleId: "sch-cron", task: "do it" }, ctx);
+
+    expect(calls[0]?.platformMeta).toEqual({
+      ...scheduleMeta("sch-once"),
+      type: SessionType.ScheduleOnce,
+      fireEvent: ctx.eventId,
+    });
+    expect(calls[1]?.platformMeta).toEqual({
+      ...scheduleMeta("sch-cron"),
+      fireEvent: undefined,
+    });
+  });
+
   it("stamps metadata and records the session when continuous mode first fires", async () => {
     const { driver, calls } = fakeDriver();
     const setSessionForSchedule = vi.fn();

@@ -22,6 +22,7 @@ export const platformSessionMetaSchema = z.object({
   ref: z.string().optional(),
   reportTo: z.string().optional(),
   reportName: z.string().optional(),
+  fireEvent: z.string().optional(),
   harness: z.string().optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
