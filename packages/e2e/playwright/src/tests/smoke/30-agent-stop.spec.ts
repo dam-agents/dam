@@ -54,6 +54,10 @@ test("Stop holds the agent against a channel mention, and Wake releases it", asy
     await page.goto("/");
     await agentRow().getByRole("button", { name: "Agent actions" }).click();
     await page.getByTestId("agent-stop").click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Confirm" })
+      .click();
     await expect
       .poll(
         async () => (await api.agents.get.query({ id: agentId })).stopRequested,
