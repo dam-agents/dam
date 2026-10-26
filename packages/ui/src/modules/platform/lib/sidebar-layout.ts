@@ -1,6 +1,6 @@
 export const SIDEBAR_COLLAPSED_W = 56;
-// UNIT_BOUNDARY_DESCRIPTION: the right rail's width, which is the side panel's bar of tile icons (`w-14`) and nothing else; a pane laid over the page stops exactly where it starts.
-export const RIGHT_RAIL_W = 56;
+// UNIT_BOUNDARY_DESCRIPTION: the right rail's width, which is the side panel's bar of labelled tiles (`w-[68px]`, wide enough for "Automations" on one line) and nothing else; a pane laid over the page stops exactly where it starts.
+export const RIGHT_RAIL_W = 68;
 // UNIT_BOUNDARY_DESCRIPTION: the classic icon bar's width, a 48 px button column and its 1 px border; the navigation counts it whenever the Unified right toolbar experiment is off.
 export const CLASSIC_RIGHT_RAIL_W = 49;
 export const SIDEBAR_DEFAULT_W = 260;

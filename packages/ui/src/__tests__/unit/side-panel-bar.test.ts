@@ -121,6 +121,33 @@ it("gives every configuration panel its own tile", () => {
   expect(html).not.toContain('data-testid="side-panel-configure"');
 });
 
+// TEST_SCENARIO: with the Unified right toolbar on, a tile prints its panel's name under the glyph, like an app rail, and only the open tile's glyph sits on the highlight.
+it("labels every tile and highlights only the open one", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: "skills",
+        hidden: new Set<never>(),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  const tiles = [
+    ...html.matchAll(
+      /data-testid="side-panel-tab-([a-z-]+)"[^>]*><span class="([^"]*)">.*?<\/span><span[^>]*>([^<]*)<\/span><\/button>/g,
+    ),
+  ];
+  expect(tiles.map((m) => m[3])).toEqual(
+    tiles.map((m) => SIDE_PANEL_TABS.find((t) => t.tab === m[1])!.label),
+  );
+  expect(tiles.length).toBeGreaterThan(5);
+  for (const [, tab, glyph] of tiles)
+    expect(glyph!.includes("bg-muted ")).toBe(tab === "skills");
+});
+
 // TEST_SCENARIO: The icon bar lists the views by how often users reach for them, Artifacts first.
 it("orders the tabs Artifacts, Files, Changes, Browser", () => {
   const html = renderToStaticMarkup(
@@ -204,7 +231,7 @@ it("scrolls the rail when the window cannot hold both clusters", () => {
   expect(nav).toContain("overflow-y-auto");
 });
 
-// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 22 px icons, only the open tab filled, no separate bar because the fill is the mark, and Get started above Approvals.
+// TEST_SCENARIO: In JanUI the rail draws 22 px icons, only the open tab's glyph filled, no separate bar because the fill is the mark, and Get started above Approvals.
 it("draws JanUI's tiles at the sidebar strip's size", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -225,10 +252,6 @@ it("draws JanUI's tiles at the sidebar strip's size", () => {
   ];
   expect(buttons.length).toBeGreaterThan(1);
   expect(html).not.toContain("-right-2.5");
-  const open = buttons.find(([, tab]) => tab === "files")![0];
-  // UNIT_BOUNDARY_DESCRIPTION: the tile is one row high and as wide, so the mark it carries is a square of the same size a row of the tree carries.
-  expect(open).toContain("size-10");
-  expect(open).toContain("bg-muted");
   expect(html).toContain('width="22"');
   const order = ["getting-started", "approvals"].map((id) =>
     html.indexOf(`data-testid="side-panel-tab-${id}"`),
@@ -236,8 +259,8 @@ it("draws JanUI's tiles at the sidebar strip's size", () => {
   expect(order[1]).toBeGreaterThan(order[0]!);
 });
 
-// TEST_SCENARIO: Both bars name every tab in a hover tooltip and in its aria-label, so a reader can find a panel from its glyph alone.
-it("names every panel in a tooltip on both bars", () => {
+// TEST_SCENARIO: Both bars name every tab in its aria-label; the classic bar's glyphs name it in a hover tooltip, while a tile prints its name under its glyph and needs none.
+it("names every panel on both bars", () => {
   const railHtml = renderToStaticMarkup(
     createElement(
       TooltipProvider,
@@ -255,8 +278,7 @@ it("names every panel in a tooltip on both bars", () => {
       /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
     )?.[0] ?? "";
   expect(tile).toContain('aria-label="Artifacts"');
-  // UNIT_BOUNDARY_DESCRIPTION: the tiled rail's tiles carry the panel's name in a tooltip too, so a glyph alone never has to be guessed.
-  expect(tile).toContain('data-state="closed"');
+  expect(tile).not.toContain("data-state=");
   const classicHtml = renderToStaticMarkup(
     createElement(
       TooltipProvider,

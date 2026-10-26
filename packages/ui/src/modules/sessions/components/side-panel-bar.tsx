@@ -17,12 +17,14 @@ import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
+  ACTIVE_ITEM,
   RAIL_BADGE,
   RAIL_COLUMN,
   RAIL_GAP,
   RAIL_GLYPH,
-  railTile,
+  SQUIRCLE,
 } from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -100,25 +102,41 @@ export function SidePanelTabButtons({
           aria-label={shown?.label ?? label}
           aria-pressed={active === tab}
           data-testid={`side-panel-tab-${tab}`}
-          className={railTile(active === tab)}
+          className={cn(
+            "group flex w-full flex-col items-center gap-1 rounded-lg text-muted-foreground hover:text-foreground",
+            FOCUS_RING,
+            active === tab && "text-foreground",
+          )}
           onClick={() => onSelect(tab)}
         >
-          {icons[tab] ?? <TileIcon size={RAIL_GLYPH} />}
-          {shown && (
-            <span
-              data-testid={`side-panel-badge-${tab}`}
-              className={cn(
-                RAIL_BADGE,
-                shown.tone === "warning"
-                  ? "bg-warning"
-                  : shown.tone === "neutral"
-                    ? "bg-muted-foreground"
-                    : "bg-accent",
-              )}
-            >
-              {shown.count > 9 ? "9+" : shown.count}
-            </span>
-          )}
+          <span
+            className={cn(
+              "relative flex size-9 items-center justify-center rounded-lg transition-colors",
+              SQUIRCLE,
+              active === tab ? ACTIVE_ITEM : "group-hover:bg-muted/60",
+            )}
+          >
+            {icons[tab] ?? <TileIcon size={RAIL_GLYPH} />}
+            {shown && (
+              <span
+                data-testid={`side-panel-badge-${tab}`}
+                className={cn(
+                  RAIL_BADGE,
+                  "-top-1 -right-1.5",
+                  shown.tone === "warning"
+                    ? "bg-warning"
+                    : shown.tone === "neutral"
+                      ? "bg-muted-foreground"
+                      : "bg-accent",
+                )}
+              >
+                {shown.count > 9 ? "9+" : shown.count}
+              </span>
+            )}
+          </span>
+          <span className="w-full text-center text-[10px] leading-tight font-medium break-words">
+            {label}
+          </span>
         </button>
       ) : (
         <Button
@@ -160,7 +178,13 @@ export function SidePanelTabButtons({
           )}
         </Button>
       );
-    // UNIT_BOUNDARY_DESCRIPTION: every icon in the bar names its panel in a tooltip, the tiled rail's too, since a tile's glyph alone does not say which panel it opens.
+    // UNIT_BOUNDARY_DESCRIPTION: an icon names its panel in a tooltip; a tile prints its name under the glyph, so it keeps a tooltip only while a badge says more than the name.
+    if (rail && tiles && content === label)
+      return (
+        <div key={tab} className="w-full">
+          {control}
+        </div>
+      );
     return (
       <Tooltip key={tab} content={content} side={rail ? "left" : "bottom"}>
         {control}
@@ -198,7 +222,7 @@ export function SidePanelBar({
       className={cn(
         tiles
           ? cn(
-              "w-14 min-h-0 shrink-0 overflow-y-auto border-l border-border bg-chrome",
+              "w-[68px] min-h-0 shrink-0 overflow-y-auto border-l border-border bg-chrome px-1",
               RAIL_COLUMN,
             )
           : "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
@@ -215,7 +239,7 @@ export function SidePanelBar({
       <div
         className={cn(
           "mt-auto flex flex-col",
-          tiles && cn("items-center", RAIL_GAP),
+          tiles && cn("w-full items-center", RAIL_GAP),
         )}
       >
         {tiles ? (
