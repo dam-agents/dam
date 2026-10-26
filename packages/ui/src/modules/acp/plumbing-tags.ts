@@ -10,6 +10,8 @@ export const PLUMBING_TAGS = [
   "addressed-to-you",
   "reading-along",
   "network-access",
+  "permission-check",
+  "agent-owner",
   "attached-files",
   "turn-undelivered",
   "turn-interrupted",

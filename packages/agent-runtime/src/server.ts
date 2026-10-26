@@ -541,6 +541,9 @@ const {
           ...(manifest.harnessState && {
             harnessState: manifest.harnessState,
           }),
+          ...(manifest.sessionLoadTimeoutSeconds && {
+            loadTimeoutMs: manifest.sessionLoadTimeoutSeconds * 1000,
+          }),
           ...(manifest.modelRouter?.nonClaudeModelEnv && {
             nonClaudeModelEnv: manifest.modelRouter.nonClaudeModelEnv,
           }),

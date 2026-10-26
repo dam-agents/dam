@@ -332,6 +332,7 @@ describe("acp-runtime: session-history provider", () => {
     expect(bob.reply(2)).toMatchObject({ error: { code: -32000 } });
     expect(wedged.received("session/prompt")).toEqual([]);
     expect(wedged.received("session/load")).toHaveLength(1);
+    await settle();
     expect(wedged.killed()).toBe(true);
   });
 

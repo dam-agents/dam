@@ -39,6 +39,7 @@ import {
 } from "../../agents/index.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
+import { channelOwnerGuidance, type ChannelOwner } from "./owner-copy.js";
 import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
 import {
   spendHoldUserCopy,
@@ -602,6 +603,7 @@ export function createTelegramWorker(deps: {
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
   ownerOf: (agentId: string) => Promise<string | null>;
+  ownerDisplayName: (sub: string) => Promise<string | null>;
   settleMs?: number;
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
@@ -656,6 +658,22 @@ export function createTelegramWorker(deps: {
       : `This is a group conversation. The message is from ${from}, and it mentions you or replies to you: answer it.`;
   }
 
+  async function resolveChannelOwner(
+    agentId: string,
+  ): Promise<ChannelOwner | null> {
+    try {
+      const owner = await deps.ownerOf(agentId);
+      const name = owner ? await deps.ownerDisplayName(owner) : null;
+      return name ? { name, slackUserId: null } : null;
+    } catch (err) {
+      getLogger().warn(
+        { agentId, error: String(err) },
+        "telegram.owner_lookup.failed",
+      );
+      return null;
+    }
+  }
+
   async function runTelegramTurn(
     agentId: string,
     thread: ThreadLike,
@@ -685,6 +703,7 @@ export function createTelegramWorker(deps: {
         : groupContext(author, messages)
     ).concat(who ? ` ${who}` : "");
 
+    const owner = await resolveChannelOwner(agentId);
     const prompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
       context,
@@ -692,6 +711,7 @@ export function createTelegramWorker(deps: {
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       `To deliberately stay silent — a group message that isn't for you, or one already handled — call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` instead of replying.`,
       "These instructions apply to the message they arrive with, not to this conversation as a whole — a later Telegram message carries its own. A message that arrives without them didn't come from Telegram: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
+      channelOwnerGuidance(owner, brandName),
       channelNetworkAccessGuidance(brandName),
       channelPermissionCheckGuidance,
       "",

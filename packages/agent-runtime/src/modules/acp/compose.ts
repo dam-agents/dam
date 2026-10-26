@@ -145,6 +145,7 @@ export interface HarnessRuntime extends SessionHarness {
   sessionModel: boolean;
   initialize?: Record<string, unknown>;
   harnessState?: HarnessStateDialect;
+  loadTimeoutMs?: number;
   nonClaudeModelEnv?: Record<string, string>;
 }
 
@@ -502,6 +503,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         sessionMetadata,
         ...(harness?.harnessState && {
           harnessState: HARNESS_STATE_PORTS[harness.harnessState],
+        }),
+        ...(harness?.loadTimeoutMs && {
+          harnessLoadTimeoutMs: harness.loadTimeoutMs,
         }),
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,

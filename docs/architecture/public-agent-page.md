@@ -1,6 +1,6 @@
 # Public Agent Page
 
-Last verified: 2026-10-17
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -83,6 +83,7 @@ Both halves matter.
 A hiccup that tombstoned would blank a live Agent for good, and a hiccup that escaped as a 500 would make the status code vary with which ids are real, which is the oracle this page is built to deny.
 The owner's **display name** is resolved from the identity directory for display, and a failed lookup omits the owner line rather than failing the page.
 It is a name and never the email: the identity directory holds a real mailbox, and this is the one page anyone holding a shared link can read, so an Agent whose owner has no name on record gets no owner line at all.
+The same display name reaches the Agent on its [channel turns](channel-turns.md), together with the owner's linked Slack identity, which this page does not show.
 
 Three mechanisms keep the projection current, each with **one** job:
 
