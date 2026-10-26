@@ -575,7 +575,7 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 
 	d, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, vCPUs: 2 * max(r.config.VM.Runner.MachineCPUs, 1), heldMiB: 2048}, d,
+	assert.Equal(t, runnerDemand{memoryMiB: 2048 + 2048, vCPUs: 2 * max(r.config.VM.Runner.MachineCPUs, 1), heldMiB: 2048}, d,
 		"the peer holds its machine; the start being sized holds nothing yet")
 
 	d, err = r.ownerRunnerDemand(context.Background(), testOwner, agent, false)
@@ -1007,7 +1007,7 @@ func TestDemandIsReadWithoutAskingTheCluster(t *testing.T) {
 
 	d, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 2*3072, d.memoryMiB)
+	assert.Equal(t, 2*2048, d.memoryMiB)
 	assert.Zero(t, actionsOn(r, "list", "agents"), "the owner's agents come from the cache")
 	assert.Zero(t, actionsOn(r, "get", "statefulsets"), "a peer's decision comes from memory")
 }

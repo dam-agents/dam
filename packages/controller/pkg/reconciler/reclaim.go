@@ -66,7 +66,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 			name:            peer.Name,
 			idleSince:       idleSince,
 			forRefusedStart: forRefusedStart,
-			vmMiB:           r.accountedMemoryMiB(ctx, owner, peer.Name, &peer.Spec),
+			vmMiB:           r.accountedMemoryMiB(ctx, owner, peer.Name),
 			booting:         vmBootInProgress(item, idleTimeout, now),
 			holdsNothing:    r.refusedWithoutMachine(peer) || r.waitingForRoom(peer),
 		})

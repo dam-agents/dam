@@ -297,12 +297,6 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	agentSpec := &agent.Spec
 
-	if r.backend.SpecWritable() {
-		if err := r.ensureConcreteSize(ctx, agent); err != nil {
-			return fmt.Errorf("agent %s: %w", name, err)
-		}
-	}
-
 	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, name, owner,
 		agentSpec.GrantedSecretIDs, agentSpec.GrantedConnectionIDs)
 	if err != nil {

@@ -537,6 +537,12 @@ virtualization:
     # Platform install (`cluster:install` picks a free one per install), so each
     # install's controller dials its own; 0 keeps the runner pod's port, 4600.
     hostPort: 0
+    # -- The memory a machine is given where the controller cannot take half
+    # its owner's pool: on the host runner above, which admits against a share
+    # of the Mac's memory the controller never learns, and on a runner pod whose
+    # pool cannot be read. It is the install's figure, not the Agent's: no agent
+    # has a size of its own, and a runner pod's machines are half the pool.
+    machineMemoryMiB: 2048
   # One gateway pod per owner serves every vm Agent of that owner, each on
   # ports of its own behind the agent's own gateway Service, so a wake starts
   # no gateway pod. Off: each vm Agent keeps a gateway pod of its own, which
@@ -1884,13 +1890,13 @@ controller:
       # agentHome included — stops it at startup instead of being ignored.)
 
       storageSize: "10Gi"
-      # The resource limits every Agent's spec is stamped with at create.
-      # Nothing user-facing chooses them: on a runner pod a machine's size is
-      # half its owner's pool whatever the spec says (`virtualization.runner`,
-      # see docs/architecture/vm-memory.md). The macOS host runner, which
-      # cannot see the share of the host it may give its machines, sizes each
-      # machine from these. A `requests` set here (or in a template) is
-      # carried onto the Agent as written — an operator escape hatch.
+      # The resource limits every Agent's spec is stamped with at create, and
+      # what an absorbed Agent with none of its own gets. They size nothing:
+      # no agent has a CPU or memory size of its own, and every machine is
+      # `virtualization.runner.machineMemoryMiB` where its owner's pool cannot
+      # size it (see docs/architecture/vm-memory.md). A `requests` set here (or
+      # in a template) is carried onto the Agent as written — an operator
+      # escape hatch.
       resources:
         limits:
           cpu: "1"
@@ -1923,20 +1929,6 @@ controller:
       # turning it on or off also changes existing vm agents and restarts
       # their machines. While it is on, an Agent cannot opt out.
       nestedVirtualization: false
-
-    # -- Size the controller materializes into any Agent spec that lacks a
-    # limits dimension (#1900): fill-if-absent on reconcile, never touching
-    # a set value — this is what makes `spec.resources.limits` effectively
-    # required without schema-level enforcement. Defaults to the limits
-    # pre-Sizes agents were actually running with under the old chart
-    # defaults (1 CPU / 2Gi), so an upgrade never shrinks an existing
-    # sandbox out from under its workload — a workload that used 1–2Gi
-    # would otherwise OOM on its next wake. Operators who overrode the old
-    # `harnessTemplateDefaults.resources.limits` should mirror that override here
-    # before upgrading.
-    legacyAgentSize:
-      cpu: "1"
-      memory: "2Gi"
 
   # -- Per-user pool defaults: the CPU and memory one user's machines share.
   # Enforced by the owner's VM runner at the start of a machine (see

@@ -72,6 +72,7 @@ export interface SessionBootstrap {
 
 export interface SessionBootstrapDeps {
   transcript: SessionTranscript;
+  forks?: boolean;
   engage(channel: ClientChannel, sessionId: string): void;
   openLoadRoute(sessionId: string): number;
   sendToAgent(frame: unknown): void;
@@ -149,8 +150,10 @@ export function createSessionBootstrap(
     queue: QueuedPrompt[],
     continuedFrom: PlatformContinuedFrom | null,
     attribution: Attribution,
+    forks: boolean | undefined,
   ): unknown {
     const extras: Record<string, unknown> = {};
+    if (forks !== undefined) extras.forks = forks;
     if (clip.clipped)
       extras.clipped = clip.older !== undefined ? { older: clip.older } : {};
     if (turn !== null) extras.turn = turn;
@@ -236,6 +239,7 @@ export function createSessionBootstrap(
         kind === "load" ? deps.queueOf(sessionId) : [],
         kind === "load" ? deps.continuedFromOf(sessionId) : null,
         kind === "load" ? deps.attributionOf(sessionId) : NO_ATTRIBUTION,
+        kind === "load" ? deps.forks : undefined,
       ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
@@ -424,6 +428,7 @@ export function createSessionBootstrap(
               [],
               null,
               NO_ATTRIBUTION,
+              deps.forks,
             ),
           });
           if (channel.isOpen()) channel.send(rewriteAuthError(response));
