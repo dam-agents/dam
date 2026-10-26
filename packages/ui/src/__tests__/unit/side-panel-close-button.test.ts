@@ -5,7 +5,6 @@ import { expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
-import { RightToolbarTiles } from "../../modules/sessions/components/right-toolbar-tiles.js";
 import {
   PanelCloseButton,
   SidePanelCloseButton,
@@ -68,80 +67,6 @@ function closeCellClasses(html: string): string[] {
   return cell.split(" ");
 }
 
-// TEST_SCENARIO: With the Unified right toolbar experiment on, the panel's header sits on the first rail tile's row, 40 high and 8 below the top with its rule under it and none above; the X's cell reaches up through those 8 px and out through the header's 8 px of right padding, 48 wide with its border and 47 high above the rule, so the 40 square X closes and hands the keyboard back like the small button, centered in a 47 px square, without JanUI being on.
-it("draws the unified right toolbar's header on the rail's row with a tile X", () => {
-  const html = renderToStaticMarkup(
-    createElement(
-      TooltipProvider,
-      null,
-      createElement(
-        RightToolbarTiles.Provider,
-        { value: true },
-        createElement(SidebarSection, {
-          title: "Files",
-          open: true,
-          headerClassName: "border-t border-border",
-          children: null,
-        }),
-      ),
-    ),
-  );
-  const headerClass =
-    html.match(/class="([^"]*mt-2[^"]*h-10[^"]*)"/)?.[1] ?? "";
-  expect(headerClass.split(" ")).toContain("border-b");
-  expect(headerClass.split(" ")).not.toContain("border-t");
-  const closeTag =
-    html.match(/<button[^>]*data-testid="side-panel-close"[^>]*>/)?.[0] ?? "";
-  expect(closeTag).toContain("size-10");
-  expect(closeTag).toContain("[corner-shape:squircle]");
-  const cell = closeCellClasses(html);
-  expect(cell).toEqual(
-    expect.arrayContaining([
-      "-mt-2",
-      "-mr-2",
-      "w-12",
-      "h-[47px]",
-      "items-center",
-      "justify-center",
-    ]),
-  );
-  expect(cell).not.toContain("pt-2");
-  store.current.getState().setSidePanelTab("approvals");
-  closeButton(PanelCloseButton({ tiles: true })).onClick(outsidePanel);
-  expect(store.current.getState().sidePanelTab).toBeNull();
-});
-
-// TEST_SCENARIO: A docked panel's header starts at the panel's top and pads its row on the right, so its X's cell takes the same 47 px square from the corner its header names, and the classic X ignores that corner and keeps its 8 px of padding.
-it.each([
-  [
-    "the tiled X",
-    true,
-    ["-mr-4", "w-12", "h-[47px]", "self-start"],
-    ["pl-2", "-mt-2"],
-  ],
-  [
-    "the classic X",
-    false,
-    ["pl-2", "self-stretch"],
-    ["-mr-4", "w-12", "h-[47px]"],
-  ],
-])(
-  "in a docked panel's header, %s takes its cell from the header's corner",
-  (_, tiles, has, lacks) => {
-    const cell = closeCellClasses(
-      renderToStaticMarkup(
-        createElement(
-          TooltipProvider,
-          null,
-          PanelCloseButton({ tiles, corner: "-mr-4" }),
-        ),
-      ),
-    );
-    expect(cell).toEqual(expect.arrayContaining(has));
-    for (const c of lacks) expect(cell).not.toContain(c);
-  },
-);
-
 // TEST_SCENARIO: The X is the last item of a panel's top bar, after the panel's own buttons, with a border between them; a panel outside the shell's provider, such as the classic chat's column, keeps the classic 48 px header and its rule.
 it("ends the panel's top bar with the X, behind a border", () => {
   const html = renderToStaticMarkup(
@@ -163,36 +88,31 @@ it("ends the panel's top bar with the X, behind a border", () => {
   expect(headerClass.split(" ")).toContain("border-b");
 });
 
-// TEST_SCENARIO: A phone hides the X, because the full-screen panel there has its own back button, except where the panel keeps a top bar with the X instead, which the Unified right toolbar experiment draws.
-it.each([
-  ["the tiled panel", true, false],
-  ["the classic column", false, true],
-])("in %s the X is hidden on a phone: %s", (_, tiles, hidden) => {
+// TEST_SCENARIO: A phone hides the X, because the full-screen panel there has its own back button.
+it("hides the X on a phone", () => {
   const html = renderToStaticMarkup(
-    createElement(TooltipProvider, null, PanelCloseButton({ tiles })),
+    createElement(TooltipProvider, null, createElement(SidePanelCloseButton)),
   );
-  expect(closeCellClasses(html).includes("max-md:hidden")).toBe(hidden);
+  expect(closeCellClasses(html)).toContain("max-md:hidden");
 });
 
-// TEST_SCENARIO: The X names itself for screen readers and carries no tooltip, in the tiled panel and in the classic column alike.
+// TEST_SCENARIO: The X names itself for screen readers and carries no tooltip.
 it("names the X without a tooltip", () => {
-  for (const tiles of [true, false]) {
-    const html = renderToStaticMarkup(
-      createElement(TooltipProvider, null, PanelCloseButton({ tiles })),
-    );
-    const button =
-      html.match(
-        /<button[^>]*aria-label="Close panel"[^>]*data-testid="side-panel-close"[^>]*>/,
-      )?.[0] ?? "";
-    expect(button).toContain('aria-label="Close panel"');
-    expect(button).not.toContain("data-state=");
-  }
+  const html = renderToStaticMarkup(
+    createElement(TooltipProvider, null, createElement(SidePanelCloseButton)),
+  );
+  const button =
+    html.match(
+      /<button[^>]*aria-label="Close panel"[^>]*data-testid="side-panel-close"[^>]*>/,
+    )?.[0] ?? "";
+  expect(button).toContain('aria-label="Close panel"');
+  expect(button).not.toContain("data-state=");
 });
 
 // TEST_SCENARIO: Clicking the X closes the open panel.
 it("closes the side panel", () => {
   store.current.getState().setSidePanelTab("approvals");
-  closeButton(PanelCloseButton({ tiles: false })).onClick(outsidePanel);
+  closeButton(PanelCloseButton({})).onClick(outsidePanel);
   expect(store.current.getState().sidePanelTab).toBeNull();
 });
 
@@ -201,7 +121,6 @@ it("runs the panel's own close when it brings one", () => {
   let closed = false;
   closeButton(
     PanelCloseButton({
-      tiles: false,
       onClose: () => {
         closed = true;
       },
@@ -229,7 +148,7 @@ it.each([
     querySelector: (s: string) =>
       s === '[data-testid="side-panel-bar"]' ? bar : null,
   };
-  closeButton(PanelCloseButton({ tiles: false, onClose: () => {} })).onClick({
+  closeButton(PanelCloseButton({ onClose: () => {} })).onClick({
     currentTarget: {
       closest: (s) => (s === '[data-testid="side-panel"]' ? panel : null),
     },
@@ -249,7 +168,7 @@ it.each([
       createElement(
         SidePanelCloseScope,
         { value: false },
-        createElement(SidePanelCloseButton, { corner: "-mr-4", ...props }),
+        createElement(SidePanelCloseButton, { ...props }),
       ),
     ),
   );
@@ -263,7 +182,7 @@ it.each([
 ])("with no rail, hands focus to %s", (_, pressed, expected) => {
   const focused: string[] = [];
   const button = (id: string) => ({ focus: () => focused.push(id) });
-  closeButton(PanelCloseButton({ tiles: false, onClose: () => {} })).onClick({
+  closeButton(PanelCloseButton({ onClose: () => {} })).onClick({
     currentTarget: {
       closest: () => null,
       ownerDocument: {

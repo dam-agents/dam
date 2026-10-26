@@ -1,5 +1,4 @@
 import { Add } from "@carbon/icons-react";
-import { KeystoresExternal } from "@carbon/pictograms-react";
 import { useState } from "react";
 
 import { AddRow, ListSection } from "@/components/ui/list-section";
@@ -35,7 +34,6 @@ export function ApiKeysList() {
   return (
     <div>
       <PageHeader
-        pictogram={<KeystoresExternal aria-hidden />}
         title="API keys"
         description="Let the CLI and scripts sign in without a browser. A key is shown only once, when you create it."
       />

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The pages beside an Agent's chat take their room from the whole window while both experiments are off: the shell draws no right column and no rail, and only a docked artifact, or either experiment turned on, brings the column back. The page stays inside the shell's own column in every state, so a panel that opens or closes never remounts it and its scroll and search text survive.
+// TEST_OVERVIEW: The pages beside an Agent's chat take their room from the whole window: the shell draws no right column and no rail, and only a docked artifact brings the column back. The page stays inside the shell's own column in every state, so a panel that opens or closes never remounts it and its scroll and search text survive.
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -7,8 +7,6 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 
 const fake = vi.hoisted(() => ({
-  janui: false,
-  toolbar: false,
   store: {
     dock: null as { kind: string; id: string } | null,
     openArtifactDirty: false,
@@ -35,12 +33,6 @@ vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) => select(fake.store),
 }));
 vi.mock("@/hooks/use-is-desktop", () => ({ useIsDesktop: () => true }));
-vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
-  useNewLayout: () => fake.janui,
-}));
-vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
-  useUnifiedRightToolbar: () => fake.toolbar,
-}));
 vi.mock("../../modules/sessions/hooks/use-app-side-panel-tabs.js", () => ({
   useAppSidePanelTabs: () => ({ gettingStarted: false, icons: {}, badges: {} }),
 }));
@@ -87,8 +79,6 @@ function mountHost(): {
 }
 
 beforeEach(() => {
-  fake.janui = false;
-  fake.toolbar = false;
   fake.store.dock = null;
   fake.store.openArtifactDirty = false;
   fake.store.sidePanelTab = null;
@@ -96,8 +86,8 @@ beforeEach(() => {
   page.mounts = 0;
 });
 
-// TEST_SCENARIO: with both experiments off and nothing docked, a page fills the window and no column or rail stands beside it.
-it("leaves the page the whole window while both experiments are off", () => {
+// TEST_SCENARIO: with nothing docked, a page fills the window and no column or rail stands beside it.
+it("leaves the page the whole window while nothing is docked", () => {
   const { container } = mountHost();
   expect(container.querySelector('[data-testid="page"]')).not.toBeNull();
   expect(container.querySelector('[data-testid="side-panel"]')).toBeNull();
@@ -121,17 +111,4 @@ it("docks and closes an artifact without remounting the page", () => {
   render();
   expect(container.querySelector('[data-testid="side-panel"]')).toBeNull();
   expect(page.mounts).toBe(1);
-});
-
-// TEST_SCENARIO: with either experiment on, the column and its rail stand beside the page as before, even with nothing open.
-it("keeps the rail while an experiment is on", () => {
-  fake.toolbar = true;
-  expect(
-    mountHost().container.querySelector('[data-testid="side-panel"]'),
-  ).not.toBeNull();
-  fake.toolbar = false;
-  fake.janui = true;
-  expect(
-    mountHost().container.querySelector('[data-testid="side-panel"]'),
-  ).not.toBeNull();
 });

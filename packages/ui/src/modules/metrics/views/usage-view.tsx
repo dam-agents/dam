@@ -1,5 +1,3 @@
-import { FinanceAndSupplyChain } from "@carbon/pictograms-react";
-
 import { PageHeader } from "@/components/ui/page-header";
 
 import { useStore } from "../../../store.js";
@@ -30,11 +28,7 @@ export function UsageView() {
 
   return (
     <div>
-      <PageHeader
-        pictogram={<FinanceAndSupplyChain aria-hidden />}
-        title="Usage"
-        description={PAGE_DESCRIPTION}
-      />
+      <PageHeader title="Usage" description={PAGE_DESCRIPTION} />
       <EarlierEstimatesAccess />
       <OwnSpendLimitCard />
       <MeasuredUsage period={period} onPeriodChange={handlePeriodChange} />

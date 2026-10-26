@@ -9,7 +9,6 @@ import { useStore } from "../../../store.js";
 import { framesToMessages } from "../../acp/frames-to-messages.js";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
-import { AgentChangeCards } from "../../sessions/components/agent-change-card.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
 import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
@@ -66,7 +65,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />
         )}
-        <SidePanelCloseButton corner="-mr-4" onClose={() => setDock(null)} />
+        <SidePanelCloseButton onClose={() => setDock(null)} />
       </div>
       {node ? (
         <PanelBody
@@ -150,22 +149,19 @@ function PanelBody({
             {transcript.data.truncated && (
               <Notice text="The start of this conversation was not kept." />
             )}
-            {/* UNIT_BOUNDARY_DESCRIPTION: a change in a sub-agent's transcript belongs to that agent, and no tab of the driver's panel holds it, so the transcript shows no card for it. */}
-            <AgentChangeCards.Provider value={false}>
-              {messages.map((message, i) => (
-                <ChatMessage
-                  key={message.id}
-                  message={message}
-                  userLabel={driverName}
-                  readOnly
-                  isLast={i === messages.length - 1}
-                  hasPendingPermission={false}
-                  onRetry={noop}
-                  onFileClick={noop}
-                  onDelete={noop}
-                />
-              ))}
-            </AgentChangeCards.Provider>
+            {messages.map((message, i) => (
+              <ChatMessage
+                key={message.id}
+                message={message}
+                userLabel={driverName}
+                readOnly
+                isLast={i === messages.length - 1}
+                hasPendingPermission={false}
+                onRetry={noop}
+                onFileClick={noop}
+                onDelete={noop}
+              />
+            ))}
           </DelegationOwnersProvider>
         )}
       </div>

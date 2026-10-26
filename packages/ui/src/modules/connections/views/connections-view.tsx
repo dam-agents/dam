@@ -1,5 +1,4 @@
 import { Add } from "@carbon/icons-react";
-import { ConnectApplications } from "@carbon/pictograms-react";
 import type { ConnectionView } from "api-server-api";
 import { useState } from "react";
 
@@ -35,7 +34,6 @@ export function ConnectionsView() {
   return (
     <div>
       <PageHeader
-        pictogram={<ConnectApplications aria-hidden />}
         title="Connections"
         description="Give your agents access to services, without handing them the credentials."
       />

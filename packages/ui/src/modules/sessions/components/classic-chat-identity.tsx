@@ -13,11 +13,11 @@ import { isSharedAgent } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar while the
- * new-layout experiment is off: the Agent's state dot, its avatar and name,
- * editable in place, the Shared badge of a Shared Agent, and the buttons
- * that toggle the browser and the changes beside the conversation, open the
- * sections on a phone, and open the Agent's configuration.
+ * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar: the Agent's
+ * state dot, its avatar and name, editable in place, the Shared badge of a
+ * Shared Agent, and the buttons that toggle the browser and the changes beside
+ * the conversation, open the sections on a phone, and open the Agent's
+ * configuration.
  */
 export function ClassicChatIdentity({
   agent,

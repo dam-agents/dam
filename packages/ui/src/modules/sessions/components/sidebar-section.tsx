@@ -1,14 +1,8 @@
-import {
-  type CSSProperties,
-  type ReactNode,
-  type Ref,
-  useContext,
-} from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
 
-import { RightToolbarTiles } from "./right-toolbar-tiles.js";
 import { SidePanelCloseButton } from "./side-panel-close-button.js";
 
 export function SidebarSection({
@@ -34,7 +28,6 @@ export function SidebarSection({
   ref?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
-  const tiles = useContext(RightToolbarTiles);
   return (
     <div
       id={id}
@@ -44,11 +37,9 @@ export function SidebarSection({
     >
       <div
         className={cn(
-          "flex items-center gap-1 shrink-0 border-border",
-          tiles ? "mt-2 h-10 pl-2 pr-2" : "h-12 pl-3 pr-2",
+          "flex items-center gap-1 shrink-0 border-border h-12 pl-3 pr-2",
           open && "border-b",
           headerClassName,
-          tiles && "border-t-0",
         )}
       >
         {onToggle ? (
@@ -66,7 +57,7 @@ export function SidebarSection({
           </h2>
         )}
         {headerRight}
-        <SidePanelCloseButton corner="-mt-2 -mr-2" />
+        <SidePanelCloseButton />
       </div>
       {}
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
