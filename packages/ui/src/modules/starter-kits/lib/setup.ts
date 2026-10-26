@@ -1,6 +1,8 @@
 import {
   type ConnectionTemplateView,
+  type HarnessFamily,
   PROVIDER_TEMPLATE_IDS,
+  type ProviderPresetType,
   requirementAccepts,
   rruleToText,
   type StarterKitApplyInput,
@@ -8,8 +10,11 @@ import {
   type StarterKitSchedule,
   type StarterKitScheduleOverride,
   type StarterKitView,
+  type TemplateHarness,
 } from "api-server-api";
 
+import type { ProviderRef } from "../../providers/components/provider-item.js";
+import type { SetupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import {
   CRON_TIMEZONE,
   cronToText,
@@ -17,6 +22,8 @@ import {
 
 export interface StarterKitSetupDraft {
   name: string;
+  templateId: string | null;
+  providerRef: ProviderRef | null;
   connectionIds: string[];
   slackChannelId: string;
   skippedSchedules: string[];
@@ -40,7 +47,12 @@ interface RequirementStatus {
 }
 
 function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
-  return [...new Set(draft.connectionIds)];
+  return [
+    ...new Set([
+      ...draft.connectionIds,
+      ...(draft.providerRef ? [draft.providerRef.id] : []),
+    ]),
+  ];
 }
 
 export function ownedMatches(
@@ -67,22 +79,21 @@ export function requirementStatuses(
 }
 
 export function isStarterKitSetupComplete(
-  kit: Pick<StarterKitView, "connections">,
+  kit: Pick<StarterKitView, "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
   templates: TemplateIndex,
 ): boolean {
   if (draft.name.trim().length === 0) return false;
+  if (!kit.image && draft.templateId === null) return false;
+  if (draft.providerRef === null) return false;
   return requirementStatuses(kit, draft, owned, templates).every(
     (s) => s.satisfied || !s.requirement.required,
   );
 }
 
 export function buildStarterKitApplyInput(
-  kit: Pick<
-    StarterKitView,
-    "id" | "catalog" | "connections" | "link" | "version"
-  >,
+  kit: Pick<StarterKitView, "id" | "catalog" | "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
   templates: TemplateIndex,
@@ -96,9 +107,9 @@ export function buildStarterKitApplyInput(
   return {
     catalog: kit.catalog,
     kitId: kit.id,
-    ...(kit.link ? { link: { url: kit.link.url, commit: kit.version } } : {}),
     name: draft.name.trim(),
     connectionIds: draftConnectionIds(draft),
+    ...(kit.image ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),
     skipSchedules: draft.skippedSchedules,
     scheduleOverrides: draft.scheduleOverrides.filter(
@@ -131,22 +142,31 @@ export function shortKitVersion(version: string): string {
   return FULL_SHA.test(version) ? version.slice(0, 9) : version;
 }
 
-const PLAIN_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
-
-function shellWord(word: string): string {
-  return PLAIN_WORD.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`;
-}
-
-export function startupItemCommandLine(
-  item: Pick<StarterKitView["startupItems"][number], "command" | "args">,
-): string {
-  return [item.command, ...item.args.map(shellWord)].join(" ");
+function isProviderTemplate(id: string): id is ProviderPresetType {
+  return PROVIDER_TEMPLATE_IDS.has(id);
 }
 
 export function isProviderRequirement(
   requirement: StarterKitConnectionRequirement,
 ): boolean {
-  return requirement.accepts.some((id) => PROVIDER_TEMPLATE_IDS.has(id));
+  return requirement.accepts.some(isProviderTemplate);
+}
+
+export function providerPolicyForKit(
+  kit: Pick<StarterKitView, "connections" | "providers">,
+  base: SetupProviderPolicy,
+): SetupProviderPolicy {
+  const declared =
+    kit.providers ??
+    kit.connections
+      .find(isProviderRequirement)
+      ?.accepts.filter(isProviderTemplate);
+  if (!declared || declared.length === 0) return base;
+  const recommended =
+    base.recommended && declared.includes(base.recommended)
+      ? base.recommended
+      : declared[0];
+  return { allow: declared, recommended };
 }
 
 export function connectionRequirements(
@@ -170,12 +190,7 @@ export function describeAccepts(
 ): string {
   const families = familiesIn(templates);
   return ids
-    .map(
-      (id) =>
-        families.get(id)?.title ??
-        templates.get(id)?.name ??
-        id.charAt(0).toUpperCase() + id.slice(1),
-    )
+    .map((id) => families.get(id)?.title ?? templates.get(id)?.name ?? id)
     .join(" or ");
 }
 
@@ -208,6 +223,18 @@ export function accepts(
   );
 }
 
+export function kitConnectionIds(
+  kit: Pick<StarterKitView, "connections">,
+  granted: readonly { id: string; templateId: string }[],
+  templates: TemplateIndex,
+): Set<string> {
+  return new Set(
+    granted
+      .filter((c) => kit.connections.some((r) => accepts(r, c, templates)))
+      .map((c) => c.id),
+  );
+}
+
 export function toggleSkipped(
   skipped: readonly string[],
   name: string,
@@ -215,4 +242,67 @@ export function toggleSkipped(
   return skipped.includes(name)
     ? skipped.filter((n) => n !== name)
     : [...skipped, name];
+}
+
+const HARNESS_LABEL: Record<HarnessFamily, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  pi: "Pi",
+  bob: "Bob",
+  copilot: "Copilot",
+};
+
+function harnessFamilyLabel(
+  harness: HarnessFamily | undefined,
+): string | undefined {
+  return harness ? HARNESS_LABEL[harness] : undefined;
+}
+
+export function ownAgentLine(
+  kit: Pick<StarterKitView, "image">,
+): string | undefined {
+  if (!kit.image) return undefined;
+  const on = harnessFamilyLabel(kit.image.harness);
+  return on ? `Its own agent, built on ${on}` : "Its own agent";
+}
+
+export function kitResourcesLine(
+  kit: Pick<StarterKitView, "resources">,
+): string | undefined {
+  const r = kit.resources;
+  if (!r) return undefined;
+  const parts = [
+    r.cpu ? `${r.cpu} CPU` : undefined,
+    r.memory ? `${r.memory} memory` : undefined,
+    r.storage ? `${r.storage} disk` : undefined,
+  ].filter((p): p is string => p !== undefined);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+export function allowedHarnesses<T extends { harness?: TemplateHarness }>(
+  kit: Pick<StarterKitView, "harnesses">,
+  harnesses: readonly T[],
+): T[] {
+  if (!kit.harnesses) return [...harnesses];
+  const accepted = new Set<string>(kit.harnesses);
+  return harnesses.filter(
+    (t) => t.harness !== undefined && accepted.has(t.harness),
+  );
+}
+
+export function harnessesLine(
+  kit: Pick<StarterKitView, "image" | "harnesses" | "knowledgeBase">,
+): string {
+  if (kit.knowledgeBase)
+    return `A knowledge base agent on ${
+      kit.harnesses
+        ? kit.harnesses.map((h) => harnessFamilyLabel(h) ?? h).join(" or ")
+        : "the harness you pick"
+    }`;
+  const own = ownAgentLine(kit);
+  if (own) return own;
+  if (!kit.harnesses) return "An agent on the harness you pick";
+  return `An agent on ${kit.harnesses
+    .map((h) => harnessFamilyLabel(h) ?? h)
+    .join(" or ")}`;
 }

@@ -8,13 +8,7 @@ export const RECONNECT_DELAYS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000];
 export type PromptBlock =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string }
-  | {
-      type: "resource_link";
-      uri: string;
-      name: string;
-      mimeType: string;
-      size: number;
-    };
+  | { type: "resource_link"; uri: string; name: string; mimeType: string };
 
 export async function buildPromptBlocks(
   agentId: string,
@@ -44,7 +38,6 @@ export async function buildPromptBlocks(
           uri: `file://${absolutePath}`,
           name: a.name,
           mimeType: a.mimeType,
-          size: a.size,
         });
       } catch (err) {
         throw new Error(

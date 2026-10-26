@@ -21,13 +21,6 @@ const base: Schedule = {
   enabled: true,
   createdBy: "user",
   status: null,
-  at: null,
-  inSession: null,
-  harness: null,
-  model: null,
-  settings: null,
-  migrationNote: null,
-  sessionTitle: null,
 };
 
 const prechecked: Schedule = { ...base, precheck: "test -f /tmp/ready" };

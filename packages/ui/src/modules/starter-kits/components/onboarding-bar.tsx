@@ -1,4 +1,5 @@
 import { Gift } from "@carbon/icons-react";
+import { useState } from "react";
 
 import {
   HoverCard,
@@ -6,6 +7,10 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 
+import {
+  readPersistedFlag,
+  writePersistedFlag,
+} from "../../../lib/persisted-prefs.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import {
   onboardingBadge,
@@ -15,14 +20,24 @@ import { ChatColumn } from "../../sessions/components/chat-column.js";
 import { useKitName } from "../hooks/use-kit-name.js";
 import { OnboardingChecklistCard } from "./onboarding-checklist-card.js";
 
+const dismissKey = (agentId: string) =>
+  `platform-onboarding-bar-dismissed:${agentId}`;
+
 export function OnboardingBar({ agentId }: { agentId: string | null }) {
   const agents = useAgentsList();
   const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
   const badge = agent ? onboardingBadge(agent) : null;
   const kitName = useKitName(agent?.starterKit ?? null, badge !== null);
-  if (!agentId || !agent || !badge) return null;
+  const [dismissed, setDismissed] = useState(() =>
+    agentId ? readPersistedFlag(dismissKey(agentId), false) : false,
+  );
+  if (!agentId || !agent || !badge || dismissed) return null;
 
   const progress = onboardingProgress(agent.onboardingSteps);
+  const dismiss = () => {
+    writePersistedFlag(dismissKey(agentId), true);
+    setDismissed(true);
+  };
 
   return (
     <div className="px-4 md:px-8" data-testid="onboarding-bar">
@@ -47,6 +62,7 @@ export function OnboardingBar({ agentId }: { agentId: string | null }) {
               <OnboardingChecklistCard
                 title="Finish onboarding"
                 steps={agent.onboardingSteps}
+                onDismiss={dismiss}
               />
             </HoverCardContent>
           </HoverCard>

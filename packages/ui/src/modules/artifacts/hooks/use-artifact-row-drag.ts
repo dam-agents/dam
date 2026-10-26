@@ -1,8 +1,6 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import { useMemo } from "react";
 
-import { useDragAutoScroll } from "./use-drag-auto-scroll.js";
-
 const ARTIFACT_MOVE_MIME = "application/x-platform-artifact-move";
 
 interface ArtifactDragSource {
@@ -44,22 +42,17 @@ export function useArtifactRowDrag(
   folderId: string | null,
   { onStart, onEnd }: ArtifactDragCallbacks,
 ) {
-  const autoScroll = useDragAutoScroll();
   return useMemo(
     () => ({
       draggable: true,
       onDragStart: (e: ReactDragEvent) => {
         e.dataTransfer.setData(ARTIFACT_MOVE_MIME, JSON.stringify({ id }));
         e.dataTransfer.effectAllowed = "move";
-        autoScroll.start(e.currentTarget);
         onStart(folderId);
       },
-      onDragEnd: () => {
-        autoScroll.stop();
-        onEnd();
-      },
+      onDragEnd: () => onEnd(),
     }),
-    [id, folderId, onStart, onEnd, autoScroll],
+    [id, folderId, onStart, onEnd],
   );
 }
 

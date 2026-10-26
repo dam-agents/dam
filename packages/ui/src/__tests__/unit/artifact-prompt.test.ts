@@ -35,17 +35,6 @@ describe("artifact callback eligibility", () => {
     expect(canUseArtifactBridge(artifact, true, "agent", 2)).toBe(true);
   });
 
-  it("keeps the owner's callbacks after the page is shared with named people", () => {
-    expect(
-      canUseArtifactBridge(
-        { ...artifact, visibility: "restricted" },
-        true,
-        "agent",
-        2,
-      ),
-    ).toBe(true);
-  });
-
   it("disables callbacks when the feature is off", () => {
     expect(canUseArtifactBridge(artifact, false, "agent", 2)).toBe(false);
   });
@@ -54,6 +43,7 @@ describe("artifact callback eligibility", () => {
     { interactive: false },
     { kind: "jsx" },
     { visibility: "public" },
+    { visibility: "restricted" },
     { agentId: null },
     { agentId: "another-agent" },
   ])("refuses an ineligible artifact: %j", (patch) => {

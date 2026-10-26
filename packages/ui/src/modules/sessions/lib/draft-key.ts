@@ -4,7 +4,6 @@ export interface SessionDraft {
   text: string;
   attachments: Attachment[];
   droppedAttachmentNames?: string[];
-  continuesInvocation?: string;
 }
 
 const NO_ATTACHMENTS: Attachment[] = [];
@@ -28,8 +27,7 @@ export function keysWithDraftContent(
     .filter(
       (key) =>
         drafts[key].text.trim().length > 0 ||
-        drafts[key].attachments.length > 0 ||
-        drafts[key].continuesInvocation !== undefined,
+        drafts[key].attachments.length > 0,
     )
     .sort();
 }

@@ -1,16 +1,16 @@
 import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
-import { Card } from "@/components/ui/card";
-import { DisclosureToggle } from "@/components/ui/disclosure";
-import { AddRow, ListSection } from "@/components/ui/list-section";
+import { Button } from "@/components/ui/button";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
-import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
+import { PlatformSkillNote } from "../../sandboxes/components/skills/platform-skill-note.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
-import { isPastOnce } from "../lib/once-schedule.js";
 import { ScheduleCard } from "./schedule-card.js";
 import { ScheduleResultsModal } from "./schedule-results-modal.js";
 
@@ -19,22 +19,14 @@ type FormState =
 
 export function SchedulesPanel({
   agentId,
-  header,
   onResumeSession,
 }: {
   agentId: string;
-  header: SectionHeaderSlot;
   onResumeSession: (sessionId: string) => void;
 }) {
+  const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
-  const upcoming = schedules.filter((s) => !isPastOnce(s));
-  const past = schedules
-    .filter(isPastOnce)
-    .sort((a, b) =>
-      (b.status?.lastRun ?? "").localeCompare(a.status?.lastRun ?? ""),
-    );
-  const [pastOpen, setPastOpen] = useState(false);
 
   const [form, setForm] = useState<FormState>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -42,69 +34,57 @@ export function SchedulesPanel({
 
   const closeForm = () => setForm(null);
 
-  const card = (schedule: Schedule) => (
-    <ScheduleCard
-      key={schedule.id}
-      schedule={schedule}
-      isExpanded={expandedId === schedule.id}
-      onToggleExpanded={() =>
-        setExpandedId((prev) => (prev === schedule.id ? null : schedule.id))
-      }
-      onEdit={() => setForm({ mode: "edit", schedule })}
-      onViewResults={() => setResultsFor(schedule)}
+  const skillNote = (
+    <PlatformSkillNote
+      featureId="schedules"
+      className="mb-4"
+      onOpenSkills={() => navigateToSandboxHome(agentId, "skills")}
     />
   );
 
   return (
     <>
-      {header()}
-      <ListSection
-        loading={schedulesQuery.isPending}
-        error={schedulesQuery.isError && "Couldn't load schedules."}
-        isEmpty={upcoming.length === 0}
-        empty="No schedules yet. Create one to run a task on a timetable or once."
-        onNew={() => setForm({ mode: "create" })}
-        newLabel="Create schedule"
-        newTestId="schedule-new"
-        addRow={
-          <AddRow
-            onClick={() => setForm({ mode: "create" })}
-            testId="schedule-new"
-          >
-            <Add size={16} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-md font-medium text-foreground">
-                Create schedule
-              </p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Run a task on a timetable, or once.
-              </p>
-            </div>
-          </AddRow>
-        }
-        separated
-      >
-        {upcoming.map(card)}
-      </ListSection>
-      {past.length > 0 && (
-        <section className="mb-8">
-          <DisclosureToggle
-            open={pastOpen}
-            onToggle={() => setPastOpen((open) => !open)}
-            className="mb-3"
-          >
-            <SectionLabel>{`Past one-time tasks (${past.length})`}</SectionLabel>
-          </DisclosureToggle>
-          {pastOpen && (
-            <div className="flex flex-col gap-3">
-              {past.map((schedule) => (
-                <Card key={schedule.id} className="overflow-hidden">
-                  {card(schedule)}
-                </Card>
-              ))}
-            </div>
-          )}
-        </section>
+      {schedules.length === 0 ? (
+        <>
+          <SectionLabel spaced>Schedules</SectionLabel>
+          {skillNote}
+          <EmptyStateCard
+            message="You have not set up any Schedules yet"
+            actionLabel="Create Schedule"
+            onAction={() => setForm({ mode: "create" })}
+          />
+        </>
+      ) : (
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <SectionLabel>Schedules</SectionLabel>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setForm({ mode: "create" })}
+            >
+              <Add size={16} />
+              Create Schedule
+            </Button>
+          </div>
+          {skillNote}
+          <Inset className="flex flex-col gap-3">
+            {schedules.map((schedule) => (
+              <ScheduleCard
+                key={schedule.id}
+                schedule={schedule}
+                isExpanded={expandedId === schedule.id}
+                onToggleExpanded={() =>
+                  setExpandedId((prev) =>
+                    prev === schedule.id ? null : schedule.id,
+                  )
+                }
+                onEdit={() => setForm({ mode: "edit", schedule })}
+                onViewResults={() => setResultsFor(schedule)}
+              />
+            ))}
+          </Inset>
+        </>
       )}
 
       {form && (

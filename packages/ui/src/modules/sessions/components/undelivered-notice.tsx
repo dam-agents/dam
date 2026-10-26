@@ -1,9 +1,18 @@
-import { Warning } from "@carbon/icons-react";
+import { OverflowMenuVertical, Warning } from "@carbon/icons-react";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useCopy } from "@/hooks/use-copy";
+
+import { emitToast } from "../../../lib/toast.js";
 import type { Attachment, Message } from "../../../types.js";
 import { describeSendError } from "../../acp/errors.js";
 import type { SendPromptOptions } from "../hooks/use-acp-prompt.js";
-import { UndeliveredActionsMenu } from "./undelivered-actions-menu.js";
 
 export type OnRetry = (
   text: string,
@@ -17,14 +26,13 @@ export type OnRetry = (
  * a recovered prompt was stored with — from every surface that offers it.
  * retryOf names the undelivered user prompt the resend supersedes, so only a
  * user-role bubble passes its id: an interrupted turn's bubble is the agent's
- * partial reply, and naming it would delete that reply on retry. A reply that
- * failed keeps the prompt it answered, so its error can offer a resend too.
+ * partial reply, and naming it would delete that reply on retry.
  */
-export function retryHandlerFor(
+function retryHandlerFor(
   message: Message,
   onRetry: OnRetry,
 ): (() => void) | undefined {
-  const retryWith = message.error?.retryWith ?? message.retryWith;
+  const retryWith = message.error?.retryWith;
   if (!retryWith) return undefined;
   return () => {
     onRetry(retryWith.text, retryWith.attachments, {
@@ -43,7 +51,10 @@ export function UndeliveredNotice({
   onRetry: OnRetry;
   onDelete: (id: string) => void;
 }) {
+  const { copy } = useCopy();
+  const retry = retryHandlerFor(message, onRetry);
   const described = describeSendError(message.error?.message ?? "");
+  const text = message.error?.retryWith?.text ?? "";
   return (
     <div
       data-testid="undelivered-marker"
@@ -53,9 +64,6 @@ export function UndeliveredNotice({
       <Warning size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         <span className="text-xs text-foreground break-words">
-          {described.title && (
-            <span className="font-bold text-danger">{described.title} </span>
-          )}
           {described.message}
         </span>
         {described.hint && (
@@ -64,11 +72,51 @@ export function UndeliveredNotice({
           </span>
         )}
       </div>
-      <UndeliveredActionsMenu
-        message={message}
-        onRetry={retryHandlerFor(message, onRetry)}
-        onDelete={onDelete}
-      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Undelivered message actions"
+            data-testid="undelivered-actions"
+            className="-my-1 shrink-0"
+          >
+            <OverflowMenuVertical size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {retry && (
+            <DropdownMenuItem
+              data-testid="undelivered-retry-button"
+              onSelect={retry}
+            >
+              Retry
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            disabled={text === ""}
+            onSelect={() => {
+              void copy(text).then((state) => {
+                if (state === "failed")
+                  emitToast({
+                    kind: "error",
+                    message: "Couldn't copy the message text.",
+                  });
+              });
+            }}
+          >
+            Copy text
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-danger"
+            onSelect={() => {
+              onDelete(message.id);
+            }}
+          >
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

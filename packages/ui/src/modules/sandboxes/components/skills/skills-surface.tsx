@@ -1,4 +1,4 @@
-import { Save } from "@carbon/icons-react";
+import { Add } from "@carbon/icons-react";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
@@ -7,32 +7,38 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
-import { useResolvedHarnessConfig } from "../../../agents/api/harness-config.js";
+import {
+  useResolvedHarnessConfig,
+  useStaleModel,
+} from "../../../agents/api/harness-config.js";
 import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
-import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
+import { SkillSetActions } from "./skill-set-actions.js";
 import { SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
-import { SkillsReadOnlyPanel } from "./skills-read-only-panel.js";
+import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
-import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
+import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
+import { StaleModelNotice } from "./stale-model-notice.js";
+import {
+  StandaloneSkillsEmptyState,
+  StandaloneSkillsGroup,
+} from "./standalone-skills-group.js";
 
 export function SkillsSurface({
   agentId,
   agentState,
-  agentDisabled = false,
   readOnly,
   comingUp,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
-  agentDisabled?: boolean;
   readOnly: boolean;
   comingUp?: boolean;
 }) {
@@ -40,6 +46,7 @@ export function SkillsSurface({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
+  const staleModel = useStaleModel(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
   const [query, setQuery] = useState("");
@@ -52,7 +59,8 @@ export function SkillsSurface({
     toggleAllWithConfirm,
     removeSourceWithConfirm,
   } = useSkillsConfirms(surface, derived);
-  const { publishes, updatingAll, updateAll, downloadStandalone } = surface;
+  const { sources, publishes, updatingAll, updateAll, downloadStandalone } =
+    surface;
   const {
     searching,
     totals,
@@ -64,20 +72,61 @@ export function SkillsSurface({
     previewReady,
     anyInstalled,
     drifted,
-    trackTargets,
+    trackUnavailableNames,
+    snapshotRows,
+    snapshotOnCount,
   } = derived;
 
-  const openAddSource = () =>
-    setOpenModal({ kind: "add-source", mode: "github", files: [] });
+  const addSourceButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() =>
+        setOpenModal({ kind: "add-source", tab: "github", files: [] })
+      }
+    >
+      <Add size={16} /> Add source
+    </Button>
+  );
+
   const manageConnections = agentId
     ? () => navigateToSandboxHome(agentId, "connections")
     : undefined;
 
   const ran = hasRun || surface.standaloneSnapshot !== undefined;
-  const disabledNotice =
-    agentDisabled && agentId ? (
-      <AgentDisabledNotice agentId={agentId} />
-    ) : undefined;
+
+  const stoppedPanel = (
+    <SkillsStoppedPanel
+      onCount={snapshotOnCount}
+      rows={snapshotRows}
+      sources={sources}
+      sourcesLoaded={surface.sourcesLoaded}
+      visibilityBySource={surface.visibilityBySource}
+      scannedAtBySource={surface.scannedAtBySource}
+      loadingBySource={surface.loadingBySource}
+      revalidatingBySource={surface.revalidatingBySource}
+      errorBySource={surface.errorBySource}
+      addSourceButton={addSourceButton}
+      callout={
+        staleModel.stale && staleModel.model ? (
+          <StaleModelNotice
+            model={staleModel.model}
+            comingUp={!!comingUp}
+            onStartAndFix={() => {
+              if (!agentId) return;
+              wakeAgent.wake(agentId);
+              navigateToSandboxHome(agentId, "setup");
+            }}
+          />
+        ) : undefined
+      }
+      comingUp={!!comingUp}
+      onStart={() => agentId && wakeAgent.wake(agentId)}
+      onRescan={(src) => void surface.refreshSource(src.id)}
+      onRemove={(src) => void removeSourceWithConfirm(src)}
+      onManageConnections={manageConnections}
+    />
+  );
 
   const dropEnabled = !readOnly && !!agentId;
   const surfaceDropProps = dropEnabled
@@ -96,10 +145,28 @@ export function SkillsSurface({
           setPageDrag(false);
           const files = [...e.dataTransfer.files];
           if (files.length > 0)
-            setOpenModal({ kind: "add-source", mode: "upload", files });
+            setOpenModal({ kind: "add-source", tab: "upload", files });
         },
       }
     : {};
+
+  const neverRunPanel = (
+    <SkillsNeverRunPanel
+      sources={sources}
+      sourcesLoaded={surface.sourcesLoaded}
+      visibilityBySource={surface.visibilityBySource}
+      scannedAtBySource={surface.scannedAtBySource}
+      loadingBySource={surface.loadingBySource}
+      revalidatingBySource={surface.revalidatingBySource}
+      errorBySource={surface.errorBySource}
+      addSourceButton={addSourceButton}
+      comingUp={!!comingUp}
+      onStart={() => agentId && wakeAgent.wake(agentId)}
+      onRescan={(src) => void surface.refreshSource(src.id)}
+      onRemove={(src) => void removeSourceWithConfirm(src)}
+      onManageConnections={manageConnections}
+    />
+  );
 
   return (
     <div
@@ -112,18 +179,10 @@ export function SkillsSurface({
       {readOnly ? (
         configPending && !ran ? (
           <SkillSourcesSkeleton />
+        ) : ran ? (
+          stoppedPanel
         ) : (
-          <SkillsReadOnlyPanel
-            surface={surface}
-            derived={derived}
-            mode={ran ? "stopped" : "never-run"}
-            comingUp={!!comingUp}
-            disabledNotice={disabledNotice}
-            onStart={() => agentId && wakeAgent.wake(agentId)}
-            onAddSource={openAddSource}
-            onRemove={(src) => void removeSourceWithConfirm(src)}
-            onManageConnections={manageConnections}
-          />
+          neverRunPanel
         )
       ) : (
         <>
@@ -144,30 +203,21 @@ export function SkillsSurface({
                 ) : undefined
               }
               actions={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!anyInstalled || !previewReady}
-                  tooltip={
-                    !previewReady
-                      ? "Still reading your sources…"
-                      : anyInstalled
-                        ? undefined
-                        : "Turn on at least one skill from a source to save a set"
-                  }
-                  onClick={() => setOpenModal({ kind: "save-set" })}
-                >
-                  <Save size={16} /> Save as skill set…
-                </Button>
+                <SkillSetActions
+                  canSave={anyInstalled}
+                  previewReady={previewReady}
+                  onAddSets={() => setOpenModal({ kind: "add-sets" })}
+                  onSaveSet={() => setOpenModal({ kind: "save-set" })}
+                />
               }
             />
           </div>
 
           <div className="flex flex-col gap-8">
-            {(shownCreatedHere.length > 0 || !searching) && (
+            {shownCreatedHere.length > 0 ? (
               <StandaloneSkillsGroup
                 skills={shownCreatedHere}
-                readOnly={false}
+                readOnly={readOnly}
                 publishes={publishes}
                 canPublish={publishableSources.length > 0}
                 onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
@@ -175,39 +225,23 @@ export function SkillsSurface({
                 onDelete={(skill, pub) =>
                   void deleteStandaloneWithConfirm(skill, pub)
                 }
-                onTrack={(skill, target) =>
-                  void trackWithConfirm(skill, target)
-                }
+                onTrack={(skill, pub) => void trackWithConfirm(skill, pub)}
                 onOpenSkill={
                   agentId
                     ? (skill) => setOpenModal({ kind: "render-local", skill })
                     : undefined
                 }
-                trackTargets={trackTargets}
-                onUpload={
-                  dropEnabled
-                    ? () =>
-                        setOpenModal({
-                          kind: "add-source",
-                          mode: "upload",
-                          files: [],
-                        })
-                    : undefined
-                }
+                trackUnavailableNames={trackUnavailableNames}
               />
+            ) : searching ? null : (
+              <StandaloneSkillsEmptyState />
             )}
 
             <SkillSourcesSection
-              readOnly={false}
+              readOnly={readOnly}
               surface={surface}
               derived={derived}
-              onAddSource={() =>
-                setOpenModal({
-                  kind: "add-source",
-                  mode: "github",
-                  files: [],
-                })
-              }
+              action={addSourceButton}
               onOpenSkill={(source, skill) =>
                 setOpenModal({ kind: "render", source, skill })
               }

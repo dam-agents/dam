@@ -1,20 +1,17 @@
 import {
   ArrowLeft,
-  Gift,
   Launch,
   Meter,
   PlayFilledAlt,
-  WarningAlt,
+  Time,
 } from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   formatEgressRuleInline,
-  LINKED_KIT_CATALOG,
   requirementAccepts,
   type StarterKitView,
 } from "api-server-api";
-import { isAvatarCharacter } from "api-server-api/avatar/svg";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 
 import {
   DialogBody,
@@ -27,56 +24,34 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
-import { Tooltip } from "@/components/ui/tooltip";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
-import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
-import { useAgents } from "../../agents/api/queries.js";
-import { EditableIdentity } from "../../agents/components/editable-agent-identity.js";
-import { defaultAvatar } from "../../agents/lib/default-avatar.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import {
   formatSizeLabel,
   sizeInMi,
   slotUnitOf,
 } from "../../budgets/lib/slots.js";
-import {
-  useAppConnections,
-  useConnectionTemplates,
-} from "../../connections/api/queries.js";
-import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
+import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { useFeatures } from "../../features/api/queries.js";
-import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
-import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
-import { routeToPath } from "../../platform/lib/routes.js";
-import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import { useApplyStarterKit } from "../api/mutations.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
-import { KitCategoryTag } from "../components/kit-category-tag.js";
-import { KitChannelsSection } from "../components/kit-channels-section.js";
-import { KitRequirementsList } from "../components/kit-requirements-list.js";
-import { KitScheduleCard } from "../components/kit-schedule-card.js";
 import {
+  CATEGORY_LABEL,
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
-  kitRunsOnVm,
+  VM_BACKEND_LABEL,
 } from "../lib/catalog-cards.js";
 import {
-  buildStarterKitApplyInput,
-  connectionRequirements,
   describeAccepts,
-  isStarterKitSetupComplete,
-  preselectedGrants,
+  harnessesLine,
+  kitScheduleCadence,
   shortKitVersion,
-  startupItemCommandLine,
-  toggleSkipped,
-  withOverride,
 } from "../lib/setup.js";
 
+const KIT_MODAL_WIDTH = "w-[600px] max-w-full md:w-[980px]";
 const KIT_MODAL_HEIGHT = "h-[85dvh] md:h-[85vh]";
 
 type TemplateIndex = ReadonlyMap<string, ConnectionTemplateView>;
@@ -88,6 +63,19 @@ function acceptedTemplates(
   return templates.filter((t) =>
     requirementAccepts({ accepts }, t.id, t.family?.id),
   );
+}
+
+function requirementIconSlug(
+  accepts: readonly string[],
+  templates: readonly ConnectionTemplateView[],
+): string | undefined {
+  for (const accepted of accepts) {
+    const match = acceptedTemplates([accepted], templates).find(
+      (t) => t.iconSlug !== undefined,
+    );
+    if (match) return match.iconSlug;
+  }
+  return undefined;
 }
 
 interface FamilyTag {
@@ -118,7 +106,6 @@ function Row({
   title,
   tag,
   detail,
-  code,
   action,
 }: {
   icon?: React.ReactNode;
@@ -126,7 +113,6 @@ function Row({
   title: string;
   tag?: React.ReactNode;
   detail?: string;
-  code?: string;
   action?: React.ReactNode;
 }) {
   const tile =
@@ -157,11 +143,6 @@ function Row({
             className="mt-0.5 text-sm text-muted-foreground"
           />
         )}
-        {code !== undefined && (
-          <pre className="mt-1.5 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-xs text-foreground">
-            {code}
-          </pre>
-        )}
       </div>
       {action}
     </li>
@@ -188,68 +169,49 @@ export function StarterKitDetailView() {
   const kitId = useStore((s) => s.starterKitId);
   const kit = useStarterKit(catalog, kitId);
   const setView = useStore((s) => s.setView);
-  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
-  const close = () => setView("home");
-  const back = () => {
-    close();
-    setKitBrowserOpen(true);
-  };
+  const close = () => setView("starter-kits");
 
   if (!kit.isPending && (kit.isError || kit.data === undefined)) {
     return (
-      <KitLoadErrorModal
-        linkReason={
-          catalog === LINKED_KIT_CATALOG ? (kit.error?.message ?? null) : null
-        }
-        onRetry={() => void kit.refetch()}
-        onClose={close}
-        onBack={back}
-      />
+      <KitLoadErrorModal onRetry={() => void kit.refetch()} onClose={close} />
     );
   }
 
   return (
-    <Modal size="xl" heightClass={KIT_MODAL_HEIGHT} onClose={close}>
-      {kit.data === undefined || kitId === null ? (
-        <KitDetailSkeleton onClose={close} onBack={back} />
+    <Modal
+      widthClass={KIT_MODAL_WIDTH}
+      heightClass={KIT_MODAL_HEIGHT}
+      onClose={close}
+    >
+      {kit.data === undefined ? (
+        <KitDetailSkeleton onClose={close} />
       ) : (
-        <KitDetail
-          kit={kit.data}
-          routeKit={kitId}
-          onClose={close}
-          onBack={back}
-        />
+        <KitDetail kit={kit.data} onClose={close} />
       )}
     </Modal>
   );
 }
 
 function KitLoadErrorModal({
-  linkReason,
   onRetry,
   onClose,
-  onBack,
 }: {
-  linkReason: string | null;
   onRetry: () => void;
   onClose: () => void;
-  onBack: () => void;
 }) {
   return (
-    <Modal size="md" onClose={onClose}>
-      <DialogHeader title="Starter kit unavailable" onClose={onClose} />
+    <Modal widthClass="w-[600px] max-w-full" onClose={onClose}>
       <DialogBody>
         <Callout tone="danger">
           <p className="text-sm text-foreground">
-            {linkReason !== null
-              ? `Couldn't use the kit at this link: ${linkReason}`
-              : "Couldn't load this starter kit. It may have been removed from the catalog, or the catalog is unreachable."}
+            Couldn&apos;t load this starter kit. It may have been removed from
+            the catalog, or the catalog is unreachable.
           </p>
           <div className="mt-2 flex gap-2">
             <Button variant="outline" size="sm" onClick={onRetry}>
               Retry
             </Button>
-            <Button variant="ghost" size="sm" onClick={onBack}>
+            <Button variant="ghost" size="sm" onClick={onClose}>
               All kits
             </Button>
           </div>
@@ -259,13 +221,7 @@ function KitLoadErrorModal({
   );
 }
 
-function KitDetailSkeleton({
-  onClose,
-  onBack,
-}: {
-  onClose: () => void;
-  onBack: () => void;
-}) {
+function KitDetailSkeleton({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 flex-1 flex-col">
@@ -283,8 +239,8 @@ function KitDetailSkeleton({
         <DialogBody>
           <ListSkeleton rows={4} rowHeight={72} />
         </DialogBody>
-        <DialogFooter className="justify-between">
-          <Button variant="ghost" onClick={onBack}>
+        <DialogFooter divided className="justify-between">
+          <Button variant="ghost" onClick={onClose}>
             <ArrowLeft size={16} /> Back
           </Button>
           <TextSkeleton width={260} className="h-10" />
@@ -292,51 +248,6 @@ function KitDetailSkeleton({
       </div>
       <KitVideoPanel video={undefined} />
     </div>
-  );
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: A kit from a link is in no catalog, so nobody on
- * this platform reviewed it; the notice says so above everything the kit sets
- * up, and names the repository and the commit the agent is created from. For
- * such a kit the modal also lists its install command and environment, which
- * a catalog kit's review already covered.
- */
-function LinkedKitNotice({
-  kit,
-  link,
-}: {
-  kit: StarterKitView;
-  link: { url: string };
-}) {
-  return (
-    <Callout
-      tone="warning"
-      size="sm"
-      className="mb-6 flex gap-2.5"
-      data-testid="linked-kit-notice"
-    >
-      <WarningAlt size={16} className="mt-px shrink-0 text-warning-fg" />
-      <div className="min-w-0 text-sm leading-snug">
-        <p className="font-semibold text-warning-fg">
-          This kit is not in a catalog
-        </p>
-        <p className="mt-0.5 text-muted-foreground">
-          Nobody on this platform reviewed it. Check what it sets up below
-          before you create the agent: it is created from{" "}
-          <a
-            href={`${link.url}/tree/${kit.version}`}
-            target="_blank"
-            rel="noreferrer"
-            className="font-mono text-foreground underline underline-offset-2"
-          >
-            {link.url.replace("https://github.com/", "")}@
-            {shortKitVersion(kit.version)}
-          </a>
-          .
-        </p>
-      </div>
-    </Callout>
   );
 }
 
@@ -365,123 +276,30 @@ function KitVideoPanel({ video }: { video: string | undefined }) {
 
 function KitDetail({
   kit,
-  routeKit,
   onClose,
-  onBack,
 }: {
   kit: StarterKitView;
-  routeKit: string;
   onClose: () => void;
-  onBack: () => void;
 }) {
-  const selectAgent = useStore((s) => s.selectAgent);
+  const setView = useStore((s) => s.setView);
+  const navigateToStarterKitSetup = useStore(
+    (s) => s.navigateToStarterKitSetup,
+  );
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
-  const { answered, vm: installVm } = useVmRuntime();
-  const runsOnVm = kitRunsOnVm(kit, answered ? installVm : undefined);
-  const connections = useAppConnections();
-  const agents = useAgents().data?.list;
-  const apply = useApplyStarterKit();
-  const returnPath = routeToPath({
-    view: "starter-kit",
-    catalog: kit.catalog,
-    kit: routeKit,
-  });
-  const { form, update, toggleConnection, reset } = useSetupForm(
-    "starter-kit",
-    {
-      namePrefix: kit.id,
-      returnPath,
-      scope: `${kit.catalog}/${routeKit}`,
-    },
-  );
-  const [invalidSchedules, setInvalidSchedules] = useState<readonly string[]>(
-    [],
-  );
-  const [connectAccepts, setConnectAccepts] = useState<
-    readonly string[] | null
-  >(null);
 
   const templateById: TemplateIndex = useMemo(
     () => new Map((templates.data ?? []).map((t) => [t.id, t])),
     [templates.data],
   );
-  const owned = useMemo(() => connections.data ?? [], [connections.data]);
-  const grantedIds = useMemo(
-    () => new Set(form.connectionIds),
-    [form.connectionIds],
-  );
-
-  const preselected = useRef(false);
-  useEffect(() => {
-    if (preselected.current) return;
-    if (connections.data === undefined || templates.data === undefined) return;
-    preselected.current = true;
-    for (const id of preselectedGrants(
-      kit,
-      connections.data,
-      form.connectionIds,
-      templateById,
-    ))
-      toggleConnection(id, true);
-  }, [
-    kit,
-    connections.data,
-    templates.data,
-    templateById,
-    form.connectionIds,
-    toggleConnection,
-  ]);
-
-  const canCreate =
-    agents !== undefined &&
-    !apply.isPending &&
-    !invalidSchedules.some((n) => !form.skippedSchedules.includes(n)) &&
-    isStarterKitSetupComplete(kit, form, owned, templateById);
-
-  const unlocked = useUnlockedAvatars();
-  const customAvatars = useFeatures().data?.["custom-avatars"] ?? false;
-  const kitAvatar =
-    customAvatars || isAvatarCharacter(kit.avatar) ? kit.avatar : undefined;
-  const avatar = useMemo(
-    () =>
-      form.avatar ??
-      kitAvatar ??
-      defaultAvatar(form.name, unlocked, agents ?? []),
-    [form.avatar, kitAvatar, form.name, unlocked, agents],
-  );
-
-  const create = async () => {
-    if (!canCreate) return;
-    try {
-      const result = await apply.mutateAsync({
-        ...buildStarterKitApplyInput(kit, form, owned, templateById),
-        avatar,
-      });
-      reset();
-      const skipped = result.skills?.skipped.length ?? 0;
-      if (result.skillsError) {
-        emitToast({
-          kind: "error",
-          message: `Agent created, but its external skills could not be installed: ${result.skillsError}`,
-        });
-      } else if (skipped > 0) {
-        emitToast({
-          kind: "warning",
-          message: `Agent created; ${skipped} external skill${skipped === 1 ? "" : "s"} could not be installed — see the Skills panel.`,
-        });
-      }
-      selectAgent(result.agent.id);
-    } catch {}
-  };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data || runsOnVm !== false) return null;
+    if (!kit.resources || !budget.data) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, runsOnVm, budget.data]);
+  }, [kit.resources, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
@@ -491,7 +309,9 @@ function KitDetail({
       <div className="flex min-h-0 flex-1 flex-col">
         <DialogHeader
           title={kit.name}
-          titleAccessory={<KitCategoryTag category={kit.category} />}
+          titleAccessory={
+            <Badge variant="kit">{CATEGORY_LABEL[kit.category]}</Badge>
+          }
           subtitle={kit.description}
           onClose={onClose}
         >
@@ -517,45 +337,33 @@ function KitDetail({
                 {skillCount} {skillCount === 1 ? "skill" : "skills"}
               </Badge>
             )}
+            {kit.backend === "vm" && (
+              <Badge variant="muted" size="sm">
+                {VM_BACKEND_LABEL}
+              </Badge>
+            )}
           </div>
         </DialogHeader>
 
         <DialogBody>
-          {kit.link && <LinkedKitNotice kit={kit} link={kit.link} />}
-          {form.name && (
-            <div
-              className="mb-8 flex min-w-0 items-center gap-3"
-              data-testid="kit-agent-identity"
-            >
-              <EditableIdentity
-                name={form.name}
-                avatar={avatar}
-                onRename={(name) => update({ name })}
-                onAvatarChange={(next) => update({ avatar: next })}
-                avatarSize={36}
-                mood="awake"
-                nameClassName="text-base font-semibold text-foreground"
-                nameTag="h2"
-              />
-            </div>
-          )}
+          <h2 className="mb-3 text-base font-semibold text-foreground">
+            Included
+          </h2>
           {kbSeed && (
             <Section label="Knowledge base">
               <Row
                 title={`${kit.name} knowledge base skills`}
                 detail="Installed by the kit's own bootstrap from its repository, so they are not listed under Skills."
                 action={
-                  <Tooltip content="Open repository">
-                    <a
-                      href={kbSeed.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`Open the ${kit.name} repository`}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Launch size={16} />
-                    </a>
-                  </Tooltip>
+                  <a
+                    href={kbSeed.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open the ${kit.name} repository`}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Launch size={16} />
+                  </a>
                 }
               />
             </Section>
@@ -599,6 +407,36 @@ function KitDetail({
             </Section>
           )}
 
+          {kit.schedules.length > 0 && (
+            <Section label="Schedules">
+              {kit.schedules.map((schedule) => (
+                <Row
+                  key={schedule.name}
+                  icon={<Time size={16} className="text-kit" />}
+                  title={schedule.name}
+                  detail={kitScheduleCadence(schedule)}
+                  tag={
+                    <Badge
+                      variant={schedule.enabled ? "template" : "muted"}
+                      size="sm"
+                    >
+                      {schedule.enabled
+                        ? "runs by default"
+                        : "optional, starts off"}
+                    </Badge>
+                  }
+                />
+              ))}
+              <li className="text-sm text-muted-foreground">
+                {kit.onboarding === false
+                  ? "Created on the new agent."
+                  : "Created on the new agent. They stay held until onboarding is finished, so nothing runs against a half-configured agent."}{" "}
+                You can switch any of them on or off, or skip one, before you
+                create the agent.
+              </li>
+            </Section>
+          )}
+
           {kit.seed && (
             <Section label="Repository">
               <Row
@@ -613,17 +451,15 @@ function KitDetail({
                     : ""
                 } before the first session`}
                 action={
-                  <Tooltip content="Open repository">
-                    <a
-                      href={kit.seed.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label="Open the repository"
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Launch size={16} />
-                    </a>
-                  </Tooltip>
+                  <a
+                    href={kit.seed.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Open the repository"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Launch size={16} />
+                  </a>
                 }
               />
             </Section>
@@ -647,45 +483,6 @@ function KitDetail({
             ))}
           </Section>
 
-          {kit.startupItems.length > 0 && (
-            <Section label="Login items">
-              {kit.startupItems.map((item) => (
-                <Row
-                  key={item.name}
-                  title={item.name}
-                  detail={item.description}
-                  code={startupItemCommandLine(item)}
-                  tag={
-                    <Badge variant="muted" size="sm">
-                      {item.enabled ? "starts at every boot" : "off at boot"}
-                    </Badge>
-                  }
-                />
-              ))}
-            </Section>
-          )}
-
-          {kit.link && kit.install && (
-            <Section label="Install command">
-              <Row
-                title="Runs in the agent's workspace when it is created"
-                code={kit.install.command}
-              />
-            </Section>
-          )}
-
-          {kit.link && kit.env.length > 0 && (
-            <Section label="Environment">
-              {kit.env.map((variable) => (
-                <Row
-                  key={variable.name}
-                  title={variable.name}
-                  code={variable.value}
-                />
-              ))}
-            </Section>
-          )}
-
           {size && (
             <Section label="Compute">
               <Row
@@ -700,106 +497,77 @@ function KitDetail({
             </Section>
           )}
 
-          {(connectionRequirements(kit).length > 0 ||
-            kit.schedules.length > 0 ||
-            kit.channels.length > 0) && (
-            <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
-              You&apos;ll set up
-            </h2>
-          )}
+          <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
+            You&apos;ll set up
+          </h2>
 
-          {connectionRequirements(kit).length > 0 && (
-            <section className="mb-6">
-              <SectionLabel spaced>Connections</SectionLabel>
-              <KitRequirementsList
-                kit={kit}
-                granted={owned.filter((c) => grantedIds.has(c.id))}
-                templateById={templateById}
-                templates={templates.data ?? []}
-                onRevoke={(id) => toggleConnection(id, false)}
-                onConnect={setConnectAccepts}
-              />
-            </section>
-          )}
-
-          {kit.schedules.length > 0 && (
-            <section className="mb-6">
-              <SectionLabel spaced>Schedules</SectionLabel>
-              <ul className="flex flex-col gap-3">
-                {kit.schedules.map((schedule) => (
-                  <KitScheduleCard
-                    key={schedule.name}
-                    schedule={schedule}
-                    override={form.scheduleOverrides.find(
-                      (o) => o.name === schedule.name,
-                    )}
-                    skipped={form.skippedSchedules.includes(schedule.name)}
-                    onChange={(patch) =>
-                      update({
-                        scheduleOverrides: withOverride(
-                          form.scheduleOverrides,
-                          schedule.name,
-                          patch,
-                        ),
-                      })
-                    }
-                    onInvalid={(invalid) =>
-                      setInvalidSchedules((prev) =>
-                        invalid
-                          ? [...new Set([...prev, schedule.name])]
-                          : prev.filter((n) => n !== schedule.name),
-                      )
-                    }
-                    onToggleSkipped={() =>
-                      update({
-                        skippedSchedules: toggleSkipped(
-                          form.skippedSchedules,
-                          schedule.name,
-                        ),
-                      })
-                    }
-                  />
-                ))}
-              </ul>
-              <p className="mt-3 text-sm text-muted-foreground">
-                {kit.onboarding === false
-                  ? "Created with the kit author's defaults."
-                  : "Created with the kit author's defaults and held until onboarding finishes."}{" "}
-                Adjust any of them, or skip what you do not want.
-              </p>
-            </section>
+          {kit.connections.length > 0 && (
+            <Section label="Connections">
+              {kit.connections.map((req) => (
+                <Row
+                  key={req.accepts.join("|")}
+                  iconSlug={requirementIconSlug(
+                    req.accepts,
+                    templates.data ?? [],
+                  )}
+                  title={describeAccepts(req.accepts, templateById)}
+                  detail={req.note}
+                  tag={
+                    <Badge
+                      variant={req.required ? "template" : "muted"}
+                      size="sm"
+                    >
+                      {req.required ? "required" : "optional"}
+                    </Badge>
+                  }
+                />
+              ))}
+            </Section>
           )}
 
           {kit.channels.length > 0 && (
-            <KitChannelsSection
-              kit={kit}
-              slackChannelId={form.slackChannelId}
-              onSlackChannelIdChange={(slackChannelId) =>
-                update({ slackChannelId })
-              }
-            />
+            <Section label="Channels">
+              {kit.channels.map((channel) => (
+                <Row
+                  key={channel.type}
+                  iconSlug={channel.type}
+                  title={channel.type === "slack" ? "Slack" : "Telegram"}
+                  detail={channel.note}
+                  tag={
+                    <Badge variant="muted" size="sm">
+                      optional
+                    </Badge>
+                  }
+                />
+              ))}
+            </Section>
+          )}
+
+          {!kit.image && (
+            <Section label="Harness">
+              <Row
+                title={harnessesLine(kit)}
+                detail="Chosen on the next step, from the harnesses installed here."
+              />
+            </Section>
           )}
         </DialogBody>
 
-        <DialogFooter className="justify-between">
-          <Button variant="ghost" onClick={onBack}>
+        <DialogFooter divided className="justify-between">
+          <Button variant="ghost" onClick={onClose}>
             <ArrowLeft size={16} /> Back
           </Button>
-          <Button onClick={() => void create()} disabled={!canCreate}>
-            <Gift size={16} aria-hidden />
-            {apply.isPending ? "Creating…" : "Use this starter kit"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setView("agent-new")}>
+              Start from scratch instead
+            </Button>
+            <Button
+              onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
+            >
+              Use this Starter Kit
+            </Button>
+          </div>
         </DialogFooter>
-        {connectAccepts && (
-          <ConnectionCatalogModal
-            accepts={connectAccepts}
-            title={`Connect ${describeAccepts(connectAccepts, templateById)}`}
-            subtitle="Pick one of your connections, or add a new one."
-            onClose={() => setConnectAccepts(null)}
-            sandbox={{ grantedIds, onToggleGrant: toggleConnection }}
-            oauthReturnView={returnPath}
-          />
-        )}
       </div>
       <KitVideoPanel video={kit.video} />
     </div>

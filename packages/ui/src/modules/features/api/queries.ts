@@ -23,10 +23,7 @@ export function useSetFeature() {
   return useMutation({
     ...trpc.features.setFlag.mutationOptions(),
     meta: {
-      invalidates: [
-        trpc.features.flags.queryKey(),
-        trpc.connections.list.queryKey(),
-      ],
+      invalidates: [trpc.features.flags.queryKey()],
       errorToast: "Couldn't update the feature flag",
     },
   });

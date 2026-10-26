@@ -5,7 +5,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
-import type { DirListResult, HomeVolume } from "agent-runtime-api";
+import type { DirListResult } from "agent-runtime-api";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
@@ -16,10 +16,9 @@ import {
   useAgentLacksLiveUpdates,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
-import { MESSAGE_UPLOAD_ROOT } from "../lib/upload-path.js";
-import { DEFAULT_EXPANDED_DIRS } from "../store.js";
 import { fileKeys } from "./keys.js";
 
+const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
 const COMPAT_POLL_MS = 5_000;
 
 function clientFor(agentId: string) {
@@ -43,9 +42,7 @@ interface ListDirsResponse {
 
 export function useExpandedDirs(agentId: string | null): ReadonlySet<string> {
   return useStore((s) =>
-    agentId
-      ? (s.expandedDirs[agentId] ?? DEFAULT_EXPANDED_DIRS)
-      : DEFAULT_EXPANDED_DIRS,
+    agentId ? (s.expandedDirs[agentId] ?? EMPTY_EXPANDED) : EMPTY_EXPANDED,
   );
 }
 
@@ -53,11 +50,7 @@ export function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
   return ["", ...expanded].sort();
 }
 
-export function useDirSnapshot(
-  agentId: string | null,
-  path: string,
-  enabled = true,
-) {
+export function useDirSnapshot(agentId: string | null, path: string) {
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
   const operable = useIsAgentOperable(agentId);
@@ -68,26 +61,12 @@ export function useDirSnapshot(
       const trpc = clientFor(agentId!);
       return trpc.files.listDirs.query({ paths });
     },
-    enabled: enabled && !!agentId && operable,
+    enabled: !!agentId && operable,
     refetchInterval: compat ? COMPAT_POLL_MS : false,
     staleTime: 2000,
     placeholderData: keepPreviousData,
     select: (data) => data.results.find((r) => r.path === path) ?? null,
     meta: { errorToast: "Couldn't refresh file tree" },
-  });
-}
-
-const VOLUME_POLL_MS = 60_000;
-
-export function useHomeVolume(agentId: string | null) {
-  const operable = useIsAgentOperable(agentId);
-  return useQuery({
-    queryKey: fileKeys.volume(agentId ?? "_none"),
-    queryFn: async (): Promise<HomeVolume | null> =>
-      clientFor(agentId!).files.volume.query(),
-    enabled: !!agentId && operable,
-    refetchInterval: VOLUME_POLL_MS,
-    retry: 0,
   });
 }
 
@@ -235,6 +214,8 @@ export function useFileDeleteMutation(agentId: string | null) {
 }
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+const MESSAGE_UPLOAD_ROOT = ".uploads";
 
 function sanitizeSegment(s: string): string {
   return s.replace(/[^A-Za-z0-9._\-]+/g, "_").replace(/^\.+/, "") || "file";

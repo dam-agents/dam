@@ -1,4 +1,17 @@
-import type { BindErrorCopy } from "../../agents/components/bind/bind-flow.js";
+export function readFlowIdFromSearch(search: string): string | null {
+  const flow = new URLSearchParams(search).get("flow");
+  return flow && flow.length > 0 ? flow : null;
+}
+
+export function readCallbackErrorFromSearch(search: string): string | null {
+  return new URLSearchParams(search).get("error");
+}
+
+export interface BindErrorCopy {
+  title: string;
+  hint: string;
+  terminal: boolean;
+}
 
 export function callbackErrorCopy(
   code: string,
@@ -8,19 +21,19 @@ export function callbackErrorCopy(
     case "denied":
       return {
         title: "Login was cancelled",
-        hint: `Run \`/${brandShort} bind\` in the channel to try again.`,
+        hint: `Run \`/${brandShort} bind\` in the Slack channel to try again.`,
         terminal: true,
       };
     case "expired":
       return {
         title: "This bind link has expired",
-        hint: `Run \`/${brandShort} bind\` in the channel to get a fresh link.`,
+        hint: `Run \`/${brandShort} bind\` in the Slack channel to get a fresh link.`,
         terminal: true,
       };
     default:
       return {
         title: "Login failed",
-        hint: `Run \`/${brandShort} bind\` in the channel to try again.`,
+        hint: `Run \`/${brandShort} bind\` in the Slack channel to try again.`,
         terminal: true,
       };
   }
@@ -34,7 +47,7 @@ export function bindErrorCopy(
     case "BAD_REQUEST":
       return {
         title: "This link is invalid or has expired",
-        hint: `Run \`/${brandShort} bind\` in the channel to get a fresh link.`,
+        hint: `Run \`/${brandShort} bind\` in the Slack channel to get a fresh link.`,
         terminal: true,
       };
     case "CONFLICT":

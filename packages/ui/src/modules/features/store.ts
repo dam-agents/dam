@@ -1,21 +1,28 @@
 import type { StateCreator } from "zustand";
 
-import {
-  readPersistedFlag,
-  writePersistedFlag,
-} from "../../lib/persisted-prefs.js";
-
-const FEATURES_MENU_KEY = "platform-debug:features-menu";
+const FEATURES_MENU_STORAGE_KEY = "platform-debug:features-menu";
 
 export interface FeaturesSlice {
   featuresMenuRevealed: boolean;
   setFeaturesMenuRevealed: (revealed: boolean) => void;
 }
 
+function readStoredFeaturesMenuRevealed(): boolean {
+  try {
+    return localStorage.getItem(FEATURES_MENU_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export const createFeaturesSlice: StateCreator<FeaturesSlice> = (set) => ({
-  featuresMenuRevealed: readPersistedFlag(FEATURES_MENU_KEY, false),
+  featuresMenuRevealed: readStoredFeaturesMenuRevealed(),
   setFeaturesMenuRevealed: (revealed) => {
-    writePersistedFlag(FEATURES_MENU_KEY, revealed);
+    if (revealed) {
+      localStorage.setItem(FEATURES_MENU_STORAGE_KEY, "true");
+    } else {
+      localStorage.removeItem(FEATURES_MENU_STORAGE_KEY);
+    }
     set({ featuresMenuRevealed: revealed });
   },
 });

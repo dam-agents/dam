@@ -1,17 +1,13 @@
-import type { SpendCallCost, TurnDetail } from "api-server-api";
+import type { TurnDetail } from "api-server-api";
 import { useMemo } from "react";
 
 import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { callCostLabel } from "../../spend/lib/amounts-label.js";
-import {
-  ESTIMATED_CALL_HELP,
-  MEASURED_CALL_HELP,
-} from "../../spend/lib/copy.js";
-import type { CallCostOf } from "../lib/call-costs.js";
+import { formatUsd } from "../../metrics/lib/format.js";
 import {
   buildWaterfall,
+  logCostUsd,
   logEventLabel,
   placementOf,
   rowKeyOf,
@@ -40,33 +36,14 @@ const offsetLabel = (ms: number): string =>
 
 export function TraceWaterfall({
   turn,
-  costOf,
   selectedKey,
   onSelect,
 }: {
   turn: TurnDetail;
-  costOf: CallCostOf | undefined;
   selectedKey: string | null;
   onSelect: (key: string) => void;
 }) {
   const wf = useMemo(() => buildWaterfall(turn), [turn]);
-  const costs = useMemo(() => {
-    const byRow = new Map<string, SpendCallCost>();
-    if (!costOf) return byRow;
-    const shownOnSpan = new Set<string>();
-    for (const row of wf.rows) {
-      if (row.kind === "span") {
-        const cost = costOf.span(row.span, row.logs);
-        if (!cost) continue;
-        byRow.set(row.key, cost);
-        shownOnSpan.add(row.span.spanId);
-      } else if (!shownOnSpan.has(row.log.attachedTo ?? "")) {
-        const cost = costOf.log(row.log);
-        if (cost) byRow.set(row.key, cost);
-      }
-    }
-    return byRow;
-  }, [wf, costOf]);
 
   if (wf.rows.length === 0) {
     return (
@@ -80,9 +57,8 @@ export function TraceWaterfall({
     const key = rowKeyOf(row);
     const selected = selectedKey === key;
     const isSpan = row.kind === "span";
+    const cost = isSpan ? null : logCostUsd(row.log);
     const placement = isSpan ? null : placementOf(row.log);
-    const cost = costs.get(key);
-    const costText = cost ? callCostLabel(cost) : null;
 
     return (
       <button
@@ -104,7 +80,7 @@ export function TraceWaterfall({
             <span
               aria-hidden
               className={cn(
-                "shrink-0 text-2xs",
+                "shrink-0 text-[8px]",
                 placement?.exact ? "text-amber-600" : "text-amber-600/45",
               )}
             >
@@ -114,7 +90,7 @@ export function TraceWaterfall({
           <span
             className={cn(
               "truncate font-mono",
-              isSpan ? "text-xs" : "text-2xs text-muted-foreground",
+              isSpan ? "text-xs" : "text-[11px] text-muted-foreground",
             )}
             title={isSpan ? row.span.name : row.log.event}
           >
@@ -124,18 +100,10 @@ export function TraceWaterfall({
           </span>
           {!isSpan && row.log.attachedBy === "request-id" && (
             <span
-              className="shrink-0 rounded-sm bg-muted px-1 text-2xs uppercase tracking-wide text-muted-foreground"
+              className="shrink-0 rounded-sm bg-muted px-1 text-[9px] uppercase tracking-wide text-muted-foreground"
               title="Matched to this call by its request id"
             >
               call
-            </span>
-          )}
-          {cost && costText && (
-            <span
-              className="shrink-0 font-mono text-2xs tabular-nums text-foreground/80"
-              title={cost.estimated ? ESTIMATED_CALL_HELP : MEASURED_CALL_HELP}
-            >
-              {costText}
             </span>
           )}
         </span>
@@ -146,7 +114,7 @@ export function TraceWaterfall({
               className={cn(
                 "absolute top-[2px] h-3 rounded-[2px]",
                 row.span.statusCode.includes("ERROR") &&
-                  "outline outline-1 outline-danger",
+                  "outline outline-1 outline-destructive",
               )}
               style={{
                 left: `${row.offsetPct}%`,
@@ -166,10 +134,12 @@ export function TraceWaterfall({
           )}
         </span>
 
-        <span className="text-right font-mono text-2xs tabular-nums text-muted-foreground">
+        <span className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
           {isSpan
             ? formatDurationMs(row.span.durationMs)
-            : offsetLabel(row.offsetMs)}
+            : cost !== null
+              ? formatUsd(cost)
+              : offsetLabel(row.offsetMs)}
         </span>
       </button>
     );
@@ -181,7 +151,7 @@ export function TraceWaterfall({
         {wf.rows.map((row) => render(row, row.depth))}
 
         {wf.traceCount > 1 && (
-          <p className="mt-2 border-t border-border pt-2 text-2xs text-muted-foreground">
+          <p className="mt-2 border-t border-border pt-2 text-[11px] text-muted-foreground">
             This turn spans {wf.traceCount} traces; rows sit on one time axis.
           </p>
         )}

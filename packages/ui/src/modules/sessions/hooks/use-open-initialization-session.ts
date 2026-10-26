@@ -32,10 +32,6 @@ export function useOpenInitializationSession(opts: {
   );
 
   useEffect(() => {
-    if (agentId && active && !idle) openedForAgentRef.current = agentId;
-  }, [agentId, active, idle]);
-
-  useEffect(() => {
     if (!armed || !agentId || sessions === undefined) return;
     const newest = sessions[0];
     if (

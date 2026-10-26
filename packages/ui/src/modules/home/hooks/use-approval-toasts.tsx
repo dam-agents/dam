@@ -2,14 +2,12 @@ import { Warning } from "@carbon/icons-react";
 import { useEffect, useRef } from "react";
 import { toast as sonner } from "sonner";
 
-import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
+import { useStore } from "../../../store.js";
 import { useFeed } from "../api/queries.js";
 import { approvalHeadline } from "../lib/approval-copy.js";
-import { approvalToastChanges } from "../lib/approval-toasts.js";
 import type { FeedItem } from "../lib/feed-item.js";
 
 function fireApprovalToast(
-  approvalId: string,
   agentName: string,
   headline: string,
   onReview: () => void,
@@ -33,13 +31,13 @@ function fireApprovalToast(
         </p>
       </button>
     ),
-    { id: approvalId, duration: 6000 },
+    { duration: 6000 },
   );
 }
 
 export function useApprovalToasts(): void {
   const { items, agents, loadingFeed } = useFeed();
-  const openSidePanel = useOpenSidePanel();
+  const setActivityView = useStore((s) => s.setActivityView);
   const seen = useRef<ReadonlySet<string> | null>(null);
 
   useEffect(() => {
@@ -49,22 +47,17 @@ export function useApprovalToasts(): void {
         item.kind === "approval",
     );
     const previous = seen.current;
-    const current = new Set(approvals.map((item) => item.id));
-    seen.current = current;
+    seen.current = new Set(approvals.map((item) => item.id));
     if (previous === null) return;
 
-    const { raise, clear } = approvalToastChanges(previous, current);
-    for (const id of clear) sonner.dismiss(id);
     const names = new Map(agents.map((agent) => [agent.id, agent.name]));
-    const raised = new Set(raise);
     for (const item of approvals) {
-      if (!raised.has(item.id)) continue;
+      if (previous.has(item.id)) continue;
       fireApprovalToast(
-        item.id,
         names.get(item.agentId) ?? "An agent",
         approvalHeadline(item.approval),
-        () => openSidePanel("approvals"),
+        () => setActivityView("approvals"),
       );
     }
-  }, [items, agents, loadingFeed, openSidePanel]);
+  }, [items, agents, loadingFeed, setActivityView]);
 }

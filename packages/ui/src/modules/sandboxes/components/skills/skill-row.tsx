@@ -1,7 +1,6 @@
-import { Launch } from "@carbon/icons-react";
+import { Compare } from "@carbon/icons-react";
 import type { Skill } from "api-server-api";
 
-import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -44,12 +43,12 @@ export function SkillRow({
           <button
             type="button"
             onClick={onOpen}
-            className="max-w-full truncate text-left text-md font-medium text-foreground hover:underline"
+            className="max-w-full truncate text-left text-[15px] font-medium text-foreground hover:underline"
           >
             {skill.name}
           </button>
         ) : (
-          <p className="truncate text-md font-medium text-foreground">
+          <p className="truncate text-[15px] font-medium text-foreground">
             {skill.name}
           </p>
         )}
@@ -57,27 +56,26 @@ export function SkillRow({
       {hasDrift && (
         <Tooltip content={DRIFT_HINT}>
           {}
-          <Button
-            variant="link"
-            size="inline"
+          <button
+            type="button"
             onClick={onUpdate}
             disabled={disabled}
             title={disabled ? DRIFT_HINT : undefined}
-            className="shrink-0 text-xs font-medium"
+            className="shrink-0 text-xs font-medium text-accent transition-colors hover:underline disabled:opacity-50"
           >
             Update
-          </Button>
+          </button>
         </Tooltip>
       )}
       {hasDrift && compareUrl && (
-        <Tooltip content="Open on GitHub">
+        <Tooltip content="View changes on GitHub">
           <a
             href={compareUrl}
             {...externalLinkProps}
-            aria-label="Open changes on GitHub"
+            aria-label="View changes on GitHub"
             className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
           >
-            <Launch size={13} />
+            <Compare size={13} />
           </a>
         </Tooltip>
       )}

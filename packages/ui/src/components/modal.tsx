@@ -6,27 +6,15 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export const MODAL_BACKDROP =
-  "fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in";
-export const MODAL_PANEL =
-  "rounded-xl border border-border bg-card shadow-xl anim-scale-in";
-
-const MODAL_SIZE = {
-  sm: "w-[480px]",
-  md: "w-[560px]",
-  lg: "w-[860px]",
-  xl: "w-[980px]",
-} as const;
-
 interface ModalProps {
-  size?: keyof typeof MODAL_SIZE;
+  widthClass?: string;
   heightClass?: string;
   onClose?: () => void;
   children: ReactNode;
 }
 
 export function Modal({
-  size = "md",
+  widthClass = "w-[560px]",
   heightClass,
   onClose,
   children,
@@ -36,30 +24,18 @@ export function Modal({
   useFocusTrap(panelRef);
   useBodyScrollLock();
   useEscapeWhenTopmost(labelId, onClose);
-  const pressStartedOnBackdrop = useRef(false);
   return createPortal(
     <ModalContext.Provider value={{ labelId }}>
-      <div
-        className={MODAL_BACKDROP}
-        onMouseDown={(e) => {
-          pressStartedOnBackdrop.current = e.target === e.currentTarget;
-        }}
-        onClick={(e) => {
-          if (pressStartedOnBackdrop.current && e.target === e.currentTarget)
-            onClose?.();
-        }}
-      >
+      <div className="fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">
         <div
           ref={panelRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={labelId}
           className={cn(
-            MODAL_SIZE[size],
-            "max-w-full",
+            widthClass,
             heightClass,
-            MODAL_PANEL,
-            "max-h-[95dvh] md:max-h-[85vh] overflow-hidden flex flex-col",
+            "max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl",
           )}
         >
           {children}
@@ -82,7 +58,6 @@ interface DialogRegionProps {
 interface DialogHeaderProps {
   children?: ReactNode;
   className?: string;
-  icon?: ReactNode;
   title?: ReactNode;
   titleAccessory?: ReactNode;
   actions?: ReactNode;
@@ -95,7 +70,6 @@ interface DialogHeaderProps {
 }
 
 export function DialogHeader({
-  icon,
   title,
   titleAccessory,
   actions,
@@ -121,8 +95,7 @@ export function DialogHeader({
     >
       {(title || subtitle || onClose || actions) && (
         <div className="flex items-start justify-between gap-3">
-          {icon}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             {title && (
               <div className="flex min-h-7 items-center gap-2">
                 <h2
@@ -152,7 +125,6 @@ export function DialogHeader({
                   onClick={onClose}
                   disabled={closeDisabled}
                   aria-label="Close"
-                  tooltip="Close"
                   data-dialog-close
                   data-testid={closeTestId}
                   className="shrink-0 text-muted-foreground"
@@ -177,7 +149,7 @@ export function DialogBody({
   return (
     <div
       className={cn(
-        "flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] py-5 md:py-6",
+        "flex-1 min-h-0 overflow-y-auto py-5 md:py-6",
         !flush && "px-5 md:px-6",
         className,
       )}
@@ -190,7 +162,7 @@ export function DialogBody({
 export function DialogFooter({
   children,
   className,
-  divided = true,
+  divided,
 }: DialogRegionProps & { divided?: boolean }) {
   return (
     <div
@@ -235,7 +207,7 @@ export function DialogActions({
   onSubmit,
   testId,
   className,
-  divided = true,
+  divided,
 }: DialogActionsProps) {
   return (
     <DialogFooter className={className} divided={divided}>
@@ -270,21 +242,11 @@ function focusablesIn(container: HTMLElement): HTMLElement[] {
   ).filter((el) => el.getClientRects().length > 0);
 }
 
-export function useFocusTrap(
-  containerRef: RefObject<HTMLElement | null>,
-  active = true,
-  fallback?: () => HTMLElement | null,
-) {
-  // UNIT_BOUNDARY_DESCRIPTION: the element to hand the keyboard back to is the one focused as the trap closes over the page, read on the render that closes it because the trap's own first effect moves focus inside itself.
-  const previouslyFocused = useRef<HTMLElement | null>(null);
-  const wasActive = useRef(false);
-  if (active && !wasActive.current)
-    previouslyFocused.current = document.activeElement as HTMLElement | null;
-  wasActive.current = active;
-
+export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const container = containerRef.current;
-    if (!active || !container) return;
+    if (!container) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
 
     let grabRaf = 0;
     const reassertUntil = performance.now() + 500;
@@ -313,13 +275,13 @@ export function useFocusTrap(
       }
       const first = focusables[0]!;
       const last = focusables[focusables.length - 1]!;
-      const focused = document.activeElement as HTMLElement | null;
+      const active = document.activeElement as HTMLElement | null;
       if (e.shiftKey) {
-        if (focused === first || !container.contains(focused)) {
+        if (active === first || !container.contains(active)) {
           e.preventDefault();
           last.focus();
         }
-      } else if (focused === last || !container.contains(focused)) {
+      } else if (active === last || !container.contains(active)) {
         e.preventDefault();
         first.focus();
       }
@@ -329,11 +291,9 @@ export function useFocusTrap(
     return () => {
       cancelAnimationFrame(grabRaf);
       container.removeEventListener("keydown", onKey);
-      const back = previouslyFocused.current;
-      // UNIT_BOUNDARY_DESCRIPTION: the opener may be gone by the time the trap closes, as the rail's Expand tile is when the pane it opened replaces the rail, so the caller names what takes the keyboard then.
-      (back?.isConnected ? back : fallback?.())?.focus?.();
+      previouslyFocused?.focus?.();
     };
-  }, [containerRef, active, fallback]);
+  }, [containerRef]);
 }
 
 const openModalIds: string[] = [];
@@ -354,7 +314,7 @@ function useEscapeWhenTopmost(id: string, onClose: (() => void) | undefined) {
 
   useEffect(() => {
     const closeIfTopmost = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.key !== "Escape") return;
       if (openModalIds[openModalIds.length - 1] !== id) return;
       close.current?.();
     };

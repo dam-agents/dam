@@ -1,12 +1,14 @@
+import { TRPCClientError } from "@trpc/client";
 import type { ConnectionView } from "api-server-api";
 import { useEffect, useState } from "react";
 
 import {
-  DialogActions,
   DialogBody,
+  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -14,13 +16,15 @@ import {
   useProbeGitHubUserToken,
   useUpdateGitHubUserTokenScope,
 } from "../api/mutations.js";
-import { GithubScopeFields } from "../forms/github-app-scope-sections.js";
-import { useGithubScopeSelection } from "../hooks/use-github-scope-selection.js";
+import {
+  PermissionSection,
+  RepositorySection,
+} from "../forms/github-app-scope-sections.js";
+import type { PermissionLevel } from "../lib/github-app-scope-fields.js";
 import {
   EVERY_ACCOUNT,
   userTokenScopePayload,
 } from "../lib/github-user-token-scope.js";
-import { mutationMessage } from "../lib/mutation-message.js";
 
 export function ConnectionEditGithubUserTokenScopeDialog({
   connection,
@@ -32,11 +36,16 @@ export function ConnectionEditGithubUserTokenScopeDialog({
   const probe = useProbeGitHubUserToken();
   const save = useUpdateGitHubUserTokenScope();
   const current = connection.githubUserToken?.scope;
-  const scope = useGithubScopeSelection(current ?? null);
 
   const [targetId, setTargetId] = useState<number | null>(
     current?.targetId ?? null,
   );
+  const [repoIds, setRepoIds] = useState<Set<number>>(
+    () => new Set(current?.repositoryIds ?? []),
+  );
+  const [permissions, setPermissions] = useState<
+    Record<string, PermissionLevel>
+  >(() => (current?.permissions ?? {}) as Record<string, PermissionLevel>);
 
   const { mutate: runProbe } = probe;
   useEffect(() => {
@@ -48,30 +57,50 @@ export function ConnectionEditGithubUserTokenScopeDialog({
   const chosenMissing =
     probe.data !== undefined && targetId !== null && !chosen;
   const unlistedRepoCount = chosen
-    ? [...scope.repoIds].filter(
-        (id) => !chosen.repositories.some((r) => r.id === id),
-      ).length
+    ? [...repoIds].filter((id) => !chosen.repositories.some((r) => r.id === id))
+        .length
     : 0;
 
   const chooseAccount = (value: string) => {
     const next = value === EVERY_ACCOUNT ? null : Number(value);
     if (next === targetId) return;
-    scope.reset();
+    setRepoIds(new Set());
+    setPermissions({});
     setTargetId(next);
   };
 
-  const saveError = mutationMessage(
-    save.error,
-    "Couldn't update the scope. Please try again.",
-  );
+  const toggleRepo = (id: number, checked: boolean) => {
+    setRepoIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const setPermission = (name: string, level: PermissionLevel | "off") => {
+    setPermissions((prev) => {
+      const next = { ...prev };
+      if (level === "off") delete next[name];
+      else next[name] = level;
+      return next;
+    });
+  };
+
+  const saveError =
+    save.error === null
+      ? undefined
+      : isBadRequest(save.error)
+        ? save.error.message
+        : "Couldn't update the scope. Please try again.";
 
   const submit = async () => {
     try {
       await save.mutateAsync(
         userTokenScopePayload(connection.id, {
           targetId,
-          repositoryIds: scope.repoIds,
-          permissions: scope.permissions,
+          repositoryIds: repoIds,
+          permissions,
         }),
       );
       onClose();
@@ -79,7 +108,7 @@ export function ConnectionEditGithubUserTokenScopeDialog({
   };
 
   return (
-    <Modal onClose={save.isPending ? undefined : onClose}>
+    <Modal widthClass="w-[560px]">
       <DialogHeader
         title="Edit repositories & permissions"
         subtitle={connection.name}
@@ -102,7 +131,7 @@ export function ConnectionEditGithubUserTokenScopeDialog({
           <>
             <fieldset className="flex flex-col gap-2">
               <legend className="text-sm font-medium">Account</legend>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 A narrowed token reaches one account. Your own access on each
                 repository still applies — the token never does more than you
                 can.
@@ -141,31 +170,43 @@ export function ConnectionEditGithubUserTokenScopeDialog({
               </Callout>
             )}
             {chosen && (
-              <GithubScopeFields
-                installation={chosen}
-                selection={scope}
-                locked={
-                  chosen.repositoriesUnavailable
-                    ? {
-                        note: "Couldn’t list this account’s repositories, so they can’t be changed here",
-                        saving:
-                          unlistedRepoCount > 0
-                            ? `saving keeps the ${unlistedRepoCount} this connection already uses.`
-                            : "saving narrows to the account and permissions only.",
-                      }
-                    : undefined
-                }
-                unlisted={
-                  unlistedRepoCount > 0
-                    ? {
-                        count: unlistedRepoCount,
-                        note: chosen.repositoriesTruncated
+              <>
+                {chosen.repositoriesUnavailable ? (
+                  <Callout tone="muted" size="sm">
+                    Couldn&rsquo;t list this account&rsquo;s repositories, so
+                    they can&rsquo;t be changed here
+                    {unlistedRepoCount > 0
+                      ? ` — saving keeps the ${unlistedRepoCount} this connection already uses.`
+                      : " — saving narrows to the account and permissions only."}
+                  </Callout>
+                ) : (
+                  <>
+                    <RepositorySection
+                      installation={chosen}
+                      selected={repoIds}
+                      onToggle={toggleRepo}
+                    />
+                    {unlistedRepoCount > 0 && (
+                      <Callout tone="muted" size="sm">
+                        {unlistedRepoCount} selected{" "}
+                        {unlistedRepoCount === 1
+                          ? "repository is"
+                          : "repositories are"}{" "}
+                        not in the list above
+                        {chosen.repositoriesTruncated
                           ? " (it shows only the first pages of a large account)"
-                          : "",
-                      }
-                    : undefined
-                }
-              />
+                          : ""}
+                        . They stay selected when you save.
+                      </Callout>
+                    )}
+                  </>
+                )}
+                <PermissionSection
+                  installation={chosen}
+                  selection={permissions}
+                  onChange={setPermission}
+                />
+              </>
             )}
             {targetId === null && (
               <Callout tone="danger" size="sm">
@@ -181,16 +222,22 @@ export function ConnectionEditGithubUserTokenScopeDialog({
           </Callout>
         )}
       </DialogBody>
-      <DialogActions
-        onCancel={onClose}
-        cancelDisabled={save.isPending}
-        label="Save"
-        pendingLabel="Saving…"
-        pending={save.isPending}
-        disabled={!probe.data || chosenMissing}
-        onSubmit={() => void submit()}
-        testId="edit-user-scope-submit"
-      />
+      <DialogFooter>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          disabled={!probe.data || chosenMissing || save.isPending}
+          onClick={() => void submit()}
+          data-testid="edit-user-scope-submit"
+        >
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
     </Modal>
   );
+}
+
+function isBadRequest(err: unknown): err is Error {
+  return err instanceof TRPCClientError && err.data?.code === "BAD_REQUEST";
 }

@@ -1,5 +1,6 @@
-import { Information } from "@carbon/icons-react";
+import { Help } from "@carbon/icons-react";
 
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { HintTooltip } from "@/components/ui/tooltip";
@@ -60,14 +61,14 @@ export function SandboxSizeSection({
           label="About compute resources"
           content={`Compute counts toward your budget only when the sandbox is active. ${
             currentSize
-              ? "Changing the size restarts the sandbox."
+              ? "Changing the size restarts the sandbox on save."
               : "The new size applies when the sandbox next starts."
           }`}
         >
-          <Information size={14} className="text-muted-foreground/60" />
+          <Help size={14} className="text-muted-foreground/60" />
         </HintTooltip>
       </div>
-      <div>
+      <Inset>
         <Select
           aria-label="Compute resources"
           value={keyOf(selected)}
@@ -83,7 +84,7 @@ export function SandboxSizeSection({
             </option>
           ))}
         </Select>
-      </div>
+      </Inset>
       {!disabled && needed > free && (
         <p className="mt-3 text-sm text-warning">
           This size needs {needed} {needed === 1 ? "slot" : "slots"} but only{" "}

@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useStore } from "../../../store.js";
 import type { ToolChip } from "../../../types.js";
 import { ActivityBlock } from "../../sessions/components/activity-block.js";
-import { ToolContentList } from "../../sessions/components/tool-chip.js";
+import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
 import { useDelegationTree } from "../api/queries.js";
 import type { FanOutSpawn } from "../lib/fan-out.js";
 import { isSpawnSubAgentChip } from "../lib/sub-agent-chips.js";
@@ -51,7 +51,7 @@ function SourceFold({ chip }: { chip: ToolChip }) {
     <ActivityBlock
       open={open}
       onToggle={() => setOpen((o) => !o)}
-      className="mt-2 border-l-0 pl-0 text-2xs"
+      className="mt-2 border-l-0 pl-0 text-[11px]"
       label={
         <span className="truncate">
           {viaTool ? "Tool" : "Script"}{" "}
@@ -61,7 +61,9 @@ function SourceFold({ chip }: { chip: ToolChip }) {
         </span>
       }
     >
-      <ToolContentList content={chip.content} />
+      {chip.content?.map((c, i) =>
+        c.text ? <ToolContentBlock key={i} text={c.text} /> : null,
+      )}
     </ActivityBlock>
   );
 }

@@ -28,6 +28,17 @@ describe("revealing the experimental features menu", () => {
     vi.unstubAllGlobals();
   });
 
+  it("TEST_SCENARIO: subscribers see the reveal and the hide", () => {
+    const store = create<FeaturesSlice>()(createFeaturesSlice);
+    const seen: boolean[] = [];
+    store.subscribe((s) => seen.push(s.featuresMenuRevealed));
+
+    store.getState().setFeaturesMenuRevealed(true);
+    store.getState().setFeaturesMenuRevealed(false);
+
+    expect(seen).toEqual([true, false]);
+  });
+
   it("TEST_SCENARIO: a reveal persists across a reload", () => {
     create<FeaturesSlice>()(createFeaturesSlice)
       .getState()

@@ -1,16 +1,26 @@
-import { Time } from "@carbon/icons-react";
+import {
+  Launch,
+  OverflowMenuHorizontal,
+  Time,
+  TrashCan,
+} from "@carbon/icons-react";
 import type { ScanFailure, SkillSource } from "api-server-api";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
+import { repoSlug } from "@/lib/git-source";
 import { cn } from "@/lib/utils";
 
 import { SourceError } from "./skill-source-error.js";
-import {
-  SkillSourceActions,
-  SkillSourceHeader,
-} from "./skill-source-header.js";
 
 function SourceListRow({
   source,
@@ -33,12 +43,29 @@ function SourceListRow({
   onRemove: () => void;
   onManageConnections?: () => void;
 }) {
+  const canRemove = !source.system && !source.fromTemplate;
   return (
     <div className={cn(divided && "border-t border-border")}>
-      <SkillSourceHeader source={source} visibility={visibility}>
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-[15px] font-medium text-foreground">
+              {source.name}
+            </p>
+            {visibility === "private" && (
+              <Badge variant="template" className="shrink-0">
+                Private
+              </Badge>
+            )}
+          </div>
+          <p className="truncate font-mono text-xs text-muted-foreground">
+            {repoSlug(source.gitUrl)}
+            {source.path ? ` · ${source.path}` : ""}
+          </p>
+        </div>
         {scanning ? (
           <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
-            <Spinner size={14} /> Scanning…
+            <Spinner size={13} /> Scanning…
           </span>
         ) : (
           scannedAt &&
@@ -52,13 +79,38 @@ function SourceListRow({
             </span>
           )
         )}
-        <SkillSourceActions
-          source={source}
-          busy={scanning}
-          onRescan={onRescan}
-          onRemove={onRemove}
-        />
-      </SkillSourceHeader>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Source actions"
+              className="shrink-0 text-muted-foreground"
+            >
+              <OverflowMenuHorizontal size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem disabled={scanning} onSelect={onRescan}>
+              Re-scan
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+              }
+            >
+              <span className="flex-1">View repo</span>
+              <Launch size={14} />
+            </DropdownMenuItem>
+            {canRemove && (
+              <DropdownMenuItem tone="danger" onSelect={onRemove}>
+                <TrashCan size={14} />
+                <span className="flex-1">Remove source</span>
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       {error && !scanning && (
         <SourceError
           failure={error}
@@ -78,7 +130,7 @@ function SourceListSkeleton({ rows = 2 }: { rows?: number }) {
             key={i}
             className={cn("px-4 py-2.5", i > 0 && "border-t border-border")}
           >
-            <p className="text-md font-medium">
+            <p className="text-[15px] font-medium">
               <span className="inline-block h-[0.7em] w-40 rounded bg-muted align-middle" />
             </p>
             <p className="text-xs">

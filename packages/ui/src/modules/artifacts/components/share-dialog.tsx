@@ -9,12 +9,10 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Callout } from "@/components/ui/callout";
-import { CopyField } from "@/components/ui/copy-field";
 
 import { useShareForm } from "../hooks/use-share-form.js";
 import { PUBLIC_SHARE_TITLE, publicShareMessage } from "../lib/public-share.js";
-import { toastCopyOutcome } from "../lib/share-link.js";
+import { ShareLinkRow } from "./share-link-row.js";
 import { ShareVisibilityChoice } from "./share-visibility-choice.js";
 import { ViewerListEditor } from "./viewer-list-editor.js";
 
@@ -23,16 +21,25 @@ interface Props {
   onClose: () => void;
 }
 
-const INTERACTIVE_UNAVAILABLE = {
-  public: "Not for interactive pages: their buttons can ask your agent",
-};
-
 export function ShareDialog({ artifact, onClose }: Props) {
+  if (!artifact.interactive)
+    return <SharingControls artifact={artifact} onClose={onClose} />;
+  return (
+    <Modal>
+      <DialogHeader title={`Share “${artifact.title}”`} onClose={onClose} />
+      <DialogBody>
+        Interactive pages stay private because their buttons can send prompts to
+        your agent. Ask the agent for a static copy to share.
+      </DialogBody>
+    </Modal>
+  );
+}
+
+function SharingControls({ artifact, onClose }: Props) {
   const { form, shareUrl, needsPublicConfirm, submit, isPending } =
     useShareForm(artifact, onClose);
   const [draftEmail, setDraftEmail] = useState("");
   const [confirmingPublic, setConfirmingPublic] = useState(false);
-  const confirmShown = confirmingPublic && needsPublicConfirm;
   const visibility = form.watch("visibility");
   const hasLink = visibility !== "private" && shareUrl !== null;
   const hasPendingViewer =
@@ -65,12 +72,12 @@ export function ShareDialog({ artifact, onClose }: Props) {
       onClose={
         isPending
           ? undefined
-          : confirmShown
+          : confirmingPublic
             ? () => setConfirmingPublic(false)
             : onClose
       }
     >
-      {confirmShown ? (
+      {confirmingPublic ? (
         <>
           <DialogHeader
             title={PUBLIC_SHARE_TITLE}
@@ -89,10 +96,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
             pendingLabel="Sharing…"
             pending={isPending}
             cancelDisabled={isPending}
-            onSubmit={() => {
-              setConfirmingPublic(false);
-              void submit();
-            }}
+            onSubmit={() => void submit({ closeOnSuccess: true })}
           />
         </>
       ) : (
@@ -112,37 +116,16 @@ export function ShareDialog({ artifact, onClose }: Props) {
                     value={field.value}
                     onChange={field.onChange}
                     disabled={isPending}
-                    unavailable={
-                      artifact.interactive ? INTERACTIVE_UNAVAILABLE : undefined
-                    }
                   />
                 )}
               />
               {visibility === "restricted" && viewerEditor}
-              {artifact.interactive && visibility === "restricted" && (
-                <Callout
-                  tone="warning"
-                  size="sm"
-                  role="note"
-                  className="text-xs"
-                >
-                  People you invite use this page as you do: it can read and
-                  change your agent&apos;s data, and its buttons send your agent
-                  prompts. Your agent acts on them under your account.
-                </Callout>
-              )}
               {hasPendingViewer && (
                 <p role="status" className="text-xs text-muted-foreground">
                   Add the email address to the list or clear it before saving.
                 </p>
               )}
-              {hasLink && (
-                <CopyField
-                  value={shareUrl}
-                  label="Share link"
-                  onResult={toastCopyOutcome}
-                />
-              )}
+              {hasLink && <ShareLinkRow shareUrl={shareUrl} />}
             </div>
           </DialogBody>
           <DialogActions

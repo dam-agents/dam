@@ -1,4 +1,4 @@
-import { Add } from "@carbon/icons-react";
+import { Add, RotateCounterclockwise, TrashCan } from "@carbon/icons-react";
 import {
   type EgressPreset,
   type EgressRuleView,
@@ -7,33 +7,21 @@ import {
 import { useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
-import {
-  DialogActions,
-  DialogBody,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CardButton } from "@/components/ui/card-button";
-import { DisclosureToggle } from "@/components/ui/disclosure";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ListGroup } from "@/components/ui/list-group";
-import { ListSection } from "@/components/ui/list-section";
-import { RemoveButton } from "@/components/ui/remove-button";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
-import { getUser } from "../../../auth.js";
 import { useStore } from "../../../store.js";
-import { useAppConnections } from "../../connections/api/queries.js";
-import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
-import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../api/mutations.js";
-import { useCurrentPreset, useEgressRulesForAgent } from "../api/queries.js";
+import { useEgressRulesForAgent, useTrustedHosts } from "../api/queries.js";
 import {
   confirmStagedGatewayRestart,
   describeGatewayRestart,
@@ -41,471 +29,582 @@ import {
   toPromotionRule,
 } from "../gateway-restart.js";
 import { formatHostPort, splitHostPort } from "../host-port.js";
-import {
-  egressHostError,
-  groupRules,
-  RULE_GROUP_TITLE,
-  type RuleGroupKey,
-} from "../rule-groups.js";
 
 const EMPTY: EgressRuleView[] = [];
+const EMPTY_HOSTS: readonly string[] = [];
 const ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
-interface RuleDraft {
+interface AddRuleDraft {
   host: string;
   method: string;
   pathPattern: string;
   verdict: "allow" | "deny";
 }
 
-const EMPTY_DRAFT: RuleDraft = {
+const EMPTY_DRAFT: AddRuleDraft = {
   host: "",
   method: "*",
   pathPattern: "*",
   verdict: "allow",
 };
 
+export interface PendingAdd extends AddRuleDraft {
+  tempId: string;
+}
+
+export interface StagedNetworkAccessController {
+  preset: EgressPreset | null;
+  setPreset: (next: EgressPreset | null) => void;
+  pendingDeletes: ReadonlySet<string>;
+  togglePendingDelete: (id: string) => void;
+  pendingAdds: ReadonlyArray<PendingAdd>;
+  appendPendingAdd: (draft: AddRuleDraft) => void;
+  removePendingAdd: (tempId: string) => void;
+  pendingConnectionGrants: ReadonlyArray<ConnectionGrantPreview>;
+  pendingConnectionRevokes: ReadonlySet<string>;
+  connectionLabels: ReadonlyMap<string, string>;
+}
+
+interface ConnectionGrantPreview {
+  connectionId: string;
+  host: string;
+  label: string;
+}
+
 export function AgentEgressEditor({
   agentId,
-  header,
+  currentPreset,
+  staged,
 }: {
   agentId: string;
-  header: SectionHeaderSlot;
+  currentPreset?: EgressPreset | null;
+  staged?: StagedNetworkAccessController;
 }) {
-  const {
-    data: rules = EMPTY,
-    isLoading,
-    isError,
-  } = useEgressRulesForAgent(agentId);
-  const { data: currentPreset = null } = useCurrentPreset(agentId);
-  const revokeRule = useRevokeEgressRule();
-  const showConfirm = useStore((s) => s.showConfirm);
-  const [adding, setAdding] = useState(false);
-  const [choosingPreset, setChoosingPreset] = useState(false);
-  const [query, setQuery] = useState("");
-  const [presetOpen, setPresetOpen] = useState(false);
-  const groups = useMemo(() => groupRules(rules, query), [rules, query]);
-  const { data: connections } = useAppConnections();
-  const connectionNames = useMemo(
-    () => new Map((connections ?? []).map((c) => [c.id, c.name])),
-    [connections],
-  );
-  const me = getUser()?.profile.sub;
-
-  const revoke = async (rule: EgressRuleView) => {
-    if (
-      await confirmStagedGatewayRestart(
-        showConfirm,
-        agentId,
-        { removeIds: [rule.id] },
-        "Revoke and restart",
-      )
-    )
-      revokeRule.mutate({ id: rule.id });
-  };
-
-  return (
-    <>
-      {header()}
-      <div className="mb-3 flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setAdding(true)}
-          data-testid="egress-rule-new"
-        >
-          <Add size={16} />
-          Create rule
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setChoosingPreset(true)}
-          data-testid="egress-preset-open"
-        >
-          Apply preset
-        </Button>
-      </div>
-      <ListSection
-        loading={isLoading}
-        error={isError && "Couldn't load the rules."}
-        isEmpty={rules.length === 0}
-        empty="No rules yet. Every outbound request will need your approval."
-      >
-        {(rules.length > 10 || query !== "") && (
-          <div className="px-4 py-2.5">
-            <Input
-              type="search"
-              size="sm"
-              aria-label="Search rules"
-              placeholder="Search hosts and paths"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-        )}
-        {groups.length === 0 && (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            No rule matches “{query.trim()}”.
-          </p>
-        )}
-        {groups.map((g) => {
-          const collapsible = g.key === "preset" && !query.trim();
-          const open = !collapsible || presetOpen;
-          return (
-            <ListGroup
-              key={g.key}
-              title={`${RULE_GROUP_TITLE[g.key]} (${g.rules.length})`}
-              testId={`egress-group-${g.key}`}
-              accessory={
-                collapsible && (
-                  <DisclosureToggle
-                    open={open}
-                    onToggle={() => setPresetOpen(!open)}
-                    className="ml-auto text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    {open ? "Hide" : "Show"}
-                  </DisclosureToggle>
-                )
-              }
-            >
-              {open &&
-                g.rules.map((r) => (
-                  <RuleRow
-                    key={r.id}
-                    rule={r}
-                    group={g.key}
-                    decidedByYou={r.decidedBy === me}
-                    connectionName={
-                      r.source.startsWith("connection:")
-                        ? connectionNames.get(
-                            r.source.slice("connection:".length),
-                          )
-                        : undefined
-                    }
-                    disabled={revokeRule.isPending}
-                    onRevoke={() => void revoke(r)}
-                  />
-                ))}
-            </ListGroup>
-          );
-        })}
-      </ListSection>
-
-      {choosingPreset && (
-        <PresetModal
-          agentId={agentId}
-          current={currentPreset}
-          onClose={() => setChoosingPreset(false)}
-        />
-      )}
-
-      {adding && (
-        <NewRuleModal
-          agentId={agentId}
-          rules={rules}
-          onClose={() => setAdding(false)}
-        />
-      )}
-    </>
-  );
-}
-
-const PRESETS: { value: EgressPreset; title: string; description: string }[] = [
-  {
-    value: "trusted",
-    title: "Trusted defaults",
-    description:
-      "Allows common package registries and APIs: npm, PyPI, GitHub, Anthropic, …",
-  },
-  {
-    value: "none",
-    title: "Strict default-deny",
-    description:
-      "Adds no rules: every request needs your approval or a rule of your own.",
-  },
-  {
-    value: "all",
-    title: "Allow everything",
-    description: "The agent can reach any host. For development only.",
-  },
-];
-
-function PresetModal({
-  agentId,
-  current,
-  onClose,
-}: {
-  agentId: string;
-  current: EgressPreset | null;
-  onClose: () => void;
-}) {
-  const applyPreset = useApplyEgressPreset();
-  const showConfirm = useStore((s) => s.showConfirm);
-  const [picked, setPicked] = useState<EgressPreset>(current ?? "trusted");
-  const apply = async () => {
-    if (
-      picked === "all" &&
-      !(await showConfirm(
-        "The agent can reach any host. You can still narrow it with deny rules.",
-        "Allow everything?",
-        { kind: "destructive", confirmLabel: "Allow everything" },
-      ))
-    )
-      return;
-    applyPreset.mutate({ agentId, preset: picked }, { onSuccess: onClose });
-  };
-  return (
-    <Modal onClose={applyPreset.isPending ? undefined : onClose}>
-      <DialogHeader
-        onClose={onClose}
-        closeDisabled={applyPreset.isPending}
-        title="Use a preset"
-        subtitle="A preset replaces the rules the previous preset added. Your own rules and rules from connections stay."
-      />
-      <DialogBody className="flex flex-col gap-3">
-        <div
-          role="radiogroup"
-          aria-label="Preset"
-          className="flex flex-col gap-3"
-        >
-          {PRESETS.map((p) => (
-            <CardButton
-              key={p.value}
-              role="radio"
-              aria-checked={picked === p.value}
-              selected={picked === p.value}
-              onClick={() => setPicked(p.value)}
-              className="flex flex-col items-start gap-1 p-4"
-              data-testid={`egress-preset-${p.value}`}
-            >
-              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                {p.title}
-                {current === p.value && <Badge variant="muted">Current</Badge>}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {p.description}
-              </span>
-            </CardButton>
-          ))}
-        </div>
-      </DialogBody>
-      <DialogActions
-        onCancel={onClose}
-        cancelDisabled={applyPreset.isPending}
-        label="Apply preset"
-        pendingLabel="Applying…"
-        pending={applyPreset.isPending}
-        disabled={picked === current}
-        onSubmit={() => void apply()}
-        testId="egress-preset-apply"
-      />
-    </Modal>
-  );
-}
-
-function NewRuleModal({
-  agentId,
-  rules,
-  onClose,
-}: {
-  agentId: string;
-  rules: EgressRuleView[];
-  onClose: () => void;
-}) {
+  const { data: serverRules = EMPTY, isLoading } =
+    useEgressRulesForAgent(agentId);
+  const { data: trustedHosts = EMPTY_HOSTS } = useTrustedHosts();
   const createRule = useCreateEgressRule();
-  const showConfirm = useStore((s) => s.showConfirm);
-  const [draft, setDraft] = useState<RuleDraft>(EMPTY_DRAFT);
-  const hostError = egressHostError(draft.host);
-  const complete =
-    draft.host.trim().length > 0 &&
-    !hostError &&
-    draft.pathPattern.trim().length > 0;
-  const close = useGuardedClose(
-    draft.host.trim() !== "" ||
-      draft.method !== EMPTY_DRAFT.method ||
-      draft.pathPattern !== EMPTY_DRAFT.pathPattern ||
-      draft.verdict !== EMPTY_DRAFT.verdict,
-    onClose,
+  const revokeRule = useRevokeEgressRule();
+  const applyPreset = useApplyEgressPreset();
+  const [draft, setDraft] = useState<AddRuleDraft>(EMPTY_DRAFT);
+  const [livePreset, setLivePreset] = useState<EgressPreset>(
+    currentPreset ?? "trusted",
   );
-  const restart = stagedGatewayRestart({
-    current: rules,
-    adds: complete ? [toPromotionRule(draft)] : [],
-  });
 
-  const add = async () => {
-    if (!complete || createRule.isPending) return;
-    const next = {
+  const stagedMode = staged !== undefined;
+  const showConfirm = useStore((s) => s.showConfirm);
+
+  const draftIsComplete =
+    draft.host.trim().length > 0 &&
+    draft.method.trim().length > 0 &&
+    draft.pathPattern.trim().length > 0;
+  const canAdd = draftIsComplete && !createRule.isPending;
+
+  const stagedAdds = staged?.pendingAdds;
+  const stagedDeletes = staged?.pendingDeletes;
+  const pendingRestart = useMemo(
+    () =>
+      stagedGatewayRestart({
+        current: serverRules,
+        adds: [
+          ...(stagedAdds?.map(toPromotionRule) ?? []),
+          ...(draftIsComplete ? [toPromotionRule(draft)] : []),
+        ],
+        removeIds: stagedDeletes ? [...stagedDeletes] : [],
+      }),
+    [serverRules, stagedAdds, stagedDeletes, draft, draftIsComplete],
+  );
+  const demotedByStagedDeletes = new Set(pendingRestart.demotedByRemovals);
+
+  const onAddRule = async () => {
+    if (!canAdd) return;
+    const next: AddRuleDraft = {
       host: draft.host.trim(),
-      method: draft.method,
+      method: draft.method.trim().toUpperCase(),
       pathPattern: draft.pathPattern.trim(),
       verdict: draft.verdict,
     };
+    if (stagedMode) {
+      staged.appendPendingAdd(next);
+      setDraft(EMPTY_DRAFT);
+      return;
+    }
     if (
       !(await confirmStagedGatewayRestart(
         showConfirm,
         agentId,
         { adds: [toPromotionRule(next)] },
-        "Add and restart",
+        "Add & restart",
       ))
     )
       return;
     createRule.mutate(
       { agentId, ...next, ...splitHostPort(next.host) },
-      { onSuccess: onClose },
+      { onSuccess: () => setDraft(EMPTY_DRAFT) },
     );
   };
 
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void onAddRule();
+    }
+  };
+
+  const onPresetSelect = (next: EgressPreset) => {
+    if (stagedMode) {
+      staged.setPreset(next);
+    } else {
+      setLivePreset(next);
+    }
+  };
+
+  const onApplyPresetLive = () => {
+    if (
+      livePreset === "all" &&
+      !window.confirm(
+        "Allow everything is a development escape hatch. Are you sure? You can still narrow with deny rules below.",
+      )
+    )
+      return;
+    applyPreset.mutate({ agentId, preset: livePreset });
+  };
+
+  const onRowDeleteClick = async (rule: EgressRuleView) => {
+    if (stagedMode) {
+      staged.togglePendingDelete(rule.id);
+      return;
+    }
+    if (
+      !(await confirmStagedGatewayRestart(
+        showConfirm,
+        agentId,
+        { removeIds: [rule.id] },
+        "Revoke & restart",
+      ))
+    )
+      return;
+    revokeRule.mutate({ id: rule.id });
+  };
+
+  const dropdownValue = stagedMode
+    ? (staged.preset ?? currentPreset ?? "trusted")
+    : livePreset;
+  const stagedAddCount = stagedMode ? staged.pendingAdds.length : 0;
+  const stagedDeleteCount = stagedMode ? staged.pendingDeletes.size : 0;
+  const presetPending = stagedMode && staged.preset !== null;
+
+  const presetPreviewRows: PreviewRow[] = presetPending
+    ? buildPresetPreviewRows(staged.preset!, trustedHosts)
+    : [];
+  const connectionGrantPreviews: PreviewRow[] = stagedMode
+    ? staged.pendingConnectionGrants.map((g) => ({
+        key: `preview:connection:${g.connectionId}:${g.host}`,
+        host: g.host,
+        method: "*",
+        pathPattern: "*",
+        sourceBadge: `from ${g.label}`,
+      }))
+    : [];
+  const previewRows: PreviewRow[] = [
+    ...presetPreviewRows,
+    ...connectionGrantPreviews,
+  ];
+
   return (
-    <Modal onClose={createRule.isPending ? undefined : () => void close()}>
-      <form
-        className="contents"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void add();
-        }}
-      >
-        <DialogHeader
-          onClose={() => void close()}
-          closeDisabled={createRule.isPending}
-          title="New rule"
-        />
-        <DialogBody className="flex flex-col gap-4">
-          <FormField label="Host" error={hostError}>
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-muted-foreground max-w-prose">
+        Rules decide which outbound HTTP requests this agent can make. The
+        most-specific rule wins; <code>*</code> in <em>method</em> or
+        <em>path</em> matches any value. Without a matching rule, the request
+        needs your approval on Home.
+      </p>
+
+      <Card className="px-3 py-3 flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
+          <SectionLabel>{stagedMode ? "Preset" : "Apply preset"}</SectionLabel>
+          <Select
+            size="xs"
+            value={dropdownValue}
+            onChange={(e) => onPresetSelect(e.target.value as EgressPreset)}
+          >
+            <option value="trusted">
+              Trusted defaults (npm, PyPI, GitHub, Anthropic, …)
+            </option>
+            <option value="none">Strict default-deny (no rules added)</option>
+            <option value="all">Allow everything (development only)</option>
+          </Select>
+        </div>
+        {!stagedMode && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={onApplyPresetLive}
+            disabled={applyPreset.isPending}
+          >
+            Apply
+          </Button>
+        )}
+        <p className="basis-full text-sm text-muted-foreground">
+          {stagedMode
+            ? presetPending
+              ? `Save will replace existing preset rules with "${staged.preset}". Manual and connection-derived rules are preserved.`
+              : "Pick a preset and Save to replace existing preset rules. Manual and connection-derived rules are preserved."
+            : "Replaces previous preset rules. Manual edits and connection-derived rules are preserved."}
+        </p>
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="px-3 py-3 border-b border-border flex flex-wrap items-end gap-2">
+          <Field label="Host" widthClass="min-w-[220px] flex-1">
             <Input
-              autoFocus
-              aria-invalid={hostError ? true : undefined}
-              variant={hostError ? "invalid" : undefined}
               value={draft.host}
               onChange={(e) => setDraft({ ...draft, host: e.target.value })}
+              onKeyDown={onInputKeyDown}
               placeholder="api.anthropic.com"
+              size="xs"
             />
-          </FormField>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField label="Method">
-              <Select
-                value={draft.method}
-                onChange={(e) => setDraft({ ...draft, method: e.target.value })}
-              >
-                <option value="*">Any method</option>
-                {ALL_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Verdict">
-              <Select
-                value={draft.verdict}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    verdict: e.target.value as "allow" | "deny",
-                  })
-                }
-              >
-                <option value="allow">Allow</option>
-                <option value="deny">Deny</option>
-              </Select>
-            </FormField>
-          </div>
-          <FormField label="Path">
+          </Field>
+          <Field label="Method" widthClass="w-[100px]">
+            <Select
+              size="xs"
+              value={
+                ALL_METHODS.includes(
+                  draft.method as (typeof ALL_METHODS)[number],
+                ) || draft.method === "*"
+                  ? draft.method
+                  : "*"
+              }
+              onChange={(e) => setDraft({ ...draft, method: e.target.value })}
+            >
+              <option value="*">* (any)</option>
+              {ALL_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Path" widthClass="min-w-[160px] flex-1">
             <Input
               value={draft.pathPattern}
               onChange={(e) =>
                 setDraft({ ...draft, pathPattern: e.target.value })
               }
+              onKeyDown={onInputKeyDown}
               placeholder="*  or  /v1/messages*"
+              size="xs"
               variant="monospace"
             />
-          </FormField>
-          {restart.willRestart && (
-            <p className="text-sm text-warning">
-              {describeGatewayRestart(restart)}
+          </Field>
+          <Field label="Verdict" widthClass="w-[100px]">
+            <Select
+              size="xs"
+              value={draft.verdict}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  verdict: e.target.value as "allow" | "deny",
+                })
+              }
+            >
+              <option value="allow">allow</option>
+              <option value="deny">deny</option>
+            </Select>
+          </Field>
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={() => void onAddRule()}
+            disabled={!canAdd}
+            variant="outline"
+          >
+            <Add size={11} /> Add rule
+          </Button>
+          {pendingRestart.willRestart && (
+            <p className="basis-full text-[11px] text-warning">
+              {describeGatewayRestart(pendingRestart)}
             </p>
           )}
-          <p className="text-xs text-muted-foreground">
-            Use <code>*</code> as a wildcard.
+        </div>
+
+        {isLoading ? (
+          <p className="px-4 py-5 text-xs text-muted-foreground">loading…</p>
+        ) : serverRules.length === 0 &&
+          stagedAddCount === 0 &&
+          previewRows.length === 0 ? (
+          <p className="px-4 py-5 text-xs text-muted-foreground">
+            No rules yet. Every outbound request will need your approval.
           </p>
-        </DialogBody>
-        <DialogActions
-          onCancel={() => void close()}
-          cancelDisabled={createRule.isPending}
-          label="Create rule"
-          pendingLabel="Creating…"
-          pending={createRule.isPending}
-          disabled={!complete}
-          testId="egress-rule-add"
-        />
-      </form>
-    </Modal>
+        ) : (
+          <ul className="flex flex-col">
+            {serverRules.map((r) => {
+              const userDelete = stagedMode && staged.pendingDeletes.has(r.id);
+              const presetSweep =
+                presetPending && r.source.startsWith("preset:");
+              const connId = r.source.startsWith("connection:")
+                ? r.source.slice("connection:".length)
+                : null;
+              const connectionSweep =
+                stagedMode &&
+                connId !== null &&
+                staged.pendingConnectionRevokes.has(connId);
+              const sourceLabelOverride =
+                connId !== null &&
+                stagedMode &&
+                staged.connectionLabels.has(connId)
+                  ? `from ${staged.connectionLabels.get(connId)!}`
+                  : null;
+              return (
+                <RuleRow
+                  key={r.id}
+                  rule={r}
+                  sourceLabelOverride={sourceLabelOverride}
+                  pendingDelete={userDelete || presetSweep || connectionSweep}
+                  demotesHost={userDelete && demotedByStagedDeletes.has(r.host)}
+                  hideAction={(presetSweep || connectionSweep) && !userDelete}
+                  onAction={() => void onRowDeleteClick(r)}
+                  disabled={!stagedMode && revokeRule.isPending}
+                />
+              );
+            })}
+            {previewRows.map((p) => (
+              <PreviewPresetRow key={p.key} row={p} />
+            ))}
+            {stagedMode &&
+              staged.pendingAdds.map((a) => (
+                <PendingAddRow
+                  key={a.tempId}
+                  add={a}
+                  onCancel={() => staged.removePendingAdd(a.tempId)}
+                />
+              ))}
+          </ul>
+        )}
+        {stagedMode &&
+          (stagedAddCount > 0 || stagedDeleteCount > 0 || presetPending) && (
+            <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border bg-background/40">
+              Pending:{" "}
+              {[
+                presetPending && `apply preset ${staged.preset}`,
+                stagedAddCount > 0 &&
+                  `${stagedAddCount} new rule${stagedAddCount === 1 ? "" : "s"}`,
+                stagedDeleteCount > 0 &&
+                  `${stagedDeleteCount} delete${stagedDeleteCount === 1 ? "" : "s"}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              . Save to commit.
+            </p>
+          )}
+      </Card>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  widthClass,
+  children,
+}: {
+  label: string;
+  widthClass: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <FormField label={label} disableInset className={cn("gap-1", widthClass)}>
+      {children}
+    </FormField>
   );
 }
 
 function RuleRow({
   rule,
-  group,
-  decidedByYou,
-  connectionName,
+  sourceLabelOverride,
+  pendingDelete,
+  demotesHost,
+  hideAction,
+  onAction,
   disabled,
-  onRevoke,
 }: {
   rule: EgressRuleView;
-  group: RuleGroupKey;
-  decidedByYou: boolean;
-  connectionName: string | undefined;
+  sourceLabelOverride?: string | null;
+  pendingDelete: boolean;
+  demotesHost?: boolean;
+  hideAction?: boolean;
+  onAction: () => void;
   disabled: boolean;
-  onRevoke: () => void;
 }) {
-  const host = formatHostPort(rule);
   const sourceLabel =
-    group === "connection"
-      ? connectionName && `from ${connectionName}`
-      : rule.source === "inbox"
-        ? formatEgressRuleSource(rule.source)
-        : null;
+    sourceLabelOverride ??
+    (rule.source === "manual" ? null : formatEgressRuleSource(rule.source));
+  const dim = pendingDelete ? "opacity-40 line-through" : "";
   return (
-    <div className="@container flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
-      <Badge
-        size="sm"
-        variant={rule.verdict === "allow" ? "success" : "danger"}
-        className="shrink-0"
-      >
-        {rule.verdict === "allow" ? "Allow" : "Deny"}
-      </Badge>
-      <span className="w-[60px] shrink-0 font-mono text-xs text-muted-foreground">
-        {rule.method === "*" ? "Any" : rule.method}
+    <li
+      className={`border-b border-border px-3 py-2 flex items-center gap-2 text-xs ${dim}`}
+    >
+      <VerdictBadge verdict={rule.verdict} />
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
+        {rule.method}
       </span>
-      <span className="min-w-[8rem] flex-1 truncate font-medium" title={host}>
-        {host}
-        {rule.pathPattern !== "*" && (
-          <span className="font-mono text-xs font-normal text-muted-foreground">
-            {" "}
-            {rule.pathPattern}
-          </span>
-        )}
+      <span className="font-medium truncate">{formatHostPort(rule)}</span>
+      <span className="font-mono text-[11px] text-muted-foreground truncate">
+        {rule.pathPattern}
       </span>
       {sourceLabel && (
+        <SourceTag label={sourceLabel} hint={`source: ${rule.source}`} />
+      )}
+      {demotesHost && (
         <Badge
           size="sm"
-          variant="muted"
-          className="hidden shrink-0 whitespace-nowrap @md:inline-flex"
+          variant="warning"
+          title={`Saving stops request inspection for ${rule.host}, which restarts the network gateway (~5–15s). The agent keeps running.`}
         >
-          {sourceLabel}
+          restarts gateway
         </Badge>
       )}
-      {decidedByYou && group === "own" && (
-        <span className="hidden shrink-0 text-xs text-muted-foreground @lg:block">
-          by you
-        </span>
+      <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
+        by {rule.decidedBy.slice(0, 8)}
+      </span>
+      {!hideAction && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+          onClick={onAction}
+          disabled={disabled}
+          aria-label={pendingDelete ? "Undo delete" : "Revoke rule"}
+          tooltip={pendingDelete ? "Undo delete" : "Revoke rule"}
+        >
+          {pendingDelete ? (
+            <RotateCounterclockwise size={11} />
+          ) : (
+            <TrashCan size={11} />
+          )}
+        </Button>
       )}
-      <RemoveButton
-        label={`Revoke rule for ${host}`}
-        tooltip="Revoke rule"
-        onClick={onRevoke}
-        disabled={disabled}
+    </li>
+  );
+}
+
+function PendingAddRow({
+  add,
+  onCancel,
+}: {
+  add: PendingAdd;
+  onCancel: () => void;
+}) {
+  return (
+    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-xs bg-primary/10">
+      <VerdictBadge verdict={add.verdict} />
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
+        {add.method}
+      </span>
+      <span className="font-medium truncate">{add.host}</span>
+      <span className="font-mono text-[11px] text-muted-foreground truncate">
+        {add.pathPattern}
+      </span>
+      <Badge size="sm" variant="accent" className="uppercase tracking-wider">
+        new
+      </Badge>
+      <span className="ml-auto" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 text-muted-foreground hover:text-destructive"
+        onClick={onCancel}
+        aria-label="Discard pending rule"
+        tooltip="Discard pending rule"
+      >
+        <TrashCan size={11} />
+      </Button>
+    </li>
+  );
+}
+
+interface PreviewRow {
+  key: string;
+  host: string;
+  method: string;
+  pathPattern: string;
+  sourceBadge: string;
+}
+
+function buildPresetPreviewRows(
+  preset: EgressPreset,
+  trustedHosts: readonly string[],
+): PreviewRow[] {
+  if (preset === "none") return [];
+  if (preset === "all") {
+    return [
+      {
+        key: "preview:all",
+        host: "*",
+        method: "*",
+        pathPattern: "*",
+        sourceBadge: "preset: all",
+      },
+    ];
+  }
+  return trustedHosts.map((host) => ({
+    key: `preview:trusted:${host}`,
+    host,
+    method: "*",
+    pathPattern: "*",
+    sourceBadge: "preset: trusted",
+  }));
+}
+
+function PreviewPresetRow({ row }: { row: PreviewRow }) {
+  return (
+    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-xs bg-primary/5">
+      <VerdictBadge verdict="allow" />
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
+        {row.method}
+      </span>
+      <span className="font-medium truncate">{row.host}</span>
+      <span className="font-mono text-[11px] text-muted-foreground truncate">
+        {row.pathPattern}
+      </span>
+      <SourceTag
+        label={row.sourceBadge}
+        hint={`Preview — ${row.sourceBadge} (saved on commit)`}
       />
-    </div>
+      <Badge
+        size="sm"
+        variant="accent"
+        className="uppercase tracking-wider"
+        title="This rule will be saved on commit"
+      >
+        preview
+      </Badge>
+      <span className="ml-auto" />
+      {}
+    </li>
+  );
+}
+
+function VerdictBadge({ verdict }: { verdict: EgressRuleView["verdict"] }) {
+  return (
+    <Badge
+      size="sm"
+      variant={verdict === "allow" ? "success" : "danger"}
+      className="uppercase tracking-wider"
+    >
+      {verdict}
+    </Badge>
+  );
+}
+
+function SourceTag({ label, hint }: { label: string; hint: string }) {
+  return (
+    <Badge size="sm" variant="muted" title={hint}>
+      {label}
+    </Badge>
   );
 }

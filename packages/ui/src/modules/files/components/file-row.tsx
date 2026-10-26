@@ -1,16 +1,26 @@
-import { Document, Folder, FolderOpen, Image } from "@carbon/icons-react";
+import {
+  Document,
+  Folder,
+  Image,
+  OverflowMenuHorizontal,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { DisclosureChevron } from "@/components/ui/disclosure";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
-import { treeIndent } from "@/components/ui/tree-guide";
 import { clickableProps } from "@/lib/clickable";
 
 import { useStore } from "../../../store.js";
@@ -49,9 +59,7 @@ export function FileRow({
 }: Props) {
   const panel = useFilesPanel();
   const isDir = type === "dir";
-  const isActive =
-    useStore((s) => (s.dock?.kind === "file" ? s.dock.path : null)) === path &&
-    !isDir;
+  const isActive = useStore((s) => s.openFilePath) === path && !isDir;
   const targetDir = isDir ? path : parentDirOf(path);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -77,8 +85,7 @@ export function FileRow({
       <ContextMenuTrigger asChild>
         <div
           className={`group relative flex items-center h-8 text-sm cursor-pointer transition-colors ${menuOpen ? "z-raised" : ""} ${highlight ? "bg-muted ring-1 ring-primary ring-inset text-muted-foreground font-medium" : `text-muted-foreground hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
-          style={{ paddingLeft: treeIndent(depth), paddingRight: 12 }}
-          aria-expanded={isDir ? !isCollapsed : undefined}
+          style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
           {...clickableProps(
             isDir
               ? () => panel.onToggleDir(path)
@@ -92,26 +99,32 @@ export function FileRow({
           >
             <RowIcons isDir={isDir} isCollapsed={isCollapsed} name={name} />
             <span className="truncate flex-1">{name}</span>
-            <RowActionsMenu
-              label="More actions"
-              dense
-              className={HOVER_ACTION}
-              stopPropagation
-              onOpenChange={setMenuOpen}
-            >
-              <FileRowMenuItems
-                path={path}
-                isDir={isDir}
-                onAction={dispatch}
-                Item={DropdownMenuItem}
-              />
-            </RowActionsMenu>
+            <DropdownMenu onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className={HOVER_ACTION}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="More actions"
+                >
+                  <OverflowMenuHorizontal size={13} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <FileRowMenuItems
+                  isDir={isDir}
+                  onAction={dispatch}
+                  Item={DropdownMenuItem}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <FileRowMenuItems
-          path={path}
           isDir={isDir}
           onAction={dispatch}
           Item={ContextMenuItem}
@@ -134,11 +147,17 @@ function RowIcons({
   return (
     <>
       {isDir ? (
-        isCollapsed ? (
-          <Folder size={16} className="shrink-0" />
-        ) : (
-          <FolderOpen size={16} className="shrink-0" />
-        )
+        <span className="w-4 shrink-0 flex items-center justify-center">
+          <DisclosureChevron
+            open={!isCollapsed}
+            className="text-muted-foreground"
+          />
+        </span>
+      ) : (
+        <span className="w-4 shrink-0" />
+      )}
+      {isDir ? (
+        <Folder size={16} className="shrink-0" />
       ) : looksLikeImage ? (
         <Image size={16} className="shrink-0" />
       ) : (

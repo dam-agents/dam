@@ -1,7 +1,5 @@
 import type { GitHubAppInstallationProbe } from "api-server-api";
-import type { ReactNode } from "react";
 
-import { Callout } from "@/components/ui/callout";
 import { CheckboxItem } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -23,7 +21,7 @@ export function RepositorySection({
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="text-sm font-medium">Repositories</legend>
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Nothing ticked means every repository the installation can reach.
         {installation.repositorySelection === "all" &&
           " This app is installed on every repository in the account, so that set grows as the account does — tick the ones this agent needs to pin it."}
@@ -58,7 +56,7 @@ export function PermissionSection({
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="text-sm font-medium">Permissions</legend>
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         All off means every permission the app was granted. A permission can be
         set no higher than the installation holds it.
       </p>
@@ -95,63 +93,5 @@ export function PermissionSection({
         ))}
       </div>
     </fieldset>
-  );
-}
-
-interface ScopeSelection {
-  repoIds: Set<number>;
-  permissions: Record<string, PermissionLevel>;
-  toggleRepo: (id: number, checked: boolean) => void;
-  setPermission: (name: string, level: PermissionLevel | "off") => void;
-}
-
-interface GithubScopeFieldsProps {
-  installation: GitHubAppInstallationProbe;
-  selection: ScopeSelection;
-  locked?: { note: ReactNode; saving: string };
-  unlisted?: { count: number; note: string };
-  children?: ReactNode;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the repositories and permissions body both GitHub scope dialogs render. A locked listing replaces the repository list with why it cannot be changed and what saving keeps; the unlisted callout names the selected repositories the listing does not show, which saving keeps. The caller adds whatever else its scope can say.
-export function GithubScopeFields({
-  installation,
-  selection,
-  locked,
-  unlisted,
-  children,
-}: GithubScopeFieldsProps) {
-  return (
-    <>
-      {locked ? (
-        <Callout tone="muted" size="sm">
-          {locked.note}
-          {" — "}
-          {locked.saving}
-        </Callout>
-      ) : (
-        <>
-          <RepositorySection
-            installation={installation}
-            selected={selection.repoIds}
-            onToggle={selection.toggleRepo}
-          />
-          {unlisted && (
-            <Callout tone="muted" size="sm">
-              {unlisted.count} selected{" "}
-              {unlisted.count === 1 ? "repository is" : "repositories are"} not
-              in the list above{unlisted.note}. They stay selected when you
-              save.
-            </Callout>
-          )}
-        </>
-      )}
-      <PermissionSection
-        installation={installation}
-        selection={selection.permissions}
-        onChange={selection.setPermission}
-      />
-      {children}
-    </>
   );
 }

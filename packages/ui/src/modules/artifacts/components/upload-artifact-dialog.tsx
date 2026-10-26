@@ -1,9 +1,7 @@
 import { Upload } from "@carbon/icons-react";
-import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
+import type { ArtifactFolder } from "api-server-api";
 import { useRef, useState } from "react";
 
-import { FormError } from "@/components/form-error";
-import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -22,10 +20,9 @@ import { uploadArtifactFile } from "../lib/transfer.js";
 interface Props {
   folders: ArtifactFolder[];
   onClose: () => void;
-  onUploaded: (artifact: LibraryArtifact) => void;
 }
 
-export function UploadArtifactDialog({ folders, onClose, onUploaded }: Props) {
+export function UploadArtifactDialog({ folders, onClose }: Props) {
   const folderNames = folderDisplayNames(folders);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -48,13 +45,7 @@ export function UploadArtifactDialog({ folders, onClose, onUploaded }: Props) {
           fileName: file.name,
           ...(folderId ? { folderId } : {}),
         },
-        {
-          onSuccess: (artifact) => {
-            onUploaded(artifact);
-            onClose();
-          },
-          onSettled: () => setUploading(false),
-        },
+        { onSuccess: onClose, onSettled: () => setUploading(false) },
       );
     } catch (err) {
       setError(getErrorMessage(err, "Upload failed"));
@@ -63,12 +54,8 @@ export function UploadArtifactDialog({ folders, onClose, onUploaded }: Props) {
   };
 
   return (
-    <Modal onClose={uploading || create.isPending ? undefined : onClose}>
-      <DialogHeader
-        closeDisabled={uploading || create.isPending}
-        title="Upload artifact"
-        onClose={onClose}
-      />
+    <Modal>
+      <DialogHeader title="Upload artifact" onClose={onClose} />
       <DialogBody>
         <div className="flex flex-col gap-4">
           <input
@@ -89,15 +76,18 @@ export function UploadArtifactDialog({ folders, onClose, onUploaded }: Props) {
             {file ? file.name : "Choose a file…"}
           </Button>
 
-          <FormField label="Title">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Title</span>
             <Input
+              size="sm"
               placeholder="Shown in the library and on the share page"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
-          </FormField>
+          </div>
 
-          <FormField label="Folder">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Folder</span>
             <Select
               value={folderId}
               onChange={(e) => setFolderId(e.target.value)}
@@ -109,10 +99,10 @@ export function UploadArtifactDialog({ folders, onClose, onUploaded }: Props) {
                 </option>
               ))}
             </Select>
-          </FormField>
+          </div>
 
-          <FormError message={error ?? undefined} />
-          <p className="text-sm text-muted-foreground">
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <p className="text-xs text-muted-foreground">
             The artifact stays private until you share it. HTML, JSX, markdown,
             and code render on the share page; anything else is downloadable.
           </p>

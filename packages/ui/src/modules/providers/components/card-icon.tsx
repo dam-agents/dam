@@ -1,11 +1,8 @@
 import { Cloud } from "@carbon/icons-react";
-import type { ComponentType, SVGProps } from "react";
 
 import {
   AnthropicIcon,
-  BobFilledIcon,
   BobIcon,
-  CurveBenderIcon,
   LiteLLMIcon,
   OpenAIIcon,
 } from "@/components/brand-icons";
@@ -13,75 +10,85 @@ import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
 
+const LITELLM_STYLE = {
+  Icon: LiteLLMIcon,
+  bg: "bg-muted",
+  iconClass: "text-2xl leading-none",
+  lgIconClass: "!text-[40px]",
+  smIconClass: "!text-base",
+};
+
 const STYLES: Record<
   ProviderPresetType,
   {
-    Icon: ComponentType<SVGProps<SVGSVGElement>>;
+    Icon: React.ComponentType<{ className?: string }>;
     bg: string;
+    iconClass: string;
+    lgIconClass: string;
+    smIconClass: string;
   }
 > = {
   anthropic: {
     Icon: AnthropicIcon,
-    bg: "bg-icon-clay",
+    bg: "bg-foreground",
+    iconClass: "w-5 h-5 text-background",
+    lgIconClass: "!w-8 !h-8",
+    smIconClass: "!w-3.5 !h-3.5",
   },
-  openai: { Icon: OpenAIIcon, bg: "bg-icon-green" },
-  "ibm-litellm": {
-    Icon: LiteLLMIcon,
-    bg: "bg-icon-litellm",
+  openai: {
+    Icon: OpenAIIcon,
+    bg: "bg-foreground",
+    iconClass: "w-5 h-5 text-background",
+    lgIconClass: "!w-8 !h-8",
+    smIconClass: "!w-3.5 !h-3.5",
   },
-  "curve-bender": {
-    Icon: CurveBenderIcon,
-    bg: "bg-icon-cb",
+  "ibm-litellm": LITELLM_STYLE,
+  "curve-bender": LITELLM_STYLE,
+  bob: {
+    Icon: BobIcon,
+    bg: "",
+    iconClass: "w-full h-full",
+    lgIconClass: "",
+    smIconClass: "",
   },
-  bob: { Icon: BobIcon, bg: "bg-icon-violet" },
-  bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
+  bedrock: {
+    Icon: Cloud,
+    bg: "bg-foreground",
+    iconClass: "w-5 h-5 text-background",
+    lgIconClass: "!w-8 !h-8",
+    smIconClass: "!w-3.5 !h-3.5",
+  },
 };
 
-type CardIconSize = "lg" | "md" | "sm" | "tile-sm" | "tile-xs";
-
-const TILE_SIZE_CLASS: Record<CardIconSize, string> = {
-  lg: "size-[68px] rounded-lg",
-  md: "size-[38px] rounded-lg",
-  sm: "size-5",
-  "tile-sm": "size-5 rounded-[5px]",
-  "tile-xs": "size-3.5 rounded-[3px]",
-};
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: one preset can offer two providers a user tells
- * apart only by their rows, so a template may take its own shade of the
- * preset's tile. The glyph stays white on the tile whichever theme is up.
- */
-const TEMPLATE_BG: Readonly<Record<string, string>> = {
-  "curve-bender-deployment": "bg-icon-cb-deep",
+const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
+  lg: "w-[68px] h-[68px]",
+  md: "w-[38px] h-[38px]",
+  sm: "w-7 h-7",
 };
 
 export function CardIcon({
   provider,
-  templateId,
   size = "md",
 }: {
   provider: ProviderPresetType;
-  templateId?: string;
-  size?: CardIconSize;
+  size?: "lg" | "md" | "sm";
 }) {
-  const { Icon: OutlineIcon, bg } = STYLES[provider];
-  const tileBg = (templateId && TEMPLATE_BG[templateId]) || bg;
-  const Icon =
-    size === "sm" && provider === "bob" ? BobFilledIcon : OutlineIcon;
+  const style = STYLES[provider];
+  const Icon = style.Icon;
   return (
     <div
-      aria-hidden="true"
       className={cn(
-        "shrink-0 flex items-center justify-center",
+        "shrink-0 rounded-lg flex items-center justify-center",
         TILE_SIZE_CLASS[size],
-        size !== "sm" && ["text-white", tileBg],
+        style.bg,
       )}
     >
       <Icon
-        className={
-          size === "sm" || provider === "ibm-litellm" ? "size-full" : "size-3/5"
-        }
+        className={cn(
+          style.iconClass,
+          size === "lg" && style.lgIconClass,
+          size === "sm" && style.smIconClass,
+        )}
       />
     </div>
   );

@@ -23,7 +23,7 @@ export function useCreateArtifact() {
     ...trpc.artifactLibrary.create.mutationOptions(),
     meta: {
       invalidates: invalidatesLibrary,
-      errorToast: "Couldn't create artifact",
+      errorToast: "Failed to create artifact",
     },
   });
 }
@@ -67,7 +67,7 @@ export function useUpdateArtifact() {
       },
       meta: {
         invalidates: invalidatesLibraryAndContent,
-        errorToast: "Couldn't update artifact",
+        errorToast: "Failed to update artifact",
       },
     }),
   );
@@ -94,7 +94,7 @@ export function useSetArtifactSharing() {
     },
     meta: {
       invalidates: invalidatesLibraryAndArtifact,
-      errorToast: "Couldn't update sharing",
+      errorToast: "Failed to update sharing",
     },
   });
 }
@@ -104,7 +104,7 @@ export function useDeleteArtifact() {
     ...trpc.artifactLibrary.delete.mutationOptions(),
     meta: {
       invalidates: invalidatesLibrary,
-      errorToast: "Couldn't delete artifact",
+      errorToast: "Failed to delete artifact",
     },
   });
 }
@@ -114,7 +114,7 @@ export function useCreateFolder() {
     ...trpc.artifactLibrary.createFolder.mutationOptions(),
     meta: {
       invalidates: [trpc.artifactLibrary.listFolders.queryKey()],
-      errorToast: "Couldn't create folder",
+      errorToast: "Failed to create folder",
     },
   });
 }
@@ -124,7 +124,7 @@ export function useUpdateFolder() {
     ...trpc.artifactLibrary.updateFolder.mutationOptions(),
     meta: {
       invalidates: invalidatesLibrary,
-      errorToast: "Couldn't update folder",
+      errorToast: "Failed to update folder",
     },
   });
 }
@@ -134,7 +134,7 @@ export function useDeleteFolder() {
     ...trpc.artifactLibrary.deleteFolder.mutationOptions(),
     meta: {
       invalidates: invalidatesLibrary,
-      errorToast: "Couldn't delete folder",
+      errorToast: "Failed to delete folder",
     },
   });
 }

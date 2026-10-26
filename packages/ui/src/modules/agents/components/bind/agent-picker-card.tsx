@@ -1,5 +1,3 @@
-import { isStartRefusal } from "api-server-api";
-
 import { Badge } from "@/components/ui/badge";
 import { CardButton } from "@/components/ui/card-button";
 
@@ -11,7 +9,7 @@ import type { AgentView } from "../../../../types.js";
 import { formatCpuMemory, sizeInMi } from "../../../budgets/lib/slots.js";
 import { AgentChannelChips } from "../../../sandboxes/components/channels/agent-channel-chips.js";
 import { resolveAgentDisplay } from "../../utils/agent-resolver.js";
-import { AgentAvatar, avatarMood } from "../avatar/agent-avatar.js";
+import { AgentAvatar, isAsleep } from "../avatar/agent-avatar.js";
 import { ContributionFailuresBadge } from "../contribution-failures-badge.js";
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -32,9 +30,7 @@ export function AgentPickerCard({
   const { size, name, hibernationTimeoutMin, contributionFailures } = agent;
   const display = resolveAgentDisplay(agent, NO_IDS);
   const sizeLabel =
-    !agent.vm && size.cpu && size.memory
-      ? formatCpuMemory(sizeInMi(size))
-      : null;
+    size.cpu && size.memory ? formatCpuMemory(sizeInMi(size)) : null;
 
   return (
     <CardButton
@@ -44,9 +40,9 @@ export function AgentPickerCard({
     >
       <AgentAvatar
         name={name}
-        avatar={agent.avatar}
         size={40}
-        mood={avatarMood(display.state, agent)}
+        sleeping={isAsleep(display.state)}
+        stopped={agent.stopRequested}
       />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -71,11 +67,7 @@ export function AgentPickerCard({
       </span>
       <span className="flex shrink-0 items-center gap-2">
         {hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        <StatusBadge
-          state={display.state}
-          vm={agent.vm}
-          refused={isStartRefusal(agent.podTerminationCode)}
-        />
+        <StatusBadge state={display.state} />
       </span>
     </CardButton>
   );

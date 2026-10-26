@@ -28,7 +28,6 @@ const agent = (
 ): AgentView => ({
   id,
   name: id,
-  avatar: null,
   templateId: null,
   templateUpdate: null,
   features: { liveUpdates: true },
@@ -38,11 +37,9 @@ const agent = (
   image: "x:latest",
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
-  whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
-  disabled: false,
   overBudget: false,
   size,
   state,
@@ -52,7 +49,6 @@ const agent = (
   workspaceFailures: [],
   channels: [],
   spawnedBy: null,
-  environmentOf: null,
   vm: false,
   runtimeMigration: null,
 });
@@ -81,11 +77,11 @@ describe("slots", () => {
 
   it("labels a size with its multiplier", () => {
     expect(formatSizeLabel(sizeInMi({ cpu: "2", memory: "4Gi" }), unit)).toBe(
-      "2x · 2 CPU · 4 GiB",
+      "2x · 2 CPU · 4 Gi",
     );
     expect(
       formatSizeLabel(sizeInMi({ cpu: "1500m", memory: "2Gi" }), unit),
-    ).toBe("1.5x · 1.5 CPU · 2 GiB");
+    ).toBe("1.5x · 1.5 CPU · 2 Gi");
   });
 
   it("keeps the real ceiling when running agents exceed it", () => {
@@ -134,7 +130,6 @@ describe("slots", () => {
           ...agent("parked", { cpu: "1", memory: "2Gi" }, "starting"),
           overBudget: true,
         },
-        { ...agent("vm", { cpu: "4", memory: "8Gi" }), vm: true },
       ],
       new Set(),
       budget,

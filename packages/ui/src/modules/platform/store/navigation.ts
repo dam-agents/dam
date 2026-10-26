@@ -8,47 +8,42 @@ import {
   routeToPath,
   type SandboxSection,
   type SettingsTab,
+  type StarterKitCategory,
   type View,
 } from "../lib/routes.js";
 
 type ParameterlessView =
-  "home" | "artifacts" | "starter-kits" | "terms" | "analytics";
+  "home" | "terms" | "artifacts" | "agent-new" | "starter-kits";
 
 export interface NavigationSlice {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
-  usagePeriod: string | null;
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
-  kitBrowserOpen: boolean;
+  starterKitCategory: StarterKitCategory | null;
+  sandboxFocus: string | null;
+  clearSandboxFocus: () => void;
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
-  navigateBack: () => void;
-  navigateToSettings: (
-    tab?: SettingsTab,
-    options?: { period?: string },
+  navigateToSettings: (tab?: SettingsTab) => void;
+  navigateToSandboxHome: (
+    agentId: string,
+    section?: SandboxSection,
+    focus?: string,
   ) => void;
-  setUsagePeriod: (period: string) => void;
-  navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
-  setKitBrowserOpen: (open: boolean) => void;
-  mobileScreen: "files" | "chat";
-  setMobileScreen: (screen: "files" | "chat") => void;
+  navigateToStarterKitSetup: (catalog: string, kitId: string) => void;
+  navigateToStarterKits: (category?: StarterKitCategory) => void;
+  mobileScreen: "sessions" | "chat";
+  setMobileScreen: (screen: "sessions" | "chat") => void;
 }
-
-const IN_APP_ENTRY = "in-app";
 
 function initialPath(): string {
   const { pathname } = window.location;
   const { view } = parseRoute(pathname);
-  if (
-    view === "telegram-bind" ||
-    view === "slack-bind" ||
-    view === "connection-secret"
-  )
-    return pathname;
+  if (view === "telegram-bind" || view === "slack-bind") return pathname;
 
   const saved = sessionStorage.getItem("platform-return-view");
   if (!saved) return pathname;
@@ -68,86 +63,78 @@ function initialPath(): string {
   return restored;
 }
 
-function leaveView(get: () => PlatformStore, navigate: () => void): void {
-  if (get().view === "chat") get().leaveChatContext(navigate);
-  else navigate();
-}
-
 export const createNavigationSlice: StateCreator<
   PlatformStore,
   [],
   [],
   NavigationSlice
-> = (set, get) => ({
-  ...routeToNavigationState(parseRoute(initialPath(), window.location.search)),
-  kitBrowserOpen: false,
+> = (set) => ({
+  ...routeToNavigationState(parseRoute(initialPath())),
+  sandboxFocus: null,
+  clearSandboxFocus: () => set({ sandboxFocus: null }),
   hydrateRoute: () =>
-    set(
-      routeToNavigationState(
-        parseRoute(window.location.pathname, window.location.search),
-      ),
-    ),
-  setView: (v) =>
-    leaveView(get, () => {
-      history.pushState(IN_APP_ENTRY, "", routeToPath({ view: v }));
-      set(routeToNavigationState({ view: v }));
+    set({
+      ...routeToNavigationState(parseRoute(window.location.pathname)),
+      sandboxFocus: null,
     }),
-  navigateBack: () => {
-    if (history.state === IN_APP_ENTRY) history.back();
-    else get().setView("home");
+  setView: (v) => {
+    history.pushState(null, "", routeToPath({ view: v }));
+    set({ ...routeToNavigationState({ view: v }), sandboxFocus: null });
   },
-  navigateToSettings: (tab, options) =>
-    leaveView(get, () => {
-      const settingsTab = tab ?? "account";
-      const period = options?.period ?? null;
-      history.pushState(
-        null,
-        "",
-        routeToPath({
-          view: "settings",
-          settingsTab,
-          ...(period ? { period } : {}),
-        }),
-      );
-      set({
-        view: "settings",
-        settingsTab,
-        usagePeriod: period,
-        agentId: null,
-      });
-    }),
-  setUsagePeriod: (period) => {
-    history.replaceState(
-      history.state,
+  navigateToSettings: (tab) => {
+    const settingsTab = tab ?? "account";
+    history.pushState(null, "", routeToPath({ view: "settings", settingsTab }));
+    set({ view: "settings", settingsTab, agentId: null, sandboxFocus: null });
+  },
+  navigateToSandboxHome: (agentId, section = "setup", focus) => {
+    history.pushState(
+      null,
       "",
-      routeToPath({ view: "settings", settingsTab: "usage", period }),
+      routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
     );
-    set({ usagePeriod: period });
+    set({
+      view: "sandbox-home",
+      agentId,
+      sandboxSection: section,
+      sandboxFocus: focus ?? null,
+    });
   },
-  navigateToSandboxHome: (agentId, section = "setup") =>
-    leaveView(get, () => {
-      history.pushState(
-        null,
-        "",
-        routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
-      );
-      set({ view: "sandbox-home", agentId, sandboxSection: section });
-    }),
-  navigateToStarterKit: (catalog, kitId) =>
-    leaveView(get, () => {
-      history.pushState(
-        null,
-        "",
-        routeToPath({ view: "starter-kit", catalog, kit: kitId }),
-      );
-      set({
-        view: "starter-kit",
-        starterKitCatalog: catalog,
-        starterKitId: kitId,
-        agentId: null,
-      });
-    }),
-  setKitBrowserOpen: (open) => set({ kitBrowserOpen: open }),
-  mobileScreen: "chat",
+  navigateToStarterKit: (catalog, kitId) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "starter-kit", catalog, kit: kitId }),
+    );
+    set({
+      view: "starter-kit",
+      starterKitCatalog: catalog,
+      starterKitId: kitId,
+      agentId: null,
+      sandboxFocus: null,
+    });
+  },
+  navigateToStarterKitSetup: (catalog, kitId) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "starter-kit-new", catalog, kit: kitId }),
+    );
+    set({
+      view: "starter-kit-new",
+      starterKitCatalog: catalog,
+      starterKitId: kitId,
+      agentId: null,
+      sandboxFocus: null,
+    });
+  },
+  navigateToStarterKits: (category) => {
+    const route = {
+      view: "starter-kits" as const,
+      ...(category ? { category } : {}),
+    };
+    history.pushState(null, "", routeToPath(route));
+    set({ ...routeToNavigationState(route), sandboxFocus: null });
+  },
+  mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),
 });

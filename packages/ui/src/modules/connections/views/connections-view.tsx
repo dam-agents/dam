@@ -1,16 +1,19 @@
 import { Add } from "@carbon/icons-react";
-import { ConnectApplications } from "@carbon/pictograms-react";
 import { useState } from "react";
 
-import { AddRow, ListSection } from "@/components/ui/list-section";
+import { Button } from "@/components/ui/button";
+import { CARD_SURFACE } from "@/components/ui/card";
+import { Inset } from "@/components/ui/inset";
 import { PageHeader } from "@/components/ui/page-header";
+import { SectionLabel } from "@/components/ui/section-label";
 
+import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
-import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
+import { SatellitesGroupCard } from "../../satellites/components/satellites-group-card.js";
 import { useRemoveSatelliteWithConfirm } from "../../satellites/hooks/use-remove-satellite.js";
 import { useAppConnections } from "../api/queries.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
-import { ConnectionGroup } from "../components/connection-group.js";
+import { ConnectionGroupCard } from "../components/connection-group-card.js";
 import { ConnectionMaintenanceDialog } from "../components/connection-update-credential-dialog.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
@@ -28,57 +31,66 @@ export function ConnectionsView() {
     connectionsQ.data ?? [],
   );
 
+  const newButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => setCatalogOpen(true)}
+      data-testid="open-connection-catalog"
+    >
+      <Add size={16} />
+      New
+    </Button>
+  );
+
   return (
-    <div>
+    <div className="w-full max-w-2xl">
       <PageHeader
-        pictogram={<ConnectApplications aria-hidden />}
         title="Connections"
-        description="Give your agents access to services, without handing them the credentials."
+        description="Connections are the services and credentials your agents can reach."
       />
 
-      <ListSection
-        loading={connectionsQ.isPending}
-        error={connectionsQ.isError && "Couldn't load connections."}
-        isEmpty={groups.length === 0 && satellites.length === 0}
-        empty="No connections yet. Add one to let your agents reach a service."
-        onNew={() => setCatalogOpen(true)}
-        newLabel="Add connection"
-        newTestId="open-connection-catalog"
-        addRow={
-          <AddRow
-            onClick={() => setCatalogOpen(true)}
-            testId="open-connection-catalog"
-          >
-            <Add size={16} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium text-foreground">
-                Add connection
+      {connectionsQ.isPending ? (
+        <ListSkeleton />
+      ) : groups.length > 0 || satellites.length > 0 ? (
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <SectionLabel>My connections</SectionLabel>
+            {newButton}
+          </div>
+          <Inset className="flex flex-col gap-4">
+            {groups.map((group) => (
+              <ConnectionGroupCard
+                key={group.provider.id}
+                group={group}
+                templateById={templateById}
+                onDelete={(id, name) => void confirmAndDelete(id, name)}
+                deletingId={deletingId}
+                maintenance={maintenance.rowActions}
+              />
+            ))}
+            {satellites.length > 0 && (
+              <SatellitesGroupCard
+                satellites={satellites}
+                onRemove={(s) => void confirmAndRemove(s)}
+                removingName={removingName}
+              />
+            )}
+          </Inset>
+        </>
+      ) : (
+        <>
+          <SectionLabel spaced>My connections</SectionLabel>
+          <Inset className={CARD_SURFACE}>
+            <div className="flex flex-col items-center gap-4 py-10">
+              <p className="text-sm text-foreground/80">
+                No connections set up yet.
               </p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                Add a service your agents can reach.
-              </p>
+              {newButton}
             </div>
-          </AddRow>
-        }
-      >
-        {groups.map((group) => (
-          <ConnectionGroup
-            key={group.provider.id}
-            group={group}
-            templateById={templateById}
-            onDelete={(id, name) => void confirmAndDelete(id, name)}
-            deletingId={deletingId}
-            maintenance={maintenance.rowActions}
-          />
-        ))}
-        {satellites.length > 0 && (
-          <SatellitesGroup
-            satellites={satellites}
-            onRemove={(s) => void confirmAndRemove(s)}
-            removingName={removingName}
-          />
-        )}
-      </ListSection>
+          </Inset>
+        </>
+      )}
 
       {catalogOpen && (
         <ConnectionCatalogModal onClose={() => setCatalogOpen(false)} />

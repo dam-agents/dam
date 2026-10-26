@@ -8,7 +8,7 @@ import type { AgentView } from "../../../../types.js";
 import { useAgents } from "../../../agents/api/queries.js";
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
 import { useTelegramChats } from "../../../telegram/api/queries.js";
-import { slackChannelLabel } from "../../lib/slack-channels.js";
+import { slackChannelLabel } from "../../hooks/use-slack-channel-form.js";
 
 const SHOWN = 2;
 

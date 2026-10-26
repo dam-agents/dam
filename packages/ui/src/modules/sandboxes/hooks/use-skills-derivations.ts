@@ -1,23 +1,12 @@
 import type { LocalSkill, Skill, SkillSource } from "api-server-api";
-import { platformSkillFeature } from "api-server-api";
-import { useCallback, useMemo } from "react";
+import { platformSkillFeature, skillKey } from "api-server-api";
+import { useMemo } from "react";
 
 import { repoSlug } from "@/lib/git-source";
 
-import {
-  latestPublishByName,
-  resolveTrackTarget,
-  type TrackTarget,
-} from "../components/skills/publish-target.js";
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
-import {
-  pickSetSource,
-  sameSourcePath,
-  selectionKey,
-  type SkillIdentity,
-} from "../lib/skill-identity.js";
 import type { SkillsSurface } from "./use-skills-surface.js";
 
 function filterByQuery<T extends { name: string; description: string }>(
@@ -48,14 +37,12 @@ export interface SkillsDerivations {
   existingSetNames: ReadonlySet<string>;
   availableKeys: ReadonlySet<string>;
   installedKeys: ReadonlySet<string>;
-  resolveSetEntry: (
-    entry: SkillIdentity,
-  ) => { key: string; unreadable: boolean } | null;
+  unreadableSources: ReadonlySet<string>;
   saveOmitted: { source: SkillSource; count: number }[];
   previewReady: boolean;
   anyInstalled: boolean;
   drifted: Skill[];
-  trackTargets: ReadonlyMap<string, TrackTarget>;
+  trackUnavailableNames: ReadonlySet<string>;
   snapshotRows: { label: string; names: string[]; capturedAt?: string }[];
   snapshotOnCount: number;
 }
@@ -103,14 +90,8 @@ export function useSkillsDerivations(
   );
 
   const suppressedBySource = useMemo(
-    () =>
-      publishedDuplicatesBySource(
-        standalone,
-        publishes,
-        sources,
-        skillsBySource,
-      ),
-    [standalone, publishes, sources, skillsBySource],
+    () => publishedDuplicatesBySource(standalone, publishes, skillsBySource),
+    [standalone, publishes, skillsBySource],
   );
 
   const q = readOnly ? "" : query.trim().toLowerCase();
@@ -135,7 +116,9 @@ export function useSkillsDerivations(
     let on = 0;
     for (const list of listBySource.values()) {
       skills += list.length;
-      on += list.filter((s) => installedRef(s) !== undefined).length;
+      on += list.filter(
+        (s) => installedRef(s.source, s.name) !== undefined,
+      ).length;
     }
     return { skills, sources: sources.length, on };
   }, [
@@ -198,32 +181,24 @@ export function useSkillsDerivations(
   const availableKeys = useMemo(() => {
     const out = new Set<string>();
     for (const list of listBySource.values()) {
-      for (const skill of list) out.add(selectionKey(skill));
+      for (const skill of list) out.add(skillKey(skill));
     }
     return out;
   }, [listBySource]);
   const installedKeys = useMemo(
-    () => new Set(installed.map((r) => selectionKey(r))),
+    () => new Set(installed.map((r) => skillKey(r))),
     [installed],
   );
-  const resolveSetEntry = useCallback(
-    (entry: SkillIdentity) => {
-      const source = pickSetSource(sources, entry);
-      if (!source) return null;
-      return {
-        key: selectionKey({ ...entry, path: source.path }),
-        unreadable: !!errorBySource[source.id],
-      };
-    },
+  const unreadableSources = useMemo(
+    () =>
+      new Set(sources.filter((s) => errorBySource[s.id]).map((s) => s.gitUrl)),
     [sources, errorBySource],
   );
   const saveOmitted = useMemo(() => {
     const out: { source: SkillSource; count: number }[] = [];
     for (const src of sources) {
       if (!errorBySource[src.id]) continue;
-      const count = installed.filter(
-        (r) => r.source === src.gitUrl && sameSourcePath(r.path, src.path),
-      ).length;
+      const count = installed.filter((r) => r.source === src.gitUrl).length;
       if (count > 0) out.push({ source: src, count });
     }
     return out;
@@ -235,7 +210,7 @@ export function useSkillsDerivations(
     const out: Skill[] = [];
     for (const list of listBySource.values()) {
       for (const skill of list) {
-        if (isDrifted(installedRef(skill), skill)) {
+        if (isDrifted(installedRef(skill.source, skill.name), skill)) {
           out.push(skill);
         }
       }
@@ -243,14 +218,17 @@ export function useSkillsDerivations(
     return out;
   }, [listBySource, installedRef]);
 
-  const trackTargets = useMemo(() => {
-    const out = new Map<string, TrackTarget>();
-    for (const p of latestPublishByName(publishes).values()) {
+  const trackUnavailableNames = useMemo(() => {
+    const out = new Set<string>();
+    for (const p of publishes) {
       if (p.prState !== "merged") continue;
-      out.set(p.skillName, resolveTrackTarget(p, sources, skillsBySource));
+      const scanned = skillsBySource[p.sourceId]?.find(
+        (s) => s.name === p.skillName,
+      );
+      if (!scanned) out.add(p.skillName);
     }
     return out;
-  }, [publishes, sources, skillsBySource]);
+  }, [publishes, skillsBySource]);
 
   const snapshotRows = useMemo(() => {
     const rows: { label: string; names: string[]; capturedAt?: string }[] = [];
@@ -263,23 +241,16 @@ export function useSkillsDerivations(
           : {}),
       });
     }
-    const unclaimed = [...installed];
-    for (const src of sources) {
-      const names: string[] = [];
-      for (let i = unclaimed.length - 1; i >= 0; i--) {
-        const ref = unclaimed[i];
-        if (ref.source !== src.gitUrl || !sameSourcePath(ref.path, src.path))
-          continue;
-        names.unshift(ref.name);
-        unclaimed.splice(i, 1);
-      }
-      if (names.length > 0) rows.push({ label: src.name, names });
-    }
     const byUrl = new Map<string, string[]>();
-    for (const ref of unclaimed) {
+    for (const ref of installed) {
       const names = byUrl.get(ref.source);
       if (names) names.push(ref.name);
       else byUrl.set(ref.source, [ref.name]);
+    }
+    for (const src of sources) {
+      const names = byUrl.get(src.gitUrl);
+      if (names && names.length > 0) rows.push({ label: src.name, names });
+      byUrl.delete(src.gitUrl);
     }
     for (const [gitUrl, names] of byUrl) {
       rows.push({ label: repoSlug(gitUrl), names });
@@ -313,12 +284,12 @@ export function useSkillsDerivations(
     existingSetNames,
     availableKeys,
     installedKeys,
-    resolveSetEntry,
+    unreadableSources,
     saveOmitted,
     previewReady,
     anyInstalled: totals.on > 0,
     drifted,
-    trackTargets,
+    trackUnavailableNames,
     snapshotRows,
     snapshotOnCount: installed.length,
   };

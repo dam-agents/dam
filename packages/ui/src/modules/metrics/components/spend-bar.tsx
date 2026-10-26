@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
-
 interface Props {
   label: string;
   value: string;
@@ -9,57 +7,6 @@ interface Props {
   color: string;
   caption?: ReactNode;
   icon?: ReactNode;
-}
-
-export function SpendBarTrack({
-  pct,
-  label,
-  color,
-  fillClassName,
-  className,
-  trackClassName = "h-5 rounded bg-muted",
-  extraPct = 0,
-  extraFillClassName,
-}: {
-  pct: number;
-  label: string;
-  color?: string;
-  fillClassName?: string;
-  className?: string;
-  trackClassName?: string;
-  extraPct?: number;
-  extraFillClassName?: string;
-}) {
-  const hasExtra = extraPct > 0;
-  return (
-    <div
-      className={cn("flex overflow-hidden", trackClassName, className)}
-      role="img"
-      aria-label={label}
-    >
-      <div
-        className={cn(
-          "h-full shrink-0 rounded",
-          fillClassName,
-          hasExtra && "rounded-r-none",
-        )}
-        style={{
-          width: pct > 0 ? `max(${pct}%, 8px)` : "0px",
-          background: color,
-        }}
-      />
-      {hasExtra && (
-        <div
-          className={cn(
-            "h-full shrink-0 rounded",
-            extraFillClassName,
-            pct > 0 && "rounded-l-none",
-          )}
-          style={{ width: `${extraPct}%` }}
-        />
-      )}
-    </div>
-  );
 }
 
 export function SpendBar({ label, value, pct, color, caption, icon }: Props) {
@@ -71,16 +18,24 @@ export function SpendBar({ label, value, pct, color, caption, icon }: Props) {
           {label}
         </span>
       </span>
-      <SpendBarTrack
-        pct={pct}
-        color={color}
-        className="min-w-0 flex-1"
-        label={
+      <div
+        className="h-5 min-w-0 flex-1 overflow-hidden rounded bg-muted"
+        role="img"
+        aria-label={
           pct > 0 && pct < 1
             ? "less than 1% of the largest"
             : `${Math.round(pct)}% of the largest`
         }
-      />
+      >
+        {}
+        <div
+          className="h-full rounded"
+          style={{
+            width: pct > 0 ? `max(${pct}%, 8px)` : "0px",
+            background: color,
+          }}
+        />
+      </div>
       <span className="flex w-28 shrink-0 flex-col items-end gap-1.5">
         <span className="font-mono font-semibold leading-none tabular-nums text-foreground">
           {value}

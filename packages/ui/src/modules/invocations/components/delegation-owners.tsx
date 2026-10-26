@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef } from "react";
+import { createContext, useContext, useMemo, useRef } from "react";
 
 import type { Message, ToolChip } from "../../../types.js";
 import {
@@ -8,7 +8,6 @@ import {
   type FanOutSpawn,
   parseFanOut,
 } from "../lib/fan-out.js";
-import { isSpawnSubAgentChip } from "../lib/sub-agent-chips.js";
 
 type Owners = ReadonlyMap<string, ChipKey>;
 
@@ -37,26 +36,11 @@ export function useDelegationOwners(messages: readonly Message[]): Owners {
   }, [messages]);
 }
 
-function ownedSpawns(
-  owners: Owners | null,
-  chip: ToolChip,
-): FanOutSpawn[] | null {
+export function useOwnedSpawns(chip: ToolChip): FanOutSpawn[] | null {
+  const owners = useContext(DelegationOwnersContext);
   const spawns = parseFanOut(chip);
   if (!spawns || !owners) return spawns;
   const key = chipKeyOf(chip);
   const owned = spawns.filter((spawn) => owners.get(spawn.id) === key);
   return owned.length > 0 ? owned : null;
-}
-
-export function useOwnedSpawns(chip: ToolChip): FanOutSpawn[] | null {
-  return ownedSpawns(useContext(DelegationOwnersContext), chip);
-}
-
-export function useIsFanOutChip(): (chip: ToolChip) => boolean {
-  const owners = useContext(DelegationOwnersContext);
-  return useCallback(
-    (chip: ToolChip) =>
-      isSpawnSubAgentChip(chip) || ownedSpawns(owners, chip) !== null,
-    [owners],
-  );
 }

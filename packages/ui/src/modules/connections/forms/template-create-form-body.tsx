@@ -215,7 +215,7 @@ export function TemplateCreateFormBody({
       )}
 
       {template.inputs.length === 0 && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           No additional inputs — preconfigured.
         </p>
       )}

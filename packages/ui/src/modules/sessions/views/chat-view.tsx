@@ -1,14 +1,18 @@
-import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import {
-  SessionMode,
-  SessionType,
-  TELEMETRY_MAX_SINCE_HOURS,
-} from "api-server-api";
+  ArrowDown,
+  ArrowLeft,
+  OverflowMenuVertical,
+  Renew,
+  TrashCan,
+  Warning,
+} from "@carbon/icons-react";
+import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import {
+  type CSSProperties,
   Fragment,
-  type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -18,201 +22,130 @@ import { stateDotClass } from "@/components/status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
+import { ResizeHandle } from "../../../components/resize-handle.js";
 import { useNow } from "../../../hooks/use-now.js";
+import { isMobile } from "../../../lib/breakpoints.js";
+import {
+  readPersistedNumber,
+  writePersistedNumber,
+} from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { AgentView, Attachment, Message } from "../../../types.js";
-import { useChatFormPreferences } from "../../a2ui/api/queries.js";
-import { A2uiActionProvider } from "../../a2ui/contexts/a2ui-action-context.js";
-import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-context.js";
-import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
-import { useA2uiConversation } from "../../a2ui/hooks/use-a2ui-conversation.js";
-import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
-import { composerLocked } from "../../a2ui/lib/composer-lock.js";
-import {
-  conversationEmpty,
-  isQueuedSend,
-  rewritePointsOf,
-} from "../../acp/session-projection.js";
-import {
-  useHarnessConfigCurrent,
-  useHarnessConfigStatus,
-} from "../../agents/api/harness-config.js";
+import type { AgentView } from "../../../types.js";
+import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
+import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
   useAgents,
   useIsAgentInaccessible,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
-import {
-  AgentStartNotice,
-  hasStartNotice,
-} from "../../agents/components/agent-start-notice.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import {
   AgentAvatar,
-  avatarMood,
+  isAsleep,
 } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
-import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
-import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
-import { RuntimeMigrationBadge } from "../../agents/components/runtime-migration-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
-import { AgentUpdateDot } from "../../agents/components/update-available-action.js";
+import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
+import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
-import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
+import {
+  useRestartAgent,
+  useSyncRestartingAgents,
+} from "../../agents/hooks/use-restart-agent.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
-import { startsInChat } from "../../agents/lib/agent-start.js";
+import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
-import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
-import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
-import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
-import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
-import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
-import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
-import { useEnvironmentsEnabled } from "../../environments/api/queries.js";
-import { EnvironmentsPanel } from "../../environments/components/environments-panel.js";
-import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
-import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
-import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { useContinuedFrom } from "../../invocations/api/queries.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
 } from "../../invocations/components/delegation-owners.js";
 import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
-import { MobileMenuButton } from "../../platform/components/sidebar/mobile-menu-button.js";
-import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
-import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
-import { ProcessesPanel } from "../../processes/components/processes-panel.js";
-import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
-import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
-import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
-import { processesBadgeTone } from "../../processes/lib/process-summary.js";
-import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
-import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
+import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import { acpSessionsKeys } from "../api/keys.js";
-import {
-  optimisticInsertSession,
-  setSessionRunning,
-  useAgentSession,
-} from "../api/queries.js";
-import {
-  attachProviderQuietly,
-  rememberFirstModel,
-  useHarnessCatalogModels,
-  useProviderConnections,
-} from "../api/session-pair.js";
-import { AppSidePanelButtons } from "../components/app-side-panel.js";
+import { optimisticInsertSession, setSessionRunning } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
-import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
-import { ClassicChatLayout } from "../components/classic-chat-layout.js";
-import {
-  ContinuedFromPrelude,
-  ContinuedFromUnavailable,
-} from "../components/continued-from-prelude.js";
-import { CurveBenderAlert } from "../components/curve-bender-alert.js";
 import { ModelIndicator } from "../components/model-indicator.js";
-import { NewSessionOptions } from "../components/new-session-launcher.js";
+import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
-import { ProviderStatusLine } from "../components/provider-status-line.js";
-import { QueuedPrompts } from "../components/queued-prompts.js";
-import {
-  RewritableMessage,
-  RewriteMarker,
-} from "../components/rewritable-message.js";
-import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
-import { SessionPairPicker } from "../components/session-pair-picker.js";
-import { SetupInstructionsCard } from "../components/setup-instructions-card.js";
-import {
-  appSidePanelTabs,
-  SIDE_PANEL_TABS,
-  SidePanelTabButtons,
-} from "../components/side-panel-bar.js";
-import { SidePanelShell } from "../components/side-panel-shell.js";
+import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
-import { ThreadDivider } from "../components/thread-divider.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
-import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
-import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
-import { useChatScroll } from "../hooks/use-chat-scroll.js";
-import { useCurveBender } from "../hooks/use-curve-bender.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
-import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
-import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
 import {
   pushSessionPath,
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
-import { useTakeBack } from "../hooks/use-take-back.js";
 import {
-  classicAppTab,
-  classicDockToggle,
-  classicPanel,
-} from "../lib/classic-chat-layout.js";
-import { composerBlock } from "../lib/composer-block.js";
-import { sharedCurveBender } from "../lib/curve-bender.js";
-import { defaultKindOf } from "../lib/default-kind.js";
-import { dockKey } from "../lib/dock.js";
+  type SidebarPanelStack,
+  useSidebarPanels,
+} from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
-import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
-import { sendPreparation } from "../lib/send-preparation.js";
-import {
-  type DockedItems,
-  dockedItemTab,
-  hiddenSidePanelTabs,
-  maximizableView,
-  selectSidePanelTab,
-  type SidePanelTab,
-  visibleSidePanelTab,
-} from "../lib/side-panel.js";
-import {
-  dividerLabel,
-  setupMessageOf,
-  threadItems,
-  timeProps,
-  userRunsOf,
-} from "../lib/thread-items.js";
+import { modelDisplayName } from "../lib/session-model.js";
+import type { SidebarPanelId } from "../lib/sidebar-panels.js";
+import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
 import type { SessionError } from "../store/sessions.js";
 
+const LEFT_WIDTH_KEY = "platform-left-w";
+const LEFT_MIN_W = 240;
+const LEFT_MAX_W = 400;
+const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
 
-// UNIT_BOUNDARY_DESCRIPTION: a sent message lands in the transcript a render or two after the send, so the jump to the end repeats once it is laid out and once more after this wait.
-const SEND_SETTLE_MS = 300;
+function clampLeftWidth(width: number): number {
+  return Math.max(LEFT_MIN_W, Math.min(LEFT_MAX_W, width));
+}
+
+function PanelDivider({
+  stack,
+  below,
+}: {
+  stack: SidebarPanelStack;
+  below: SidebarPanelId;
+}) {
+  const divider = stack.dividerProps(below);
+  return divider && <ResizeHandle orientation="vertical" {...divider} />;
+}
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -227,10 +160,10 @@ export function ChatView() {
 
   useSessionUrlSync(selectedAgent);
 
+  useSyncRestartingAgents();
   const slowStartIds = useSlowStartIds();
   useAgentReachability(selectedAgent);
   useSessionWatch(selectedAgent);
-  useHarnessConfigWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(
@@ -240,61 +173,62 @@ export function ChatView() {
   const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
   const runtimeOutdated = agentView?.features.liveUpdates === false;
   const agentDisplay = agentView
-    ? resolveAgentDisplay(agentView, restartingIds, slowStartIds)
+    ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
-  const agentStarting =
-    agentDisplay?.state === "starting" ||
-    agentDisplay?.state === "preparing_workspace";
-  const startNotice = agentStarting &&
-    agentView &&
-    agentDisplay &&
-    hasStartNotice(agentView, agentDisplay) && (
-      <AgentStartNotice agent={agentView} display={agentDisplay} />
-    );
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
-  const shown = useMemo(
-    () => messages.filter((m) => !isQueuedSend(m)),
-    [messages],
-  );
   const now = useNow(60_000);
   const runStarts = useStore((s) => s.runStarts);
   const items = useMemo(
-    () => threadItems(shown, runStarts),
-    [shown, runStarts],
+    () => threadItems(messages, runStarts),
+    [messages, runStarts],
   );
-  const userRuns = useMemo(() => userRunsOf(items), [items]);
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);
-  const dock = useStore((s) => s.dock);
-  const openBrowser = useOpenBrowser();
-  const closeBrowser = useStore((s) => s.setOpenBrowser);
-  const toggleChanges = useToggleChanges();
-  const processesEnabled = useProcessesEnabled();
-  const newLayout = useNewLayout();
-  const rightToolbar = useUnifiedRightToolbar();
-  const environmentsEnabled = useEnvironmentsEnabled();
-  useProcessesLiveUpdates(selectedAgent, processesEnabled);
-  const runningProcesses = useRunningProcesses(
-    processesEnabled ? selectedAgent : null,
+  const openFilePath = useStore((s) => s.openFilePath);
+  const openArtifactId = useStore((s) => s.openArtifactId);
+  const openDelegation = useStore((s) =>
+    s.openDelegation?.driverAgentId === s.selectedAgent
+      ? s.openDelegation
+      : null,
   );
+  const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
+  const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const sidePanelTab = useStore((s) => s.sidePanelTab);
-  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
-  const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
+  const setView = useStore((s) => s.setView);
+  const sessionsSectionOpen = useStore((s) => s.sessionsSectionOpen);
+  const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
+  const filesSectionOpen = useStore((s) => s.filesSectionOpen);
+  const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
+  const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
+  const [leftW, setLeftW] = useState(() =>
+    clampLeftWidth(readPersistedNumber(LEFT_WIDTH_KEY, LEFT_MIN_W)),
+  );
+  const leftWRef = useRef(leftW);
+  const [rightW, setRightW] = useState<number | null>(() =>
+    readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
+  );
+  const rightWRef = useRef(rightW);
+  const filePanelRef = useRef<HTMLDivElement>(null);
+  const panelStack = useSidebarPanels([
+    { id: "sessions", open: sessionsSectionOpen },
+    { id: "files", open: filesSectionOpen },
+    { id: "artifacts", open: artifactsSectionOpen },
+  ]);
   const terminalFreshRef = useRef(false);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
@@ -302,103 +236,44 @@ export function ChatView() {
     resumeSession,
     loadOlderMessages,
     sendPrompt,
-    rewriteFrom,
-    takeBackPrompt,
     stopAgent,
     chooseSessionModel,
-    configureSession,
     busy,
     loadingSession,
     connectionState,
   } = useAcpSession(selectedAgent, textareaRef);
 
-  const promptGate = {
+  const sendArtifactPrompt = useChatArtifactPrompt({
     agentId: selectedAgent,
     sessionId,
     sessionMode,
     agentOperable,
     loadingSession,
     sendPrompt,
-  };
-  const sendArtifactPrompt = useChatArtifactPrompt(promptGate);
+  });
 
   const { openFileHandler } = useFileTree(selectedAgent);
+  const { restart } = useRestartAgent();
+  const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
-  const harnessStatusQuery = useHarnessConfigStatus(selectedAgent);
-  const harnessStatus = harnessStatusQuery.data;
-  const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
-  const sessionTemplateId = useSessionTemplateId(selectedAgent, sessionId);
-  const {
-    choice,
-    newSessionAgent,
-    pair,
-    pairHarness,
-    noProviders,
-    noGrantedProvider,
-  } = useNewSessionChoice({
-    agentId: selectedAgent,
-    sessionId,
-    status: harnessStatus,
-    statusPending: harnessStatusQuery.isPending,
-    operable: agentOperable,
-    session: currentSession,
-  });
-  const providers = useProviderConnections(selectedAgent);
-  const shared = sharedCurveBender(providers.owned);
-  const routed =
-    choice.kind === "picker" ? choice.routed : harnessStatus?.modelRouter;
-  const sendHarness =
-    (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
-  const sendCatalog = useHarnessCatalogModels(
-    routed ? selectedAgent : null,
-    sendHarness ?? null,
-  );
-  const curveBender = useCurveBender({
-    agentId: selectedAgent,
-    routed,
-    session:
-      sessionId && currentSession
-        ? {
-            harness: currentSession.harness ?? null,
-            model: currentSession.model ?? null,
-          }
-        : null,
-    onChooseSessionModel: chooseSessionModel,
-  });
-  const setNextSessionPair = useStore((s) => s.setNextSessionPair);
-  const setDraft = useStore((s) => s.setDraft);
-  const [providersModal, setProvidersModal] = useState<boolean | null>(null);
+  const storedSessionModel = useStore((s) => s.sessionModel);
+  const sessionModel =
+    sessionId && storedSessionModel?.sessionId === sessionId
+      ? storedSessionModel
+      : null;
+  const indicatorModel = sessionModel
+    ? (sessionModel.choices.find((c) => c.value === sessionModel.current)
+        ?.name ?? modelDisplayName(sessionModel.current))
+    : harnessCurrent?.model;
 
   const view = useStore((s) => s.view);
-  const continuesInvocation = useStore((s) =>
-    selectedAgent && !sessionId
-      ? s.drafts[draftKey(selectedAgent, null)]?.continuesInvocation
-      : undefined,
-  );
-  const draftRead = useContinuedFrom(selectedAgent, continuesInvocation);
-  const dropDraftContinuation = useStore((s) => s.dropDraftContinuation);
-  const sessionCopy = useStore((s) => s.continuedFrom);
-  const copy = sessionId
-    ? sessionCopy
-    : draftRead?.kind === "ready"
-      ? draftRead.copy
-      : null;
-  const copyUnavailable =
-    !sessionId && draftRead?.kind === "unavailable" ? draftRead.reason : null;
-  const copyInView = copy !== null && shown[0]?.loadOlderBefore === undefined;
-  const chatIdle =
-    !sessionId && messages.length === 0 && continuesInvocation === undefined;
+  const chatIdle = !sessionId && messages.length === 0;
 
-  const {
-    messagesRef,
-    scrollToBottom,
-    loadOlderKeepingScroll,
-    showJump,
-    historyShown,
-  } = useChatScroll({ messages, sessionId, loadingSession, loadOlderMessages });
-  const features = useFeatures().data;
-  const telemetryEnabled = features?.["agent-telemetry"] ?? false;
+  const stickRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+  const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
   const delegationOwners = useDelegationOwners(messages);
+  const avatarsEnabled = useAgentAvatars();
   const telemetryLive = useMemo(() => {
     if (messages.some((m) => m.role === "assistant" && m.streaming))
       return true;
@@ -427,157 +302,108 @@ export function ChatView() {
       sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
     return matchTurnsToReplies(rows, messages);
   }, [sessionTurns.data, messages]);
-  const shownTurns = useMemo(
-    () => [...turnForMessage.values()],
-    [turnForMessage],
-  );
-  const { data: turnSpend } = useTurnSpend(
-    selectedAgent ?? null,
-    sessionId ?? null,
-    shownTurns,
-  );
 
-  const harnessForks = useStore((s) => s.harnessForks);
-  const queuedPrompts = useStore((s) => s.queuedPrompts);
-  const queueEmpty = queuedPrompts.length === 0;
-  const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
-  const rewritable =
-    sessionView?.mode === SessionMode.Chat &&
-    sessionView.type === SessionType.Regular &&
-    !sessionView.threadTs &&
-    !sessionView.scheduleId &&
-    !sessionView.initialization;
-  const canRewrite = harnessForks && rewritable;
-  const setupMessageId = sessionView?.initialization
-    ? setupMessageOf(shown)
-    : undefined;
-  const arrivalsRef = useRef(newLiveArrivals(sessionId));
-  if (arrivalsRef.current.sessionId !== sessionId)
-    arrivalsRef.current = newLiveArrivals(sessionId);
-  const arrived = noteArrivals(arrivalsRef.current, shown, loadingSession);
-  const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
-  const takeBack = useTakeBack({
-    shown,
-    rewritePoints,
-    sessionId,
-    rewritable: rewritable === true,
-    harnessForks,
-    queuedPrompts,
-    title: sessionView?.title ?? null,
-    takeBackPrompt,
-    stop: stopAgent,
-  });
-  const rewriting = useStore((s) => s.rewriting);
-  const rewriteIndex = rewriting
-    ? shown.findIndex((m) => m.id === rewriting.messageId)
-    : -1;
+  const scrollToBottom = useCallback(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  }, []);
 
-  const sendAndFollow = useCallback(
-    (...args: Parameters<typeof sendPrompt>) => {
-      scrollToBottom();
-      const sent = sendPrompt(...args);
-      requestAnimationFrame(() => requestAnimationFrame(scrollToBottom));
-      setTimeout(scrollToBottom, SEND_SETTLE_MS);
-      return sent;
-    },
-    [scrollToBottom, sendPrompt],
-  );
+  const pendingPrependRef = useRef<{
+    height: number;
+    before: string;
+  } | null>(null);
 
-  const sendFormPrompt = useChatFormPrompt({
-    ...promptGate,
-    sendPrompt: sendAndFollow,
-  });
-  const chatFormsEnabled = useChatFormsEnabled();
-  const { data: chatFormPreferences } = useChatFormPreferences(
-    chatFormsEnabled ? selectedAgent : null,
-    { quiet: true },
-  );
-  const a2uiConversation = useA2uiConversation(
-    messages,
-    sessionId ?? "",
-    chatFormsEnabled,
-    chatFormPreferences,
-  );
-  const { withRendererMetadata } = a2uiConversation;
-  const formLocksComposer = composerLocked(
-    a2uiConversation.conversation,
-    a2uiConversation.liveMessageId,
-    chatFormPreferences,
-  );
-  useA2uiAutoReplies(a2uiConversation, sendFormPrompt);
-  const block = composerBlock({
-    agentId: selectedAgent,
-    providers,
-    noProviders,
-    noGrantedProvider,
-    sharedCurveBender: !!shared,
-    formLocked: formLocksComposer,
-  });
-  const sendWithA2uiData = useCallback(
-    (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
-      sendAndFollow(withRendererMetadata(text), ...rest),
-    [sendAndFollow, withRendererMetadata],
-  );
-  const sendPrepared = useCallback(
-    async (text: string, attachments?: Attachment[]) => {
-      const agentId = selectedAgent;
-      if (!agentId) return;
-      const plan = sendPreparation({
-        session: sessionId
-          ? {
-              harness: sendHarness ?? "",
-              model: currentSession?.model ?? null,
-            }
-          : null,
-        harness: sessionId ? null : (sendHarness ?? null),
-        pair: sessionId ? null : pair,
-        granted: providers.granted,
-        owned: providers.owned,
-        catalog: sendCatalog.data,
-      });
-      const attached =
-        plan.attach === null
-          ? true
-          : await attachProviderQuietly(agentId, plan.attach);
-      if (!attached) {
-        setDraft(draftKey(agentId, sessionId), {
-          text,
-          attachments: attachments ?? [],
-        });
-        return;
+  const loadOlderKeepingScroll = useCallback(
+    async (before: string): Promise<"paged" | "reloaded" | "noop"> => {
+      const el = messagesRef.current;
+      if (el) {
+        pendingPrependRef.current = { height: el.scrollHeight, before };
+        el.style.overflowAnchor = "none";
       }
-      if (plan.pair) setNextSessionPair(agentId, plan.pair);
-      if (plan.model) await chooseSessionModel(plan.model);
-      await sendWithA2uiData(text, attachments);
+      const outcome = await loadOlderMessages(before);
+      if (outcome !== "paged") {
+        pendingPrependRef.current = null;
+        if (el) el.style.overflowAnchor = "";
+        if (outcome === "reloaded") scrollToBottom();
+      }
+      return outcome;
     },
-    [
-      selectedAgent,
-      sessionId,
-      currentSession,
-      sendHarness,
-      pair,
-      providers,
-      sendCatalog.data,
-      setDraft,
-      setNextSessionPair,
-      chooseSessionModel,
-      sendWithA2uiData,
-    ],
+    [loadOlderMessages, scrollToBottom],
   );
+
+  useLayoutEffect(() => {
+    const pending = pendingPrependRef.current;
+    const el = messagesRef.current;
+    if (!pending || !el) return;
+    if (messages.some((m) => m.loadOlderBefore === pending.before)) {
+      pending.height = el.scrollHeight;
+      return;
+    }
+    pendingPrependRef.current = null;
+    el.scrollTop += el.scrollHeight - pending.height;
+    el.style.overflowAnchor = "";
+  }, [messages]);
+
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const inner = el.firstElementChild;
+
+    const THRESHOLD = 30;
+    const nearBottom = () =>
+      el.scrollHeight - el.scrollTop - el.clientHeight < THRESHOLD;
+
+    const onScroll = () => {
+      const near = nearBottom();
+      stickRef.current = near;
+      setShowJump(!near);
+    };
+
+    const ro = new ResizeObserver(() => {
+      if (stickRef.current) el.scrollTop = el.scrollHeight;
+    });
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    ro.observe(el);
+    if (inner) ro.observe(inner);
+    onScroll();
+
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      stickRef.current = true;
+      setShowJump(false);
+    }
+  }, [messages.length]);
+
+  useLayoutEffect(() => {
+    if (loadingSession) return;
+    const el = messagesRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  }, [loadingSession, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
     (s) => s.setPendingResumeSessionId,
   );
   const pendingResumeSessionMode = useStore((s) => s.pendingResumeSessionMode);
-  const pendingResumeFresh = useStore((s) => s.pendingResumeFresh);
   useEffect(() => {
     if (!selectedAgent || !pendingResumeSessionId) return;
     const sid = pendingResumeSessionId;
     const mode = pendingResumeSessionMode;
     setPendingResumeSessionId(null);
     if (mode === SessionMode.Terminal) {
-      terminalFreshRef.current = pendingResumeFresh;
       setSessionMode(mode);
       setSessionId(sid);
       return;
@@ -587,7 +413,6 @@ export function ChatView() {
     selectedAgent,
     pendingResumeSessionId,
     pendingResumeSessionMode,
-    pendingResumeFresh,
     setPendingResumeSessionId,
     setSessionMode,
     setSessionId,
@@ -608,7 +433,7 @@ export function ChatView() {
     [view, selectedAgent],
   );
 
-  const openSession = useCallback(
+  const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       pushSessionUrl(sid, mode ?? SessionMode.Chat);
       setMobileScreen("chat");
@@ -635,47 +460,31 @@ export function ChatView() {
     ],
   );
 
-  const [pairPickerOpen, setPairPickerOpen] = useState(false);
-  useEffect(() => {
-    if (sessionId) setPairPickerOpen(false);
-  }, [sessionId]);
-  const handleNewSession = useCallback(
-    (pickPair = false) => {
-      const afterReset = () =>
-        pickPair
-          ? setPairPickerOpen(true)
-          : requestAnimationFrame(() => textareaRef.current?.focus());
-      if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
-      if (!sessionId && messages.length === 0) {
-        setMobileScreen("chat");
-        afterReset();
-        return;
-      }
-      pushSessionUrl(null, null);
-      setSessionMode(SessionMode.Chat);
-      resetSession();
+  const handleNewSession = useCallback(() => {
+    const focusComposer = () =>
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
+    if (!sessionId && messages.length === 0) {
       setMobileScreen("chat");
-      afterReset();
-    },
-    [
-      selectedAgent,
-      sessionId,
-      messages.length,
-      resetSession,
-      setMobileScreen,
-      setSessionMode,
-      pushSessionUrl,
-    ],
-  );
+      focusComposer();
+      return;
+    }
+    pushSessionUrl(null, null);
+    setSessionMode(SessionMode.Chat);
+    resetSession();
+    setMobileScreen("chat");
+    focusComposer();
+  }, [
+    selectedAgent,
+    sessionId,
+    messages.length,
+    resetSession,
+    setMobileScreen,
+    setSessionMode,
+    pushSessionUrl,
+  ]);
 
-  const chatRequest = useStore((s) => s.chatRequest);
-  const requestChat = useStore((s) => s.requestChat);
-  useEffect(() => {
-    if (!chatRequest) return;
-    requestChat(null);
-    if (chatRequest.kind === "new") handleNewSession();
-    else openSession(chatRequest.sessionId, chatRequest.mode ?? undefined);
-  }, [chatRequest, requestChat, handleNewSession, openSession]);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const handleNewTerminal = useCallback(() => {
     resetSession();
@@ -686,786 +495,458 @@ export function ChatView() {
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
-  const canOpenBrowser = agentView?.requireConnectionAddress === true;
-  // UNIT_BOUNDARY_DESCRIPTION: the browser, changes and delegation docks belong to one agent, so a dock left by a previously selected agent counts as nothing docked here.
-  const shownDock =
-    dock === null
-      ? null
-      : dock.kind === "browser" || dock.kind === "changes"
-        ? dock.agentId === selectedAgent
-          ? dock
-          : null
-        : dock.kind === "delegation"
-          ? dock.driverAgentId === selectedAgent
-            ? dock
-            : null
-          : dock.kind === "process-output" && !processesEnabled
-            ? null
-            : dock;
-  const docked: DockedItems = {
-    file: shownDock?.kind === "file",
-    artifact: shownDock?.kind === "artifact",
-    processOutput:
-      shownDock?.kind === "process-output" && selectedAgent !== null,
-    changes: shownDock?.kind === "changes",
-    browser: shownDock?.kind === "browser" && canOpenBrowser,
-    delegation: shownDock?.kind === "delegation",
+  const canShareKnowledge =
+    agentView !== null && sharesKnowledgeBase(agentView);
+  const surfaceCopy = {
+    actionsAria: "Agent actions",
+    configure: "Configure agent",
+    delete: "Delete Agent",
+    modelSubject: "agent",
+    modelSettings: "Agent Setup",
   };
-  const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
-  const changesAvailable = useChangesAvailable(selectedAgent, sessionId);
-  const hiddenTabs = hiddenSidePanelTabs({
-    agent: true,
-    artifacts: true,
-    canOpenBrowser,
-    changes: changesAvailable,
-    processesEnabled,
-    environments: environmentsTabShown({
-      newLayout,
-      enabled: environmentsEnabled,
-      vm: agentView?.vm === true,
-    }),
-    gettingStarted,
-  });
-  const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
-  const dockedTab = dockedItemTab(docked);
-  const dockedShown = dockedTab !== null && dockedTab === activeTab;
-  const dockedKept = dockedTab !== null && (dockedShown || draftDocked);
-  const classicTab = classicAppTab(sidePanelTab, hiddenTabs);
-  const shownClassicPanel = classicPanel(
-    sidePanelTab,
-    hiddenTabs,
-    dockedTab !== null,
-  );
-  const dockedItem = dockedTab && dockKey(shownDock);
-  const [phoneHiddenDock, setPhoneHiddenDock] = useState<string | null>(null);
-  const dockHiddenOnPhone =
-    phoneHiddenDock !== null && phoneHiddenDock === dockedItem;
-  const revealDock = () => {
-    setPhoneHiddenDock(null);
-    if (classicTab !== null) setSidePanelTab(null);
-  };
-  const classicToggle = (item: "browser" | "changes") =>
-    classicDockToggle({
-      docked: docked[item],
-      front: dockedTab === item,
-      panel: shownClassicPanel,
-      hiddenOnPhone: dockHiddenOnPhone,
-    });
-  const browserToggle = classicToggle("browser");
-  const changesToggle = classicToggle("changes");
-  const onSidePanelTab = (tab: SidePanelTab) => {
-    const selection = selectSidePanelTab(tab, activeTab, docked);
-    if (selection.kind === "collapse") setSidePanelTab(null);
-    else if (selection.kind === "show") setSidePanelTab(selection.tab);
-    else if (!selectedAgent) return;
-    else if (selection.kind === "open-changes")
-      void toggleChanges(selectedAgent);
-    else void openBrowser(selectedAgent);
-  };
+
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
 
+  const handleShareKnowledgeBase = () => {
+    if (!selectedAgent) return;
+    navigateToSandboxHome(selectedAgent, "setup", "knowledge");
+  };
+
+  const handleRestartSandbox = () => {
+    if (selectedAgent) restart(selectedAgent);
+  };
+
+  const handleDeleteSandbox = async () => {
+    if (!selectedAgent) return;
+    const ok = await showConfirm(
+      "Delete this agent? This also deletes all persistent data and cannot be undone.",
+      "Delete Agent",
+      { kind: "destructive" },
+    );
+    if (!ok) return;
+    deleteAgent.mutate({ id: selectedAgent });
+    setView("home");
+  };
+
   const handleBack = useCallback(() => {
+    if (isMobile() && mobileScreen === "chat") {
+      setMobileScreen("sessions");
+      return;
+    }
     resetSession();
     goBack();
-  }, [resetSession, goBack]);
+  }, [mobileScreen, setMobileScreen, resetSession, goBack]);
+
+  const leftPanelWidth = { width: leftW };
 
   const dotColor = agentDisplay
     ? stateDotClass[agentDisplay.state]
     : "bg-warning";
 
-  const lastMessage = shown[shown.length - 1];
+  const lastMessage = messages[messages.length - 1];
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
-
-  const dockPanel =
-    shownDock?.kind === "browser" && canOpenBrowser ? (
-      <DockedBrowserPanel
-        key={shownDock.agentId}
-        agentId={shownDock.agentId}
-        agentName={selectedAgentName ?? shownDock.agentId}
-      />
-    ) : shownDock?.kind === "delegation" ? (
-      <DockedDelegationPanel
-        key={shownDock.id}
-        driverAgentId={shownDock.driverAgentId}
-        id={shownDock.id}
-      />
-    ) : shownDock?.kind === "file" ? (
-      <DockedFilePanel onOpenFile={openFileHandler} />
-    ) : shownDock?.kind === "artifact" ? (
-      <DockedArtifactPanel
-        key={shownDock.id}
-        agentId={selectedAgent}
-        onSendPrompt={sendArtifactPrompt}
-      />
-    ) : shownDock?.kind === "changes" ? (
-      <DockedChangesPanel
-        key={`${shownDock.agentId}:${sessionId ?? ""}`}
-        agentId={shownDock.agentId}
-        sessionId={sessionId}
-      />
-    ) : shownDock?.kind === "process-output" && selectedAgent ? (
-      <DockedProcessOutputPanel
-        key={shownDock.key}
-        agentId={selectedAgent}
-        outputKey={shownDock.key}
-      />
-    ) : null;
-
-  const notices = (
-    <>
-      {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
-      <ContributionGapNotice agentId={selectedAgent} />
-      <WorkspaceFailureNotice agentId={selectedAgent} />
-    </>
-  );
-
-  const conversation =
-    sessionMode === SessionMode.Terminal && selectedAgent && sessionId ? (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <Terminal
-          key={sessionId}
-          agentId={selectedAgent}
-          sessionId={sessionId}
-          fresh={terminalFreshRef.current}
-          autoConnect={!terminalPaused && agentOperable}
-          onConnected={() => {
-            terminalFreshRef.current = false;
-            setTerminalPaused(false);
-          }}
-          onFirstSubmit={() => {
-            optimisticInsertSession(
-              selectedAgent,
-              sessionId,
-              SessionMode.Terminal,
-              true,
-            );
-            queryClient.invalidateQueries({
-              queryKey: acpSessionsKeys.agent(selectedAgent),
-            });
-          }}
-          onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
-          onSessionMoved={setSessionId}
-        />
-      </div>
-    ) : (
-      <>
-        <div className="@container relative flex flex-1 flex-col min-h-0">
-          <div ref={messagesRef} className="flex-1 overflow-y-auto">
-            <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
-              {!historyShown && (
-                <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
-                  <Spinner size={20} />
-                  Loading session…
-                </div>
-              )}
-              {loadingSession && startNotice && (
-                <div className="flex justify-center">{startNotice}</div>
-              )}
-              {!loadingSession && sessionError && (
-                <SessionErrorCard
-                  error={sessionError}
-                  onRetry={() => resumeSession(sessionError.sessionId)}
-                  onDelete={async () => {
-                    if (!(await deleteSession(sessionError.sessionId))) return;
-                    setSessionError(null);
-                  }}
-                />
-              )}
-              {!loadingSession &&
-                !sessionError &&
-                conversationEmpty(messages, queuedPrompts) &&
-                continuesInvocation === undefined &&
-                copy === null && (
-                  <div className="flex flex-1 flex-col items-center justify-center text-center">
-                    <h2 aria-label={selectedAgentName ?? undefined}>
-                      <button
-                        type="button"
-                        onClick={handleConfigureSandbox}
-                        aria-label={`Configure ${selectedAgentName ?? "agent"}`}
-                        className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {agentView && (
-                          <AgentAvatar
-                            name={agentView.name}
-                            avatar={agentView.avatar}
-                            size={96}
-                            mood={avatarMood(agentDisplay?.state, agentView)}
-                            className={cn(
-                              !newLayout &&
-                                "transition-opacity group-hover:opacity-80",
-                            )}
-                          />
-                        )}
-                        <span className="mt-3 flex items-center gap-2">
-                          <span
-                            className={cn(
-                              "text-xl font-bold text-foreground",
-                              !newLayout &&
-                                "underline-offset-4 group-hover:underline",
-                            )}
-                          >
-                            {selectedAgentName}
-                          </span>
-                          {newLayout && agentView && (
-                            <AgentUpdateDot
-                              available={!!agentView.templateUpdate}
-                            />
-                          )}
-                        </span>
-                      </button>
-                    </h2>
-                    <p className="text-sm text-muted-foreground">
-                      Send a message to begin or open a new session in:
-                    </p>
-                    {agentView && (
-                      <NewSessionOptions
-                        agent={agentView}
-                        newLayout={newLayout}
-                        onNewTerminal={handleNewTerminal}
-                      />
-                    )}
-                    {startNotice && <div className="mt-6">{startNotice}</div>}
-                  </div>
-                )}
-              {copyInView && (
-                <ContinuedFromPrelude
-                  copy={copy}
-                  avatarAgent={agentView ?? undefined}
-                />
-              )}
-              {copyUnavailable !== null && selectedAgent && (
-                <ContinuedFromUnavailable
-                  reason={copyUnavailable}
-                  onDrop={() => dropDraftContinuation(selectedAgent)}
-                />
-              )}
-              <A2uiActionProvider value={sendFormPrompt}>
-                <A2uiConversationProvider value={a2uiConversation}>
-                  <DelegationOwnersProvider value={delegationOwners}>
-                    {items.map((item) => {
-                      if (item.kind === "divider") {
-                        return (
-                          <ThreadDivider
-                            key={item.key}
-                            label={dividerLabel(item, now)}
-                          />
-                        );
-                      }
-                      if (userRuns.inner.has(item.message.id)) return null;
-                      const turn = turnForMessage.get(item.message.id);
-                      const members = userRuns.runs.get(item.message.id) ?? [
-                        item.message,
-                      ];
-                      const lastIndex = item.index + members.length - 1;
-                      const chatMessage = (actions?: ReactNode) => {
-                        const bubbles = members.map((m, k) =>
-                          m.id === setupMessageId ? (
-                            <SetupInstructionsCard key={m.id} message={m} />
-                          ) : (
-                            <ChatMessage
-                              key={m.id}
-                              message={m}
-                              continued={k > 0}
-                              arriving={arrived.has(m.id)}
-                              avatarAgent={agentView ?? undefined}
-                              onAgentClick={handleConfigureSandbox}
-                              footer={
-                                k === members.length - 1 ? actions : undefined
-                              }
-                              isLast={item.index + k === shown.length - 1}
-                              showModel={runStarts.length > 0}
-                              {...timeProps(m.at, now)}
-                              hasPendingPermission={hasPendingPermission}
-                              pendingNotice={
-                                item.index + k === shown.length - 1
-                                  ? startNotice
-                                  : undefined
-                              }
-                              onRetry={sendPrompt}
-                              onFileClick={openFileHandler}
-                              onDelete={deleteMessage}
-                              onLoadOlder={loadOlderKeepingScroll}
-                              turn={turn}
-                              turnSpend={
-                                turn ? turnSpend?.get(turn.turnId) : undefined
-                              }
-                              agentId={selectedAgent ?? undefined}
-                              sessionId={sessionId ?? undefined}
-                            />
-                          ),
-                        );
-                        return members.length === 1 ? (
-                          bubbles[0]
-                        ) : (
-                          <div className="flex flex-col gap-5">{bubbles}</div>
-                        );
-                      };
-                      const runMessage: Message =
-                        members.length === 1
-                          ? item.message
-                          : {
-                              ...item.message,
-                              parts: members.flatMap((m) =>
-                                m.parts.filter((p) => p.kind === "text"),
-                              ),
-                            };
-                      const upTo = rewritePoints.get(item.message.id);
-                      const editingHere =
-                        rewriting?.messageId === item.message.id;
-                      const doomed =
-                        rewriting?.mode === "rewind" &&
-                        rewriteIndex !== -1 &&
-                        item.index > rewriteIndex;
-                      const content =
-                        canRewrite && rewritePoints.has(item.message.id) ? (
-                          <RewritableMessage
-                            message={runMessage}
-                            enabled={queueEmpty && !busy}
-                            onRewrite={(mode, text) =>
-                              rewriteFrom({
-                                messageId: item.message.id,
-                                upToMessageId: upTo,
-                                mode,
-                                text,
-                                title: sessionView?.title ?? null,
-                              })
-                            }
-                          >
-                            {chatMessage}
-                          </RewritableMessage>
-                        ) : (
-                          chatMessage()
-                        );
-                      return (
-                        <Fragment key={item.message.id}>
-                          {doomed ? (
-                            <div className="opacity-30 grayscale">
-                              {content}
-                            </div>
-                          ) : (
-                            content
-                          )}
-                          {editingHere && rewriting && (
-                            <RewriteMarker
-                              mode={rewriting.mode}
-                              following={shown.length - 1 - lastIndex}
-                            />
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </DelegationOwnersProvider>
-                </A2uiConversationProvider>
-              </A2uiActionProvider>
-              {selectedAgent && (
-                <LiveDelegationBlock
-                  driverAgentId={selectedAgent}
-                  sessionId={sessionId}
-                  busy={busy}
-                  claimed={delegationOwners}
-                />
-              )}
-              <QueuedPrompts onFileClick={openFileHandler} />
-              {telemetryEnabled && sessionTurns.isError && (
-                <p className="py-1 text-2xs text-muted-foreground/70">
-                  Telemetry for this session could not be read.
-                </p>
-              )}
-              {turnsUnavailable && (
-                <p className="py-1 text-2xs text-muted-foreground/70">
-                  {turnsUnavailable}
-                </p>
-              )}
-              {turnsTruncated && (
-                <p className="py-1 text-2xs text-muted-foreground/70">
-                  Older turns in this session are past the telemetry display cap
-                  and are not shown.
-                </p>
-              )}
-              {!statusLineInThread && <PermissionStatusLine />}
-              <ProviderStatusLine templateId={sessionTemplateId} busy={busy} />
-            </ChatColumn>
-          </div>
-
-          {showJump && (
-            <button
-              onClick={scrollToBottom}
-              className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised hidden @[11rem]:inline-flex items-center whitespace-nowrap gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-sm font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
-            >
-              <ArrowDown size={16} />
-              Jump to latest
-            </button>
-          )}
-        </div>
-
-        <div className="pb-4">
-          <OnboardingBar
-            key={selectedAgent ?? "none"}
-            agentId={selectedAgent}
-          />
-          <KitUpdateBar agentId={selectedAgent} />
-          <HomeVolumeBar agentId={selectedAgent} />
-          <CurveBenderAlert visible={!!shared} onTry={curveBender.tryIt} />
-          <ChatInputArea
-            textareaRef={textareaRef}
-            busy={busy}
-            loadingSession={loadingSession}
-            onSend={sendPrepared}
-            onStop={stopAgent}
-            onTakeBack={takeBack}
-            blockedReason={block?.reason ?? null}
-            onBlockedClick={
-              block?.kind === "connect"
-                ? () => setProvidersModal(true)
-                : block?.kind === "attach"
-                  ? () => setPairPickerOpen(true)
-                  : undefined
-            }
-          />
-          {!hasPendingPermission &&
-            (choice.kind === "picker" || choice.kind === "pending") && (
-              <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-                <ChatColumn>
-                  {choice.kind === "picker" ? (
-                    <SessionPairPicker
-                      agentId={choice.agentId}
-                      carried={choice.carried}
-                      defaultHarness={choice.defaultHarness}
-                      routed={choice.routed}
-                      open={pairPickerOpen}
-                      onOpenChange={setPairPickerOpen}
-                      onConnectProviders={() => setProvidersModal(true)}
-                      newLayout={newLayout}
-                    />
-                  ) : (
-                    <SessionPairPicker
-                      agentId={choice.agentId}
-                      agentHarness={agentView?.harness}
-                      pending
-                      open={pairPickerOpen}
-                      onOpenChange={setPairPickerOpen}
-                      onConnectProviders={() => setProvidersModal(true)}
-                    />
-                  )}
-                </ChatColumn>
-              </div>
-            )}
-          {!hasPendingPermission &&
-            choice.kind !== "picker" &&
-            choice.kind !== "pending" && (
-              <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-                <ChatColumn>
-                  {choice.kind === "outdated" ? (
-                    <SessionPairOutdatedNotice agentId={choice.agentId} />
-                  ) : choice.kind === "session" &&
-                    selectedAgent &&
-                    currentSession ? (
-                    <div className="flex min-w-0 items-center justify-between gap-3">
-                      <ModelIndicator
-                        agentId={selectedAgent}
-                        kind={defaultKindOf(sessionView?.type)}
-                        follows={currentSession.follows}
-                        followsDefaults={
-                          harnessStatus?.followsDefaults ?? false
-                        }
-                        onFollowDefault={(afterNextDefaults) => {
-                          const kind = defaultKindOf(sessionView?.type);
-                          if (kind)
-                            void configureSession({}, kind, afterNextDefaults);
-                        }}
-                        harness={choice.harness}
-                        provider={currentSession.provider ?? null}
-                        model={currentSession.model ?? null}
-                        settings={currentSession.settings}
-                        carried={harnessStatus?.harnesses ?? []}
-                        routed={harnessStatus?.modelRouter ?? false}
-                        turnRunning={busy}
-                        onChoose={(value) =>
-                          void chooseSessionModel(value, () => {
-                            if (harnessStatus?.modelRouter)
-                              void rememberFirstModel(selectedAgent, {
-                                harness: choice.harness,
-                                provider: null,
-                                model: value,
-                              });
-                          })
-                        }
-                        onConfigure={(change) => void configureSession(change)}
-                        onNewSession={() => handleNewSession(true)}
-                      />
-                      <SessionPullRequests
-                        repositories={currentSession.repositories}
-                      />
-                    </div>
-                  ) : choice.kind === "defaults" ? (
-                    <Button
-                      variant="link"
-                      size="inline"
-                      tone="muted"
-                      className="pl-3 text-sm"
-                      onClick={() =>
-                        navigateToSandboxHome(choice.agentId, "setup")
-                      }
-                    >
-                      {harnessCurrent?.model
-                        ? `${harnessCurrent.model} · Configure defaults`
-                        : "Configure defaults"}
-                    </Button>
-                  ) : null}
-                </ChatColumn>
-              </div>
-            )}
-          {!hasPendingPermission && selectedAgent && (
-            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-              <ChatColumn>
-                <DefaultModelNotice agentId={selectedAgent} />
-              </ChatColumn>
-            </div>
-          )}
-        </div>
-      </>
-    );
 
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
-      {(providersModal ?? noProviders) && (
-        <ProviderSettingsModal
-          agentId={newSessionAgent}
-          onClose={() => setProvidersModal(false)}
-        />
-      )}
-      {}
-      {newLayout || rightToolbar ? (
-        <SidePanelShell
-          mainClassName="@container/chat"
-          activeTab={activeTab}
-          hiddenTabs={hiddenTabs}
-          onSelectTab={onSidePanelTab}
-          icons={appTabs.icons}
-          badges={{
-            ...appTabs.badges,
-            ...(runningProcesses && {
-              processes: {
-                count: runningProcesses.running,
-                label: `Processes, ${String(runningProcesses.running)} running`,
-                tone: processesBadgeTone(runningProcesses),
-              },
-            }),
-          }}
-          dockedShown={dockedShown}
-          dockedKept={dockedKept}
-          mobileTitle={selectedAgentName}
-          mobileBackLabel="Back to chat"
-          panel={
-            <>
-              {!dockedShown && activeTab === "files" && (
-                <FilesPanel
-                  open
-                  className="flex-1"
-                  onOpenFile={openFileHandler}
-                />
-              )}
-              {activeTab === "artifacts" && (
-                <ChatArtifactsPanel
-                  key={selectedAgent}
-                  agentId={selectedAgent}
-                  open
-                  className={cn("flex-1", dockedShown && "hidden")}
-                />
-              )}
-              {!dockedShown && activeTab === "processes" && (
-                <ProcessesPanel
-                  agentId={selectedAgent}
-                  alwaysOn={agentView?.hibernationTimeoutMin === 0}
-                  open
-                  className="flex-1"
-                />
-              )}
-              {activeTab === "environments" && selectedAgent && (
-                <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
-              )}
-            </>
-          }
-          dock={dockPanel}
+      <header
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
+      >
+        <div
+          style={leftPanelWidth}
+          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 md:px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
         >
-          <h1 className="sr-only">
-            {[selectedAgentName, sessionView?.title]
-              .filter(Boolean)
-              .join(" · ")}
-          </h1>
-          {!newLayout && (
-            // UNIT_BOUNDARY_DESCRIPTION: the tabbed panel leaves the chat without a bar of its own on a wide window, as JanUI's chat has none, so that bar appears there only while the status has a badge to show; a phone keeps it, because the rail waits for a panel there and the navigation button has nowhere else to go.
-            <header
-              data-testid="chat-top-bar"
-              className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex"
-            >
-              <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
-                <MobileMenuButton />
+          <Button
+            variant="ghost"
+            size="inline"
+            aria-label="Back"
+            onClick={handleBack}
+            className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+          >
+            <ArrowLeft size={14} />
+          </Button>
+          <div className="flex items-center gap-3 min-w-0">
+            {avatarsEnabled && agentView ? (
+              <>
+                <AgentAvatar
+                  name={agentView.name}
+                  size={40}
+                  sleeping={isAsleep(agentDisplay?.state)}
+                  stopped={agentView.stopRequested}
+                  className="@max-[149px]:hidden"
+                />
                 <span
                   aria-hidden
                   className={cn(
-                    "h-2 w-2 shrink-0 rounded-full",
-                    // UNIT_BOUNDARY_DESCRIPTION: the avatar already carries the state, so the dot marks only a chat whose Agent has not loaded yet.
-                    agentView && "hidden",
+                    "hidden h-2 w-2 shrink-0 rounded-full @max-[149px]:block",
                     dotColor,
                   )}
                 />
-                <button
-                  type="button"
-                  onClick={handleConfigureSandbox}
-                  aria-label={`Configure ${selectedAgentName ?? "agent"}`}
-                  className="flex min-w-0 items-center gap-2"
+              </>
+            ) : (
+              <span
+                aria-hidden
+                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              />
+            )}
+            <h1 className="text-sm font-bold text-foreground truncate">
+              {selectedAgentName}
+            </h1>
+            {agentView && (
+              <span className="flex shrink-0 @max-[119px]:hidden">
+                <VmRuntimeBadge
+                  agent={agentView}
+                  labelClassName="@max-[279px]:sr-only"
+                />
+              </span>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={surfaceCopy.actionsAria}
+                  className="shrink-0"
                 >
-                  {agentView && (
-                    <AgentAvatar
-                      name={agentView.name}
-                      avatar={agentView.avatar}
-                      size={28}
-                      mood={avatarMood(agentDisplay?.state, agentView)}
-                    />
-                  )}
-                </button>
-                {agentView && (
-                  <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-                    <RuntimeMigrationBadge
-                      agent={agentView}
-                      labelClassName="@max-[279px]:sr-only"
-                    />
-                  </span>
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={handleConfigureSandbox}>
+                  {surfaceCopy.configure}
+                </DropdownMenuItem>
+                {canShareKnowledge && (
+                  <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
+                    Share knowledge base
+                  </DropdownMenuItem>
                 )}
-              </div>
-              <div
-                data-chat-status
-                className="flex shrink-0 items-center gap-2"
-              >
-                <ChatHeaderStatus
-                  selectedAgent={selectedAgent}
-                  agents={agents}
-                  busy={busy}
-                  connectionState={connectionState}
-                  sessionId={sessionId}
-                  processesEnabled={processesEnabled}
-                />
-              </div>
-              <div className="flex shrink-0 items-center gap-1 md:hidden">
-                {processesEnabled && (
-                  <ProcessesIndicator agentId={selectedAgent} />
-                )}
-                <SidePanelTabButtons
-                  tabs={SIDE_PANEL_TABS.filter(
-                    ({ tab }) => tab === "artifacts" || tab === "files",
-                  )}
-                  active={null}
-                  onSelect={(tab) => {
-                    setSidePanelTab(tab);
-                    setMobileScreen("files");
-                  }}
-                  placement="top-bar"
-                />
-                <AppSidePanelButtons />
-              </div>
-            </header>
-          )}
-          <div className="empty:hidden">{notices}</div>
-          {conversation}
-        </SidePanelShell>
-      ) : (
-        <ClassicChatLayout
-          identity={
-            <ClassicChatIdentity
-              agent={agentView}
-              agentId={selectedAgent}
-              name={selectedAgentName}
-              display={agentDisplay}
-              canOpenBrowser={canOpenBrowser}
-              canShowChanges={changesAvailable}
-              browserOpen={browserToggle.pressed}
-              changesOpen={changesToggle.pressed}
-              onToggleBrowser={() => {
-                if (!selectedAgent) return;
-                if (browserToggle.click === "close") closeBrowser(null);
-                else if (browserToggle.click === "open")
-                  void openBrowser(selectedAgent);
-                else revealDock();
-              }}
-              onToggleChanges={() => {
-                if (!selectedAgent) return;
-                if (changesToggle.click === "close") void toggleChanges(null);
-                else if (changesToggle.click === "open")
-                  void toggleChanges(selectedAgent);
-                else revealDock();
-              }}
-              onConfigure={handleConfigureSandbox}
-            />
-          }
-          status={
-            <>
-              {processesEnabled && (
-                <ProcessesIndicator agentId={selectedAgent} />
-              )}
-              <ChatHeaderStatus
-                selectedAgent={selectedAgent}
-                agents={agents}
-                busy={busy}
-                connectionState={connectionState}
-                sessionId={sessionId}
-                processesEnabled={processesEnabled}
-              />
-              <SidePanelTabButtons
-                tabs={appSidePanelTabs(hiddenTabs)}
-                active={classicTab}
-                onSelect={(tab) =>
-                  setSidePanelTab(tab === classicTab ? null : tab)
-                }
-                placement="top-bar"
-                {...appTabs}
-              />
-            </>
-          }
-          notices={notices}
-          agentId={selectedAgent}
-          agentName={selectedAgentName}
-          alwaysOn={agentView?.hibernationTimeoutMin === 0}
-          processesEnabled={processesEnabled}
-          onOpenFile={openFileHandler}
-          panel={shownClassicPanel}
-          dockHiddenOnPhone={dockHiddenOnPhone}
-          dock={dockPanel}
-          maximizable={
-            shownClassicPanel === "dock"
-              ? maximizableView(
-                  dockedTab,
-                  true,
-                  shownDock?.kind === "file" ? shownDock.path : null,
-                  shownDock?.kind === "artifact" ? shownDock.id : null,
-                )
-              : null
-          }
-          onClosePanel={() => {
-            setPhoneHiddenDock(dockedItem);
-            setSidePanelTab(null);
-            setMobileScreen("chat");
-          }}
+                <DropdownMenuItem onSelect={handleRestartSandbox}>
+                  Restart
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={handleDeleteSandbox}
+                >
+                  {surfaceCopy.delete}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-2 px-6">
+          <ChatHeaderStatus
+            selectedAgent={selectedAgent}
+            agents={agents}
+            busy={busy}
+            connectionState={connectionState}
+            sessionId={sessionId}
+          />
+        </div>
+      </header>
+
+      {}
+      <div className="flex flex-1 min-h-0">
+        {}
+        <div
+          style={leftPanelWidth}
+          className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
+            mobileScreen === "chat" ? "hidden md:flex" : "flex"
+          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
-          {conversation}
-        </ClassicChatLayout>
-      )}
+          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
+          <ContributionGapNotice agentId={selectedAgent} />
+          <WorkspaceFailureNotice agentId={selectedAgent} />
+          <SessionsSidebar
+            open={sessionsSectionOpen}
+            onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}
+            {...panelStack.panelProps("sessions")}
+            onResumeSession={mobileResumeSession}
+            onNewSession={handleNewSession}
+          />
+          <PanelDivider stack={panelStack} below="files" />
+          <FilesPanel
+            open={filesSectionOpen}
+            onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
+            {...panelStack.panelProps("files")}
+            onOpenFile={openFileHandler}
+          />
+          <PanelDivider stack={panelStack} below="artifacts" />
+          <ChatArtifactsPanel
+            agentId={selectedAgent}
+            open={artifactsSectionOpen}
+            onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
+            {...panelStack.panelProps("artifacts")}
+          />
+        </div>
+        <ResizeHandle
+          side="left"
+          onResize={(d) => {
+            const v = clampLeftWidth(leftWRef.current + d);
+            leftWRef.current = v;
+            writePersistedNumber(LEFT_WIDTH_KEY, v);
+            setLeftW(v);
+          }}
+        />
+
+        {}
+        <div
+          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
+        >
+          {}
+          {sessionMode === SessionMode.Terminal &&
+          selectedAgent &&
+          sessionId ? (
+            <Terminal
+              key={sessionId}
+              agentId={selectedAgent}
+              sessionId={sessionId}
+              fresh={terminalFreshRef.current}
+              autoConnect={!terminalPaused && agentOperable}
+              onConnected={() => {
+                terminalFreshRef.current = false;
+                setTerminalPaused(false);
+              }}
+              onFirstSubmit={() => {
+                optimisticInsertSession(
+                  selectedAgent,
+                  sessionId,
+                  SessionMode.Terminal,
+                  true,
+                );
+                queryClient.invalidateQueries({
+                  queryKey: acpSessionsKeys.agent(selectedAgent),
+                });
+              }}
+              onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
+            />
+          ) : (
+            <>
+              <div className="relative flex flex-1 flex-col min-h-0">
+                <div ref={messagesRef} className="flex-1 overflow-y-auto">
+                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
+                    {loadingSession && (
+                      <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
+                        <Spinner size={20} />
+                        Loading session...
+                      </div>
+                    )}
+                    {!loadingSession && sessionError && (
+                      <SessionErrorCard
+                        error={sessionError}
+                        onRetry={() => resumeSession(sessionError.sessionId)}
+                        onDelete={async () => {
+                          if (!(await deleteSession(sessionError.sessionId)))
+                            return;
+                          setSessionError(null);
+                          if (isMobile()) setMobileScreen("sessions");
+                        }}
+                      />
+                    )}
+                    {!loadingSession &&
+                      !sessionError &&
+                      messages.length === 0 && (
+                        <div className="flex flex-1 flex-col items-center justify-center text-center">
+                          <p className="text-base font-bold text-foreground mb-2">
+                            Start a new session
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Send a message to begin or open a new session in:
+                          </p>
+                          {selectedAgent && (
+                            <NewSessionLauncher
+                              agentId={selectedAgent}
+                              agentName={selectedAgentName ?? ""}
+                              onNewTerminal={handleNewTerminal}
+                            />
+                          )}
+                        </div>
+                      )}
+                    <DelegationOwnersProvider value={delegationOwners}>
+                      {items.map((item) => {
+                        if (item.kind === "divider") {
+                          return (
+                            <div
+                              key={item.key}
+                              className="flex items-center gap-3 py-2"
+                            >
+                              <span className="h-px flex-1 bg-border/60" />
+                              <span className="text-[11px] text-muted-foreground">
+                                {dividerLabel(item, now)}
+                              </span>
+                              <span className="h-px flex-1 bg-border/60" />
+                            </div>
+                          );
+                        }
+                        const turn = turnForMessage.get(item.message.id);
+                        return (
+                          <Fragment key={item.message.id}>
+                            <ChatMessage
+                              message={item.message}
+                              avatarAgentName={
+                                avatarsEnabled ? agentView?.name : undefined
+                              }
+                              isLast={item.index === messages.length - 1}
+                              {...timeProps(item.message.at, now)}
+                              hasPendingPermission={hasPendingPermission}
+                              onRetry={sendPrompt}
+                              onFileClick={openFileHandler}
+                              onDelete={deleteMessage}
+                              onLoadOlder={loadOlderKeepingScroll}
+                            />
+                            {selectedAgent && sessionId && turn && (
+                              <TurnTelemetry
+                                agentId={selectedAgent}
+                                sessionId={sessionId}
+                                turn={turn}
+                              />
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </DelegationOwnersProvider>
+                    {selectedAgent && (
+                      <LiveDelegationBlock
+                        driverAgentId={selectedAgent}
+                        busy={busy}
+                        claimed={delegationOwners}
+                      />
+                    )}
+                    {telemetryEnabled && sessionTurns.isError && (
+                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                        Telemetry for this session could not be read.
+                      </p>
+                    )}
+                    {turnsUnavailable && (
+                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                        {turnsUnavailable}
+                      </p>
+                    )}
+                    {turnsTruncated && (
+                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                        Older turns in this session are past the telemetry
+                        display cap and are not shown.
+                      </p>
+                    )}
+                    {!statusLineInThread && <PermissionStatusLine />}
+                  </ChatColumn>
+                </div>
+
+                {showJump && (
+                  <button
+                    onClick={scrollToBottom}
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-sm font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
+                  >
+                    <ArrowDown size={16} />
+                    Jump to latest
+                  </button>
+                )}
+              </div>
+
+              <div className="pb-4">
+                <OnboardingBar
+                  key={selectedAgent ?? "none"}
+                  agentId={selectedAgent}
+                />
+                <KitUpdateBar agentId={selectedAgent} />
+                <ChatInputArea
+                  textareaRef={textareaRef}
+                  busy={busy}
+                  loadingSession={loadingSession}
+                  onSend={sendPrompt}
+                  onStop={stopAgent}
+                />
+                {!hasPendingPermission && indicatorModel && (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <ModelIndicator
+                        model={indicatorModel}
+                        sessionChoices={
+                          sessionModel
+                            ? {
+                                current: sessionModel.current,
+                                choices: sessionModel.choices,
+                                onChoose: (value) =>
+                                  void chooseSessionModel(value),
+                              }
+                            : undefined
+                        }
+                        subject={surfaceCopy.modelSubject}
+                        settings={
+                          surfaceCopy.modelSettings
+                            ? {
+                                label: surfaceCopy.modelSettings,
+                                onConfigure: handleConfigureSandbox,
+                              }
+                            : undefined
+                        }
+                      />
+                    </ChatColumn>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {}
+        {(openDelegation || openFilePath || openArtifactId) && (
+          <>
+            <div className="hidden md:flex">
+              <ResizeHandle
+                side="right"
+                onResize={(d) => {
+                  const base =
+                    rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0;
+                  const max = Math.min(960, window.innerWidth - 500);
+                  const v = Math.max(240, Math.min(max, base + d));
+                  rightWRef.current = v;
+                  writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
+                  setRightW(v);
+                }}
+              />
+            </div>
+            <div
+              ref={filePanelRef}
+              style={
+                rightW !== null
+                  ? ({ "--file-w": `${rightW}px` } as CSSProperties)
+                  : undefined
+              }
+              className={cn(
+                "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
+                rightW !== null
+                  ? "md:shrink-0 md:w-[var(--file-w)]"
+                  : "md:flex-1 md:basis-0 md:min-w-0",
+                "md:border-l md:border-border",
+              )}
+            >
+              {openDelegation ? (
+                <DockedDelegationPanel
+                  key={openDelegation.id}
+                  driverAgentId={openDelegation.driverAgentId}
+                  id={openDelegation.id}
+                />
+              ) : openFilePath ? (
+                <DockedFilePanel onOpenFile={openFileHandler} />
+              ) : openArtifactId ? (
+                <DockedArtifactPanel
+                  key={openArtifactId}
+                  agentId={selectedAgent}
+                  onSendPrompt={sendArtifactPrompt}
+                />
+              ) : null}
+            </div>
+          </>
+        )}
+      </div>
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent &&
-        !agentInaccessible &&
-        !agentOperable &&
-        !(
-          agentView &&
-          agentDisplay &&
-          startsInChat(agentView, agentDisplay.state)
-        ) ? (
+      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}
@@ -1483,14 +964,12 @@ function ChatHeaderStatus({
   busy,
   connectionState,
   sessionId,
-  processesEnabled,
 }: {
   selectedAgent: string | null;
   agents: AgentView[];
   busy: boolean;
   connectionState: ConnectionState;
   sessionId: string | null;
-  processesEnabled: boolean;
 }) {
   const agent = agents.find((a) => a.id === selectedAgent);
   const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
@@ -1498,10 +977,9 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
-      {!processesEnabled && <BackgroundWorkIndicator items={backgroundWork} />}
+      <BackgroundWorkIndicator items={backgroundWork} />
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
-      {agent && <GatewayFailureBadge agent={agent} />}
       {!busy && agent && (
         <>
           <ContributionFailuresBadge failures={agentFailures(agent)} />
@@ -1526,7 +1004,7 @@ const RESUME_FAILURE_COPY: Record<
   },
   connection: {
     title: "Can't reach the agent",
-    body: "The agent didn't answer. It may be waking up or falling asleep — try again in a moment.",
+    body: "The agent didn't answer. It may be waking up or hibernating — try again in a moment.",
   },
   other: {
     title: "Can't open this conversation",
@@ -1549,7 +1027,9 @@ function SessionErrorCard({
       <div className="flex items-start gap-3">
         <Warning size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <h3 className="text-md font-bold text-foreground mb-1">{title}</h3>
+          <h3 className="text-[15px] font-bold text-foreground mb-1">
+            {title}
+          </h3>
           <p className="text-sm text-muted-foreground break-words">{body}</p>
         </div>
       </div>
@@ -1558,7 +1038,7 @@ function SessionErrorCard({
         <div className="flex items-center gap-2 flex-wrap">
           {error.kind === "connection" ? (
             <Button variant="outline" size="sm" onClick={onRetry}>
-              <Renew size={14} /> Retry
+              <Renew size={12} /> Try again
             </Button>
           ) : (
             <Button variant="destructive" size="sm" onClick={onDelete}>

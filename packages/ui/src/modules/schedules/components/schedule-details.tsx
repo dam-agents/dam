@@ -3,25 +3,13 @@ import { Time } from "@carbon/icons-react";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
-import { cn } from "@/lib/utils";
 
 import type { Schedule } from "../../../types.js";
-import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
-import { useHarnessCatalogModels } from "../../sessions/api/session-pair.js";
-import {
-  modelGroups,
-  modelIndicatorLabel,
-} from "../../sessions/lib/catalog-groups.js";
-import {
-  useHasHarnessDefault,
-  useScheduleDefault,
-  useSessionModelChoices,
-} from "../api/session-model.js";
 import {
   clampText,
   declinedSummary,
   formatRunTime,
-  runOutcomeLine,
+  lastRunStatus,
 } from "../lib/schedule-format.js";
 
 function DetailCard({
@@ -39,25 +27,16 @@ function DetailCard({
   );
 }
 
-export function ScheduleDetails({
-  schedule,
-  onPickModel,
-}: {
-  schedule: Schedule;
-  onPickModel?: () => void;
-}) {
-  const { task, precheck, model, timezone, sessionMode, enabled, status } =
-    schedule;
+export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
+  const { task, precheck, timezone, sessionMode, enabled, status } = schedule;
   const stopReason = enabled ? status?.stopReason : undefined;
   const nextRun =
     enabled && status?.nextRun
       ? timeUntil(status.nextRun)
-      : schedule.type === "once"
-        ? "—"
-        : stopReason
-          ? "Stopped"
-          : "Paused";
-  const outcome = runOutcomeLine(schedule);
+      : stopReason
+        ? "Stopped"
+        : "Paused";
+  const lastStatus = lastRunStatus(status?.lastResult);
   const declined = precheck ? declinedSummary(status ?? undefined) : null;
 
   return (
@@ -77,7 +56,7 @@ export function ScheduleDetails({
             {precheck}
           </p>
           {status?.lastPrecheckError && (
-            <p className="mt-1 text-xs break-all whitespace-pre-wrap text-danger">
+            <p className="mt-1 text-xs break-all whitespace-pre-wrap text-destructive">
               {(status.precheckFailedCount ?? 0) > 1
                 ? `Precheck failed ${status.precheckFailedCount} times in a row — ran anyway: `
                 : "Precheck failed — ran anyway: "}
@@ -96,7 +75,7 @@ export function ScheduleDetails({
             <Time size={12} /> {nextRun}
           </span>
           {stopReason && (
-            <p className="mt-1 text-xs font-normal break-words text-danger">
+            <p className="mt-1 text-xs font-normal break-words text-destructive">
               {stopReason}
             </p>
           )}
@@ -115,109 +94,16 @@ export function ScheduleDetails({
                 {declined ? "(never ran)" : "Never run"}
               </span>
             )}
-            {outcome?.resultText && (
-              <span className={cn("break-words", outcome.className)}>
-                {outcome.resultText}
-              </span>
+            {lastStatus && (
+              <span className={lastStatus.className}>{lastStatus.label}</span>
             )}
           </div>
         </DetailCard>
         <DetailCard label="Timezone">{timezone ?? "—"}</DetailCard>
-        {schedule.type !== "once" && (
-          <DetailCard label="Session mode">
-            <span className="capitalize">{sessionMode ?? "fresh"}</span>
-          </DetailCard>
-        )}
-        {schedule.harness && (
-          <DetailCard label="Harness">{schedule.harness}</DetailCard>
-        )}
-        <DetailCard label="Model">
-          <ScheduleModel
-            agentId={schedule.agentId}
-            harness={schedule.harness}
-            model={model}
-          />
-          {schedule.migrationNote && (
-            <p className="mt-1 text-xs font-normal text-warning">
-              {schedule.migrationNote}
-              {onPickModel && (
-                <>
-                  {" "}
-                  <button
-                    type="button"
-                    onClick={onPickModel}
-                    className="underline underline-offset-2"
-                  >
-                    Pick a model
-                  </button>
-                </>
-              )}
-            </p>
-          )}
+        <DetailCard label="Session mode">
+          <span className="capitalize">{sessionMode ?? "fresh"}</span>
         </DetailCard>
-        {schedule.settings && Object.keys(schedule.settings).length > 0 && (
-          <DetailCard label="Settings">
-            {Object.entries(schedule.settings)
-              .map(([id, value]) => `${id}: ${value}`)
-              .join(" · ")}
-          </DetailCard>
-        )}
-        {schedule.sessionTitle && (
-          <DetailCard label="Session title">
-            <span className="break-words">{schedule.sessionTitle}</span>
-          </DetailCard>
-        )}
       </div>
     </div>
-  );
-}
-
-function ScheduleModel({
-  agentId,
-  harness,
-  model,
-}: {
-  agentId: string;
-  harness: string | null;
-  model: string | null;
-}) {
-  const choices = useSessionModelChoices(agentId);
-  const hasDefault = useHasHarnessDefault(agentId);
-  const { data: status } = useHarnessConfigStatus(agentId);
-  const routed = status?.modelRouter ?? false;
-  const { data: catalog } = useHarnessCatalogModels(
-    routed ? agentId : null,
-    harness ?? status?.defaultHarness ?? null,
-  );
-  const { data: fallback } = useScheduleDefault(
-    routed && !model ? agentId : null,
-    harness,
-  );
-  if (routed) {
-    const groups = modelGroups(catalog);
-    if (!model)
-      return (
-        <>
-          Scheduled default
-          {fallback?.model && (
-            <p className="mt-1 text-xs font-normal text-muted-foreground">
-              Now: {modelIndicatorLabel(groups, fallback.model)}
-            </p>
-          )}
-        </>
-      );
-    return <>{modelIndicatorLabel(groups, model)}</>;
-  }
-  if (!model) return <>{hasDefault ? "Default" : "Same as agent"}</>;
-  const choice = choices.find((c) => c.value === model);
-  return (
-    <>
-      {choice?.name ?? model}
-      {choice?.description && (
-        <p className="mt-1 text-xs font-normal text-muted-foreground">
-          {choice.description}
-        </p>
-      )}
-    </>
   );
 }

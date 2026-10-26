@@ -3,7 +3,7 @@ import { termsDocumentSchema } from "api-server-api";
 
 import { trpc } from "../../../trpc.js";
 
-export const termsKeys = {
+const termsKeys = {
   all: () => ["terms"] as const,
   document: () => [...termsKeys.all(), "document"] as const,
 };
@@ -17,6 +17,7 @@ export function useTermsDocument() {
       return termsDocumentSchema.parse(await res.json());
     },
     staleTime: Infinity,
+    meta: { errorToast: "Couldn't load Terms of Use" },
   });
 }
 

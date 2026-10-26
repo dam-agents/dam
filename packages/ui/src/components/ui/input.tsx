@@ -10,7 +10,7 @@ const inputVariants = cva(
       variant: {
         standard: "border-input",
         monospace: "border-input font-mono",
-        invalid: "border-danger focus-visible:ring-danger",
+        invalid: "border-destructive focus-visible:ring-destructive",
       },
       size: {
         default: "h-10 px-4 py-2 text-sm",
@@ -40,4 +40,4 @@ function Input({ className, type, variant, size, ...props }: InputProps) {
   );
 }
 
-export { Input };
+export { Input, inputVariants };

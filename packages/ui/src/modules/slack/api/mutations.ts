@@ -25,7 +25,7 @@ export function useBindSlackChannel() {
   return useMutation({
     ...trpc.agents.bindSlackChannel.mutationOptions(),
     meta: {
-      invalidates: [agentsKeys.listWithChannels(), trpc.attention.pathKey()],
+      invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
     },
   });
 }

@@ -1,50 +1,45 @@
-import { FolderAdd, Upload } from "@carbon/icons-react";
-import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
+import {
+  ArrowsVertical,
+  Link,
+  OverflowMenuVertical,
+} from "@carbon/icons-react";
+import type { LibraryArtifact } from "api-server-api";
 import {
   type CSSProperties,
   type Ref,
-  useEffect,
+  useCallback,
   useMemo,
   useState,
 } from "react";
-import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { EmptyState, LoadFailed } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
-import { Tabs } from "@/components/ui/tabs";
-import { formatBytes } from "@/lib/format-size";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { Tooltip } from "@/components/ui/tooltip";
+import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
-import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
-import { useFolderDropTarget } from "../hooks/use-artifact-row-drag.js";
+import {
+  type ArtifactDragCallbacks,
+  useArtifactRowDrag,
+} from "../hooks/use-artifact-row-drag.js";
 import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
 import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 import { folderDisplayNames } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
-import { ArtifactListRow } from "./artifact-list-row.js";
-import { FolderActionsMenu } from "./folder-actions-menu.js";
-import { FolderDialog } from "./folder-dialog.js";
+import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 import { SidebarFolderGroup } from "./sidebar-folder-group.js";
-import { UploadArtifactDialog } from "./upload-artifact-dialog.js";
-
-const ALL_SCOPE = "__all__";
-const UPLOAD_HIGHLIGHT_MS = 3000;
-
-type ArtifactScope = "agent" | "all";
-
-const SCOPE_TABS = [
-  { value: "agent", label: "This agent" },
-  { value: "all", label: "All" },
-] as const;
 
 export function ChatArtifactsPanel({
   agentId,
@@ -56,58 +51,36 @@ export function ChatArtifactsPanel({
 }: {
   agentId: string | null;
   open: boolean;
-  onToggle?: () => void;
+  onToggle: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
 }) {
-  const [scope, setScope] = useState<ArtifactScope>("agent");
-  const scopeAgentId = match(scope)
-    .with("agent", () => agentId)
-    .with("all", () => null)
-    .exhaustive();
-  const artifactsQuery = useArtifacts(
-    open ? (scopeAgentId ? { agentId: scopeAgentId } : {}) : null,
+  const enabled = open && !!agentId;
+  const { data: artifacts = [], isPending } = useArtifacts(
+    enabled && agentId ? { agentId } : null,
   );
-  const foldersQuery = useArtifactFolders(open);
-  const { data: artifacts = [] } = artifactsQuery;
-  const { data: folders = [] } = foldersQuery;
-  const failed = artifactsQuery.isError || foldersQuery.isError;
-  const loading =
-    open && !failed && (artifactsQuery.isPending || foldersQuery.isPending);
-  const [search, setSearch] = useState("");
-  const term = search.trim().toLowerCase();
-  const shown = useMemo(
-    () =>
-      term
-        ? artifacts.filter(
-            (a) =>
-              a.title.toLowerCase().includes(term) ||
-              a.fileName.toLowerCase().includes(term),
-          )
-        : artifacts,
-    [artifacts, term],
-  );
-  const shownBytes = shown.reduce((sum, a) => sum + a.sizeBytes, 0);
-  const openArtifactId = useStore((s) =>
-    s.dock?.kind === "artifact" ? s.dock.id : null,
-  );
+  const { data: folders = [], isPending: foldersPending } =
+    useArtifactFolders(enabled);
+  const loading = enabled && (isPending || foldersPending);
+  const openArtifactId = useStore((s) => s.openArtifactId);
   const openArtifact = useOpenArtifact();
 
   const openRow = (id: string) =>
     openArtifact(id === openArtifactId ? null : id);
-  const collapseScope = scopeAgentId ?? ALL_SCOPE;
-  const folderCollapse = useStore(
-    (s) => s.artifactFolderCollapse[collapseScope],
+  const folderCollapse = useStore((s) =>
+    agentId ? s.artifactFolderCollapse[agentId] : undefined,
   );
   const setFolderCollapsed = useStore((s) => s.setArtifactFolderCollapsed);
   const { dropCallbacks, hotFolderId, dragInProgress } =
     useFolderDragOrchestration(artifacts);
-  const groups = useMemo(() => {
-    const all = groupArtifactsByFolder(shown, folders);
-    return term ? all.filter((g) => g.artifacts.length > 0) : all;
-  }, [shown, folders, term]);
-  const rootDrop = useFolderDropTarget(null, dropCallbacks);
+  const groups = useMemo(
+    () =>
+      groupArtifactsByFolder(artifacts, folders, {
+        includeEmptyUngrouped: dragInProgress,
+      }),
+    [artifacts, folders, dragInProgress],
+  );
   const folderNames = useMemo(() => folderDisplayNames(folders), [folders]);
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
     null,
@@ -116,36 +89,6 @@ export function ChatArtifactsPanel({
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
   const [retentionTarget, setRetentionTarget] =
     useState<LibraryArtifact | null>(null);
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [highlightId, setHighlightId] = useState<string | null>(null);
-  useEffect(() => {
-    if (!highlightId) return;
-    const timer = setTimeout(() => setHighlightId(null), UPLOAD_HIGHLIGHT_MS);
-    return () => clearTimeout(timer);
-  }, [highlightId]);
-  const [editFolder, setEditFolder] = useState<ArtifactFolder | null>(null);
-  const [deleteFolderTarget, setDeleteFolderTarget] =
-    useState<ArtifactFolder | null>(null);
-  const deleteFolder = useDeleteFolder();
-
-  const renderRow = (artifact: LibraryArtifact, depth: number) => (
-    <ArtifactListRow
-      key={artifact.id}
-      artifact={artifact}
-      depth={depth}
-      active={artifact.id === openArtifactId}
-      highlighted={artifact.id === highlightId}
-      onClick={() => void openRow(artifact.id)}
-      drag={dropCallbacks}
-      showCreator={scopeAgentId === null}
-      onEdit={(a) => void openArtifact(a.id, { edit: true })}
-      onRename={setRenameTarget}
-      onMove={setMoveTarget}
-      onShare={setShareTarget}
-      onSetRetention={setRetentionTarget}
-    />
-  );
 
   return (
     <SidebarSection
@@ -156,117 +99,53 @@ export function ChatArtifactsPanel({
       headerClassName="border-t border-border"
       style={style}
       ref={ref}
-      headerRight={
-        <>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Upload artifact"
-            tooltip="Upload artifact"
-            onClick={() => setUploading(true)}
-          >
-            <Upload size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="New folder"
-            tooltip="New folder"
-            onClick={() => setCreatingFolder(true)}
-          >
-            <FolderAdd size={16} />
-          </Button>
-        </>
-      }
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        {agentId && (
-          <Tabs
-            tabs={SCOPE_TABS}
-            value={scope}
-            onValueChange={setScope}
-            variant="pill"
-            size="sm"
-            ariaLabel="Artifacts to list"
-            className="shrink-0"
-          />
-        )}
-        <Input
-          type="search"
-          size="sm"
-          placeholder="Search artifacts…"
-          aria-label="Search artifacts"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="min-w-0 flex-1"
-        />
-      </div>
-      {failed ? (
-        <LoadFailed
-          what="Couldn't load artifacts."
-          onRetry={() => {
-            void artifactsQuery.refetch();
-            void foldersQuery.refetch();
-          }}
-        />
-      ) : loading || groups.length === 0 ? (
-        <EmptyState bordered={false}>
-          {loading
-            ? "Loading…"
-            : term
-              ? "No matching artifacts."
-              : "No artifacts yet."}
-        </EmptyState>
+      {loading || artifacts.length === 0 ? (
+        <p className="px-4 py-5 text-xs text-muted-foreground">
+          {loading ? "Loading\u2026" : "No artifacts yet"}
+        </p>
       ) : (
-        <div
-          {...rootDrop}
-          className={cn(
-            "flex-1 overflow-y-auto",
-            dragInProgress &&
-              hotFolderId === null &&
-              "ring-2 ring-inset ring-primary",
-          )}
-        >
+        <div className="overflow-y-auto">
           {groups.map((group) => {
-            if (!group.folder)
-              return group.artifacts.map((a) => renderRow(a, 0));
             const collapsed =
               folderCollapse?.[group.key] ?? group.artifacts.length === 0;
             return (
               <SidebarFolderGroup
                 key={group.key}
-                folderId={group.folder.id}
-                label={folderNames.get(group.folder.id) ?? group.folder.name}
+                folderId={group.folder?.id ?? null}
+                label={
+                  group.folder
+                    ? (folderNames.get(group.folder.id) ?? group.folder.name)
+                    : "Ungrouped"
+                }
                 count={group.artifacts.length}
                 collapsed={collapsed}
-                onToggle={() =>
-                  setFolderCollapsed(collapseScope, group.key, !collapsed)
-                }
+                onToggle={() => {
+                  if (agentId)
+                    setFolderCollapsed(agentId, group.key, !collapsed);
+                }}
                 drop={dropCallbacks}
-                dropActive={hotFolderId === group.folder.id}
+                dropActive={hotFolderId === (group.folder?.id ?? null)}
                 testId={`artifacts-folder-${group.key}`}
-                actions={
-                  <FolderActionsMenu
-                    folder={group.folder}
-                    shared={group.artifacts.some(
-                      (a) => a.visibility === "public",
-                    )}
-                    onEdit={setEditFolder}
-                    onDelete={setDeleteFolderTarget}
-                  />
-                }
               >
-                {group.artifacts.map((a) => renderRow(a, 1))}
+                {group.artifacts.map((artifact) => (
+                  <ArtifactListRow
+                    key={artifact.id}
+                    artifact={artifact}
+                    active={artifact.id === openArtifactId}
+                    onClick={() => void openRow(artifact.id)}
+                    drag={dropCallbacks}
+                    onEdit={(a) => void openArtifact(a.id, { edit: true })}
+                    onRename={setRenameTarget}
+                    onMove={setMoveTarget}
+                    onShare={setShareTarget}
+                    onSetRetention={setRetentionTarget}
+                  />
+                ))}
               </SidebarFolderGroup>
             );
           })}
         </div>
-      )}
-      {!loading && !failed && artifacts.length > 0 && (
-        <p className="mt-auto shrink-0 border-t border-border px-4 py-2 text-xs text-muted-foreground">
-          {shown.length} artifact{shown.length === 1 ? "" : "s"} ·{" "}
-          {formatBytes(shownBytes)} stored
-        </p>
       )}
       {renameTarget && (
         <RenameArtifactDialog
@@ -292,44 +171,117 @@ export function ChatArtifactsPanel({
           onClose={() => setRetentionTarget(null)}
         />
       )}
-      {creatingFolder && (
-        <FolderDialog folder={null} onClose={() => setCreatingFolder(false)} />
-      )}
-      {editFolder && (
-        <FolderDialog folder={editFolder} onClose={() => setEditFolder(null)} />
-      )}
-      {uploading && (
-        <UploadArtifactDialog
-          folders={folders}
-          onClose={() => setUploading(false)}
-          onUploaded={(artifact) => {
-            if (artifact.agentId !== scopeAgentId) setScope("all");
-            setSearch("");
-            if (artifact.folderId)
-              setFolderCollapsed(
-                artifact.agentId === scopeAgentId ? collapseScope : ALL_SCOPE,
-                artifact.folderId,
-                false,
-              );
-            setHighlightId(artifact.id);
-          }}
-        />
-      )}
-      <ConfirmDialog
-        open={deleteFolderTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteFolderTarget(null);
-        }}
-        kind="destructive"
-        title={`Delete folder “${deleteFolderTarget?.name ?? ""}”?`}
-        description="Artifacts inside are kept and move to the top level."
-        confirmLabel="Delete"
-        onConfirm={() => {
-          if (deleteFolderTarget)
-            deleteFolder.mutate({ id: deleteFolderTarget.id });
-          setDeleteFolderTarget(null);
-        }}
-      />
     </SidebarSection>
+  );
+}
+
+function ArtifactListRow({
+  artifact,
+  active,
+  onClick,
+  drag,
+  onEdit,
+  onRename,
+  onMove,
+  onShare,
+  onSetRetention,
+}: {
+  artifact: LibraryArtifact;
+  active: boolean;
+  onClick: () => void;
+  drag?: ArtifactDragCallbacks;
+  onEdit: (artifact: LibraryArtifact) => void;
+  onRename: (artifact: LibraryArtifact) => void;
+  onMove: (artifact: LibraryArtifact) => void;
+  onShare: (artifact: LibraryArtifact) => void;
+  onSetRetention: (artifact: LibraryArtifact) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const startDrag = useCallback(
+    (folderId: string | null) => {
+      setDragging(true);
+      drag?.onStart(folderId);
+    },
+    [drag],
+  );
+  const endDrag = useCallback(() => {
+    setDragging(false);
+    drag?.onEnd();
+  }, [drag]);
+  const dragProps = useArtifactRowDrag(artifact.id, artifact.folderId, {
+    onStart: startDrag,
+    onEnd: endDrag,
+  });
+
+  return (
+    <div
+      {...clickableProps(onClick)}
+      {...(drag ? dragProps : {})}
+      title={artifact.title}
+      className={cn(
+        "group flex h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+        active && "bg-muted text-foreground",
+        dragging && "opacity-50",
+      )}
+    >
+      <ArrowsVertical
+        size={12}
+        aria-hidden
+        className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+      />
+      <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
+      {artifact.shareUrl !== null && (
+        <Tooltip
+          content={
+            artifact.visibility === "restricted" ? "Restricted" : "Public"
+          }
+        >
+          <span
+            role="img"
+            aria-label={
+              artifact.visibility === "restricted" ? "Restricted" : "Public"
+            }
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+          />
+        </Tooltip>
+      )}
+      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className={HOVER_ACTION}
+          aria-label="Share"
+          tooltip="Share"
+          onClick={() => onShare(artifact)}
+        >
+          <Link size={16} />
+        </Button>
+      </div>
+      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenu>
+          {}
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={HOVER_ACTION}
+              aria-label="More actions"
+            >
+              <OverflowMenuVertical size={13} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <ArtifactRowMenuItems
+              artifact={artifact}
+              onEdit={onEdit}
+              onRename={onRename}
+              onMove={onMove}
+              onShare={onShare}
+              onSetRetention={onSetRetention}
+            />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
   );
 }

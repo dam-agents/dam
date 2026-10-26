@@ -37,7 +37,7 @@ export function SkillsSearchHeader({
 }) {
   const countsText =
     matchCount === null
-      ? `${plural(totals.skills, "skill")} · ${plural(totals.sources, "connected source")} · ${totals.on} enabled`
+      ? `${plural(totals.skills, "skill")} · ${plural(totals.sources, "connected source")} · ${totals.on} on`
       : `${plural(matchCount, "skill")} ${matchCount === 1 ? "matches" : "match"} “${query}”`;
   const announced = useDebouncedValue(countsText, 300);
   return (

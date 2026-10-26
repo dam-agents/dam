@@ -9,24 +9,15 @@ import remarkGfm from "remark-gfm";
 import { MarkdownCodeBlock } from "@/components/markdown-code-block";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { externalLinkProps } from "@/lib/external-link";
-import { cn } from "@/lib/utils";
 
 import {
   ARTIFACT_LINK_PREFIX,
   ArtifactLinkChip,
   parseArtifactLink,
 } from "../modules/artifacts/components/artifact-link-chip.js";
-import { BrowserLinkChip } from "../modules/browser/components/browser-link-chip.js";
-import {
-  BROWSER_LINK_PREFIX,
-  parseBrowserLink,
-} from "../modules/browser/lib/browser-link.js";
 
-function allowPlatformLinks(url: string): string {
-  return url.startsWith(ARTIFACT_LINK_PREFIX) ||
-    url.startsWith(BROWSER_LINK_PREFIX)
-    ? url
-    : defaultUrlTransform(url);
+function allowArtifactLinks(url: string): string {
+  return url.startsWith(ARTIFACT_LINK_PREFIX) ? url : defaultUrlTransform(url);
 }
 
 const REMARK_PLUGINS = [remarkGfm];
@@ -61,12 +52,12 @@ function FrontmatterBlock({ source }: { source: string }) {
         chevronSize={12}
         className="gap-1.5 text-muted-foreground hover:text-foreground"
       >
-        <span className="font-mono uppercase tracking-[0.05em] text-2xs">
+        <span className="font-mono uppercase tracking-[0.05em] text-[11px]">
           Frontmatter
         </span>
       </DisclosureToggle>
       {open && (
-        <pre className="mt-1.5 font-mono text-2xs leading-[1.6] text-muted-foreground whitespace-pre-wrap overflow-x-auto">
+        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-muted-foreground whitespace-pre-wrap overflow-x-auto">
           {source}
         </pre>
       )}
@@ -77,11 +68,9 @@ function FrontmatterBlock({ source }: { source: string }) {
 export function Markdown({
   children,
   onFileClick,
-  className,
 }: {
   children: string;
   onFileClick?: (path: string) => void;
-  className?: string;
 }) {
   const { frontmatter, body } = useMemo(
     () => splitFrontmatter(children),
@@ -92,11 +81,6 @@ export function Markdown({
     () => ({
       pre: MarkdownCodeBlock,
       a({ href, children }) {
-        const browserLink = parseBrowserLink(href);
-        if (browserLink) return <BrowserLinkChip link={browserLink} />;
-        if (href?.startsWith(BROWSER_LINK_PREFIX)) {
-          return <span>{children}</span>;
-        }
         const artifactId = parseArtifactLink(href);
         if (artifactId) {
           return (
@@ -134,13 +118,13 @@ export function Markdown({
   );
 
   return (
-    <div className={cn("prose", className)}>
+    <div className="prose">
       {frontmatter !== null && <FrontmatterBlock source={frontmatter} />}
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={REHYPE_PLUGINS}
         components={components}
-        urlTransform={allowPlatformLinks}
+        urlTransform={allowArtifactLinks}
       >
         {body}
       </ReactMarkdown>

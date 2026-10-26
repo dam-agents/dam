@@ -1,9 +1,8 @@
 import type { BudgetReserved } from "api-server-api";
 
-import { formatGi } from "../../../lib/format-size.js";
 import type { AgentView } from "../../../types.js";
 import { parseCpuMilli, parseMemoryMi } from "../../sandboxes/lib/quantity.js";
-import { formatCores } from "./format.js";
+import { formatCores, formatGi } from "./format.js";
 
 export const BYTES_PER_MI = 1024 ** 2;
 
@@ -93,7 +92,7 @@ function formatMultiplier(size: SizeMi, unit: SlotUnit): string {
 export function formatCpuMemory(size: SizeMi): string {
   return `${formatCores(size.cpuMilli)} CPU · ${formatGi(
     size.memoryMi * BYTES_PER_MI,
-  )} GiB`;
+  )} Gi`;
 }
 
 export function formatSizeLabel(size: SizeMi, unit: SlotUnit): string {
@@ -133,7 +132,7 @@ export function computeView(
 ): ComputeView {
   const unit = slotUnitOf(budget);
   const scaledUp = agents.filter(
-    (agent) => agent.state !== "hibernated" && !agent.overBudget && !agent.vm,
+    (agent) => agent.state !== "hibernated" && !agent.overBudget,
   );
   const held = scaledUp.map((agent) => {
     const size = sizeInMi(agent.size);

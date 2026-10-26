@@ -100,7 +100,7 @@ export function FilePreviewBody({
     return (
       <div className="py-12 text-center text-sm text-muted-foreground">
         <p>File too large to preview</p>
-        <p className="mt-1 text-2xs">
+        <p className="mt-1 text-[11px]">
           Too large to load in the browser — open it in a terminal instead
         </p>
       </div>
@@ -112,13 +112,15 @@ export function FilePreviewBody({
         <div className="mb-2 flex items-baseline gap-2">
           <SectionLabel>Binary file — hex dump</SectionLabel>
           {mime && (
-            <p className="text-2xs font-mono text-muted-foreground">{mime}</p>
+            <p className="text-[11px] font-mono text-muted-foreground">
+              {mime}
+            </p>
           )}
         </div>
-        <p className="mb-3 text-2xs text-muted-foreground">
+        <p className="mb-3 text-[11px] text-muted-foreground">
           This file is not directly viewable. The first bytes are shown below.
         </p>
-        <pre className="text-2xs font-mono leading-[1.6] text-foreground/80 whitespace-pre overflow-x-auto">
+        <pre className="text-[11px] font-mono leading-[1.6] text-foreground/80 whitespace-pre overflow-x-auto">
           {hexDump(content)}
         </pre>
       </div>

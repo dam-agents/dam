@@ -8,10 +8,10 @@ import type {
 
 export type Role = "user" | "assistant";
 
-export type ToolContent =
-  | { type: "content"; text: string }
-  | { type: "terminal"; text: string }
-  | { type: "diff"; path: string; oldText: string | null; newText: string };
+export interface ToolContent {
+  type: "content" | "diff" | "terminal";
+  text?: string;
+}
 
 export interface ToolChip {
   kind: "tool";
@@ -19,20 +19,16 @@ export interface ToolChip {
   title: string;
   status: string;
   content?: ToolContent[];
-  toolKind?: string;
-  description?: string;
 }
 
 interface TextPart {
   kind: "text";
   text: string;
-  messageId?: string;
 }
 
 interface ThoughtPart {
   kind: "thought";
   text: string;
-  messageId?: string;
 }
 
 interface HistoryPart {
@@ -44,7 +40,6 @@ interface ImagePart {
   kind: "image";
   data: string;
   mimeType: string;
-  name?: string;
 }
 
 interface FilePart {
@@ -90,19 +85,12 @@ export interface Message {
   parts: MessagePart[];
   streaming: boolean;
   queued?: boolean;
-  sentHere?: boolean;
-  steered?: boolean;
-  lastMessageId?: string;
   promptId?: string;
   retryWith?: RetryPayload;
   notice?: boolean;
   loadOlderBefore?: string;
   at?: string;
   telemetryPromptId?: string;
-  model?: string;
-  stopped?: boolean;
-  stoppedAtOutputLimit?: boolean;
-  turnId?: string;
   error?: {
     message: string;
     retryWith?: RetryPayload;
@@ -114,7 +102,6 @@ export type { SessionView } from "api-server-api";
 export interface TemplateView {
   id: string;
   name: string;
-  aliases?: string[];
   image: string;
   description?: string;
   category: "harness";
@@ -149,37 +136,26 @@ export interface AgentView {
   name: string;
   createdAt?: string;
   templateId: string | null;
-  templateUpdate: {
-    fromImage: string;
-    toImage: string;
-    startFailed?: boolean;
-  } | null;
+  templateUpdate: { fromImage: string; toImage: string } | null;
   features: { liveUpdates: boolean | null };
   image: string;
-  harness?: string;
   description?: string;
-  avatar: string | null;
   env?: EnvVar[];
   hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
-  whisper: boolean;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;
   error?: string;
   stopRequested: boolean;
-  disabled: boolean;
+  disabled?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
-  reclaimed?: { at: string; for: "memory" | "compute" };
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
-  podTerminationCode?: string;
   notReadyMessage?: string;
-  startFailure?: { reason: string; message: string };
   podRestarts: number;
   podRestartReason?: string;
-  gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   workspaceFailures: {
@@ -196,7 +172,6 @@ export interface AgentView {
   starterKitOnboarded: string | null;
   onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
-  environmentOf: string | null;
   vm: boolean;
   runtimeMigration: RuntimeMigrationView | null;
   kind?: AgentKind;
@@ -230,13 +205,7 @@ export interface Schedule {
   type: "cron" | "rrule" | "once";
   cron: string | null;
   rrule: string | null;
-  at: string | null;
-  inSession: "fresh" | "continue" | "report" | null;
-  harness: string | null;
-  model: string | null;
-  settings: Record<string, string> | null;
-  migrationNote: string | null;
-  sessionTitle: string | null;
+  at?: string | null;
   timezone: string | null;
   quietHours: QuietWindowView[];
   task: string | null;

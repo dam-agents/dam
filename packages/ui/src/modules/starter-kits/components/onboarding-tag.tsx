@@ -4,7 +4,6 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
@@ -13,9 +12,7 @@ import { OnboardingChecklistCard } from "./onboarding-checklist-card.js";
 
 export function OnboardingTag({
   agent,
-  className,
 }: {
-  className?: string;
   agent: Pick<
     AgentView,
     "starterKit" | "starterKitOnboarded" | "onboardingSteps"
@@ -30,7 +27,7 @@ export function OnboardingTag({
       <HoverCardTrigger asChild>
         <Badge
           variant={badge.variant}
-          className={cn("shrink-0 cursor-default", className)}
+          className="shrink-0 cursor-default"
           data-testid="agent-onboarding-badge"
         >
           {badge.label}

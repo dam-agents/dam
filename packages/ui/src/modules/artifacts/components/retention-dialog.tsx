@@ -4,7 +4,6 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
-import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -67,9 +66,9 @@ export function RetentionDialog({ artifact, onClose }: Props) {
   };
 
   return (
-    <Modal onClose={sharing.isPending ? undefined : onClose}>
+    <Modal>
       <DialogHeader
-        title={`Set expiration for “${artifact.title}”`}
+        title={`Delete “${artifact.title}” automatically`}
         onClose={onClose}
         closeDisabled={sharing.isPending}
       />
@@ -88,7 +87,10 @@ export function RetentionDialog({ artifact, onClose }: Props) {
 
           <p className="text-sm text-muted-foreground">{statusText}</p>
 
-          <FormField label="Delete after">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">
+              Delete after
+            </span>
             <Select
               value={choice}
               onChange={(e) => setChoice(e.target.value)}
@@ -105,7 +107,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
                 </option>
               ))}
             </Select>
-          </FormField>
+          </label>
         </div>
       </DialogBody>
       <DialogActions

@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { PAGE_TITLE } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
@@ -33,7 +32,7 @@ export function BindPage({
         <div
           className={cn("mx-auto w-full", narrow ? TEXT_WIDTH : PICKER_WIDTH)}
         >
-          <h1 className={cn("flex items-center gap-3", PAGE_TITLE)}>
+          <h1 className="flex items-center gap-3 text-2xl font-semibold">
             <ConnectionIcon iconSlug={messenger} alt="" size={32} />
             {title}
           </h1>

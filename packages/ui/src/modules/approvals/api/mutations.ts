@@ -7,7 +7,7 @@ export function useApproveOnce() {
   return useMutation({
     ...trpc.approvals.approveOnce.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all, trpc.spend.status.queryKey()],
+      invalidates: [approvalsKeys.all],
       errorToast: "Couldn't approve",
     },
   });
@@ -49,16 +49,6 @@ export function useDismissApproval() {
     meta: {
       invalidates: [approvalsKeys.all],
       errorToast: "Couldn't dismiss",
-    },
-  });
-}
-
-export function useDismissApprovals() {
-  return useMutation({
-    ...trpc.approvals.dismissMany.mutationOptions(),
-    meta: {
-      invalidates: [approvalsKeys.all],
-      errorToast: "Couldn't deny the requests",
     },
   });
 }

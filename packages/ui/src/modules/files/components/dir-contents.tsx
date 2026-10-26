@@ -1,9 +1,6 @@
 import type { DirEntry } from "agent-runtime-api";
-import type { CSSProperties, ReactNode } from "react";
+import { Fragment } from "react";
 
-import { TREE_GUIDE, treeGuideX, treeIndent } from "@/components/ui/tree-guide";
-
-import { useStore } from "../../../store.js";
 import { useDirSnapshot } from "../api/queries.js";
 import { FileRow } from "./file-row.js";
 import { useFilesPanel } from "./files-panel-controller.js";
@@ -17,27 +14,12 @@ interface DirContentsProps {
 export function DirContents({ path, depth }: DirContentsProps) {
   const panel = useFilesPanel();
   const { data: snapshot } = useDirSnapshot(panel.agentId, path);
-  const showHiddenFiles = useStore((s) => s.showHiddenFiles);
 
-  if (!snapshot) return null;
-  if (!snapshot.ok)
-    return (
-      <PlaceholderRow depth={depth} tone="error">
-        {snapshot.error === "forbidden"
-          ? "Couldn't open this folder: permission denied"
-          : "This folder no longer exists"}
-      </PlaceholderRow>
-    );
-
-  const shown = snapshot.entries.filter(
-    (entry) => showHiddenFiles || !entry.name.startsWith("."),
-  );
-  if (shown.length === 0 && depth > 0 && panel.pendingNew?.dir !== path)
-    return <PlaceholderRow depth={depth}>Empty folder</PlaceholderRow>;
+  if (!snapshot || !snapshot.ok) return null;
 
   return (
     <>
-      {shown.map((entry) => (
+      {snapshot.entries.map((entry) => (
         <DirEntryRow
           key={entry.name}
           entry={entry}
@@ -46,25 +28,6 @@ export function DirContents({ path, depth }: DirContentsProps) {
         />
       ))}
     </>
-  );
-}
-
-function PlaceholderRow({
-  depth,
-  tone,
-  children,
-}: {
-  depth: number;
-  tone?: "error";
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={`flex h-8 items-center text-xs italic ${tone === "error" ? "text-destructive" : "text-muted-foreground"}`}
-      style={{ paddingLeft: treeIndent(depth) + 22, paddingRight: 12 }}
-    >
-      {children}
-    </div>
   );
 }
 
@@ -86,7 +49,7 @@ function DirEntryRow({ entry, parentPath, depth }: DirEntryRowProps) {
   const isRenaming = panel.renamingPath === fullPath;
 
   return (
-    <div className={depth > 0 ? TREE_GUIDE : undefined}>
+    <Fragment>
       {isRenaming ? (
         <InlineNameRow
           kind={isDir ? "dir" : "file"}
@@ -106,22 +69,18 @@ function DirEntryRow({ entry, parentPath, depth }: DirEntryRowProps) {
           dropActive={isDir && panel.dragTargetPath === fullPath}
         />
       )}
-      <div style={{ "--tree-guide-x": treeGuideX(depth) } as CSSProperties}>
-        {isExpanded && <DirContents path={fullPath} depth={depth + 1} />}
-        {panel.pendingNew && panel.pendingNew.dir === fullPath && (
-          <div className={TREE_GUIDE}>
-            <InlineNameRow
-              kind={panel.pendingNew.kind}
-              depth={depth + 1}
-              placeholder={
-                panel.pendingNew.kind === "dir" ? "new-folder" : "new-file.md"
-              }
-              onCommit={panel.onCommitNew}
-              onCancel={panel.onCancelNew}
-            />
-          </div>
-        )}
-      </div>
-    </div>
+      {isExpanded && <DirContents path={fullPath} depth={depth + 1} />}
+      {panel.pendingNew && panel.pendingNew.dir === fullPath && (
+        <InlineNameRow
+          kind={panel.pendingNew.kind}
+          depth={depth + 1}
+          placeholder={
+            panel.pendingNew.kind === "dir" ? "new-folder" : "new-file.md"
+          }
+          onCommit={panel.onCommitNew}
+          onCancel={panel.onCancelNew}
+        />
+      )}
+    </Fragment>
   );
 }

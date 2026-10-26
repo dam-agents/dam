@@ -6,11 +6,11 @@ import type {
   RuntimeMigrationView,
 } from "../../../types.js";
 
-export type RuntimeMigrationBadge =
+export type RuntimeBadge =
   | { kind: "migrating"; label: string; title: string }
   | { kind: "failed"; label: string; title: string };
 
-// UNIT_BOUNDARY_DESCRIPTION: what each phase of a migration is called where the owner watches one an operator started, short enough for a badge.
+// UNIT_BOUNDARY_DESCRIPTION: what each phase of a migration is called where the user sees it, short enough for a badge and a button.
 export function migrationPhaseLabel(phase: RuntimeMigrationPhase): string {
   return match(phase)
     .with("requested", () => "Preparing")
@@ -42,7 +42,11 @@ function migrationPhaseDescription(migration: RuntimeMigrationView): string {
     )
     .with("booting", () => "Starting the agent on the new sandbox runtime")
     .with("verified", () => "The agent started on the new sandbox runtime")
-    .with("failed", () => "Moving to the new sandbox runtime failed")
+    .with(
+      "failed",
+      () =>
+        "Moving to the new sandbox runtime failed; an operator finishes or undoes the move",
+    )
     .with(
       "aborting",
       () => "Undoing the move; the agent returns to its previous runtime",
@@ -54,21 +58,21 @@ export function migrationTitle(migration: RuntimeMigrationView): string {
   return migration.message ?? migrationPhaseDescription(migration);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which runtime badge an agent row shows. Only a move that is under way, or one that failed, is badged: the new runtime is the default, and an agent still on the old container runtime has nothing to decide here, since the move is not the owner's to start.
-export function runtimeMigrationBadge(
+// UNIT_BOUNDARY_DESCRIPTION: which runtime badge an agent row shows: a migration under way is badged with its phase, and a failed one distinctly, so a stuck move is never mistaken for one still running. Nothing else is badged, since the runtime an agent runs on is not a choice the web app offers.
+export function runtimeBadge(
   agent: Pick<AgentView, "runtimeMigration">,
-): RuntimeMigrationBadge | null {
+): RuntimeBadge | null {
   const migration = agent.runtimeMigration;
   if (!migration) return null;
-  if (migration.phase === "failed")
-    return {
-      kind: "failed",
-      label: "Migration failed",
-      title: migrationTitle(migration),
-    };
-  return {
-    kind: "migrating",
-    label: `Migrating: ${migrationPhaseLabel(migration.phase).toLowerCase()}`,
-    title: migrationTitle(migration),
-  };
+  return migration.phase === "failed"
+    ? {
+        kind: "failed",
+        label: "Migration failed",
+        title: migrationTitle(migration),
+      }
+    : {
+        kind: "migrating",
+        label: `Migrating: ${migrationPhaseLabel(migration.phase).toLowerCase()}`,
+        title: migrationTitle(migration),
+      };
 }

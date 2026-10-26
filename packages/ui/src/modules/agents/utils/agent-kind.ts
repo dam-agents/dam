@@ -2,6 +2,11 @@ import type { AgentKind } from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
 
+export function sharesKnowledgeBase(agent: AgentView): boolean {
+  if (agent.kbShareRoots && agent.kbShareRoots.length > 0) return true;
+  return agent.kind === "knowledge-base";
+}
+
 interface AgentKindBadge {
   label: string;
   variant: "accent" | "template" | "muted" | "warning" | "kit";
@@ -47,6 +52,17 @@ export function starterKitBadge(
     label: ref?.kit ?? agent.starterKit,
     variant: "muted",
     title: agent.starterKit,
+  };
+}
+
+export function knowledgeBadge(
+  agent: AgentView,
+): (AgentKindBadge & { title: string }) | null {
+  if (!sharesKnowledgeBase(agent)) return null;
+  return {
+    label: "Knowledge",
+    variant: "template",
+    title: "Publishes a knowledge base that can be shared read-only",
   };
 }
 

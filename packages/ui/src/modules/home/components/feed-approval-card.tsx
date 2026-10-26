@@ -1,24 +1,25 @@
+import { OverflowMenuVertical, Settings } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
-import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
-import { useAppConnections } from "../../connections/api/queries.js";
-import {
-  approvalDetail,
-  approvalHeadline,
-  approvalHideHint,
-} from "../lib/approval-copy.js";
+import { approvalDetail, approvalHeadline } from "../lib/approval-copy.js";
 
 interface Props {
   approval: ApprovalView;
-  ids?: readonly string[];
   agentName: string;
   avatarName: string | undefined;
-  avatar: string | null | undefined;
   meta: string;
   onDismiss: () => void;
   resolvedLabel?: string | null;
@@ -27,22 +28,20 @@ interface Props {
 
 export function FeedApprovalCard({
   approval,
-  ids = [approval.id],
   agentName,
   avatarName,
-  avatar,
   meta,
   onDismiss,
   resolvedLabel = null,
   onResolved,
 }: Props) {
   const { actions, inflight, hostLabel, expiredNote, openSettings } =
-    useApprovalActions(approval, ids);
-  const { data: connections } = useAppConnections();
-  const connectionName = (id: string) =>
-    connections?.find((connection) => connection.id === id)?.name;
+    useApprovalActions(approval);
   const [ownResolved, setOwnResolved] = useState<string | null>(null);
   const resolved = resolvedLabel ?? ownResolved;
+
+  const allowOnce = actions.find((a) => a.id === "allow-once");
+  const rest = actions.filter((a) => a.id !== "allow-once");
 
   const act = async (run: () => Promise<boolean>, label: string) => {
     if (!(await run())) return;
@@ -53,7 +52,7 @@ export function FeedApprovalCard({
   return (
     <div
       data-testid="feed-approval-card"
-      className="group w-full rounded-lg border border-border bg-card/80 p-5 text-left"
+      className="group w-full rounded-2xl border border-border bg-card/80 p-5 text-left"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -62,18 +61,18 @@ export function FeedApprovalCard({
               <span className="size-2 shrink-0 rounded-full bg-warning" />
             )}
             {avatarName !== undefined && (
-              <AgentAvatar name={avatarName} avatar={avatar} size={20} />
+              <AgentAvatar name={avatarName} size={20} />
             )}
             <span className="truncate">{agentName}</span>
           </div>
-          <p className="text-md leading-snug font-semibold text-foreground">
+          <p className="text-[15px] leading-snug font-semibold text-foreground">
             {approvalHeadline(approval)}
           </p>
         </div>
         <button
           type="button"
           onClick={onDismiss}
-          title={approvalHideHint(approval)}
+          title="Hides this from Home. The request stays pending — resolve it in the session."
           className="shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
         >
           Dismiss
@@ -81,19 +80,9 @@ export function FeedApprovalCard({
       </div>
 
       <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
-        <span
-          className={cn(
-            "min-w-0 font-mono text-sm text-muted-foreground",
-            approval.type !== "spend_limit" && "truncate",
-          )}
-        >
-          {approvalDetail(approval, connectionName)}
+        <span className="min-w-0 truncate font-mono text-sm text-muted-foreground">
+          {approvalDetail(approval)}
         </span>
-        {ids.length > 1 && (
-          <span className="ml-auto shrink-0 text-sm text-muted-foreground">
-            {ids.length} requests
-          </span>
-        )}
       </div>
 
       {expiredNote && (
@@ -106,8 +95,8 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              /^(Denied|Always denied|Stopped)/.test(resolved)
-                ? "text-danger"
+              resolved.startsWith("Denied")
+                ? "text-destructive"
                 : "text-success",
             )}
           >
@@ -115,13 +104,51 @@ export function FeedApprovalCard({
           </span>
         ) : (
           <div className="flex items-center gap-2">
-            <ApprovalActionsMenu
-              actions={actions}
-              inflight={inflight}
-              hostLabel={hostLabel}
-              openSettings={openSettings}
-              onRun={(action) => void act(action.run, action.resolvedLabel)}
-            />
+            {allowOnce && (
+              <Button
+                size="sm"
+                disabled={allowOnce.disabled}
+                tooltip={allowOnce.tooltip}
+                onClick={() => void act(allowOnce.run, allowOnce.resolvedLabel)}
+              >
+                Allow
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-2"
+                  disabled={inflight}
+                  aria-label="More approval actions"
+                >
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {rest.map((action) => (
+                  <DropdownMenuItem
+                    key={action.id}
+                    disabled={action.disabled}
+                    className={action.danger ? "text-destructive" : undefined}
+                    onSelect={() => void act(action.run, action.resolvedLabel)}
+                    title={action.tooltip}
+                  >
+                    {action.label}
+                  </DropdownMenuItem>
+                ))}
+                {hostLabel !== null && (
+                  <>
+                    <DropdownMenuSeparator className="-mx-1" />
+                    <DropdownMenuItem onSelect={openSettings}>
+                      <Settings size={16} />
+                      Network settings
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>

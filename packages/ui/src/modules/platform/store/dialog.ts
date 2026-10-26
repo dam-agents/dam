@@ -4,6 +4,8 @@ import type { StateCreator } from "zustand";
 import type { ConfirmDialogProps } from "@/components/ui/confirm-dialog";
 import type { ConfirmDialogKind } from "@/components/ui/confirm-dialog";
 
+import type { PlatformStore } from "../../../store.js";
+
 interface ConfirmOptions {
   kind?: ConfirmDialogKind;
   icon?: ConfirmDialogProps["icon"];
@@ -14,7 +16,6 @@ interface ConfirmOptions {
 type AlertOptions = Omit<ConfirmOptions, "cancelLabel">;
 
 interface DialogState {
-  open: boolean;
   type: "alert" | "confirm";
   title: string;
   message: ReactNode;
@@ -38,16 +39,19 @@ export interface DialogSlice {
     options?: ConfirmOptions,
   ) => Promise<boolean>;
   closeDialog: (ok: boolean) => void;
-  clearClosedDialog: () => void;
 }
 
-export const createDialogSlice: StateCreator<DialogSlice> = (set, get) => ({
+export const createDialogSlice: StateCreator<
+  PlatformStore,
+  [],
+  [],
+  DialogSlice
+> = (set, get) => ({
   dialog: null,
   showAlert: (message, title = "Error", options) =>
     new Promise<void>((resolve) => {
       set({
         dialog: {
-          open: true,
           type: "alert",
           title,
           message,
@@ -61,7 +65,6 @@ export const createDialogSlice: StateCreator<DialogSlice> = (set, get) => ({
     new Promise<boolean>((resolve) => {
       set({
         dialog: {
-          open: true,
           type: "confirm",
           title,
           message,
@@ -74,13 +77,10 @@ export const createDialogSlice: StateCreator<DialogSlice> = (set, get) => ({
       });
     }),
   closeDialog: (ok) => {
-    const dialog = get().dialog;
-    if (!dialog?.open) return;
-    set({ dialog: { ...dialog, open: false } });
-    dialog.resolve(ok);
-  },
-  clearClosedDialog: () => {
-    const dialog = get().dialog;
-    if (dialog && !dialog.open) set({ dialog: null });
+    const d = get().dialog;
+    if (d) {
+      d.resolve(ok);
+      set({ dialog: null });
+    }
   },
 });

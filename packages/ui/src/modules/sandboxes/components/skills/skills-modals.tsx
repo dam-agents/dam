@@ -30,7 +30,7 @@ function latestPublish(
 }
 
 export type SkillsModal =
-  | { kind: "add-source"; mode: "github" | "upload"; files: File[] }
+  | { kind: "add-source"; tab: "github" | "upload"; files: File[] }
   | { kind: "publish"; skill: LocalSkill }
   | { kind: "render"; source: SkillSource; skill: Skill }
   | { kind: "render-local"; skill: LocalSkill }
@@ -61,12 +61,10 @@ export function SkillsModals({
       return (
         <AddSkillSourceModal
           sources={surface.sources}
-          hiddenSources={surface.hiddenSources}
-          onShowSource={(id) => surface.setSourceHidden(id, false)}
           onClose={onClose}
           onCreate={surface.createSource}
           onCreateSkills={surface.createLocalSkills}
-          mode={open.mode}
+          initialTab={open.tab}
           initialFiles={open.files}
         />
       );
@@ -78,7 +76,7 @@ export function SkillsModals({
           loadFailed={surface.setsFailed}
           available={derived.availableKeys}
           installedKeys={derived.installedKeys}
-          resolveSetEntry={derived.resolveSetEntry}
+          unreadableSources={derived.unreadableSources}
           ready={derived.previewReady}
           applying={surface.applyingSets}
           onApply={surface.applySets}
@@ -92,7 +90,9 @@ export function SkillsModals({
         <SaveSkillSetModal
           groups={derived.setGroups}
           omitted={derived.saveOmitted}
-          isOn={(skill) => surface.installedRef(skill) !== undefined}
+          isOn={(skill) =>
+            surface.installedRef(skill.source, skill.name) !== undefined
+          }
           existingNames={derived.existingSetNames}
           onCreate={surface.createSet}
           onClose={onClose}
@@ -110,7 +110,7 @@ export function SkillsModals({
       );
 
     case "render": {
-      const ref = surface.installedRef(open.skill);
+      const ref = surface.installedRef(open.skill.source, open.skill.name);
       return (
         <SkillRenderModal
           source={open.source}
@@ -164,7 +164,7 @@ export function SkillsModals({
                 <Button
                   variant="ghost"
                   size="sm"
-                  tone="danger"
+                  className="text-danger hover:bg-danger-light hover:text-danger"
                   onClick={() => {
                     onClose();
                     onDeleteLocal(skill, publish);

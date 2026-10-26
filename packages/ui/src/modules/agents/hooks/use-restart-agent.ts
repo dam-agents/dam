@@ -7,8 +7,8 @@ import { transitionRestartingAgents } from "../store.js";
 import { useRestartingAction } from "./use-restarting-action.js";
 
 export function useRestartAgent() {
-  const { mutateAsync, isPending } = useRestartAgentMutation();
-  const restart = useRestartingAction(mutateAsync);
+  const { mutate, isPending } = useRestartAgentMutation();
+  const restart = useRestartingAction(mutate);
 
   return { restart, isPending };
 }
@@ -30,12 +30,11 @@ export function useSyncRestartingAgents() {
     );
     if (freshlyParked) {
       const reason =
-        freshlyParked.overBudgetMessage ??
-        "disable agents you aren't using to free room";
+        freshlyParked.overBudgetMessage ?? "stop a running agent to free room";
       void showConfirm(
-        `${reason[0].toUpperCase()}${reason.slice(1)}${reason.endsWith(".") ? "" : "."}`,
+        `${reason[0].toUpperCase()}${reason.slice(1)}.`,
         "This agent could not start",
-        { confirmLabel: "Manage agents" },
+        { confirmLabel: "Manage sandboxes" },
       ).then((ok) => ok && setView("home"));
     }
   }, [data, dataUpdatedAt, setRestartingAgents, showConfirm, setView]);

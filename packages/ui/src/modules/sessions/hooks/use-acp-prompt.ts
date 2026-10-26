@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { trpc } from "../../../trpc.js";
 import type { Attachment, Message, RetryPayload } from "../../../types.js";
 import {
   connectionCloseReason,
@@ -14,17 +13,13 @@ import {
 } from "../../acp/close-race.js";
 import { extractErrorMessage, isQueueFullError } from "../../acp/errors.js";
 import {
-  fileChipOf,
-  finalizeRunningReply,
+  finalizeAllStreaming,
   hasAgentContent,
-  sendWaits,
+  hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
-import { untilAgentOperable } from "../../agents/api/queries.js";
-import { LEFT_BEFORE_START } from "../../agents/lib/agent-start.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { optimisticInsertSession } from "../api/queries.js";
-import { harnessOfSession } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { PromptDelivery } from "../lib/prompt-delivery.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
@@ -40,9 +35,6 @@ import type {
 } from "./use-acp-connection.js";
 
 type PromptInitiator = "user" | "system";
-
-// UNIT_BOUNDARY_DESCRIPTION: Stop leaves the reply to the turn's end, which the harness sends once it has flushed what it was streaming; past this wait the reply is closed locally, for a turn that never reports an end.
-const STOP_SETTLE_MS = 10_000;
 
 export interface SendPromptOptions {
   hidden?: boolean;
@@ -149,14 +141,18 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             mimeType: block.mimeType,
           });
         else if (block.type === "resource_link")
-          userParts.push(fileChipOf(block));
+          userParts.push({
+            kind: "file",
+            name: block.name,
+            mimeType: block.mimeType ?? "",
+          });
       }
       if (attachments?.length) for (const a of attachments) userParts.push(a);
       if (text) userParts.push({ kind: "text", text });
 
       const aId = crypto.randomUUID();
       const promptId = crypto.randomUUID();
-      const uId = promptId;
+      const uId = retryOf ?? promptId;
       let reported = false;
       const dropBubble = () =>
         setMessages((p) => p.filter((m) => m.id !== aId));
@@ -176,33 +172,21 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           }),
         );
       };
-      const refreshProviderStatus = () =>
-        void queryClient.invalidateQueries({
-          queryKey: trpc.providerStatus.list.queryKey(),
-        });
       const failUserMessage = (message: string) => {
         if (reported) return;
         reported = true;
-        refreshProviderStatus();
         recordUndeliveredLocally(message);
-        const failed: Message = {
-          ...uMsg,
-          error: { message, retryWith: retryPayload },
-        };
         setMessages((p) =>
-          p.some((m) => m.id === uId)
-            ? p.flatMap<Message>((m) => {
-                if (m.id === aId) return [];
-                if (m.id !== uId) return [m];
-                return [failed];
-              })
-            : [...p.filter((m) => m.id !== aId), failed],
+          p.flatMap<Message>((m) => {
+            if (m.id === aId) return [];
+            if (m.id !== uId) return [m];
+            return [{ ...m, error: { message, retryWith: retryPayload } }];
+          }),
         );
       };
       const interruptTurn = (message: string) => {
         if (reported) return;
         reported = true;
-        refreshProviderStatus();
         setMessages((p) =>
           p.map((m) =>
             m.id === aId
@@ -214,16 +198,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       const finalizeBubble = () =>
         setMessages((p) =>
           p.map((m) =>
-            m.id === aId || (m.role === "assistant" && m.promptId === promptId)
-              ? { ...m, streaming: false, queued: false }
-              : m,
+            m.id === aId ? { ...m, streaming: false, queued: false } : m,
           ),
         );
       let delivered = false;
 
-      const waits = sendWaits(
+      const startingQueued = hasStreamingAssistant(
         useStore.getState().messages,
-        useStore.getState().queuedPrompts,
       );
       const uMsg: Message = {
         id: uId,
@@ -231,8 +212,6 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: userParts,
         streaming: false,
         at: new Date().toISOString(),
-        sentHere: true,
-        ...(waits && { queued: true }),
       };
       const aMsg: Message = {
         id: aId,
@@ -240,7 +219,6 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
-        ...(waits && { queued: true }),
         ...(hidden ? {} : { retryWith: retryPayload }),
       };
       if (retryOf !== undefined) {
@@ -263,36 +241,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           "Not delivered — the agent never confirmed it received this message.",
         );
       };
-      const recoverDelivery = () => {
-        if (!reported) return;
-        reported = false;
-        forgetUndelivered(draftKey(selectedAgent, intendedSessionId), uId);
-        setMessages((p) => {
-          const at = p.findIndex((m) => m.id === uId && m.error);
-          if (at === -1 || p.some((m) => m.id === aId)) return p;
-          return [
-            ...p.slice(0, at),
-            { ...p[at]!, error: undefined },
-            aMsg,
-            ...p.slice(at + 1),
-          ];
-        });
-      };
-      const hold = untilAgentOperable(selectedAgent);
-      if (hold) recordUndeliveredLocally(LEFT_BEFORE_START);
+      delivery.beginSend(promptId, failDelivery, {
+        waking: agentRunState !== "running",
+      });
 
       let started: StartedSession | null = null;
       let detached = false;
       try {
-        if (hold) {
-          await hold;
-          forgetUndelivered(draftKey(selectedAgent, intendedSessionId), uId);
-        }
-        delivery.beginSend(promptId, failDelivery, {
-          waking: !hold && agentRunState !== "running",
-          recover: recoverDelivery,
-        });
-
         let connection: ClientConnection;
         let sessionId: string;
         let isOpen: () => boolean;
@@ -321,7 +276,6 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                 text,
                 attachments,
               );
-        const harness = harnessOfSession(selectedAgent, sessionId, !!started);
         const turn = connection.agent.request("session/prompt", {
           sessionId,
           prompt: promptBlocks,
@@ -329,7 +283,6 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             platform: {
               promptId,
               surface: "ui",
-              ...(harness ? { harness } : {}),
               ...(retryOf !== undefined ? { retryOf } : {}),
               ...(initiator ? { initiator } : {}),
             },
@@ -348,19 +301,12 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 
         finalizeBubble();
       } catch (err: unknown) {
-        if (
-          (err as { data?: { platform?: { reason?: string } } } | null)?.data
-            ?.platform?.reason === "provider-removed"
-        )
-          void queryClient.invalidateQueries({
-            queryKey: trpc.connections.getAgentConnections.queryKey(),
-          });
         const bubble = useStore.getState().messages.find((m) => m.id === aId);
         const streamed = !!bubble && hasAgentContent(bubble);
         const outcome = classifySendOutcome({
           connectionClosed: isConnectionClosed(err),
           delivered,
-          queued: bubble?.queued ?? false,
+          queued: bubble?.queued ?? startingQueued,
           queueFull: isQueueFullError(err),
           closeReason: connectionCloseReason(err),
           errorMessage: extractErrorMessage(err),
@@ -411,34 +357,11 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     const started = startedRef.current;
     const conn = connectionRef.current?.connection ?? started?.connection;
     const sid = engagedSessionIdRef.current ?? started?.sessionId;
-    const finalizeLocally = () => setMessages((p) => finalizeRunningReply(p));
-    if (!conn || !sid) {
-      finalizeLocally();
-      return;
-    }
+    setMessages((p) => finalizeAllStreaming(p));
+    if (!conn || !sid) return;
     try {
       await conn.agent.notify("session/cancel", { sessionId: sid });
-    } catch {
-      finalizeLocally();
-      return;
-    }
-    const stopping = new Set(
-      useStore
-        .getState()
-        .messages.filter(
-          (m) => m.role === "assistant" && m.streaming && !m.queued,
-        )
-        .map((m) => m.id),
-    );
-    setTimeout(() => {
-      setMessages((p) =>
-        p.map((m) =>
-          stopping.has(m.id) && m.streaming
-            ? { ...m, streaming: false, queued: false }
-            : m,
-        ),
-      );
-    }, STOP_SETTLE_MS);
+    } catch {}
   }, [engagedSessionIdRef, connectionRef, setMessages]);
 
   return { sendPrompt, stopAgent };
