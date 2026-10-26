@@ -135,6 +135,7 @@ function createLeaseWorld(opts: {
         sessionMetadata: metadata.store,
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
+        harnessForks: pair.harness === "claude-code",
         modeSettingId: "mode",
         sessionSettingFrames: (sessionId) => {
           const meta = metadata.store.get(sessionId)?.meta;
@@ -305,6 +306,31 @@ describe("acp-runtime: one harness process per harness", () => {
     });
     codex.replyTo("initialize", {});
     expect(client.saw("initialize")).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: A client's initialize carries the default harness's
+   * capabilities, which say nothing about a session on another harness, so a
+   * chat would offer to fork a Codex session the harness cannot fork. Each
+   * session's own answer, on session/new and on every later session/load,
+   * says whether its harness can fork. */
+  it("tells a client whether each session's harness can fork", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    startSession(world, client, "claude-code", "s-a", 2, {});
+    startSession(world, client, "codex", "s-c", 3, { harness: "codex" });
+    const forksOf = (frame: Frame | undefined): unknown =>
+      (frame?.result as { _meta?: { platform?: { forks?: unknown } } })?._meta
+        ?.platform?.forks;
+    expect(forksOf(client.reply(2))).toBe(true);
+    expect(forksOf(client.reply(3))).toBe(false);
+
+    const other = world.connect();
+    other.send(frames.initialize(1));
+    other.send(frames.loadSession(2, "s-a"));
+    other.send(frames.loadSession(3, "s-c"));
+    expect(forksOf(other.reply(2))).toBe(true);
+    expect(forksOf(other.reply(3))).toBe(false);
   });
 
   /** TEST_SCENARIO: session/list is answered from the session metadata, so a

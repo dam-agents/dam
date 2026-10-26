@@ -63,7 +63,7 @@ func TestAVMAgentWithNoPullSecretFetchesAnonymously(t *testing.T) {
 	assert.Empty(t, node.spec("my-agent").PullAuths)
 }
 
-// TEST_SCENARIO: a vm agent wakes: the node gets a running machine with the install's vCPUs, sized by the agent's spec where the runner has no memory limit, and its mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and since no pod event will come the reconciler watches the machine itself.
+// TEST_SCENARIO: a vm agent wakes: the node gets a running machine with the install's vCPUs, sized from the install's machine memory where the runner has no memory limit, and its mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and since no pod event will come the reconciler watches the machine itself.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
@@ -74,7 +74,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.True(t, spec.Running)
 	assert.Equal(t, "quay.io/example/claude-code-vm:1", spec.Image)
 	assert.Equal(t, 4, spec.CPUs)
-	assert.Equal(t, 3072, spec.MemoryMiB)
+	assert.Equal(t, 2048, spec.MemoryMiB)
 	assert.Equal(t, 100, spec.StorageGiB, "a new machine is created at the owner's pool")
 	assert.Equal(t, "MITM-CA", spec.CACert)
 	assert.Equal(t, []string{"10.96.42.42/32"}, spec.AllowCIDRs)

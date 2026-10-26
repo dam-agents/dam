@@ -1068,8 +1068,6 @@ export const invocations = pgTable(
     templateId: text("template_id"),
     image: text("image"),
     connections: jsonb("connections").$type<string[]>().notNull().default([]),
-    cpu: text("cpu"),
-    memory: text("memory"),
     ttlMs: integer("ttl_ms"),
     resultSchema: jsonb("result_schema"),
     result: jsonb("result"),

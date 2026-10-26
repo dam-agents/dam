@@ -189,15 +189,6 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
-            {{- if .Values.agentStore.previewReport }}
-            # The report sizes an Agent that carries no limit from the same
-            # defaults the controller uses, so what it previews is what an
-            # absorb would write.
-            - name: AGENT_LEGACY_CPU_LIMIT
-              value: {{ .Values.controller.agent.legacyAgentSize.cpu | quote }}
-            - name: AGENT_LEGACY_MEMORY_LIMIT
-              value: {{ .Values.controller.agent.legacyAgentSize.memory | quote }}
-            {{- end }}
             - name: RUNTIME_DELIVERY_CONCURRENCY
               value: {{ .Values.apiServer.runtimeDelivery.concurrency | quote }}
             {{- if .Values.apiServer.db.caCert }}

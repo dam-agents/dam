@@ -367,6 +367,18 @@ func TestLoadFromEnv_RejectsAVMRunnerWithNoMemoryLimit(t *testing.T) {
 	assert.Equal(t, "8Gi", cfg.VM.Runner.Resources.Limits.Memory().String())
 }
 
+// TEST_SCENARIO: a runner configuration that names no machine memory keeps the chart's 2 GiB, the value a machine takes where its owner's pool cannot size it. Every chart render sends it, so this is the value a hand-written AGENT_VM gets.
+func TestLoadFromEnv_MachineMemoryDefaultsToTheChartsValue(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 2048, cfg.VM.Runner.MachineMemoryMiB)
+}
+
 // TEST_SCENARIO: runner pods take a new runner image only as a hand-off from the node's release directory, so virtualization with runner pods and no such directory is refused at start. A host runner outside the cluster has no pod to hand off in, and needs none.
 func TestLoadFromEnv_RejectsRunnerPodsWithNoReleaseDirectory(t *testing.T) {
 	base := map[string]string{
