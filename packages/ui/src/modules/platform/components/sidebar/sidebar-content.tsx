@@ -35,7 +35,7 @@ export function SidebarContent({
     <>
       <div className="mt-px flex flex-col gap-px">{primary.map(item)}</div>
       <div
-        className="-mx-2 mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-4"
+        className="relative -mx-2 mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-4"
         data-testid="sidebar-sections"
       >
         <div data-testid="sidebar-agents-section">
