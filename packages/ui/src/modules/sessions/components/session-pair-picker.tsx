@@ -39,10 +39,10 @@ import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useProviderUsage } from "../hooks/use-provider-usage.js";
 import {
   attachableProviders,
+  findModel,
   modelGroups,
   sameModel,
   sameSideGroups,
-  sessionModelLabel,
 } from "../lib/catalog-groups.js";
 import { DEFAULT_KIND_LABEL, DEFAULT_KIND_TITLE } from "../lib/default-kind.js";
 import {
@@ -55,6 +55,7 @@ import {
 } from "../lib/session-pair-options.js";
 import {
   applySettingChanges,
+  pairSummary,
   settingDefaults,
   settingsForModel,
 } from "../lib/session-settings.js";
@@ -69,7 +70,7 @@ import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { DetachProviderMessage } from "./detach-provider-message.js";
 import { PlatformSubagentSettings } from "./platform-subagent-settings.js";
 import { SessionModelList } from "./session-model-list.js";
-import { SessionPairTrigger } from "./session-pair-trigger.js";
+import { PairSummary, SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
@@ -89,6 +90,12 @@ type Props = CommonProps &
         carried: readonly HarnessCapability[];
         defaultHarness: string;
         routed?: boolean;
+        /** UNIT_BOUNDARY_DESCRIPTION: edits a pick held elsewhere (a profile in Settings): the Custom screen alone, and a pick goes to `onChoose`, never to the agent's next session or chat default. `providerName` names a provider the agent does not hold. */
+        edit?: {
+          pair: SessionPair;
+          providerName: string;
+          onChoose: (pair: SessionPair) => void;
+        };
       }
   );
 
@@ -109,13 +116,15 @@ export function SessionPairPicker(props: Props) {
   } = props;
   const carried = props.pending ? [] : props.carried;
   const routed = props.pending ? false : (props.routed ?? false);
+  const edit = props.pending ? undefined : props.edit;
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
   const picked = useStore((s) => s.nextSessionPair[agentId] ?? null);
-  const chosen = picked;
+  const chosen = edit ? null : picked;
+  const firstView = edit ? "custom" : "profiles";
   const [view, setView] = useState<"profiles" | "custom" | "subagent">(
-    "profiles",
+    firstView,
   );
   const [fromProfile, setFromProfile] = useState<{
     id: string;
@@ -153,6 +162,7 @@ export function SessionPairPicker(props: Props) {
     : props.defaultHarness;
   const next = useNextSessionPair(agentId, names, defaultHarness);
   const pair =
+    edit?.pair ??
     next ??
     (props.pending && names[0]
       ? { harness: names[0], provider: null, model: null }
@@ -197,6 +207,7 @@ export function SessionPairPicker(props: Props) {
       platformSubagentProfileId?: string | null;
     },
   ) => {
+    if (edit) return edit.onChoose(chosenPair);
     setPair(agentId, chosenPair);
     if (routed)
       rememberSessionPair(agentId, chosenPair, "chat", undefined, references);
@@ -288,14 +299,23 @@ export function SessionPairPicker(props: Props) {
   const label = !pair
     ? undefined
     : routed
-      ? (sessionModelLabel(groups, pair.model) ?? "Choose a model")
+      ? pairSummary(pair.model, {
+          settings,
+          defaults,
+          capability,
+          provider:
+            findModel(groups, pair.model)?.group.displayName ??
+            provider?.name ??
+            edit?.providerName,
+        })
       : modelProviderLabel(
           pair.model,
           provider?.name,
           harnessName(pair.harness) ?? pair.harness,
         );
 
-  const showProfiles = routed && view === "profiles" && profiles.length > 0;
+  const showProfiles =
+    routed && !edit && view === "profiles" && profiles.length > 0;
 
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -304,7 +324,7 @@ export function SessionPairPicker(props: Props) {
       <Popover
         open={open}
         onOpenChange={(next) => {
-          if (next) setView("profiles");
+          if (next) setView(firstView);
           onOpenChange?.(next);
         }}
       >
@@ -329,9 +349,9 @@ export function SessionPairPicker(props: Props) {
                 primary={{
                   selectedId: primary?.id ?? null,
                   custom:
-                    primary || !pair
-                      ? null
-                      : `${pair.harness} · ${pair.model ?? "no model"}`,
+                    primary || !pair ? null : (
+                      <PairSummary harness={pair.harness} label={label ?? ""} />
+                    ),
                   onPick: (profile) => {
                     setFromProfile(profile);
                     choose(
@@ -355,9 +375,12 @@ export function SessionPairPicker(props: Props) {
                 subagent={{
                   selectedId: slot?.id ?? null,
                   custom:
-                    slot || !customSlot
-                      ? null
-                      : `${customSlot.harness} · ${customSlot.model}`,
+                    slot || !customSlot ? null : (
+                      <PairSummary
+                        harness={customSlot.harness}
+                        label={pairSummary(customSlot.model, {})}
+                      />
+                    ),
                   onPick: (profile) =>
                     pair &&
                     chooseSubagent(
@@ -377,7 +400,7 @@ export function SessionPairPicker(props: Props) {
             </div>
           ) : (
             <>
-              {routed && (
+              {routed && !edit && (
                 <button
                   type="button"
                   onClick={() => setView("profiles")}
@@ -553,9 +576,15 @@ export function SessionPairPicker(props: Props) {
               />
             </div>
           )}
-          {routed && !showProfiles && view !== "subagent" && saveAs.row && (
-            <div className="border-t border-border px-2 pt-2">{saveAs.row}</div>
-          )}
+          {routed &&
+            !edit &&
+            !showProfiles &&
+            view !== "subagent" &&
+            saveAs.row && (
+              <div className="border-t border-border px-2 pt-2">
+                {saveAs.row}
+              </div>
+            )}
           {!routed && (
             <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
               <PopoverClose asChild>
@@ -571,7 +600,7 @@ export function SessionPairPicker(props: Props) {
           )}
         </PopoverContent>
       </Popover>
-      {pair && (
+      {pair && !edit && (
         <ToolApprovalPicker
           capability={capability}
           settings={settings}

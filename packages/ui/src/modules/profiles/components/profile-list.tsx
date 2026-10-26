@@ -10,7 +10,7 @@ import { profileDetail } from "../lib/profile-detail.js";
 export interface ProfileSlot {
   selectedId: string | null;
   /** UNIT_BOUNDARY_DESCRIPTION: the values the slot holds when no profile matches them, shown on its Custom selection row; null while a profile or the agent picks. */
-  custom: string | null;
+  custom: ReactNode | null;
   onPick: (profile: ProfileWithUsage) => void;
   onCustom: () => void;
 }
@@ -196,7 +196,7 @@ export function CustomRow({
   onClick,
 }: {
   label: string;
-  detail?: string | undefined;
+  detail?: ReactNode;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -220,7 +220,7 @@ export function CustomRow({
           {label}
         </span>
         {detail && (
-          <span className="block truncate text-xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
             {detail}
           </span>
         )}

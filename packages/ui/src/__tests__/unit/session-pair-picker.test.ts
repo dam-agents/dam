@@ -851,8 +851,8 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).not.toContain(">Change<");
   });
 
-  /** TEST_SCENARIO: The label under the composer is the model family's pretty name for a matched model, not its provider. */
-  it("shows the pretty model name under the composer", () => {
+  /** TEST_SCENARIO: The label under the composer reads the model family's pretty name, the harness's effort and the provider in parentheses. */
+  it("shows the pretty model name, effort and provider under the composer", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
         onToolApproval: () => {},
@@ -870,8 +870,7 @@ describe("one model list on a runtime that routes by model name", () => {
     );
     const trigger =
       /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(html)?.[1];
-    expect(trigger).toContain("GLM 5.3");
-    expect(trigger).not.toContain("Curve");
+    expect(trigger).toContain(">GLM 5.3 · Low (Curve)</span>");
   });
 
   /** TEST_SCENARIO: The provider a running session's model names (the
@@ -1041,6 +1040,74 @@ describe("the profile a session's pick came from", () => {
       render("s2");
       expect(container.textContent).toContain("Save as a profile");
       expect(container.textContent).not.toContain("Update “Fast review”");
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+    }
+  });
+});
+
+describe("the picker editing a profile in Settings", () => {
+  /** TEST_SCENARIO: Settings opens the picker on its Custom screen with no
+   * profile view, Save row or tool approval, and a pick goes to the profile,
+   * never to the agent's next session. */
+  it("shows the Custom screen and hands a pick to the profile", () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "curve-bender",
+        model: "cb/rits/zai-org/glm-5-3",
+        settings: {},
+        seeded: false,
+        usage: { agents: 1, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+    ];
+    state.catalog = routedCatalog;
+    state.chosenModel.mockReset();
+    const onChoose = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+            edit: {
+              pair: {
+                harness: "pi",
+                provider: "curve",
+                model: "cb/rits/zai-org/glm-5-3",
+              },
+              providerName: "Curve",
+              onChoose,
+            },
+          }),
+        ),
+      );
+      const text = container.textContent ?? "";
+      expect(text).not.toContain("Primary model");
+      expect(text).not.toContain("Use a profile");
+      expect(text).not.toContain("Save as a profile");
+      expect(
+        container.querySelector('[data-testid="tool-approval-picker"]'),
+      ).toBeNull();
+      const pi = [
+        ...container.querySelectorAll('[aria-label="Harness"] button'),
+      ].find((b) => b.textContent?.includes("Pi")) as HTMLButtonElement;
+      act(() => pi.click());
+      expect(onChoose).toHaveBeenCalledWith({
+        harness: "pi",
+        provider: "ibm",
+        model: null,
+      });
+      expect(state.chosenModel).not.toHaveBeenCalled();
     } finally {
       act(() => root.unmount());
       profilesState = [];

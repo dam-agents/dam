@@ -43,7 +43,7 @@ The choice belongs to that session alone and starts with its next turn; it is ke
 An agent remembers one **chat default**, which preselects the next session, and two **legacy** pairs, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on, kept for rows written before profiles.
 A pick in a chat saves the chat default, whose primary model and subagent slot each hold a profile reference or values of their own, never both.
 **Tool approval** (Claude Code's permission mode, Bob's approvals) is one session's own pick, in its own picker: no default, profile, channel, schedule or Config panel holds one, a session that picks none runs on Auto mode (else Bypass), and Plan modes are offered nowhere.
-**An owner's profiles** hold a harness, a provider template, a model and settings; they are edited from a chat's model picker, listed in Settings › Providers, and named by the chat default, by a channel's or a chat's binding and by a schedule.
+**An owner's profiles** hold a harness, a provider template, a model and settings; they are saved from a chat's model picker, edited there or with it in Settings › Providers, and named by the chat default, by a channel's or a chat's binding and by a schedule.
 The api-server resolves a reference into the pair the runtime is sent, so an edit reaches every run following it while a session that picked keeps its own.
 A channel or schedule naming none follows its kind's legacy pair; picking a profile grants its provider on the agent.
 Home marks a default that is not set or whose provider the agent no longer holds, and so does the agent's Models tile.

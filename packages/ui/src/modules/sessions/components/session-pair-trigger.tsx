@@ -24,17 +24,30 @@ export function SessionPairTrigger({
       {...props}
     >
       {label ? (
-        <>
-          {harness && (
-            <span className="flex shrink-0">
-              <HarnessIcons harnesses={[harness]} size="xs" />
-            </span>
-          )}
-          <span className="truncate">{label}</span>
-        </>
+        <PairSummary harness={harness} label={label} />
       ) : (
         <Spinner size={12} />
       )}
     </button>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a pick as one line, the harness icon before its `pairSummary`. */
+export function PairSummary({
+  harness,
+  label,
+}: {
+  harness?: string | undefined;
+  label: string;
+}) {
+  return (
+    <>
+      {harness && (
+        <span className="flex shrink-0">
+          <HarnessIcons harnesses={[harness]} size="xs" />
+        </span>
+      )}
+      <span className="truncate">{label}</span>
+    </>
   );
 }

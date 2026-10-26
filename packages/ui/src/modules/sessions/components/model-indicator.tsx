@@ -31,9 +31,9 @@ import {
   useProviderModels,
 } from "../api/session-pair.js";
 import {
+  findModel,
   modelGroups,
   sameSideGroups,
-  sessionModelLabel,
 } from "../lib/catalog-groups.js";
 import {
   harnessDisplayName,
@@ -41,6 +41,7 @@ import {
 } from "../lib/session-pair-options.js";
 import {
   applySettingChanges,
+  pairSummary,
   settingDefaults,
 } from "../lib/session-settings.js";
 import {
@@ -54,7 +55,7 @@ import {
 } from "../lib/subagent-choice.js";
 import { PlatformSubagentSettings } from "./platform-subagent-settings.js";
 import { SessionModelList } from "./session-model-list.js";
-import { SessionPairTrigger } from "./session-pair-trigger.js";
+import { PairSummary, SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
@@ -173,7 +174,13 @@ export function ModelIndicator({
           ?.choices ?? [])
       : (data?.availableModels ?? []);
   const modelName = routed
-    ? (sessionModelLabel(groups, model) ?? "Choose a model")
+    ? pairSummary(model, {
+        settings,
+        defaults,
+        capability,
+        provider:
+          findModel(groups, model)?.group.displayName ?? activeProvider?.name,
+      })
     : (models.find((m) => m.value === model)?.name ?? model);
   const unlisted =
     !routed &&
@@ -294,7 +301,9 @@ export function ModelIndicator({
               customHint={harnessName ?? harness}
               primary={{
                 selectedId: primary?.id ?? null,
-                custom: primary ? null : modelName,
+                custom: primary ? null : (
+                  <PairSummary harness={harness} label={modelName ?? ""} />
+                ),
                 onPick: (profile) => {
                   setOpen(false);
                   setFromProfile(profile);
@@ -313,9 +322,12 @@ export function ModelIndicator({
               subagent={{
                 selectedId: slot?.id ?? null,
                 custom:
-                  slot || !customSlot
-                    ? null
-                    : `${customSlot.harness} · ${customSlot.model}`,
+                  slot || !customSlot ? null : (
+                    <PairSummary
+                      harness={customSlot.harness}
+                      label={pairSummary(customSlot.model, {})}
+                    />
+                  ),
                 onPick: (profile) =>
                   onConfigure(
                     subagentChanges(
