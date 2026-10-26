@@ -210,6 +210,7 @@ A job that never reached a phase prints `n/a` for its rows, so one job's table c
 No image build uses a container runtime.
 Each `:oci` task writes a tar to its package's `dist/oci/`; `cluster:import` copies it into the k3s VM (`platform-k3s`, 200 GiB per `etc/lima/k3s.yaml`) for `k3s ctr images import`.
 On macOS the Linux-only images (agent images, VM runner) also build in that VM, so its one disk holds their build caches beside the cluster's containerd.
+`cluster:import` stages each tar in the guest's `/var/tmp` and not its `/tmp`, which lima mounts as a tmpfs of half the VM's memory: an agent image tar is gigabytes, and the e2e test VM's 3.9 GiB `/tmp` ran out importing one while its disk had room.
 
 **Symptom.** A build or import fails with `no space left on device` while the Mac has room.
 The full disk is the VM's; host `df -h /` measures the wrong filesystem:
