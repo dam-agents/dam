@@ -1194,6 +1194,14 @@ ingress:
   # an unplanned alias. Off by default — convention-based hostnames cover
   # production, and a catch-all weakens host-based isolation.
   catchAllAppHost: false
+  # -- The Traefik router priority of the catch-all rule's own Ingress. Empty
+  # leaves it out, and Traefik ranks that Ingress by its rule's length, as for
+  # every Ingress without a priority. Set it below the explicit hosts'
+  # `router.priority` (`ingress.annotations`) and above the rule-length
+  # priorities Traefik derives: a local named install does this, so its hosts
+  # win over its catch-all, which in turn wins over an install whose Ingress
+  # still answers on every entrypoint.
+  catchAllPriority: ""
   # -- TLS rules passed through verbatim to `Ingress.spec.tls`. The chart does
   # NOT auto-derive `hosts` from rules — when you set any `urls.{service}`
   # override, you must also list those hostnames here (or reference them via

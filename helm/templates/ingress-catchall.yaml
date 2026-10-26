@@ -1,0 +1,43 @@
+{{- /*
+  Catch-all app rule (host-less): matches any Host header that no other rule
+  claims, so requests to IP literals (e.g. `127.0.0.1`) or ad-hoc aliases reach
+  the UI + API. Skipped when an explicit `urls.ui`/`urls.api` override is set
+  since that pins the app to a single hostname intentionally.
+
+  It has an Ingress of its own because Traefik's `router.priority` is set per
+  Ingress and applies to every router that Ingress makes. Beside the explicit
+  hosts it took their priority, so a `keycloak.localhost` request could tie
+  with the catch-all and reach the UI. Here it carries
+  `ingress.catchAllPriority` instead: below the explicit hosts, above the
+  priority Traefik derives from a rule's length, which is what an Ingress
+  without `router.priority` — one installed before the local installs scoped
+  their Ingresses to an entrypoint — still claims on every entrypoint.
+*/ -}}
+{{- if and .Values.ingress.enabled .Values.ingress.catchAllAppHost (not (or .Values.urls.ui .Values.urls.api)) }}
+{{- $uiSvc := include "platform.ui.fullname" . -}}
+{{- $apiSvc := include "platform.apiserver.fullname" . -}}
+{{- $annotations := deepCopy (.Values.ingress.annotations | default dict) -}}
+{{- $_ := unset $annotations "traefik.ingress.kubernetes.io/router.priority" -}}
+{{- with .Values.ingress.catchAllPriority -}}
+{{- $_ := set $annotations "traefik.ingress.kubernetes.io/router.priority" (toString .) -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "platform.fullname" . }}-catchall
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - http:
+        paths:
+          {{- include "platform.ingress.appPaths" (dict "uiSvc" $uiSvc "apiSvc" $apiSvc) | nindent 10 }}
+{{- end }}
