@@ -1,6 +1,7 @@
 import { jsonRpcErrorDetails, saysProviderUnavailable } from "api-server-api";
 
 import { AcpTurnAbandonedError } from "../../../core/acp-client.js";
+import { PROVIDER_UNAVAILABLE_TURN_REASON } from "../../../events.js";
 import type { NoDefaultModelError } from "../../harness-config/index.js";
 import { isNoDefaultModelError } from "../../harness-config/index.js";
 import {
@@ -10,8 +11,6 @@ import {
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 
-export const PROVIDER_UNAVAILABLE_REASON = "provider-unavailable";
-
 export type TurnFailure =
   | {
       kind: "plain";
@@ -20,7 +19,7 @@ export type TurnFailure =
     }
   | {
       kind: "provider-unavailable";
-      reason: typeof PROVIDER_UNAVAILABLE_REASON;
+      reason: typeof PROVIDER_UNAVAILABLE_TURN_REASON;
     };
 
 export function classifyTurnFailure(err: unknown): TurnFailure {
@@ -55,7 +54,7 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
   if (saysProviderUnavailable(errorText(err)))
     return {
       kind: "provider-unavailable",
-      reason: PROVIDER_UNAVAILABLE_REASON,
+      reason: PROVIDER_UNAVAILABLE_TURN_REASON,
     };
   return {
     kind: "plain",

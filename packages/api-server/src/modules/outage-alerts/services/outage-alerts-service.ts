@@ -1,4 +1,5 @@
 import type { OutageAlertNotice, SessionCategory } from "api-server-api";
+import { match } from "ts-pattern";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -147,11 +148,12 @@ export function createOutageAlertsService(deps: {
   };
 
   const categoriesOf = async (work: readonly FailedWork[]) => {
-    if (work.length === 0) return new Map<string, SessionCategory>();
+    const sessions = work.flatMap((w) => (w.kind === "session" ? [w] : []));
+    if (sessions.length === 0) return new Map<string, SessionCategory>();
     try {
       return await deps.sessionCategories(
-        [...new Set(work.map((w) => w.agentId))],
-        [...new Set(work.map((w) => w.sessionId))],
+        [...new Set(sessions.map((w) => w.agentId))],
+        [...new Set(sessions.map((w) => w.sessionId))],
       );
     } catch (err) {
       log().warn({ reason: formatError(err) }, "outage_alerts.sessions_unread");
@@ -163,9 +165,17 @@ export function createOutageAlertsService(deps: {
     const work = await failedWorkIn(outage);
     const categories = await categoriesOf(work);
     const reasons = new Map<string, OutageAlertAffectedBy[]>();
-    for (const { agentId, sessionId } of work)
-      if (categories.get(sessionId) === "scheduled")
-        reasons.set(agentId, ["schedule"]);
+    for (const failed of work) {
+      const reason = match(failed)
+        .with({ kind: "session" }, ({ sessionId }) =>
+          categories.get(sessionId) === "scheduled" ? "schedule" : null,
+        )
+        .with({ kind: "ambient" }, ({ channel }) => channel)
+        .exhaustive();
+      const known = reasons.get(failed.agentId) ?? [];
+      if (reason && !known.includes(reason))
+        reasons.set(failed.agentId, [...known, reason]);
+    }
     const owners = new Map<string, AffectedAgent[]>();
     for (const [agentId, affectedBy] of reasons) {
       const facts = await describe(agentId);

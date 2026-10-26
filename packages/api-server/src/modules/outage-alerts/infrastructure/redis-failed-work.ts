@@ -16,6 +16,11 @@ const failedWorkSchema = z.discriminatedUnion("kind", [
     agentId: z.string(),
     sessionId: z.string(),
   }),
+  z.object({
+    kind: z.literal("ambient"),
+    agentId: z.string(),
+    channel: z.enum(["slack", "telegram"]),
+  }),
 ]);
 
 function parsed(member: string): FailedWork | null {

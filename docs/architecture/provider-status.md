@@ -114,7 +114,7 @@ The card lives only in the open chat: a reload or a reconnect rebuilds the chat 
 The provider is the one of the agent's channel default.
 A thread whose model someone picked by hand can run on another provider, and the reply then names the default's provider.
 When the provider or the status cannot be read, the reply says that the model provider did not respond.
-An ambient turn that fails posts nothing.
+An ambient turn that fails posts nothing; a provider outage that fails it reaches the owner through the [outage alerts](#outage-alerts).
 
 **The status line.** While the provider of the open session is degraded, a line at the end of the chat, above the message box, says so: while a turn runs, that the provider is not responding and the agent keeps trying; otherwise, since when the provider has had problems and that messages may fail.
 While the fault is on the platform's side, the line says that the platform cannot reach model providers, also when the session's provider is not known.
@@ -137,7 +137,7 @@ On a narrow screen it shows only its lead and the close button.
 ## Outage alerts
 
 A user who meets an outage in the chat, or in a Slack or Telegram reply, learns the cause there ([screens](#screens)).
-A schedule runs an agent while nobody watches, so an outage alert tells the owner when such work failed in an outage that lasts longer than a delay, and again when the provider works again.
+A schedule or an ambient turn runs an agent while nobody watches, so an outage alert tells the owner when such work failed in an outage that lasts longer than a delay, and again when the provider works again.
 The delay is one platform setting, 15 minutes by default; an outage that ends earlier sends nothing, and a failure from the start of the outage counts once the delay has passed.
 An outage that failed no unattended work sends nothing, whatever schedules and channels the agents have.
 
@@ -147,6 +147,8 @@ The api-server does not learn the outcome of a scheduled run, because the run's 
 Each replica records the failed calls with a Session that it sees, per template in Redis, for a day.
 Once an outage has lasted the delay, the job looks up their Sessions in the [Session directory](metrics.md#session-directory) and keeps the scheduled ones: a failed call in a chat or a channel Session does not count.
 A run that retried and then succeeded still counts, and a Session that the directory cannot read counts at a later run.
+An ambient turn in Slack or Telegram that failed because the provider is down is failed unattended work too: its turn event names the template, so it counts without a lookup.
+An addressed turn does not count, because its reply already names the outage, and a failed call in a channel Session does not count by itself, because addressed and ambient turns can share one Session.
 A disabled or deleted agent is left out.
 
 The alerts react to the state of each run on the replica that ran the job, so each run is the delay's clock, and a lost run changes nothing, because the next one repeats the whole state.

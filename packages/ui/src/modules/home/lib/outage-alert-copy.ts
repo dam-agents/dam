@@ -38,8 +38,8 @@ export function outageAlertDismissHint(provider: string): string {
 function affectedByLabel(reason: OutageAlertAffectedBy): string {
   return match(reason)
     .with("schedule", () => "Scheduled run failed")
-    .with("slack", () => "Slack channel")
-    .with("telegram", () => "Telegram chat")
+    .with("slack", () => "Slack turn in ambient mode failed")
+    .with("telegram", () => "Telegram turn in ambient mode failed")
     .exhaustive();
 }
 

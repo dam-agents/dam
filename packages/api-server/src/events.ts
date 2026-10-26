@@ -146,6 +146,8 @@ export type TelegramChatUnbound = {
   ownerSub: string;
 };
 
+export const PROVIDER_UNAVAILABLE_TURN_REASON = "provider-unavailable";
+
 export type ChannelTurnRelayed = {
   type: EventType.ChannelTurnRelayed;
   channel: "slack" | "telegram";

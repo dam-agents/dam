@@ -71,6 +71,7 @@ A few observations the diagram glosses over:
   A hard failure (a machine that restarts, a bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string.
   The one message passed through verbatim is a refusal to start: the controller's text names what is full and what to stop, which no copy written here could reproduce; a cause the platform is itself repairing still invites a retry.
   Telegram replies with the same copy on wake failures (no early notice, no extended wait), on addressed turns only: an ambient turn fails silently, as on Slack.
+  An ambient turn that fails because the model provider is down still reaches the Agent's owner, through [outage alerts](provider-status.md#outage-alerts).
 - **The agent posts by calling a tool — plain assistant text is never delivered.** A Slack turn's reply reaches the channel only when the agent calls one of its outbound tools (see [Outbound](#outbound--agent-to-channel)), mirroring how Telegram already works.
   The relay hands the message to the machine and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted, and an addressed turn that ends having posted nothing is nudged to deliver it (see [the turn watch](#the-turn-watch--liveness-not-duration)).
   The prompt carries a per-turn contract stating this and naming the thread and triggering message the tools target by default, so the agent replies into the right thread without tracking ids.
