@@ -169,6 +169,7 @@ describe("discoverMcp", () => {
       providerBalance: unused(),
       credentialProbe: unused(),
       providerKeyProbe: unused(),
+      providerModelCatalog: unused(),
       oauthCallbackUrl: callbackUrl,
       brandName: "Test",
       connectionLock: (_key, fn) => fn(),

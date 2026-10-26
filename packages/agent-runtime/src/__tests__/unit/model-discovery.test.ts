@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listingForTemplate } from "../../modules/model-catalog/domain/provider-listing.js";
+import { listingForTemplate } from "api-server-api";
 import { createModelDiscovery } from "../../modules/runtime-channel/infrastructure/model-discovery.js";
 
 const noop = () => {};

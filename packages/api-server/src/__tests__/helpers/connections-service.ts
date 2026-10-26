@@ -150,6 +150,7 @@ export function serviceHarness(opts: {
     providerBalance: unused(),
     credentialProbe: { probe: async () => ({ status: "passed" }) },
     providerKeyProbe: { probe: async () => ({ ok: true }) },
+    providerModelCatalog: unused(),
     oauthCallbackUrl: "https://example.com/callback",
     brandName: opts.brandName,
     connectionLock: opts.lock ?? keyedMutex(),

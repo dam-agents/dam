@@ -1,6 +1,6 @@
-import type { ProviderAlias } from "api-server-api";
-import type { ModelDiscoverySpec } from "../../runtime-channel/manifest.js";
+import type { ProviderAlias } from "../connections/providers.js";
 import type { ModelDialect, ModelPrices } from "./catalog-entry.js";
+import type { ModelDiscoverySpec } from "./discovery.js";
 
 const ALL_DIALECTS: readonly ModelDialect[] = [
   "anthropic-messages",
@@ -24,7 +24,7 @@ export const PROVIDER_DIALECTS: Record<ProviderAlias, readonly ModelDialect[]> =
     bob: ["openai-chat"],
   };
 
-export interface ProviderListing {
+export interface ProviderListingSpec {
   spec: ModelDiscoverySpec;
   defaultBase?: string;
   keep?: (upstreamId: string) => boolean;
@@ -63,7 +63,9 @@ export const BOB_LISTING_USER_AGENT = "platform-bob-catalog/1";
  * harnesses it serves: Bob's gateway serves the Bob harness alone, as a
  * subscription token serves Claude Code alone.
  */
-export function listingForTemplate(templateId: string): ProviderListing | null {
+export function listingForTemplate(
+  templateId: string,
+): ProviderListingSpec | null {
   switch (templateId) {
     case "ibm-litellm":
     case "curve-bender":

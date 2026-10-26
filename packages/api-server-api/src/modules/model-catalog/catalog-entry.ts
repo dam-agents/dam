@@ -1,5 +1,5 @@
-import type { ProviderAlias } from "api-server-api";
-import type { ModelDialect } from "../../runtime-channel/manifest.js";
+import type { ProviderAlias } from "../connections/providers.js";
+import type { ModelDialect } from "./dialects.js";
 
 export type { ModelDialect };
 

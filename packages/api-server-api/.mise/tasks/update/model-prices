@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 //MISE description="Re-vendor LiteLLM's model price and context-window table, pruned to the fields the model catalog reads"
 //MISE sources=[".mise/tasks/update/model-prices"]
-//MISE outputs=["src/modules/model-catalog/infrastructure/model-prices.json"]
+//MISE outputs=["src/modules/model-catalog/model-prices.json"]
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +31,7 @@ const plainness = (key) =>
 
 const out = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../src/modules/model-catalog/infrastructure/model-prices.json",
+  "../../../src/modules/model-catalog/model-prices.json",
 );
 
 const commits = await (await fetch(COMMITS, { headers: { accept: "application/vnd.github+json" } })).json();

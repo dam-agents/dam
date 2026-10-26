@@ -1133,6 +1133,7 @@ export async function bootstrap() {
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
+      providerModelCatalog: connectionsBoot.providerModelCatalog,
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>

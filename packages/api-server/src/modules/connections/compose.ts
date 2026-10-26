@@ -35,6 +35,10 @@ import {
   type ManagedProviderConnections,
 } from "./services/connections-service.js";
 import {
+  createProviderModelCatalog,
+  type ProviderModelCatalog,
+} from "./services/provider-model-catalog.js";
+import {
   createContributionFanOut,
   type FanOutPort,
 } from "./services/contribution-fanout.js";
@@ -80,6 +84,7 @@ export interface ConnectionsBootCompose {
   providerKeyProbe: ProviderKeyProbe;
   refreshLoop: OAuthRefreshLoop;
   accountLabelBackfill: AccountLabelBackfill;
+  providerModelCatalog: ProviderModelCatalog;
 }
 
 export interface ComposeConnectionsAtBootOpts {
@@ -137,6 +142,9 @@ export function composeConnectionsAtBoot(
     providerKeyProbe,
     refreshLoop,
     accountLabelBackfill,
+    providerModelCatalog: createProviderModelCatalog({
+      secretStore: opts.secretStore,
+    }),
   };
 }
 
@@ -243,6 +251,7 @@ export function composeConnectionsForOwner(opts: {
   maxSharedKbConnections?: number;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
+  providerModelCatalog: ProviderModelCatalog;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -295,6 +304,7 @@ export function composeConnectionsForOwner(opts: {
     resolveKbShare: createKbShareResolver(opts.db),
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey,
     harnesses: opts.harnesses,
+    providerModelCatalog: opts.providerModelCatalog,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),

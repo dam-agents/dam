@@ -1,6 +1,11 @@
-import { formatQualifiedModel } from "api-server-api";
-import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
+import { formatQualifiedModel } from "../harness-config/model-name.js";
 import type { CatalogEntry, ModelDialect } from "./catalog-entry.js";
+
+export interface HarnessBinding {
+  dialects: readonly ModelDialect[];
+  namePrefix?: string;
+  lowercaseNames?: boolean;
+}
 
 export interface HarnessOffer {
   dialects: readonly ModelDialect[];
@@ -15,7 +20,7 @@ export interface HarnessOffer {
 export function servesHarness(
   offer: HarnessOffer,
   harness: string,
-  binding: ModelRouterBinding,
+  binding: HarnessBinding,
 ): boolean {
   return (
     binding.dialects.some((d) => offer.dialects.includes(d)) &&
@@ -31,7 +36,7 @@ export function servesHarness(
  */
 export function renderName(
   entry: Pick<CatalogEntry, "alias" | "upstreamId">,
-  harness: ModelRouterBinding | undefined,
+  harness: HarnessBinding | undefined,
 ): string {
   const name = formatQualifiedModel(entry.alias, entry.upstreamId);
   if (!harness) return name;
@@ -44,12 +49,12 @@ export function renderName(
  * several thousand tokens, so a model known to hold less than this would
  * compact on every turn and is not offered; an unknown window is offered.
  */
-const MIN_CONTEXT_WINDOW = 32_000;
+export const MIN_CONTEXT_WINDOW = 32_000;
 
 export function forHarness(
   entries: readonly CatalogEntry[],
   harness: string,
-  binding: ModelRouterBinding | undefined,
+  binding: HarnessBinding | undefined,
 ): CatalogEntry[] {
   if (!binding) return [];
   return entries

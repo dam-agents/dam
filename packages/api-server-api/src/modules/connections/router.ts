@@ -9,6 +9,7 @@ import {
   manageCredentialsProcedure,
   readAgentProcedure,
   readCredentialsProcedure,
+  requireWildcardBinding,
 } from "../../auth-procedures.js";
 import {
   connectionCreateInputSchema,
@@ -52,6 +53,10 @@ export const connectionsRouter = t.router({
   list: readCredentialsProcedure.query(({ ctx }) =>
     ctx.connections.listAndReconcileConnections(),
   ),
+
+  catalog: readCredentialsProcedure
+    .use(requireWildcardBinding)
+    .query(({ ctx }) => ctx.connections.modelCatalog()),
 
   get: readCredentialsProcedure
     .input(connectionIdInputSchema)

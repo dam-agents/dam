@@ -2,6 +2,7 @@ import { z } from "zod";
 import { contribution } from "agent-runtime-api";
 import { secretRef, type SecretRef } from "../secret-store/types.js";
 import type { ProviderPresetType } from "./providers.js";
+import type { OwnerModelCatalogView } from "../model-catalog/types.js";
 import type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
@@ -296,6 +297,8 @@ export interface ProviderBalance {
 
 export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
+
+  modelCatalog(): Promise<OwnerModelCatalogView>;
 
   listConnections(): Promise<ConnectionView[]>;
 

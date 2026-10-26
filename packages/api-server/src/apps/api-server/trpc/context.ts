@@ -168,6 +168,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
+      providerModelCatalog: connectionsBoot.providerModelCatalog,
     });
     const secretRequests = composeSecretRequestsForOwner({
       ownerId: user.sub,
