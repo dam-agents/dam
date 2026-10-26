@@ -26,6 +26,11 @@ initializeCapabilities:
 # conversation once, under the terminal session.
 terminalSessionPins: "$HOME/.bob/platform-sessions"
 
+# A cold load spawns Bob first, which alone takes about 20 s, and each loaded
+# session builds its own MCP hub and connects the servers it carries before
+# Bob answers. The runtime's 30 s default left a healthy reopen 2 s of margin.
+sessionLoadTimeoutSeconds: 90
+
 drivers:
   env:
     impl: env

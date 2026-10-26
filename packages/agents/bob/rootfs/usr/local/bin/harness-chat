@@ -8,6 +8,10 @@
 # the mcp-entry driver writes for the terminal: the session's own entry, with
 # the session ref, is then the one Bob starts. bob chat reads the whole file.
 preload="--import=/usr/local/lib/bob-mcp-file.mjs"
+# bob-acp-patch.mjs: Bob's chat process would wait for every MCP server of
+# mcp.json before it answers a session, so one server that never gets ready
+# would stop every chat; see the Bob README, "MCP startup".
+preload="$preload --import=/usr/local/lib/bob-acp-patch.mjs"
 # The platform runs one Bob process per approval posture (and, on an older
 # runtime, per provider and model). Bob reads and watches one fixed settings
 # file, so each process gets its own copy, written from the shared file plus
