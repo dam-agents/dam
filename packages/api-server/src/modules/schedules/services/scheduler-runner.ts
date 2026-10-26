@@ -424,7 +424,6 @@ export function createSchedulerRunner(
       throw err;
     }
     noteFire("success");
-    await emitFired(sched, "success");
   }
 
   async function fire(
@@ -707,11 +706,17 @@ export function createSchedulerRunner(
         OnceResult.Delivering,
         outcome,
       );
-      if (changed) await emitChanged(sched.agentId, scheduleId);
-      else
+      if (!changed) {
         log(
           `delivery: one-time schedule ${scheduleId} is at ${sched.status?.lastResult ?? "no result"}, not ${OnceResult.Delivering}; ${outcome} dropped`,
         );
+        return;
+      }
+      await emitChanged(sched.agentId, scheduleId);
+      await emitFired(
+        sched,
+        outcome === OnceResult.Success ? "success" : "failure",
+      );
     },
 
     async recordOnceFailure(scheduleId, reason): Promise<void> {

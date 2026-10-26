@@ -695,6 +695,28 @@ describe("scheduler-runner fire", () => {
     ]);
   });
 
+  // TEST_SCENARIO: a one-time fire's outcome reaches usage, the audit log and the activity feed only once its event settles on the machine — a fire committed for a sleeping Agent has not run yet, and recording it success then is what told an owner their task had run when it had not. An undelivered fire reports failure.
+  it("reports a one-time fire's outcome from delivery, not from the commit", async () => {
+    const seen: string[] = [];
+    const sub = events$()
+      .pipe(ofType<ScheduleFired>(EventType.ScheduleFired))
+      .subscribe((event) => seen.push(event.outcome));
+    try {
+      const { runner } = makeDeps({ once: true });
+      await runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:30:00Z"),
+      );
+      expect(seen).toEqual([]);
+
+      await runner.recordDelivery(SCHEDULE_ID, "settled");
+      await runner.recordDelivery(SCHEDULE_ID, "expired");
+      expect(seen).toEqual(["success", "failure"]);
+    } finally {
+      sub.unsubscribe();
+    }
+  });
+
   // TEST_SCENARIO: a redelivered fire must mint the same event id — BullMQ is at-least-once, and only a fireAt-derived id lets the agent dedup the rerun.
   it("derives the trigger event id from the job's fireAt, not the wall clock", async () => {
     const { runner, events } = makeDeps();
