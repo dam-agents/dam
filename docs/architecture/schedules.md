@@ -86,6 +86,10 @@ What a single occurrence changes follows from it having **no next occurrence to 
   Both transitions come from runtime delivery's per-kind listeners, notified on the api-server once the settle or the drop has committed — no report from the pod, so a runtime too old to know the kind still resolves.
   The fire's own outcome — the one the audit log, the activity feed and usage count — comes from that same transition, so no surface reports a one-time task as succeeded before the machine has it.
   One fire reports one outcome, from that transition alone: a poke that fails after the commit says nothing, since the event it already committed settles or expires on its own.
+  Delivery is not the run: a one-time fire's first turn can still end in failure, and no next occurrence corrects it.
+  So the Session that fire opened carries the fire's event, and a turn of it that ends in an error reports the fire failed with its reason over the same event report a refused run uses — the schedule then reads failed instead of succeeded.
+  The report lands after the fire settled, which is why the settle replaces *delivering* only: a result the machine has since corrected is never overwritten by the delivery that preceded it.
+  Only a one-time fire's Session carries that event, and its first turn's end forgets it, so a turn a person sends into that Session later cannot fail the schedule for work that did happen; a recurring fire and a person's chat report nothing, since a failed turn there is theirs.
 - **Its delivery window is a day, not an hour.** The event expires 24 hours after the moment, and a queue job that runs late inside that window still fires — an Agent in error state or out of budget for a while still gets the task, where a recurring fire would rather skip to the next occurrence.
   One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately.

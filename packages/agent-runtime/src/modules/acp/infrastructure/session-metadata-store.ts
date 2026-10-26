@@ -11,6 +11,7 @@ export const platformSessionMetaSchema = z.object({
   ref: z.string().optional(),
   reportTo: z.string().optional(),
   reportName: z.string().optional(),
+  fireEvent: z.string().optional(),
   harness: z.string().optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
@@ -63,6 +64,7 @@ export interface SessionMetadataStore {
   runStartsOf(sessionId: string): string[];
   markUnstored(sessionId: string): void;
   markStored(sessionId: string): void;
+  clearFireEvent(sessionId: string): void;
   all(): Record<string, SessionMetaEntry>;
   adopt(
     sessionId: string,
@@ -225,6 +227,16 @@ export function createSessionMetadataStore(
       store.write({
         tombstones,
         sessions: { ...sessions, [sessionId]: { ...existing, unstored: true } },
+      });
+    },
+    clearFireEvent(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (existing?.meta.fireEvent === undefined) return;
+      const { fireEvent: _fired, ...meta } = existing.meta;
+      store.write({
+        tombstones,
+        sessions: { ...sessions, [sessionId]: { ...existing, meta } },
       });
     },
     markStored(sessionId) {

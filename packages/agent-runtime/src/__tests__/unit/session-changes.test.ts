@@ -19,6 +19,7 @@ function fakeStore(): SessionMetadataStore {
     runStartsOf: () => [],
     markUnstored: () => {},
     markStored: () => {},
+    clearFireEvent: () => {},
     all: () => ({}),
     adopt: () => {},
     tombstone: () => {},

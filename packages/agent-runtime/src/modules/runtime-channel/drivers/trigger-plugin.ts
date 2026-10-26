@@ -94,6 +94,7 @@ export function createTriggerPlugin(deps: {
   const startSession = async (
     payload: TriggerEventPayload,
     task: string,
+    eventId: string,
   ): Promise<string> => {
     if (deps.catalogListed)
       await Promise.race([
@@ -113,6 +114,7 @@ export function createTriggerPlugin(deps: {
       ...(payload.sessionTitle && { customTitle: payload.sessionTitle }),
       ...(payload.settings !== undefined && { settings: payload.settings }),
       follows: payload.onDefault ? ("scheduled" as const) : null,
+      ...(payload.once === true && { fireEvent: eventId }),
     };
     const origin = payload.origin;
     if (origin?.mode === "continue") {
@@ -198,9 +200,10 @@ export function createTriggerPlugin(deps: {
   const runOrRefuse = async (
     payload: TriggerEventPayload,
     task: string,
+    eventId: string,
   ): Promise<string | null> => {
     try {
-      await startSession(payload, task);
+      await startSession(payload, task, eventId);
       return null;
     } catch (err) {
       if (
@@ -216,9 +219,10 @@ export function createTriggerPlugin(deps: {
   const runOrFail = async (
     payload: TriggerEventPayload,
     task: string,
+    eventId: string,
   ): Promise<string | null> => {
     try {
-      return await runOrRefuse(payload, task);
+      return await runOrRefuse(payload, task, eventId);
     } catch (err) {
       const detail = `the run could not start: ${(err as Error).message}`;
       deps.log(`[trigger] ${payload.scheduleId} ${detail}`);
@@ -243,7 +247,11 @@ export function createTriggerPlugin(deps: {
     const refused =
       outcome.verdict === "declined"
         ? null
-        : await runOrFail(payload, withContext(payload.task, outcome.context));
+        : await runOrFail(
+            payload,
+            withContext(payload.task, outcome.context),
+            eventId,
+          );
     await report(
       refused
         ? refusedReport(eventId, refused)
@@ -262,7 +270,7 @@ export function createTriggerPlugin(deps: {
     for (let attempt = 1; ; attempt++) {
       try {
         deps.invocationWatch.watch(
-          await withinStartBound(startSession(payload, payload.task)),
+          await withinStartBound(startSession(payload, payload.task, eventId)),
           eventId,
         );
         return;
@@ -307,7 +315,7 @@ export function createTriggerPlugin(deps: {
       return;
     }
     if (!payload.precheck) {
-      const refused = await runOrRefuse(payload, payload.task);
+      const refused = await runOrRefuse(payload, payload.task, ctx.eventId);
       if (refused) void report(refusedReport(ctx.eventId, refused));
       return;
     }

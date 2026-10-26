@@ -745,7 +745,6 @@ export function createSchedulerRunner(
       const sched = await deps.repo.getById(scheduleId);
       if (sched?.spec.type !== "once") return;
       await deps.repo.writeStatus(scheduleId, {
-        lastFiredAt: now(),
         lastFiredResult: reason,
         nextRun: null,
       });

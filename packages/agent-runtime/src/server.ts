@@ -85,6 +85,7 @@ import {
   createFilePlugin,
   createHarnessClient,
   createInvocationWatch,
+  createScheduleRunReport,
   createSubAgentsRunning,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
@@ -306,6 +307,15 @@ const invocationWatch = createInvocationWatch({
   localWork: (sessionId) => sessionState.localWork(sessionId),
   subAgentsRunning: (sessionId) =>
     subAgentsRunning(sessionState.spawnedBy(sessionId)),
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
+const scheduleRunReport = createScheduleRunReport({
+  fireEventOf: (sessionId) => sessionMetadata.get(sessionId)?.meta.fireEvent,
+  forgetFireEvent: (sessionId) => sessionMetadata.clearFireEvent(sessionId),
+  reporter: {
+    report: (input) =>
+      harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
+  },
   log: (msg) => process.stderr.write(`${msg}\n`),
 });
 const modelCallExporter = createModelCallExporter({
@@ -563,8 +573,10 @@ const {
   onToolActivity: ({ sessionId }) =>
     void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
   gitTraceEnv: gitTraceEnv(gitTraceDir, sessionEnvVars),
-  onTurnOutcome: (sessionId, end) =>
-    invocationWatch.turnOutcome(sessionId, end),
+  onTurnOutcome: (sessionId, end) => {
+    invocationWatch.turnOutcome(sessionId, end);
+    scheduleRunReport.turnOutcome(sessionId, end);
+  },
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: browser.start,
