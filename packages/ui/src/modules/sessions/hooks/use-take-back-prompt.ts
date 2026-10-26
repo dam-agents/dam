@@ -21,16 +21,13 @@ export function useTakeBackPrompt({
   selectedAgent,
   stopAgent,
   ensureLive,
-  bindEngagement,
   reloadSession,
 }: {
   selectedAgent: string | null;
   stopAgent: () => Promise<void>;
   ensureLive: () => Promise<LiveSession | null>;
-  bindEngagement: (sessionId: string) => void;
   reloadSession: (sessionId: string) => Promise<void>;
 }): (take: TakeBack) => Promise<void> {
-  const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
   const pending = useRef(false);
 
@@ -123,23 +120,12 @@ export function useTakeBackPrompt({
           draftKey(selectedAgent, sid),
           draftKey(selectedAgent, result.sessionId),
         );
-      if (inView()) {
-        bindEngagement(result.sessionId);
-        setSessionId(result.sessionId);
-      }
+      if (inView()) void reloadSession(result.sessionId);
       void queryClient.invalidateQueries({
         queryKey: acpSessionsKeys.agent(selectedAgent),
       });
     },
-    [
-      selectedAgent,
-      stopAgent,
-      ensureLive,
-      bindEngagement,
-      reloadSession,
-      setSessionId,
-      setMessages,
-    ],
+    [selectedAgent, stopAgent, ensureLive, reloadSession, setMessages],
   );
 
   return useCallback(

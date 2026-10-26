@@ -203,6 +203,7 @@ export interface AcpRuntimeDeps {
   harnessLoadTimeoutMs?: number;
   historyProvider?: HistoryProvider;
   sessionCut?: SessionCutProvider;
+  harnessForks?: boolean;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
@@ -582,6 +583,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const toolActivityIn = createToolActivityReader();
   const bootstrap = createSessionBootstrap({
     transcript,
+    ...(deps.harnessForks !== undefined && { forks: deps.harnessForks }),
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
     },
@@ -2131,7 +2133,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                   sessionIsRunning,
                   deps.terminalSessionPins?.(),
                 )
-              : (frame as object);
+              : mapping.method === "session/new" &&
+                  deps.harnessForks !== undefined
+                ? withForks(frame, deps.harnessForks)
+                : (frame as object);
           const out = JSON.stringify({
             ...responseFrame,
             id: mapping.originalId,
@@ -2972,7 +2977,18 @@ function injectPlatformMetaIntoList(
   return { ...frame, result: { ...result, sessions } };
 }
 
-function hasSessionCapability(
+function withForks(frame: unknown, forks: boolean): object {
+  const result = resultOf(frame);
+  if (result === null) return frame as object;
+  const meta = isNonNullObject(result._meta) ? result._meta : {};
+  const platform = isNonNullObject(meta.platform) ? meta.platform : {};
+  return {
+    ...(frame as object),
+    result: { ...result, _meta: { ...meta, platform: { ...platform, forks } } },
+  };
+}
+
+export function hasSessionCapability(
   frame: unknown,
   name: "close" | "resume" | "fork",
 ): boolean {

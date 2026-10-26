@@ -1,14 +1,14 @@
 ---
 id: 054
 title: Branded Keycloak login via Keycloakify-built custom image
-status: proposed
+status: accepted
 subsystem: security-and-credentials
 summary: Ship a first-party Keycloak image with a Keycloakify-built React theme baked in, always enabled via loginTheme=platform.
 ---
 
 # ADR-054: Branded Keycloak login via Keycloakify-built custom image
 
-**Date:** 2026-05-28 **Status:** Proposed **Owner:** @kapetr
+**Date:** 2026-05-28 **Status:** Accepted **Owner:** @kapetr
 
 ## Context
 

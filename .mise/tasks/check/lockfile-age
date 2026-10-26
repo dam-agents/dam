@@ -8,14 +8,34 @@ if date -u -d "-1 days" +%Y >/dev/null 2>&1; then
 else
   export CUTOFF=$(date -u -v-"${DAYS}"d +%Y-%m-%dT%H:%M:%SZ)
 fi
-export LOCKFILE_ENTRIES=$(mktemp); trap 'rm -f "$LOCKFILE_ENTRIES"' EXIT
-yq '.packages | keys | .[]' pnpm-lock.yaml | sed 's/\(.*\)@/\1\t/' > "$LOCKFILE_ENTRIES"
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+entries() { yq '.packages | keys | .[]' "$1" | sed 's/\(.*\)@/\1\t/' | sort -u; }
+entries pnpm-lock.yaml > "$TMP/all"
+export LOCKFILE_ENTRIES="$TMP/entries"
+# A branch only answers for the entries it adds: the rest landed through a check
+# of their own. On the base branch itself every entry is the last gate on what
+# merged, so there it checks them all.
+# mise caches on the lockfile alone, not on the base, so an entry that leaves
+# main is re-checked at the next lockfile change rather than at once.
+BASE=""
+HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
+for ref in origin/main main; do
+  git show "$ref:pnpm-lock.yaml" > "$TMP/base-lock" 2>/dev/null || continue
+  BASE=$ref; break
+done
+if [[ -n "$BASE" && -n "$HEAD_SHA" && "$(git rev-parse "$BASE")" == "$HEAD_SHA" ]]; then BASE=""; fi
+if [[ -n "$BASE" ]]; then
+  entries "$TMP/base-lock" > "$TMP/base"
+  comm -23 "$TMP/all" "$TMP/base" > "$LOCKFILE_ENTRIES"
+else
+  cp "$TMP/all" "$LOCKFILE_ENTRIES"
+fi
 # Honour pnpm minimumReleaseAgeExclude — same packages pnpm itself skips
 while IFS= read -r excl; do
   [[ -z "$excl" ]] && continue
   excl_name="${excl%@*}"; excl_ver="${excl##*@}"
-  tmp=$(mktemp)
-  awk -F'\t' -v n="$excl_name" -v v="$excl_ver" '!(n==$1 && v==$2)' "$LOCKFILE_ENTRIES" > "$tmp" && mv "$tmp" "$LOCKFILE_ENTRIES"
+  awk -F'\t' -v n="$excl_name" -v v="$excl_ver" '!(n==$1 && v==$2)' "$LOCKFILE_ENTRIES" > "$TMP/filtered"
+  mv "$TMP/filtered" "$LOCKFILE_ENTRIES"
 done < <(yq '.minimumReleaseAgeExclude // [] | .[]' pnpm-workspace.yaml 2>/dev/null)
 check_pkg() {
   export PKG_NAME="$1" PKG_VERSIONS=$(awk -F'\t' -v n="$1" '$1==n{printf(c++?",":"[")"\""$2"\""}END{print"]"}' "$LOCKFILE_ENTRIES")
@@ -37,4 +57,6 @@ if [[ -n "$HITS" ]]; then
   printf '\nFAIL: packages published <%sd ago (cutoff %s) or not fetchable. Wait or pin older.\n' "$DAYS" "$CUTOFF"
   exit 1
 fi
-echo "OK: $(wc -l < "$LOCKFILE_ENTRIES") lockfile entries all older than ${DAYS}d"
+SCOPE="the whole lockfile, no base"
+if [[ -n "$BASE" ]]; then SCOPE="new against $BASE"; fi
+echo "OK: $(wc -l < "$LOCKFILE_ENTRIES" | tr -d ' ') of $(wc -l < "$TMP/all" | tr -d ' ') lockfile entries, $SCOPE, all older than ${DAYS}d"

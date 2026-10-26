@@ -117,15 +117,14 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
   "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs"
 
 # libkrun is the release's own, rebuilt from the commit smolvm.pin names with
-# libkrun.patch applied: fixes for guest-reachable bugs in its virtio devices
-# that the release does not have yet. Built as smolvm's release workflow builds
-# it (make BLK=1 NET=1 INPUT=1 GPU=1, partial RELRO, virglrenderer dropped from
-# NEEDED) but with mise.lock's compiler, on this host, like the runner. A build
-# that exports a different set of krun_* symbols than the release lib is
-# refused, since smolvm resolves them at runtime and a missing one fails a boot.
-# Drop this once a smolvm release ships these fixes, but for the MADV_HUGEPAGE
-# call on guest RAM, which upstream leaves out and nested hosts need (a busy
-# dam-cl node filled 4 GiB in 4.1 s with it and 8.3 s without).
+# libkrun.patch applied: a block write the host has no room for is held until
+# it has room, where upstream fails the guest's write with an I/O error. Built
+# as smolvm's release workflow builds it (make BLK=1 NET=1 INPUT=1 GPU=1,
+# partial RELRO, virglrenderer dropped from NEEDED) but with mise.lock's
+# compiler, on this host, like the runner. A build that exports a different set
+# of krun_* symbols than the release lib is refused, since smolvm resolves them
+# at runtime and a missing one fails a boot. Drop this once a smolvm release
+# holds those writes itself.
 # musl-tools and the musl target: libkrun's init.krun, which it builds static
 # against musl and serves as the guest's /init.krun. Without them its build
 # only warns and links it against glibc, which the agent rootfs lacks, so every
@@ -240,7 +239,7 @@ install -m 755 "$target/$host/release/platform-init" "$b/opt/smolvm/agent-rootfs
 
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
 # v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
-# from this one file. Upstream has not rebuilt it as of 1.29.0, so replace it here.
+# from this one file. Upstream has not rebuilt it as of 1.32.1, so replace it here.
 # Drop this once a smolvm release ships a current crane.
 #
 # The same binary serves the runner: a machine may reach only its gateway, so the

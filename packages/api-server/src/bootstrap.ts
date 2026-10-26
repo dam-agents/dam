@@ -500,8 +500,8 @@ export async function bootstrap() {
       db,
       logger: getLogger(),
       defaults: {
-        cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
-        memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+        cpuLimit: config.agentDefaultCpuLimit,
+        memoryLimit: config.agentDefaultMemoryLimit,
       },
     });
 
@@ -540,8 +540,8 @@ export async function bootstrap() {
           ? `s3://${config.objectStorageBucket}`
           : "",
         defaults: {
-          cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
-          memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+          cpuLimit: config.agentDefaultCpuLimit,
+          memoryLimit: config.agentDefaultMemoryLimit,
         },
         absorbedByVersion: config.appVersion,
         now: new Date(),
