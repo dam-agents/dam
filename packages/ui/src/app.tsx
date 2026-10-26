@@ -117,6 +117,7 @@ function MainApp() {
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <IconRail hideMobileBar />
             <div className="relative z-content flex-1 min-w-0">
+              <NotificationBell />
               <ChatView />
             </div>
           </div>
@@ -135,6 +136,7 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
+          <NotificationBell />
           {view === "agent-landing" ? (
             <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
               <AgentLandingView />
@@ -190,6 +192,37 @@ function MainApp() {
       />
       <DialogOverlay />
       <ConnectionBanner />
+    </div>
+  );
+}
+
+function NotificationBell() {
+  const toggleNotifications = useStore((s) => s.toggleNotifications);
+  const { items } = useNotifications();
+  const needsYouCount = useMemo(() => items.filter(isNeedsYou).length, [items]);
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-raised flex justify-end p-3">
+      <button
+        type="button"
+        onClick={toggleNotifications}
+        aria-label={
+          needsYouCount > 0
+            ? `Notifications, ${needsYouCount} need attention`
+            : "Notifications"
+        }
+        className="pointer-events-auto relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <Notification size={16} />
+        {needsYouCount > 0 && (
+          <Badge
+            variant="default"
+            className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
+          >
+            {needsYouCount > 9 ? "9+" : needsYouCount}
+          </Badge>
+        )}
+      </button>
     </div>
   );
 }
