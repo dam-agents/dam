@@ -20,6 +20,7 @@ import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import { useOperatorAvailability } from "../../operator/api/queries.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
@@ -125,9 +126,15 @@ export function SettingsView() {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const user = getUser();
+  const newLayout = useNewLayout();
 
   return (
-    <div className="flex gap-6 md:gap-10 flex-col md:flex-row md:pt-5">
+    <div
+      className={cn(
+        "flex gap-6 md:gap-10 flex-col md:flex-row",
+        newLayout && "md:pt-5",
+      )}
+    >
       <div ref={tabStrip} className="contents">
         <Tabs
           ariaLabel="Settings sections"

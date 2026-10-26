@@ -44,6 +44,28 @@ vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
 const { SidePanelShell } =
   await import("../../modules/sessions/components/side-panel-shell.js");
 
+function panelMarkup(activeTab: "files" | null, rail = true): string {
+  return renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelShell, {
+        activeTab,
+        rail,
+        hiddenTabs: new Set<never>(),
+        onSelectTab: () => {},
+        dockedShown: false,
+        dockedKept: false,
+        panel: activeTab ? createElement("p", null, "panel") : null,
+        dock: null,
+        mobileTitle: "Files",
+        mobileBackLabel: "Close side panel",
+        children: createElement("div", null, "page"),
+      }),
+    ),
+  );
+}
+
 function panelClasses(activeTab: "files" | null): string[] {
   const html = renderToStaticMarkup(
     createElement(
@@ -104,4 +126,11 @@ it("hides the toolbar-only panel on a phone until it opens", () => {
 it("keeps the classic column with both experiments off", () => {
   expect(panelClasses("files")).toContain("max-md:inset-0");
   expect(panelClasses(null)).toContain("max-md:hidden");
+});
+
+// TEST_SCENARIO: a page whose panels live outside the shell, as in the current layout, gets no panel column and no rail, so the page takes the window and an empty column never stands beside it.
+it("draws no column when the shell has no rail", () => {
+  const html = panelMarkup(null, false);
+  expect(html).not.toContain('data-testid="side-panel"');
+  expect(html).toContain("page");
 });
