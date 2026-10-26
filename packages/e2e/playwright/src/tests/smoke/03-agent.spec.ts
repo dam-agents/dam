@@ -120,10 +120,18 @@ test("a harness picked on the create form is the agent's harness", async ({
 
   await page.getByTestId("provider-select").click();
   await page.getByTestId("provider-option-openai").click();
+  // UNIT_BOUNDARY_DESCRIPTION: the suite's first case already connected openai, so the create form either asks for a key or offers that connection, and only the first needs one.
   const dialog = page.getByRole("dialog");
-  await dialog.locator('input[type="password"]').fill("sk-e2e-dummy-key");
-  await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(dialog).toBeHidden();
+  if (
+    await dialog.waitFor({ timeout: 2_000 }).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    await dialog.locator('input[type="password"]').fill("sk-e2e-dummy-key");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(dialog).toBeHidden();
+  }
 
   await page.getByRole("button", { name: /create agent/i }).click();
   const id = await waitForAgentRunning(api, name);
