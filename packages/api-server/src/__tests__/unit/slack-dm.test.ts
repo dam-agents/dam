@@ -65,6 +65,7 @@ function harness(opts: { binding: Binding }) {
     } as never,
     pendingOAuthFlows: pending,
     getInstanceOwner: async () => OWNER,
+    ownerDisplayName: async () => null,
     channelRegistry: {
       resolveSlackBindings: async () =>
         opts.binding
