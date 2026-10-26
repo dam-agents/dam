@@ -39,27 +39,27 @@ func TestAMeasuredMachineCountsAtItsUsePlusHeadroom(t *testing.T) {
 
 	d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+2048, d.memoryMiB, "unmeasured machines count at their size")
+	assert.Equal(t, 2048+2048, d.memoryMiB, "unmeasured machines count at their size")
 
 	r.noteMachineUse("peer-up", measured(600))
 	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+600+256, d.memoryMiB)
+	assert.Equal(t, 2048+600+256, d.memoryMiB)
 
 	r.noteMachineUse("peer-up", vmrunner.MachineStatus{State: vmrunner.StateUnknown})
 	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+600+256, d.memoryMiB, "an unread state forgot the last measurement")
+	assert.Equal(t, 2048+600+256, d.memoryMiB, "an unread state forgot the last measurement")
 
 	r.noteMachineUse("peer-up", measured(2000))
 	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+2048, d.memoryMiB, "a machine is never counted above its size")
+	assert.Equal(t, 2048+2048, d.memoryMiB, "a machine is never counted above its size")
 
 	r.noteMachineUse("peer-up", vmrunner.MachineStatus{State: vmrunner.StateStopped})
 	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+2048, d.memoryMiB, "a stopped machine's last measurement is forgotten")
+	assert.Equal(t, 2048+2048, d.memoryMiB, "a stopped machine's last measurement is forgotten")
 }
 
 // TEST_SCENARIO: room on a runner is freed by hibernating the owner's idle vm agents under the blocked-start rules, and only when the agents chosen free all of it: a peer is never hibernated for room that would still not be enough. A peer frees what it is counted at, so an idle guest holding little frees little.
@@ -155,16 +155,36 @@ func TestAWarmingMachineMeasuredSmallCountsAtTheWarmUpFloor(t *testing.T) {
 	assert.Equal(t, 3072+300+256, d.memoryMiB, "a warmed-up machine counts at its use plus headroom")
 }
 
-// TEST_SCENARIO: the host runner admits against a share of the Mac's memory, not the chart's pod limit the install still has to set, so half of that limit would be a machine it refuses. There the agent's spec still sets the machine's memory.
-func TestAHostRunnerMachineTakesItsMemoryFromTheSpec(t *testing.T) {
+// TEST_SCENARIO: the host runner admits against a share of the Mac's memory, not the chart's pod limit the install still has to set, so half of that limit would be a machine it refuses. There a machine takes the install's machineMemoryMiB, whatever its Agent's spec names.
+func TestAHostRunnerMachineTakesTheInstallsMemory(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("12Gi")}}
 	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	r.config.VM.Runner.MachineMemoryMiB = 3584
 
-	size, err := r.machineMemoryMiB(context.Background(), testOwner, &agent.Spec)
+	size, err := r.machineMemoryMiB(context.Background(), testOwner)
 	require.NoError(t, err)
-	assert.Equal(t, 3072, size, "the host runner's machine was sized from the chart's pod limit")
+	assert.Equal(t, 3584, size, "the host runner's machine is the install's memory, not half the pod limit and not the Agent's spec")
+}
+
+// TEST_SCENARIO: a runner pod whose owner's pool cannot be sized gives its machines the install's memory as well — both when the owner has no pool at all and when reading one fails — and the failed read is still reported, so a start that should be refused for it is.
+func TestARunnerPodWithNoReadablePoolSizesItsMachinesFromTheInstall(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.MachineMemoryMiB = 3584
+
+	size, err := r.machineMemoryMiB(context.Background(), testOwner)
+	require.NoError(t, err)
+	assert.Equal(t, 3584, size, "an owner with no pool sizes the machine from the install")
+
+	r.vmPools.Delete(testOwner)
+	r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("get", "userbudgets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, k8serrors.NewInternalError(fmt.Errorf("the budget cannot be read"))
+	})
+	size, err = r.machineMemoryMiB(context.Background(), testOwner)
+	require.Error(t, err, "the failed read is the caller's to refuse a start on")
+	assert.Equal(t, 3584, size, "a pool that cannot be read sizes the machine from the install")
 }
 
 // TEST_SCENARIO: a new size reaches a running machine only at its next start, so until then the machine may hold more than its new size says. Memory and vCPUs count it at the larger of the size it runs at and the one it will start with, so a shrink never lowers the request or the CPU limit under a guest still running large.
@@ -177,13 +197,13 @@ func TestAMachineStillRunningAtItsOldSizeCountsAtTheLarger(t *testing.T) {
 
 	before, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+2048, before.memoryMiB)
+	assert.Equal(t, 2048+2048, before.memoryMiB)
 	assert.Equal(t, 2*cpus, before.vCPUs)
 
 	r.noteMachineUse("peer-up", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: cpus + 4, MemoryMiB: 6144})
 	larger, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+6144, larger.memoryMiB, "the machine runs at its old, larger size")
+	assert.Equal(t, 2048+6144, larger.memoryMiB, "the machine runs at its old, larger size")
 	assert.Equal(t, 2*cpus+4, larger.vCPUs)
 
 	r.noteMachineUse("peer-up", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 1, MemoryMiB: 1024})
@@ -276,9 +296,9 @@ func TestAMemoryPassOnAnOlderRunnerReadsEachMachineAsBefore(t *testing.T) {
 	assert.Equal(t, 1, node.usageReads, "the read still answers for the owner's machines")
 	assert.Equal(t, 2, node.statusReads, "an older runner is asked about each machine in turn")
 	node.mu.Unlock()
-	assert.Equal(t, 1024, r.accountedMemoryMiB(ctx, testOwner, agent.Name, &agent.Spec),
+	assert.Equal(t, 1024, r.accountedMemoryMiB(ctx, testOwner, agent.Name),
 		"a warming machine counts at its warm-up floor, not at the 556 MiB it holds")
-	assert.Equal(t, 6144, r.accountedMemoryMiB(ctx, testOwner, "shrunk-peer", &peer.Spec),
+	assert.Equal(t, 6144, r.accountedMemoryMiB(ctx, testOwner, "shrunk-peer"),
 		"a machine still running at its old size counts at that size, though the pool has shrunk under it")
 }
 
@@ -579,12 +599,12 @@ func TestARefusedMachineCountsNothingUntilItsRetryRuns(t *testing.T) {
 
 			d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
 			require.NoError(t, err)
-			assert.Equal(t, 3072, d.memoryMiB, "the refused machine holds nothing")
+			assert.Equal(t, 2048, d.memoryMiB, "the refused machine holds nothing")
 
 			r.noteMachineUse("peer", measured(700))
 			d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
 			require.NoError(t, err)
-			assert.Equal(t, 3072+700+256, d.memoryMiB, "a retry that got the machine running counts at its use as any other")
+			assert.Equal(t, 2048+700+256, d.memoryMiB, "a retry that got the machine running counts at its use as any other")
 		})
 	}
 }
@@ -822,7 +842,7 @@ func TestThePassDemandLeavesOutARefusedMachineEvenAsItsAnchor(t *testing.T) {
 
 	full, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+600+256, full.memoryMiB, "a start the runner has not refused counts itself")
+	assert.Equal(t, 2048+600+256, full.memoryMiB, "a start the runner has not refused counts itself")
 
 	r.vmAnswers.Store(agent.Name, vmrunner.ReasonOutOfCapacity)
 	held, err := r.heldRunnerDemand(ctx, testOwner, agent, true)
@@ -831,7 +851,7 @@ func TestThePassDemandLeavesOutARefusedMachineEvenAsItsAnchor(t *testing.T) {
 
 	kept, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3072+600+256, kept.memoryMiB, "the demand that sizes a start keeps counting it for its retry")
+	assert.Equal(t, 2048+600+256, kept.memoryMiB, "the demand that sizes a start keeps counting it for its retry")
 }
 
 // TEST_SCENARIO: a start the runner refused for room frees that room from the owner's idle agents, and the machine a reclaim hibernated takes a moment to stop. Until it has, a retry is still refused and frees nothing more, so a refusal that reads as a refusal would tell the owner their memory is full for the seconds the platform is already making room: the start reads as one waiting for room it has freed, and is asked for again at the machine watch's cadence rather than at the parked tick. The wait is bounded: a retry that nothing has freed room for inside memoryReclaimWait is the pool's refusal again, with the message that says what frees it.

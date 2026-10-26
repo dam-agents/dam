@@ -276,7 +276,7 @@ func TestAUserBudgetMemoryResizesTheRunnerPodInPlace(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	limit = runnerPodResources(t, r).Limits[corev1.ResourceMemory]
 	assert.Equal(t, "11Gi", limit.String(), "the limit stops at the measured machine plus headroom and reserve")
-	size, err := r.machineMemoryMiB(ctx, testOwner, &agent.Spec)
+	size, err := r.machineMemoryMiB(ctx, testOwner)
 	require.NoError(t, err)
 	assert.Equal(t, (4096-512)/2, size)
 }
@@ -414,7 +414,7 @@ func TestAMachineWokenAfterAPoolChangeIsSizedFromTheNewPool(t *testing.T) {
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("24Gi")}}
 	agent.Annotations[annLastActivity] = time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	require.NoError(t, r.Reconcile(ctx, agent))
-	size, err := r.machineMemoryMiB(ctx, testOwner, &agent.Spec)
+	size, err := r.machineMemoryMiB(ctx, testOwner)
 	require.NoError(t, err)
 	assert.Equal(t, (24576-512)/2, size, "the pool was read while the agent slept")
 

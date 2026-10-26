@@ -36,9 +36,6 @@ type Config struct {
 	DefaultUserCPUBudget    resource.Quantity
 	DefaultUserMemoryBudget resource.Quantity
 
-	LegacyAgentCPULimit    resource.Quantity
-	LegacyAgentMemoryLimit resource.Quantity
-
 	HarnessServerURL       string
 	HarnessServerPort      int
 	EnvoyImage             string
@@ -238,6 +235,9 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "" {
 		return nil, fmt.Errorf("AGENT_VM: runner.image and runner.storage are required")
 	}
+	if cfg.VM.Runner.MachineMemoryMiB == 0 {
+		cfg.VM.Runner.MachineMemoryMiB = 2048
+	}
 	if cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero() {
 		return nil, fmt.Errorf("AGENT_VM: runner.resources.limits.memory is required — the runner admits machines against it, and without one it reads the node's allocatable")
 	}
@@ -291,8 +291,6 @@ func LoadFromEnv() (*Config, error) {
 	}{
 		{&cfg.DefaultUserCPUBudget, "DEFAULT_USER_CPU_BUDGET", "4"},
 		{&cfg.DefaultUserMemoryBudget, "DEFAULT_USER_MEMORY_BUDGET", "8Gi"},
-		{&cfg.LegacyAgentCPULimit, "AGENT_LEGACY_CPU_LIMIT", "1"},
-		{&cfg.LegacyAgentMemoryLimit, "AGENT_LEGACY_MEMORY_LIMIT", "2Gi"},
 	} {
 		v, err := resource.ParseQuantity(envOrDefault(q.key, q.def))
 		if err != nil {
