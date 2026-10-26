@@ -1,5 +1,5 @@
 import { Add } from "@carbon/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/card";
 import { DisclosureToggle } from "@/components/ui/disclosure";
@@ -10,6 +10,7 @@ import type { Schedule } from "../../../types.js";
 import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
+import type { CreatedSchedule } from "../lib/just-ask.js";
 import { isPastOnce } from "../lib/once-schedule.js";
 import { ScheduleCard } from "./schedule-card.js";
 import { ScheduleResultsModal } from "./schedule-results-modal.js";
@@ -20,11 +21,19 @@ type FormState =
 export function SchedulesPanel({
   agentId,
   header,
+  panel = false,
   onResumeSession,
+  focusId,
+  onFocusApplied,
+  onCreated,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
+  panel?: boolean;
   onResumeSession: (sessionId: string) => void;
+  focusId?: string | null;
+  onFocusApplied?: () => void;
+  onCreated?: (draft: CreatedSchedule) => void;
 }) {
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
@@ -39,26 +48,45 @@ export function SchedulesPanel({
   const [form, setForm] = useState<FormState>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [resultsFor, setResultsFor] = useState<Schedule | null>(null);
+  // UNIT_BOUNDARY_DESCRIPTION: a focused item comes from a card in the chat, so it is applied once — expanded, its Past group opened if it sits there, and scrolled to — and then released, so the next click on the same card and every later opening of the tab behave the same.
+  useEffect(() => {
+    if (!focusId || schedulesQuery.data === undefined) return;
+    setExpandedId(focusId);
+    if (past.some((s) => s.id === focusId)) setPastOpen(true);
+  }, [focusId, schedulesQuery.data, past]);
+
+  // UNIT_BOUNDARY_DESCRIPTION: the release waits for the row itself, since expanding it and opening its Past group are renders of their own; a card that is not on screen yet keeps the focus, so the scroll happens once the list has drawn it.
+  useEffect(() => {
+    if (!focusId) return;
+    const row = document.querySelector(
+      `[data-schedule-id="${CSS.escape(focusId)}"]`,
+    );
+    if (row === null) return;
+    row.scrollIntoView({ block: "nearest" });
+    onFocusApplied?.();
+  }, [focusId, expandedId, pastOpen, onFocusApplied]);
 
   const closeForm = () => setForm(null);
 
   const card = (schedule: Schedule) => (
-    <ScheduleCard
-      key={schedule.id}
-      schedule={schedule}
-      isExpanded={expandedId === schedule.id}
-      onToggleExpanded={() =>
-        setExpandedId((prev) => (prev === schedule.id ? null : schedule.id))
-      }
-      onEdit={() => setForm({ mode: "edit", schedule })}
-      onViewResults={() => setResultsFor(schedule)}
-    />
+    <div key={schedule.id} data-schedule-id={schedule.id}>
+      <ScheduleCard
+        schedule={schedule}
+        isExpanded={expandedId === schedule.id}
+        onToggleExpanded={() =>
+          setExpandedId((prev) => (prev === schedule.id ? null : schedule.id))
+        }
+        onEdit={() => setForm({ mode: "edit", schedule })}
+        onViewResults={() => setResultsFor(schedule)}
+      />
+    </div>
   );
 
   return (
     <>
       {header()}
       <ListSection
+        label={panel ? "Schedules" : undefined}
         loading={schedulesQuery.isPending}
         error={schedulesQuery.isError && "Couldn't load schedules."}
         isEmpty={upcoming.length === 0}
@@ -66,6 +94,7 @@ export function SchedulesPanel({
         onNew={() => setForm({ mode: "create" })}
         newLabel="Create schedule"
         newTestId="schedule-new"
+        addInHeader={panel}
         addRow={
           <AddRow
             onClick={() => setForm({ mode: "create" })}
@@ -112,6 +141,7 @@ export function SchedulesPanel({
           agentId={agentId}
           existing={form.mode === "edit" ? form.schedule : undefined}
           onClose={closeForm}
+          onCreated={onCreated}
         />
       )}
 

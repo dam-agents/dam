@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for their agents, which have no size of their own.
@@ -28,7 +28,7 @@ Only an install that sets no memory limit has nothing to derive from: there the 
 A CPU request the install sets above the owner's pool comes down to the pool at creation, since a pod whose request is above its limit is one the API refuses.
 A runner Deployment created before the controller rendered that limit gains it when it is next rolled for any reason, since its template is what the controller writes; until then its pod carries the install's `limits.cpu`, or whatever an install with no CPU figure derives above, or none.
 Where that figure exists, one runaway VMM cannot take the whole node, and the pool, not the install's vCPUs, is what a guest ends up with: the creation bound is a ceiling on the pod, so a pool below a machine's vCPUs caps that machine, and machines admitted after the pool is warm share it.
-The [host runner](vm-host-runner.md) admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the Agent's spec still sets its machine's memory; its vCPUs still come from the install.
+The [host runner](vm-host-runner.md) admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there every machine takes the install's `virtualization.runner.machineMemoryMiB` (2 GiB by default) instead of half a pool, and so does a machine of a runner pod whose pool cannot be read; its vCPUs still come from the install.
 A new size reaches a running machine at its next start, not by rebooting it ([vm-runner](vm-runner.md)); until then the controller counts it at the larger of the two sizes, in memory and in vCPUs.
 A machine's size is the most its guest can see; the host commits only the pages the guest touches, and the guest hands freed pages back through free-page reporting, so an idle agent on a 2 GiB machine holds a few hundred MiB.
 

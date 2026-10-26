@@ -8,7 +8,6 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -98,23 +97,20 @@ export function PanelCloseButton({
         )}
       >
         {tiles ? (
-          <Tooltip content="Close panel" side="left">
-            <button
-              type="button"
-              aria-label="Close panel"
-              data-testid="side-panel-close"
-              className={railTile(false)}
-              onClick={close}
-            >
-              <Close size={RAIL_GLYPH} />
-            </button>
-          </Tooltip>
+          <button
+            type="button"
+            aria-label="Close panel"
+            data-testid="side-panel-close"
+            className={railTile(false)}
+            onClick={close}
+          >
+            <Close size={RAIL_GLYPH} />
+          </button>
         ) : (
           <Button
             variant="ghost"
             size="icon-sm"
             aria-label="Close panel"
-            tooltip="Close panel"
             data-testid="side-panel-close"
             onClick={close}
           >

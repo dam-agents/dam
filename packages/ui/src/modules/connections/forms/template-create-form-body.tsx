@@ -1,15 +1,18 @@
 import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { ConnectionTemplateView } from "api-server-api";
+import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { type ReactNode, useMemo } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { emitToast } from "@/lib/toast";
 
+import { useAppConnections } from "../api/queries.js";
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
 import { templateSubmitLabel } from "../lib/catalog-providers.js";
+import { newParentNameRule } from "../lib/connection-hierarchy.js";
+import { appScopeFieldsChosen } from "../lib/github-app-scope-fields.js";
 import {
   buildTemplateFormSchema,
   templateFormDefaults,
@@ -24,9 +27,12 @@ import { OAuthAppHint } from "./oauth-app-hint.js";
 import { OverridableSection } from "./overridable-section.js";
 import { TemplateFieldInput } from "./template-field-input.js";
 
+const NO_CONNECTIONS: ConnectionView[] = [];
+
 interface TemplateCreateFormProps {
   template: ConnectionTemplateView;
   onCreated: (id: string) => void;
+  onSignedIn?: (parent: ConnectionView) => void;
   onCancel: () => void;
   oauthReturnView?: string;
   popupOAuth?: boolean;
@@ -38,6 +44,7 @@ interface TemplateCreateFormProps {
 export function TemplateCreateFormBody({
   template,
   onCreated,
+  onSignedIn,
   onCancel,
   oauthReturnView,
   popupOAuth,
@@ -53,12 +60,20 @@ export function TemplateCreateFormBody({
 }: TemplateCreateFormProps & {
   layout?: (fields: ReactNode, footer: ReactNode) => ReactNode;
 }) {
-  const schema = useMemo(() => buildTemplateFormSchema(template), [template]);
+  const connections = useAppConnections().data ?? NO_CONNECTIONS;
+  const nameRule = useMemo(
+    () => newParentNameRule(template, connections),
+    [template, connections],
+  );
+  const schema = useMemo(
+    () => buildTemplateFormSchema(template, nameRule),
+    [template, nameRule],
+  );
   const { control, handleSubmit, setValue } = useForm<TemplateFormValues>({
     resolver: zodResolver(schema),
     mode: "onChange",
     defaultValues: {
-      ...templateFormDefaults(template),
+      ...templateFormDefaults(template, nameRule),
       ...(initialName !== undefined ? { name: initialName } : {}),
     },
   });
@@ -76,6 +91,7 @@ export function TemplateCreateFormBody({
     popupOAuth,
     oauthReturnView,
     onCreated,
+    onSignedIn,
   });
 
   const bringYourOwnApp =
@@ -100,6 +116,9 @@ export function TemplateCreateFormBody({
 
   const submitCopy = templateSubmitLabel(template.id);
   const isGithubApp = template.authKind === "github-app";
+  const [access, fields] = useWatch({ control, name: ["access", "fields"] });
+  const reachUnchosen =
+    isGithubApp && access !== "full" && !appScopeFieldsChosen(fields ?? {});
   const scopeInputNames = new Set(
     isGithubApp ? ["repositories", "repositoryIds", "permissions"] : [],
   );
@@ -229,7 +248,7 @@ export function TemplateCreateFormBody({
       </Button>
       <Button
         onClick={awaitingPopup ? refocusPopup : onSubmit}
-        disabled={pending && !awaitingPopup}
+        disabled={(pending && !awaitingPopup) || reachUnchosen}
         tooltip={
           awaitingPopup
             ? "Bring the authorization window back to the front"

@@ -277,17 +277,15 @@ export function createAcpRelay(
             isBinary: boolean,
             parsed: unknown,
           ) => {
-            const filled = isBinary
-              ? null
-              : fillSavedDefault(parsed, agentId, firePair)?.catch(
-                  (err: unknown) => {
-                    getLogger().warn(
-                      { err, agentId },
-                      "acp relay: saved default lookup failed",
-                    );
-                    return null;
-                  },
+            const filled = fillSavedDefault(parsed, agentId, firePair)?.catch(
+              (err: unknown) => {
+                getLogger().warn(
+                  { err, agentId },
+                  "acp relay: saved default lookup failed",
                 );
+                return null;
+              },
+            );
             if (!filled && !held) {
               send(data, isBinary);
               return;
@@ -311,7 +309,7 @@ export function createAcpRelay(
           };
 
           for (const msg of pending) {
-            const parsed = msg.isBinary ? null : tryParse(msg.data);
+            const parsed = tryParse(msg.data);
             if (answeredForEditor(parsed)) continue;
             if (parsed !== null) trackIfPrompt(parsed);
             const stamped = stampSender(parsed, person);
@@ -327,7 +325,7 @@ export function createAcpRelay(
           client.on("message", (data, isBinary) => {
             if (upstream.readyState !== WebSocket.OPEN) return;
 
-            const parsed = isBinary ? null : tryParse(data);
+            const parsed = tryParse(data);
             if (answeredForEditor(parsed)) return;
             if (parsed !== null) trackIfPrompt(parsed);
 

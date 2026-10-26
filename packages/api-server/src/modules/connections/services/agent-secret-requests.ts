@@ -56,6 +56,16 @@ export interface AgentSecretRequests {
 const GITHUB_APP_INPUTS: AgentSecretInput[] = [
   { name: "appId", label: "App ID", required: true },
   { name: "installationId", label: "Installation ID", required: true },
+  {
+    name: "repositories",
+    label: "Repositories",
+    hint: "the repository names the connection reaches, space- or comma-separated; without repositories or permissions the installation is saved and no connection is made from it",
+  },
+  {
+    name: "permissions",
+    label: "Permissions",
+    hint: "name:level pairs the connection takes, e.g. contents:read issues:write",
+  },
 ];
 
 function inputsOf(template: ConnectionTemplate): AgentSecretInput[] {
@@ -144,7 +154,7 @@ export function createAgentSecretRequests(
       return {
         templates,
         connections: granted
-          .filter((c) => isSecretRequestAuthKind(c.auth.kind))
+          .filter((c) => isSecretRequestAuthKind(c.auth.kind) && !c.parentId)
           .map((c) => ({
             connectionId: c.id,
             name: c.name,

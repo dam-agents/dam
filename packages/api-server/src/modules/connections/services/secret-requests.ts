@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type {
+  Connection,
   ConnectionsService,
   SecretRequestsService,
   SecretRequestView,
@@ -12,6 +13,7 @@ import {
   credentialUpdateOf,
   destinationsOf,
   envNamesOf,
+  githubAppAccessOf,
   isSecretRequestAuthKind,
   planConnection,
   presetHostsOf,
@@ -54,7 +56,10 @@ export function createSecretRequestsService(deps: {
   pending: TtlStore<PendingSecretRequest>;
   outcomes: TtlStore<SecretRequestOutcome>;
   templates: ConnectionTemplateRegistry;
-  repo: Pick<ConnectionsRepository, "get" | "listAgentsForConnection">;
+  repo: Pick<
+    ConnectionsRepository,
+    "get" | "listAgentsForConnection" | "listChildren"
+  >;
   connections: Pick<
     ConnectionsService,
     "createFromTemplate" | "update" | "getConnection" | "updateAgentConnections"
@@ -91,9 +96,20 @@ export function createSecretRequestsService(deps: {
   }
 
   async function grantedAgents(
-    connectionId: string,
+    conn: Connection,
   ): Promise<{ id: string; name: string }[]> {
-    const ids = await deps.repo.listAgentsForConnection(connectionId);
+    const holders = conn.isParent
+      ? (await deps.repo.listChildren(conn.id)).map((c) => c.id)
+      : [conn.id];
+    const ids = [
+      ...new Set(
+        (
+          await Promise.all(
+            holders.map((id) => deps.repo.listAgentsForConnection(id)),
+          )
+        ).flat(),
+      ),
+    ];
     return Promise.all(
       ids.map(async (id) => ({ id, name: (await deps.agentName(id)) ?? id })),
     );
@@ -156,7 +172,8 @@ export function createSecretRequestsService(deps: {
           unexpectedHosts: [],
           customDestination: template?.isCustom ?? false,
           envNames: envNamesOf(conn.contributions),
-          grantedAgents: await grantedAgents(conn.id),
+          ...(conn.isParent ? { isParent: true as const } : {}),
+          grantedAgents: await grantedAgents(conn),
           ...requestedBy,
           fields: secretFieldsFor(conn.auth.kind),
           expiresAt,
@@ -185,6 +202,9 @@ export function createSecretRequestsService(deps: {
           ? { tokenEndpoint: planned.tokenEndpoint }
           : {}),
         envNames: envNamesOf(planned.contributions),
+        ...(pending.connection.authKind === "github-app"
+          ? { githubAppAccess: githubAppAccessOf(pending.connection) }
+          : {}),
         grantedAgents: [],
         ...requestedBy,
         fields: secretFieldsFor(pending.connection.authKind),
@@ -247,10 +267,15 @@ export function createSecretRequestsService(deps: {
         }
         throw err;
       }
-      const check = (await deps.connections.getConnection(connectionId))?.check;
+      const saved = await deps.connections.getConnection(connectionId);
+      const check = saved?.check;
       const granted =
         claimed.agentId && claimed.action === "create"
-          ? { granted: await grantTo(claimed.agentId, connectionId) }
+          ? {
+              granted:
+                !saved?.isParent &&
+                (await grantTo(claimed.agentId, connectionId)),
+            }
           : {};
       await deps.outcomes.set(requestId, {
         ownerId: deps.ownerId,

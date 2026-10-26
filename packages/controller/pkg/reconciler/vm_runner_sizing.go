@@ -36,8 +36,8 @@ type runnerDemand struct {
 	nextStartMiB int
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before the machine's growth has the kernel kill a machine of the pool. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
-func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, spec *apiv1.AgentSpec) (int, error) {
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before the machine's growth has the kernel kill a machine of the pool. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there a machine takes the install's `machineMemoryMiB` instead, and so does a machine whose pool cannot be read.
+func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string) (int, error) {
 	var err error
 	limit := 0
 	if r.config.VM.Runner.HostAddress == "" {
@@ -46,8 +46,7 @@ func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, sp
 	if err == nil && limit > 0 {
 		return max((limit-r.config.VM.Runner.ReserveMiB)/2, 1), nil
 	}
-	_, mem := r.limitsOf(spec)
-	return max(int(mem.Value()>>20), 1), err
+	return max(r.config.VM.Runner.MachineMemoryMiB, 1), err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the runner has an answer about the agent's machine, so it holds what it was answered or holds memory while it boots, as the runner's own counting does. A start nothing has answered for yet holds nothing.
@@ -87,7 +86,7 @@ func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *
 	}
 	var d runnerDemand
 	for _, a := range agents {
-		if _, err := resolveVMDiskGiB(&a.Spec, r.config.AgentTemplateDefaults); err != nil {
+		if _, err := resolveVMDiskGiB(&a.Spec, r.config.HarnessTemplateDefaults); err != nil {
 			continue
 		}
 		running := selfRunning
@@ -102,7 +101,7 @@ func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *
 		if !running {
 			continue
 		}
-		counted := r.accountedMemoryMiB(ctx, owner, a.Name, &a.Spec)
+		counted := r.accountedMemoryMiB(ctx, owner, a.Name)
 		// UNIT_BOUNDARY_DESCRIPTION: a start waiting for the node holds nothing, so it is what one more machine costs and never part of what the machines hold. The smallest one is the figure, since a request cut down to admit one start should ask for the cheapest one that can go.
 		if waiting && (d.nextStartMiB == 0 || counted < d.nextStartMiB) {
 			d.nextStartMiB = counted

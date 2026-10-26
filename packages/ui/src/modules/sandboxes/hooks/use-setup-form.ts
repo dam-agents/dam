@@ -1,9 +1,11 @@
 import { avatarSchema, starterKitScheduleOverrideSchema } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
+import { match } from "ts-pattern";
 import { z } from "zod";
 
 import { emitToast } from "../../../lib/toast.js";
 import { usePrefilledSandboxName } from "../../agents/hooks/use-default-sandbox-name.js";
+import { fetchConnection } from "../../connections/api/queries.js";
 
 export type SetupFlow = "coding-agent" | "starter-kit";
 
@@ -11,7 +13,7 @@ const setupFormSchema = z.object({
   name: z.string(),
   avatar: avatarSchema.nullable().default(null).catch(null),
   connectionIds: z.array(z.string()).default([]),
-  slackChannelId: z.string().default(""),
+  slackChannelIds: z.array(z.string()).default([]),
   skippedSchedules: z.array(z.string()).default([]),
   scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
 });
@@ -22,6 +24,20 @@ interface SetupFormState {
   update: (patch: Partial<SetupForm>) => void;
   toggleConnection: (id: string, granted: boolean) => void;
   reset: () => void;
+  signedInParentId: string | null;
+  clearSignedIn: () => void;
+}
+
+async function returnedConnectionKind(
+  connectionId: string,
+): Promise<"sign-in" | "connection" | "unreadable"> {
+  try {
+    const connection = await fetchConnection(connectionId);
+    if (!connection) return "unreadable";
+    return connection.isParent ? "sign-in" : "connection";
+  } catch {
+    return "unreadable";
+  }
 }
 
 function save(key: string, form: SetupForm): void {
@@ -93,6 +109,9 @@ export function useSetupForm(
     [key],
   );
 
+  const [signedInParentId, setSignedInParentId] = useState<string | null>(null);
+  const clearSignedIn = useCallback(() => setSignedInParentId(null), []);
+
   const setName = useCallback((name: string) => update({ name }), [update]);
   usePrefilledSandboxName(namePrefix, form.name, setName);
 
@@ -110,14 +129,19 @@ export function useSetupForm(
     window.history.replaceState({}, "", returnPath);
     const connectionId = params.get("connection");
     if (result === "success" && connectionId) {
-      setForm((prev) => {
-        const next = {
-          ...prev,
-          connectionIds: [...new Set([...prev.connectionIds, connectionId])],
-        };
-        save(key, next);
-        return next;
-      });
+      void returnedConnectionKind(connectionId).then((kind) =>
+        match(kind)
+          .with("sign-in", () => setSignedInParentId(connectionId))
+          .with("connection", () => toggleConnection(connectionId, true))
+          .with("unreadable", () =>
+            emitToast({
+              kind: "error",
+              message:
+                "Connection authorized, but it couldn't be read, so it wasn't added. Add it from the connection list.",
+            }),
+          )
+          .exhaustive(),
+      );
       return;
     }
     emitToast({
@@ -127,7 +151,14 @@ export function useSetupForm(
           ? "Connection authorized, but no connection was returned."
           : `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
     });
-  }, [key, returnPath]);
+  }, [key, returnPath, toggleConnection]);
 
-  return { form, update, toggleConnection, reset };
+  return {
+    form,
+    update,
+    toggleConnection,
+    reset,
+    signedInParentId,
+    clearSignedIn,
+  };
 }

@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -121,9 +121,14 @@ Their page is the owner's page with every control they lack permission for hidde
 A section where they hold none of its permissions carries a lock in the section list: People, Connections and Channels.
 Each such page opens with a notice that says what only the owner does, why, and names the owner to ask; Providers has one too, with its switches disabled.
 Where the owner would delete the Agent, a line says only the owner can.
-Under Shared with me, a Shared Agent lists its sessions as the owner's own Agents do; they are not in an editor's Activity, All sessions or Pinned.
+Under Shared with me, a Shared Agent lists its sessions as the owner's own Agents do, and its row and chevron act as theirs do: a click on its closed row opens its new-session page and its list, a click on its open row closes the list; its sessions are not in an editor's Activity, All sessions or Pinned.
 A session of a Shared Agent carries the Shared badge in its top bar for the owner and the editors alike.
-An editor's approval prompts in the chat add one line naming the owner and the Agent's connections other than its model providers, since the platform cannot know which one a tool call will use; the owner's prompts do not.
+An editor's approval prompts in the chat add one line naming the owner and the Agent's connections other than its model providers, each with the account it acts as when that is known ("GitHub as tomkis"), since the platform cannot know which one a tool call will use; the owner's prompts do not.
+Wherever the owner gives a Shared Agent a connection, they are reminded that its editors can use it with the owner's access.
+The People warning lists the Agent's connections and their accounts, three and then a tooltip.
+Adding a connection to a Shared Agent asks first, in one dialog with the channel warning when the Agent is also bound to a channel.
+Each of the two warnings has its own "Don't show again", and once it is off the catalog shows a notice instead.
+The Connections page of a Shared Agent opens with a notice naming the editors, and the secret-entry page names the editors of each Shared Agent the new or replaced secret goes to.
 Where only the owner can continue a spend limit, the chat tells an editor to ask the owner by name.
 An editor is not offered what they lack: no channel tiles without `channels`, no terminal or local editor tiles and no terminal sessions without `terminal`.
 Shared Agents add nothing to an editor's Home feed or unread marks (see [home feed](home-feed.md)).
@@ -139,6 +144,7 @@ The Agents context's own records of a change name the editor as the actor.
 
 - An expired connection stops the Agent until its owner fixes it; an editor cannot.
 - Editors have no CLI or API access to Shared Agents.
+- The CLI does not warn when the owner grants a connection to a Shared Agent, as it does not for a channel-bound one.
 - The owner and an editor saving the same whole-list form at once: the last save wins.
 - A new host an Environment asks for, and a spend limit that stops the Agent, file approvals on the owner's Home only.
 - An editor's turns count toward the owner's own spend limits.

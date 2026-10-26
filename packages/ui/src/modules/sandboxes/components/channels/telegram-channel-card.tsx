@@ -23,9 +23,11 @@ import { ChannelRow } from "./channel-row.js";
 export function TelegramChannelCard({
   agentId,
   readOnly = false,
+  compact = false,
 }: {
   agentId: string;
   readOnly?: boolean;
+  compact?: boolean;
 }) {
   const chats = useTelegramChats(agentId);
   const unbind = useUnbindTelegramChat();
@@ -44,6 +46,7 @@ export function TelegramChannelCard({
         onNew={readOnly ? undefined : () => setInstructionsOpen(true)}
         newTestId="telegram-connect"
         newLabel="Add Telegram chat"
+        addInHeader={compact}
         loading={chats.isPending}
         error={chats.isError && "Couldn't load the connected chats."}
         isEmpty={list.length === 0}

@@ -1,5 +1,6 @@
 import type {
   ConnectionView,
+  GitHubAppInstallationProbe,
   GitHubUserTokenInstallation,
   GitHubUserTokenProbe,
 } from "api-server-api";
@@ -13,6 +14,7 @@ export function isGitHubUserTokenTemplate(templateId: string): boolean {
 
 export interface ConnectionScope {
   restricted: boolean;
+  fullAccess?: true;
   account?: string;
   accountId?: number;
   repositories?: string[];
@@ -38,7 +40,9 @@ export function scopeKindOf(view: ConnectionView): ScopeKind | undefined {
 }
 
 export function scopeOf(view: ConnectionView): ConnectionScope | undefined {
+  if (view.isParent) return undefined;
   const kind = scopeKindOf(view);
+  if (kind && view.fullAccess) return { restricted: false, fullAccess: true };
   if (kind === "github-app") {
     const s = view.githubAppScope;
     if (!s) return { restricted: false };
@@ -61,6 +65,7 @@ export function scopeOf(view: ConnectionView): ConnectionScope | undefined {
       restricted: true,
       ...(s.targetLogin ? { account: s.targetLogin } : {}),
       accountId: s.targetId,
+      ...(s.repositoryNames?.length ? { repositories: s.repositoryNames } : {}),
       ...(s.repositoryIds?.length ? { repositoryIds: s.repositoryIds } : {}),
       ...(s.permissions && Object.keys(s.permissions).length > 0
         ? { permissions: s.permissions }
@@ -70,8 +75,23 @@ export function scopeOf(view: ConnectionView): ConnectionScope | undefined {
   return undefined;
 }
 
-export function formatScope(scope: ConnectionScope | undefined): string {
+export function fullAccessSummary(kind: ScopeKind | undefined): string {
+  switch (kind) {
+    case "github-user-token":
+      return "FULL ACCESS — every account, repository and permission the sign-in reaches";
+    case "github-app":
+      return "FULL ACCESS — the whole installation, every repository and permission";
+    case undefined:
+      return "FULL ACCESS";
+  }
+}
+
+export function formatScope(
+  scope: ConnectionScope | undefined,
+  kind?: ScopeKind,
+): string {
   if (!scope) return "—";
+  if (scope.fullAccess) return fullAccessSummary(kind);
   if (!scope.restricted) return "unrestricted";
   const parts: string[] = [];
   if (scope.account !== undefined || scope.accountId !== undefined) {
@@ -89,6 +109,44 @@ export function formatScope(scope: ConnectionScope | undefined): string {
   return parts.join("; ");
 }
 
+export function reachLines(
+  available: GitHubUserTokenProbe | GitHubAppInstallationProbe,
+): string[] {
+  const lines: string[] = [];
+  const installations =
+    "installations" in available
+      ? available.installations
+      : [{ accountLogin: undefined, ...available }];
+  if (installations.length === 0) {
+    lines.push("The app is not installed on any account this sign-in reaches.");
+  }
+  for (const inst of installations) {
+    lines.push(
+      inst.accountLogin !== undefined
+        ? `Account ${inst.accountLogin}:`
+        : "Installation:",
+    );
+    lines.push(
+      `  repositories: ${
+        inst.repositoriesUnavailable
+          ? `couldn't list (${inst.repositoriesUnavailable})`
+          : inst.repositories.map((r) => `${r.name} (${r.id})`).join(", ") +
+            (inst.repositoriesTruncated ? ", …" : "")
+      }`,
+    );
+    lines.push(
+      `  permissions: ${writePermissions(inst.permissions).replace(/ /g, ", ") || "none"}`,
+    );
+  }
+  if (
+    "installationsTruncated" in available &&
+    available.installationsTruncated
+  ) {
+    lines.push("…and more installations than can be listed.");
+  }
+  return lines;
+}
+
 export function writePermissions(permissions: Record<string, string>): string {
   return Object.keys(permissions)
     .sort()
@@ -102,6 +160,9 @@ function split(raw: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 }
+
+export const FULL_ACCESS_CONFLICT =
+  "--full-access can't be combined with --account, --repositories, --repository-ids or --permissions";
 
 export function hasScopeFlags(flags: ScopeFlags): boolean {
   return (
@@ -230,6 +291,47 @@ export interface AppScopeInput {
   permissions?: string;
 }
 
+export interface SentScope extends AppScopeInput {
+  fullAccess?: boolean;
+  targetId?: number;
+}
+
+export function limitsAppScope(input: AppScopeInput): boolean {
+  return [input.repositories, input.repositoryIds, input.permissions].some(
+    (v) => v !== undefined && split(v).length > 0,
+  );
+}
+
+export function sentReach(sent: SentScope): boolean {
+  return (
+    sent.fullAccess === true ||
+    sent.targetId !== undefined ||
+    limitsAppScope(sent)
+  );
+}
+
+export function scopeOfSent(sent: SentScope): ConnectionScope {
+  if (sent.fullAccess) return { restricted: false, fullAccess: true };
+  const repositoryIds = split(sent.repositoryIds ?? "").map(Number);
+  const repositories = split(sent.repositories ?? "");
+  const permissions = Object.fromEntries(
+    split(sent.permissions ?? "").map((pair) => {
+      const [name = "", level = ""] = pair.split(":");
+      return [name, level];
+    }),
+  );
+  return {
+    restricted: true,
+    ...(sent.targetId !== undefined ? { accountId: sent.targetId } : {}),
+    ...(repositoryIds.length > 0
+      ? { repositoryIds }
+      : repositories.length > 0
+        ? { repositories }
+        : {}),
+    ...(Object.keys(permissions).length > 0 ? { permissions } : {}),
+  };
+}
+
 export function resolveAppScope(
   current: ConnectionScope | undefined,
   flags: ScopeFlags,
@@ -252,5 +354,12 @@ export function resolveAppScope(
   const permissions =
     flags.permissions ??
     (current?.permissions ? writePermissions(current.permissions) : undefined);
-  return ok({ ...repos, ...(permissions?.trim() ? { permissions } : {}) });
+  const scope = { ...repos, ...(permissions?.trim() ? { permissions } : {}) };
+  if (!limitsAppScope(scope)) {
+    return err(
+      "that leaves the connection without any limit; name the repositories or permissions it reaches, " +
+        "or pass --full-access for the whole installation",
+    );
+  }
+  return ok(scope);
 }

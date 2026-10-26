@@ -12,7 +12,11 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { promptSecret } from "../../shared/prompt-secret.js";
-import { resolveConnectionRef } from "../domain/connection-ref.js";
+import {
+  resolveConnectionRef,
+  unresolvedConnectionRef,
+} from "../domain/connection-ref.js";
+import { parentLabel, parentOf } from "../domain/github-parent.js";
 import { credentialCheckWarning } from "../domain/credential-check.js";
 import type { ConnectionService } from "../services/connection-service.js";
 import { enterSecretOnPage, PAGE_SECRET_FIELDS } from "./secret-page.js";
@@ -109,6 +113,8 @@ export function buildUpdateCommand(deps: {
         "\nThe secret flags are for scripts with nobody at a browser, which read the\n" +
         "secret from their environment; an agent leaves them out:\n" +
         '  dam connection update anthropic --value "$ANTHROPIC_API_KEY" --json\n' +
+        "\nA GitHub sign-in or GitHub App installation holds the credential of the\n" +
+        "connections made from it: update the sign-in or installation, by its id.\n" +
         "\nOn an OAuth connection this rotates its *client secret* (only when the\n" +
         "connection carries its own). To replace expired tokens, re-consent:\n" +
         "  dam connection reauth <id-or-name>\n",
@@ -123,9 +129,19 @@ export function buildUpdateCommand(deps: {
       exitOnServiceError(listed, host);
       const match = resolveConnectionRef(listed.value, ref);
       if (!match) {
-        process.stderr.write(`error: no connection with id or name '${ref}'\n`);
+        process.stderr.write(unresolvedConnectionRef(listed.value, ref));
+        process.exit(EXIT_INVALID_INPUT);
+      }
+      const parent = parentOf(listed.value, match);
+      if (parent) {
         process.stderr.write(
-          "hint: run `dam connection list` to see ids and names\n",
+          `error: '${match.name}' was made from the ${parentLabel(parent)} ${parent.name} (${parent.id}), ` +
+            "which holds its credential\n" +
+            (parent.authKind === "github-app"
+              ? `hint: replace the private key with \`dam connection update ${parent.id}\`; ` +
+                "every connection made from it gets a new token\n"
+              : `hint: sign in again with \`dam connection reauth ${match.name}\`, ` +
+                `or rotate the client secret of your own OAuth app with \`dam connection update ${parent.id}\`\n`),
         );
         process.exit(EXIT_INVALID_INPUT);
       }

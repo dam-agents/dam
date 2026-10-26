@@ -1,12 +1,11 @@
 import { isCancel, password, text } from "@clack/prompts";
 import { Command, Option } from "commander";
-import {
-  type ConnectionCreateInput,
-  type ConnectionTemplateInput,
-  type ConnectionTemplateView,
-  type CredentialCheck,
-  type SecretlessConnectionCreateInput,
-  connectionNameSchema,
+import type {
+  ConnectionCreateInput,
+  ConnectionTemplateInput,
+  ConnectionTemplateView,
+  CredentialCheck,
+  SecretlessConnectionCreateInput,
 } from "api-server-api";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
@@ -25,14 +24,31 @@ import {
 } from "../domain/config-inputs.js";
 import { credentialCheckWarning } from "../domain/credential-check.js";
 import {
-  type ConnectionScope,
-  formatScope,
+  connectFromHint,
+  freeConnectionName,
+  nonParentNames,
+  splitsIntoParent,
+} from "../domain/github-parent.js";
+import {
+  FULL_ACCESS_CONFLICT,
   hasScopeFlags,
   isGitHubUserTokenTemplate,
-  resolveUserTokenScope,
   scopeOf,
+  scopeOfSent,
+  sentReach,
 } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
+import {
+  choosesReach,
+  connectFrom,
+  emitMadeConnection,
+  emitParentOnly,
+  type ChildScopeInput,
+  makeConnection,
+  makeConnectionFailure,
+  readBackFailure,
+  validateName,
+} from "./connect-from.js";
 import { enterSecretOnPage, PAGE_SECRET_FIELDS } from "./secret-page.js";
 
 const POLL_INTERVAL_MS = 2000;
@@ -57,6 +73,8 @@ interface ConnectOpts {
   repositories?: string;
   repositoryIds?: string;
   permissions?: string;
+  fullAccess?: boolean;
+  from?: string;
   headerName?: string;
   valueFormat?: string;
   envName?: string;
@@ -82,14 +100,23 @@ export function buildConnectCommand(deps: {
   browserOpener: BrowserOpener;
 }): Command {
   return new Command("connect")
-    .description("Create a connection from a provider template or MCP server")
+    .description(
+      "Create a connection from a provider template or MCP server, or from a GitHub sign-in or installation",
+    )
     .argument(
-      "<provider-or-url>",
-      "a provider template id (see `dam connection templates`) or an MCP server URL (https://…)",
+      "[provider-or-url]",
+      "a provider template id (see `dam connection templates`) or an MCP server URL (https://…); left out with --from",
+    )
+    .option(
+      "--from <sign-in>",
+      "make a connection from an existing GitHub sign-in or GitHub App installation (id or name), " +
+        "next to those made from it; takes the scope flags or --full-access",
     )
     .option(
       "--name <name>",
-      "connection name (default: slug of the template name, or the MCP server host)",
+      "connection name (default: slug of the template name, or the MCP server host; " +
+        "a GitHub sign-in or installation and its first connection share it, with -2, -3, … when it is taken; " +
+        "with --from, the sign-in's or installation's name, with -2, -3, … when a connection has it)",
     )
     .option(
       "--auth <mode>",
@@ -130,19 +157,24 @@ export function buildConnectCommand(deps: {
     )
     .option(
       "--account <login>",
-      "narrow a GitHub sign-in to the app's installation on this user or organization, after consent (GitHub)",
+      "limit the connection made from a GitHub sign-in to the app's installation on this user or organization, after consent (GitHub)",
     )
     .option(
       "--repositories <names>",
-      "limit the token to these repository names, space- or comma-separated (GitHub, GitHub App installation)",
+      "limit the connection to these repository names, space- or comma-separated (GitHub, GitHub App installation)",
     )
     .option(
       "--repository-ids <ids>",
-      "limit the token to these numeric repository ids; takes precedence over --repositories (GitHub, GitHub App installation)",
+      "limit the connection to these numeric repository ids; takes precedence over --repositories (GitHub, GitHub App installation)",
     )
     .option(
       "--permissions <pairs>",
-      "limit the token to these name:level permissions, e.g. contents:read (GitHub, GitHub App installation)",
+      "limit the connection to these name:level permissions, e.g. contents:read (GitHub, GitHub App installation)",
+    )
+    .option(
+      "--full-access",
+      "let the connection reach everything the GitHub sign-in or installation reaches: " +
+        "every account, repository and permission (GitHub, GitHub App installation)",
     )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -197,7 +229,9 @@ export function buildConnectCommand(deps: {
     .option(
       "--json",
       "emit { ok, id, status, authKind, presetsApplied?, scope?, check? } as JSON; " +
-        "check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, reason?, at } is the token check",
+        "a connection made from a GitHub sign-in or installation adds name and parentId (the sign-in's or installation's id), " +
+        "and a sign-in or installation kept alone has isParent: true and available, what it reaches; " +
+        "check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at } is the token check",
     )
     .option(
       "--no-browser",
@@ -214,23 +248,32 @@ export function buildConnectCommand(deps: {
     )
     .addHelpText(
       "after",
-      "\nA missing secret (token, API key, client secret, private key, key pair)\n" +
+      "\nA GitHub sign-in (github, github-enterprise) or GitHub App installation\n" +
+        "(github-app, github-enterprise-app) holds the credential and is never granted\n" +
+        "to an agent. Agents are granted the connections made from it, each with its own\n" +
+        "scope: the scope flags, or --full-access for everything the sign-in or\n" +
+        "installation reaches. Without either, the command keeps the sign-in or\n" +
+        "installation alone and shows what it reaches; --from makes a connection from\n" +
+        "it then, and another one next to those it has.\n" +
+        "\nA missing secret (token, API key, client secret, private key, key pair)\n" +
         "is entered on a DAM web page: the command opens it, waits until the\n" +
         "secret is saved, and reports the result. The page shows where the secret\n" +
         "will be sent, and takes a multi-line PEM key. Sign in there as the same\n" +
         "user. Pass --prompt to type it at a hidden terminal prompt instead.\n" +
         "\nExamples:\n" +
-        "  dam connection connect github\n" +
-        "  dam connection connect github --no-browser\n" +
+        "  dam connection connect github   # the sign-in alone, and what it reaches\n" +
         "  dam connection connect github --account acme --repositories api,web \\\n" +
         "      --permissions contents:read,pull_requests:write\n" +
+        "  dam connection connect github --full-access --no-browser\n" +
+        "  dam connection connect --from github --account acme --repositories docs --name github-docs\n" +
         "  dam connection connect github-pat   # the token is entered on a DAM web page\n" +
         "  dam connection connect custom-header --host api.example.com \\\n" +
         "      --header-name X-API-Key --value-format '{value}'   # the key, on the page\n" +
         "  dam connection connect custom-client-credentials --host api.example.com \\\n" +
         "      --issuer-url https://auth.example.com/realms/main --client-id my-client \\\n" +
         "      --header-name Authorization --value-format 'Bearer {value}'\n" +
-        "  dam connection connect github-app --app-id 123456 --installation-id 987654\n" +
+        "  dam connection connect github-app --app-id 123456 --installation-id 987654 \\\n" +
+        "      --repositories api --permissions contents:read\n" +
         "  dam connection connect github-enterprise-app --host ghe.acme.com \\\n" +
         "      --app-id 123456 --installation-id 987654   # the private key, on the page\n" +
         "  dam connection connect bob --config model=premium-shell --config chatMode=agent\n" +
@@ -245,12 +288,41 @@ export function buildConnectCommand(deps: {
         "in a terminal of their own:\n" +
         "  dam connection connect github --client-id Iv1.… --client-secret …\n",
     )
-    .action(async (providerOrUrl: string, opts: ConnectOpts) => {
+    .action(async (providerOrUrl: string | undefined, opts: ConnectOpts) => {
       const json = opts.json ?? false;
 
       const timeoutSeconds = parseTimeout(opts.timeout);
       if (timeoutSeconds === null) {
         process.stderr.write("error: --timeout must be a positive integer\n");
+        process.exit(EXIT_INVALID_INPUT);
+      }
+      if (opts.fullAccess && hasScopeFlags(opts)) {
+        process.stderr.write(`error: ${FULL_ACCESS_CONFLICT}\n`);
+        process.exit(EXIT_INVALID_INPUT);
+      }
+
+      if (opts.from !== undefined) {
+        if (providerOrUrl !== undefined) {
+          process.stderr.write(
+            "error: pass a provider or --from, not both; --from makes a connection from an existing GitHub sign-in or installation\n",
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+        const host = await resolveActiveHost(deps, opts.server);
+        return connectFrom({
+          svc: deps.createConnectionService(host),
+          host,
+          ref: opts.from,
+          name: opts.name,
+          choice: opts,
+          json,
+        });
+      }
+      if (providerOrUrl === undefined) {
+        process.stderr.write(
+          "error: pass a provider template id or an MCP server URL, or --from <sign-in or installation>\n" +
+            "hint: run `dam connection templates` to see the available providers\n",
+        );
         process.exit(EXIT_INVALID_INPUT);
       }
 
@@ -264,7 +336,7 @@ export function buildConnectCommand(deps: {
       const templates = templatesRes.value;
 
       const mcpUrl = parseHttpUrl(providerOrUrl);
-      const { template, name, values, presetsApplied, secretOnPage } = mcpUrl
+      const resolved = mcpUrl
         ? await resolveMcpTemplate({
             svc,
             url: providerOrUrl,
@@ -281,6 +353,11 @@ export function buildConnectCommand(deps: {
             opts,
             json,
           });
+      const { template, values, presetsApplied, secretOnPage } = resolved;
+      const github = splitsIntoParent(template);
+      const name = github
+        ? await gitHubName(svc, host, resolved.name, opts)
+        : resolved.name;
 
       const configRes = resolveConfigInputFlags(template, opts.config ?? []);
       if (!configRes.ok) {
@@ -290,11 +367,16 @@ export function buildConnectCommand(deps: {
         process.exit(EXIT_INVALID_INPUT);
       }
 
-      const payload = buildPayload(template, name, {
-        ...values,
-        ...configRes.value,
-        ...(secretOnPage ? pagePlaceholders(template) : {}),
-      });
+      const payload = buildPayload(
+        template,
+        name,
+        {
+          ...values,
+          ...configRes.value,
+          ...(secretOnPage ? pagePlaceholders(template) : {}),
+        },
+        opts.fullAccess === true,
+      );
       if ("error" in payload) {
         process.stderr.write(`error: ${payload.error}\n`);
         process.exit(EXIT_INVALID_INPUT);
@@ -327,13 +409,15 @@ export function buildConnectCommand(deps: {
           timeoutSeconds,
         });
         if (entered.kind === "saved") {
-          emitSuccess({
+          await emitCreated({
+            svc,
             json,
-            verb: "Created",
+            github,
             name,
             id: entered.connectionId,
             authKind: template.authKind,
             presetsApplied: presetNames,
+            sent: sentAppScope(payload),
             ...(entered.check ? { check: entered.check } : {}),
           });
           process.exit(EXIT_SUCCESS);
@@ -361,16 +445,15 @@ export function buildConnectCommand(deps: {
       }
 
       if (template.authKind !== "oauth") {
-        const created = await svc.getConnection(id);
-        const check = created.ok ? created.value?.check : undefined;
-        emitSuccess({
+        await emitCreated({
+          svc,
           json,
-          verb: "Created",
+          github,
           name,
           id,
           authKind: template.authKind,
           presetsApplied: presetNames,
-          ...(check ? { check } : {}),
+          sent: sentAppScope(payload),
         });
         process.exit(EXIT_SUCCESS);
       }
@@ -405,20 +488,62 @@ export function buildConnectCommand(deps: {
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
-      const scope =
-        isGitHubUserTokenTemplate(template.id) && hasScopeFlags(opts)
-          ? await narrowUserToken(svc, id, name, opts)
-          : undefined;
+      if (!github) {
+        emitSuccess({
+          json,
+          verb: "Connected",
+          name,
+          id,
+          authKind: "oauth",
+          presetsApplied: presetNames,
+          ...(noBrowser ? { authUrl } : {}),
+        });
+        process.exit(EXIT_SUCCESS);
+      }
 
-      emitSuccess({
+      const signIn = { id, name, authKind: "oauth" as const };
+      if (!choosesReach(opts)) {
+        await emitParentOnly({
+          svc,
+          json,
+          verb: "Connected",
+          parent: signIn,
+          presetsApplied: presetNames,
+          ...(noBrowser ? { authUrl } : {}),
+        });
+        process.exit(EXIT_SUCCESS);
+      }
+
+      const made = await makeConnection(
+        svc,
+        { id, kind: "github-user-token" },
+        name,
+        opts,
+      );
+      if (!made.ok) {
+        process.stderr.write(
+          `error: signed in, but couldn't make a connection from the GitHub sign-in ${name} (${id}): ` +
+            `${makeConnectionFailure(made.error)}\n` +
+            "  No agent can use the sign-in until a connection is made from it:\n" +
+            connectFromHint(signIn) +
+            `  or remove the sign-in with \`dam connection disconnect ${id}\`.\n`,
+        );
+        process.exit(EXIT_RUNTIME_FAILURE);
+      }
+      const after = await svc.getConnection(made.value.id);
+      const view = after.ok ? after.value : null;
+      const failure = readBackFailure(after);
+      emitMadeConnection({
         json,
         verb: "Connected",
+        id: made.value.id,
         name,
-        id,
-        authKind: "oauth",
+        parent: signIn,
+        kind: "github-user-token",
+        scope: (view && scopeOf(view)) ?? scopeOfSent(made.value.sent),
         presetsApplied: presetNames,
         ...(noBrowser ? { authUrl } : {}),
-        ...(scope ? { scope } : {}),
+        ...(failure ? { readBackFailure: failure } : {}),
       });
       process.exit(EXIT_SUCCESS);
     });
@@ -476,6 +601,14 @@ async function resolveSlugTemplate(args: {
   if (opts.account !== undefined && !isGitHubUserTokenTemplate(template.id)) {
     process.stderr.write(
       `error: --account applies only to a GitHub sign-in (github, github-enterprise), not '${template.id}'\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+
+  if (opts.fullAccess && !splitsIntoParent(template)) {
+    process.stderr.write(
+      "error: --full-access applies only to a GitHub sign-in or GitHub App installation " +
+        `(github, github-enterprise, github-app, github-enterprise-app), not '${template.id}'\n`,
     );
     process.exit(EXIT_INVALID_INPUT);
   }
@@ -551,13 +684,24 @@ async function resolveMcpName(
   return String(answer).trim();
 }
 
-function validateName(name: string): void {
-  const nameCheck = connectionNameSchema.safeParse(name);
-  if (!nameCheck.success) {
-    const msg = nameCheck.error.issues[0]?.message ?? "invalid name";
-    process.stderr.write(`error: ${msg}\n`);
+async function gitHubName(
+  svc: ConnectionService,
+  host: string,
+  base: string,
+  opts: ConnectOpts,
+): Promise<string> {
+  const listed = await svc.list();
+  exitOnServiceError(listed, host);
+  if (opts.name === undefined) {
+    return freeConnectionName(new Set(listed.value.map((c) => c.name)), base);
+  }
+  if (choosesReach(opts) && nonParentNames(listed.value).has(base)) {
+    process.stderr.write(
+      `error: a connection named '${base}' exists; pass another --name\n`,
+    );
     process.exit(EXIT_INVALID_INPUT);
   }
+  return base;
 }
 
 interface CollectedInputs {
@@ -696,6 +840,7 @@ function buildPayload(
   template: ConnectionTemplateView,
   name: string,
   values: Record<string, string>,
+  fullAccess: boolean,
 ): ConnectionCreateInput | { error: string } {
   const common = { templateId: template.id, name };
   const v = (k: string): string | undefined => {
@@ -748,6 +893,7 @@ function buildPayload(
         ...(v("repositories") ? { repositories: v("repositories")! } : {}),
         ...(v("repositoryIds") ? { repositoryIds: v("repositoryIds")! } : {}),
         ...(v("permissions") ? { permissions: v("permissions")! } : {}),
+        ...(fullAccess ? { fullAccess: true } : {}),
       };
     }
     case "header": {
@@ -804,34 +950,6 @@ function buildPayload(
   }
 }
 
-async function narrowUserToken(
-  svc: ConnectionService,
-  id: string,
-  name: string,
-  opts: ConnectOpts,
-): Promise<ConnectionScope | undefined> {
-  const fail = (message: string): never => {
-    process.stderr.write(
-      `error: connected ${name} (${id}), but couldn't limit it: ${message}\n` +
-        "  It reaches everything this sign-in can. Limit it with `dam connection scope " +
-        `${name} …\` before you grant it, or remove it with \`dam connection disconnect ${name}\`.\n`,
-    );
-    process.exit(EXIT_RUNTIME_FAILURE);
-  };
-  const probe = await svc.probeGitHubUserToken(id);
-  if (!probe.ok) return fail(probe.error.reason);
-  const resolved = resolveUserTokenScope(probe.value, undefined, opts);
-  if (!resolved.ok) return fail(resolved.error);
-  const res = await svc.updateGitHubUserTokenScope({ id, ...resolved.value });
-  if (!res.ok) return fail(res.error.reason);
-  const after = await svc.getConnection(id);
-  const scope = after.ok && after.value ? scopeOf(after.value) : undefined;
-  if (!opts.json) {
-    process.stderr.write(`Limited ${name} to ${formatScope(scope)}.\n`);
-  }
-  return scope;
-}
-
 function checkClusterTrust(
   probeRes: Awaited<ReturnType<ConnectionService["probeClusterCa"]>>,
   host: string,
@@ -855,6 +973,82 @@ function checkClusterTrust(
   return true;
 }
 
+async function emitCreated(args: {
+  svc: ConnectionService;
+  json: boolean;
+  github: boolean;
+  name: string;
+  id: string;
+  authKind: ConnectionTemplateView["authKind"];
+  presetsApplied: string[];
+  sent: ChildScopeInput | undefined;
+  check?: CredentialCheck;
+}): Promise<void> {
+  const created =
+    args.github || args.check === undefined
+      ? await args.svc.getConnection(args.id)
+      : undefined;
+  const view = created?.ok ? created.value : null;
+  const check = view?.check ?? args.check;
+  const failure = args.github && created ? readBackFailure(created) : undefined;
+  const sent = args.sent ?? {};
+  const madeConnection = view
+    ? view.parentId !== undefined
+    : failure !== undefined && sentReach(sent);
+  const keptAlone = view ? view.isParent === true : failure !== undefined;
+  const common = {
+    json: args.json,
+    verb: "Created" as const,
+    presetsApplied: args.presetsApplied,
+    ...(check ? { check } : {}),
+    ...(failure ? { readBackFailure: failure } : {}),
+  };
+  if (args.github && madeConnection) {
+    emitMadeConnection({
+      ...common,
+      id: args.id,
+      name: args.name,
+      parent: {
+        id: view?.parentId,
+        name: args.name,
+        authKind: args.authKind,
+      },
+      kind: "github-app",
+      scope: (view && scopeOf(view)) ?? scopeOfSent(sent),
+    });
+    return;
+  }
+  if (args.github && keptAlone) {
+    await emitParentOnly({
+      ...common,
+      svc: args.svc,
+      parent: { id: args.id, name: args.name, authKind: args.authKind },
+    });
+    return;
+  }
+  emitSuccess({
+    json: args.json,
+    verb: "Created",
+    name: args.name,
+    id: args.id,
+    authKind: args.authKind,
+    presetsApplied: args.presetsApplied,
+    ...(check ? { check } : {}),
+  });
+}
+
+function sentAppScope(
+  payload: ConnectionCreateInput,
+): ChildScopeInput | undefined {
+  if (payload.authKind !== "github-app") return undefined;
+  return {
+    ...(payload.fullAccess ? { fullAccess: true } : {}),
+    ...(payload.repositories ? { repositories: payload.repositories } : {}),
+    ...(payload.repositoryIds ? { repositoryIds: payload.repositoryIds } : {}),
+    ...(payload.permissions ? { permissions: payload.permissions } : {}),
+  };
+}
+
 function emitSuccess(args: {
   json: boolean;
   verb: "Created" | "Connected";
@@ -863,7 +1057,6 @@ function emitSuccess(args: {
   authKind: ConnectionTemplateView["authKind"];
   authUrl?: string;
   presetsApplied?: string[];
-  scope?: ConnectionScope;
   check?: CredentialCheck;
 }): void {
   if (args.json) {
@@ -877,7 +1070,6 @@ function emitSuccess(args: {
         ...(args.presetsApplied && args.presetsApplied.length > 0
           ? { presetsApplied: args.presetsApplied }
           : {}),
-        ...(args.scope ? { scope: args.scope } : {}),
         ...(args.check ? { check: args.check } : {}),
       })}\n`,
     );

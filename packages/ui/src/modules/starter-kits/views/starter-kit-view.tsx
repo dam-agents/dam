@@ -6,6 +6,7 @@ import {
   WarningAlt,
 } from "@carbon/icons-react";
 import {
+  ChannelType,
   type ConnectionTemplateView,
   formatEgressRuleInline,
   LINKED_KIT_CATALOG,
@@ -40,6 +41,8 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { SignedInParentDialog } from "../../connections/components/signed-in-parent-dialog.js";
+import { isGrantable } from "../../connections/lib/connection-hierarchy.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
@@ -368,21 +371,31 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const connections = useAppConnections();
-  const agents = useAgents().data?.list;
+  const agentsData = useAgents().data;
+  const agents = agentsData?.list;
+  const availableChannels = agentsData?.availableChannels ?? {};
+  const offersChannels = !!(
+    availableChannels[ChannelType.Slack] ||
+    availableChannels[ChannelType.Telegram]
+  );
   const apply = useApplyStarterKit();
   const returnPath = routeToPath({
     view: "starter-kit",
     catalog: kit.catalog,
     kit: routeKit,
   });
-  const { form, update, toggleConnection, reset } = useSetupForm(
-    "starter-kit",
-    {
-      namePrefix: kit.id,
-      returnPath,
-      scope: `${kit.catalog}/${routeKit}`,
-    },
-  );
+  const {
+    form,
+    update,
+    toggleConnection,
+    reset,
+    signedInParentId,
+    clearSignedIn,
+  } = useSetupForm("starter-kit", {
+    namePrefix: kit.id,
+    returnPath,
+    scope: `${kit.catalog}/${routeKit}`,
+  });
   const [invalidSchedules, setInvalidSchedules] = useState<readonly string[]>(
     [],
   );
@@ -394,7 +407,10 @@ function KitDetail({
     () => new Map((templates.data ?? []).map((t) => [t.id, t])),
     [templates.data],
   );
-  const owned = useMemo(() => connections.data ?? [], [connections.data]);
+  const owned = useMemo(
+    () => (connections.data ?? []).filter(isGrantable),
+    [connections.data],
+  );
   const grantedIds = useMemo(
     () => new Set(form.connectionIds),
     [form.connectionIds],
@@ -407,7 +423,7 @@ function KitDetail({
     preselected.current = true;
     for (const id of preselectedGrants(
       kit,
-      connections.data,
+      owned,
       form.connectionIds,
       templateById,
     ))
@@ -415,6 +431,7 @@ function KitDetail({
   }, [
     kit,
     connections.data,
+    owned,
     templates.data,
     templateById,
     form.connectionIds,
@@ -668,7 +685,7 @@ function KitDetail({
 
           {(connectionRequirements(kit).length > 0 ||
             kit.schedules.length > 0 ||
-            kit.channels.length > 0) && (
+            offersChannels) && (
             <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
               You&apos;ll set up
             </h2>
@@ -736,15 +753,14 @@ function KitDetail({
             </section>
           )}
 
-          {kit.channels.length > 0 && (
-            <KitChannelsSection
-              kit={kit}
-              slackChannelId={form.slackChannelId}
-              onSlackChannelIdChange={(slackChannelId) =>
-                update({ slackChannelId })
-              }
-            />
-          )}
+          <KitChannelsSection
+            kit={kit}
+            available={availableChannels}
+            slackChannelIds={form.slackChannelIds}
+            onSlackChannelIdsChange={(slackChannelIds) =>
+              update({ slackChannelIds })
+            }
+          />
         </DialogBody>
 
         <DialogFooter className="justify-between">
@@ -762,8 +778,24 @@ function KitDetail({
             title={`Connect ${describeAccepts(connectAccepts, templateById)}`}
             subtitle="Pick one of your connections, or add a new one."
             onClose={() => setConnectAccepts(null)}
-            sandbox={{ grantedIds, onToggleGrant: toggleConnection }}
+            sandbox={{
+              grantedIds,
+              onToggleGrant: toggleConnection,
+              onRevoke: (ids) => {
+                for (const id of ids) toggleConnection(id, false);
+              },
+            }}
             oauthReturnView={returnPath}
+          />
+        )}
+        {signedInParentId && (
+          <SignedInParentDialog
+            connectionId={signedInParentId}
+            onClose={clearSignedIn}
+            onCreated={(id) => {
+              clearSignedIn();
+              toggleConnection(id, true);
+            }}
           />
         )}
       </div>

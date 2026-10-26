@@ -13,9 +13,10 @@ import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
  * layout from before the side panel: Files, Artifacts and Processes are
  * sections in a column beside the conversation, and the docked item (a file,
  * an artifact, the browser, the changes, a process output or a delegation)
- * opens on the right. Get started and Approvals open in that same slot from
- * the top bar, and the docked item waits behind them. The side panel's own
- * tabs, Files and the rest, show nothing there: their lists are the sections.
+ * opens on the right. Get started opens in that same slot from the top bar and
+ * the docked item waits behind it; Approvals opens as a drawer over the chat,
+ * so it leaves the slot as it is. The side panel's own tabs, Files and the
+ * rest, show nothing there: their lists are the sections.
  */
 
 const SHOWN = hiddenSidePanelTabs({
@@ -25,6 +26,7 @@ const SHOWN = hiddenSidePanelTabs({
   changes: true,
   processesEnabled: true,
   environments: true,
+  configuration: false,
   gettingStarted: true,
 });
 
@@ -40,13 +42,18 @@ describe("what the right-hand slot shows", () => {
     expect(classicPanel("processes", SHOWN, false)).toBe(null);
   });
 
-  it("TEST_SCENARIO: Approvals and Get started take the slot over a docked item, which comes back when they close", () => {
-    expect(classicPanel("approvals", SHOWN, true)).toBe("approvals");
-    expect(classicPanel("getting-started", SHOWN, false)).toBe(
+  it("TEST_SCENARIO: Get started takes the slot over a docked item, which comes back when it closes", () => {
+    expect(classicPanel("getting-started", SHOWN, true)).toBe(
       "getting-started",
     );
-    expect(classicAppTab("approvals", SHOWN)).toBe("approvals");
+    expect(classicAppTab("getting-started", SHOWN)).toBe("getting-started");
     expect(classicAppTab("files", SHOWN)).toBe(null);
+  });
+
+  it("TEST_SCENARIO: Approvals opens as a drawer over the chat, so it never takes the slot and the docked item stays in view", () => {
+    expect(classicPanel("approvals", SHOWN, true)).toBe("dock");
+    expect(classicPanel("approvals", SHOWN, false)).toBe(null);
+    expect(classicAppTab("approvals", SHOWN)).toBe("approvals");
   });
 
   it("TEST_SCENARIO: a finished or dismissed checklist hides Get started, so the slot falls back to the docked item", () => {
@@ -57,6 +64,7 @@ describe("what the right-hand slot shows", () => {
       changes: true,
       processesEnabled: true,
       environments: true,
+      configuration: false,
       gettingStarted: false,
     });
     expect(classicPanel("getting-started", hidden, true)).toBe("dock");
@@ -130,8 +138,8 @@ describe("the top bar's browser and changes toggles", () => {
     });
   });
 
-  it("TEST_SCENARIO: an item docked behind Approvals or Get started is not pressed, and a click brings it back instead of closing it", () => {
-    for (const panel of ["approvals", "getting-started"] as const)
+  it("TEST_SCENARIO: an item docked behind Get started is not pressed, and a click brings it back instead of closing it", () => {
+    for (const panel of ["getting-started"] as const)
       expect(classicDockToggle({ ...base, panel })).toEqual({
         pressed: false,
         click: "reveal",
@@ -145,7 +153,7 @@ describe("the top bar's browser and changes toggles", () => {
   });
 
   it("TEST_SCENARIO: an item another docked item covers is not pressed, and a click opens it in front; so does a click on an item not docked", () => {
-    for (const panel of ["dock", "approvals"] as const)
+    for (const panel of ["dock", "getting-started"] as const)
       expect(classicDockToggle({ ...base, panel, front: false })).toEqual({
         pressed: false,
         click: "open",

@@ -16,7 +16,6 @@ export function SidebarSection({
   title,
   open,
   onToggle,
-  headerLeft,
   headerRight,
   className,
   headerClassName,
@@ -28,7 +27,6 @@ export function SidebarSection({
   title: string;
   open: boolean;
   onToggle?: () => void;
-  headerLeft?: ReactNode;
   headerRight?: ReactNode;
   className?: string;
   headerClassName?: string;
@@ -53,7 +51,6 @@ export function SidebarSection({
           tiles && "border-t-0",
         )}
       >
-        {headerLeft}
         {onToggle ? (
           <DisclosureToggle
             open={open}

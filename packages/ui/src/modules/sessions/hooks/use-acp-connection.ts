@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
-import { openInitializedConnection } from "../../acp/acp.js";
+import { openInitializedConnection, sessionForksIn } from "../../acp/acp.js";
 import { unstoredSessionPrompts } from "../../acp/errors.js";
 import {
   appendInterruptedNotice,
@@ -43,6 +43,7 @@ import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
+import { lastOutputAtOf } from "../lib/quiet-turn.js";
 import { pairMeta } from "../lib/session-pair-options.js";
 import {
   clearUndelivered,
@@ -131,6 +132,7 @@ export function useAcpConnection(
   const reconnectFnRef = useRef<(() => void) | null>(null);
   const pendingReloadRef = useRef(false);
   const generationRef = useRef(0);
+  const agentForksRef = useRef(false);
   const startInFlightRef = useRef<{
     holders: { count: number };
     promise: Promise<StartedSession>;
@@ -260,7 +262,10 @@ export function useAcpConnection(
           },
         });
         startedSessionId = session.sessionId;
-        useStore.getState().setHarnessForks(forksSessions);
+        agentForksRef.current = forksSessions;
+        useStore
+          .getState()
+          .setHarnessForks(sessionForksIn(session, forksSessions));
         useStore.getState().setHarnessSteers(steers);
         seedStartedSession(agentId, startedSessionId, next?.pair ?? null);
       } catch (err) {
@@ -345,7 +350,7 @@ export function useAcpConnection(
       );
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
-    useStore.getState().setHarnessForks(forksSessions);
+    agentForksRef.current = forksSessions;
     useStore.getState().setHarnessSteers(steers);
     return connectionRef.current;
   }, [selectedAgent, makeUpdateHandler, delivery, attachCloseHandler]);
@@ -397,6 +402,10 @@ export function useAcpConnection(
           };
         } | null
       )?._meta?.platform;
+      if (useStore.getState().sessionId === sid)
+        useStore
+          .getState()
+          .setHarnessForks(sessionForksIn(result, agentForksRef.current));
       const clippedRaw = platformMeta?.clipped;
       const turn = platformReplayTurnMetaSchema.safeParse(platformMeta?.turn);
       const undelivered = platformUndeliveredMetaSchema.safeParse(
@@ -483,6 +492,11 @@ export function useAcpConnection(
             ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
         useStore.getState().setQueuedPrompts(queue.success ? queue.data : []);
+        useStore
+          .getState()
+          .setLastOutputAt(
+            lastOutputAtOf(updates, useStore.getState().lastOutputAt),
+          );
         useStore.getState().setAttribution({
           senders: senders.success ? senders.data : [],
           verdicts: verdicts.success ? verdicts.data : [],
@@ -494,7 +508,12 @@ export function useAcpConnection(
         useStore
           .getState()
           .setContinuedFrom(continuedFrom.success ? continuedFrom.data : null);
-        if (turn.success && !turn.data.inFlight)
+        if (
+          turn.success &&
+          !turn.data.inFlight &&
+          queue.success &&
+          queue.data.length === 0
+        )
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);
         bindEngagement(sid);

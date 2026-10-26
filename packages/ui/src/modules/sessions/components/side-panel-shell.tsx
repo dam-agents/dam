@@ -52,7 +52,9 @@ const dismissLayerAbove = () =>
  * phone view. The chat view and every other page share it, so the panel looks
  * and sizes the same wherever it opens; each caller decides which tabs exist
  * and what its own tabs show. Get started and Approvals belong to no page, so
- * the shell shows them itself.
+ * the shell shows them itself. The page stays inside the same column while the
+ * panel column comes and goes, so opening a panel never remounts it; a shell
+ * whose page keeps its panels outside the shell draws no column at all.
  */
 export function SidePanelShell({
   activeTab,
@@ -67,6 +69,7 @@ export function SidePanelShell({
   mobileTitle,
   mobileBackLabel,
   mainClassName,
+  rail = true,
   children,
 }: {
   activeTab: SidePanelTab | null;
@@ -81,6 +84,7 @@ export function SidePanelShell({
   mobileTitle: ReactNode;
   mobileBackLabel: string;
   mainClassName?: string;
+  rail?: boolean;
   children: ReactNode;
 }) {
   // UNIT_BOUNDARY_DESCRIPTION: JanUI is the only shell whose left navigation is a rail and whose page has no bar above it; the toolbar alone leaves the shell to the page and changes only the right side.
@@ -215,6 +219,18 @@ export function SidePanelShell({
       before?.focus();
     };
   }, [mobileOverlay, tabbed, closeMobilePanel]);
+
+  // UNIT_BOUNDARY_DESCRIPTION: a page whose panels live outside the shell draws the page column alone and no panel column, so an empty rail never takes room beside it; the column around the page is the same element in both shapes, so its page never remounts.
+  if (!rail)
+    return (
+      <div ref={setColumnsEl} className="flex flex-1 min-h-0 min-w-0">
+        <div
+          className={cn("relative flex flex-1 flex-col min-w-0", mainClassName)}
+        >
+          {children}
+        </div>
+      </div>
+    );
 
   return (
     <div ref={setColumnsEl} className="flex flex-1 min-h-0 min-w-0">

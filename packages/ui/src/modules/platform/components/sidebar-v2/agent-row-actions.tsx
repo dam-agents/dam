@@ -1,5 +1,5 @@
-import { Tools, TrashCan } from "@carbon/icons-react";
-import type { ReactNode } from "react";
+import { Edit, Power, Restart, Tools, TrashCan } from "@carbon/icons-react";
+import { type ReactNode, useState } from "react";
 
 import {
   ContextMenu,
@@ -16,11 +16,15 @@ import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { cn } from "@/lib/utils";
 
-import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
-import { useDeleteAgent } from "../../../agents/api/mutations.js";
+import { RenameAgentDialog } from "../../../agents/components/rename-agent-dialog.js";
 import { AgentUpdateDot } from "../../../agents/components/update-available-action.js";
-import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
+import { useAgentMenuActions } from "../../../agents/hooks/use-agent-menu-actions.js";
+import {
+  agentMenuEntries,
+  type AgentMenuEntry,
+} from "../../../agents/lib/agent-menu.js";
+import { useUnifiedRightToolbar } from "../../../features/hooks/use-unified-right-toolbar.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { defaultActivityFilters } from "../../../home/lib/activity-filter.js";
 import {
@@ -50,6 +54,8 @@ export function AgentRowActions({
 }) {
   const agentFilter = useAgentSessionFilter(agent.id);
   const actions = useAgentMenuActions({ agent, current, onNavigate });
+  const rightToolbar = useUnifiedRightToolbar();
+  const [renaming, setRenaming] = useState(false);
   return (
     <div className="flex items-center gap-0.5">
       <div
@@ -81,7 +87,14 @@ export function AgentRowActions({
             testId="sidebar-agent-menu"
             dense
           >
-            <AgentMenuItems {...actions} />
+            <AgentMenuItems
+              agent={agent}
+              entries={agentMenuEntries(rightToolbar)}
+              onRename={() => {
+                setRenaming(true);
+              }}
+              {...actions}
+            />
           </RowActionsMenu>
           <AgentUpdateDot
             available={!!agent.templateUpdate}
@@ -89,65 +102,73 @@ export function AgentRowActions({
           />
         </span>
       </div>
+      {renaming && (
+        <RenameAgentDialog
+          agent={agent}
+          onClose={() => {
+            setRenaming(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: An Agent's Configure and Remove items, drawn by its row's "⋯" menu and by the menu a right click on its row opens.
+ * UNIT_BOUNDARY_DESCRIPTION: An Agent's row-menu items, drawn by its row's "⋯" menu and by the menu a right click on its row opens, with the rename dialog they open.
  */
 export function AgentMenuItems({
+  agent,
+  entries,
   onConfigure,
+  onRename,
   onRemove,
+  onToggleDisabled,
+  onRestart,
   updateAvailable,
   menu = "dropdown",
 }: {
+  agent: AgentView;
+  entries: readonly AgentMenuEntry[];
   onConfigure: () => void;
+  onRename: () => void;
   onRemove: () => void;
+  onToggleDisabled: () => void;
+  onRestart: () => void;
   updateAvailable: boolean;
   menu?: keyof typeof MENU_PARTS;
 }) {
   const { Item, Separator } = MENU_PARTS[menu];
   return (
     <>
-      <Item onSelect={onConfigure}>
-        <Tools size={14} /> Configure
-        <AgentUpdateDot available={updateAvailable} className="ml-auto" />
-      </Item>
+      {entries.includes("configure") && (
+        <Item onSelect={onConfigure}>
+          <Tools size={14} /> Configure
+          <AgentUpdateDot available={updateAvailable} className="ml-auto" />
+        </Item>
+      )}
+      {entries.includes("rename") && (
+        <Item onSelect={onRename}>
+          <Edit size={14} /> Rename
+          <AgentUpdateDot available={updateAvailable} className="ml-auto" />
+        </Item>
+      )}
+      {entries.includes("disable") && (
+        <Item onSelect={onToggleDisabled}>
+          <Power size={14} /> {agent.disabled ? "Enable" : "Disable"}
+        </Item>
+      )}
+      {entries.includes("restart") && (
+        <Item onSelect={onRestart}>
+          <Restart size={14} /> Restart
+        </Item>
+      )}
       <Separator />
       <Item tone="danger" onSelect={onRemove}>
         <TrashCan size={14} /> Remove
       </Item>
     </>
   );
-}
-
-function useAgentMenuActions({
-  agent,
-  current,
-  onNavigate,
-}: {
-  agent: AgentView;
-  current: boolean;
-  onNavigate: (() => void) | undefined;
-}) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const setView = useStore((s) => s.setView);
-  const confirmDelete = useConfirmDeleteAgent();
-  const deleteAgent = useDeleteAgent();
-  return {
-    updateAvailable: !!agent.templateUpdate,
-    onConfigure: () => {
-      navigateToSandboxHome(agent.id);
-      onNavigate?.();
-    },
-    onRemove: () =>
-      void confirmDelete(agent).then((ok) => {
-        if (!ok) return;
-        deleteAgent.mutate({ id: agent.id });
-        if (current) setView("home");
-      }),
-  };
 }
 
 /**
@@ -167,12 +188,30 @@ export function AgentContextMenu({
   children: ReactNode;
 }) {
   const actions = useAgentMenuActions({ agent, current, onNavigate });
+  const rightToolbar = useUnifiedRightToolbar();
+  const [renaming, setRenaming] = useState(false);
   return (
     <ContextMenu onOpenChange={onOpenChange}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        <AgentMenuItems menu="context" {...actions} />
+        <AgentMenuItems
+          agent={agent}
+          entries={agentMenuEntries(rightToolbar)}
+          onRename={() => {
+            setRenaming(true);
+          }}
+          menu="context"
+          {...actions}
+        />
       </ContextMenuContent>
+      {renaming && (
+        <RenameAgentDialog
+          agent={agent}
+          onClose={() => {
+            setRenaming(false);
+          }}
+        />
+      )}
     </ContextMenu>
   );
 }

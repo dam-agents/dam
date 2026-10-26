@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl } from "@/lib/git-source";
 
+import { useUnifiedRightToolbar } from "../../../features/hooks/use-unified-right-toolbar.js";
 import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
 import { sameSourcePath, selectionKey } from "../../lib/skill-identity.js";
@@ -73,6 +74,7 @@ export function SkillSourceCard({
   onToggleAll: (on: boolean, scope?: Skill[]) => void;
   onManageConnections?: () => void;
 }) {
+  const rightToolbar = useUnifiedRightToolbar();
   const {
     skillsBySource,
     loadingBySource,
@@ -142,6 +144,7 @@ export function SkillSourceCard({
         visibility={visibility}
         badgeTitle="Only readable through this agent's GitHub connection"
         note={
+          !rightToolbar &&
           loaded && (
             <span className="shrink-0 text-sm text-muted-foreground">
               {enabled.length} of {list.length} on
@@ -150,7 +153,7 @@ export function SkillSourceCard({
         }
       >
         <div className="flex shrink-0 items-center gap-2">
-          {scannedAt && (
+          {!rightToolbar && scannedAt && (
             <ScanFreshness
               scannedAt={scannedAt}
               rescanning={revalidating}
@@ -177,8 +180,12 @@ export function SkillSourceCard({
                   : "Enable all"}
             </Button>
           )}
+          {rightToolbar && revalidating && (
+            <Spinner size={14} label="Rescanning this source" />
+          )}
           <SkillSourceActions
             source={source}
+            scannedAt={rightToolbar ? scannedAt : undefined}
             busy={loading || revalidating}
             onRescan={() => void surface.refreshSource(source.id)}
             onRemove={onRemove}

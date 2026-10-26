@@ -4,6 +4,7 @@ import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName, mockDefaultReply } from "../../lib/fixtures.js";
+import { connectSlackAsMember } from "../../lib/slack.js";
 
 const ambientChannelId = "C-E2E-AMBIENT";
 const strangerSlackUserId = "U-E2E-STRANGER";
@@ -20,7 +21,7 @@ test("an unmentioned channel message gets an ambient reply", async () => {
   await test.step("owner binds the channel shared with ambient on", async () => {
     await api.e2e.slackResetOutbound.mutate();
     await api.agents.disconnectSlack.mutate({ id: agentId });
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: ambientChannelId,
       ambient: true,
@@ -86,7 +87,7 @@ test("without ambient, an unmentioned message stays unanswered", async () => {
   const agentId = await waitForAgentRunning(api, agentName);
 
   await test.step("owner dials the binding back to mentions-only", async () => {
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: ambientChannelId,
     });

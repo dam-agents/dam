@@ -94,6 +94,7 @@ function harness(
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async (agentId: string) => ownerOf(agentId),
+    ownerDisplayName: async () => null,
     channelRegistry: {
       resolveSlackBindings: async () =>
         (hooks.bindings ?? agentSpecs).map((spec) => ({

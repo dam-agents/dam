@@ -13,7 +13,8 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { formatExpiry } from "../domain/credential-check.js";
-import { formatScope, scopeOf } from "../domain/github-scope.js";
+import { childrenOf, parentLabel } from "../domain/github-parent.js";
+import { formatScope, scopeKindOf, scopeOf } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const HEADER = [
@@ -52,18 +53,45 @@ function statusCell({ status, check }: ConnectionView): string {
     : status;
 }
 
+function scopeCell(c: ConnectionView, children: number): string {
+  if (!c.isParent) return formatScope(scopeOf(c), scopeKindOf(c));
+  return children > 0
+    ? `${parentLabel(c)} (never granted itself)`
+    : `${parentLabel(c)} (no connection made from it yet)`;
+}
+
+function treeRows(
+  views: readonly ConnectionView[],
+): { view: ConnectionView; branch: string; children: number }[] {
+  const listed = new Set(views.map((c) => c.id));
+  const roots = sortViews(
+    views.filter((c) => c.parentId === undefined || !listed.has(c.parentId)),
+  );
+  return roots.flatMap((root) => {
+    const children = root.isParent ? childrenOf(views, root.id) : [];
+    return [
+      { view: root, branch: "", children: children.length },
+      ...children.map((child, i) => ({
+        view: child,
+        branch: i === children.length - 1 ? "└─ " : "├─ ",
+        children: 0,
+      })),
+    ];
+  });
+}
+
 function tableFor(views: readonly ConnectionView[]): string {
   return renderTable([
     HEADER,
-    ...sortViews(views).map((c) => [
+    ...treeRows(views).map(({ view: c, branch, children }) => [
       c.id,
-      c.name,
+      `${branch}${c.name}`,
       c.category,
       statusCell(c),
       providerCell(c),
       c.hosts.join(","),
       c.check?.expiresAt ? formatExpiry(c.check.expiresAt) : "—",
-      formatScope(scopeOf(c)),
+      scopeCell(c, children),
     ]),
   ]);
 }
@@ -108,12 +136,18 @@ export function buildListCommand(deps: {
     )
     .option(
       "--json",
-      "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, account?, repositories?, repositoryIds?, permissions? }, " +
-        "and a checked credential its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, reason?, at }",
+      "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, fullAccess?, account?, repositories?, repositoryIds?, permissions? }, " +
+        "with fullAccess: true when it reaches everything its sign-in or installation reaches; " +
+        "a GitHub sign-in or installation carries isParent: true, and each connection made from it parentId; " +
+        "a checked credential carries its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }",
     )
     .addHelpText(
       "after",
-      "\nEXPIRES is when the credential expires, as its last check found it.\n" +
+      "\nA GitHub sign-in or GitHub App installation holds the credential and is never\n" +
+        "granted to an agent. The connections made from it are listed under it, each\n" +
+        "with its own SCOPE. FULL ACCESS marks one that reaches everything its sign-in\n" +
+        "or installation reaches; limit it with `dam connection scope`.\n" +
+        "\nEXPIRES is when the credential expires, as its last check found it.\n" +
         "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
         "`preferred` on the one a new agent's sessions use when `dam agent create`\n" +
         "names no --provider.\n" +

@@ -1,5 +1,6 @@
 import {
-  Book,
+  AiLabel,
+  Automatic,
   Branch,
   type CarbonIconType,
   Cloud,
@@ -8,9 +9,11 @@ import {
   Gears,
   Notification,
   Task,
+  ToolsAlt,
+  WifiController,
   Wikis,
 } from "@carbon/icons-react";
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +28,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
-import { useDocsUrl } from "../../links/api/queries.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: the tiled rail is the Unified right toolbar's own surface, so its Artifacts tile draws the document icon whatever shell the page has; every other button that opens the panel, and every artifact link and list, keeps the layout's own icon.
@@ -46,6 +48,10 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
   { tab: "environments", label: "Environments", icon: Cloud },
+  { tab: "models", label: "Models", icon: AiLabel },
+  { tab: "services", label: "Services", icon: WifiController },
+  { tab: "skills", label: "Skills", icon: ToolsAlt },
+  { tab: "automations", label: "Automations", icon: Automatic },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
@@ -154,9 +160,8 @@ export function SidePanelTabButtons({
           )}
         </Button>
       );
-    return rail && tiles ? (
-      <Fragment key={tab}>{control}</Fragment>
-    ) : (
+    // UNIT_BOUNDARY_DESCRIPTION: every icon in the bar names its panel in a tooltip, the tiled rail's too, since a tile's glyph alone does not say which panel it opens.
+    return (
       <Tooltip key={tab} content={content} side={rail ? "left" : "bottom"}>
         {control}
       </Tooltip>
@@ -220,7 +225,6 @@ export function SidePanelBar({
               tiles
               {...props}
             />
-            <DocsLink />
             <SidePanelTabButtons
               tabs={appTabs.filter((t) => t.tab === "approvals")}
               tiles
@@ -232,22 +236,5 @@ export function SidePanelBar({
         )}
       </div>
     </nav>
-  );
-}
-
-function DocsLink() {
-  const href = useDocsUrl("home");
-  if (!href) return null;
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Documentation"
-      data-testid="side-panel-docs"
-      className={railTile(false)}
-    >
-      <Book size={RAIL_GLYPH} />
-    </a>
   );
 }

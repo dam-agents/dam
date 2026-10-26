@@ -34,9 +34,9 @@ import {
 import {
   harnessDisplayName,
   modelProviderLabel,
+  providerOptions,
 } from "../lib/session-pair-options.js";
 import { settingDefaults, settingsForModel } from "../lib/session-settings.js";
-import { DefaultFollowState } from "./default-follow-state.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SetAsDefault } from "./session-pair-picker.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
@@ -114,8 +114,16 @@ export function ModelIndicator({
     routed ? agentId : null,
     harness,
   );
+  const fitting = providerOptions(
+    harness,
+    catalog?.harnesses ?? [],
+    granted,
+    owned,
+  ).granted;
   const groups = routed
-    ? modelGroups(catalogModels.data, catalogModels.granted)
+    ? modelGroups(catalogModels.data, catalogModels.granted).filter(
+        (g) => !catalog || fitting.some((p) => p.id === g.connectionId),
+      )
     : [];
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
   const models = removed
@@ -284,15 +292,14 @@ export function ModelIndicator({
           </div>
         )}
         <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-xs text-muted-foreground empty:hidden">
-          {kind && routed && followsDefaults && (
-            <DefaultFollowState
-              kind={kind}
-              follows={follows}
-              harness={harness}
-              model={model}
-              target={remembered}
-              onFollow={() => onFollowDefault(false)}
-            />
+          {kind && routed && followsDefaults && follows !== kind && (
+            <button
+              type="button"
+              onClick={() => onFollowDefault(false)}
+              className="whitespace-nowrap underline underline-offset-2 hover:text-foreground"
+            >
+              Back to default
+            </button>
           )}
           {kind && !(followsDefaults && follows === kind) && (
             <SetAsDefault

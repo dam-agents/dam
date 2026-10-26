@@ -1,6 +1,6 @@
 import { Document } from "@carbon/icons-react";
 import { hasA2uiBlock } from "api-server-api/chat-forms";
-import { useState } from "react";
+import { useContext, useState } from "react";
 
 import { formatBytes } from "@/lib/format-size";
 
@@ -19,17 +19,27 @@ import {
   awaitChipTitle,
   isAwaitSubAgentsChip,
 } from "../../invocations/lib/sub-agent-chips.js";
+import { agentChangeOf } from "../lib/agent-change.js";
 import { ActivityBlock } from "./activity-block.js";
+import { AgentChangeCard, AgentChangeCards } from "./agent-change-card.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
 
 export function ToolPart({ chip }: { chip: ToolChipPart }) {
   const spawns = useOwnedSpawns(chip);
+  const changeCards = useContext(AgentChangeCards);
   if (spawns) return <DelegationBlock chip={chip} spawns={spawns} />;
   if (isAwaitSubAgentsChip(chip))
     return <ToolChip chip={{ ...chip, title: awaitChipTitle(chip) }} />;
-  return <ToolChip chip={chip} />;
+  const change = changeCards ? agentChangeOf(chip) : null;
+  if (!change) return <ToolChip chip={chip} />;
+  return (
+    <div className="flex flex-col gap-2">
+      <ToolChip chip={chip} />
+      <AgentChangeCard change={change} />
+    </div>
+  );
 }
 
 function HistoryBlock({ text }: { text: string }) {

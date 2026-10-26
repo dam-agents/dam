@@ -26,6 +26,7 @@ async function harness(links: ExternalLink[], workspaces: string[]) {
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => null,
+    ownerDisplayName: async () => null,
     channelRegistry: {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () => [],

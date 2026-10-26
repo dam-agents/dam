@@ -30,6 +30,8 @@ function makeRepoFake() {
     },
     listByOwner: async (ownerId) =>
       [...rows.values()].filter((c) => c.ownerId === ownerId),
+    listChildren: async (parentId) =>
+      [...rows.values()].filter((c) => c.parentId === parentId),
     listByOwnerOldestFirst: async (ownerId) =>
       [...rows.values()].filter((c) => c.ownerId === ownerId),
     get: async (id, ownerId) => {
@@ -43,7 +45,10 @@ function makeRepoFake() {
       if (c) rows.set(id, { ...c, auth });
     },
     updateContributions: async () => {},
-    mergeInputs: async () => {},
+    mergeInputs: async (id, inputs) => {
+      const c = rows.get(id);
+      if (c) rows.set(id, { ...c, inputs: { ...c.inputs, ...inputs } });
+    },
     delete: async (id) => {
       rows.delete(id);
     },
@@ -64,13 +69,19 @@ function makeRepoFake() {
 function makeSecretStoreFake() {
   const stored = new Map<string, Record<string, string>>();
   const deleted: string[] = [];
+  const minted = new Map<string, number>();
   const store: SecretStore = {
     storeId: "test",
-    mintRef: (meta) => ({
-      storeId: "test",
-      path: `secret-${meta.purpose}`,
-      field: "",
-    }),
+    mintRef: (meta) => {
+      const n = (minted.get(meta.purpose) ?? 0) + 1;
+      minted.set(meta.purpose, n);
+      return {
+        storeId: "test",
+        path:
+          n === 1 ? `secret-${meta.purpose}` : `secret-${meta.purpose}-${n}`,
+        field: "",
+      };
+    },
     put: async (ref, fields) => {
       stored.set(ref.path, { ...fields });
     },
@@ -165,7 +176,7 @@ function makeService(
   };
 }
 
-function createInput(overrides: Record<string, string> = {}) {
+function createInput(overrides: Record<string, string | boolean> = {}) {
   return {
     templateId: "github-app",
     name: "my-app",
@@ -177,19 +188,36 @@ function createInput(overrides: Record<string, string> = {}) {
   };
 }
 
+const fullAccessInput = () => createInput({ fullAccess: true });
+
 const SECRET_PATH = "secret-connection:github-app";
+const CHILD_SECRET_PATH = "secret-connection:github-app-2";
+
+function parentIdOf(rows: Map<string, Connection>, childId: string): string {
+  const parentId = rows.get(childId)?.parentId;
+  if (!parentId) throw new Error(`${childId} was made from no installation`);
+  return parentId;
+}
 
 describe("github-app connection create", () => {
-  it("mints once and persists private key, token, SDS, and auth markers", async () => {
+  it("keeps the key on the installation and the token on the connection made from it", async () => {
     const { svc, rows, stored, tokenCalls } = makeService();
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
 
-    expect(tokenCalls).toEqual([
+    expect(tokenCalls.filter((url) => url.includes("/access_tokens"))).toEqual([
+      "https://api.github.com/app/installations/987654/access_tokens",
       "https://api.github.com/app/installations/987654/access_tokens",
     ]);
 
-    const fields = stored.get(SECRET_PATH)!;
-    expect(fields.private_key).toBe(PRIVATE_KEY_PEM.trim());
+    const installation = stored.get(SECRET_PATH)!;
+    expect(installation.private_key).toBe(PRIVATE_KEY_PEM.trim());
+    expect(installation).not.toHaveProperty("access_token");
+    expect(installation).not.toHaveProperty(
+      sdsFileKeyForHost("api.github.com"),
+    );
+
+    const fields = stored.get(CHILD_SECRET_PATH)!;
+    expect(fields).not.toHaveProperty("private_key");
     expect(fields.access_token).toBe("ghs_1");
     expect(fields[sdsFileKeyForHost("api.github.com")]).toContain(
       "Bearer ghs_1",
@@ -201,15 +229,33 @@ describe("github-app connection create", () => {
     const conn = rows.get(id)!;
     expect(conn.auth.kind).toBe("github-app");
     if (conn.auth.kind !== "github-app") return;
+    expect(conn.auth.fullAccess).toBe(true);
+    expect(conn.auth.privateKeyRef.path).toBe(SECRET_PATH);
     expect(conn.auth.expiresAt).toBe(
       Math.floor(Date.parse("2027-01-15T13:00:00Z") / 1000),
     );
     expect(conn.auth.connectedAt).toBeGreaterThan(0);
     expect(JSON.stringify(conn.inputs)).not.toContain("PRIVATE KEY");
 
+    const parent = rows.get(parentIdOf(rows, id))!;
+    expect(parent.isParent).toBe(true);
+    expect(parent.name).toBe(conn.name);
+    expect(parent.auth).not.toHaveProperty("expiresAt");
+
     const view = await svc.getConnection(id);
     expect(view?.status).toBe("active");
     expect(view?.authKind).toBe("github-app");
+    expect(view?.fullAccess).toBe(true);
+  });
+
+  it("saves the installation alone when no scope and no full access are chosen", async () => {
+    const { svc, rows, stored } = makeService();
+    const id = await svc.createFromTemplate(createInput());
+
+    expect([...rows.keys()]).toEqual([id]);
+    expect(rows.get(id)!.isParent).toBe(true);
+    expect(stored.get(SECRET_PATH)).not.toHaveProperty("access_token");
+    expect((await svc.getConnection(id))?.isParent).toBe(true);
   });
 
   it("persists nothing when the installation-token request fails", async () => {
@@ -286,7 +332,7 @@ describe("github-app connection create", () => {
         }),
     );
     const before = Math.floor(Date.now() / 1000);
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     const after = Math.floor(Date.now() / 1000);
     const auth = rows.get(id)!.auth;
     if (auth.kind !== "github-app") throw new Error("wrong kind");
@@ -294,16 +340,25 @@ describe("github-app connection create", () => {
     expect(after).toBeGreaterThanOrEqual(before);
   });
 
-  it("delete removes the single shared secret exactly once", async () => {
-    const { svc, deleted } = makeService();
-    const id = await svc.createFromTemplate(createInput());
+  it("removing the installation removes the Secret of every connection made from it", async () => {
+    const { svc, rows, deleted } = makeService();
+    const id = await svc.createFromTemplate(fullAccessInput());
+    await svc.deleteConnection(parentIdOf(rows, id));
+    expect(deleted).toEqual([SECRET_PATH, CHILD_SECRET_PATH]);
+  });
+
+  it("removing a connection keeps the installation's key", async () => {
+    const { svc, rows, deleted, stored } = makeService();
+    const id = await svc.createFromTemplate(fullAccessInput());
     await svc.deleteConnection(id);
-    expect(deleted).toEqual([SECRET_PATH]);
+    expect(deleted).toEqual([CHILD_SECRET_PATH]);
+    expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
+    expect(rows.size).toBe(1);
   });
 
   it("reports expired once the token horizon has passed", async () => {
     const { svc, rows } = makeService();
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     const conn = rows.get(id)!;
     const auth: ConnectionAuthConfig = {
       ...(conn.auth as Extract<ConnectionAuthConfig, { kind: "github-app" }>),
@@ -316,7 +371,7 @@ describe("github-app connection create", () => {
 
   it("exposes the injected GitHub hosts on the view", async () => {
     const { svc } = makeService();
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     const view = await svc.getConnection(id);
     expect(view?.host).toBe("github.com");
     expect(view?.hosts).toEqual([
@@ -328,7 +383,7 @@ describe("github-app connection create", () => {
 
   it("rotates the private key, normalizing a flattened PEM paste", async () => {
     const { svc, rows, stored } = makeService();
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     const created = rows.get(id)!;
     if (created.auth.kind !== "github-app") throw new Error("kind");
     rows.set(id, {
@@ -341,13 +396,28 @@ describe("github-app connection create", () => {
       publicKeyEncoding: { type: "spki", format: "pem" },
       privateKeyEncoding: { type: "pkcs1", format: "pem" },
     });
-    await svc.update(id, { value: rotatedPem.replaceAll("\n", "\\n") });
+    await svc.update(parentIdOf(rows, id), {
+      value: rotatedPem.replaceAll("\n", "\\n"),
+    });
 
     expect(stored.get(SECRET_PATH)!.private_key).toBe(rotatedPem.trim());
     const auth = rows.get(id)!.auth;
     if (auth.kind !== "github-app") throw new Error("kind");
     expect(auth.refreshFailedAt).toBeUndefined();
     expect((await svc.getConnection(id))?.status).toBe("active");
+  });
+
+  it("refuses to replace the key on a connection made from an installation", async () => {
+    const { svc, stored } = makeService();
+    const id = await svc.createFromTemplate(fullAccessInput());
+
+    await expect(
+      svc.update(id, { value: PRIVATE_KEY_PEM }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: /Replace the key on the installation/,
+    });
+    expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
   });
 
   it("stores the new private key even when a re-mint went first", async () => {
@@ -397,7 +467,7 @@ describe("github-app scope editing", () => {
 
   it("re-mints against the new scope and stores it", async () => {
     const { svc, rows, stored, tokenBodies } = makeService(okToken);
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
 
     await svc.updateGitHubAppScope({
       id,
@@ -413,15 +483,16 @@ describe("github-app scope editing", () => {
     if (auth.kind !== "github-app") throw new Error("kind");
     expect(auth.repositoryIds).toEqual([12, 34]);
     expect(auth.permissions).toEqual({ contents: "read" });
-    expect(stored.get(SECRET_PATH)!.access_token).toBe("ghs_2");
+    expect(auth).not.toHaveProperty("fullAccess");
+    expect(stored.get(CHILD_SECRET_PATH)!.access_token).toBe("ghs_2");
     expect(
-      stored.get(SECRET_PATH)![sdsFileKeyForHost("api.github.com")],
+      stored.get(CHILD_SECRET_PATH)![sdsFileKeyForHost("api.github.com")],
     ).toContain("ghs_2");
   });
 
   it("keeps the credential and the connection's identity", async () => {
     const { svc, rows, stored } = makeService(okToken);
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     const before = rows.get(id)!;
 
     await svc.updateGitHubAppScope({ id, repositoryIds: "12" });
@@ -432,20 +503,48 @@ describe("github-app scope editing", () => {
     expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
   });
 
-  it("clears the scope back to the full installation", async () => {
+  it("widens to the whole installation only when full access is asked for", async () => {
     const { svc, rows, tokenBodies } = makeService(okToken);
     const id = await svc.createFromTemplate(
       createInput({ repositories: "docs", permissions: "contents:read" }),
     );
 
-    await svc.updateGitHubAppScope({ id });
+    await svc.updateGitHubAppScope({ id, fullAccess: true });
 
     expect(tokenBodies.at(-1)).toBeUndefined();
     const auth = rows.get(id)!.auth;
     if (auth.kind !== "github-app") throw new Error("kind");
+    expect(auth.fullAccess).toBe(true);
     expect(auth).not.toHaveProperty("repositories");
     expect(auth).not.toHaveProperty("repositoryIds");
     expect(auth).not.toHaveProperty("permissions");
+  });
+
+  // TEST_SCENARIO: an edit that names no repository, no permission and no full access is refused rather than read as the whole installation, so a connection never widens by accident.
+  it("refuses an edit that names neither a scope nor full access", async () => {
+    const { svc, rows } = makeService(okToken);
+    const id = await svc.createFromTemplate(
+      createInput({ repositories: "docs" }),
+    );
+    const before = rows.get(id)!.auth;
+
+    await expect(svc.updateGitHubAppScope({ id })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: /or pick full access/,
+    });
+    expect(rows.get(id)!.auth).toEqual(before);
+  });
+
+  it("refuses to narrow the installation itself", async () => {
+    const { svc, rows } = makeService(okToken);
+    const id = await svc.createFromTemplate(fullAccessInput());
+
+    await expect(
+      svc.updateGitHubAppScope({
+        id: parentIdOf(rows, id),
+        repositories: "docs",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("replaces a name-based scope rather than merging with it", async () => {
@@ -467,25 +566,25 @@ describe("github-app scope editing", () => {
     const { svc, rows, stored } = makeService((url) => {
       if (!url.includes("/access_tokens")) return okToken();
       mints += 1;
-      return mints === 1
+      return mints <= 2
         ? okToken()
         : new Response("no access to that repository", { status: 422 });
     });
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     const authBefore = rows.get(id)!.auth;
-    const tokenBefore = stored.get(SECRET_PATH)!.access_token;
+    const tokenBefore = stored.get(CHILD_SECRET_PATH)!.access_token;
 
     await expect(
       svc.updateGitHubAppScope({ id, repositoryIds: "999" }),
     ).rejects.toThrow();
 
     expect(rows.get(id)!.auth).toEqual(authBefore);
-    expect(stored.get(SECRET_PATH)!.access_token).toBe(tokenBefore);
+    expect(stored.get(CHILD_SECRET_PATH)!.access_token).toBe(tokenBefore);
   });
 
   it("clears a refresh-failure marker on a successful re-scope", async () => {
     const { svc, rows } = makeService(okToken);
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     const created = rows.get(id)!;
     if (created.auth.kind !== "github-app") throw new Error("kind");
     rows.set(id, {
@@ -504,7 +603,7 @@ describe("github-app scope editing", () => {
 
   it("runs the edit under the connection's mint lock", async () => {
     const { svc, lockKeys } = makeService(okToken);
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     lockKeys.length = 0;
 
     await svc.updateGitHubAppScope({ id, repositoryIds: "12" });
@@ -514,7 +613,7 @@ describe("github-app scope editing", () => {
 
   it("rejects an id that is not a whole number before reaching GitHub", async () => {
     const { svc } = makeService(okToken);
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
     await expect(
       svc.updateGitHubAppScope({ id, repositoryIds: "12abc" }),
     ).rejects.toThrow(/whole number/);
@@ -547,10 +646,12 @@ describe("github-app scope editing", () => {
     });
   });
 
-  it("omits the scope from the view when nothing is narrowed", async () => {
+  it("marks full access on the view instead of a scope", async () => {
     const { svc } = makeService(okToken);
-    const id = await svc.createFromTemplate(createInput());
-    expect((await svc.getConnection(id))?.githubAppScope).toBeUndefined();
+    const id = await svc.createFromTemplate(fullAccessInput());
+    const view = await svc.getConnection(id);
+    expect(view?.githubAppScope).toBeUndefined();
+    expect(view?.fullAccess).toBe(true);
   });
 
   it("probes the installation using the connection's stored key", async () => {
@@ -571,7 +672,7 @@ describe("github-app scope editing", () => {
             )
           : okToken(),
     );
-    const id = await svc.createFromTemplate(createInput());
+    const id = await svc.createFromTemplate(fullAccessInput());
 
     const probe = await svc.probeGitHubAppInstallationForConnection({
       connectionId: id,
@@ -582,5 +683,303 @@ describe("github-app scope editing", () => {
     expect(tokenCalls).toContain(
       "https://api.github.com/app/installations/987654",
     );
+  });
+});
+
+describe("github-app credential check", () => {
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+
+  function github(
+    overrides: { mint?: () => Response; installation?: () => Response } = {},
+  ) {
+    return (url: string) => {
+      if (url.includes("/access_tokens")) {
+        return (
+          overrides.mint?.() ??
+          json({ token: "ghs_1", expires_at: "2027-01-15T13:00:00Z" }, 201)
+        );
+      }
+      if (url.endsWith("/app/installations/987654")) {
+        return (
+          overrides.installation?.() ??
+          json({ app_slug: "dam-bot", account: { login: "dam-agents" } })
+        );
+      }
+      if (url.includes("/installation/repositories")) {
+        return json({
+          total_count: 2,
+          repositories: [
+            { id: 12, name: "docs" },
+            { id: 34, name: "web" },
+          ],
+        });
+      }
+      return new Response(null, { status: 204 });
+    };
+  }
+
+  // TEST_SCENARIO: a GitHub App connection that mints a token is saved with a passed check that names the bot, the account the app is installed on and the repositories the token reaches, so the CLI and the page can tell the user who the connection acts as.
+  it("names the bot, the installation's account and the repositories on save", async () => {
+    const { svc } = makeService(github());
+    const id = await svc.createFromTemplate(createInput());
+
+    const check = (await svc.getConnection(id))?.check;
+    expect(check).toMatchObject({
+      status: "passed",
+      account: "dam-bot[bot]",
+      installedOn: "dam-agents",
+      repositories: ["docs", "web"],
+    });
+    expect(check).not.toHaveProperty("repositoriesTruncated");
+    expect(Date.parse(check!.at)).not.toBeNaN();
+  });
+
+  // TEST_SCENARIO: the token the check minted for itself is revoked, and the one the save minted stays the connection's own, so a check on demand leaves no extra live token behind.
+  it("checks a stored connection again and revokes the token it minted", async () => {
+    let mints = 0;
+    const { svc, stored, tokenCalls } = makeService(
+      github({
+        mint: () =>
+          json(
+            { token: `ghs_${++mints}`, expires_at: "2027-01-15T13:00:00Z" },
+            201,
+          ),
+      }),
+    );
+    const id = await svc.createFromTemplate(fullAccessInput());
+
+    const check = await svc.checkCredential(id);
+
+    expect(check).toMatchObject({ status: "passed", account: "dam-bot[bot]" });
+    expect(mints).toBe(3);
+    expect(tokenCalls.at(-1)).toBe("https://api.github.com/installation/token");
+    expect(stored.get(CHILD_SECRET_PATH)!.access_token).toBe("ghs_2");
+    expect((await svc.getConnection(id))?.check?.status).toBe("passed");
+  });
+
+  // TEST_SCENARIO: a key revoked or an installation removed after the save is found on demand: the check fails with the input GitHub rejected and the listing keeps that result, so the user learns before an agent's gh call is refused.
+  it("fails a stored connection GitHub no longer accepts, naming the input", async () => {
+    let refuse = false;
+    const { svc } = makeService(
+      github({
+        mint: () =>
+          refuse
+            ? json({ message: "Not Found" }, 404)
+            : json({ token: "ghs_1", expires_at: "2027-01-15T13:00:00Z" }, 201),
+      }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+    refuse = true;
+
+    const check = await svc.checkCredential(id);
+
+    expect(check?.status).toBe("failed");
+    expect(check?.reason).toMatch(/^The Installation ID is wrong/);
+    expect((await svc.getConnection(id))?.check?.status).toBe("failed");
+  });
+
+  // TEST_SCENARIO: a suspended installation answers 403, which fails the check with advice about the installation.
+  it("fails a suspended installation", async () => {
+    let refuse = false;
+    const { svc } = makeService(
+      github({
+        mint: () =>
+          refuse
+            ? json({ message: "This installation has been suspended" }, 403)
+            : json({ token: "ghs_1" }, 201),
+      }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+    refuse = true;
+
+    const check = await svc.checkCredential(id);
+
+    expect(check?.status).toBe("failed");
+    expect(check?.reason).toMatch(/not suspended/);
+  });
+
+  // TEST_SCENARIO: a GitHub outage says nothing about the app's credentials, so the check is unchecked rather than failed.
+  it("leaves the check unchecked when GitHub has an outage", async () => {
+    let outage = false;
+    const { svc } = makeService(
+      github({
+        mint: () =>
+          outage
+            ? new Response("oops", { status: 502 })
+            : json({ token: "ghs_1" }, 201),
+      }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+    outage = true;
+
+    const check = await svc.checkCredential(id);
+
+    expect(check?.status).toBe("unchecked");
+    expect(check?.reason).toMatch(/HTTP 502/);
+  });
+
+  // TEST_SCENARIO: the bot and the repositories are details: when GitHub will not say them, the check still passes on the minted token, without the details.
+  it("passes without details when the installation cannot be read", async () => {
+    const { svc } = makeService(
+      github({ installation: () => json({ message: "Not Found" }, 404) }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+
+    const check = (await svc.getConnection(id))?.check;
+    expect(check?.status).toBe("passed");
+    expect(check).not.toHaveProperty("account");
+    expect(check?.repositories).toEqual(["docs", "web"]);
+  });
+
+  // TEST_SCENARIO: a key rotation records a fresh check, so the result reads as the new key's.
+  it("records a fresh check when the private key is rotated", async () => {
+    const { svc, rows } = makeService(github());
+    const id = await svc.createFromTemplate(createInput());
+    const row = rows.get(id)!;
+    rows.set(id, {
+      ...row,
+      inputs: {
+        ...row.inputs,
+        credentialCheck: {
+          status: "failed",
+          reason: "old",
+          at: "2026-01-01T00:00:00Z",
+        },
+      },
+    });
+
+    await svc.update(id, { value: PRIVATE_KEY_PEM });
+
+    expect((await svc.getConnection(id))?.check).toMatchObject({
+      status: "passed",
+      account: "dam-bot[bot]",
+    });
+  });
+
+  // TEST_SCENARIO: a narrowed scope is checked with the token minted for it, so the check lists only the repositories the narrowed token reaches.
+  it("records the check of the new scope", async () => {
+    let scoped = false;
+    const respond = github();
+    const { svc } = makeService((url) =>
+      scoped && url.includes("/installation/repositories")
+        ? json({ total_count: 1, repositories: [{ id: 12, name: "docs" }] })
+        : respond(url),
+    );
+    const id = await svc.createFromTemplate(fullAccessInput());
+    scoped = true;
+
+    await svc.updateGitHubAppScope({ id, repositories: "docs" });
+
+    expect((await svc.getConnection(id))?.check?.repositories).toEqual([
+      "docs",
+    ]);
+  });
+
+  // TEST_SCENARIO: an installation with more repositories than one page lists the first page and says the list is truncated, rather than claim it is complete.
+  it("flags a repository list longer than one page", async () => {
+    const respond = github();
+    const { svc } = makeService((url) =>
+      url.includes("/installation/repositories")
+        ? json({ total_count: 250, repositories: [{ id: 12, name: "docs" }] })
+        : respond(url),
+    );
+    const id = await svc.createFromTemplate(createInput());
+
+    expect((await svc.getConnection(id))?.check).toMatchObject({
+      repositories: ["docs"],
+      repositoriesTruncated: true,
+    });
+  });
+});
+
+describe("github-app connections made from one installation", () => {
+  function numberedMints() {
+    let mints = 0;
+    return (url: string) =>
+      url.includes("/access_tokens")
+        ? new Response(
+            JSON.stringify({
+              token: `ghs_${++mints}`,
+              expires_at: "2027-01-15T13:00:00Z",
+            }),
+            { status: 201, headers: { "content-type": "application/json" } },
+          )
+        : new Response(null, { status: 204 });
+  }
+
+  // TEST_SCENARIO: one installation backs connections with different scopes side by side: each mints its own token into its own Secret with the installation's key, and a second one leaves the first unchanged.
+  it("mints each connection's own token from the installation's key", async () => {
+    const { svc, rows, stored, tokenBodies } = makeService(numberedMints());
+    const first = await svc.createFromTemplate(
+      createInput({ repositories: "docs" }),
+    );
+    const parentId = parentIdOf(rows, first);
+    const firstAuth = rows.get(first)!.auth;
+
+    const second = await svc.createFromParent({
+      parentId,
+      name: "my-app-write",
+      permissions: "contents:write",
+    });
+
+    expect(JSON.parse(tokenBodies.at(-1)!)).toEqual({
+      permissions: { contents: "write" },
+    });
+    expect(rows.get(first)!.auth).toEqual(firstAuth);
+    const secondAuth = rows.get(second)!.auth;
+    if (secondAuth.kind !== "github-app") throw new Error("kind");
+    expect(secondAuth.privateKeyRef.path).toBe(SECRET_PATH);
+    expect(secondAuth.accessTokenRef.path).toBe(
+      "secret-connection:github-app-3",
+    );
+    expect(stored.get(CHILD_SECRET_PATH)!.access_token).toBe("ghs_2");
+    expect(stored.get("secret-connection:github-app-3")!.access_token).toBe(
+      "ghs_3",
+    );
+  });
+
+  // TEST_SCENARIO: a replaced private key is written once, on the installation, and every connection made from it mints a fresh token with it right away.
+  it("re-mints every connection when the installation's key is replaced", async () => {
+    const { svc, rows, stored } = makeService(numberedMints());
+    const first = await svc.createFromTemplate(fullAccessInput());
+    const parentId = parentIdOf(rows, first);
+    await svc.createFromParent({
+      parentId,
+      name: "my-app-docs",
+      repositories: "docs",
+    });
+
+    await svc.update(parentId, { value: PRIVATE_KEY_PEM });
+
+    expect(stored.get(CHILD_SECRET_PATH)!.access_token).toBe("ghs_5");
+    expect(stored.get("secret-connection:github-app-3")!.access_token).toBe(
+      "ghs_6",
+    );
+  });
+
+  it("refuses a connection that names neither a scope nor full access", async () => {
+    const { svc, rows } = makeService();
+    const parentId = await svc.createFromTemplate(createInput());
+
+    await expect(
+      svc.createFromParent({ parentId, name: "my-app-x" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: /full access/ });
+    expect(rows.size).toBe(1);
+  });
+
+  it("refuses to give the installation itself to an agent", async () => {
+    const { svc } = makeService();
+    const parentId = await svc.createFromTemplate(createInput());
+
+    await expect(
+      svc.updateAgentConnections("agent-a", { grant: [parentId], revoke: [] }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: /GitHub App installation/,
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import type { ConnectionView } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
@@ -6,6 +7,11 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
+import {
+  childrenOf,
+  connectFromHint,
+  parentLabel,
+} from "../domain/github-parent.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
@@ -32,7 +38,9 @@ export function buildGrantCommand(deps: {
     .option("--json", "emit { ok, agentId, connectionIds } as JSON")
     .addHelpText(
       "after",
-      "\nExamples:\n" +
+      "\nA GitHub sign-in or GitHub App installation is never granted: grant one of\n" +
+        "the connections made from it, which `dam connection list` shows under it.\n" +
+        "\nExamples:\n" +
         "  dam connection grant my-agent --connection github\n" +
         "  dam connection grant my-agent --connection github --connection spotify\n",
     )
@@ -63,9 +71,11 @@ export function buildGrantCommand(deps: {
         exitOnServiceError(allRes, host);
         const connectionIds: string[] = [];
         const unknown: string[] = [];
+        const parents: ConnectionView[] = [];
         for (const r of requested) {
           const match = resolveConnectionRef(allRes.value, r);
-          if (match) connectionIds.push(match.id);
+          if (match?.isParent) parents.push(match);
+          else if (match) connectionIds.push(match.id);
           else unknown.push(r);
         }
         if (unknown.length > 0) {
@@ -77,6 +87,16 @@ export function buildGrantCommand(deps: {
           );
           process.exit(EXIT_INVALID_INPUT);
         }
+        for (const parent of parents) {
+          const children = childrenOf(allRes.value, parent.id);
+          process.stderr.write(
+            `error: ${parent.name} (${parent.id}) is a ${parentLabel(parent)}, which is never granted to an agent\n` +
+              (children.length > 0
+                ? `hint: grant a connection made from it: ${children.map((c) => `${c.name} (${c.id})`).join(", ")}\n`
+                : `hint: no connection is made from it yet; make one:\n${connectFromHint(parent)}`),
+          );
+        }
+        if (parents.length > 0) process.exit(EXIT_INVALID_INPUT);
 
         const res = await svc.grant(agent.id, connectionIds);
         exitOnServiceError(res, host);

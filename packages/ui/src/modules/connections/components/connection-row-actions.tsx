@@ -8,6 +8,7 @@ import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import { credentialCopyFor } from "../forms/field-copy.js";
+import { parentNoun } from "../lib/connection-hierarchy.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
@@ -21,6 +22,12 @@ interface Props {
   onManage?: () => void;
   onDelete?: () => void;
   deleting?: boolean;
+  onNewChild?: () => void;
+}
+
+function reauthLabelOf(connection: ConnectionView): string {
+  if (connection.parentId) return "Re-authenticate sign-in";
+  return connection.status === "pending" ? "Authorize" : "Re-authenticate";
 }
 
 export function ConnectionRowActions({
@@ -30,9 +37,10 @@ export function ConnectionRowActions({
   onManage,
   onDelete,
   deleting = false,
+  onNewChild,
 }: Props) {
-  const reauthLabel =
-    connection.status === "pending" ? "Authorize" : "Re-authenticate";
+  const reauthLabel = reauthLabelOf(connection);
+  const narrow = connection.fullAccess ? maintenance?.onEditScope : undefined;
   const updateLabel =
     credentialCopyFor(connection.authKind)?.action ?? "Update credential";
   const inlineFix =
@@ -47,6 +55,29 @@ export function ConnectionRowActions({
     <>
       <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
         <GithubAppInstallButton connection={connection} />
+        {narrow && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={narrow}
+            data-testid={`catalog-narrow-${connection.id}`}
+          >
+            Narrow access
+          </Button>
+        )}
+        {onNewChild && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={onNewChild}
+            data-testid={`connection-new-child-${connection.id}`}
+          >
+            <Add size={16} />
+            New connection
+          </Button>
+        )}
         {inlineFix && (
           <Button
             variant="outline"
@@ -108,7 +139,8 @@ export function ConnectionRowActions({
             disabled={deleting}
             onSelect={onDelete}
           >
-            Delete this connection
+            Delete this{" "}
+            {connection.isParent ? parentNoun(connection) : "connection"}
           </DropdownMenuItem>
         )}
       </RowActionsMenu>

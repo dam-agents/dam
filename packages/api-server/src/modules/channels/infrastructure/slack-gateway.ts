@@ -203,6 +203,7 @@ export interface SlackSetStatus {
 export interface SlackChannelInfo {
   id: string;
   name: string;
+  isPrivate: boolean;
 }
 
 export interface SlackConversationInfo {

@@ -15,8 +15,10 @@ if (pinned === undefined || pinned !== patched) {
   console.error(
     `pi-acp-patch: the image pins pi-acp ${pinned} but the patch targets ${patched}. ` +
       "If that release keeps concurrent sessions apart (https://github.com/svkozak/pi-acp/issues/152), " +
-      "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72) " +
-      "reports a reply cut at the output limit as max_tokens " +
+      "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72), " +
+      "reports a reply cut at the output limit as max_tokens, " +
+      "fails a turn whose model request failed (https://github.com/svkozak/pi-acp/issues/135), " +
+      "writes no retry notice into the reply " +
       "or hands pi the session ref of session/new and session/load, drop the edits it makes unnecessary " +
       "(packages/agents/pi-agent/README.md, \"pi-acp patch\"); " +
       "otherwise confirm its edits still apply and update PATCHED_VERSION.",

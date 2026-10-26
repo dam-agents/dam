@@ -13,6 +13,15 @@ interface Pending {
   connectedAt: string | undefined;
 }
 
+function signInOf(connection: ConnectionView): Pending {
+  if (!connection.parentId)
+    return { id: connection.id, connectedAt: connection.connectedAt };
+  const parent = queryClient
+    .getQueryData<ConnectionView[]>(trpc.connections.list.queryKey())
+    ?.find((c) => c.id === connection.parentId);
+  return { id: connection.parentId, connectedAt: parent?.connectedAt };
+}
+
 export function useReauthenticateConnection() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const pendingRef = useRef<Pending | null>(null);
@@ -53,15 +62,13 @@ export function useReauthenticateConnection() {
       focusPopup();
       return;
     }
+    const signIn = signInOf(connection);
     const popup = openPopup();
-    setBusyId(connection.id);
-    pendingRef.current = {
-      id: connection.id,
-      connectedAt: connection.connectedAt,
-    };
+    setBusyId(signIn.id);
+    pendingRef.current = signIn;
     try {
       const { authUrl } = await api.connections.startOAuth.mutate({
-        connectionId: connection.id,
+        connectionId: signIn.id,
         ...(popup ? { popup: true } : { returnTo: window.location.pathname }),
       });
       if (popup) {

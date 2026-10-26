@@ -27,6 +27,7 @@ import { useApiKeys } from "../../api-keys/api/queries.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
 import { ResourcesCard } from "../../budgets/components/resources-card.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { isGrantable } from "../../connections/lib/connection-hierarchy.js";
 import { useMonthlySpend } from "../../metrics/hooks/use-monthly-spend.js";
 import { formatTokens } from "../../metrics/lib/format.js";
 import { useOwnerSchedules } from "../../schedules/api/queries.js";
@@ -432,7 +433,7 @@ export function SchedulesCard() {
 export function ConnectionsCard() {
   const { data } = useAppConnections();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const connections = data ?? [];
+  const connections = (data ?? []).filter(isGrantable);
   const active = connections.filter((c) => c.status === "active").length;
   const broken = connections.length - active;
   return (

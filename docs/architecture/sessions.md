@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-24
+Last verified: 2026-10-26
 
 ## Session inside the machine
 
@@ -22,6 +22,7 @@ Each lease is the unchanged ACP runtime this section describes, behind a **lease
 Each lease is told about the client as the first was, and an agent's question is answered to the lease that asked.
 The session list draws on the metadata store too, so a harness not running still lists its sessions.
 A listed session's title is its explicit title (a rename, a schedule's session title, or the original's on a rewind) when it has one, else the harness's own or the one its first prompt gave it; the list also carries the explicit and the automatic title apart, so the rename dialog prefills only an explicit one and offers the automatic one as its placeholder.
+A channel turn's first prompt opens with the platform's instructions to the agent, so a Slack or Telegram Session's automatic title is instead the person's first message, which the channel names on `session/new` in `_meta.platform.title` (Slack sends its first line without leading mentions, Telegram the whole text); the runtime cuts it to one line of the same length as a title from a prompt.
 
 A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
 A prompt to a session whose model names a removed provider fails with a structured *provider removed* error naming it; another provider's model, or the grant restored, resumes it.
@@ -30,6 +31,8 @@ Each session is an append-only in-memory log (≤2 MB soft cap; inline image and
 Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them.
 Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented.
 From a session-history provider that source can also supply the harness's own name for the prompt a reply answered — the prompt id by which [agent-telemetry](agent-telemetry.md#progressive-disclosure) joins a reply to its Turn once the Session is loaded.
+A harness can send the same output twice: Claude Code answers a local command such as `/context` with no model call, and its adapter sends the output once from the command's reply and again from the turn's result, as a second agent message.
+So in a prompt turn whose prompt is one text block starting with `/`, an agent message whose whole text, trailing white space aside, is that of the message just before it, with no thought or tool call between them, never enters the log, and the output shows once, live and on every load.
 
 The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns.
 A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen.
@@ -60,6 +63,7 @@ An image may also declare a **session-cut provider**, a module in a worker threa
 It drives the harness's own store directly, never the harness's protocol, since the adapter would replay a cut passed to it whenever it rebuilds the session.
 
 **Rewinding and forking from a message.** A user can take an earlier message of an idle chat Session, edit it, and either **rewind** the conversation to it or **fork** a new one from it.
+The chat offers both only on a Session whose harness can fork: a client's `initialize` answer carries the default harness's capabilities, so the runtime says it for each Session in `_meta.platform.forks` on `session/new` and `session/load`, from the capabilities that harness's image declares.
 A rewind on a harness whose image declares a session-cut provider **cuts in place**: the runtime closes the harness's copy of the Session, has the provider cut right before that message, and **resets** the Session — drops its log and fills it again from the session-history provider, under the same id, with its metadata.
 It then tells the Session's viewers, once and outside the log, that the Session was reset, and they load it again; the edited message is the Session's next prompt.
 A cut that fails refuses the rewind rather than forking.
@@ -67,10 +71,11 @@ Otherwise — a fork, a harness without the provider, or a message that started 
 User messages with nothing between them are one **batch**, which the agent took as one message: the chat shows them under one header and rewrites them as one, editing their texts joined by a blank line and sending the result as one message.
 The runtime finds that entry in the harness's own history, through the session-history provider, by the message's id or, for a message sent live, by its text; a message that history does not hold is refused rather than cut somewhere else, and only for the first message does an empty Session stand in.
 The copy's history is loaded before anything else and the edited message is its first new prompt.
+To the platform tools a fork is a session of its own, with its own session reference; a rewind keeps the original's reference, so a check-back the original scheduled still lands in it ([schedules](schedules.md)).
 A rewritten follow-up chat keeps its copy, and the cut compares user messages with the `<continued-from>` block removed; a copy cut at the start carries the block again in its first prompt.
 A rewind by copy gives the copy the original's place, title and creation time and then deletes the original like any deleted Session, so the conversation keeps going under a new id; a fork leaves the original as it was and lists the copy as a new conversation.
 Files the agent changed stay changed.
-The runtime answers before the copy's first frame, so the client that asked follows the new id without reloading; after a cut in place it answers with the same id, and the client that asked keeps its own view.
+The runtime answers before the copy's first frame, and the client that asked then loads the copy, so its view holds the copy's own message ids and a later rewrite or take-back in it finds its message; after a cut in place it answers with the same id, and the client that asked keeps its own view.
 It refuses while a turn, a queued prompt or an agent request is pending, and for Sessions other parts of the platform hold the id of — scheduled, channel-bound, initialization.
 It tells a busy refusal from the others, so a client can ask again once the turn ends.
 A rewind can carry no message: it then **takes back** the newest message, cutting before the last batch of user messages in the history; a cut in place then drops that one turn only, and refuses, changing nothing, when anything else would go.
@@ -152,8 +157,12 @@ Recovery is always a send the user initiates: an automatic resend cannot know wh
 A prompt already *handed to the harness* is the other side of that split: losing the channel costs the sender only its live view — the turn runs to completion and its output lands in the log for any later viewer.
 Every honest delivery report depends on this split ([channel-turns](channel-turns.md) states it for its surface).
 
-One failure is deliberately **not** detected: an agent alive but permanently stuck emits nothing and is indistinguishable from one thinking hard, so a prompt waits indefinitely.
-Silence after acceptance is timed nowhere — a deadline there fails healthy turns whose first word is merely slow — and telling wedged from slow is a separate problem from delivery.
+One failure is deliberately **not** judged: an agent alive but permanently stuck emits nothing and is indistinguishable from one thinking hard, so a prompt waits indefinitely.
+Silence after acceptance fails nothing and cancels nothing, because a deadline there fails healthy turns whose first word is merely slow.
+The chat **states** the silence instead, once a running turn has gone quiet: how long nothing has come from the agent, and what it is waiting on.
+A live viewer times it from the last agent frame it received, or from the prompt that opened the turn when that is later; a session opened or reloaded mid-turn starts from the newest frame time the runtime stamped in the replay.
+An open tool call gets only its running time, since the chat already shows the call and a long build that prints nothing is normal; with no tool call open the agent is waiting on the model, and after a few minutes of that the line says it may be stuck.
+A pending approval, a provider outage and a starting agent each have their own line, so the quiet line stays away while they show.
 
 **Surviving memory pressure.** The harness and its tool processes share one memory ceiling, so a runaway command would take the whole agent down with it.
 A machine has no cgroup limit at all: it is bounded by its own memory, read from the kernel's headroom estimate so that reclaimable cache is not mistaken for consumption.
@@ -174,7 +183,10 @@ The runtime reports such a request to the api-server the moment no engaged chann
 It reports how every permission request it held ended, watched or not: the answer it accepted, which settles the row whoever wrote it, or its end when the request is dropped.
 Dropping covers both the ten-minute wait and a session reset, so a row never outlives the question it describes.
 The api-server records it as a pending tool approval at once, so Home and the approvals bell show it with the time the agent asked, not first when someone opens the session; a verdict given there answers it, the session still unwatched ([home-feed](home-feed.md#what-home-reads)).
-A harness that leaves a cold re-attach unanswered — whichever verb it advertised for one — is wedged: that request's frames are suppressed and the process is recycled when work drains.
+A cold re-attach, whichever verb the harness advertised for one, has a load budget, which a harness's image can lengthen when it spawns or loads slowly, as Bob's does.
+Past it the waiting clients get the timeout and the request's frames are suppressed, but the harness gets as long again to answer late: one that does stays up, with every call it still owes, such as a new chat on the same process.
+Until the late answer comes, a prompt or setting for that Session is refused, and an open of it waits and loads it once the harness is free.
+A harness that misses that second budget too is wedged, and the process is recycled when work drains.
 
 One further condition holds that reap back: **background work the session reports**.
 While a session reports work still running, the runtime keeps it open, and busy while that work is kept, so neither the reap nor the [idle checker](agent-lifecycle.md#hibernate) ends the work underneath it.

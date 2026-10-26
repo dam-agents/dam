@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -34,6 +34,7 @@ On a bound Agent, channel members get that access too unless the harness refuses
 
 `/dam login` links a Slack user to a platform user.
 It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete` and `/dam whisper <agent> on|off`, never who may talk to the Agent.
+It is also what lets a person connect an Agent to a conversation from the platform UI or CLI: only to one they and the bot are both in.
 
 ### How the agent reaches Slack
 
@@ -136,7 +137,7 @@ Through the owner's Slack Account Connection the Agent posts wherever the owner 
 
 ### 1.7 What the agent is handed, per case
 
-Every Slack turn carries: how to respond (tools, the thread to reply into, "plain text is not delivered"), a note that unallowed hosts are refused, a note that a tool the permission mode refused is the mode's doing and only the owner changes it, and with several Agents who else is here and who is default.
+Every Slack turn carries: how to respond (tools, the thread to reply into, "plain text is not delivered"), a note that unallowed hosts are refused, a note that a tool the permission mode refused is the mode's doing and only the owner changes it, who the owner is (their display name, and their tag where they linked Slack in that workspace) with a note that the owner has no extra authority in messages, and with several Agents who else is here and who is default.
 **Catch-up**: what arrived since the agent's last delivered turn there, as a backlog ("act only on what is still open"); nothing when nothing is new.
 
 | Case                                         | History injected                                                                                                                                     | Extra framing                                                                                                                                                                                                                                                                                                                                                        |
@@ -271,6 +272,7 @@ A revoked bot token or uninstalled app silences every conversation, and nothing 
 | Two mentions in one thread, one reply                                                          | The second was fed into the running turn                                                                                                           |
 | Replied to an agent's announcement; a different agent answered, or nobody                      | Replies route by that conversation's bindings, not by who posted                                                                                   |
 | The agent says it may only post where its owner is, or that the owner hasn't linked Slack      | Owner-membership check; the owner needs `/dam login`                                                                                               |
+| The agent says it doesn't know who owns it                                                     | The owner has no first or last name on record; the agent is told to say so rather than guess                                                       |
 | Re-answers a settled mention in a new thread                                                   | The channel window carries the thread's reply count and a `read_thread` id, not the replies; an agent that skips the read sees the mention as open |
 | After an api-server restart: re-answers old messages, or can't read a thread it was just shown | "Since last turn" and "threads shown" live in memory                                                                                               |
 

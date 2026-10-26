@@ -89,6 +89,7 @@ function harness(opts: {
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => OWNER,
+    ownerDisplayName: async () => null,
     channelRegistry: {
       resolveSlackBindings: async () =>
         toRoster(
@@ -330,6 +331,17 @@ describe("slack ambient inbound", () => {
     const opts = h.sendOpts[0]!;
     expect("platformMeta" in opts && opts.platformMeta?.threadTs).toBe(
       "ambient:C1",
+    );
+  });
+
+  it("ambient on: names the message it reads, without its speaker, as the session's title", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "hello there");
+    await h.settled(() => h.sendOpts.length === 1);
+
+    const opts = h.sendOpts[0]!;
+    expect("platformMeta" in opts && opts.platformMeta?.title).toBe(
+      "hello there",
     );
   });
 

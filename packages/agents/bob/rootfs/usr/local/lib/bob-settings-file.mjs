@@ -5,12 +5,13 @@
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
+import { pathOf, wrapMoves } from "./bob-preload-lib.mjs";
 
 const target = process.env.BOB_SETTINGS_FILE;
 const shared = join(process.env.HOME ?? "", ".bob", "settings", "settings.json");
 if (target && target !== shared) {
   const redirect = (p) => {
-    const path = p instanceof URL ? p.pathname : p;
+    const path = pathOf(p);
     if (path === shared) return target;
     if (path === `${shared}.bak`) return `${target}.bak`;
     return p;
@@ -27,11 +28,6 @@ if (target && target !== shared) {
   };
   patch(fs, [...names, ...names.map((n) => `${n}Sync`), "existsSync", "watchFile", "unwatchFile", "createReadStream", "createWriteStream"]);
   patch(fs.promises, names);
-  for (const [owner, name] of [[fs, "rename"], [fs, "renameSync"], [fs.promises, "rename"], [fs, "copyFile"], [fs, "copyFileSync"], [fs.promises, "copyFile"]]) {
-    const original = owner[name];
-    owner[name] = function (from, to, ...rest) {
-      return original.call(this, redirect(from), redirect(to), ...rest);
-    };
-  }
+  wrapMoves((from, to) => [redirect(from), redirect(to)]);
   syncBuiltinESMExports();
 }

@@ -21,6 +21,7 @@ export const githubUserTokenScope = z.object({
   targetId: z.number().int(),
   targetLogin: z.string().min(1).optional(),
   repositoryIds: z.array(z.number().int()).nonempty().optional(),
+  repositoryNames: z.array(z.string().min(1)).optional(),
   permissions: z.record(z.string(), z.string()).optional(),
 });
 export type GitHubUserTokenScope = z.infer<typeof githubUserTokenScope>;
@@ -43,6 +44,7 @@ export const oauthAuth = z.object({
   host: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
   githubUserTokenScope: githubUserTokenScope.optional(),
+  fullAccess: z.literal(true).optional(),
 });
 
 export const clientCredentialsAuth = z.object({
@@ -77,6 +79,7 @@ export const githubAppAuth = z.object({
   repositories: z.array(z.string().min(1)).nonempty().optional(),
   permissions: z.record(z.string(), z.string()).optional(),
   repositoryIds: z.array(z.number().int()).nonempty().optional(),
+  fullAccess: z.literal(true).optional(),
 });
 
 export const headerAuth = z.object({
@@ -118,6 +121,8 @@ export const connection = z.object({
   inputs: z.record(z.string(), z.unknown()),
   auth: authConfig,
   contributions: z.array(contribution),
+  parentId: z.string().min(1).optional(),
+  isParent: z.literal(true).optional(),
 });
 export type Connection = z.infer<typeof connection>;
 
@@ -151,6 +156,9 @@ export const credentialCheck = z.object({
   account: z.string().optional(),
   expiresAt: z.string().optional(),
   scopes: z.array(z.string()).optional(),
+  installedOn: z.string().optional(),
+  repositories: z.array(z.string()).optional(),
+  repositoriesTruncated: z.boolean().optional(),
   reason: z.string().optional(),
   at: z.string(),
 });
@@ -198,6 +206,9 @@ export const connectionView = z.object({
   githubUserToken: z
     .object({ scope: githubUserTokenScope.optional() })
     .optional(),
+  parentId: z.string().optional(),
+  isParent: z.literal(true).optional(),
+  fullAccess: z.literal(true).optional(),
   provider: connectionProviderView
     .extend({ preferred: z.boolean() })
     .optional(),
@@ -341,7 +352,18 @@ export interface ConnectionsService {
     repositories?: string;
     repositoryIds?: string;
     permissions?: string;
+    fullAccess?: boolean;
   }): Promise<void>;
+
+  createFromParent(input: {
+    parentId: string;
+    name: string;
+    fullAccess?: boolean;
+    targetId?: number;
+    repositories?: string;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<string>;
 
   probeGitHubUserTokenForConnection(input: {
     connectionId: string;
@@ -352,6 +374,7 @@ export interface ConnectionsService {
     targetId?: number;
     repositoryIds?: string;
     permissions?: string;
+    fullAccess?: boolean;
   }): Promise<void>;
 
   startOAuth(
@@ -414,6 +437,13 @@ export interface SecretRequestView {
   customDestination: boolean;
   tokenEndpoint?: { url: string } | { discoveredFrom: string };
   envNames: string[];
+  isParent?: true;
+  githubAppAccess?: {
+    fullAccess?: true;
+    repositories?: string[];
+    repositoryIds?: number[];
+    permissions?: Record<string, string>;
+  };
   grantedAgents: { id: string; name: string }[];
   requestedBy?: { id: string; name: string };
   fields: SecretRequestField[];

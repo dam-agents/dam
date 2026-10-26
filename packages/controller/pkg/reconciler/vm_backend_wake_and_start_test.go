@@ -70,7 +70,7 @@ func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	elsewhere.Name = "elsewhere"
 	demand, err := r.heldRunnerDemand(ctx, testOwner, elsewhere, false)
 	require.NoError(t, err)
-	assert.Equal(t, 3072, demand.memoryMiB, "the admitted machine still holds its boot floor, though its answer repeats the refusal's reason")
+	assert.Equal(t, 2048, demand.memoryMiB, "the admitted machine still holds its boot floor, though its answer repeats the refusal's reason")
 }
 
 // TEST_SCENARIO: a restart the runner is running holds its exemption from the ceiling, but a runner built before that still answers the wait when the controller's ensure lands between the stop and the boot. Acting on that answer by parking would stop the machine behind the restart the runner already performs, and the owner's machines would be left down for a ceiling nothing asked for.

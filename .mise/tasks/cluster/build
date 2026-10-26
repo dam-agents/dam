@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Rebuild images, load them into k3s and restart what runs them"
 #USAGE flag "--environment <name>" help="Rebuild them for this agent's Environment of that name"
+#USAGE flag "--name <name>" help="Rebuild for this install (default: this worktree's)"
 #USAGE arg "<component>..." var=#true help="controller, api-server, ui, keycloak, or agents: every agent image the cluster has deployed"
 set -eo pipefail
 eval "components=($usage_component)"
@@ -44,35 +45,38 @@ for c in "${components[@]}"; do
     agents)
       # Captured first, so a kubectl failure aborts rather than looking like
       # "nothing deployed".
-      cms="$(kubectl get configmap -A -o yaml)"
+      # This install's templates only: the cluster may hold other installs'.
+      cms="$(kubectl -n "$CLUSTER_NAMESPACE" get configmap -o yaml)"
       agents=($(deployed_agents "$cms"))
       if [ ${#agents[@]} -eq 0 ]; then echo "No agent templates deployed — nothing to build."; continue; fi
       mise run //packages/agents:oci -- "${agents[@]}"
       tars=()
       for a in "${agents[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$a")"); done
       mise run cluster:import -- "${tars[@]}"
+      install_image_tags "${agents[@]}" || exit 1
       # A machine boots from the node image cache, so a rebuilt image reaches
       # it at its next start and no pod is restarted to do it. Restart one
       # agent's machine by changing the revision it boots with; deleting a
       # runner pod instead reboots every machine of that owner, and the
       # gateway, cache and runner pods are more than this rebuild touches.
       echo "agent images rebuilt. Restart one agent's machine with:"
-      echo "  kubectl annotate agent <name> -n platform-agents agent-platform.ai/roll-rev=\"$(date -u +%Y%m%dT%H%M%SZ)\" --overwrite"
+      echo "  kubectl annotate agent <name> -n $CLUSTER_AGENT_NAMESPACE agent-platform.ai/roll-rev=\"$(date -u +%Y%m%dT%H%M%SZ)\" --overwrite"
       continue
       ;;
-    controller) pkg=controller deploy=platform-controller timeout=60s ;;
-    ui) pkg=ui deploy=platform-ui timeout=60s ;;
+    controller) pkg=controller deploy="$CLUSTER_RELEASE-controller" timeout=60s ;;
+    ui) pkg=ui deploy="$CLUSTER_RELEASE-ui" timeout=60s ;;
     # Readiness gates on the first Keycloak JWKS fetch (warm-up gives up at
     # ~240s), so a fresh pod whose mesh egress is still converging needs
     # headroom past that bound before it reports Ready.
-    api-server) pkg=api-server deploy=platform-apiserver timeout=300s ;;
-    keycloak) pkg=keycloak-theme deploy=platform-keycloak timeout=180s ;;
+    api-server) pkg=api-server deploy="$CLUSTER_RELEASE-apiserver" timeout=300s ;;
+    keycloak) pkg=keycloak-theme deploy="$CLUSTER_RELEASE-keycloak" timeout=180s ;;
     *) echo "unknown component: $c" >&2; exit 2 ;;
   esac
   mise run "//packages/$pkg:oci"
   mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path "$c")"
-  kubectl rollout restart deployment "$deploy"
-  kubectl rollout status deployment "$deploy" --timeout="$timeout"
+  install_image_tags "$c" || exit 1
+  kubectl -n "$CLUSTER_NAMESPACE" rollout restart deployment "$deploy"
+  kubectl -n "$CLUSTER_NAMESPACE" rollout status deployment "$deploy" --timeout="$timeout"
 done
 
 prune_dangling_images

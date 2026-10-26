@@ -46,7 +46,7 @@ export type ClassicAppTab = Extract<
   "approvals" | "getting-started"
 >;
 
-export type ClassicPanel = "dock" | ClassicAppTab;
+export type ClassicPanel = "dock" | "getting-started";
 
 export function classicAppTab(
   tab: SidePanelTab | null,
@@ -62,7 +62,11 @@ export function classicPanel(
   hidden: ReadonlySet<SidePanelTab>,
   docked: boolean,
 ): ClassicPanel | null {
-  return classicAppTab(tab, hidden) ?? (docked ? "dock" : null);
+  return tab === "getting-started" && !hidden.has(tab)
+    ? "getting-started"
+    : docked
+      ? "dock"
+      : null;
 }
 
 export type ClassicDockToggle = "reveal" | "close" | "open";
@@ -70,9 +74,10 @@ export type ClassicDockToggle = "reveal" | "close" | "open";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a top-bar toggle of the classic chat (browser,
  * changes) reads what the slot shows. Its item shown in the slot is pressed and
- * closes; its item docked behind an app panel (Approvals, Get started), or
- * hidden on a phone, is not pressed and comes back to view; an item not docked,
- * or covered by another docked item, opens in front.
+ * closes; its item docked behind the Get started panel, or hidden on a phone,
+ * is not pressed and comes back to view; an item not docked, or covered by a
+ * docked item, opens in front. Approvals is a drawer over the chat, so it never
+ * takes the slot and leaves the docked item in view.
  */
 export function classicDockToggle({
   docked,

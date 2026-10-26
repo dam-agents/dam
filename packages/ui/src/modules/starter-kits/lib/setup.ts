@@ -18,7 +18,7 @@ import {
 export interface StarterKitSetupDraft {
   name: string;
   connectionIds: string[];
-  slackChannelId: string;
+  slackChannelIds: string[];
   skippedSchedules: string[];
   scheduleOverrides: StarterKitScheduleOverride[];
 }
@@ -81,7 +81,7 @@ export function isStarterKitSetupComplete(
 export function buildStarterKitApplyInput(
   kit: Pick<
     StarterKitView,
-    "id" | "catalog" | "connections" | "link" | "version"
+    "id" | "catalog" | "connections" | "link" | "version" | "channels"
   >,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
@@ -92,19 +92,26 @@ export function buildStarterKitApplyInput(
       "cannot build starter kit apply input from an incomplete draft",
     );
   }
-  const slackChannelId = draft.slackChannelId.trim();
   return {
     catalog: kit.catalog,
     kitId: kit.id,
     ...(kit.link ? { link: { url: kit.link.url, commit: kit.version } } : {}),
     name: draft.name.trim(),
     connectionIds: draftConnectionIds(draft),
-    ...(slackChannelId ? { slackChannelId } : {}),
+    slackChannelIds: takesSlackChannels(kit) ? draft.slackChannelIds : [],
     skipSchedules: draft.skippedSchedules,
     scheduleOverrides: draft.scheduleOverrides.filter(
       (o) => !draft.skippedSchedules.includes(o.name),
     ),
   };
+}
+
+export function takesSlackChannels(
+  kit: Pick<StarterKitView, "channels">,
+): boolean {
+  return !kit.channels.some(
+    (c) => c.type === "slack" && c.conversation === "direct",
+  );
 }
 
 export function preselectedGrants(

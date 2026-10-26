@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
+import { normalizeServerUrl } from "../../shared/server-url.js";
 import type {
   InvalidKeyError,
   InvalidValueError,
@@ -9,10 +10,12 @@ import type {
 export const SERVER_ENV_VAR = "DAM_SERVER";
 
 export const configSchema = z.object({
-  server: z.url({
-    protocol: /^https?$/,
-    error: "must be an http(s) URL (e.g. https://platform.example)",
-  }),
+  server: z
+    .url({
+      protocol: /^https?$/,
+      error: "must be an http(s) URL (e.g. https://platform.example)",
+    })
+    .transform(normalizeServerUrl),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -64,5 +67,5 @@ export function resolveConfig(
   if (server === undefined) {
     return err({ kind: "missing-config", key: "server" });
   }
-  return ok({ server });
+  return ok({ server: normalizeServerUrl(server) });
 }

@@ -46,12 +46,12 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// TEST_SCENARIO: with the Unified right toolbar on, the navigation leaves Artifacts and Documentation out, because every page's rail already offers both.
-it("leaves Artifacts and Documentation out while the right toolbar offers them", () => {
+// TEST_SCENARIO: with the Unified right toolbar on, the navigation leaves Artifacts out, because every page's rail already offers it, and keeps Documentation, because the rail shows no docs surface at all.
+it("leaves Artifacts out while the right toolbar offers it", () => {
   state.rightToolbar = true;
   const { primary, secondary } = useSidebarDestinations();
   expect(primary.map((d) => d.label)).toEqual(["Home", "Starter kits"]);
-  expect(secondary.map((d) => d.label)).toEqual(["Settings"]);
+  expect(secondary.map((d) => d.label)).toEqual(["Documentation", "Settings"]);
 });
 
 // TEST_SCENARIO: an install that sets no documentation site has no Documentation entry, rather than one that opens nothing.

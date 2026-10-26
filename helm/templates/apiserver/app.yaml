@@ -189,15 +189,6 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
-            {{- if .Values.agentStore.previewReport }}
-            # The report sizes an Agent that carries no limit from the same
-            # defaults the controller uses, so what it previews is what an
-            # absorb would write.
-            - name: AGENT_LEGACY_CPU_LIMIT
-              value: {{ .Values.controller.agent.legacyAgentSize.cpu | quote }}
-            - name: AGENT_LEGACY_MEMORY_LIMIT
-              value: {{ .Values.controller.agent.legacyAgentSize.memory | quote }}
-            {{- end }}
             - name: RUNTIME_DELIVERY_CONCURRENCY
               value: {{ .Values.apiServer.runtimeDelivery.concurrency | quote }}
             {{- if .Values.apiServer.db.caCert }}
@@ -416,8 +407,8 @@ spec:
               value: {{ .Values.keycloak.operatorRole | quote }}
             {{- end }}
             {{- end }}
-            # The agent home is fixed at /home/agent (templateDefaults.agentHome
-            # is retired). The controller substitutes `$HOME` mount paths with
+            # The agent home is fixed at /home/agent (the defaults layer's
+            # retired agentHome is gone). The controller substitutes `$HOME` mount paths with
             # this same literal at render time; the api-server resolves KB share
             # roots beneath the work dir, so it must see the identical absolute
             # paths the controller and agent runtime use.
@@ -427,18 +418,18 @@ spec:
               value: "/home/agent/work"
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.vmIdleTimeout | quote }}
-            # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
+            # Same Helm value the controller's AGENT_HARNESS_TEMPLATE_DEFAULTS carries,
             # so create-time resource stamping (#1900) cannot drift from the
             # controller's render-time defaults.
             - name: AGENT_DEFAULT_CPU_LIMIT
-              value: {{ .Values.controller.agent.templateDefaults.resources.limits.cpu | quote }}
+              value: {{ .Values.controller.agent.harnessTemplateDefaults.resources.limits.cpu | quote }}
             - name: AGENT_DEFAULT_MEMORY_LIMIT
-              value: {{ .Values.controller.agent.templateDefaults.resources.limits.memory | quote }}
+              value: {{ .Values.controller.agent.harnessTemplateDefaults.resources.limits.memory | quote }}
             # The size a persisted mount without one of its own gets, which a
             # runtime migration falls back to when it sizes the moved agent's
             # disk for its home.
             - name: AGENT_DEFAULT_STORAGE_SIZE
-              value: {{ .Values.controller.agent.templateDefaults.storageSize | quote }}
+              value: {{ .Values.controller.agent.harnessTemplateDefaults.storageSize | quote }}
             # Default per-user pool, the same value the controller enforces
             # with; the budget surfaces show it.
             - name: DEFAULT_USER_CPU_BUDGET

@@ -21,6 +21,12 @@ import {
 import { match, P } from "ts-pattern";
 import type { SlackConversationStanding } from "../services/slack-workspace-probe.js";
 import {
+  pickableSlackChannels,
+  type SlackChannelChoices,
+  type SlackChannelMembership,
+  type SlackWorkspaceReach,
+} from "../domain/slack-channel-choices.js";
+import {
   ambientThreadKey,
   isAmbientThreadKey,
   slackThreadKey,
@@ -79,7 +85,11 @@ import {
   type DomainEvent,
   type TurnOutcome,
 } from "../../../events.js";
-import type { IdentityLinkService } from "./../services/identity-link-service.js";
+import type {
+  ExternalLink,
+  IdentityLinkService,
+} from "./../services/identity-link-service.js";
+import type { ChannelOwner } from "./owner-copy.js";
 import {
   buildAuthorizeUrl,
   generatePkce,
@@ -178,6 +188,7 @@ import {
   peerTaggedBy,
   routeMention,
   senderReaches,
+  sessionTitleOf,
   type RosterEntry,
 } from "./slack-routing.js";
 import type { SlackSender } from "./slack-sender.js";
@@ -992,6 +1003,12 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
     slackChannelId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackConversationStanding>;
+  channelChoices(keycloakSub: string): Promise<SlackChannelChoices>;
+  channelMembership(
+    keycloakSub: string,
+    slackChannelId: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackChannelMembership>;
   start(instanceName: string): Promise<void>;
   stop(instanceName: string): Promise<void>;
   resolveConversationLabels(
@@ -1289,6 +1306,7 @@ export type SlackWorkerDeps = {
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<SlackOAuthPending>;
   getInstanceOwner: (agentId: string) => Promise<string | null>;
+  ownerDisplayName: (sub: string) => Promise<string | null>;
   channelRegistry: ChannelRegistry;
   unbindSlackChannel: (
     agentId: string,
@@ -1329,6 +1347,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     oauthConfig,
     pendingOAuthFlows,
     getInstanceOwner,
+    ownerDisplayName,
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
@@ -1369,6 +1388,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     }
     return reach;
+  }
+
+  async function linkedWorkspaces(
+    links: { teamId: string | null }[],
+  ): Promise<SlackWorkspace[]> {
+    return [
+      ...new Set([
+        ...(await listWorkspaces()),
+        ...links.flatMap((l) => (l.teamId === null ? [] : [l.teamId])),
+      ]),
+    ];
   }
 
   async function mayMessageDirectly(
@@ -1941,6 +1971,59 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch {
       return null;
     }
+  }
+
+  async function resolveChannelOwner(
+    instanceName: string,
+    teamId: SlackWorkspace,
+  ): Promise<ChannelOwner | null> {
+    let owner: string | null;
+    let name: string | null;
+    try {
+      owner = await getInstanceOwner(instanceName);
+      name = owner ? await ownerDisplayName(owner) : null;
+    } catch (err) {
+      getLogger().warn(
+        { agentId: instanceName, step: "name", error: formatError(err) },
+        "slack.owner_lookup.failed",
+      );
+      return null;
+    }
+    if (!owner || !name) return null;
+    return {
+      name,
+      slackUserId: await ownerSlackUserId(instanceName, owner, teamId),
+    };
+  }
+
+  async function ownerSlackUserId(
+    instanceName: string,
+    owner: string,
+    teamId: SlackWorkspace,
+  ): Promise<string | null> {
+    try {
+      const links = await identityLinks.externalLinksOf("slack", owner);
+      const inWorkspace =
+        links.find((link) => link.teamId === teamId) ??
+        (await soleWorkspaceLink(links, teamId));
+      return inWorkspace?.externalUserId ?? null;
+    } catch (err) {
+      getLogger().warn(
+        { agentId: instanceName, step: "link", error: formatError(err) },
+        "slack.owner_lookup.failed",
+      );
+      return null;
+    }
+  }
+
+  async function soleWorkspaceLink(
+    links: ExternalLink[],
+    teamId: SlackWorkspace,
+  ): Promise<ExternalLink | undefined> {
+    const legacy = links.find((link) => link.teamId === null);
+    if (!legacy) return undefined;
+    const active = await listWorkspaces();
+    return active.length === 1 && active[0] === teamId ? legacy : undefined;
   }
 
   const AGENT_NAME_TTL_MS = 30_000;
@@ -2796,6 +2879,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
+    title: string;
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
     onWaking?: () => void;
@@ -2810,6 +2894,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const platformMeta = {
       type: SessionType.ChannelSlack,
       threadTs: args.threadKey,
+      title: args.title,
     };
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
       await agents().ensureReady(args.instanceName, {
@@ -2872,6 +2957,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     instanceName: string;
     channel: string;
     threadTs: string;
+    title: string;
     messages: AddressedMessage[];
     actorSub: string | null;
     externalActorId?: string;
@@ -2978,11 +3064,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           });
 
     const isDirectMessage = isDirectMessageId(ctx.channel);
-    const [turnContext, agentName] = await Promise.all([
+    const [turnContext, agentName, owner] = await Promise.all([
       turnContractContext(gw, ctx.channel, eventTs, ctx.teamId, {
         batched: batched || privateReply,
       }),
       resolveAgentDisplayName(instanceName),
+      resolveChannelOwner(instanceName, ctx.teamId),
     ]);
     const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
@@ -2997,6 +3084,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       reach: { isDirectMessage, ambient: ctx.ambient },
       roster: rosterCopy(ctx.roster, instanceName),
       ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
+      owner,
       ...contractContext,
     });
     const earlierTurn =
@@ -3063,6 +3151,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await runSessionTurn({
         instanceName,
         threadKey,
+        title: ctx.title,
         legacyThreadKey: ctx.threadTs,
         onReady: () => {
           restartsAtStart = readRestarts(instanceName);
@@ -5338,6 +5427,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       instanceName: args.instanceName,
       channel: args.channel,
       threadTs: args.threadTs,
+      title: sessionTitleOf(args.messages[0]!.text),
       messages: args.messages.map((message) => ({
         ...message,
         text:
@@ -5380,6 +5470,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     replyThreadTs: string;
     eventTs: string;
     hasThread: boolean;
+    title: string;
     messages: Array<{ text: string; eventTs: string; slackUserId?: string }>;
     images: FetchedImage[];
     files: FetchedFile[];
@@ -5432,14 +5523,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
-    const agentName = await resolveAgentDisplayName(args.instanceName);
-    const { botUserId, ...contractContext } = await turnContractContext(
-      gw,
-      args.channel,
-      args.eventTs,
-      args.teamId,
-      { batched: args.messages.length > 1 },
-    );
+    const [agentName, owner, turnContext] = await Promise.all([
+      resolveAgentDisplayName(args.instanceName),
+      resolveChannelOwner(args.instanceName, args.teamId),
+      turnContractContext(gw, args.channel, args.eventTs, args.teamId, {
+        batched: args.messages.length > 1,
+      }),
+    ]);
+    const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
@@ -5454,6 +5545,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ambient: true,
       },
       roster: rosterCopy(args.roster, args.instanceName),
+      owner,
       ...contractContext,
     });
     const guidance = [
@@ -5480,6 +5572,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       runSessionTurn({
         instanceName: args.instanceName,
         threadKey: args.threadKey,
+        title: args.title,
         ...(args.legacyThreadKey
           ? { legacyThreadKey: args.legacyThreadKey }
           : {}),
@@ -5774,8 +5867,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             replyThreadTs: inThread ? threadTs : last.eventTs,
             eventTs: last.eventTs,
             hasThread: inThread,
-            messages: shown.map(({ text, eventTs, slackUserId }) => ({
-              text,
+            title: sessionTitleOf(shown[0]!.text),
+            messages: shown.map(({ text, speaker, eventTs, slackUserId }) => ({
+              text: `${speaker}: ${text}`,
               eventTs,
               slackUserId,
             })),
@@ -5894,9 +5988,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const withheldNote = renderWithheldNote(failures);
 
     const speaker = await speakerOf(sender);
-    const text = `${speaker}: ${event.text}${withheldNote}`;
     enqueueAmbient(event.channel, event.threadTs ?? null, {
-      text,
+      text: event.text + withheldNote,
       eventTs: event.ts,
       slackUserId,
       sender,
@@ -6004,6 +6097,60 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           () => "unknown" as const,
         )
         .exhaustive();
+    },
+
+    async channelChoices(keycloakSub: string): Promise<SlackChannelChoices> {
+      const links = await identityLinks.externalLinksOf("slack", keycloakSub);
+      if (links.length === 0) return { linked: false };
+      const gw = await ensureGateway();
+      if (!gw) throw new Error("slack gateway is not connected here");
+      const userIds = [...new Set(links.map((l) => l.externalUserId))];
+      const reach = await Promise.all(
+        (await linkedWorkspaces(links)).map(
+          async (teamId): Promise<SlackWorkspaceReach> => {
+            const [botChannels, ...shared] = await Promise.all([
+              gw.listBotChannels(teamId),
+              ...userIds.map((userId) => gw.listSharedChannels(userId, teamId)),
+            ]);
+            return {
+              teamId,
+              botChannels,
+              sharedChannelIds: new Set(shared.flat()),
+            };
+          },
+        ),
+      );
+      return { linked: true, channels: pickableSlackChannels(reach) };
+    },
+
+    async channelMembership(
+      keycloakSub: string,
+      slackChannelId: string,
+      teamId: SlackWorkspace,
+    ): Promise<SlackChannelMembership> {
+      const links = await identityLinks.externalLinksOf("slack", keycloakSub);
+      if (links.length === 0) return "unlinked";
+      const gw = await ensureGateway();
+      if (!gw) throw new Error("slack gateway is not connected here");
+      const userIds = [...new Set(links.map((l) => l.externalUserId))];
+      if (isDirectMessageId(slackChannelId)) {
+        const lookup = await gw.getConversationInfo(slackChannelId, teamId);
+        return lookup.kind === "found" &&
+          lookup.directMessageUser !== null &&
+          userIds.includes(lookup.directMessageUser)
+          ? "member"
+          : "not-member";
+      }
+      const workspaces = [
+        ...new Set([teamId, ...(await linkedWorkspaces(links))]),
+      ];
+      for (const workspace of workspaces) {
+        for (const userId of userIds) {
+          const shared = await gw.listSharedChannels(userId, workspace);
+          if (shared.includes(slackChannelId)) return "member";
+        }
+      }
+      return "not-member";
     },
 
     async listConversations(instanceName: string) {

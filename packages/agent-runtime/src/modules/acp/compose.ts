@@ -40,6 +40,7 @@ import {
 } from "./infrastructure/session-metadata-store.js";
 import {
   createAcpRuntime,
+  hasSessionCapability,
   sessionListAnswer,
   type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
@@ -143,6 +144,7 @@ export interface HarnessRuntime extends SessionHarness {
   sessionModel: boolean;
   initialize?: Record<string, unknown>;
   harnessState?: HarnessStateDialect;
+  loadTimeoutMs?: number;
   nonClaudeModelEnv?: Record<string, string>;
 }
 
@@ -490,6 +492,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         ...(harness?.harnessState && {
           harnessState: HARNESS_STATE_PORTS[harness.harnessState],
         }),
+        ...(harness?.loadTimeoutMs && {
+          harnessLoadTimeoutMs: harness.loadTimeoutMs,
+        }),
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
@@ -499,6 +504,12 @@ export function composeAcp(opts: ComposeAcpOptions): {
           subAgentSessions.record(sessionId, subAgentIds),
         ...(ownHistory ? { historyProvider: ownHistory } : {}),
         ...(ownCut ? { sessionCut: ownCut } : {}),
+        ...(harness?.initialize && {
+          harnessForks: hasSessionCapability(
+            { result: harness.initialize },
+            "fork",
+          ),
+        }),
         ...(ownPins
           ? { terminalSessionPins: terminalSessionPinsOf([ownPins]) }
           : {}),

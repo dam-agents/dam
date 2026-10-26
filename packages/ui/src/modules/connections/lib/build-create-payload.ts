@@ -5,6 +5,8 @@ import {
 } from "api-server-api";
 
 import { validateConnectionName } from "./connection-name.js";
+import type { GithubAccess } from "./github-access.js";
+import { NO_APP_SCOPE } from "./github-app-scope-fields.js";
 
 function compact<T extends Record<string, unknown>>(
   obj: T,
@@ -18,6 +20,7 @@ export interface CreateFormValues {
   name: string;
   fields: Record<string, string>;
   overrideDefaults: boolean;
+  access?: GithubAccess;
 }
 
 export function buildCreatePayload(
@@ -34,7 +37,7 @@ export function buildCreatePayload(
 
 function buildUncheckedPayload(
   template: ConnectionTemplateView,
-  { name, fields, overrideDefaults }: CreateFormValues,
+  { name, fields, overrideDefaults, access }: CreateFormValues,
 ): ConnectionCreateInput | { error: string } {
   const inputsByName = new Map(template.inputs.map((i) => [i.name, i]));
   const submitted = (k: string): string | undefined => {
@@ -88,17 +91,24 @@ function buildUncheckedPayload(
       if (!appId) return { error: "App ID is required" };
       if (!installationId) return { error: "Installation ID is required" };
       if (!privateKey) return { error: "Private key is required" };
-      return compact({
+      const credential = {
         ...common,
         authKind: "github-app" as const,
         host,
         appId,
         installationId,
         privateKey,
+      };
+      if (access === "full")
+        return compact({ ...credential, fullAccess: true });
+      const scope = {
         repositories: submitted("repositories"),
         repositoryIds: submitted("repositoryIds"),
         permissions: submitted("permissions"),
-      });
+      };
+      if (Object.values(scope).every((v) => v === undefined))
+        return { error: NO_APP_SCOPE };
+      return compact({ ...credential, ...scope });
     }
     case "header": {
       const value = submitted("value");

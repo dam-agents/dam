@@ -7,19 +7,37 @@ import { SlackChannelCard } from "./channels/slack-channel-card.js";
 import { TelegramChannelCard } from "./channels/telegram-channel-card.js";
 import { WhisperCard } from "./channels/whisper-card.js";
 
-export function SandboxChannelsSection({ agentId }: { agentId: string }) {
+export function SandboxChannelsSection({
+  agentId,
+  compact = false,
+}: {
+  agentId: string;
+  compact?: boolean;
+}) {
   const { data } = useAgents();
   const agent = findAgent(data, agentId) ?? undefined;
   const available = data?.availableChannels ?? {};
   const readOnly = agent ? !holds(agent.access, "channels") : false;
 
-  if (!available.slack && !available.telegram)
+  const missing = [
+    ...(available.slack ? [] : ["Slack"]),
+    ...(available.telegram ? [] : ["Telegram"]),
+  ];
+  // UNIT_BOUNDARY_DESCRIPTION: in a panel the section names the messenger this install does not offer in one muted line, and shows no card for it; whispers are a row of the Slack card rather than a card of their own.
+  if (missing.length === 2) {
+    if (compact)
+      return (
+        <p className="text-sm text-muted-foreground">
+          {notConfigured(missing)}
+        </p>
+      );
     return (
       <EmptyState title="No messenger set up">
         There is nothing to connect yet. Ask your administrator to configure
         Slack or Telegram.
       </EmptyState>
     );
+  }
   return (
     <>
       {agent && readOnly && (
@@ -33,17 +51,35 @@ export function SandboxChannelsSection({ agentId }: { agentId: string }) {
           disconnect one.
         </OwnerOnlyNotice>
       )}
-      {available.slack && agent && (
+      {available.slack && !compact && agent && (
         <div className="mb-6">
           <WhisperCard agent={agent} />
         </div>
       )}
       {available.slack && (
-        <SlackChannelCard agent={agent} readOnly={readOnly} />
+        <SlackChannelCard
+          agent={agent}
+          withWhisper={compact}
+          readOnly={readOnly}
+        />
       )}
       {available.telegram && (
-        <TelegramChannelCard agentId={agentId} readOnly={readOnly} />
+        <TelegramChannelCard
+          agentId={agentId}
+          readOnly={readOnly}
+          compact={compact}
+        />
+      )}
+      {compact && missing.length === 1 && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          {notConfigured(missing)}
+        </p>
       )}
     </>
   );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the one line a panel says about a messenger the install does not offer, naming it and nothing else.
+function notConfigured(missing: readonly string[]): string {
+  return `${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} not configured on this install.`;
 }

@@ -173,12 +173,14 @@ export function useAcpSession(
   const resetSession = useCallback(() => {
     resetConnection();
     setSessionId(null);
+    useStore.getState().setHarnessForks(false);
     setMessages(
       selectedAgent === null
         ? []
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
     useStore.getState().setRunStarts([]);
+    useStore.getState().setLastOutputAt(null);
     useStore.getState().setAttribution(NO_ATTRIBUTION);
     useStore.getState().setContinuedFrom(null);
     useStore.getState().setSessionError(null);
@@ -192,7 +194,9 @@ export function useAcpSession(
       setLoadingSession(true);
       setMessages([]);
       useStore.getState().setRewriting(null);
+      useStore.getState().setHarnessForks(false);
       useStore.getState().setRunStarts([]);
+      useStore.getState().setLastOutputAt(null);
       useStore.getState().setAttribution(NO_ATTRIBUTION);
       useStore.getState().setContinuedFrom(null);
       useStore.getState().setSessionError(null);
@@ -416,19 +420,17 @@ export function useAcpSession(
         .finally(endPending)) as {
         sessionId: string;
       };
-      if (!optimistic) {
+      if (result.sessionId !== live.sessionId) {
+        void resumeSession(result.sessionId);
+      } else if (!optimistic) {
         setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
         useStore.getState().setRewriting(null);
-      }
-      if (result.sessionId !== live.sessionId) {
-        bindEngagement(result.sessionId);
-        setSessionId(result.sessionId);
       }
       void queryClient.invalidateQueries({
         queryKey: acpSessionsKeys.agent(selectedAgent),
       });
     },
-    [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
+    [selectedAgent, ensureLive, resumeSession, setMessages],
   );
 
   reloadAfterResetRef.current = (sid: string) => {
@@ -439,7 +441,6 @@ export function useAcpSession(
     selectedAgent,
     stopAgent,
     ensureLive,
-    bindEngagement,
     reloadSession: resumeSession,
   });
 

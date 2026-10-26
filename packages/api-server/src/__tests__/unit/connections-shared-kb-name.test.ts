@@ -64,6 +64,8 @@ function makeRepoFake() {
     },
     listByOwner: async (ownerId) =>
       [...rows.values()].filter((c) => c.ownerId === ownerId),
+    listChildren: async (parentId) =>
+      [...rows.values()].filter((c) => c.parentId === parentId),
     listByOwnerOldestFirst: async (ownerId) =>
       [...rows.values()].filter((c) => c.ownerId === ownerId),
     get: async (id, ownerId) => {

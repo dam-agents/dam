@@ -108,6 +108,7 @@ import {
 } from "./pending-agent-requests.js";
 import { createAutonomousTurns } from "./autonomous-turns.js";
 import { createHarnessActivity } from "./harness-activity.js";
+import { createLocalCommandEchoes } from "./local-command-echoes.js";
 import type { HarnessStatePort } from "../../domain/harness-state.js";
 import {
   createPromptScheduler,
@@ -203,6 +204,7 @@ export interface AcpRuntimeDeps {
   harnessLoadTimeoutMs?: number;
   historyProvider?: HistoryProvider;
   sessionCut?: SessionCutProvider;
+  harnessForks?: boolean;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
@@ -256,6 +258,11 @@ export interface ReportableTurn {
 }
 
 type RewriteRequest = PlatformRewriteFromParams & { sender?: Sender };
+
+interface OrphanedLoad {
+  outboundId: number;
+  lateTimer: ReturnType<typeof setTimeout> | null;
+}
 
 interface OutboundMapping {
   channel: ClientChannel | null;
@@ -363,6 +370,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ),
   });
 
+  const localCommandEchoes = createLocalCommandEchoes();
+
   const heldRuns = new Map<
     string,
     { promptId: string | null; stopReason: string | null; cancelled: boolean }
@@ -434,6 +443,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       autonomousTurns.end(sessionId);
       finishHeldRun(sessionId);
       generating.add(sessionId);
+      localCommandEchoes.start(sessionId, typed);
       const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
@@ -582,6 +592,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const toolActivityIn = createToolActivityReader();
   const bootstrap = createSessionBootstrap({
     transcript,
+    ...(deps.harnessForks !== undefined && { forks: deps.harnessForks }),
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
     },
@@ -785,15 +796,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const rehydratingSessions = new Set<string>();
   const rehydrateTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const rehydrateLoadIds = new Map<string, number>();
-  const orphanedHarnessLoads = new Map<string, number>();
+  const orphanedHarnessLoads = new Map<string, OrphanedLoad>();
 
   function orphanLoad(sessionId: string, outboundId: number): void {
-    orphanedHarnessLoads.set(sessionId, outboundId);
+    const previous = orphanedHarnessLoads.get(sessionId)?.lateTimer;
+    if (previous) clearTimeout(previous);
     deps.log?.(
       `harness left session/load for ${sessionId} unanswered; ` +
-        `suppressing its frames and recycling the harness`,
+        `suppressing its frames and recycling the harness unless it ` +
+        `answers within ${harnessLoadTimeoutMs}ms`,
     );
-    lease.requestRecycle();
+    const orphan: OrphanedLoad = {
+      outboundId,
+      lateTimer: setTimeout(() => {
+        orphan.lateTimer = null;
+        deps.log?.(`harness still owes session/load for ${sessionId}`);
+        lease.requestRecycle();
+      }, harnessLoadTimeoutMs),
+    };
+    orphanedHarnessLoads.set(sessionId, orphan);
   }
 
   function settleOrphanedLoad(
@@ -801,10 +822,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     outboundId: number,
   ): boolean {
     if (sessionId === null) return false;
-    if (orphanedHarnessLoads.get(sessionId) !== outboundId) return false;
+    const orphan = orphanedHarnessLoads.get(sessionId);
+    if (orphan?.outboundId !== outboundId) return false;
+    if (orphan.lateTimer) clearTimeout(orphan.lateTimer);
     orphanedHarnessLoads.delete(sessionId);
     deps.log?.(`orphaned session/load for ${sessionId} answered late; dropped`);
-    if (orphanedHarnessLoads.size === 0) lease.cancelRecycleRequest();
+    if ([...orphanedHarnessLoads.values()].every((o) => o.lateTimer !== null))
+      lease.cancelRecycleRequest();
+    bootstrap.harnessLoadFreed(sessionId);
     return true;
   }
 
@@ -1050,6 +1075,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const t of rehydrateTimers.values()) clearTimeout(t);
     rehydrateTimers.clear();
     rehydrateLoadIds.clear();
+    for (const { lateTimer } of orphanedHarnessLoads.values())
+      if (lateTimer) clearTimeout(lateTimer);
     orphanedHarnessLoads.clear();
     harnessGone = teardownCause(reason);
     if (!shuttingDown)
@@ -1068,6 +1095,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     harnessActivity.clear();
     promptScheduler.clear();
     autonomousTurns.clear();
+    localCommandEchoes.clear();
     runTextBuffers.clear();
     openToolCalls.clear();
     generating.clear();
@@ -1565,12 +1593,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   ): void {
     const oldId = params.sessionId;
     const fresh = cut.kind === "start";
+    const ref = params.mode === "rewind" ? refFor(oldId) : randomUUID();
     requestFromHarness(
       fresh ? "session/new" : "session/fork",
       {
         ...(fresh ? {} : { sessionId: oldId }),
         cwd: ".",
-        mcpServers: [],
+        mcpServers: deps.sessionMcpServers?.(ref) ?? [],
         ...(!fresh && {
           _meta: {
             jetbrains: {
@@ -1612,6 +1641,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             rewritingSessions.delete(oldId);
             const meta = {
               ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
+              ref,
               ...(params.title !== undefined && { customTitle: params.title }),
             };
             deps.continuedFrom.copy(oldId, newId, !fresh);
@@ -1775,6 +1805,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     harnessColdSessions.add(sessionId);
     appliedSettings.delete(sessionId);
     autonomousTurns.end(sessionId);
+    localCommandEchoes.end(sessionId);
     transcript.forget(sessionId);
     openToolCalls.delete(sessionId);
     generating.delete(sessionId);
@@ -1938,6 +1969,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
     autonomousTurns.end(sessionId);
+    localCommandEchoes.end(sessionId);
     transcript.forget(sessionId);
     openToolCalls.delete(sessionId);
     generating.delete(sessionId);
@@ -2129,7 +2161,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                   sessionIsRunning,
                   deps.terminalSessionPins?.(),
                 )
-              : (frame as object);
+              : mapping.method === "session/new" &&
+                  deps.harnessForks !== undefined
+                ? withForks(frame, deps.harnessForks)
+                : (frame as object);
           const out = JSON.stringify({
             ...responseFrame,
             id: mapping.originalId,
@@ -2152,6 +2187,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (turnEnded) {
             openToolCalls.delete(sid);
             generating.delete(sid);
+            localCommandEchoes.end(sid);
             deps.sessionMetadata?.markStored(sid);
           }
           for (const follower of steered)
@@ -2219,7 +2255,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (
         orphanedHarnessLoads.has(sessionId) ||
         rehydratingSessions.has(sessionId) ||
-        isNoResponseFiller(frame)
+        isNoResponseFiller(frame) ||
+        localCommandEchoes.isEcho(sessionId, frame)
       ) {
         return;
       }
@@ -2521,7 +2558,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (
         (method === "session/prompt" || settingSessionId !== null) &&
         paramsSid &&
-        harnessColdSessions.has(paramsSid) &&
         orphanedHarnessLoads.has(paramsSid)
       ) {
         sendToChannel(
@@ -2533,7 +2569,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               error: {
                 code: -32000,
                 message:
-                  "the harness is not answering; it is being restarted — try again",
+                  "the harness is still loading this session; try again shortly",
               },
             }),
           ),
@@ -2566,9 +2602,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
       const platformMeta =
-        method === "session/new"
-          ? { ...(extractPlatformMeta(frame) ?? {}), ref: randomUUID() }
-          : null;
+        method === "session/new" ? newSessionMeta(frame) : null;
       const promptId =
         method === "session/prompt" ? platformString(frame, "promptId") : null;
       const retryOf =
@@ -2832,6 +2866,12 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   return parsed.success ? parsed.data : null;
 }
 
+function newSessionMeta(frame: unknown): PlatformSessionMeta & { ref: string } {
+  const { title, ...meta } = extractPlatformMeta(frame) ?? {};
+  const shortened = title === undefined ? null : titleOf(title);
+  return { ...meta, ...(shortened && { title: shortened }), ref: randomUUID() };
+}
+
 function platformString(frame: unknown, key: string): string | null {
   const value = stringAt(platformOf(frame), key);
   return value === "" ? null : value;
@@ -2848,7 +2888,11 @@ function promptTitle(prompt: unknown): string | null {
         : "",
     )
     .join(" ");
-  const text = separateRendererBlocks(joined).text.replace(/\s+/g, " ");
+  return titleOf(joined);
+}
+
+function titleOf(raw: string): string | null {
+  const text = separateRendererBlocks(raw).text.replace(/\s+/g, " ").trim();
   if (!text) return null;
   return text.length > TITLE_CHARS
     ? `${text.slice(0, TITLE_CHARS - 1)}…`
@@ -2970,7 +3014,18 @@ function injectPlatformMetaIntoList(
   return { ...frame, result: { ...result, sessions } };
 }
 
-function hasSessionCapability(
+function withForks(frame: unknown, forks: boolean): object {
+  const result = resultOf(frame);
+  if (result === null) return frame as object;
+  const meta = isNonNullObject(result._meta) ? result._meta : {};
+  const platform = isNonNullObject(meta.platform) ? meta.platform : {};
+  return {
+    ...(frame as object),
+    result: { ...result, _meta: { ...meta, platform: { ...platform, forks } } },
+  };
+}
+
+export function hasSessionCapability(
   frame: unknown,
   name: "close" | "resume" | "fork",
 ): boolean {

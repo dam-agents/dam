@@ -43,6 +43,7 @@ const kit: Pick<
   | "install"
   | "link"
   | "version"
+  | "channels"
 > = {
   id: "code-reviewer",
   catalog: "platform",
@@ -50,6 +51,7 @@ const kit: Pick<
   image: undefined,
   seed: undefined,
   install: undefined,
+  channels: [],
   connections: [
     { accepts: ["github-app", "github-pat"], required: true },
     { accepts: ["slack"], required: false },
@@ -65,7 +67,7 @@ const owned = [
 const complete: StarterKitSetupDraft = {
   name: " reviewer ",
   connectionIds: ["c-gh"],
-  slackChannelId: " C123 ",
+  slackChannelIds: ["C123"],
   skippedSchedules: [],
   scheduleOverrides: [],
 };
@@ -145,20 +147,10 @@ describe("buildStarterKitApplyInput", () => {
       kitId: "code-reviewer",
       name: "reviewer",
       connectionIds: ["c-gh", "c-llm"],
-      slackChannelId: "C123",
+      slackChannelIds: ["C123"],
       skipSchedules: ["benchmark"],
       scheduleOverrides: [],
     });
-  });
-
-  test("omits the Slack channel when blank", () => {
-    const input = buildStarterKitApplyInput(
-      kit,
-      { ...complete, slackChannelId: "" },
-      owned,
-      templates,
-    );
-    expect(input).not.toHaveProperty("slackChannelId");
   });
 
   // TEST_SCENARIO: a kit from a link is created from the commit its page showed, so the apply names the link and that commit; a catalog kit names no link at all.

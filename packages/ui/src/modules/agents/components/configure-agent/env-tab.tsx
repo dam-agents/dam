@@ -8,7 +8,7 @@ import {
   WarningAlt,
 } from "@carbon/icons-react";
 import { isProtectedAgentEnvName } from "api-server-api";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -19,9 +19,12 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
+import { ListGroup } from "@/components/ui/list-group";
 import { AddRow, LIST_ROW, ListSection } from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { cn } from "@/lib/utils";
 
 import { sanitizeEnvVars } from "../../../../components/env-vars-editor.js";
@@ -39,6 +42,7 @@ import {
 } from "../../../sandboxes/hooks/use-inherited-envs.js";
 import { useSetAgentEnv } from "../../api/mutations.js";
 import { useAgentConnections } from "../../api/queries.js";
+import { contributorOf, matchesEnvQuery } from "../../lib/env-contributors.js";
 
 const ENV_NAME_RULE =
   "Use capital letters, digits and _, and don't start with a digit.";
@@ -63,9 +67,11 @@ function shadowWarnings(
 export function EnvTab({
   agent,
   header,
+  panelHeading,
 }: {
   agent: AgentView;
   header: SectionHeaderSlot;
+  panelHeading?: string;
 }) {
   const updateAgent = useSetAgentEnv();
   const { data: apps = [] } = useAgentPageConnections(agent.id);
@@ -105,104 +111,172 @@ export function EnvTab({
       if (!next.delete(name)) next.add(name);
       return next;
     });
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [query, setQuery] = useState("");
+  // UNIT_BOUNDARY_DESCRIPTION: in a panel the variables are grouped by who contributes them — the Agent's own first, then one group per provider, connection or the platform — and each group folds to its name and count until a search opens them all, the way the network rules group.
+  const manualRows = envVars.map((v, i) => ({
+    name: v.name,
+    value: v.value,
+    node: (
+      <div key={`${v.name}:${i}`} className={cn(LIST_ROW, "text-xs")}>
+        <span className="font-mono font-semibold text-foreground truncate">
+          {v.name}
+        </span>
+        <span className="text-muted-foreground">=</span>
+        <span
+          className="font-mono text-muted-foreground truncate flex-1"
+          title={revealed.has(v.name) ? v.value : undefined}
+        >
+          {revealed.has(v.name) ? v.value : MASK}
+          {!revealed.has(v.name) && (
+            <span className="sr-only">Value hidden</span>
+          )}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${revealed.has(v.name) ? "Hide" : "Show"} value of ${v.name}`}
+          aria-pressed={revealed.has(v.name)}
+          tooltip={revealed.has(v.name) ? "Hide value" : "Show value"}
+          onClick={() => toggleReveal(v.name)}
+        >
+          {revealed.has(v.name) ? <ViewOff size={14} /> : <View size={14} />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Edit ${v.name}`}
+          tooltip="Edit"
+          disabled={saving}
+          onClick={() => setEditing(i)}
+        >
+          <RequestQuote size={14} />
+        </Button>
+        <RemoveButton
+          label={`Remove ${v.name}`}
+          tooltip="Remove"
+          onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
+          disabled={saving}
+        />
+      </div>
+    ),
+  }));
+
+  const needle = query.trim().toLowerCase();
+  const bySource = new Map<string, { title: string; rows: ReactNode[] }>();
+  for (const entry of shownInherited) {
+    const { key, title } = contributorOf(entry.source);
+    const group = bySource.get(key) ?? { title, rows: [] };
+    if (matchesEnvQuery(query, entry))
+      group.rows.push(
+        <InheritedEnvRow
+          key={`${entry.name}:${contributorOf(entry.source).key}`}
+          entry={entry}
+          showSource={false}
+        />,
+      );
+    bySource.set(key, group);
+  }
+  const groups = [
+    {
+      key: "own",
+      title: "Your variables",
+      rows: manualRows
+        .filter((r) => matchesEnvQuery(query, r))
+        .map((r) => r.node),
+    },
+    ...[...bySource.entries()].map(([key, group]) => ({ key, ...group })),
+  ].filter((group) => group.rows.length > 0);
+  const collapsible = needle === "";
+  const groupList = groups.map((group) => {
+    const open = !collapsible || (openGroups[group.key] ?? false);
+    return (
+      <ListGroup
+        key={group.key}
+        title={`${group.title} (${group.rows.length})`}
+        testId={`env-group-${group.key}`}
+        accessory={
+          collapsible && (
+            <DisclosureToggle
+              open={open}
+              onToggle={() =>
+                setOpenGroups((prev) => ({ ...prev, [group.key]: !open }))
+              }
+              className="ml-auto text-sm text-muted-foreground hover:text-foreground"
+            >
+              {open ? "Hide" : "Show"}
+            </DisclosureToggle>
+          )
+        }
+      >
+        {open && group.rows}
+      </ListGroup>
+    );
+  });
+
   return (
     <>
       {header()}
-      {warnings.length > 0 && (
-        <Callout
-          tone="warning"
-          size="sm"
-          className="mb-4 flex flex-col gap-1 text-xs"
-        >
-          <div className="flex items-center gap-2 text-warning">
-            <WarningAlt size={12} />
-            <span className="font-semibold">Shadowing inherited values</span>
-          </div>
-          <ul className="list-disc pl-5 text-muted-foreground">
-            {warnings.map((w) => (
-              <li key={w.envName}>
-                <span className="font-mono">{w.envName}</span> shadows the value
-                from {w.shadowedSource}
-              </li>
-            ))}
-          </ul>
-        </Callout>
+      {!panelHeading && <ShadowWarnings warnings={warnings} />}
+      {panelHeading && (
+        <SectionHeading
+          label={panelHeading}
+          count={envVars.length + shownInherited.length}
+          addLabel="Create variable"
+          onAdd={() => setEditing("new")}
+          addDisabled={saving}
+        />
       )}
 
+      {panelHeading && (
+        <Input
+          type="search"
+          size="sm"
+          aria-label="Search variables"
+          placeholder="Search variables"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="mb-3"
+        />
+      )}
+
+      {panelHeading && <ShadowWarnings warnings={warnings} />}
+
       <ListSection
-        isEmpty={envVars.length === 0}
+        className={panelHeading ? "mb-0" : undefined}
+        isEmpty={
+          panelHeading
+            ? envVars.length === 0 && shownInherited.length === 0
+            : envVars.length === 0
+        }
         empty="No variables yet. Create one for configuration the agent reads from its environment."
         onNew={() => setEditing("new")}
         newLabel="Create variable"
         newTestId="env-var-new"
         newDisabled={saving}
         addRow={
-          <AddRow
-            onClick={() => setEditing("new")}
-            disabled={saving}
-            testId="env-var-new"
-            className="text-xs"
-          >
-            <Add size={14} className="shrink-0" />
-            <span className="font-mono font-semibold text-foreground">
-              Create variable
-            </span>
-            <span className="flex-1 truncate text-muted-foreground">
-              Name and value the agent reads from its environment.
-            </span>
-          </AddRow>
+          panelHeading ? undefined : (
+            <AddRow
+              onClick={() => setEditing("new")}
+              disabled={saving}
+              testId="env-var-new"
+              className="text-xs"
+            >
+              <Add size={14} className="shrink-0" />
+              <span className="font-mono font-semibold text-foreground">
+                Create variable
+              </span>
+              <span className="flex-1 truncate text-muted-foreground">
+                Name and value the agent reads from its environment.
+              </span>
+            </AddRow>
+          )
         }
       >
-        {envVars.map((v, i) => (
-          <div key={`${v.name}:${i}`} className={cn(LIST_ROW, "text-xs")}>
-            <span className="font-mono font-semibold text-foreground truncate">
-              {v.name}
-            </span>
-            <span className="text-muted-foreground">=</span>
-            <span
-              className="font-mono text-muted-foreground truncate flex-1"
-              title={revealed.has(v.name) ? v.value : undefined}
-            >
-              {revealed.has(v.name) ? v.value : MASK}
-              {!revealed.has(v.name) && (
-                <span className="sr-only">Value hidden</span>
-              )}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`${revealed.has(v.name) ? "Hide" : "Show"} value of ${v.name}`}
-              aria-pressed={revealed.has(v.name)}
-              tooltip={revealed.has(v.name) ? "Hide value" : "Show value"}
-              onClick={() => toggleReveal(v.name)}
-            >
-              {revealed.has(v.name) ? (
-                <ViewOff size={14} />
-              ) : (
-                <View size={14} />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Edit ${v.name}`}
-              tooltip="Edit"
-              disabled={saving}
-              onClick={() => setEditing(i)}
-            >
-              <RequestQuote size={14} />
-            </Button>
-            <RemoveButton
-              label={`Remove ${v.name}`}
-              tooltip="Remove"
-              onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
-              disabled={saving}
-            />
-          </div>
-        ))}
+        {panelHeading ? groupList : manualRows.map((r) => r.node)}
       </ListSection>
 
-      {shownInherited.length > 0 && (
+      {!panelHeading && shownInherited.length > 0 && (
         <ListSection
           label="Inherited"
           description="Set by the platform and by this agent's providers and connections. Read-only."
@@ -316,21 +390,57 @@ function EnvVarModal({
   );
 }
 
-function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
-  const source = entry.source === "system" ? null : entry.source;
+function ShadowWarnings({
+  warnings,
+}: {
+  warnings: { envName: string; shadowedSource: string }[];
+}) {
+  if (warnings.length === 0) return null;
+  return (
+    <Callout
+      tone="warning"
+      size="sm"
+      className="mb-4 flex flex-col gap-1 text-xs"
+    >
+      <div className="flex items-center gap-2 text-warning">
+        <WarningAlt size={12} />
+        <span className="font-semibold">Shadowing inherited values</span>
+      </div>
+      <ul className="list-disc pl-5 text-muted-foreground">
+        {warnings.map((w) => (
+          <li key={w.envName}>
+            <span className="font-mono">{w.envName}</span> shadows the value
+            from {w.shadowedSource}
+          </li>
+        ))}
+      </ul>
+    </Callout>
+  );
+}
+
+function InheritedEnvRow({
+  entry,
+  showSource = true,
+}: {
+  entry: InheritedEnv;
+  showSource?: boolean;
+}) {
+  const source = showSource && entry.source !== "system" ? entry.source : null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-xs">
       <span className="flex min-w-0 items-center gap-3 max-sm:basis-full">
-        <span
-          className={cn("shrink-0", !source && "text-muted-foreground")}
-          title={
-            source
-              ? `From the ${source.kind} ${source.label}`
-              : "Platform-managed"
-          }
-        >
-          {source ? <Password size={12} /> : <Locked size={12} />}
-        </span>
+        {showSource && (
+          <span
+            className={cn("shrink-0", !source && "text-muted-foreground")}
+            title={
+              source
+                ? `From the ${source.kind} ${source.label}`
+                : "Platform-managed"
+            }
+          >
+            {source ? <Password size={12} /> : <Locked size={12} />}
+          </span>
+        )}
         <span className="font-mono font-semibold text-foreground truncate">
           {entry.name}
         </span>

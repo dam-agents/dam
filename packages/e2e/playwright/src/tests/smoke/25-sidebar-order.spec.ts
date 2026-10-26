@@ -171,7 +171,7 @@ test.afterAll(async () => {
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that joins the foot of the list, under the Agents the user has arranged. A click on an Agent opens and closes its Sessions and moves nothing.
+// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that joins the foot of the list, under the Agents the user has arranged. A click on a closed Agent opens its Sessions and its new-session page, a second click only closes the Sessions and stays on that page, and neither moves an Agent.
 test("drag reorders Agents, and a new Agent joins the foot", async ({
   page,
   browser,
@@ -230,17 +230,19 @@ test("drag reorders Agents, and a new Agent joins the foot", async ({
       .toEqual([third, second, first, LATE_AGENT]);
   });
 
-  await test.step("a click opens and closes an Agent's Sessions in place", async () => {
+  await test.step("a click opens an Agent's page and Sessions, a second only closes them", async () => {
     const row = agentRow(page, AGENTS[0]);
     const before = await shownAgents(page);
-    const expanded = await row.getAttribute("aria-expanded");
+    await expect(row).toHaveAttribute("aria-expanded", "false");
     await row.click();
-    await expect(row).toHaveAttribute(
-      "aria-expanded",
-      expanded === "true" ? "false" : "true",
+    await expect(row).toHaveAttribute("aria-expanded", "true");
+    const chat = new RegExp(
+      `/chat/${encodeURIComponent(agentIds.get(AGENTS[0])!)}$`,
     );
+    await expect(page).toHaveURL(chat);
     await row.click();
-    await expect(row).toHaveAttribute("aria-expanded", expanded ?? "false");
+    await expect(row).toHaveAttribute("aria-expanded", "false");
+    await expect(page).toHaveURL(chat);
     expect(await shownAgents(page)).toEqual(before);
   });
 });

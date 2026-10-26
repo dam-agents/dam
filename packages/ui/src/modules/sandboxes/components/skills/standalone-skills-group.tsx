@@ -22,6 +22,7 @@ export function StandaloneSkillsGroup({
   onOpenSkill,
   trackTargets,
   onUpload,
+  addInHeader = false,
 }: {
   skills: LocalSkill[];
   readOnly: boolean;
@@ -34,6 +35,7 @@ export function StandaloneSkillsGroup({
   onOpenSkill?: (skill: LocalSkill) => void;
   trackTargets: ReadonlyMap<string, TrackTarget>;
   onUpload?: () => void;
+  addInHeader?: boolean;
 }) {
   const published = latestPublishByName(publishes);
 
@@ -44,6 +46,7 @@ export function StandaloneSkillsGroup({
       onNew={onUpload}
       newLabel="Upload skill"
       newTestId="skills-upload"
+      addInHeader={addInHeader}
       isEmpty={skills.length === 0}
       empty="No skills created in this agent yet. Upload or drop a .md file here, or ask the agent to author one."
       addRow={

@@ -16,6 +16,7 @@ import {
   unique,
   smallint,
   check,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
@@ -561,6 +562,10 @@ export const connections = pgTable(
     inputs: jsonb("inputs").notNull(),
     auth: jsonb("auth").notNull(),
     contributions: jsonb("contributions").notNull(),
+    parentId: text("parent_id").references((): AnyPgColumn => connections.id, {
+      onDelete: "cascade",
+    }),
+    isParent: boolean("is_parent").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -570,9 +575,15 @@ export const connections = pgTable(
   },
   (table) => [
     index("connections_owner_idx").on(table.owner),
+    index("connections_parent_idx").on(table.parentId),
     uniqueIndex("connections_owner_name_unique_idx").on(
       table.owner,
       table.name,
+      table.isParent,
+    ),
+    check(
+      "connections_parent_has_no_parent",
+      sql`NOT (${table.isParent} AND ${table.parentId} IS NOT NULL)`,
     ),
   ],
 );
@@ -1001,8 +1012,6 @@ export const invocations = pgTable(
     templateId: text("template_id"),
     image: text("image"),
     connections: jsonb("connections").$type<string[]>().notNull().default([]),
-    cpu: text("cpu"),
-    memory: text("memory"),
     ttlMs: integer("ttl_ms"),
     resultSchema: jsonb("result_schema"),
     result: jsonb("result"),

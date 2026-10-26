@@ -13,6 +13,7 @@ import {
   writeTomlContents,
 } from "../../shared/toml-file.js";
 import { zodIssuesMessage } from "../../shared/error-message.js";
+import { normalizeServerUrl } from "../../shared/server-url.js";
 
 export type HostUrl = string;
 
@@ -88,6 +89,14 @@ function hostsOf(table: TomlTable): TomlTable {
   ) as TomlTable;
 }
 
+function hostsOtherThan(hosts: TomlTable, host: HostUrl): TomlTable {
+  return Object.fromEntries(
+    Object.entries(hosts).filter(
+      ([saved]) => normalizeServerUrl(saved) !== host,
+    ),
+  );
+}
+
 export function createTomlAuthStore(filePath: string): AuthStore {
   async function readForWrite(): Promise<
     Result<TomlTable, AuthStoreWriteError>
@@ -137,29 +146,47 @@ export function createTomlAuthStore(filePath: string): AuthStore {
         });
       }
       const out = new Map<HostUrl, HostAuth>();
-      for (const [host, entry] of Object.entries(parsed.data.hosts ?? {})) {
+      for (const [saved, entry] of Object.entries(parsed.data.hosts ?? {})) {
         const converted = toHostAuth(entry);
         if (!converted.ok) return converted;
-        out.set(host, converted.value);
+        const host = normalizeServerUrl(saved);
+        const other = out.get(host);
+        if (
+          other === undefined ||
+          other.expiresAt < converted.value.expiresAt
+        ) {
+          out.set(host, converted.value);
+        }
       }
       return ok(out);
     },
 
-    async write(host, value) {
+    async write(rawHost, value) {
       const raw = await readForWrite();
       if (!raw.ok) return raw;
+      const host = normalizeServerUrl(rawHost);
       return writeHosts({
         ...raw.value,
-        hosts: { ...hostsOf(raw.value), [host]: fromHostAuth(value) },
+        hosts: {
+          ...hostsOtherThan(hostsOf(raw.value), host),
+          [host]: fromHostAuth(value),
+        },
       });
     },
 
-    async remove(host) {
+    async remove(rawHost) {
       const raw = await readForWrite();
       if (!raw.ok) return raw;
       const existingHosts = hostsOf(raw.value);
-      if (!(host in existingHosts)) return ok(undefined);
-      const { [host]: _removed, ...remainingHosts } = existingHosts;
+      const remainingHosts = hostsOtherThan(
+        existingHosts,
+        normalizeServerUrl(rawHost),
+      );
+      if (
+        Object.keys(remainingHosts).length === Object.keys(existingHosts).length
+      ) {
+        return ok(undefined);
+      }
       return writeHosts({ ...raw.value, hosts: remainingHosts });
     },
   };

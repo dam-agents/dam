@@ -11,6 +11,8 @@ The harness ships in the default image every harness Template boots, built by `/
 | ------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Harness            | `bobshell` 2.0.6 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
 | Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)                                     | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform and agent instructions rules links and the terminal-session pin hook; runs before either surface starts |
+| Session ref        | [`bob-mcp-file.mjs`](rootfs/usr/local/lib/bob-mcp-file.mjs)                           | Preloaded into `bob acp` only: hides the file's platform MCP entry from Bob, so the per-session entry carrying the session ref is the one Bob uses (see [Session ref](#session-ref))                                 |
+| MCP startup        | [`bob-acp-patch.mjs`](rootfs/usr/local/lib/bob-acp-patch.mjs)                         | Preloaded into `bob acp` only: starts the servers of `mcp.json` in the background, so one that never gets ready cannot hold every chat session back (see [MCP startup](#mcp-startup))                                |
 | Storage            | `/home/agent`, on the machine's disk                                                  | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives restarts and hibernation                                                                                    |
 
 ## ACP
@@ -40,7 +42,45 @@ Consequences for the platform:
 
 The one ACP capability Bob does not implement is `session/set_model` — model selection goes through settings (below), modes through `session/set_mode`.
 
-MCP servers still arrive the platform way, as a runtime-channel contribution written to `~/.bob/settings/mcp.json` (see [`runtime-manifest.yaml`](rootfs/app/runtime-manifest.yaml)), not through `session/new.mcpServers`.
+MCP servers arrive the platform way, as a runtime-channel contribution written to `~/.bob/settings/mcp.json` (see [`runtime-manifest.yaml`](rootfs/app/runtime-manifest.yaml)).
+Bob also registers the servers a `session/new`, `session/load` or `session/resume` carries, into that session's own harness: `type: http` with `url` and `headers`; it rejects SSE and ACP transports.
+The platform uses that for one server, its own, so each chat session calls the platform tools under its own session ref (see [Session ref](#session-ref)).
+
+### Session ref
+
+The platform MCP server learns which session calls it from the `x-platform-session-ref` header.
+agent-runtime gives every session an opaque ref and adds the platform entry, with that header, to the `mcpServers` of each `session/new`, `session/load` and `session/resume` it sends.
+Bob registers it, but keeps one server per name and lets an entry of `~/.bob/settings/mcp.json` outrank one a session carried, and the mcp-entry driver writes the platform entry there under the same name for the terminal's `bob chat`.
+Left alone, the file's entry wins and every Bob chat session calls the platform tools anonymously: its platform sub-agent settings cannot apply, a `schedule_once` with `inSession: continue` is refused, and a sub-agent it spawns shows in every chat.
+
+So `harness-chat` always preloads [`bob-mcp-file.mjs`](rootfs/usr/local/lib/bob-mcp-file.mjs) into `bob acp`.
+It wraps Bob's reads of that one file to drop `platform-outbound`, and its writes (and renames or copies onto the file) to put the entry back from the file on disk, so a `bob mcp add` from a chat session never loses it.
+Bob's watch on the file is untouched, so a Connection's MCP entry written mid-process still reloads.
+`bob chat` runs without the preload and reads the whole file, so terminal sessions keep the platform tools and, like every harness's terminal, name no session.
+One visible side effect: Bob's own `read_file` tool, in a chat session, shows `mcp.json` without the platform entry, while `cat`, the terminal and SSH show the whole file.
+The preload takes its own `--import` out of `NODE_OPTIONS` only once the process reads the file, so a parent that merely starts the real Bob still hands it down, and it writes one line to stderr the first time it reads the file and finds nothing to hide, since the only other symptom would be anonymous platform calls.
+The Bob preloads share [`bob-preload-lib.mjs`](rootfs/usr/local/lib/bob-preload-lib.mjs): the path an fs call names, the wrapping of renames and copies, and the `NODE_OPTIONS` cleanup.
+
+The preload is written against Bob 2.0.6, which reads and writes the file through `node:fs` by that path.
+`mise run //packages/agents:check:bob-mcp-file` fails when the image pins another Bob than the preload names, so a bump runs `mise run //packages/agents:test:bob-session-ref` with `BOB_CLI` naming the new Bob: its control scenario fails when Bob starts preferring a session's own entry, which is the moment to delete the preload, its line in `harness-chat`, and these tests; its other scenarios fail when Bob stops reading the file the way the preload expects.
+`mise run //packages/agents:test:bob-mcp-file` checks the preload itself with a fake Bob and runs in CI.
+
+### MCP startup
+
+`bob acp` builds each session's harness as a non-interactive one, and Bob 2.0.6 ties the MCP startup mode to that flag.
+Left alone, a `session/new`, `session/load` or `session/resume` answers only after every server of `mcp.json` finished its first connect.
+A stdio server gets no timeout of its own: the per-server `timeout` reaches HTTP servers only, so one that never answers `initialize` holds each session for the MCP SDK's 60 s request timeout.
+Every new chat then waits a minute for its first answer, and a reopen, which also spawns Bob, ran past agent-runtime's load budget before Bob's manifest raised it, so a single broken entry, such as an `npx` server an agent added for itself, stopped every chat on the agent.
+`bob chat` starts the same servers in the background and is not affected.
+
+So `harness-chat` always preloads [`bob-acp-patch.mjs`](rootfs/usr/local/lib/bob-acp-patch.mjs) into `bob acp`.
+It edits Bob's bundle in memory as it loads, so the chat process starts the servers of `mcp.json` in the background too; their tools appear in a session once they connect.
+The servers a session carries, the platform entry among them, are registered after that startup and still awaited, so the platform tools are there on the first turn.
+A server that never gets ready still has its name in Bob's own log, `~/.bob/logs/shell/`, and nowhere in the chat.
+The patch takes its own `--import` out of `NODE_OPTIONS` once Bob's bundle loads, and writes one `bob-acp-patch: not applied` line to stderr when the bundle is not the Bob it targets or its edit no longer matches.
+
+`mise run //packages/agents:check:bob-acp-patch` fails when the image pins another Bob than the patch names, so a bump runs `mise run //packages/agents:test:bob-mcp-startup` with `BOB_CLI` naming the new Bob.
+Its control scenario fails when Bob starts the servers in the background on its own, which is the moment to delete the patch, its line in `harness-chat`, the test and the check; its other scenario fails when the patch stops working.
 
 ## Authentication
 
@@ -182,11 +222,11 @@ The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins th
 
 ## Harness scripts
 
-| Script                                                      | Behavior                                                                                                                                                                                                                      |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`harness-chat`](rootfs/usr/local/bin/harness-chat)         | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, then `exec`s `bob acp`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
-| [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI — with `--resume <task>` when the session has a pinned Bob task (see [Terminal sessions](#terminal-sessions)). |
-| [`bob-pin-session`](rootfs/usr/local/bin/bob-pin-session)   | The `SessionStart` hook that pins a terminal session's Bob task. A no-op outside a terminal session.                                                                                                                          |
+| Script                                                      | Behavior                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`harness-chat`](rootfs/usr/local/bin/harness-chat)         | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, preloads [`bob-mcp-file.mjs`](rootfs/usr/local/lib/bob-mcp-file.mjs) and [`bob-acp-patch.mjs`](rootfs/usr/local/lib/bob-acp-patch.mjs), then `exec`s `bob acp`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
+| [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI — with `--resume <task>` when the session has a pinned Bob task (see [Terminal sessions](#terminal-sessions)).                                                                                                                                         |
+| [`bob-pin-session`](rootfs/usr/local/bin/bob-pin-session)   | The `SessionStart` hook that pins a terminal session's Bob task. A no-op outside a terminal session.                                                                                                                                                                                                                                                                  |
 
 ## Session history
 

@@ -27,6 +27,10 @@ export type {
 
 export { repoSchema } from "./modules/repos/schemas.js";
 export type { Repo, ReposService } from "./modules/repos/types.js";
+export type {
+  SlackChannelChoiceView,
+  SlackChannelChoicesView,
+} from "./modules/channels/types.js";
 
 export {
   spawnInvocationRequestSchema,
@@ -107,6 +111,7 @@ export type {
   SessionBackgroundWork,
   TemplateUpdate,
   UpgradeAgentError,
+  ConnectSlackError,
   ConnectSlackResult,
   BindSlackChannelResult,
   BindTelegramChatResult,
@@ -763,6 +768,7 @@ export {
 export type { EgressProposalInput } from "./modules/approvals/schemas.js";
 export {
   acpNativeRowId,
+  answerableOption,
   permissionOptionKindsOf,
   recordedOptionsOf,
   recordedToolOf,

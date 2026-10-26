@@ -542,10 +542,12 @@ describe("auth-service.login on a moved server", () => {
       isTty: false,
     });
 
-    expect(r.ok && r.value.host).toBe(NEW);
-    expect(saved).toEqual([NEW]);
+    expect(r.ok && r.value.host).toBe("https://new.test");
+    expect(saved).toEqual(["https://new.test"]);
     const stored = await store.read();
-    expect(stored.ok && stored.value.get(NEW)?.refreshToken).toBe("rt");
+    expect(
+      stored.ok && stored.value.get("https://new.test")?.refreshToken,
+    ).toBe("rt");
   });
 });
 describe("auth-service.logout", () => {
@@ -642,9 +644,9 @@ describe("auth-service.status", () => {
     const r = await svc.status();
 
     expect(r.ok && r.value.activeHostValid).toBe(false);
-    expect(
-      r.ok && r.value.entries.find((e) => e.isActive)?.sessionExpired,
-    ).toBe(true);
+    expect(r.ok && r.value.entries.find((e) => e.isActive)?.session).toBe(
+      "expired",
+    );
   });
 
   /**
@@ -682,7 +684,7 @@ describe("auth-service.status", () => {
 
     expect(r.ok && r.value.activeHostValid).toBe(true);
     const active = r.ok ? r.value.entries.find((e) => e.isActive) : undefined;
-    expect(active?.sessionExpired).toBe(false);
+    expect(active?.session).toBe("valid");
     expect(active?.expiresAt).toEqual(refreshedUntil);
   });
 
@@ -714,9 +716,9 @@ describe("auth-service.status", () => {
 
     expect(r.ok && r.value.activeHostValid).toBe(false);
     expect(r.ok && r.value.uncheckedReason).toBe("ECONNRESET");
-    expect(
-      r.ok && r.value.entries.find((e) => e.isActive)?.sessionExpired,
-    ).toBe(false);
+    expect(r.ok && r.value.entries.find((e) => e.isActive)?.session).toBe(
+      "unchecked",
+    );
   });
 
   it("DAM_TOKEN set + active host → synthesizes an env-sourced entry", async () => {

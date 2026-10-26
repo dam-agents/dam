@@ -126,7 +126,7 @@ The cluster tasks then act on the Environment's k3s instead of their own host's:
 The public URLs are the Environment's `app`, `keycloak`, `share` and `content` endpoints, all on one port; the install stops, naming what to create, when one is missing.
 It runs no mesh, which the Environment's kernel cannot.
 Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`.
-Nothing in the create asks for nesting, so the Environment's machine nests only when the install that owns it sets `controller.agent.templateDefaults.nestedVirtualization` and lets its runners nest, on a node whose KVM allows it.
+Nothing in the create asks for nesting, so the Environment's machine nests only when the install that owns it sets `controller.agent.harnessTemplateDefaults.nestedVirtualization` and lets its runners nest, on a node whose KVM allows it.
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
 Beside the chart it installs two pieces the gate needs:
@@ -147,7 +147,8 @@ The section is in the page's section navigation only once the agent has an Envir
 While the agent has none, the Manage card of its General section links to the section, because the list of people can be set before the first Environment exists and is the list that first Environment inherits.
 What an Environment runs, its Startup Items and their output, is not shown there yet.
 The sidebar lists an agent's Environments under it, once it is expanded and only once it has one: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
-With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead, once the agent has one: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls, and a link to the section, where the list of people is edited.
+With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead, once the agent has one: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls.
+Who may open them is edited in that tab under the Unified right toolbar, where no configuration page holds the list, and a link to the section otherwise.
 The owner creates none there; the agent does.
 Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the list that decides whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up.
 

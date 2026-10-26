@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import type {
   ConnectionView,
   GitHubAppInstallationProbe,
@@ -11,24 +11,43 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { resolveConnectionRef } from "../domain/connection-ref.js";
 import {
+  resolveConnectionRef,
+  unresolvedConnectionRef,
+} from "../domain/connection-ref.js";
+import { credentialCheckSummary } from "../domain/credential-check.js";
+import {
+  childrenOf,
+  connectFromHint,
+  parentKindOf,
+  parentLabel,
+  parentOf,
+} from "../domain/github-parent.js";
+import {
+  FULL_ACCESS_CONFLICT,
   formatScope,
   hasScopeFlags,
+  reachLines,
   resolveAppScope,
   resolveUserTokenScope,
   type ScopeFlags,
+  type ScopeKind,
   scopeKindOf,
   scopeOf,
-  writePermissions,
+  scopeOfSent,
+  type SentScope,
 } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
+import { readBackFailure, readBackWarning } from "./connect-from.js";
 
 interface ScopeOpts extends ScopeFlags {
+  fullAccess?: boolean;
   clear?: boolean;
   server?: string;
   json?: boolean;
 }
+
+type Available = GitHubUserTokenProbe | GitHubAppInstallationProbe;
 
 export function buildScopeCommand(deps: {
   compatService: CompatService;
@@ -37,19 +56,20 @@ export function buildScopeCommand(deps: {
 }): Command {
   return new Command("scope")
     .description(
-      "Show or limit the repositories and permissions a GitHub connection reaches",
+      "Show or limit the account, repositories and permissions a GitHub connection reaches",
     )
     .argument(
       "<id-or-name>",
-      "Connection id ('conn-…') or unique name (from `dam connection list`)",
+      "Connection id ('conn-…') or unique name (from `dam connection list`); " +
+        "a GitHub sign-in or installation shows what it reaches and the connections made from it",
     )
     .option(
       "--account <login>",
-      "narrow a GitHub sign-in to the app's installation on this user or organization",
+      "limit a connection made from a GitHub sign-in to the app's installation on this user or organization",
     )
     .option(
       "--repositories <names>",
-      "limit to these repository names, space- or comma-separated; empty for every repository",
+      "limit to these repository names, space- or comma-separated; empty lifts the repository limit and keeps the others",
     )
     .option(
       "--repository-ids <ids>",
@@ -57,16 +77,23 @@ export function buildScopeCommand(deps: {
     )
     .option(
       "--permissions <pairs>",
-      "limit to these name:level permissions, e.g. contents:read issues:write; empty for every permission",
+      "limit to these name:level permissions, e.g. contents:read issues:write; empty lifts the permission limit and keeps the others",
     )
-    .option("--clear", "remove every limit: the connection reaches all it can")
+    .option(
+      "--full-access",
+      "remove every limit: the connection reaches every account, repository and permission " +
+        "its GitHub sign-in or installation reaches",
+    )
+    .addOption(new Option("--clear").hideHelp())
     .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
     .option(
       "--json",
-      "emit { id, name, kind, scope, available? } as JSON; available lists what can be chosen",
+      "emit { id, name, kind, scope, parentId?, available?, check? } as JSON; available lists what can be chosen, " +
+        "check is a GitHub App's credential check of the new scope, as in `dam connection test`; " +
+        "a GitHub sign-in or installation gives { id, name, kind, isParent: true, connections, available }",
     )
     .addHelpText(
       "after",
@@ -75,14 +102,32 @@ export function buildScopeCommand(deps: {
         "  dam connection scope github --account acme --repositories api,web \\\n" +
         "      --permissions contents:read,pull_requests:write\n" +
         "  dam connection scope my-github-app --repositories api\n" +
-        "  dam connection scope github --clear\n" +
-        "\nA flag you leave out keeps that part of the current scope.\n" +
-        "A GitHub sign-in reaches one account once it is narrowed;\n" +
+        "  dam connection scope github --full-access\n" +
+        "\nA flag you leave out keeps that part of the current scope; on a connection\n" +
+        "with full access, it leaves every one of that part.\n" +
+        "A connection made from a GitHub sign-in reaches one account once it is limited;\n" +
         "with the app installed on one account only, --account may be left out.\n" +
-        "The token never does more than the person who signed in can.\n",
+        "The token never does more than the person who signed in can.\n" +
+        "A GitHub App is checked again with a token minted for the new scope.\n" +
+        "\nFull access is an explicit choice, never the default: pass --full-access.\n" +
+        "A change that would leave a connection with no limit at all is refused.\n" +
+        "A GitHub sign-in or GitHub App installation is never granted, so it has no\n" +
+        "scope; limit the connections made from it, or make another with\n" +
+        "`dam connection connect --from <sign-in or installation>`.\n",
     )
     .action(async (ref: string, opts: ScopeOpts) => {
       const json = opts.json ?? false;
+      if (opts.clear) {
+        process.stderr.write(
+          "error: --clear is gone; a connection reaches everything only when you choose it:\n" +
+            "  pass --full-access for that, or the scope flags to limit the connection\n",
+        );
+        process.exit(EXIT_INVALID_INPUT);
+      }
+      if (opts.fullAccess && hasScopeFlags(opts)) {
+        process.stderr.write(`error: ${FULL_ACCESS_CONFLICT}\n`);
+        process.exit(EXIT_INVALID_INPUT);
+      }
       const host = await resolveActiveHost(deps, opts.server);
       const svc = deps.createConnectionService(host);
 
@@ -90,13 +135,10 @@ export function buildScopeCommand(deps: {
       exitOnServiceError(listed, host);
       const match = resolveConnectionRef(listed.value, ref);
       if (!match) {
-        process.stderr.write(`error: no connection with id or name '${ref}'\n`);
-        process.stderr.write(
-          "hint: run `dam connection list` to see ids and names\n",
-        );
+        process.stderr.write(unresolvedConnectionRef(listed.value, ref));
         process.exit(EXIT_INVALID_INPUT);
       }
-      const kind = scopeKindOf(match);
+      const kind = match.isParent ? parentKindOf(match) : scopeKindOf(match);
       if (!kind) {
         process.stderr.write(
           `error: '${match.name}' is not a GitHub sign-in or GitHub App connection; ` +
@@ -104,54 +146,71 @@ export function buildScopeCommand(deps: {
         );
         process.exit(EXIT_INVALID_INPUT);
       }
-      if (opts.clear && hasScopeFlags(opts)) {
-        process.stderr.write(
-          "error: --clear can't be combined with --account, --repositories, --repository-ids or --permissions\n",
-        );
-        process.exit(EXIT_INVALID_INPUT);
+      const changes = opts.fullAccess === true || hasScopeFlags(opts);
+
+      if (match.isParent) {
+        const children = childrenOf(listed.value, match.id);
+        if (changes) {
+          process.stderr.write(
+            `error: ${match.name} (${match.id}) is a ${parentLabel(match)}; ` +
+              "it is never granted, so it has no scope to change\n" +
+              connectionsLine(children) +
+              (children.length > 0
+                ? "hint: limit one of them with `dam connection scope <connection> …`, or make another:\n"
+                : "hint: make one:\n") +
+              connectFromHint(match),
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+        const available = await probe(svc, match.id, kind);
+        exitOnServiceError(available, host);
+        return showParent(match, kind, children, available.value, json);
       }
 
-      if (!opts.clear && !hasScopeFlags(opts)) {
-        const available: Result<
-          GitHubUserTokenProbe | GitHubAppInstallationProbe,
-          TransportError | AuthRequiredError
-        > =
-          kind === "github-user-token"
-            ? await svc.probeGitHubUserToken(match.id)
-            : await svc.probeGitHubApp(match.id);
+      if (!changes) {
+        const available = await probe(svc, match.id, kind);
         exitOnServiceError(available, host);
-        return show(match, kind, available.value, json);
+        return show(
+          match,
+          kind,
+          parentOf(listed.value, match),
+          available.value,
+          json,
+        );
       }
 
       const current = scopeOf(match);
+      let sent: SentScope;
       if (kind === "github-user-token") {
         let input: Omit<
           Parameters<ConnectionService["updateGitHubUserTokenScope"]>[0],
           "id"
-        > = {};
-        if (!opts.clear) {
-          const probe = await svc.probeGitHubUserToken(match.id);
-          exitOnServiceError(probe, host);
-          const resolved = resolveUserTokenScope(probe.value, current, opts);
+        > = { fullAccess: true };
+        if (!opts.fullAccess) {
+          const probed = await svc.probeGitHubUserToken(match.id);
+          exitOnServiceError(probed, host);
+          const resolved = resolveUserTokenScope(probed.value, current, opts);
           if (!resolved.ok) {
             process.stderr.write(`error: ${resolved.error}\n`);
             process.exit(EXIT_INVALID_INPUT);
           }
           input = resolved.value;
         }
+        sent = input;
         const res = await svc.updateGitHubUserTokenScope({
           id: match.id,
           ...input,
         });
         exitOnServiceError(res, host);
       } else {
-        const resolved = opts.clear
-          ? { ok: true as const, value: {} }
+        const resolved = opts.fullAccess
+          ? { ok: true as const, value: { fullAccess: true } }
           : resolveAppScope(current, opts);
         if (!resolved.ok) {
           process.stderr.write(`error: ${resolved.error}\n`);
           process.exit(EXIT_INVALID_INPUT);
         }
+        sent = resolved.value;
         const res = await svc.updateGitHubAppScope({
           id: match.id,
           ...resolved.value,
@@ -160,64 +219,109 @@ export function buildScopeCommand(deps: {
       }
 
       const after = await svc.getConnection(match.id);
-      const scope = after.ok && after.value ? scopeOf(after.value) : undefined;
+      const view = after.ok ? after.value : null;
+      const failure = readBackFailure(after);
+      if (failure) {
+        process.stderr.write(readBackWarning(match.name, failure, "changing"));
+      }
+      const scope = (view && scopeOf(view)) ?? scopeOfSent(sent);
+      const check = kind === "github-app" ? view?.check : undefined;
       if (json) {
         return writeStdoutAndExit(
-          `${JSON.stringify({ ok: true, id: match.id, name: match.name, kind, scope })}\n`,
+          `${JSON.stringify({ ok: true, id: match.id, name: match.name, kind, scope, ...(check ? { check } : {}) })}\n`,
           EXIT_SUCCESS,
         );
       }
+      if (scope.fullAccess) {
+        process.stderr.write(
+          `note: ${match.name} has full access: an agent you grant it to reaches everything ` +
+            "its sign-in or installation reaches\n",
+        );
+      }
       return writeStdoutAndExit(
-        `✓ Scoped ${match.name} (${match.id})${scope ? `: ${formatScope(scope)}` : ""}\n`,
+        `✓ Scoped ${match.name} (${match.id}): ${formatScope(scope, kind)}\n` +
+          (check ? `  check: ${credentialCheckSummary(check)}\n` : ""),
         EXIT_SUCCESS,
       );
     });
 }
 
+function probe(
+  svc: ConnectionService,
+  id: string,
+  kind: ScopeKind,
+): Promise<Result<Available, TransportError | AuthRequiredError>> {
+  return kind === "github-user-token"
+    ? svc.probeGitHubUserToken(id)
+    : svc.probeGitHubApp(id);
+}
+
+function connectionsLine(children: readonly ConnectionView[]): string {
+  return children.length > 0
+    ? `  Connections made from it: ${children.map((c) => `${c.name} (${c.id})`).join(", ")}\n`
+    : "  No connection is made from it yet.\n";
+}
+
 function show(
   view: ConnectionView,
-  kind: "github-user-token" | "github-app",
-  available: GitHubUserTokenProbe | GitHubAppInstallationProbe,
+  kind: ScopeKind,
+  parent: ConnectionView | undefined,
+  available: Available,
   json: boolean,
 ): Promise<never> {
   const scope = scopeOf(view);
   if (json) {
     return writeStdoutAndExit(
-      `${JSON.stringify({ id: view.id, name: view.name, kind, scope, available })}\n`,
+      `${JSON.stringify({ id: view.id, name: view.name, kind, scope, ...(view.parentId ? { parentId: view.parentId } : {}), available })}\n`,
       EXIT_SUCCESS,
     );
   }
-  const lines = [`${view.name} (${view.id}): ${formatScope(scope)}`, ""];
-  const installations =
-    "installations" in available
-      ? available.installations
-      : [{ accountLogin: undefined, ...available }];
-  if (installations.length === 0) {
-    lines.push("The app is not installed on any account this sign-in reaches.");
-  }
-  for (const inst of installations) {
-    lines.push(
-      inst.accountLogin !== undefined
-        ? `Account ${inst.accountLogin}:`
-        : "Installation:",
+  const lines = [
+    `${view.name} (${view.id}): ${formatScope(scope, kind)}`,
+    ...(parent
+      ? [`Made from the ${parentLabel(parent)} ${parent.name} (${parent.id}).`]
+      : []),
+    "",
+    ...reachLines(available),
+  ];
+  return writeStdoutAndExit(`${lines.join("\n")}\n`, EXIT_SUCCESS);
+}
+
+function showParent(
+  parent: ConnectionView,
+  kind: ScopeKind,
+  children: readonly ConnectionView[],
+  available: Available,
+  json: boolean,
+): Promise<never> {
+  if (json) {
+    const connections = children.map((c) => ({
+      id: c.id,
+      name: c.name,
+      scope: scopeOf(c),
+    }));
+    return writeStdoutAndExit(
+      `${JSON.stringify({ id: parent.id, name: parent.name, kind, isParent: true, connections, available })}\n`,
+      EXIT_SUCCESS,
     );
-    lines.push(
-      `  repositories: ${
-        inst.repositoriesUnavailable
-          ? `couldn't list (${inst.repositoriesUnavailable})`
-          : inst.repositories.map((r) => `${r.name} (${r.id})`).join(", ") +
-            (inst.repositoriesTruncated ? ", …" : "")
-      }`,
-    );
-    lines.push(
-      `  permissions: ${writePermissions(inst.permissions).replace(/ /g, ", ") || "none"}`,
-    );
   }
-  if (
-    "installationsTruncated" in available &&
-    available.installationsTruncated
-  ) {
-    lines.push("…and more installations than can be listed.");
-  }
+  const lines = [
+    `${parent.name} (${parent.id}): ${parentLabel(parent)}, never granted itself`,
+    ...(children.length > 0
+      ? [
+          "Connections made from it:",
+          ...children.map(
+            (c) =>
+              `  ${c.name} (${c.id}): ${formatScope(scopeOf(c), scopeKindOf(c) ?? kind)}`,
+          ),
+        ]
+      : ["No connection is made from it yet."]),
+    "",
+    "It reaches:",
+    ...reachLines(available),
+  ];
+  process.stderr.write(
+    `hint: make ${children.length > 0 ? "another" : "a"} connection from it:\n${connectFromHint(parent)}`,
+  );
   return writeStdoutAndExit(`${lines.join("\n")}\n`, EXIT_SUCCESS);
 }

@@ -139,6 +139,13 @@ export async function openInitializedConnection(
   };
 }
 
+export function sessionForksIn(result: unknown, agentForks: boolean): boolean {
+  const forks = (
+    result as { _meta?: { platform?: { forks?: unknown } } } | null
+  )?._meta?.platform?.forks;
+  return typeof forks === "boolean" ? forks : agentForks;
+}
+
 function forksSessionsIn(init: unknown): boolean {
   const caps = (
     init as {

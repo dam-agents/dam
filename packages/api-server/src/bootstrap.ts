@@ -284,6 +284,7 @@ import {
   createGitRefResolver,
   createKitUpstream,
   createKitUpdateNudge,
+  createTurnReplyReader,
   createKitUpdateReporter,
   createLinkedKits,
   createResolvedCatalogRepository,
@@ -490,8 +491,8 @@ export async function bootstrap() {
       db,
       logger: getLogger(),
       defaults: {
-        cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
-        memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+        cpuLimit: config.agentDefaultCpuLimit,
+        memoryLimit: config.agentDefaultMemoryLimit,
       },
     });
 
@@ -530,8 +531,8 @@ export async function bootstrap() {
           ? `s3://${config.objectStorageBucket}`
           : "",
         defaults: {
-          cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
-          memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+          cpuLimit: config.agentDefaultCpuLimit,
+          memoryLimit: config.agentDefaultMemoryLimit,
         },
         absorbedByVersion: config.appVersion,
         now: new Date(),
@@ -1169,6 +1170,8 @@ export async function bootstrap() {
   const { service: e2eService } = composeE2eModule({
     namespace: config.namespace,
     slack: fakeSlackGateway,
+    linkSlackUser: (slackUserId, keycloakSub, teamId) =>
+      upsertIdentityLink(db)("slack", slackUserId, keycloakSub, teamId),
     ...(fakeSlackGateway && fakeSlackRotation
       ? {
           slackInstalls: {
@@ -1347,6 +1350,7 @@ export async function bootstrap() {
     marks: createKitUpdateMarks(agentsRepo),
     listSessions: (agentId, signal) =>
       sessionWatch.listSessions(agentId, signal),
+    lastReply: createTurnReplyReader(config.namespace),
     send: (agentId, payload) =>
       runtimeDelivery.sessionMessages.send(agentId, payload),
   });
@@ -1725,6 +1729,7 @@ export async function bootstrap() {
         },
         pendingOAuthFlows: pendingSlackOAuthFlows,
         getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
+        ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
@@ -1786,6 +1791,7 @@ export async function bootstrap() {
           pendingOAuthFlows: pendingTelegramOAuthFlows,
           isTermsAccepted,
           ownerOf: (agentId) => agentsRepo.getOwner(agentId),
+          ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
           spendHold: channelSpendHold,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,

@@ -28,16 +28,13 @@ type Config struct {
 
 	AgentBase AgentBase
 
-	AgentTemplateDefaults AgentTemplateDefaults
+	HarnessTemplateDefaults HarnessTemplateDefaults
 
 	VM          VMConfig
 	KubeAPIAddr string
 
 	DefaultUserCPUBudget    resource.Quantity
 	DefaultUserMemoryBudget resource.Quantity
-
-	LegacyAgentCPULimit    resource.Quantity
-	LegacyAgentMemoryLimit resource.Quantity
 
 	HarnessServerURL       string
 	HarnessServerPort      int
@@ -208,7 +205,7 @@ func LoadFromEnv() (*Config, error) {
 	if err := decodeJSONEnv("AGENT_BASE", &cfg.AgentBase); err != nil {
 		return nil, err
 	}
-	if err := decodeJSONEnv("AGENT_TEMPLATE_DEFAULTS", &cfg.AgentTemplateDefaults); err != nil {
+	if err := decodeJSONEnv("AGENT_HARNESS_TEMPLATE_DEFAULTS", &cfg.HarnessTemplateDefaults); err != nil {
 		return nil, err
 	}
 	if err := decodeJSONEnv("AGENT_VM", &cfg.VM); err != nil {
@@ -237,6 +234,9 @@ func LoadFromEnv() (*Config, error) {
 	}
 	if cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "" {
 		return nil, fmt.Errorf("AGENT_VM: runner.image and runner.storage are required")
+	}
+	if cfg.VM.Runner.MachineMemoryMiB == 0 {
+		cfg.VM.Runner.MachineMemoryMiB = 2048
 	}
 	if cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero() {
 		return nil, fmt.Errorf("AGENT_VM: runner.resources.limits.memory is required — the runner admits machines against it, and without one it reads the node's allocatable")
@@ -291,8 +291,6 @@ func LoadFromEnv() (*Config, error) {
 	}{
 		{&cfg.DefaultUserCPUBudget, "DEFAULT_USER_CPU_BUDGET", "4"},
 		{&cfg.DefaultUserMemoryBudget, "DEFAULT_USER_MEMORY_BUDGET", "8Gi"},
-		{&cfg.LegacyAgentCPULimit, "AGENT_LEGACY_CPU_LIMIT", "1"},
-		{&cfg.LegacyAgentMemoryLimit, "AGENT_LEGACY_MEMORY_LIMIT", "2Gi"},
 	} {
 		v, err := resource.ParseQuantity(envOrDefault(q.key, q.def))
 		if err != nil {
@@ -319,14 +317,14 @@ func LoadFromEnv() (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.AgentTemplateDefaults.StorageSize == "" {
-		return fmt.Errorf("controller.agent.templateDefaults.storageSize is required")
+	if c.HarnessTemplateDefaults.StorageSize == "" {
+		return fmt.Errorf("controller.agent.harnessTemplateDefaults.storageSize is required")
 	}
-	if _, err := resource.ParseQuantity(c.AgentTemplateDefaults.StorageSize); err != nil {
-		return fmt.Errorf("controller.agent.templateDefaults.storageSize %q is not a valid K8s quantity: %w", c.AgentTemplateDefaults.StorageSize, err)
+	if _, err := resource.ParseQuantity(c.HarnessTemplateDefaults.StorageSize); err != nil {
+		return fmt.Errorf("controller.agent.harnessTemplateDefaults.storageSize %q is not a valid K8s quantity: %w", c.HarnessTemplateDefaults.StorageSize, err)
 	}
-	if r := c.AgentTemplateDefaults.Resources; r == nil || r.Limits.Cpu().IsZero() || r.Limits.Memory().IsZero() {
-		return fmt.Errorf("controller.agent.templateDefaults.resources.limits must set cpu and memory (the default agent size and the budget fallback for legacy specs)")
+	if r := c.HarnessTemplateDefaults.Resources; r == nil || r.Limits.Cpu().IsZero() || r.Limits.Memory().IsZero() {
+		return fmt.Errorf("controller.agent.harnessTemplateDefaults.resources.limits must set cpu and memory (the default agent size and the budget fallback for legacy specs)")
 	}
 	return nil
 }

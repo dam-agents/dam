@@ -1,12 +1,13 @@
 # Home feed
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
-The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, which takes its room from the page.
-In an Agent's chat with the JanUI and Unified right toolbar experiments both off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
+With either the JanUI or the Unified right toolbar experiment on, the bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, which takes its room from the page.
+With both experiments off there is no icon bar: the bell sits in the page's own top corner beside the Get started ring, and opens Approvals as a drawer over the page.
+In an Agent's chat with both experiments off, the bell sits in the chat's top bar and opens that same drawer.
 
 ## What Home reads
 
@@ -16,6 +17,7 @@ Three sources sit behind the feed, and they are deliberately different kinds of 
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
 A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and shows in the Agent's chat beside its held network requests.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
+Its card offers only the choices the harness offered for that request: a verdict reaches the harness as the option of its kind, and one with no such option would cancel the tool call, so a request with no "always" option, such as Bob's writes to its own settings, offers no "Always allow" or "Always deny".
 The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.
 Both use the same row id, so a client that engages later joins the row and it keeps the time the agent asked.
 The runtime reports the end of every permission request it held, watched or not: an answer settles the row on the verdict the harness actually got — the runtime accepts one answer, so it, not the path that wrote the row, decides what the record says — and a request it dropped unanswered — its ten-minute wait ran out, or the session was reset ([sessions](sessions.md)) — expires it.
@@ -45,7 +47,8 @@ It shows its owner the rows filed for that Agent as a **provisional** list, and 
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
-The sidebar's Agents section lists the Sessions of an Agent only while the user has it open: a click on the Agent opens or closes its list in place, and the Agent whose chat or configuration page is shown is open.
+The sidebar's Agents section lists the Sessions of an Agent only while the user has it open, and the Agent whose chat or configuration page is shown is open.
+A click on a closed Agent opens its list and its new-session page, so its files and artifacts show beside the chat; a click on an open Agent only closes its list and leaves the page where it is.
 An open Agent lists five Sessions, and each **View more** shows five more and moves keyboard focus to the first of them.
 When the new rows come later, from the Agent's own list after its last known Sessions or from a Retry of a failed page, focus moves once they show.
 An open Agent that is not the shown one lists the record's rows; the shown Agent lists its own list, and so does any Agent once the user asks for more.
@@ -126,27 +129,45 @@ The Pinned section reads a pinned Session from the record, and one the record do
 A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
 Opening an Agent's list wakes a hibernated Agent the same way, and a list left waiting on an Agent that stays asleep offers the same retry; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
-An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them and Documentation between the two while the Unified right toolbar experiment draws the bar, Changes is one only while the Agent has a git repository, and an Agent's chat also has an Environments tab while the `environments` feature is on and the Agent owns at least one Environment.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them, Changes is one only while the Agent has a git repository, and an Agent's chat also has an Environments tab while the `environments` feature is on and the Agent owns at least one Environment.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules, and a user with no Agent sees only the welcome introduction with Create agent and Start from a kit; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 
 ## The Unified right toolbar experiment
 
 The **Unified right toolbar experiment** is an [experimental feature](features.md) of its own, independent of JanUI: it changes the right-hand icon bar and the top bar of the panel that bar opens, and leaves the rest of the shell to whichever layout the page uses.
-With it off, the right edge keeps the classic icon column, a 49 px bar of 48 px buttons under a 48 px panel header.
+With it off under JanUI, the right edge keeps the classic icon column, a 49 px bar of 48 px buttons under a 48 px panel header.
 With it on, the bar is 56 px wide and draws one column of 40 px tiles 8 px from the top, spaced 14 px apart, with the same muted fill and hairline for the item the user is on, the same hover shade, the same 8 px squircles and the same accent focus outline as the sidebar rail.
-Its tiles carry no tooltips: the accessible name stays on the button and the open panel's header names the tab.
+Its tiles name their panel in a tooltip as they hover, the same words as the button's accessible name, and the open panel's header repeats it.
 A count badge keeps its place on the icon's top-right corner.
 The panel's top bar becomes a 40 px row 8 px below the top of the panel, with its rule under it, ending in a 40 px X tile that closes the panel and hands the keyboard back to the rail; the tile sits centered in a square cell in the top bar's top-right corner, from the panel's top down to the bar's rule and from the cell's border to the panel's edge, in a docked item's top bar too, and the panel's other controls keep their size.
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
-The tiled bar adds the Documentation tile, and it offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
-The left navigation drops its own Artifacts entry and Documentation link while the bar offers both.
-Both Documentation places open the install's documentation site, the chart's `links.docs` value, and an install that sets it empty shows neither.
-The rest of the rail's tab list and what each tab shows do not depend on this flag.
+The tiled bar offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
+The left navigation drops its own Artifacts entry while the bar offers it; Documentation, which no surface of the bar shows, stays there.
+That Documentation entry opens the install's documentation site, the chart's `links.docs` value, and an install that sets it empty shows no entry.
+With the flag on, an Agent's chat also holds the whole of its configuration, and the configuration page has no way in but People's own: four tiles carry it, Models, Services, Skills and Automations, plus Environments when the Agent owns one, each gathering the page's sections by subject rather than one per section.
+Models holds the model providers the Agent may use, one row each with a small icon, its name, its spend and the switch that decides whether the Agent may use it, and under them the Agent's spending and the settings its harness carries itself.
+Services holds the connections the Agent holds — one list, with no heading per provider — its network rules and its environment variables, all open at once with the count in the heading of the last two; each heading carries the one add button that belongs to it, and no section carries copy under it.
+The network rules fold by where each one came from — a connection's group and a preset's, not the reader's own rules or a kit's — and the preset's group is named after its preset, with the button that changes it; the environment variables fold by who contributes each one, the Agent's own first and then a group per provider, connection or the platform, and both kinds of group open on a search in their section.
+Automations holds the schedules and the channels, and it is offered whether or not the install has a messenger, so a schedule is still reachable where no Slack or Telegram exists.
+Chat forms is the exception: its settings are not offered at all under the experiment, and no tile exists for them.
+People is the other: it arrived after the panels did, so no panel renders it and its own address keeps the page that draws it.
+The Agent itself is managed from its row menu and renamed from the dialog that menu opens.
+A link, a menu item or a deep link to the configuration page opens the chat on the panel that holds that section, so a bookmark keeps working, and the page itself redirects instead of drawing — except People, which opens its own page as it always has.
+The panels carry the page's own sections, so the warning that stops a mistake — a variable that shadows an inherited one — is still read where the value is typed, and revoking a rule still asks before the gateway restarts.
+Who may open an Agent's Environments is edited in its panel, and the model switcher's "set as default" sets the default that the Models panel's provider rows sit beside.
+Not every surface moves: the section list's summaries and warnings, the page's row of ways to use the Agent (CLI, SSH, editor and messenger how-tos) and its "Restart now" bar have no panel, and the chat's empty page and the Processes panel already carry what they said.
+The experiment gives no panel to sleep after idle or to the image update; each stays where it already was, outside the panels.
+A recurring schedule created in that panel makes the browser add a line in the Agent's voice naming the shortest prompt that would have made that schedule — its cadence, its zone and its whole task, and nothing at all when the form set an advanced field or typed an rrule the presets only partly describe.
+That line is the browser's own: it is not part of the Session record, it is never sent to the Agent, and it goes when the conversation changes or the user writes again.
+A tool call of the platform's own MCP server that created or changed a schedule or a skill carries a card that opens its tab, and a schedule's card also expands that schedule.
+In the Skills panel the platform's own skills are one list, "Platform features", without feature badges, and every row opens the skill's info; the panel shows no counts line under its search.
+Both are part of the experiment, so with the flag off the chat shows neither.
+Apart from the configuration panels, the rail's tab list and what each tab shows do not depend on this flag.
 The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to.
 The chat's own bar goes with that column, so a wide window reads as JanUI's chat does and nothing repeats the Agent's name; it comes back there only while the status has a badge to show.
 A phone keeps that bar, carrying the navigation button, the running count and the buttons that open the panel, since the rail waits for a panel there.
 JanUI decides only the shell around it: whether the navigation is the tree or the classic sidebar, whether a page outside a chat has a bar above it, and whether a narrow screen's overlay starts at the left rail or at the screen's edge — a page with no rail there shows the overlay at its own edge, with the rail inside the panel.
-With the toolbar off, a chat without JanUI keeps its classic column of sections and opens the browser, changes, Get started and Approvals from its top bar.
+With the toolbar off, a chat without JanUI keeps its classic column of sections and opens the browser, changes and Get started from its top bar, and Approvals as a drawer over the chat.
 While JanUI is on as well, the navigation counts the bar this flag draws when it decides whether the page has room for the pane.
 With both experiments on, the page reads as one surface: the sidebar rail and the right rail draw the same tile.
 
