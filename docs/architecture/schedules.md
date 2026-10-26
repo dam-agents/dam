@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -83,6 +83,7 @@ What a single occurrence changes follows from it having **no next occurrence to 
   A one-time fire has no next one, so it writes *delivering* in the transaction that commits its event — a settle can never land before it — and reads it until its event settles on the machine (then *success*) or expires undelivered (then *missed*).
   A wake that fails after that commit leaves it *delivering* rather than recording the failure, since the event is already on its way; the fire's retry finds it committed and only pokes the Agent again.
   Both transitions come from runtime delivery's per-kind listeners, notified on the api-server once the settle or the drop has committed — no report from the machine, so a runtime too old to know the kind still resolves.
+  The fire's own outcome — the one the audit log, the activity feed and usage count — comes from that same transition, so no surface reports a one-time task as succeeded before the machine has it.
 - **Its delivery window is a day, not an hour.** The event expires 24 hours after the moment, and a queue job that runs late inside that window still fires — an Agent in error state or out of budget for a while still gets the task, where a recurring fire would rather skip to the next occurrence.
   One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately.
