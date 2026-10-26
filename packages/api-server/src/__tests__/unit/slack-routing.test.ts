@@ -4,6 +4,7 @@ import {
   matchRosterName,
   orderAmbientReaders,
   routeMention,
+  sessionTitleOf,
   stripLeadingMentions,
   type RosterEntry,
 } from "../../modules/channels/infrastructure/slack-routing.js";
@@ -47,6 +48,29 @@ describe("stripLeadingMentions", () => {
     expect(stripLeadingMentions("ask <@U123> about it")).toBe(
       "ask <@U123> about it",
     );
+  });
+});
+
+describe("sessionTitleOf", () => {
+  it("drops the leading mentions and keeps the message's first line", () => {
+    expect(sessionTitleOf("<@U123> who owns you?\nand what can you do?")).toBe(
+      "who owns you?",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A message whose attachment could not be read carries a
+   * note for the agent after a blank line. The title is what the person
+   * wrote, not the note.
+   */
+  it("leaves out a note appended after the message", () => {
+    expect(
+      sessionTitleOf("check this\n\nAn attachment on this message could not"),
+    ).toBe("check this");
+  });
+
+  it("is empty for a message with nothing but a mention", () => {
+    expect(sessionTitleOf("<@U123>")).toBe("");
   });
 });
 

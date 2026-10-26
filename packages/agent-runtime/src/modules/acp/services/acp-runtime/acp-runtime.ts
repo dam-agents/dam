@@ -2593,9 +2593,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
       const platformMeta =
-        method === "session/new"
-          ? { ...(extractPlatformMeta(frame) ?? {}), ref: randomUUID() }
-          : null;
+        method === "session/new" ? newSessionMeta(frame) : null;
       const promptId =
         method === "session/prompt" ? platformString(frame, "promptId") : null;
       const retryOf =
@@ -2859,6 +2857,12 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   return parsed.success ? parsed.data : null;
 }
 
+function newSessionMeta(frame: unknown): PlatformSessionMeta & { ref: string } {
+  const { title, ...meta } = extractPlatformMeta(frame) ?? {};
+  const shortened = title === undefined ? null : titleOf(title);
+  return { ...meta, ...(shortened && { title: shortened }), ref: randomUUID() };
+}
+
 function platformString(frame: unknown, key: string): string | null {
   const value = stringAt(platformOf(frame), key);
   return value === "" ? null : value;
@@ -2875,7 +2879,11 @@ function promptTitle(prompt: unknown): string | null {
         : "",
     )
     .join(" ");
-  const text = separateRendererBlocks(joined).text.replace(/\s+/g, " ");
+  return titleOf(joined);
+}
+
+function titleOf(raw: string): string | null {
+  const text = separateRendererBlocks(raw).text.replace(/\s+/g, " ").trim();
   if (!text) return null;
   return text.length > TITLE_CHARS
     ? `${text.slice(0, TITLE_CHARS - 1)}…`

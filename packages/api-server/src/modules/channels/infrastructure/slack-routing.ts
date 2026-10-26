@@ -24,6 +24,15 @@ export function stripLeadingMentions(text: string): string {
   return text.replace(LEADING_MENTIONS, "");
 }
 
+export function sessionTitleOf(text: string): string {
+  return (
+    stripLeadingMentions(text)
+      .split("\n")
+      .find((line) => line.trim() !== "")
+      ?.trim() ?? ""
+  );
+}
+
 function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
