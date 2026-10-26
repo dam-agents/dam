@@ -100,14 +100,14 @@ test("keeps the current layout while the experiment is off", async ({
   await expect(drawer).toHaveCount(0);
 });
 
-// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Artifacts, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar. Documentation is the left navigation's, and no surface of the bar shows it. On a phone the bar stays inside the viewport with the panel closed, whichever flag draws it.
+// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 68 px tiled bar with Artifacts, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar. Documentation is the left navigation's, and no surface of the bar shows it. On a phone the bar stays inside the viewport with the panel closed, whichever flag draws it.
 test("draws the right toolbar from its own flag", async ({ page }) => {
   await setNewLayout(false);
   await setUnifiedRightToolbar(true);
   await openHome(page);
   await expect(page.getByTestId("side-panel-tab-artifacts")).toBeVisible();
   expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
-    56,
+    68,
   );
 
   await setNewLayout(true);
@@ -304,7 +304,7 @@ test("gives the chat the tiled rail without JanUI", async ({ page }) => {
   await switchToolbar(true);
   const bar = page.getByTestId("side-panel-bar");
   await expect(bar).toBeVisible();
-  expect((await bar.boundingBox())?.width).toBe(56);
+  expect((await bar.boundingBox())?.width).toBe(68);
   await expect(page.getByTestId("chat-sections")).toHaveCount(0);
   await expect(page.getByTestId("chat-top-bar")).toBeHidden();
   await page.setViewportSize({ width: 390, height: 844 });

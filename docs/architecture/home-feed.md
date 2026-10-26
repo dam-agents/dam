@@ -136,9 +136,10 @@ Home becomes a dashboard of cards built from the record, the Agents list and the
 
 The **Unified right toolbar experiment** is an [experimental feature](features.md) of its own, independent of JanUI: it changes the right-hand icon bar and the top bar of the panel that bar opens, and leaves the rest of the shell to whichever layout the page uses.
 With it off under JanUI, the right edge keeps the classic icon column, a 49 px bar of 48 px buttons under a 48 px panel header.
-With it on, the bar is 56 px wide and draws one column of 40 px tiles 8 px from the top, spaced 14 px apart, with the same muted fill and hairline for the item the user is on, the same hover shade, the same 8 px squircles and the same accent focus outline as the sidebar rail.
-Its tiles name their panel in a tooltip as they hover, the same words as the button's accessible name, and the open panel's header repeats it.
-A count badge keeps its place on the icon's top-right corner.
+With it on, the bar is 68 px wide and draws one column of labelled tiles 8 px from the top, spaced 14 px apart, like the rail of a chat app: a 36 px icon square with the panel's name under it in small medium-weight text, wrapping to two lines when it must.
+The icon square of the item the user is on carries the sidebar rail's muted fill and hairline, and a hover gives it the same hover shade; it has the same 8 px squircles, and the tile the same accent focus outline.
+The label is the button's accessible name, so a tile shows no tooltip, unless its badge makes the accessible name longer than the label; the open panel's header repeats the name.
+A count badge sits on the icon square's top-right corner.
 The panel's top bar becomes a 40 px row 8 px below the top of the panel, with its rule under it, ending in a 40 px X tile that closes the panel and hands the keyboard back to the rail; the tile sits centered in a square cell in the top bar's top-right corner, from the panel's top down to the bar's rule and from the cell's border to the panel's edge, in a docked item's top bar too, and the panel's other controls keep their size.
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
 The tiled bar offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
