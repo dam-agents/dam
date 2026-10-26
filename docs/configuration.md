@@ -269,11 +269,18 @@ With a running systemd (or OpenRC) it runs the Lima provision scripts on the hos
 On a node kernel without IPv6 the mesh dataplane is installed IPv4-only.
 Claude Code on the web needs that wrapper and more: see the [`ccweb`](../.agents/skills/ccweb/SKILL.md) skill.
 Every agent runs as a microVM, so the sandbox must be able to open `/dev/kvm`: `cluster:install` fails in one that cannot.
-Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.harnessTemplateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
-Changing the ask restarts that agent's machine and no other; changing the template default restarts every agent's machine that does not ask itself, and while it is on no Agent can opt out.
-Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the chart value is the switch.
+Such an agent can open `/dev/kvm` only on an install with `virtualization.runner.nestedVirtualization=true`, and only when it asks for nesting.
+Every vm agent asks by default, an Environment included, through `controller.agent.harnessTemplateDefaults.nestedVirtualization`, which is `true` in the chart; an install that sets it `false` leaves the ask to each Agent's own `spec.backend.vm.nestedVirtualization: true`.
+Then that machine gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
+On an install whose runners may not nest, the template default reaches no machine and puts no condition on any agent; only an Agent that asks itself is told the install forbids it.
+Changing an Agent's own ask restarts that agent's machine and no other; changing the template default restarts every agent's machine that does not ask itself, and while it is on no Agent can opt out.
+Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the runner value is the switch.
 It is off by default because a nesting guest reaches the host kernel's nested-virtualization code.
-The api-server offers no way to ask, so only someone who can edit Agent resources can turn it on for one agent, and only the install for all of them.
+The api-server offers no way to ask, so an install that turns the template default off leaves nesting to someone who can edit Agent resources.
+
+**Upgrading to the template default that asks:** the template default used to be `false`.
+On an install that sets `virtualization.runner.nestedVirtualization=true` and not the template default, the first rollout of a chart with the new default restarts every vm agent's machine once, each losing the turn it was running; an install that wants to keep the old behavior sets `controller.agent.harnessTemplateDefaults.nestedVirtualization=false`.
+An install whose runners may not nest sees no change.
 
 ### Agents (VM runner)
 

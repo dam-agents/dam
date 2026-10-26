@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-24
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -127,8 +127,8 @@ An Environment holds one install, so it is always the default install: a `--name
 The public URLs are the Environment's `app`, `keycloak`, `share` and `content` endpoints, all on one port; the install stops, naming what to create, when one is missing.
 It runs no mesh, which the Environment's kernel cannot.
 Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`.
-Nothing in the create asks for nesting, so the Environment's machine nests only when the install that owns it sets `controller.agent.harnessTemplateDefaults.nestedVirtualization` and lets its runners nest, on a node whose KVM allows it.
-An Environment without it refuses the install and names that.
+Every vm agent asks for nesting by default (`controller.agent.harnessTemplateDefaults.nestedVirtualization`), an Environment included, so the Environment's machine nests when the install that owns it lets its runners nest (`virtualization.runner.nestedVirtualization`), on a node whose KVM allows it.
+An Environment without it refuses the install and names that switch.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
 Beside the chart it installs two pieces the gate needs:
 

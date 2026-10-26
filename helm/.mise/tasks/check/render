@@ -227,6 +227,20 @@ jq -e -s '
 seccomp=$(helm template platform . "${COMMON[@]}" --set virtualization.runner.seccomp=false)
 grep '\\"seccomp\\":\\"off\\"' <<<"$seccomp" >/dev/null ||
   { echo "a render with seccomp=false did not give the runners seccomp off" >&2; exit 1; }
+# Every vm agent asks to nest by default, and the runners' switch stays off, so
+# an install that sets nothing asks without being granted it. An install that
+# turns the ask off keeps it off: the controller decodes its false, not the
+# chart's true.
+nesting() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/controller/deployment.yaml | yq -o=json |
+    jq -s '[.[] | select(.kind == "Deployment") | .spec.template.spec.containers[].env // [] | .[]]
+      | {ask: (map(select(.name == "AGENT_HARNESS_TEMPLATE_DEFAULTS")) | .[0].value | fromjson | .nestedVirtualization),
+         runner: (map(select(.name == "AGENT_VM")) | .[0].value | fromjson | .runner.nestedVirtualization)}' -c
+}
+[ "$(nesting)" = '{"ask":true,"runner":false}' ] ||
+  { echo "a default render does not ask every vm agent to nest with the runners' switch off: $(nesting)" >&2; exit 1; }
+[ "$(nesting --set controller.agent.harnessTemplateDefaults.nestedVirtualization=false)" = '{"ask":false,"runner":false}' ] ||
+  { echo "a render that turns the nesting ask off still asks" >&2; exit 1; }
 # The Mac's host runner runs outside the cluster on images the install stages
 # for it, so it needs no node cache, and none is rendered for it.
 # A host runner also names no cluster DNS pods: it runs no cache service, so the

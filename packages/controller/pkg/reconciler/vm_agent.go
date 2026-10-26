@@ -934,12 +934,16 @@ const runnerOOMEpisode = 10 * time.Minute
 
 // UNIT_BOUNDARY_DESCRIPTION: the nesting ask is the one thing the Agent's Backend still says. The schema keeps that field until the Agents move to Postgres, so the machine reads the ask from where an existing Agent carries it; nothing else in the controller reads the field.
 func wantsNesting(agent *apiv1.Agent, defaults config.HarnessTemplateDefaults) bool {
-	return defaults.NestedVirtualization || (agent.Spec.Backend != nil && agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization)
+	return defaults.NestedVirtualization || asksToNest(agent)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: tells an owner whose agent asks for nesting, itself or through controller.agent.harnessTemplateDefaults.nestedVirtualization, whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it.
+func asksToNest(agent *apiv1.Agent) bool {
+	return agent.Spec.Backend != nil && agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: tells an owner whose agent asks for nesting, itself or through controller.agent.harnessTemplateDefaults.nestedVirtualization, whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it. The template default asks on every install, its chart default included, so on an install whose runners may not nest that ask alone says nothing: only an Agent's own ask is told the install forbids it.
 func nestingCondition(s *apiv1.AgentStatus, agent *apiv1.Agent, st vmrunner.MachineStatus, defaults config.HarnessTemplateDefaults, installAllows bool) {
-	if !wantsNesting(agent, defaults) {
+	if !wantsNesting(agent, defaults) || (!installAllows && !asksToNest(agent)) {
 		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionNestedVirtualization)
 		return
 	}

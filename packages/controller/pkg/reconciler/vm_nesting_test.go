@@ -99,13 +99,18 @@ func TestTheTemplateDefaultAsksToNestForAnAgentThatDoesNotSetIt(t *testing.T) {
 	assert.Equal(t, "Enabled", cond["reason"])
 }
 
-// TEST_SCENARIO: the template default is only an ask, so on an install whose runners may not nest it reaches no machine, and every vm agent is told why instead.
-func TestTheTemplateDefaultOnAnInstallThatForbidsNestingIsToldWhy(t *testing.T) {
+// TEST_SCENARIO: the template default is only an ask, and the chart sets it on every install, so on an install whose runners may not nest it reaches no machine and puts no condition on any vm agent: that install looks as it did before the chart asked. An Agent that asks itself there is still told why.
+func TestTheTemplateDefaultOnAnInstallThatForbidsNestingChangesNothing(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
 	r.config.HarnessTemplateDefaults.NestedVirtualization = true
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
+	assert.False(t, node.spec("my-agent").NestedVirtualization)
+	assert.Nil(t, readNestingCondition(t, r, "my-agent"))
+
+	agent.Spec.Backend = &apiv1.Backend{Type: "vm", VM: &apiv1.VMBackend{NestedVirtualization: true}}
+	require.NoError(t, r.Reconcile(context.Background(), agent))
 	assert.False(t, node.spec("my-agent").NestedVirtualization)
 	cond := readNestingCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
