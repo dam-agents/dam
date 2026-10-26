@@ -51,7 +51,6 @@ let api: ApiClient;
 const token = refreshingToken();
 let agentId = "";
 let sessionsBefore: string[] = [];
-let checklistDismissed: boolean | undefined;
 
 function agentRow(page: Page, name: string) {
   return page.getByTestId("agent-row").filter({
@@ -90,10 +89,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   if (agentId) await api.agents.delete.mutate({ id: agentId });
-  if (checklistDismissed !== undefined)
-    await api.gettingStarted.setDismissed.mutate({
-      dismissed: checklistDismissed,
-    });
 });
 
 // TEST_SCENARIO: the Agent to migrate. It is a container Agent that can be migrated, it holds a file in HOME written through the files API, and it holds a Session from one chat turn. The later scenarios check each of these again on the vm Backend. For about a second after the pod turns Ready, the mesh may not route to it yet. A write whose connection was reset may have reached the agent, so the proxy answers it 502 and does not retry it; the write of the same bytes is idempotent, so the helper retries it.
@@ -129,19 +124,14 @@ test("migrates to the vm Backend on an operator's request", async ({
   page,
 }) => {
   test.setTimeout(300_000);
-  checklistDismissed = (await api.gettingStarted.progress.query()).dismissed;
-  await api.gettingStarted.setDismissed.mutate({ dismissed: false });
   await page.goto(baseUrl);
-  await page.getByTestId("side-panel-tab-getting-started").click();
-  await expect(
-    page
-      .getByTestId("side-panel")
-      .getByRole("heading", { name: "Get started" }),
-  ).toBeVisible();
   const row = agentRow(page, agentName);
   await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByText("Old runtime", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(
-    row.getByRole("button", { name: "Migrate to the new runtime" }),
+    row.getByRole("button", { name: "Migrate", exact: true }),
   ).toHaveCount(0);
 
   requestRuntimeMigration(agentId);

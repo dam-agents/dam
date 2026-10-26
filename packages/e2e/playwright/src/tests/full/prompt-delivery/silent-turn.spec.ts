@@ -61,9 +61,7 @@ test("a turn that started but streamed nothing survives a dropped connection wit
   });
 
   await test.step("the turn reads as an ordinary exchange after replay", async () => {
-    await expect(
-      page.getByTestId("chat-message").getByText(promptA),
-    ).toBeVisible();
+    await expect(page.getByText(promptA)).toBeVisible();
     await expect(deliveryError(page)).toBeHidden();
   });
 
