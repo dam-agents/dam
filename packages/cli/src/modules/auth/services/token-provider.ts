@@ -17,6 +17,7 @@ export interface TokenProvider {
 export interface SavedTokenProvider {
   getSavedAccessToken(
     host: HostUrl,
+    opts?: { keepExpired?: boolean },
   ): Promise<Result<string, TokenProviderError>>;
 }
 
@@ -46,6 +47,7 @@ export function createTokenProvider(
 
   const getSavedAccessToken: SavedTokenProvider["getSavedAccessToken"] = async (
     host,
+    opts,
   ) => {
     const stored = await deps.authStore.read();
     if (!stored.ok) return stored;
@@ -76,8 +78,10 @@ export function createTokenProvider(
     const body = refreshResult.value;
     if (body.kind === "error") {
       if (body.error === "invalid_grant") {
-        const removed = await deps.authStore.remove(host);
-        if (!removed.ok) return removed;
+        if (opts?.keepExpired !== true) {
+          const removed = await deps.authStore.remove(host);
+          if (!removed.ok) return removed;
+        }
         return err({ kind: "session-expired", host });
       }
       return err({

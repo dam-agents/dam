@@ -105,4 +105,45 @@ describe("TOML AuthStore", () => {
     const removeAgain = await store.remove(HOST_A);
     expect(removeAgain.ok).toBe(true);
   });
+  /** TEST_SCENARIO: an older CLI saved a server with a trailing slash. Reading names it without the slash, and a new sign-in to the same server replaces that entry instead of saving a second one beside it. */
+  it("keys a server saved with a trailing slash without it, and replaces it on write", async () => {
+    await writeFile(
+      authPath,
+      [
+        '[hosts."https://dev.example.test/"]',
+        'issuer = "http://keycloak.localhost:4444/realms/platform"',
+        'username = "old"',
+        'sub = "sub-A"',
+        'cli_client_id = "platform-cli"',
+        'access_token = "a"',
+        'refresh_token = "r"',
+        'expires_at = "2026-05-06T15:34:01.000Z"',
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const store = createTomlAuthStore(authPath);
+
+    const before = await store.read();
+    expect(before.ok && [...before.value.keys()]).toEqual([
+      "https://dev.example.test",
+    ]);
+
+    await store.write(
+      "https://dev.example.test",
+      sampleAuth({ username: "new" }),
+    );
+
+    const raw = await readFile(authPath, "utf-8");
+    expect(raw).not.toContain('"https://dev.example.test/"');
+    const after = await store.read();
+    expect(after.ok && after.value.size).toBe(1);
+    expect(
+      after.ok && after.value.get("https://dev.example.test")?.username,
+    ).toBe("new");
+
+    await store.remove("https://dev.example.test/");
+    const removed = await store.read();
+    expect(removed.ok && removed.value.size).toBe(0);
+  });
 });

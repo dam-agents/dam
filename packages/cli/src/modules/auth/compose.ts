@@ -3,6 +3,7 @@ import type { CompatService, ConfigService } from "../cli/index.js";
 import { buildLoginCommand } from "./commands/login.js";
 import { buildLogoutCommand } from "./commands/logout.js";
 import { buildStatusCommand } from "./commands/status.js";
+import { buildSwitchCommand } from "./commands/switch.js";
 import { buildTokenCreateCommand } from "./commands/token-create.js";
 import { buildTokenListCommand } from "./commands/token-list.js";
 import { buildTokenRevokeCommand } from "./commands/token-revoke.js";
@@ -121,6 +122,7 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
     }),
   );
   authParent.addCommand(buildStatusCommand({ authService }));
+  authParent.addCommand(buildSwitchCommand({ authService }));
 
   const buildTrpc: (host: string) => TrpcClient = (host) =>
     createTrpcClient({ host, tokenProvider });
