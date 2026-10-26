@@ -18,7 +18,7 @@ export function SessionRepositoryBadges({
   return (
     <span
       className="flex min-w-0 flex-wrap items-center gap-1"
-      aria-label="Repositories this session touched"
+      aria-label="Repositories this session has pull requests in"
     >
       {shown.map((repository, index) => (
         <Badge

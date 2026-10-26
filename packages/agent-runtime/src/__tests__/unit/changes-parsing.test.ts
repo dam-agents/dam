@@ -331,9 +331,7 @@ describe("git trace", () => {
     expect(commandOf(startedBy("pull", "merge"))).toBeNull();
     expect(commandOf(startedBy("pull", "rebase"))).toBeNull();
     expect(commandOf(trace("merge", { params }))?.name).toBe("merge");
-    expect(commandOf(startedBy("_run_dashed_", "rebase"))?.name).toBe(
-      "rebase",
-    );
+    expect(commandOf(startedBy("_run_dashed_", "rebase"))?.name).toBe("rebase");
   });
 
   /**
