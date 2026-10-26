@@ -65,7 +65,7 @@ export function ProviderRow({
         onOpen && "hover:bg-muted/50",
       )}
     >
-      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included; the spend pill and the harness icons sit above the button, so they keep their own dialog and tooltips. */}
+      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included; the spend pill sits above the button and keeps its own dialog, and the harness icons sit above it for their tooltips and open the provider too. */}
       {onOpen && (
         <button
           type="button"
@@ -79,6 +79,7 @@ export function ProviderRow({
         templateId={templateId}
         name={name}
         harnesses={harnesses}
+        onOpen={onOpen}
       />
       {balance}
       {spend && <span className="relative flex">{spend}</span>}
@@ -103,11 +104,13 @@ export function ProviderHead({
   templateId,
   name,
   harnesses,
+  onOpen,
 }: {
   type: ProviderPresetType;
   templateId?: string | undefined;
   name: string;
   harnesses: readonly string[] | undefined;
+  onOpen?: (() => void) | undefined;
 }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -116,12 +119,17 @@ export function ProviderHead({
         {name}
       </span>
       {harnesses && (
-        <HarnessIcons
-          harnesses={harnesses}
-          size="xs"
-          tooltip={(harness) => `Supports ${harness}`}
-          className="relative shrink-0 gap-1 text-muted-foreground opacity-70"
-        />
+        <span
+          onClick={onOpen}
+          className={cn("relative flex shrink-0", onOpen && "cursor-pointer")}
+        >
+          <HarnessIcons
+            harnesses={harnesses}
+            size="xs"
+            tooltip={(harness) => `Supports ${harness}`}
+            className="gap-1 text-muted-foreground opacity-70"
+          />
+        </span>
       )}
     </span>
   );
