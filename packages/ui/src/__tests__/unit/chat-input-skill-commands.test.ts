@@ -38,7 +38,9 @@ const { useStore } = await import("../../store.js");
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
-let onSend: ReturnType<typeof vi.fn>;
+let onSend: ReturnType<
+  typeof vi.fn<(text: string, attachments?: unknown[]) => void>
+>;
 let frames: FrameRequestCallback[] = [];
 
 function flushFrames() {
@@ -123,7 +125,7 @@ beforeEach(() => {
     messages: [],
     reportedCommands: null,
   });
-  onSend = vi.fn();
+  onSend = vi.fn<(text: string, attachments?: unknown[]) => void>();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
