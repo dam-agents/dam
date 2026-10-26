@@ -133,7 +133,7 @@ function makeDeps(opts?: {
               ...ONCE_SCHEDULE,
               status: { lastRun: WAKE_STAMP, lastResult: opts.onceResult },
             }
-          : ONCE_SCHEDULE;
+          : { ...ONCE_SCHEDULE };
       return id === SCHEDULE_ID
         ? makeSchedule(
             opts?.storedNextRun,
@@ -311,6 +311,35 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
         SCHEDULE_ID,
         new Date("2026-06-12T10:30:00Z"),
       );
+      expect(seen).toEqual(["codex"]);
+    } finally {
+      sub.unsubscribe();
+    }
+  });
+
+  /** TEST_SCENARIO: a one-time fire's outcome is emitted when its event sets
+   * on the machine, long after the fire returned. Usage must still count it
+   * under the harness the fire ran on, not the agent's own, which a remembered
+   * pair can make different. */
+  it("reports the harness the fire ran on for a one-time fire's delivery", async () => {
+    const seen: (string | undefined)[] = [];
+    const sub = events$()
+      .pipe(ofType<ScheduleFired>(EventType.ScheduleFired))
+      .subscribe((event) => seen.push(event.harness));
+    try {
+      const { runner } = makeDeps({
+        once: true,
+        firePair: async () => ({
+          harness: "codex",
+          provider: null,
+          model: null,
+        }),
+      });
+      await runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:30:00Z"),
+      );
+      await runner.recordDelivery(SCHEDULE_ID, "settled");
       expect(seen).toEqual(["codex"]);
     } finally {
       sub.unsubscribe();
