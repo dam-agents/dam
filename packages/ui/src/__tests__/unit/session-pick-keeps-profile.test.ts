@@ -2,7 +2,10 @@
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
-import { primaryProfileOf } from "../../modules/sessions/lib/subagent-choice.js";
+import {
+  primaryProfileOf,
+  subagentSaveReferences,
+} from "../../modules/sessions/lib/subagent-choice.js";
 
 const profile = (
   overrides: Partial<ProfileWithUsage> = {},
@@ -52,5 +55,67 @@ describe("the profile a session's pair still is", () => {
         [profile()],
       ),
     ).toBe(null);
+  });
+
+  /** TEST_SCENARIO: a slot pick whose native model differs from the primary
+   * profile's own still leaves the primary that profile, since the native
+   * subagent's keys belong to the choice, not to the primary. */
+  it("ignores the native subagent keys when matching", () => {
+    expect(
+      primaryProfileOf(
+        {
+          harness: "codex",
+          provider: "conn-1",
+          model: "openai/gpt-6-luna",
+          settings: {
+            effort: "high",
+            subagentModel: "anthropic/claude-sonnet-5-5",
+            subagentEffort: "low",
+          },
+        },
+        [profile()],
+      )?.id,
+    ).toBe("p1");
+  });
+});
+
+describe("the references a subagent save writes", () => {
+  const pair: SessionPair = {
+    harness: "codex",
+    provider: "conn-1",
+    model: "openai/gpt-6-luna",
+    settings: { effort: "high" },
+  };
+  const slot = profile({
+    id: "slot-1",
+    name: "Fast review",
+    harness: "claude-code",
+    model: "anthropic/claude-sonnet-5-5",
+  });
+
+  /** TEST_SCENARIO: the attach-then-save and slot-pick paths keep the primary's
+   * reference beside the slot's (QA D2). */
+  it("keeps the primary's reference beside the slot's", () => {
+    expect(
+      subagentSaveReferences({ pair, slot, profiles: [profile(), slot] }),
+    ).toEqual({ platformSubagentProfileId: "slot-1", profileId: "p1" });
+  });
+
+  /** TEST_SCENARIO: "Let the agent pick" clears the slot and keeps the primary. */
+  it("clears the slot and keeps the primary when the agent picks", () => {
+    expect(
+      subagentSaveReferences({ pair, slot: null, profiles: [profile()] }),
+    ).toEqual({ platformSubagentProfileId: null, profileId: "p1" });
+  });
+
+  /** TEST_SCENARIO: a primary that is nobody's profile stays custom. */
+  it("writes no primary reference for a custom primary", () => {
+    expect(
+      subagentSaveReferences({
+        pair: { ...pair, model: "openai/gpt-6-other" },
+        slot,
+        profiles: [profile(), slot],
+      }),
+    ).toEqual({ platformSubagentProfileId: "slot-1", profileId: null });
   });
 });

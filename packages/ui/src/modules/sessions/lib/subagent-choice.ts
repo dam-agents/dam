@@ -1,5 +1,6 @@
 import {
   type HarnessCapability,
+  PLATFORM_SUBAGENT_PREFIX,
   SUBAGENT_MODEL_SETTING,
 } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
@@ -125,11 +126,18 @@ export function primaryPickSettings(input: {
   };
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: the settings a subagent choice writes, which say nothing about the primary: the platform slot's keys and the native subagent's model and effort. */
+const isSubagentKey = (id: string): boolean =>
+  id.startsWith(PLATFORM_SUBAGENT_PREFIX) ||
+  id === SUBAGENT_MODEL_SETTING ||
+  id === "subagentEffort";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: which profile the primary slot names, found by the
- * harness, the model and the settings the profile holds. The subagent keys are
- * left out of the comparison, because a subagent choice is written onto the same
- * pair and must not make the primary stop being that profile (QA D2).
+ * harness, the model and the settings the profile holds. Every key a subagent
+ * choice writes is left out of the comparison — the slot's and the native
+ * subagent's — because both are written onto the same pair and neither may make
+ * the primary stop being that profile (QA D2).
  */
 export function primaryProfileOf(
   pair: SessionPair | null,
@@ -139,7 +147,7 @@ export function primaryProfileOf(
   const own = (value: Readonly<Record<string, string>> | undefined) =>
     JSON.stringify(
       Object.entries(value ?? {})
-        .filter(([id]) => !id.startsWith("platformSubagent."))
+        .filter(([id]) => !isSubagentKey(id))
         .sort(),
     );
   return (
@@ -163,4 +171,21 @@ export function subagentProfileOf(
   return (
     profiles.find((p) => p.harness === harness && p.model === model) ?? null
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the references a save writes when the subagent
+ * section made the choice — the slot's profile, and the primary's own reference,
+ * which a slot write never changes and must never detach (QA D2). Every subagent
+ * save path uses this, so no one of them can drop the primary's profile.
+ */
+export function subagentSaveReferences(input: {
+  pair: SessionPair | null;
+  slot: ProfileWithUsage | null;
+  profiles: readonly ProfileWithUsage[];
+}): { platformSubagentProfileId: string | null; profileId: string | null } {
+  return {
+    platformSubagentProfileId: input.slot?.id ?? null,
+    profileId: primaryProfileOf(input.pair, input.profiles)?.id ?? null,
+  };
 }

@@ -67,8 +67,8 @@ import {
 } from "../lib/session-settings.js";
 import {
   primaryPickSettings,
-  primaryProfileOf,
   subagentProfileOf,
+  subagentSaveReferences,
   withSubagent,
 } from "../lib/subagent-choice.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
@@ -297,9 +297,13 @@ export function SessionPairPicker(props: Props) {
        * for the native subagent, which is the rule's safe side. */
       if (forSubagent) {
         if (pair)
-          choose(withSubagent(pair, profile, capabilityOf(pair.harness), []), {
-            platformSubagentProfileId: profile.id,
-          });
+          choose(
+            withSubagent(pair, profile, capabilityOf(pair.harness), []),
+            /* UNIT_BOUNDARY_DESCRIPTION: a repaired subagent pick is still a
+             * subagent save, so the primary keeps the profile it was on — this
+             * path used to write the slot alone and detach it (QA D2). */
+            subagentSaveReferences({ pair, slot: profile, profiles }),
+          );
         return;
       }
       chooseProfile(profile, connection.id);
@@ -414,13 +418,13 @@ export function SessionPairPicker(props: Props) {
                 selectedId={subagentProfileId}
                 onAgentPicks={() => {
                   if (pair)
-                    choose(withSubagent(pair, null), {
-                      platformSubagentProfileId: null,
+                    choose(
+                      withSubagent(pair, null),
                       /* UNIT_BOUNDARY_DESCRIPTION: clearing the slot changes
                        * nothing the primary runs, so its reference stays (QA
                        * D2). */
-                      profileId: primaryProfileOf(pair, profiles)?.id ?? null,
-                    });
+                      subagentSaveReferences({ pair, slot: null, profiles }),
+                    );
                 }}
                 onPick={(profile) => {
                   if (!pair) return;
@@ -436,14 +440,11 @@ export function SessionPairPicker(props: Props) {
                         g.models.map((m) => ({ name: m.name })),
                       ),
                     ),
-                    {
-                      platformSubagentProfileId: profile.id,
-                      /* UNIT_BOUNDARY_DESCRIPTION: a subagent pick is written
-                       * onto the same pair, so the primary keeps the profile it
-                       * was on — otherwise every later edit of that profile
-                       * stops reaching this agent (QA D2). */
-                      profileId: primaryProfileOf(pair, profiles)?.id ?? null,
-                    },
+                    /* UNIT_BOUNDARY_DESCRIPTION: a subagent pick is written
+                     * onto the same pair, so the primary keeps the profile it
+                     * was on — otherwise every later edit of that profile stops
+                     * reaching this agent (QA D2). */
+                    subagentSaveReferences({ pair, slot: profile, profiles }),
                   );
                 }}
                 onAttach={(profile) => attachAndPick(profile, true)}
