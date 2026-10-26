@@ -330,7 +330,7 @@ describe("the profile view a routed picker opens on", () => {
       expect(html).toContain("Let the agent pick");
       expect(html).toContain("Fast review");
       expect(html).toContain("Custom selection");
-      expect(html).toContain("harnesses");
+      expect(html).toContain("1 harness");
       expect(html).not.toContain("line-through");
       expect(html).toContain("CurveBender (shared) is not connected");
       expect(html).toContain("Configure providers");

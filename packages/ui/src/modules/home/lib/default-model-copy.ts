@@ -8,12 +8,21 @@ export const defaultModelStopsRuns = (
 
 const ALL_KINDS: readonly DefaultKind[] = ["chat", "channel", "scheduled"];
 
+/* UNIT_BOUNDARY_DESCRIPTION: what an agent-level default still governs — the
+ * chat default stops new chats, and a channel or scheduled default saved before
+ * profiles follows it (QA); channels and schedules with a profile of their own
+ * are untouched. */
 export function stoppedRuns(kinds: readonly DefaultKind[]): string {
   const runs = [
-    ...(kinds.includes("scheduled") ? ["schedules"] : []),
-    ...(kinds.includes("channel") ? ["Slack or Telegram turns"] : []),
+    "new chats",
+    ...(kinds.includes("scheduled") ? ["schedules saved before profiles"] : []),
+    ...(kinds.includes("channel")
+      ? ["Slack or Telegram turns saved before profiles"]
+      : []),
   ];
-  return runs.length > 0 ? runs.join(" and ") : "new chats";
+  return runs.length < 3
+    ? runs.join(" and ")
+    : `${runs[0]}, ${runs.slice(1).join(" and ")}`;
 }
 
 function kindQualifier(kinds: readonly DefaultKind[]): string {

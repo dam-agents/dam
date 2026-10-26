@@ -23,7 +23,7 @@ export function ProfileList({
 }: {
   profiles: readonly ProfileWithUsage[];
   current: SessionPair | null;
-  counts: { harnesses: number; models: number };
+  counts: { harnesses: number };
   onPick: (profile: ProfileWithUsage) => void;
   onCustom: () => void;
   onAttach: (profile: ProfileWithUsage) => void;
@@ -63,8 +63,11 @@ export function ProfileList({
             Custom selection
           </span>
           <span className="block truncate text-xs text-muted-foreground">
+            {/* UNIT_BOUNDARY_DESCRIPTION: one count, of the harnesses the agent
+             * can run — a model count beside it is one harness's, which reads
+             * as a count of every harness's (QA). */}
             {current === null || profiles.some((p) => sameAsProfile(current, p))
-              ? `${counts.harnesses} harnesses, ${counts.models} models`
+              ? `${counts.harnesses} harness${counts.harnesses === 1 ? "" : "es"}`
               : selectionLabel(current)}
           </span>
         </span>

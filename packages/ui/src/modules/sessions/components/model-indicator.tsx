@@ -91,6 +91,9 @@ export function ModelIndicator({
   /* UNIT_BOUNDARY_DESCRIPTION: the picker opens on the profiles, the same view a
    * new chat shows, so one place teaches the other. */
   const [custom, setCustom] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: a pick ends the choice, so the popover closes on
+   * one, as it already does on a custom pick (QA). */
+  const [open, setOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   /* UNIT_BOUNDARY_DESCRIPTION: the profile the session's pick came from, kept
    * while the user tunes it, so the save can offer to update that profile. */
@@ -161,10 +164,7 @@ export function ModelIndicator({
   /* UNIT_BOUNDARY_DESCRIPTION: the values the view reads — what "Custom
    * selection" costs and how a repair attaches a provider — derived from the
    * pair and the connections, never kept in state. */
-  const catalogCounts = {
-    harnesses: carried.length,
-    models: groups.reduce((total, group) => total + group.models.length, 0),
-  };
+  const catalogCounts = { harnesses: carried.length };
   const attachAndPick = (profile: ProfileWithUsage) => {
     const connection = owned.find(
       (p) => p.templateId === profile.providerTemplate,
@@ -213,7 +213,7 @@ export function ModelIndicator({
   return (
     <>
       {savingAsProfile}
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <SessionPairTrigger
             testId="session-model-picker"
@@ -324,6 +324,7 @@ export function ModelIndicator({
                   ...(settings && { settings }),
                 }}
                 onPick={(profile) => {
+                  setOpen(false);
                   /* UNIT_BOUNDARY_DESCRIPTION: a pick applies the model and the
                    * settings the profile holds, and saves those same values with
                    * the reference, so the next chat starts on what this one got.
@@ -373,7 +374,10 @@ export function ModelIndicator({
                   );
                 }}
                 counts={catalogCounts}
-                onAttach={attachAndPick}
+                onAttach={(profile) => {
+                  setOpen(false);
+                  attachAndPick(profile);
+                }}
                 onCustom={() => setCustom(true)}
                 onManage={() => navigateToSettings("providers")}
               />
