@@ -5,11 +5,13 @@ export function useVmRuntime(): {
   answered: boolean;
   unknown: boolean;
   vm: boolean;
+  vmAgentSizing: "spec" | "pool" | undefined;
 } {
   const install = useInstallCapabilities();
   return {
     answered: install.data !== undefined || install.isError,
     unknown: install.isError,
     vm: install.data?.virtualization === true,
+    vmAgentSizing: install.data?.vmAgentSizing,
   };
 }

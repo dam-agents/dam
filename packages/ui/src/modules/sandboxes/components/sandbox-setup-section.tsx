@@ -10,9 +10,11 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useStore } from "../../../store.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
+import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
+import { sizeControlOffered } from "../lib/size-control.js";
 import { LifecycleField } from "./lifecycle-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
@@ -26,6 +28,7 @@ interface Props {
 
 export function SandboxSetupSection({ f }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
+  const vmRuntime = useVmRuntime();
   const { agent } = f;
   if (!agent) return null;
 
@@ -104,7 +107,7 @@ export function SandboxSetupSection({ f }: Props) {
         </Inset>
       </section>
 
-      {!agent.vm && (
+      {sizeControlOffered(agent, vmRuntime.vmAgentSizing) && (
         <SandboxSizeSection
           sizeCpuMilli={f.sizeCpuMilli}
           sizeMemoryMi={f.sizeMemoryMi}
