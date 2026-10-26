@@ -1223,6 +1223,7 @@ export function ChatView() {
                     <div className="flex min-w-0 items-center justify-between gap-3">
                       <ModelIndicator
                         agentId={selectedAgent}
+                        sessionId={sessionId}
                         harness={choice.harness}
                         provider={currentSession.provider ?? null}
                         model={currentSession.model ?? null}

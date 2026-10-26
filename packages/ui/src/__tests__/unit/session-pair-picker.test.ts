@@ -1,5 +1,7 @@
+// @vitest-environment happy-dom
 import type { HarnessCapability } from "agent-runtime-api";
-import { createElement, Fragment, type PropsWithChildren } from "react";
+import { act, createElement, Fragment, type PropsWithChildren } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -219,7 +221,12 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
             ? []
             : [
                 { id: "ibm", name: "IBM", type: "ibm-litellm" },
-                { id: "curve", name: "Curve", type: "curve-bender" },
+                {
+                  id: "curve",
+                  name: "Curve",
+                  type: "curve-bender",
+                  templateId: "curve-bender",
+                },
               ],
           owned: [
             { id: "ibm", name: "IBM", type: "ibm-litellm" },
@@ -515,6 +522,7 @@ describe("session pair model choices", () => {
         createElement(ModelIndicator, {
           onToolApproval: () => {},
           agentId: "agent",
+          sessionId: "s1",
           harness: "pi",
           provider: "ibm",
           model: null,
@@ -586,6 +594,7 @@ describe("session pair model choices", () => {
         createElement(ModelIndicator, {
           onToolApproval: () => {},
           agentId: "agent",
+          sessionId: "s1",
           harness: "pi",
           provider: "curve",
           model: "static",
@@ -622,6 +631,7 @@ describe("session pair model choices", () => {
           createElement(ModelIndicator, {
             onToolApproval: () => {},
             agentId: "agent",
+            sessionId: "s1",
             harness: "pi",
             provider: "curve",
             model,
@@ -822,6 +832,7 @@ describe("one model list on a runtime that routes by model name", () => {
       createElement(ModelIndicator, {
         onToolApproval: () => {},
         agentId: "agent",
+        sessionId: "s1",
         harness: "pi",
         provider: "ibm",
         model: "ibm/gpt-5.5",
@@ -846,6 +857,7 @@ describe("one model list on a runtime that routes by model name", () => {
       createElement(ModelIndicator, {
         onToolApproval: () => {},
         agentId: "agent",
+        sessionId: "s1",
         harness: "pi",
         provider: "curve",
         model: "cb/rits/zai-org/glm-5-3",
@@ -883,6 +895,7 @@ describe("one model list on a runtime that routes by model name", () => {
       createElement(ModelIndicator, {
         onToolApproval: () => {},
         agentId: "agent",
+        sessionId: "s1",
         harness: "pi",
         provider: null,
         model: "anthropic/claude-sonnet-5-5",
@@ -971,6 +984,66 @@ describe("the profile save on a shared agent", () => {
     } finally {
       agentAccess = "owner";
       state.chosen = null;
+    }
+  });
+});
+
+describe("the profile a session's pick came from", () => {
+  /** TEST_SCENARIO: A profile picked in one session makes its Save row
+   * Update that profile; after a switch to another session, the row saves a
+   * new profile instead of overwriting the first session's. */
+  it("does not carry the picked profile into another session", () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "curve-bender",
+        model: "cb/rits/zai-org/glm-5-3",
+        settings: {},
+        seeded: false,
+        usage: { agents: 1, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+    ];
+    state.catalog = routedCatalog;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = (sessionId: string) =>
+      act(() =>
+        root.render(
+          createElement(ModelIndicator, {
+            onToolApproval: () => {},
+            agentId: "agent",
+            sessionId,
+            harness: "pi",
+            provider: "curve",
+            model: "cb/rits/zai-org/glm-5-3",
+            carried,
+            routed: true,
+            onChoose: vi.fn(),
+            onConfigure: vi.fn(),
+            onNewSession: state.newSession,
+          }),
+        ),
+      );
+    const click = (text: string) => {
+      const button = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes(text),
+      );
+      act(() => button?.click());
+    };
+    try {
+      render("s1");
+      click("Fast review");
+      click("Custom selection");
+      expect(container.textContent).toContain("Update “Fast review”");
+      render("s2");
+      expect(container.textContent).toContain("Save as a profile");
+      expect(container.textContent).not.toContain("Update “Fast review”");
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
     }
   });
 });

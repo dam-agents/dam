@@ -60,6 +60,7 @@ import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
 interface Props {
   agentId: string;
+  sessionId: string | null;
   harness: string;
   provider: string | null;
   model: string | null;
@@ -77,6 +78,7 @@ interface Props {
 
 export function ModelIndicator({
   agentId,
+  sessionId,
   harness,
   provider,
   model,
@@ -132,10 +134,15 @@ export function ModelIndicator({
   const [view, setView] = useState<"profiles" | "custom" | "subagent">(
     "profiles",
   );
-  const [fromProfile, setFromProfile] = useState<{
-    id: string;
-    name: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the profile this session's pick came from, so Update writes back to it; another session's pick never carries over. */
+  const [origin, setOrigin] = useState<{
+    sessionId: string | null;
+    profile: { id: string; name: string };
   } | null>(null);
+  const fromProfile =
+    origin && origin.sessionId === sessionId ? origin.profile : null;
+  const setFromProfile = (profile: { id: string; name: string }) =>
+    setOrigin({ sessionId, profile });
   const { data: profiles = [] } = useProfiles(agentId);
   /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so its primary model is offered only the profiles that run on it. */
   const sessionProfiles = profiles.filter((p) => p.harness === harness);

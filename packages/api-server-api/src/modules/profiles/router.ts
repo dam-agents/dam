@@ -31,7 +31,10 @@ export const profilesRouter = t.router({
     .input(profileIdInputSchema)
     .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .output(profileUsageSchema)
-    .query(({ ctx, input }) => ctx.profiles.usage(input.id)),
+    .query(({ ctx, input }) => {
+      if (input.agentId !== undefined) checkAgentBinding(ctx, input.agentId);
+      return ctx.profiles.usage(input.id);
+    }),
 
   create: manageAgentsProcedure
     .input(profileCreateInputSchema)

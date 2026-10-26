@@ -199,4 +199,24 @@ describe("an Agent Editor and the profile set", () => {
     expect(w.ownProfiles.create).toHaveBeenCalled();
     expect(w.madeFor).toEqual([]);
   });
+
+  /** TEST_SCENARIO: An owner's API key bound to another agent may not read
+   * this agent's profiles or a profile's usage through it, and no set is
+   * asked. */
+  it.each(["list", "usage"] as const)(
+    "refuses the %s to a key bound to another agent",
+    async (procedure) => {
+      const w = world({
+        ...person(OWNER, "alice@example.com"),
+        agentIds: ["other-bot"],
+      });
+      await expect(
+        procedure === "list"
+          ? w.caller.profiles.list({ agentId: AGENT })
+          : w.caller.profiles.usage({ id: "profile-owner", agentId: AGENT }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(w.ownProfiles.list).not.toHaveBeenCalled();
+      expect(w.ownProfiles.usage).not.toHaveBeenCalled();
+    },
+  );
 });
