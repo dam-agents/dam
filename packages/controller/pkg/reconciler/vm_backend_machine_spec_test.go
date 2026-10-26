@@ -63,7 +63,7 @@ func TestAVMAgentWithNoPullSecretFetchesAnonymously(t *testing.T) {
 	assert.Empty(t, node.spec("my-agent").PullAuths)
 }
 
-// TEST_SCENARIO: a vm agent wakes: the node gets a running machine with the install's vCPUs, sized by the agent's spec where the runner has no memory limit, and its mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and since no pod event will come the reconciler watches the machine itself.
+// TEST_SCENARIO: a vm agent wakes: the node gets a running machine with the install's vCPUs, sized from the install's machine memory where the runner has no memory limit, and its mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and since no pod event will come the reconciler watches the machine itself.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
@@ -74,7 +74,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.True(t, spec.Running)
 	assert.Equal(t, "quay.io/example/claude-code-vm:1", spec.Image)
 	assert.Equal(t, 4, spec.CPUs)
-	assert.Equal(t, 3072, spec.MemoryMiB)
+	assert.Equal(t, 2048, spec.MemoryMiB)
 	assert.Equal(t, 100, spec.StorageGiB, "a new machine is created at the owner's pool")
 	assert.Equal(t, "MITM-CA", spec.CACert)
 	assert.Equal(t, []string{"10.96.42.42/32"}, spec.AllowCIDRs)
@@ -229,6 +229,8 @@ func TestTheHostRunnerGetsOneUsageSecretNamingNoOwner(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	// TEST_SCENARIO: one Mac runs one host runner per install, so the port is the install's, and the URL the api-server reads names it.
+	r.config.VM.Runner.HostPort = 4611
 	ctx := context.Background()
 	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
 		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
@@ -253,7 +255,7 @@ func TestTheHostRunnerGetsOneUsageSecretNamingNoOwner(t *testing.T) {
 	assert.Equal(t, "true", usage.Labels[vmRunnerUsageLabel])
 	_, owned := usage.Labels[envoyOwnerLabel]
 	assert.False(t, owned, "one Secret serves every owner, so it names none")
-	assert.Equal(t, fmt.Sprintf("https://192.168.5.2:%d", vmRunnerPort), string(usage.Data["url"]))
+	assert.Equal(t, "https://192.168.5.2:4611", string(usage.Data["url"]), "the URL names the host runner's own port, not the runner pod's")
 	assert.Equal(t, vmrunner.MintUsageCapability(string(token.Data["token"])), string(usage.Data["capability"]))
 }
 

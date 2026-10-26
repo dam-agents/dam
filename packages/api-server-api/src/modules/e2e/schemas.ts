@@ -138,6 +138,15 @@ export const slackSetChannelsInputSchema = z
   .object({ channels: z.array(fakeSlackChannelSchema) })
   .strict();
 
+export const slackAddMemberInputSchema = z
+  .object({
+    slackUserId: z.string().min(1),
+    channelId: z.string().min(1),
+    teamId: z.string().optional(),
+    linkToCaller: z.boolean().default(true),
+  })
+  .strict();
+
 export const slackConnectWorkspaceResultSchema = z
   .object({ ok: z.literal(true), secretPath: z.string() })
   .strict();

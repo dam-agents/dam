@@ -2,16 +2,12 @@ package reconciler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
@@ -29,54 +25,6 @@ func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string) (bool
 		return false, fmt.Errorf("reading the gateway statefulset: %w", err)
 	}
 	return ss.Spec.Replicas != nil && *ss.Spec.Replicas >= 1, nil
-}
-
-func (r *AgentReconciler) ensureConcreteSize(ctx context.Context, agent *apiv1.Agent) error {
-	fill := map[string]string{}
-	if agent.Spec.Resources.Limits["cpu"] == "" {
-		fill["cpu"] = r.config.LegacyAgentCPULimit.String()
-	}
-	if agent.Spec.Resources.Limits["memory"] == "" {
-		fill["memory"] = r.config.LegacyAgentMemoryLimit.String()
-	}
-	if len(fill) == 0 {
-		return nil
-	}
-	raw, err := json.Marshal(map[string]any{
-		"spec": map[string]any{"resources": map[string]any{"limits": fill}},
-	})
-	if err != nil {
-		return fmt.Errorf("encoding size fill patch: %w", err)
-	}
-	if _, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).
-		Patch(ctx, agent.Name, types.MergePatchType, raw, metav1.PatchOptions{}); err != nil {
-		return fmt.Errorf("materializing agent size: %w", err)
-	}
-	if agent.Spec.Resources.Limits == nil {
-		agent.Spec.Resources.Limits = map[string]string{}
-	}
-	for k, v := range fill {
-		agent.Spec.Resources.Limits[k] = v
-	}
-	slog.Info("materialized concrete agent size into spec", "agent", agent.Name, "fill", fill)
-	return nil
-}
-
-func (r *AgentReconciler) limitsOf(spec *apiv1.AgentSpec) (resource.Quantity, resource.Quantity) {
-	cpu := parseQuantityOr(spec.Resources.Limits["cpu"], r.config.LegacyAgentCPULimit)
-	mem := parseQuantityOr(spec.Resources.Limits["memory"], r.config.LegacyAgentMemoryLimit)
-	return cpu, mem
-}
-
-func parseQuantityOr(s string, def resource.Quantity) resource.Quantity {
-	if s == "" {
-		return def
-	}
-	q, err := resource.ParseQuantity(s)
-	if err != nil || q.Sign() <= 0 {
-		return def
-	}
-	return q
 }
 
 func (r *AgentReconciler) recordParkedRetry(name string) {

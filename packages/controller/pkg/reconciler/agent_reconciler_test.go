@@ -96,13 +96,11 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		AgentBase: config.AgentBase{
 			VMIdleTimeout: config.Duration(time.Hour),
 		},
-		AgentTemplateDefaults: config.AgentTemplateDefaults{
+		HarnessTemplateDefaults: config.HarnessTemplateDefaults{
 			StorageSize: "10Gi",
 		},
 		DefaultUserCPUBudget:    resource.MustParse("4"),
 		DefaultUserMemoryBudget: resource.MustParse("8Gi"),
-		LegacyAgentCPULimit:     resource.MustParse("1"),
-		LegacyAgentMemoryLimit:  resource.MustParse("2Gi"),
 	}
 	var dynObjs []runtime.Object
 	if agent != nil {

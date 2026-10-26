@@ -105,6 +105,14 @@ func (r *AgentReconciler) runnerName(owner string) string {
 	return fmt.Sprintf("%s-vm-runner-%s", r.config.ReleaseName, runnerSuffix(owner))
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: where a runner answers. A host runner is reached at its install's own port (one Mac runs one per install); a runner pod keeps the Service port its chart renders.
+func (r *AgentReconciler) runnerPort() int {
+	if r.config.VM.Runner.HostAddress != "" && r.config.VM.Runner.HostPort != 0 {
+		return r.config.VM.Runner.HostPort
+	}
+	return vmRunnerPort
+}
+
 func (r *AgentReconciler) runnerHost(owner string) string {
 	if r.config.VM.Runner.HostAddress != "" {
 		return r.config.VM.Runner.HostAddress
@@ -213,7 +221,7 @@ func (r *AgentReconciler) applyRunnerUsageSecret(ctx context.Context, owner stri
 	}
 	labels[vmRunnerUsageLabel] = "true"
 	data := map[string][]byte{
-		"url":        fmt.Appendf(nil, "https://%s:%d", r.runnerHost(owner), vmRunnerPort),
+		"url":        fmt.Appendf(nil, "https://%s:%d", r.runnerHost(owner), r.runnerPort()),
 		"ca.crt":     tls.Data["ca.crt"],
 		"capability": []byte(vmrunner.MintUsageCapability(string(token.Data["token"]))),
 	}
@@ -335,7 +343,7 @@ func (r *AgentReconciler) runnerClient(owner, token, caPEM string) (*vmrunner.Cl
 	if conn, ok := r.runners[owner]; ok && conn.token == token && conn.caPEM == caPEM {
 		return conn.client, nil
 	}
-	endpoint, trust := fmt.Sprintf("https://%s:%d", r.runnerHost(owner), vmRunnerPort), caPEM
+	endpoint, trust := fmt.Sprintf("https://%s:%d", r.runnerHost(owner), r.runnerPort()), caPEM
 	if r.runnerEndpoint != nil {
 		endpoint, trust = r.runnerEndpoint(owner), ""
 	} else if caPEM == "" {

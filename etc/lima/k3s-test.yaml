@@ -117,23 +117,6 @@ provision:
         done
         rm -f "$installer"
       fi
-      mkdir -p /var/lib/rancher/k3s/server/manifests
-      cat > /var/lib/rancher/k3s/server/manifests/traefik-config.yaml << 'EOF'
-      apiVersion: helm.cattle.io/v1
-      kind: HelmChartConfig
-      metadata:
-        name: traefik
-        namespace: kube-system
-      spec:
-        valuesContent: |
-          ports:
-            platform:
-              port: 6555
-              expose:
-                default: true
-              exposedPort: 6555
-              protocol: TCP
-      EOF
 
 probes:
   - mode: readiness

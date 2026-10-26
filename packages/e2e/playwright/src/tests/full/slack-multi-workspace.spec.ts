@@ -4,6 +4,7 @@ import { ensureAgentRunning } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { mockDefaultReply } from "../../lib/fixtures.js";
+import { connectSlackAsMember } from "../../lib/slack.js";
 
 const agentName = "e2e-slack-workspaces";
 
@@ -35,7 +36,7 @@ test("an agent in a second Slack workspace is answered with that workspace's cre
 
   await test.step("a conversation is bound before any second workspace exists", async () => {
     await api.agents.disconnectSlack.mutate({ id: agentId });
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: channelInOriginal,
     });
@@ -57,9 +58,10 @@ test("an agent in a second Slack workspace is answered with that workspace's cre
   });
 
   await test.step("binding finds the workspace from the conversation id alone", async () => {
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: channelInSecond,
+      teamId: secondTeamId,
     });
 
     const agent = await api.agents.get.query({ id: agentId });
@@ -152,7 +154,7 @@ test("an agent in a second Slack workspace is answered with that workspace's cre
       }),
     ).rejects.toThrow(/No connected Slack workspace can see/);
 
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: channelInOriginal,
       ambient: true,

@@ -284,6 +284,19 @@ case "$out" in
   *'agentTemplates is no longer read'*) ;;
   *) echo "a render setting agentTemplates failed for another reason: $out" >&2; exit 1 ;;
 esac
+# The chart-wide defaults were renamed from `controller.agent.templateDefaults`
+# with no alias. An install that kept the old key renders the chart's own
+# defaults instead of its own, so every Agent built from a harness template
+# silently takes the wrong disk size, mounts and env — the render fails, naming
+# the key, rather than leave the install on defaults nobody chose.
+if out=$(helm template platform . "${COMMON[@]}" --set controller.agent.templateDefaults.storageSize=5Gi 2>&1 >/dev/null); then
+  echo "a render setting controller.agent.templateDefaults succeeded, but the chart reads only harnessTemplateDefaults" >&2
+  exit 1
+fi
+case "$out" in
+  *'controller.agent.templateDefaults is no longer read'*) ;;
+  *) echo "a render setting controller.agent.templateDefaults failed for another reason: $out" >&2; exit 1 ;;
+esac
 # A Template for a private registry brings its own pull Secret, and every Agent
 # created from it names that Secret: the chart renders it, in the agent
 # namespace, under the very name the Template stamps on the Agent. A machine

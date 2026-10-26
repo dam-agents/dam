@@ -26,6 +26,7 @@ const h = vi.hoisted(() => {
     setBusy: () => {},
     setQueuedPrompts: () => {},
     setRewriting: () => {},
+    setHarnessForks: () => {},
     setRunStarts: () => {},
     setAttribution: () => {},
     setContinuedFrom: () => {},

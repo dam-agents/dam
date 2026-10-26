@@ -1,24 +1,74 @@
 #!/usr/bin/env bash
-#MISE description="Uninstall Platform chart and clean up all resources"
+#MISE description="Uninstall this worktree's install (its chart, agents and data), leaving the others alone"
+#MISE raw=true
+#USAGE flag "--name <name>" help="Remove this install instead of this worktree's"
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
-# Drain agent workloads BEFORE helm uninstall, so their PVCs and namespace
-# go before the controller that owns them.
-if kubectl get ns platform-agents >/dev/null 2>&1; then
-  echo "Draining platform-agents before uninstall..."
-  kubectl -n platform-agents delete sts --all --wait=true --timeout=60s 2>/dev/null || true
-  kubectl -n platform-agents wait --for=delete pod --all --timeout=60s 2>/dev/null || true
-  kubectl -n platform-agents delete pvc --all --wait=true --timeout=60s 2>/dev/null || true
-  kubectl delete ns platform-agents --ignore-not-found --wait=true --timeout=60s 2>/dev/null || true
+if [ "$CLUSTER_TARGET" = environment ]; then
+  echo "An Environment's install goes with the Environment: delete it with the delete_environment tool." >&2
+  exit 1
+fi
+# The runner this install started on the Mac stops with it, and its entrypoint
+# leaves the cluster's Traefik config so its port is free for the next install.
+if [ "$(uname -s)" = Darwin ]; then
+  . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+  host_runner_stop
+fi
+traefik_entrypoint_drop
+
+if ! helm status "$CLUSTER_RELEASE" -n "$CLUSTER_NAMESPACE" >/dev/null 2>&1; then
+  if [ -n "$CLUSTER_INSTALL" ]; then
+    echo "No install '$CLUSTER_RELEASE' in namespace '$CLUSTER_NAMESPACE'; nothing to remove."
+    echo "mise run cluster:installs -- --all lists the installs this cluster has."
+    exit 0
+  fi
+  # The default install's chart can be gone (a failed run, a hand-run helm
+  # uninstall) while its agent namespace, PVCs and namespaces are not: sweep
+  # those anyway, as the task always did.
+  echo "No 'platform' release left; cleaning up what it left behind."
 fi
 
-helm uninstall platform || true
+# Drain agent workloads BEFORE helm uninstall, so their PVCs and namespace
+# go before the controller that owns them.
+if kubectl get ns "$CLUSTER_AGENT_NAMESPACE" >/dev/null 2>&1; then
+  echo "Draining $CLUSTER_AGENT_NAMESPACE before uninstall..."
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" delete sts --all --wait=true --timeout=60s 2>/dev/null || true
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" wait --for=delete pod --all --timeout=60s 2>/dev/null || true
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" delete pvc --all --wait=true --timeout=60s 2>/dev/null || true
+  kubectl delete ns "$CLUSTER_AGENT_NAMESPACE" --ignore-not-found --wait=true --timeout=60s 2>/dev/null || true
+fi
+
+helm uninstall "$CLUSTER_RELEASE" -n "$CLUSTER_NAMESPACE" || true
 
 # Clean up StatefulSet-managed PVCs in the release namespace (postgres,
 # redis). These aren't owned by the helm release, so helm
 # leaves them behind. Delete them AFTER helm uninstall — pods are gone now,
 # so pvc-protection finalizers clear immediately.
-kubectl delete pvc --all --ignore-not-found 2>/dev/null || true
+kubectl -n "$CLUSTER_NAMESPACE" delete pvc --all --ignore-not-found 2>/dev/null || true
 
-echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
+if [ -n "$CLUSTER_INSTALL" ]; then
+  # The namespace is this install's alone, and so are the cluster-scoped objects
+  # the chart rendered for it (a release's ClusterRoles and ClusterIssuers go
+  # with the release). The runner PriorityClass is the exception: the chart keeps
+  # it on uninstall so a runner pod that outlives the release still names a class
+  # that exists, and nothing here outlives it.
+  kubectl delete priorityclass -l "app.kubernetes.io/instance=$CLUSTER_RELEASE" --ignore-not-found 2>/dev/null || true
+  # cert-manager creates the CA Secrets in its own namespace and keeps them when
+  # the Certificate that made them goes; they are this install's alone, so the
+  # name carries the release.
+  for ca in "platform-$CLUSTER_INSTALL-mitm-ca" "platform-$CLUSTER_INSTALL-vm-runner-ca"; do
+    kubectl -n cert-manager delete certificate,secret "$ca" --ignore-not-found 2>/dev/null || true
+  done
+  kubectl delete ns "$CLUSTER_NAMESPACE" --ignore-not-found --wait=true --timeout=120s 2>/dev/null || true
+  # Its runner is stopped, and the machines it ran were this install's agents:
+  # their disks have nothing left to belong to. Its port record goes with it, so
+  # a later install of this name takes a free port and the chart agrees with it.
+  # Only a Mac has a host runner.
+  if [ -n "${HOST_RUNNER_DIR:-}" ]; then
+    rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_DIR/port" "$HOST_RUNNER_VM_HOME"
+  fi
+  echo "Install '$CLUSTER_INSTALL' removed (namespace $CLUSTER_NAMESPACE)."
+else
+  echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
+fi

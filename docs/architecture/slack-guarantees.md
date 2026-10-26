@@ -34,6 +34,7 @@ On a bound Agent, channel members get that access too unless the harness refuses
 
 `/dam login` links a Slack user to a platform user.
 It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete` and `/dam whisper <agent> on|off`, never who may talk to the Agent.
+It is also what lets a person connect an Agent to a conversation from the platform UI or CLI: only to one they and the bot are both in.
 
 ### How the agent reaches Slack
 

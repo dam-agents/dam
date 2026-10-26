@@ -1,0 +1,133 @@
+#!/usr/bin/env node
+//MISE description="Test (with the real Bob, when BOB_CLI names its dist/bob.js) that each Bob chat session reaches the platform MCP server with its own session ref while the file's platform entry stays hidden from it, and that Bob without the preload still lets the file's entry win"
+//MISE sources=["bob/rootfs/usr/local/lib/bob-mcp-file.mjs", "bob/rootfs/usr/local/lib/bob-preload-lib.mjs", "bob/image.toml", "test-lib/acp-client.mjs", ".mise/tasks/test/bob-session-ref"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { acpClient, allowPermission, chatStream, fakePlatformMcp } from "../../../test-lib/acp-client.mjs";
+
+// TEST_OVERVIEW: The real `bob acp` runs against a fake Model Router and a fake platform MCP server that records the headers of every request. The home holds the platform entry as the mcp-entry driver writes it, with no ref, next to Bob's settings. With bob-mcp-file.mjs preloaded, each session's calls carry the ref its session/new carried, and the file's entry is never connected; without the preload, Bob's own precedence lets the file's entry win, which is the behavior the preload exists for. Skipped when BOB_CLI names no Bob, since the repository does not vendor it.
+
+const bob = process.env.BOB_CLI;
+if (!bob) {
+  console.log("bob-session-ref: skipped, set BOB_CLI=<path to Bob's dist/bob.js> to run against the real Bob");
+  process.exit(0);
+}
+const preload = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/bob-mcp-file.mjs", import.meta.url));
+const HEADER = "x-platform-session-ref";
+const SOURCE = "x-test-source";
+const MODEL = "ibm/aws/claude-sonnet-4-6";
+const home = mkdtempSync(join(tmpdir(), "bob-session-ref-"));
+const work = join(home, "work");
+mkdirSync(work);
+
+const router = createServer(async (req, res) => {
+  const path = new URL(req.url, "http://127.0.0.1").pathname.replace(/^\/inference/, "");
+  if (req.method === "GET" && path === "/v1/model/info") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ data: [{ model_name: MODEL, litellm_params: { model: MODEL }, model_info: { id: MODEL, mode: "chat", exposed: true, max_input_tokens: 200000, max_tokens: 8192, input_cost_per_token: 3e-6, output_cost_per_token: 15e-6 } }] }));
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  if (path !== "/v1/chat/completions") {
+    res.writeHead(404, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ error: { message: `no route ${path}` } }));
+  }
+  const body = JSON.parse(Buffer.concat(chunks).toString());
+  const messages = body.messages ?? [];
+  const text = (m) => (typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? ""));
+  const asked = messages.some((m) => m?.role === "user" && text(m).includes("WHOAMI"));
+  const answered = messages.some((m) => m?.role === "tool");
+  const whoami = (body.tools ?? []).find((t) => /whoami/i.test(t?.function?.name ?? ""));
+  const reply = asked && whoami && !answered
+    ? chatStream(body.model, { tool: { name: whoami.function.name, arguments: {} } })
+    : chatStream(body.model, { text: answered ? "done" : "ok" });
+  res.writeHead(200, { "content-type": reply.contentType });
+  res.end(reply.body);
+});
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+
+const platform = await fakePlatformMcp({
+  tools: [{ name: "whoami", description: "Says which session is calling.", inputSchema: { type: "object", properties: {}, additionalProperties: false } }],
+  callResult: (_params, headers) => `ref=${headers[HEADER] ?? "none"}`,
+});
+const initializes = (source) => platform.calls.filter((c) => c.method === "initialize" && c.headers[SOURCE] === source);
+const toolCalls = (from) =>
+  platform.calls.slice(from).filter((c) => c.method === "tools/call").map((c) => ({ ref: c.headers[HEADER] ?? null, source: c.headers[SOURCE] ?? null }));
+
+mkdirSync(join(home, ".bob/settings"), { recursive: true });
+writeFileSync(
+  join(home, ".bob/settings/settings.json"),
+  JSON.stringify({ session: { model: MODEL, defaultMode: "agent" }, approval: { outsideWorkspaceAllowed: true }, bobShell: { autoUpdate: false }, telemetry: { enabled: false, excludePayload: true } }, null, 2),
+);
+const fileEntry = { type: "http", url: platform.url, transportType: "http", headers: { [SOURCE]: "file" } };
+const mcpFile = join(home, ".bob/settings/mcp.json");
+const writeMcpFile = (extra = {}) => writeFileSync(mcpFile, JSON.stringify({ mcpServers: { "platform-outbound": fileEntry, ...extra } }, null, 2));
+const sessionEntry = (ref) => [{ type: "http", name: "platform-outbound", url: platform.url, headers: [{ name: HEADER, value: ref }, { name: SOURCE, value: "session" }] }];
+const env = (withPreload) => ({
+  PATH: process.env.PATH,
+  HOME: home,
+  BOB_GATEWAY_URL: `http://127.0.0.1:${router.address().port}`,
+  BOB_API_KEY: "platform:conn:router",
+  BOBSHELL_API_KEY: "platform:conn:router",
+  BOB_LOG_LEVEL: "warn",
+  NO_PROXY: "127.0.0.1,localhost",
+  ...(withPreload && { NODE_OPTIONS: `--import=${preload}` }),
+});
+const start = async (withPreload) => {
+  platform.calls.length = 0;
+  writeMcpFile();
+  const c = acpClient("node", [bob, "acp", "--trust", "--accept-license", "--auto-approve"], { env: env(withPreload), cwd: work, name: "bob", onRequest: allowPermission });
+  await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } }, clientInfo: { name: "dam-test", version: "0" } }, 120_000);
+  return c;
+};
+const whoami = async (c, sessionId) => {
+  const from = platform.calls.length;
+  const r = await c.request("session/prompt", { sessionId, prompt: [{ type: "text", text: "WHOAMI: call the whoami tool, then reply done." }] }, 240_000);
+  assert.equal(r.stopReason, "end_turn");
+  return toolCalls(from);
+};
+
+try {
+  const c = await start(true);
+  try {
+    // TEST_SCENARIO: Two sessions opened one after the other, with the file's platform entry in place: a tool call from each goes over the entry its own session/new carried and so names that session's ref. The file's entry, which outranks them by name when Bob can read it, carries no ref and names no session.
+    const a = await c.request("session/new", { cwd: work, mcpServers: sessionEntry("ref-a") }, 120_000);
+    const b = await c.request("session/new", { cwd: work, mcpServers: sessionEntry("ref-b") }, 120_000);
+    assert.deepEqual(await whoami(c, a.sessionId), [{ ref: "ref-a", source: "session" }]);
+    assert.deepEqual(await whoami(c, b.sessionId), [{ ref: "ref-b", source: "session" }]);
+
+    // TEST_SCENARIO: The mcp-entry driver writes the file while Bob runs, as a new Connection does. Bob's watch sees the write and connects the new server; the platform entry the write carries is still hidden.
+    writeMcpFile({ other: { type: "http", url: platform.url, transportType: "http", headers: { [SOURCE]: "other" } } });
+    await platform.waitFor(() => initializes("other").length >= 1, "the other server's connection after the file changed", 90_000);
+    assert.deepEqual(initializes("file"), [], "the file's platform entry was connected after a reload");
+  } finally {
+    await c.close();
+  }
+
+  // TEST_SCENARIO: Without the preload, Bob's own precedence lets the file's platform entry outrank the session's, so every connection and tool call is the file's, with no ref. When this fails, Bob prefers a session's own entry on its own, and the preload, its line in harness-chat, and these tests can go.
+  const control = await start(false);
+  try {
+    const a = await control.request("session/new", { cwd: work, mcpServers: sessionEntry("ref-a") }, 120_000);
+    await platform.waitFor(() => initializes("file").length >= 1, "the file entry's connection", 90_000);
+    const made = await whoami(control, a.sessionId);
+    assert.deepEqual(made, [{ ref: null, source: "file" }], "Bob let the session's own entry win: the preload is no longer needed, see packages/agents/bob/README.md, \"Session ref\"");
+    assert.deepEqual(initializes("session"), [], "Bob connected the session's entry beside the file's: revisit the preload");
+  } finally {
+    await control.close();
+  }
+  console.log("bob chat sessions carry their own session ref with the preload, and the file's entry still wins without it");
+} finally {
+  router.close();
+  platform.close();
+  await new Promise((r) => setTimeout(r, 1500));
+  try {
+    rmSync(home, { recursive: true, force: true });
+  } catch {}
+}

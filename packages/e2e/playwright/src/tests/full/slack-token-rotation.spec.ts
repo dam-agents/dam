@@ -4,6 +4,7 @@ import { ensureAgentRunning } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { mockDefaultReply } from "../../lib/fixtures.js";
+import { connectSlackAsMember } from "../../lib/slack.js";
 
 const agentName = "e2e-slack-rotation";
 
@@ -40,7 +41,7 @@ test("Slack bot tokens import from Helm, exchange for rotating ones and refresh"
       channels: [{ id: legacyChannel, name: "legacy", botIsMember: true }],
     });
     await api.agents.disconnectSlack.mutate({ id: agentId });
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: legacyChannel,
     });

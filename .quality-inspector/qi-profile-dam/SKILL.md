@@ -68,7 +68,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   - Filing an issue or deciding anything needs a real model: with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template.
     Without it, such ACs are `blocked`, naming `lend_model`.
   - A sandbox whose credentials are not set leaves its ACs `testable: no — external dependency`; so does a second user or person this instance lacks, for an AC that needs two.
-- Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`): it replies "Hello from the mock agent."
+- Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`), where an agent can run at all (see *No running agents* below): it replies "Hello from the mock agent."
   to every prompt and never calls a model.
   An AC about what an agent says or decides is judged only on what the UI shows around that reply; with `mock_image` set empty, an AC that needs an agent to reply or run is `blocked`, not failed.
 - The harness templates (Claude Code, Codex, Pi, Bob) boot the default image, which bakes their
@@ -79,6 +79,10 @@ Builds published before these accounts were added have only `qa-owner`; there an
   The injection canary therefore names one Mock agent with its text (`canary` in `profile.json`) and deletes it.
 - No service mesh: the VM's kernel cannot run Istio, so the nested install runs without it.
   Network isolation between agents is not enforced — an AC that one agent cannot reach or act as another is `testable: no — no mesh`.
+- No running agents: every agent runs as a virtual machine, and the inspector's VM cannot host one inside it.
+  An agent is created, shown, shared and configured as usual, but none of its sessions starts: DAM reports that it "can't start" because the owner's VM runner cannot be scheduled.
+  That message is this limit, not a product failure.
+  An AC that needs an agent to start, reply or run a task (the Mock agent included) is `testable: no — no VM agents`; one that only checks what the UI offers or records stays testable.
 - No email, no SSO federation, no real billing.
 
 ## Tested elsewhere

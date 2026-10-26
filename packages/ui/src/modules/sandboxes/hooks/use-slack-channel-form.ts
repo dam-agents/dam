@@ -12,27 +12,36 @@ import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
 export type { SlackChannel };
 
-const slackChannelFormSchema = z
-  .object({
-    channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
-    ambient: z.boolean(),
-    customEmojiEnabled: z.boolean(),
-    customEmoji: z.array(z.string()),
-  })
-  .superRefine((values, ctx) => {
-    if (!values.customEmojiEnabled) return;
-    values.customEmoji.forEach((name, i) => {
-      if (!/^:?[a-z0-9_'+-]{1,100}:?$/.test(name.trim()))
+const slackChannelFormSchema = (editing: boolean) =>
+  z
+    .object({
+      channelIds: z.array(z.string()),
+      ambient: z.boolean(),
+      customEmojiEnabled: z.boolean(),
+      customEmoji: z.array(z.string()),
+    })
+    .superRefine((values, ctx) => {
+      if (!editing && values.channelIds.length === 0)
         ctx.addIssue({
           code: "custom",
-          path: ["customEmoji", i],
-          message:
-            "Use the emoji's name: lowercase letters, digits, - _ + or '.",
+          path: ["channelIds"],
+          message: "Pick a channel.",
         });
+      if (!values.customEmojiEnabled) return;
+      values.customEmoji.forEach((name, i) => {
+        if (!/^:?[a-z0-9_'+-]{1,100}:?$/.test(name.trim()))
+          ctx.addIssue({
+            code: "custom",
+            path: ["customEmoji", i],
+            message:
+              "Use the emoji's name: lowercase letters, digits, - _ + or '.",
+          });
+      });
     });
-  });
 
-type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
+type SlackChannelFormValues = z.infer<
+  ReturnType<typeof slackChannelFormSchema>
+>;
 
 export function useSlackChannelForm(
   agent: AgentView,
@@ -45,9 +54,9 @@ export function useSlackChannelForm(
   const bindConfirm = useBindSharingConfirm(editing ? null : agent);
 
   const form = useForm<SlackChannelFormValues>({
-    resolver: zodResolver(slackChannelFormSchema),
+    resolver: zodResolver(slackChannelFormSchema(editing)),
     defaultValues: {
-      channelId: channel?.slackChannelId ?? "",
+      channelIds: [],
       ambient: channel?.ambient ?? false,
       customEmojiEnabled: !!channel?.customEmoji,
       customEmoji:
@@ -60,23 +69,29 @@ export function useSlackChannelForm(
   });
 
   const onSubmit = form.handleSubmit(async (values) => {
+    const channelIds = channel ? [channel.slackChannelId] : values.channelIds;
     const audience =
-      editing || isSlackDirectMessageId(values.channelId)
+      editing || channelIds.every(isSlackDirectMessageId)
         ? null
         : { kind: "slack-channel" as const, name: null };
     if (!(await bindConfirm.confirm(audience, "Connect", agent.whisper)))
       return;
-    const connect = planSlackChannelSave({
-      agentId: agent.id,
-      channel,
-      values: {
-        ...values,
-        customEmoji: values.customEmojiEnabled
-          ? values.customEmoji.map((n) => n.trim().replace(/^:|:$/g, ""))
-          : null,
-      },
-    });
-    if (connect) await connectSlack.mutateAsync(connect);
+    const customEmoji = values.customEmojiEnabled
+      ? values.customEmoji.map((n) => n.trim().replace(/^:|:$/g, ""))
+      : null;
+    for (const channelId of channelIds) {
+      const connect = planSlackChannelSave({
+        agentId: agent.id,
+        channel,
+        values: { channelId, ambient: values.ambient, customEmoji },
+      });
+      if (connect) await connectSlack.mutateAsync(connect);
+      if (!channel)
+        form.setValue(
+          "channelIds",
+          form.getValues("channelIds").filter((id) => id !== channelId),
+        );
+    }
     onSaved();
   });
 

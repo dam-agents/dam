@@ -156,7 +156,8 @@ A Slack channel binds to at most one instance globally; the binding routes every
 5. Connect the app's own workspace the way every workspace is connected (below).
    No bot token is pasted anywhere: each workspace's token comes from the install handshake and is stored in a Kubernetes Secret.
 
-6. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
+6. Link your Slack account with `/dam login` in Slack, invite the bot to a channel you are in, then connect an agent to it from the agent's Channels settings (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
+   The platform connects an agent only to a channel you and the bot are both in; `/dam bind` in the channel itself works without linking first.
 
 **Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's.
 The scope is opt-in.
@@ -270,7 +271,7 @@ With a running systemd (or OpenRC) it runs the Lima provision scripts on the hos
 On a node kernel without IPv6 the mesh dataplane is installed IPv4-only.
 Claude Code on the web needs that wrapper and more: see the [`ccweb`](../.agents/skills/ccweb/SKILL.md) skill.
 Every agent runs as a microVM, so the sandbox must be able to open `/dev/kvm`: `cluster:install` fails in one that cannot.
-Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.templateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
+Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.harnessTemplateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
 Changing the ask restarts that agent's machine and no other; changing the template default restarts every agent's machine that does not ask itself, and while it is on no Agent can opt out.
 Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the chart value is the switch.
 It is off by default because a nesting guest reaches the host kernel's nested-virtualization code.
@@ -284,7 +285,7 @@ A local install on an Apple silicon Mac has no such pod, unless it keeps the run
 An agent persists its home on its machine's disk, and the rest of the machine as a root overlay kept across stops while the image's root generation stays the same ([vm storage](architecture/vm-storage.md)).
 The install requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, `virtualization.runner.releaseHostPath`, and `virtualization.imageCache.hostPath` unless the Mac host runner is in use, or it refuses to render.
 An install may still carry `virtualization.enabled`, `controller.warmPool`, `controller.storageMigration`, `controller.requestsFromLimits` or a pod field under `controller.agent.base`: Helm drops a value nothing reads, and those configured the agent pod and its volumes, which are gone.
-The three JSON blocks the controller decodes are the exception — a key left in `AGENT_BASE`, `AGENT_TEMPLATE_DEFAULTS` or `AGENT_VM` stops its startup, because it refuses a field its config no longer has.
+The three JSON blocks the controller decodes are the exception — a key left in `AGENT_BASE`, `AGENT_HARNESS_TEMPLATE_DEFAULTS` or `AGENT_VM` stops its startup, because it refuses a field its config no longer has.
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).
 The devices reach the pod only as device-plugin resources, so an install with no node a plugin exposes `/dev/kvm` on cannot run agents, and the chart ships no plugin: a plugin is per node, so a cluster runs one for every install on it.
 By default the pod asks for KubeVirt's `devices.kubevirt.io/kvm`; `virtualization.runner.devices` names another plugin's resource instead — e.g. `squat.ai/kvm` from squat's generic-device-plugin, which local dev applies from `helm/extra/kvm-device-plugin.yaml`.

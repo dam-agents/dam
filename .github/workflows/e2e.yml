@@ -494,8 +494,13 @@ jobs:
     # Every step is e2e-agent-gateway's, through the anchors it defines: the
     # KVM setup, the background k3s provision and image builds, the suite and
     # its logs. The only difference is E2E_GATEWAY_PER_OWNER below.
+    #
+    # A pull request does not run it: the merge queue runs the same suite on the
+    # same tree in full scope before anything merges, so the guard costs one
+    # 13-minute runner per push and buys a failure reported a few minutes
+    # earlier. The merge queue and the nightly run keep it.
     needs: [docs-only]
-    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
