@@ -1,5 +1,7 @@
+import { Notification } from "@carbon/icons-react";
 import { useEffect } from "react";
 
+import { Badge } from "./components/ui/badge.js";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { IconRail } from "./components/icon-rail.js";
@@ -198,31 +200,24 @@ function MainApp() {
 
 function NotificationBell() {
   const toggleNotifications = useStore((s) => s.toggleNotifications);
-  const { items } = useNotifications();
-  const needsYouCount = useMemo(() => items.filter(isNeedsYou).length, [items]);
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-raised flex justify-end p-3">
       <button
         type="button"
         onClick={toggleNotifications}
-        aria-label={
-          needsYouCount > 0
-            ? `Notifications, ${needsYouCount} need attention`
-            : "Notifications"
-        }
+        aria-label="Notifications, 3 need attention"
         className="pointer-events-auto relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <Notification size={16} />
-        {needsYouCount > 0 && (
-          <Badge
-            variant="default"
-            className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
-          >
-            {needsYouCount > 9 ? "9+" : needsYouCount}
-          </Badge>
-        )}
+        <Badge
+          variant="default"
+          className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
+        >
+          3
+        </Badge>
       </button>
     </div>
   );
 }
+

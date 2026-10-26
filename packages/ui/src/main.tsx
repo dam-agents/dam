@@ -45,8 +45,9 @@ async function main() {
       const { REAL_PACKS } = await import("./modules/packs/data/packs.js");
       const pack = REAL_PACKS[0];
       const agentId = agents[0]?.id;
-      if (pack && agentId) {
-        useStore.getState().initOnboarding(agentId, pack);
+      const state = useStore.getState();
+      if (pack && agentId && "initOnboarding" in state) {
+        (state as any).initOnboarding(agentId, pack);
       }
     }
 

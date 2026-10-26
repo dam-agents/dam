@@ -447,28 +447,6 @@ export function IconRail({
                 <BrandLogo />
               </button>
               <div className="flex items-center gap-0.5">
-                <Tooltip content="Notifications" side="bottom">
-                  <button
-                    type="button"
-                    onClick={toggleNotifications}
-                    aria-label={
-                      needsYouCount > 0
-                        ? `Notifications, ${needsYouCount} need attention`
-                        : "Notifications"
-                    }
-                    className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <Notification size={16} />
-                    {needsYouCount > 0 && (
-                      <Badge
-                        variant="default"
-                        className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
-                      >
-                        {needsYouCount > 9 ? "9+" : needsYouCount}
-                      </Badge>
-                    )}
-                  </button>
-                </Tooltip>
                 <Tooltip content="Collapse navigation" side="bottom">
                   <button
                     type="button"
@@ -496,28 +474,6 @@ export function IconRail({
                     size={16}
                     className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
                   />
-                </button>
-              </Tooltip>
-              <Tooltip content="Notifications" side="right">
-                <button
-                  type="button"
-                  onClick={toggleNotifications}
-                  aria-label={
-                    needsYouCount > 0
-                      ? `Notifications, ${needsYouCount} need attention`
-                      : "Notifications"
-                  }
-                  className="relative flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <Notification size={16} />
-                  {needsYouCount > 0 && (
-                    <Badge
-                      variant="default"
-                      className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
-                    >
-                      {needsYouCount > 9 ? "9+" : needsYouCount}
-                    </Badge>
-                  )}
                 </button>
               </Tooltip>
             </>
