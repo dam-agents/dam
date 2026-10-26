@@ -162,8 +162,7 @@ export function ModelIndicator({
     capability,
     onSaved: setFromProfile,
   });
-  const showProfiles =
-    routed && view === "profiles" && sessionProfiles.length > 0;
+  const showProfiles = routed && view === "profiles";
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
   const models = removed
     ? []
@@ -371,9 +370,7 @@ export function ModelIndicator({
               aria-label="Models for this session"
               className="-mx-1 flex max-h-72 flex-col gap-2 overflow-y-auto"
             >
-              {sessionProfiles.length > 0 && (
-                <BackToProfiles onClick={() => setView("profiles")} />
-              )}
+              <BackToProfiles onClick={() => setView("profiles")} />
               <SessionModelList
                 groups={groups}
                 current={model}

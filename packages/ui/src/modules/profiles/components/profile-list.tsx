@@ -41,15 +41,17 @@ export function ModelConfiguration({
   const { attach, manage } = useProfileAttach(agentId);
   const choices = (slot: ProfileSlot) => (
     <>
-      <ProfileChoices
-        profiles={profiles}
-        selectedId={slot.selectedId}
-        onPick={slot.onPick}
-        onAttach={(profile) =>
-          void attach(profile).then((id) => id && slot.onPick(profile, id))
-        }
-        onManage={manage}
-      />
+      {profiles.length > 0 && (
+        <ProfileChoices
+          profiles={profiles}
+          selectedId={slot.selectedId}
+          onPick={slot.onPick}
+          onAttach={(profile) =>
+            void attach(profile).then((id) => id && slot.onPick(profile, id))
+          }
+          onManage={manage}
+        />
+      )}
       <CustomRow
         label="Custom selection"
         detail={slot.custom ?? customHint}

@@ -198,6 +198,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentBinding: user.agentIds,
         catalog: harnesses,
         seed: config.curveBenderDeployment && config.defaultProfileSeed,
+        ownerCatalog: () => connections.modelCatalog(),
         republish: (agentId) => harnessConfig.republishDefaults(agentId),
       });
     const { agents, isOwnedAgent } = composeAgentsModule({

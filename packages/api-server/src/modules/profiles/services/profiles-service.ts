@@ -11,6 +11,8 @@ import {
   providerAliasConflict,
   providerTypeForTemplateId,
   type HarnessCatalog,
+  type OwnerModelCatalogView,
+  preferredModelOf,
   type ProfilesService,
   type ProfileWithUsage,
   type SessionPair,
@@ -21,6 +23,7 @@ import {
   type ProfileReferences,
   type ProfileRow,
   type ProfilesRepository,
+  type ProfileWrite,
 } from "../infrastructure/profiles-repository.js";
 
 export interface ResolvedProfile {
@@ -94,8 +97,43 @@ interface OwnerDeps {
   repo: ProfilesRepository;
   owner: string;
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
-  /* UNIT_BOUNDARY_DESCRIPTION: the "Default" an owner with no profile is given, on the deployment's shared CurveBender: the harness and the upstream model the install names. Null where the install serves no shared CurveBender or names no seed; then nothing is seeded and no marker is claimed, so configuring it later still seeds. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the "Default" an owner with no profile is given, on the deployment's shared CurveBender: the harness and the upstream model the install names. Null where the install serves no shared CurveBender or names no seed; then "Default" comes from the owner's first provider instead. */
   seed: { harness: string; model: string } | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's providers with their models, which an install without the shared CurveBender seeds "Default" from. */
+  ownerCatalog?: () => Promise<OwnerModelCatalogView>;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: "Default" from the owner's first provider that
+ * has listed its models: the install's default harness where that provider
+ * runs it, else the first harness it runs, and the model the platform prefers
+ * for work, else the first it lists for that harness. Null while no provider
+ * has listed, so the next read tries again.
+ */
+export function firstProviderDefault(
+  catalog: OwnerModelCatalogView,
+): Omit<ProfileWrite, "name" | "settings"> | null {
+  for (const provider of catalog.providers) {
+    if (provider.status !== "listed") continue;
+    const harness = provider.harnesses.includes(catalog.defaultHarness)
+      ? catalog.defaultHarness
+      : provider.harnesses[0];
+    const models = provider.models.filter(
+      (m) => harness !== undefined && m.harnesses.includes(harness),
+    );
+    const preferred = preferredModelOf("work", [
+      { alias: provider.alias, listed: models.map((m) => m.upstreamId) },
+    ]);
+    const model =
+      models.find((m) => m.upstreamId === preferred?.upstreamId) ?? models[0];
+    if (harness && model)
+      return {
+        harness,
+        providerTemplate: provider.template,
+        model: model.name,
+      };
+  }
+  return null;
 }
 
 /**
@@ -107,15 +145,22 @@ async function ensureDefault(deps: OwnerDeps): Promise<ProfileRow | null> {
   const current = await deps.repo.defaultOf(deps.owner);
   if (current) return current;
   let [oldest] = await deps.repo.list(deps.owner);
-  if (!oldest && deps.seed) {
-    await deps.repo.seed(deps.owner, {
-      name: "Default",
-      harness: deps.seed.harness,
-      providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-      model: `${aliasForTemplateId(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!}/${deps.seed.model}`,
-      settings: {},
-    });
-    [oldest] = await deps.repo.list(deps.owner);
+  if (!oldest) {
+    const pair = deps.seed
+      ? {
+          harness: deps.seed.harness,
+          providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+          model: `${aliasForTemplateId(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!}/${deps.seed.model}`,
+        }
+      : deps.ownerCatalog && firstProviderDefault(await deps.ownerCatalog());
+    if (pair) {
+      await deps.repo.seed(deps.owner, {
+        name: "Default",
+        settings: {},
+        ...pair,
+      });
+      [oldest] = await deps.repo.list(deps.owner);
+    }
   }
   if (!oldest) return null;
   await deps.repo.setDefault(deps.owner, oldest.id, { onlyIfNone: true });

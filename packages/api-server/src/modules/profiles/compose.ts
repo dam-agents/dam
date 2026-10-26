@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import type { HarnessCatalog } from "api-server-api";
+import type { HarnessCatalog, OwnerModelCatalogView } from "api-server-api";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import { createProfilesRepository } from "./infrastructure/profiles-repository.js";
 import {
@@ -20,6 +20,7 @@ export function composeProfilesForOwner(deps: {
   agentBinding: readonly string[] | "*";
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   seed: { harness: string; model: string } | null;
+  ownerCatalog: () => Promise<OwnerModelCatalogView>;
   republish: (agentId: string) => Promise<string | null>;
 }) {
   const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
@@ -28,6 +29,7 @@ export function composeProfilesForOwner(deps: {
     owner: deps.owner,
     catalog: deps.catalog,
     seed: deps.seed,
+    ownerCatalog: deps.ownerCatalog,
   };
   const resolveProfile = profileResolver(repo);
   return {

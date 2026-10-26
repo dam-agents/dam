@@ -301,6 +301,21 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   },
 }));
 
+/* UNIT_BOUNDARY_DESCRIPTION: a routed picker opens on its profile view; this
+ * mounts it and opens Custom selection, where the model list is. */
+function custom(element: ReturnType<typeof createElement>): string {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  act(() => root.render(element));
+  const open = [...container.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Custom selection"),
+  );
+  if (open) act(() => open.click());
+  const html = container.innerHTML;
+  act(() => root.unmount());
+  return html;
+}
+
 function renderPicker() {
   return renderToStaticMarkup(
     createElement(SessionPairPicker, {
@@ -321,6 +336,26 @@ describe("the profile view a routed picker opens on", () => {
     state.catalogLoaded = true;
     state.chosen = null;
     state.catalog = routedCatalog;
+  });
+
+  /** TEST_SCENARIO: an owner with no profile still gets the profile view when
+   * the model name is clicked, Custom selection its only row in each slot. */
+  it("opens on the profile view with no profile, Custom selection alone", () => {
+    profilesState = [];
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain("Primary model");
+    expect(html).toContain("Subagent model");
+    expect(html.match(/Custom selection/g)).toHaveLength(1);
+    expect(html).not.toContain("No profiles yet");
+    expect(html).not.toContain('aria-label="Harness"');
   });
 
   /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on them: a primary-model section, a subagent section behind its toggle, each ending in Custom selection; an unavailable profile is disabled with its reason and the one action that would fix it. */
@@ -746,7 +781,7 @@ describe("one model list on a runtime that routes by model name", () => {
    * family under Other, and the per-provider model hooks of the old runtime
    * are never asked. */
   it("lists every provider's models in one grouped list", () => {
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(SessionPairPicker, {
         agentId: "agent",
         defaultHarness: "pi",
@@ -771,7 +806,7 @@ describe("one model list on a runtime that routes by model name", () => {
    * the running agent, so a sleeping agent still lists its models. */
   it("lists the models while the agent sleeps", () => {
     state.operable = false;
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(SessionPairPicker, {
         agentId: "agent",
         defaultHarness: "pi",
@@ -828,7 +863,7 @@ describe("one model list on a runtime that routes by model name", () => {
         },
       ],
     };
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(SessionPairPicker, {
         agentId: "agent",
         defaultHarness: "pi",
@@ -859,7 +894,7 @@ describe("one model list on a runtime that routes by model name", () => {
    * on the next message while a turn runs; the label under the composer
    * reads the pretty family name. */
   it("offers every provider's models to a running session", () => {
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(ModelIndicator, {
         onToolApproval: () => {},
         agentId: "agent",
@@ -921,7 +956,7 @@ describe("one model list on a runtime that routes by model name", () => {
         templateId: "anthropic",
       } as never,
     ];
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(ModelIndicator, {
         onToolApproval: () => {},
         agentId: "agent",
@@ -957,7 +992,7 @@ describe("JanUI's picker and the default's editor", () => {
   });
 
   const render = (props: Record<string, unknown>) =>
-    renderToStaticMarkup(
+    custom(
       createElement(SessionPairPicker, {
         agentId: "agent",
         defaultHarness: "pi",
@@ -997,7 +1032,7 @@ describe("the profile save on a shared agent", () => {
     };
     state.catalogLoaded = true;
     const render = () =>
-      renderToStaticMarkup(
+      custom(
         createElement(SessionPairPicker, {
           agentId: "agent",
           defaultHarness: "pi",
@@ -1207,6 +1242,11 @@ describe("a model from a provider the agent is not connected to", () => {
       );
     try {
       render();
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find((b) => b.textContent?.includes("Custom selection"))
+          ?.click(),
+      );
       expect(container.innerHTML).toMatch(
         /OpenAI<svg[^>]*aria-label="not connected"/,
       );
@@ -1318,6 +1358,11 @@ describe("a harness picked without a model", () => {
             onConnectProviders: state.connectProviders,
           }),
         ),
+      );
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find((b) => b.textContent?.includes("Custom selection"))
+          ?.click(),
       );
       const pi = [
         ...container.querySelectorAll('[aria-label="Harness"] button'),

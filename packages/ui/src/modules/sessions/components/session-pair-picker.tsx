@@ -325,8 +325,8 @@ export function SessionPairPicker(props: Props) {
           harnessName(pair.harness) ?? pair.harness,
         );
 
-  const showProfiles =
-    routed && !edit && view === "profiles" && profiles.length > 0;
+  /* UNIT_BOUNDARY_DESCRIPTION: a routed picker always opens on its profile view, with Custom selection its only row while the owner has no profile. */
+  const showProfiles = routed && !edit && view === "profiles";
 
   return (
     <div className="flex min-w-0 items-center gap-3">

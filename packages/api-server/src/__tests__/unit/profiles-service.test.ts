@@ -1,6 +1,10 @@
 // TEST_OVERVIEW: Profiles are an owner's named presets. A profile names a provider template, so whether it runs on an agent follows from the agent's grants: its own Connection of the template, else an owner's one it may be granted, never one replacing a rival of the same alias. An owner with no profile is seeded one Default where the install names it, and every owner has one default for new agents, which a new agent starts on and which cannot be deleted; a profile in use cannot be deleted; an edit no referencing agent can run is put back.
 import { TRPCError } from "@trpc/server";
-import type { AliasedConnection, HarnessCatalog } from "api-server-api";
+import type {
+  AliasedConnection,
+  HarnessCatalog,
+  OwnerModelCatalogView,
+} from "api-server-api";
 import { describe, expect, it } from "vitest";
 import type {
   ProfileReferences,
@@ -123,6 +127,7 @@ function service(
   repo: ProfilesRepository,
   opts: {
     seed?: { harness: string; model: string } | null;
+    ownerCatalog?: () => Promise<OwnerModelCatalogView>;
     republish?: () => Promise<string | null>;
     agentBinding?: readonly string[] | "*";
   } = {},
@@ -135,6 +140,7 @@ function service(
       opts.seed === undefined
         ? { harness: "pi", model: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017" }
         : opts.seed,
+    ...(opts.ownerCatalog && { ownerCatalog: opts.ownerCatalog }),
     agentBinding: opts.agentBinding ?? "*",
     resolve: profileResolver(repo),
     republish: opts.republish ?? (async () => null),
@@ -213,6 +219,62 @@ describe("the owner's profiles", () => {
     const unserved = fakeRepo({ rows: [] });
     await service(unserved.repo, { seed: null }).list();
     expect(unserved.writes.seeds).toBe(0);
+  });
+
+  /** TEST_SCENARIO: on an install without the shared CurveBender, an owner's first provider that has listed its models gives "Default": the install's default harness where it runs, and the model the platform prefers for work over the newest it lists; with no provider listed yet, nothing is seeded and the next read tries again. */
+  it("seeds Default from the first listed provider without the shared CurveBender", async () => {
+    const model = (upstreamId: string, harnesses: string[]) => ({
+      name: `ibm/${upstreamId}`,
+      upstreamId,
+      contextWindow: null,
+      maxOutputTokens: null,
+      reasoning: null,
+      vision: null,
+      prices: null,
+      source: { limits: "none" as const, prices: "none" as const },
+      harnesses,
+    });
+    const listing = (status: "listed" | "unavailable") => async () =>
+      ({
+        defaultHarness: "claude-code",
+        modelRouter: true,
+        harnesses: [],
+        providers: [
+          {
+            connectionId: "conn-ibm",
+            alias: "ibm",
+            template: "ibm-litellm",
+            displayName: "IBM",
+            status,
+            listedAt: null,
+            harnesses: ["claude-code", "pi"],
+            models: [
+              model("aws/claude-sonnet-6", ["claude-code", "pi"]),
+              model("aws/claude-opus-5-5", ["claude-code", "pi"]),
+            ],
+          },
+        ],
+      }) as OwnerModelCatalogView;
+    const waiting = fakeRepo({ rows: [] });
+    await service(waiting.repo, {
+      seed: null,
+      ownerCatalog: listing("unavailable"),
+    }).list();
+    expect(waiting.writes.seeds).toBe(0);
+    const listed = fakeRepo({ rows: [] });
+    const profiles = await service(listed.repo, {
+      seed: null,
+      ownerCatalog: listing("listed"),
+    }).list();
+    expect(profiles).toEqual([
+      expect.objectContaining({
+        name: "Default",
+        harness: "claude-code",
+        providerTemplate: "ibm-litellm",
+        model: "ibm/aws/claude-opus-5-5",
+        newAgentDefault: true,
+      }),
+    ]);
   });
 
   /** TEST_SCENARIO: an owner who already has profiles gets no "Default"; their oldest becomes the default for new agents. */
