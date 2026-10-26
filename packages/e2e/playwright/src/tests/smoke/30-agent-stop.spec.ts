@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { setMockAgentReply, waitForAgentRunning } from "../../lib/agents.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { agentName, mockDefaultReply } from "../../lib/fixtures.js";
+import { agentName } from "../../lib/fixtures.js";
 
 const stopChannelId = "C-E2E-STOP";
 const strangerSlackUserId = "U-E2E-STOPPER";
@@ -11,15 +11,10 @@ const runningTs = "1700000010.000100";
 const stoppedTs = "1700000011.000100";
 const wokenTs = "1700000012.000100";
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the mention in one thread was answered. The e2e Slack gateway signs every agent post with the agent's name, so a reply is matched with includes rather than at its start.
+// UNIT_BOUNDARY_DESCRIPTION: whether the mention in one thread was answered. The e2e Slack gateway records what the agent posts, and an ephemeral is not a reply, so any message in the thread is the answer.
 async function answeredIn(api: ApiClient, ts: string): Promise<boolean> {
   const { records } = await api.e2e.slackReadOutbound.query();
-  return records.some(
-    (r) =>
-      r.kind === "message" &&
-      r.threadTs === ts &&
-      r.text.includes(mockDefaultReply),
-  );
+  return records.some((r) => r.kind === "message" && r.threadTs === ts);
 }
 
 test("Stop holds the agent against a channel mention, and Wake releases it", async ({
@@ -39,7 +34,6 @@ test("Stop holds the agent against a channel mention, and Wake releases it", asy
     agentRow().getByRole("button", { name: "Agent actions" });
 
   await test.step("bind a channel and prove a mention is answered", async () => {
-    await setMockAgentReply(api, agentId, mockDefaultReply);
     await api.agents.connectSlack.mutate({
       id: agentId,
       slackChannelId: stopChannelId,
