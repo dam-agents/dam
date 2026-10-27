@@ -1,7 +1,7 @@
 ---
 name: develop
 description: >
-  Take a change from request to merged pull request through one fixed process: a GitHub issue, or a free-text description of a feature or bug fix, goes through research of the area it touches (duplicate issues, who built and last changed the code, open and closed pull requests, whether today's behavior was a deliberate decision), a grilling of the plan, the implementation with the repository's own engineering skills, a doc-drift check and a code review, a descriptive report of what was built, and a pull request taken through CI and review to merge.
+  Take a change from request to merged pull request through one fixed process: a GitHub issue, or a free-text description of a feature or bug fix, goes through research of the area it touches (duplicate issues, who built and last changed the code, open and closed pull requests, whether today's behavior was a deliberate decision), a grilling of the plan, the implementation with the repository's own engineering skills, a documentation check and a code review, a descriptive report of what was built, and a pull request taken through CI and review to merge.
   Use when the user wants to develop, implement or fix something and hands over an issue link or number or describes the change in words — "develop", "/develop", "implementuj", "oprav", "chci přidat", "work on issue #123".
 argument-hint: "<issue URL or number | description of the feature or bug>"
 ---
@@ -14,9 +14,10 @@ Run the steps in order and finish each one before the next.
 ## 0. Read the input
 
 - **GitHub issue** (URL, `#123`, or a number): read it with its comments (`gh issue view <n> --comments`), and any parent issue and linked pull requests.
-  An issue already carries the problem statement, so skip step 1 and go to step 2.
+  An issue states what to change, not the history of the code it touches, so still run step 1.
+  Skip only the duplicate search in 1a; still note other issues that change the same area.
 - **Free-text description**: restate it in one or two sentences, so the user can correct the reading before you research it.
-  Then run step 1.
+  Then run all of step 1.
 
 ## 1. Research the area
 
@@ -111,7 +112,9 @@ Without it, run this short version:
 
 ### 2a. Record the outcome
 
-Every change ends this step with an issue that carries it:
+Every change ends this step with an issue that carries it and the decision log.
+`grill-me` offers this in its own wrap-up; when it already posted the log or filed the issue, keep that and do not ask again.
+Otherwise:
 
 - **Input was an issue**: post the decision log on it as a comment.
 - **Input was a description**, and step 1 found no issue to reuse: file one with the `file-issue` skill, with the request, the step 1 findings that matter to a reader, and the decision log as input.
@@ -126,7 +129,9 @@ Ask the user first when the repository keeps no decision records at all.
 ### 2b. Check the size
 
 If the grilling shows the change is too large for one reviewable pull request, offer to split it before any code is written.
-With the `plan-feature` and `implement-feature` skills, hand the issue to `plan-feature` and then build with `implement-feature`: they replace steps 3 and 6, while steps 4 and 5 still run before the pull request is marked ready, and step 7 after.
+With the `plan-feature` and `implement-feature` skills, hand the issue to `plan-feature`, then let `implement-feature` run to its end: it takes the place of steps 3 to 6, with its own branch, smoke tests, code review and pull request.
+Pass it the decision log, so its pull request carries the decisions.
+When it is done, run the documentation check of step 4 and the report of step 5 on the whole branch, push any doc fixes, and go on with step 7.
 Without them, agree with the user on an ordered list of smaller changes, file each as its own issue, and take each through steps 3 to 7.
 
 ## 3. Implement
@@ -172,15 +177,15 @@ Push only in step 6.
 
 ## 4. Check the change
 
-Run both checks on the whole branch diff:
+Run these checks on the whole branch diff:
 
-- the `doc-drift` skill, for architecture docs the change leaves out of date;
-- the `code-review` skill, Claude Code's built-in review.
+- **Code review**: Claude Code's built-in `code-review` skill.
+- **Documentation**: find the documentation that describes the changed area (architecture and design docs, READMEs, API and configuration references, user guides), compare it with the new implementation, and update every statement the change made untrue.
+  When the repository has the `doc-drift` skill, run it as well: it applies the repository's own rules to the docs it covers, which may be only part of them.
 
-Fix what they find and run them again, until neither reports a blocking finding.
+Fix what they find and run them again, until none reports a blocking finding.
 A finding you think is wrong goes to the user, not into a silent skip.
 When the change touches security-sensitive ground — authentication, authorization, secrets, user input reaching a shell, query or file path, network exposure, cryptography — propose a security review to the user (Claude Code's built-in `security-review` skill), and run it if they agree.
-Without `doc-drift`, check the drift yourself: find the documentation that describes the changed area (architecture and design docs, READMEs, API and configuration references, user guides), compare it with the new implementation, and update every statement the change made untrue.
 
 ## 5. Report what was built
 
@@ -208,6 +213,8 @@ Without `pr-open`, run the repository's checks, then open the pull request with 
 
 ## 7. Take it to merge
 
-Hand the pull request to the `babysit` skill: it watches CI and the code reviews, fixes the pull request after each round, and asks for the next review, until the reviews approve and CI is green.
+Hand the pull request from step 6 to the `babysit` skill: it watches CI and the code reviews, fixes the pull request after each round, and asks for the next review, until the reviews approve and CI is green.
+Tell it the pull request is already open and its size settled in step 2b: `babysit` would otherwise open one with `pr-open` without the decisions, or offer to split it again.
+Keep the decision log at hand while it runs: a review that questions a recorded decision gets answered from the log, not changed in the code.
 Then ask the user for the go-ahead to merge, and let `babysit` follow the merge until the pull request is merged.
 Without `babysit`, run the same loop yourself: wait for CI and the reviews, fix every failure and blocking finding in one push per round, and repeat.
