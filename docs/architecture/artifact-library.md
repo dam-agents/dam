@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -207,6 +207,8 @@ flowchart LR
   While the library holds no artifact and no folder, the page shows an introduction instead of the list, with Create agent and Upload artifact; a list that fails to load still shows the list's retry.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
   Folders are listed first and unfiled artifacts after them at the top level; every user folder is listed, empty ones included, even when the list shows one Agent's artifacts, so a folder created there is in view at once and can take a drop.
+  With the `environments` feature on, the owner's [Environments](environments.md#surfaces) are an **Environments** group above the folders, which folds like one, shown only while it has an Environment to show: in an Agent's chat that Agent's alone, and filtered by name with a search.
+  The list and the page's introduction count them too, so an owner with Environments and no artifact sees the list.
 - Opening an artifact docks a **preview** in the same tab, or, in a chat with both experiments off, in the panel docked beside the conversation; it reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.
   An owner can **change a text artifact's content** from the preview, which publishes a version like any other revision, so the artifact keeps its identity, its link and every earlier version.
   Only the current version is editable; a past one is read-only.

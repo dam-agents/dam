@@ -32,10 +32,10 @@ describe("who may open an Environment", () => {
     const { caller, environments } = setup(principal(["agent-owning"]));
 
     await expect(
-      caller.environments.accessList({ owningAgentId: "agent-owning" }),
+      caller.environments.agentMembers({ owningAgentId: "agent-owning" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
-      caller.environments.setAccessList({
+      caller.environments.setAgentMembers({
         owningAgentId: "agent-owning",
         emails: ["someone@example.com"],
       }),
@@ -60,7 +60,7 @@ describe("who may open an Environment", () => {
     const { caller } = setup(principal("*"));
 
     expect(
-      await caller.environments.accessList({ owningAgentId: "agent-owning" }),
+      await caller.environments.agentMembers({ owningAgentId: "agent-owning" }),
     ).toEqual(["reviewer@example.com"]);
   });
 });

@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -62,7 +62,7 @@ The updates the Agent context once took in one procedure are now one procedure p
 An approval names only its id, so the middleware reads the Agent from the approval, and the approval adds the permission of what it lets through: `sessions` for a tool call, `egressRules` for network access or a rule the Agent proposes.
 A spend limit question names no Agent for this check, because continuing it raises the owner's own spending: it stays with the owner.
 
-An editor opens the Agent's Environments like its owner: the owning Agent's editors are always on the list, and no Environment's own list narrows them out (see [environments](environments.md)).
+An editor opens the Agent's Environments like its owner, and sets the Agent's Environment Members on its page; adding a person to one Environment is the owner's, in the Artifacts list (see [environments](environments.md#surfaces)).
 
 ## Sessions
 

@@ -91,9 +91,10 @@ vi.mock("../../modules/processes/components/pending-restart-banner.js", () => ({
   useApplyPendingRestartWithConfirm: () => ({ apply: vi.fn() }),
 }));
 vi.mock(
-  "../../modules/environments/components/environments-section.js",
+  "../../modules/environments/components/agent-environment-members.js",
   () => ({
-    EnvironmentsSection: () => createElement("p", null, "ENVIRONMENTS-SECTION"),
+    AgentEnvironmentsSection: () =>
+      createElement("p", null, "ENVIRONMENTS-SECTION"),
   }),
 );
 vi.mock("../../modules/sandboxes/components/sandbox-home-header.js", () => ({

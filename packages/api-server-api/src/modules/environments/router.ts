@@ -8,7 +8,7 @@ import {
   requireWildcardBinding,
 } from "../../auth-procedures.js";
 import {
-  environmentAccessListInputSchema,
+  environmentAgentMembersInputSchema,
   environmentExtendInputSchema,
   environmentIdInputSchema,
   environmentListInputSchema,
@@ -33,7 +33,7 @@ export const environmentsRouter = t.router({
     .use(requireWildcardBinding)
     .query(({ ctx }) => ctx.environments.listAll()),
 
-  accessList: readAgentProcedure
+  agentMembers: readAgentProcedure
     .use(requireWildcardBinding)
     .input(environmentListInputSchema)
     .use(agentPermission("view", (input) => agentTarget(input.owningAgentId)))
@@ -42,8 +42,8 @@ export const environmentsRouter = t.router({
       return ctx.environments.agentMembers(input.owningAgentId);
     }),
 
-  setAccessList: manageAgentsProcedure
-    .input(environmentAccessListInputSchema)
+  setAgentMembers: manageAgentsProcedure
+    .input(environmentAgentMembersInputSchema)
     .use(
       agentPermission("environments", (input) =>
         agentTarget(input.owningAgentId),

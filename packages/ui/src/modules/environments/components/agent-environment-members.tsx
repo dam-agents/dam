@@ -1,83 +1,76 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ListSection } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { useStore } from "../../../store.js";
 import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.js";
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
 import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
-import { useSetEnvironmentAccessList } from "../api/mutations.js";
-import { useEnvironmentAccessList, useEnvironments } from "../api/queries.js";
-import { EnvironmentCard } from "./environment-card.js";
-
-export const NO_ENVIRONMENTS =
-  "No Environments yet. The agent creates one with its create_environment tool, for example to run a pull request's build for you to open.";
+import { useSetAgentEnvironmentMembers } from "../api/mutations.js";
+import { useAgentEnvironmentMembers } from "../api/queries.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: An agent's Environments, which the agent creates
- * and controls, and the owner's controls over them: the list of people who may
- * open any of them, and each Environment's card. The owner creates none here;
- * the agent does, with its tools.
+ * UNIT_BOUNDARY_DESCRIPTION: The Environments section of an agent's page: the
+ * agent's Environment Members, who open every Environment it creates, read at
+ * each request, and a link to the Artifacts list, where its owner finds,
+ * shares, extends and deletes each Environment. The agent sets none of it.
  */
-export function EnvironmentsSection({
+export function AgentEnvironmentsSection({
   agentId,
   header,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
 }) {
-  const environments = useEnvironments(agentId);
-  const list = environments.data ?? [];
-
+  const setView = useStore((s) => s.setView);
   return (
     <>
       {header()}
-      <AccessListEditor key={agentId} agentId={agentId} />
-      <ListSection
-        label="Environments"
-        loading={environments.isPending}
-        error={environments.isError && "Couldn't load Environments."}
-        isEmpty={list.length === 0}
-        empty={NO_ENVIRONMENTS}
-        separated
-      >
-        {list.map((environment) => (
-          <EnvironmentCard key={environment.id} environment={environment} />
-        ))}
-      </ListSection>
+      <AgentEnvironmentMembers key={agentId} agentId={agentId} />
+      <p className="text-sm text-muted-foreground" data-testid="environments-in-artifacts">
+        The agent&apos;s Environments are in{" "}
+        <button
+          type="button"
+          className="text-accent hover:underline"
+          onClick={() => setView("artifacts")}
+        >
+          Artifacts
+        </button>
+        , where you open, share, extend and delete each one.
+      </p>
     </>
   );
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The owner's list of people who may open this
- * agent's Environments, by the email they sign in with. The owner always may;
- * the agent may narrow the list for one Environment, never add to it. The
- * list is edited only once it loaded, so a Save never replaces a list the
- * page could not read, and its edits belong to one agent: moving to another
- * agent starts the editor afresh.
+ * UNIT_BOUNDARY_DESCRIPTION: The agent's Environment Members, by the email
+ * they sign in with. The owner and the agent's editors always may open its
+ * Environments; the owner adds a person to one Environment in its Share
+ * dialog. The list is edited only once it loaded, so a Save never replaces a
+ * list the page could not read, and its edits belong to one agent: moving to
+ * another agent starts the editor afresh.
  */
-export function AccessListEditor({ agentId }: { agentId: string }) {
-  const saved = useEnvironmentAccessList(agentId);
-  const save = useSetEnvironmentAccessList();
+function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
+  const saved = useAgentEnvironmentMembers(agentId);
+  const save = useSetAgentEnvironmentMembers();
   const [edited, setEdited] = useState<string[] | null>(null);
   const [draft, setDraft] = useState("");
 
   return (
     <div className="mb-6 flex flex-col gap-2" data-testid="environment-access">
-      <SectionLabel>Who may open them</SectionLabel>
+      <SectionLabel>Environment members</SectionLabel>
       <p className="text-sm text-muted-foreground">
-        You always may. Add the people who review this agent's work; they sign
-        in with this email. The agent can narrow the list for one Environment,
-        never add to it.
+        They open every Environment this agent creates, signed in with this
+        email, as you and the agent&apos;s editors do. Only people change this
+        list; the agent cannot.
       </p>
       {saved.data === undefined ? (
         <p className="text-sm text-muted-foreground">
           {saved.isError ? "Couldn't load the list." : "Loading…"}
         </p>
       ) : (
-        <ListForm
+        <MembersForm
           savedEmails={saved.data}
           edited={edited}
           setEdited={setEdited}
@@ -96,8 +89,8 @@ export function AccessListEditor({ agentId }: { agentId: string }) {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the loaded list, its edits and their Save. The shared editor says how full the list is, and the empty list says that only the owner may open them.
-function ListForm({
+// UNIT_BOUNDARY_DESCRIPTION: the loaded list, its edits and their Save. The shared editor says how full the list is, and the empty list says who may open them without it.
+function MembersForm({
   savedEmails,
   edited,
   setEdited,
@@ -125,8 +118,10 @@ function ListForm({
         disabled={saving}
         draft={draft}
         onDraftChange={setDraft}
+        inputLabel="Member email address"
         {...(emails.length === 0 && {
-          caption: "Only you can open this agent's Environments.",
+          caption:
+            "Only you and the agent's editors can open this agent's Environments.",
         })}
       />
       {dirty && (
