@@ -1,7 +1,6 @@
 import "./getting-started.css";
 
 import { useCallback, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
@@ -17,25 +16,25 @@ import { ChecklistPanel } from "./checklist-panel.js";
 import { ChecklistPill } from "./checklist-pill.js";
 import { UnlockCelebration } from "./unlock-celebration.js";
 
-const PANEL_POSITION = {
-  corner: "top-[82px] right-4 md:right-6",
-  bar: "top-[60px] right-4 md:top-[78px] md:right-6",
+const PLACEMENT = {
+  page: "fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] md:bottom-4",
+  chat: "absolute right-3 bottom-14 md:bottom-3",
 } as const;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The Get started checklist. It lists the tasks
- * that unlock the avatar characters, plays the celebration for each unlock the
- * user has not seen, and collapses to a progress ring. A click on the ring is
- * the only thing that opens it; a click elsewhere on the page, Escape, its
- * collapse chevron or Dismiss closes it, so it never holds a button of the
- * page it covers. While it is closed, a count on the ring shows the unlocks it
- * holds. Dismissing it hides it until the next unlock or until the avatar
- * picker asks for it; it is gone once every character is unlocked, until the
- * user resets their onboarding progress. Where its page puts it decides its
- * place: in a page's corner it hangs in the band under the approvals bell, and
- * the open card hangs under the ring; in a top bar both hang under the bar. A
- * page that scrolls passes under the card either way. The card takes the
- * keyboard while it is open and gives it back to the ring when it closes, as
+ * UNIT_BOUNDARY_DESCRIPTION: The Get started checklist, docked in the lower
+ * right corner. It lists the tasks that unlock the avatar characters, plays
+ * the celebration for each unlock the user has not seen, and collapses to a
+ * pill. A click on the pill is the only thing that opens it; a click
+ * elsewhere on the page, Escape, its collapse chevron or Dismiss closes it, so
+ * it never holds a button of the page it covers. While it is closed, a count
+ * on the pill shows the unlocks it holds. Dismissing it hides it until the
+ * next unlock or until the avatar picker asks for it; it is gone once every
+ * character is unlocked, until the user resets their onboarding progress. On
+ * a page it is fixed to the lower right corner of the window. In the chat it
+ * sits inside the message area, so it never covers the composer below it. The
+ * card takes the
+ * keyboard while it is open and gives it back to the pill when it closes, as
  * the drawer it replaces did; it does not trap the keyboard, because the page
  * stays reachable and a click there closes it. A dock that leaves the page,
  * because every character is unlocked or another tab dismissed it, drops the
@@ -44,7 +43,7 @@ const PANEL_POSITION = {
 export function GettingStartedDock({
   placement,
 }: {
-  placement: keyof typeof PANEL_POSITION;
+  placement: keyof typeof PLACEMENT;
 }) {
   const progress = useGettingStarted().data;
   const expanded = useStore((s) => s.checklistExpanded);
@@ -53,9 +52,8 @@ export function GettingStartedDock({
   const markSeen = useMarkUnlockSeen();
   const setDismissed = useSetChecklistDismissed();
   const startTask = useStartTask();
-  const pill = useRef<HTMLDivElement>(null);
+  const dock = useRef<HTMLDivElement>(null);
   const ring = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLElement>(null);
 
   const checklist = progress ? deriveChecklist(progress) : null;
@@ -75,9 +73,7 @@ export function GettingStartedDock({
     if (!open) return;
     const away = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (pill.current?.contains(target) || panel.current?.contains(target))
-        return;
-      close();
+      if (!dock.current?.contains(target)) close();
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !event.defaultPrevented) close();
@@ -107,51 +103,49 @@ export function GettingStartedDock({
 
   const unseen = progress?.unlocks.filter((unlock) => !unlock.seen).length ?? 0;
 
+  const dismiss = () => {
+    close();
+    setDismissed.mutate({ dismissed: true });
+  };
+
   return (
-    <div ref={pill}>
-      <ChecklistPill
-        ref={ring}
-        done={checklist.unlocked.length}
-        total={checklist.rows.length}
-        unseen={unseen}
-        expanded={open}
-        onToggle={() => setExpanded(!open)}
-      />
-      {open &&
-        createPortal(
-          <div
-            ref={panel}
-            data-testid="getting-started-dock-layer"
-            className={cn(
-              "getting-started-dock fixed z-raised flex flex-col items-end gap-3",
-              PANEL_POSITION[placement],
-            )}
-          >
-            {celebrating && (
-              <UnlockCelebration
-                key={celebrating.unlock.task}
-                character={celebrating.unlock.character}
-                variant={celebrating.variant}
-                onFinished={finishCelebration}
-              />
-            )}
-            <ChecklistPanel
-              ref={card}
-              rows={checklist.rows}
-              onCollapse={close}
-              onDismiss={() => {
-                close();
-                setDismissed.mutate({ dismissed: true });
-              }}
-              onStart={(task) => {
-                close();
-                setMobileScreen("chat");
-                void startTask(task);
-              }}
-            />
-          </div>,
-          document.body,
-        )}
+    <div
+      ref={dock}
+      className={cn(
+        "getting-started-dock z-raised flex flex-col items-end gap-3",
+        PLACEMENT[placement],
+      )}
+    >
+      {open && celebrating && (
+        <UnlockCelebration
+          key={celebrating.unlock.task}
+          character={celebrating.unlock.character}
+          variant={celebrating.variant}
+          onFinished={finishCelebration}
+        />
+      )}
+      {open ? (
+        <ChecklistPanel
+          ref={card}
+          rows={checklist.rows}
+          onCollapse={close}
+          onDismiss={dismiss}
+          onStart={(task) => {
+            close();
+            setMobileScreen("chat");
+            void startTask(task);
+          }}
+        />
+      ) : (
+        <ChecklistPill
+          ref={ring}
+          done={checklist.unlocked.length}
+          total={checklist.rows.length}
+          unseen={unseen}
+          onExpand={() => setExpanded(true)}
+          onDismiss={dismiss}
+        />
+      )}
     </div>
   );
 }

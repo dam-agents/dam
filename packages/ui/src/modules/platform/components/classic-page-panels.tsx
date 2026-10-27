@@ -1,34 +1,21 @@
 import { useCallback } from "react";
 
-import { useIsDesktop } from "../../../hooks/use-is-desktop.js";
 import { useStore } from "../../../store.js";
-import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
 import { ApprovalsDrawer } from "../../home/components/approvals-panel.js";
 import { AppSidePanelButtons } from "../../sessions/components/app-side-panel.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The right edge of a page. The approvals bell and,
- * on an Agent's configuration page, Artifacts sit in the page's own top corner
- * row, and the bell opens Approvals as a drawer over the page, so no icon
- * column takes room beside it. The Get started ring hangs under that row, out
- * of its flow, so the row keeps no place for it and the page scrolls under it;
- * its dock opens under the ring. The drawer reads the side panel's tab, so a
- * phone opens it the same way. The row shows on a wide screen only, so a phone
- * carries the ring in the page's top bar instead; the ring follows the same
- * breakpoint so a phone mounts one dock, not two.
+ * UNIT_BOUNDARY_DESCRIPTION: The right edge of a page: the approvals bell in
+ * the page's own top corner, and Approvals as a drawer over the page, so no
+ * icon column takes room beside the page. The drawer reads the side panel's
+ * tab, so a phone's top bar opens it the same way.
  */
 export function ClassicPageActions() {
-  const desktop = useIsDesktop();
   return (
     <div className="pointer-events-none sticky top-0 z-raised hidden justify-end px-4 pt-3 md:flex md:px-6">
       <div className="pointer-events-auto flex items-center gap-1">
         <AppSidePanelButtons onDesktop withArtifacts />
       </div>
-      {desktop && (
-        <div className="pointer-events-auto absolute top-[46px] right-4 md:right-6">
-          <GettingStartedDock placement="corner" />
-        </div>
-      )}
     </div>
   );
 }

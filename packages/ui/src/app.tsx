@@ -206,14 +206,7 @@ function MainApp() {
             className="flex flex-1 min-w-0 flex-col overflow-y-auto [scrollbar-gutter:stable] outline-none"
           >
             {!desktop && (
-              <AppTopBar
-                actions={
-                  <>
-                    <GettingStartedDock placement="bar" />
-                    <AppSidePanelButtons withArtifacts />
-                  </>
-                }
-              />
+              <AppTopBar actions={<AppSidePanelButtons withArtifacts />} />
             )}
             <ClassicPageActions />
             <div
@@ -256,6 +249,7 @@ function MainApp() {
       <SignInFollowUp />
       <DialogOverlay />
       <ConnectionBanner />
+      <GettingStartedDock placement="page" />
     </div>
   );
 }

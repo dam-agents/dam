@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The Get started checklist is a dock that floats over the page. Its progress ring is the only thing that opens it, a click elsewhere, Escape, its collapse chevron or Dismiss closes it, and the card hangs under the ring below the page's corner row, or under the top bar that holds the ring. It is gone once every avatar character is unlocked, or while the user has dismissed it.
+// TEST_OVERVIEW: The Get started checklist is a dock that floats in the lower right corner, fixed to the window on a page and inside the message area in the chat. Its pill is the only thing that opens it, a click elsewhere, Escape, its collapse chevron or Dismiss closes it back to the pill. It is gone once every avatar character is unlocked, or while the user has dismissed it.
 import type { AvatarUnlock, GettingStartedProgress } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -68,10 +68,10 @@ const ALL_TASKS: AvatarUnlock["task"][] = [
 const roots: {
   root: Root;
   container: HTMLElement;
-  placement: "corner" | "bar";
+  placement: "page" | "chat";
 }[] = [];
 
-function dockElement(placement: "corner" | "bar") {
+function dockElement(placement: "page" | "chat") {
   return createElement(
     TooltipProvider,
     null,
@@ -79,7 +79,7 @@ function dockElement(placement: "corner" | "bar") {
   );
 }
 
-function rendered(placement: "corner" | "bar"): HTMLElement {
+function rendered(placement: "page" | "chat"): HTMLElement {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -119,7 +119,7 @@ afterEach(() => {
 
 // TEST_SCENARIO: a closed checklist shows only the ring, and the ring's click asks for the dock, which no page load and no unlock does on its own.
 it("opens the dock from the ring", () => {
-  rendered("corner");
+  rendered("page");
   expect(inDocument("getting-started-ring")).not.toBeNull();
   expect(inDocument("getting-started-dock")).toBeNull();
   act(() => inDocument("getting-started-ring")?.click());
@@ -129,7 +129,7 @@ it("opens the dock from the ring", () => {
 // TEST_SCENARIO: an open dock lists the tasks, and its collapse chevron closes it.
 it("closes the dock from its collapse chevron", () => {
   fake.expanded = true;
-  rendered("corner");
+  rendered("page");
   expect(inDocument("getting-started-dock")).not.toBeNull();
   act(() =>
     document
@@ -142,7 +142,7 @@ it("closes the dock from its collapse chevron", () => {
 // TEST_SCENARIO: a click on the page under the dock closes it, so the dock never holds a button of the page; a click inside it leaves it open.
 it("closes the dock on a click outside it", () => {
   fake.expanded = true;
-  rendered("corner");
+  rendered("page");
   act(() => {
     document.body.dispatchEvent(
       new PointerEvent("pointerdown", { bubbles: true }),
@@ -161,7 +161,7 @@ it("closes the dock on a click outside it", () => {
 // TEST_SCENARIO: Dismiss closes the card and clears the open flag, so the next unlock, which clears the dismissal on the server, cannot open a card the user asked to close.
 it("clears the open flag when the user dismisses the checklist", () => {
   fake.expanded = true;
-  rendered("corner");
+  rendered("page");
   act(() => {
     [...document.querySelectorAll("button")]
       .find((button) => button.textContent === "Dismiss")
@@ -176,7 +176,7 @@ it("clears the open flag when the user dismisses the checklist", () => {
 // TEST_SCENARIO: the card takes the keyboard when the user opens it, so its rows are next in the tab order, and gives it back to the ring when it closes, so a keyboard user is not dropped at the top of the page. A page that mounts with the dock already open leaves the keyboard where it is.
 it("moves focus into the card and back to the ring", () => {
   fake.expanded = true;
-  rendered("corner");
+  rendered("page");
   expect(document.activeElement).not.toBe(inDocument("getting-started-dock"));
   fake.expanded = false;
   rerenderAll();
@@ -191,33 +191,50 @@ it("moves focus into the card and back to the ring", () => {
 // TEST_SCENARIO: Escape closes the dock, as it does every other overlay.
 it("closes the dock on Escape", () => {
   fake.expanded = true;
-  rendered("corner");
+  rendered("page");
   act(() => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   });
   expect(fake.setExpanded).toHaveBeenCalledWith(false);
 });
 
-// TEST_SCENARIO: the dock hangs in a fixed layer under the ring, low enough to clear the page's corner row above it, and lower still under the chat's taller top bar.
-it("hangs the dock under the ring of its page", () => {
-  const layer = () => inDocument("getting-started-dock-layer");
-  fake.expanded = true;
-  rendered("corner");
+// TEST_SCENARIO: on a page the dock is fixed to the window's lower right corner, and in the chat it sits in the lower right corner of the message area, above the composer.
+it("docks in the lower right corner", () => {
+  const layer = () =>
+    inDocument("getting-started-ring")?.closest(".getting-started-dock");
+  rendered("page");
   expect(layer()?.className).toContain("fixed");
-  expect(layer()?.className).toContain("top-[82px]");
   expect(layer()?.className).toContain("right-4");
-  expect(layer()?.className).toContain("md:right-6");
+  expect(layer()?.className).toContain("md:bottom-4");
   unmountAll();
-  rendered("bar");
-  expect(layer()?.className).toContain("fixed");
-  expect(layer()?.className).toContain("top-[60px]");
-  expect(layer()?.className).toContain("md:top-[78px]");
+  rendered("chat");
+  expect(layer()?.className).toContain("absolute");
+  expect(layer()?.className).toContain("right-3");
+  expect(layer()?.className).toContain("md:bottom-3");
+});
+
+// TEST_SCENARIO: the open card replaces the pill in its corner, and the pill's own X dismisses the checklist without opening it.
+it("swaps the pill for the card and dismisses from the pill", () => {
+  fake.expanded = true;
+  rendered("page");
+  expect(inDocument("getting-started-ring")).toBeNull();
+  unmountAll();
+  fake.expanded = false;
+  rendered("page");
+  act(() =>
+    document
+      .querySelector<HTMLElement>('[aria-label="Dismiss checklist"]')
+      ?.click(),
+  );
+  act(() => vi.advanceTimersByTime(300));
+  expect(fake.setDismissed).toHaveBeenCalledWith({ dismissed: true });
+  expect(fake.setExpanded).not.toHaveBeenCalledWith(true);
 });
 
 // TEST_SCENARIO: a dock that leaves the page because the last celebration completed the checklist closes itself, so the reset or the next unlock does not open a card nobody asked for.
 it("clears the open flag when the checklist completes", () => {
   fake.expanded = true;
-  rendered("corner");
+  rendered("page");
   expect(inDocument("getting-started-dock")).not.toBeNull();
   fake.progress = {
     unlocks: ALL_TASKS.map((task, i) => ({
@@ -237,7 +254,7 @@ it("clears the open flag when the checklist completes", () => {
 // TEST_SCENARIO: a dock that leaves the page because another tab dismissed the checklist closes itself too.
 it("clears the open flag when the checklist is dismissed elsewhere", () => {
   fake.expanded = true;
-  rendered("corner");
+  rendered("page");
   expect(inDocument("getting-started-dock")).not.toBeNull();
   fake.progress = { unlocks: [], dismissed: true };
   rerenderAll();
@@ -248,7 +265,7 @@ it("clears the open flag when the checklist is dismissed elsewhere", () => {
 // TEST_SCENARIO: the avatar picker opens a dismissed checklist in one click: the click clears the dismissal on the server and opens the dock, so the dock must not close itself in the moment the dismissal is still in the cache.
 it("stays open when the avatar picker clears the dismissal", () => {
   fake.progress = { unlocks: [], dismissed: true };
-  rendered("corner");
+  rendered("page");
   fake.setExpanded.mockClear();
   act(() => {
     fake.expanded = true;
@@ -260,10 +277,10 @@ it("stays open when the avatar picker clears the dismissal", () => {
   expect(inDocument("getting-started-dock")).not.toBeNull();
 });
 
-// TEST_SCENARIO: a dismissed checklist is gone until the avatar picker asks for it again, and one whose every character is unlocked is gone for good, so the ring leaves the page's corner too.
+// TEST_SCENARIO: a dismissed checklist is gone until the avatar picker asks for it again, and one whose every character is unlocked is gone for good, so the pill leaves the corner too.
 it("hides the ring and the dock for a dismissed or finished checklist", () => {
   fake.progress = { unlocks: [], dismissed: true };
-  rendered("corner");
+  rendered("page");
   expect(inDocument("getting-started-ring")).toBeNull();
   expect(inDocument("getting-started-dock")).toBeNull();
   unmountAll();
@@ -277,7 +294,7 @@ it("hides the ring and the dock for a dismissed or finished checklist", () => {
     })),
     dismissed: false,
   };
-  rendered("corner");
+  rendered("page");
   expect(inDocument("getting-started-ring")).toBeNull();
   expect(inDocument("getting-started-dock")).toBeNull();
 });

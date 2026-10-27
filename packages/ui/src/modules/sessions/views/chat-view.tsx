@@ -1047,6 +1047,7 @@ export function ChatView() {
             </ChatColumn>
           </div>
 
+          <GettingStartedDock placement="chat" />
           {showJump && (
             <button
               onClick={scrollToBottom}
@@ -1235,7 +1236,6 @@ export function ChatView() {
               sessionId={sessionId}
               processesEnabled={processesEnabled}
             />
-            <GettingStartedDock placement="bar" />
             <SidePanelTabButtons
               tabs={appSidePanelTabs(hiddenTabs)}
               active={classicTab}
