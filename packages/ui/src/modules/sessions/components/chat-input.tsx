@@ -318,7 +318,7 @@ export function ChatInput({
   };
 
   const placeholder = budgetLocked
-    ? "Your CurveBender budget has been used up — switch provider to continue"
+    ? "Add a provider to continue"
     : composerLocked
       ? "Complete the setup form above to continue"
       : isComputing
@@ -366,17 +366,19 @@ export function ChatInput({
             </div>
           )}
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
-            <PlusMenuPopover
-              agentId={agentId}
-              disabled={loadingSession || !key}
-              onAttachFile={() => fileInputRef.current?.click()}
-              onConfigureSection={onConfigureSection}
-              onPrefillInput={(text) => {
-                if (!key) return;
-                setDraft(key, { text });
-                requestAnimationFrame(() => textareaRef.current?.focus());
-              }}
-            />
+            {!budgetLocked && (
+              <PlusMenuPopover
+                agentId={agentId}
+                disabled={loadingSession || !key}
+                onAttachFile={() => fileInputRef.current?.click()}
+                onConfigureSection={onConfigureSection}
+                onPrefillInput={(text) => {
+                  if (!key) return;
+                  setDraft(key, { text });
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+              />
+            )}
             <div className="relative flex-1">
               {showRotating && (
                 <span

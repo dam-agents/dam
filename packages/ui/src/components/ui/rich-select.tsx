@@ -13,12 +13,16 @@ import { cn } from "@/lib/utils";
 export interface RichSelectOption<T extends string = string> {
   value: T;
   title: string;
+  triggerTitle?: string;
   description?: ReactNode;
+  triggerDescription?: ReactNode;
   icon?: ReactNode;
   triggerIcon?: ReactNode;
   badge?: ReactNode;
   triggerBadge?: ReactNode;
   trailing?: ReactNode;
+  triggerTrailing?: ReactNode;
+  hideCheck?: boolean;
   testId?: string;
 }
 
@@ -54,7 +58,7 @@ export function RichSelect<T extends string>({
           data-testid={testId}
           className={cn(
             CARD_SURFACE,
-            "group flex min-h-[76px] w-full items-center gap-3.5 p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground",
+            "group flex min-h-[76px] w-full items-start gap-3.5 p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground",
             invalid &&
               "border-destructive hover:border-destructive data-[state=open]:border-destructive",
           )}
@@ -66,13 +70,13 @@ export function RichSelect<T extends string>({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2.5">
                   <p className="truncate text-base font-medium text-foreground">
-                    {selected.title}
+                    {selected.triggerTitle ?? selected.title}
                   </p>
                   {selected.triggerBadge}
                 </div>
-                {selected.description && (
+                {(selected.triggerDescription ?? selected.description) && (
                   <div className="text-sm text-muted-foreground">
-                    {selected.description}
+                    {selected.triggerDescription ?? selected.description}
                   </div>
                 )}
               </div>
@@ -82,6 +86,7 @@ export function RichSelect<T extends string>({
               {placeholder}
             </p>
           )}
+          {selected?.triggerTrailing}
           {invalid && (
             <WarningFilled size={18} className="shrink-0 text-destructive" />
           )}
@@ -105,7 +110,7 @@ export function RichSelect<T extends string>({
             data-testid={option.testId}
             onSelect={() => onSelect(option.value)}
             className={cn(
-              "h-auto items-center gap-3 rounded-lg px-3 py-2.5",
+              "h-auto items-start gap-3 rounded-lg px-3 py-2.5",
               option.value === value && "bg-muted/50",
             )}
           >
@@ -123,7 +128,7 @@ export function RichSelect<T extends string>({
                 </div>
               )}
             </div>
-            {option.value === value ? (
+            {option.value === value && !option.hideCheck ? (
               <Checkmark size={16} className="shrink-0 text-foreground" />
             ) : (
               option.trailing

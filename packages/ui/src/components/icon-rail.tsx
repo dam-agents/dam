@@ -23,6 +23,7 @@ import {
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
+import { getBrand } from "../brand.js";
 import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
 import { timeAgo } from "../lib/format-time.js";
@@ -52,13 +54,6 @@ import { useAgentsList } from "../modules/agents/api/queries.js";
 import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
 import { resolveAgentDisplay } from "../modules/agents/utils/agent-resolver.js";
 import { ConnectionIcon } from "../modules/connections/components/connection-icon.js";
-import {
-  ChecklistCelebration,
-  ChecklistPopoverContent,
-  ProgressRing,
-  useChecklistState,
-} from "../modules/instant-start/components/getting-started-checklist.js";
-import { useInstantStart } from "../modules/instant-start/context.js";
 import { useNotifications } from "../modules/notifications/api/queries.js";
 import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
 import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
@@ -174,10 +169,27 @@ export function IconRail({
     defaultActivityFilter,
   );
   const [showAllAgents, setShowAllAgents] = useState(false);
-  const agentOrder = useStore((s) => s.sidebarAgentOrder) ?? [];
-  const reorderAgents = useStore((s) => s.reorderSidebarAgents) ?? (() => {});
-  const expandedAgentIds =
-    useStore((s) => s.expandedSidebarAgents) ?? new Set<string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawAgentOrder = useStore((s) => (s as any).sidebarAgentOrder) as
+    | string[]
+    | undefined;
+  const agentOrder = useMemo(() => rawAgentOrder ?? [], [rawAgentOrder]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawReorderAgents = useStore((s) => (s as any).reorderSidebarAgents) as
+    | ((ids: string[]) => void)
+    | undefined;
+  const reorderAgents = useCallback(
+    (ids: string[]) => rawReorderAgents?.(ids),
+    [rawReorderAgents],
+  );
+  const rawExpandedAgentIds = useStore(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (s) => (s as any).expandedSidebarAgents,
+  ) as Set<string> | undefined;
+  const expandedAgentIds = useMemo(
+    () => rawExpandedAgentIds ?? new Set<string>(),
+    [rawExpandedAgentIds],
+  );
   const toggleSidebarAgent = useStore((s) => s.toggleSidebarAgent);
   const expandSidebarAgent = useStore((s) => s.expandSidebarAgent);
   const activeSessionId = useStore((s) => s.sidebarActiveSessionId);
@@ -432,35 +444,52 @@ export function IconRail({
       >
         <div
           className={cn(
-            "flex shrink-0 items-center px-2",
-            expandedNav ? "w-full justify-end gap-2" : "justify-center",
+            "flex shrink-0 items-center px-2 pt-2",
+            expandedNav ? "w-full justify-between gap-2" : "flex-col gap-1",
           )}
         >
-          <Tooltip
-            content={expandedNav ? "Collapse navigation" : "Expand navigation"}
-            side="right"
-          >
-            <button
-              type="button"
-              onClick={() => setExpandedNav(!expandedNav)}
-              aria-label={
-                expandedNav ? "Collapse navigation" : "Expand navigation"
-              }
-              aria-expanded={expandedNav}
-              className={cn(
-                "group relative flex items-center justify-center rounded-lg transition-colors hover:bg-muted hover:text-foreground",
-                expandedNav
-                  ? "p-1.5 text-muted-foreground"
-                  : "h-10 w-10 text-foreground/80",
-              )}
-            >
-              {expandedNav ? (
-                <ChevronLeft size={16} />
-              ) : (
-                <ChevronRight size={16} />
-              )}
-            </button>
-          </Tooltip>
+          {expandedNav ? (
+            <>
+              <button
+                type="button"
+                onClick={sandboxes.navigate}
+                aria-label={getBrand().name}
+                className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <BrandLogo />
+              </button>
+              <div className="flex items-center gap-0.5">
+                <Tooltip content="Collapse navigation" side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedNav(false)}
+                    aria-label="Collapse navigation"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                </Tooltip>
+              </div>
+            </>
+          ) : (
+            <>
+              <Tooltip content="Expand navigation" side="right">
+                <button
+                  type="button"
+                  onClick={() => setExpandedNav(true)}
+                  aria-label="Expand navigation"
+                  aria-expanded={false}
+                  className="group relative flex h-10 w-10 items-center justify-center rounded-lg text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <BrandLogo className="transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
+                  <ChevronRight
+                    size={16}
+                    className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+                  />
+                </button>
+              </Tooltip>
+            </>
+          )}
         </div>
         <div className="mt-px shrink-0 flex flex-col gap-px px-2">
           <RailItem {...sandboxes} expanded={expandedNav} />
@@ -485,9 +514,9 @@ export function IconRail({
                   )}
                 >
                   <SectionLabel>Agents</SectionLabel>
-                  <DropdownMenu>
+                  <Popover>
                     <Tooltip content="Create agent" side="right">
-                      <DropdownMenuTrigger asChild>
+                      <PopoverTrigger asChild>
                         <button
                           type="button"
                           aria-label="Create agent"
@@ -495,25 +524,39 @@ export function IconRail({
                         >
                           <Add size={16} />
                         </button>
-                      </DropdownMenuTrigger>
+                      </PopoverTrigger>
                     </Tooltip>
-                    <DropdownMenuContent align="start" className="w-52">
-                      <DropdownMenuItem onClick={() => setView("agent-new")}>
-                        <Add
-                          size={16}
-                          className="shrink-0 text-muted-foreground"
-                        />
-                        Create from scratch
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setView("packs")}>
-                        <Gift
-                          size={16}
-                          className="shrink-0 text-muted-foreground"
-                        />
-                        Start from a kit
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    <PopoverContent
+                      side="right"
+                      align="start"
+                      className="w-52 p-1"
+                    >
+                      <PopoverClose asChild>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                        >
+                          <Add
+                            size={16}
+                            className="shrink-0 text-muted-foreground"
+                          />
+                          Create from scratch
+                        </button>
+                      </PopoverClose>
+                      <PopoverClose asChild>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                        >
+                          <Gift
+                            size={16}
+                            className="shrink-0 text-muted-foreground"
+                          />
+                          Use a starter kit
+                        </button>
+                      </PopoverClose>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="flex flex-col gap-px px-2">
                   {visibleAgents.map((agent, agentIndex) => {
@@ -1537,9 +1580,6 @@ export function IconRail({
           </>
         )}
 
-        <div className="shrink-0 px-2">
-          <SidebarChecklist expanded={expandedNav} />
-        </div>
         <div className="shrink-0 pb-2 pt-1">
           <div className="flex flex-col gap-px px-2">
             <RailLink
@@ -1561,87 +1601,6 @@ export function IconRail({
         </nav>
       )}
     </>
-  );
-}
-
-function SidebarChecklist({ expanded }: { expanded: boolean }) {
-  const ctx = useInstantStart();
-  const { done, total, celebrating, finished } = useChecklistState(
-    !!ctx?.firstLanding,
-  );
-  const [open, setOpen] = useState(false);
-
-  if (!ctx?.firstLanding || finished) return null;
-
-  const showCelebration = !!celebrating;
-
-  const trigger = (
-    <button
-      type="button"
-      onClick={() => {
-        if (!showCelebration) setOpen(!open);
-      }}
-      className={cn(
-        "flex h-[34px] w-full items-center gap-3 rounded-lg px-3 transition-colors",
-        open
-          ? "text-primary bg-muted"
-          : "text-foreground/80 hover:text-foreground hover:bg-muted",
-      )}
-    >
-      <div className="flex w-4 items-center justify-center">
-        <ProgressRing done={done} total={total} size={20} />
-      </div>
-      {expanded && (
-        <span className="truncate text-sm font-medium">Get started</span>
-      )}
-    </button>
-  );
-
-  if (showCelebration) {
-    return (
-      <Popover open>
-        <PopoverTrigger asChild>
-          {expanded ? (
-            trigger
-          ) : (
-            <Tooltip content="Get started" side="right">
-              {trigger}
-            </Tooltip>
-          )}
-        </PopoverTrigger>
-        <PopoverContent
-          side="right"
-          align="end"
-          sideOffset={8}
-          className="w-auto border-none bg-transparent p-0 shadow-none"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <ChecklistCelebration onDismiss={() => setOpen(true)} />
-        </PopoverContent>
-      </Popover>
-    );
-  }
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        {expanded ? (
-          trigger
-        ) : (
-          <Tooltip content="Get started" side="right">
-            {trigger}
-          </Tooltip>
-        )}
-      </PopoverTrigger>
-      <PopoverContent
-        side="right"
-        align="end"
-        sideOffset={8}
-        className="relative w-[340px] overflow-visible p-0"
-      >
-        <ChecklistPopoverContent onClose={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
   );
 }
 

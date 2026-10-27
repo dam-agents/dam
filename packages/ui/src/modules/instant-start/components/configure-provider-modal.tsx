@@ -35,49 +35,7 @@ const CB_ICON_SM = (
   </div>
 );
 
-function formatUsd(value: number): string {
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function PaymentToggle({
-  value,
-  onChange,
-}: {
-  value: "free" | "own-key";
-  onChange: (v: "free" | "own-key") => void;
-}) {
-  return (
-    <div className="flex h-8 rounded-lg border border-border bg-muted/50 p-0.5">
-      <button
-        type="button"
-        onClick={() => onChange("free")}
-        className={cn(
-          "flex-1 rounded-md px-3 text-xs font-medium transition-colors",
-          value === "free"
-            ? "bg-background text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        Free budget
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("own-key")}
-        className={cn(
-          "flex-1 rounded-md px-3 text-xs font-medium transition-colors",
-          value === "own-key"
-            ? "bg-background text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        Your key
-      </button>
-    </div>
-  );
-}
+const CB_DESCRIPTION = "IBM Research’s open-model inference service.";
 
 interface Props {
   onClose: () => void;
@@ -88,35 +46,33 @@ export function ConfigureProviderModal({ onClose, initialShowKeyForm }: Props) {
   const ctx = useInstantStart();
   const [phase, setPhase] = useState<Phase>("pick");
   const [selected, setSelected] = useState<SelectionType | null>(null);
-  const [showKeyForm, setShowKeyForm] = useState(!!initialShowKeyForm);
 
   const currentProvider = ctx?.connectedProviderType ?? null;
   const isCurveBender = ctx?.activeProvider === "curvebender";
 
+  const budgetPct = ctx
+    ? Math.round(
+        ((ctx.freeBudget.limit - ctx.freeBudget.used) / ctx.freeBudget.limit) *
+          100,
+      )
+    : 100;
+
+  const budgetLabel = ctx?.budgetExhausted
+    ? "Free budget — 0% remaining"
+    : `Free budget — ${budgetPct}% remaining`;
+
   useEffect(() => {
     if (initialShowKeyForm && isCurveBender) {
-      ctx?.setCurveBenderPayment("own-key");
+      setSelected("curvebender");
+      setPhase("form");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialShowKeyForm]);
 
-  function getCurveBenderDescription() {
-    if (!ctx) return "";
-    if (ctx.curveBenderPayment === "own-key") {
-      return ctx.ownCurveBenderKey
-        ? `Your key (···${ctx.ownCurveBenderKeyLast4 || "••••"})`
-        : "Your own API key";
-    }
-    const { freeBudget, budgetExhausted } = ctx;
-    if (budgetExhausted)
-      return `${formatUsd(freeBudget.limit)} free budget used up`;
-    return `Free budget — ${formatUsd(freeBudget.used)} of ${formatUsd(freeBudget.limit)} used`;
-  }
-
   const CURVEBENDER_OPTION: ProviderOption = {
     type: "curvebender",
     title: "CurveBender",
-    description: getCurveBenderDescription(),
+    description: CB_DESCRIPTION,
     icon: CB_ICON_SM,
   };
 
@@ -249,25 +205,6 @@ export function ConfigureProviderModal({ onClose, initialShowKeyForm }: Props) {
 
   const activeType: SelectionType = currentProvider ?? "curvebender";
 
-  const handlePaymentChange = (v: "free" | "own-key") => {
-    ctx?.setCurveBenderPayment(v);
-    if (v === "own-key" && !ctx?.ownCurveBenderKey) {
-      setShowKeyForm(true);
-    } else {
-      setShowKeyForm(false);
-    }
-  };
-
-  const handleKeyFormSave = async (input: { value: string }) => {
-    const last4 = input.value.slice(-4);
-    ctx?.setOwnCurveBenderKey(true);
-    ctx?.setOwnCurveBenderKeyLast4(last4);
-    ctx?.setCurveBenderPayment("own-key");
-    ctx?.setActiveProvider("curvebender");
-    ctx?.setConnectedProviderType(null);
-    setShowKeyForm(false);
-  };
-
   return (
     <Modal widthClass="w-[505px]">
       <DialogHeader
@@ -276,6 +213,7 @@ export function ConfigureProviderModal({ onClose, initialShowKeyForm }: Props) {
         onClose={onClose}
       />
       <DialogBody>
+        {/* Selected / collapsed view */}
         <button
           type="button"
           className={cn(
@@ -287,15 +225,22 @@ export function ConfigureProviderModal({ onClose, initialShowKeyForm }: Props) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
               <p className="truncate text-base font-medium text-foreground">
-                {isCurveBender
-                  ? "CurveBender"
-                  : PROVIDERS[currentProvider!].displayName}
+                {isCurveBender ? (
+                  <>
+                    CurveBender{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ( Free budget )
+                    </span>
+                  </>
+                ) : (
+                  PROVIDERS[currentProvider!].displayName
+                )}
               </p>
               <Badge variant="success">Active</Badge>
             </div>
             <p className="truncate text-sm text-muted-foreground">
               {isCurveBender
-                ? getCurveBenderDescription()
+                ? CB_DESCRIPTION
                 : (PROVIDER_ROWS.find((r) => r.type === currentProvider)
                     ?.description ?? "")}
             </p>
@@ -306,59 +251,7 @@ export function ConfigureProviderModal({ onClose, initialShowKeyForm }: Props) {
           />
         </button>
 
-        {isCurveBender && (
-          <div className="mt-3 space-y-3">
-            <PaymentToggle
-              value={ctx?.curveBenderPayment ?? "free"}
-              onChange={handlePaymentChange}
-            />
-            {ctx?.curveBenderPayment === "own-key" && showKeyForm && (
-              <div className="rounded-lg border border-border p-3">
-                <CurveBenderForm
-                  onSave={handleKeyFormSave}
-                  onCancel={() => {
-                    ctx?.setCurveBenderPayment("free");
-                    setShowKeyForm(false);
-                  }}
-                />
-              </div>
-            )}
-            {ctx?.curveBenderPayment === "own-key" &&
-              ctx.ownCurveBenderKey &&
-              !showKeyForm && (
-                <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    {CB_ICON_SM}
-                    <span className="text-sm text-foreground">
-                      ···· ···· ···· {ctx.ownCurveBenderKeyLast4 || "••••"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowKeyForm(true)}
-                      className="text-sm font-medium text-primary hover:underline"
-                    >
-                      Replace
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        ctx.setOwnCurveBenderKey(false);
-                        ctx.setOwnCurveBenderKeyLast4("");
-                        ctx.setCurveBenderPayment("free");
-                        setShowKeyForm(false);
-                      }}
-                      className="text-sm font-medium text-muted-foreground hover:text-foreground hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              )}
-          </div>
-        )}
-
+        {/* Dropdown list */}
         <div className="mt-2 rounded-lg border border-border bg-popover p-1.5 shadow-md">
           {allOptions.map((opt) => {
             const isActive = opt.type === activeType;
@@ -374,20 +267,23 @@ export function ConfigureProviderModal({ onClose, initialShowKeyForm }: Props) {
               >
                 {opt.icon}
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {opt.title}
-                    </p>
-                  </div>
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {opt.title}
+                  </p>
                   <p className="truncate text-sm text-muted-foreground">
                     {opt.description}
                   </p>
+                  {opt.type === "curvebender" && (
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {budgetLabel}
+                    </p>
+                  )}
                 </div>
                 {isActive ? (
                   <Checkmark size={16} className="shrink-0 text-foreground" />
                 ) : (
                   <span className="shrink-0 text-sm text-muted-foreground">
-                    {opt.type === "curvebender" ? "Free" : "Connect"}
+                    Connect
                   </span>
                 )}
               </button>

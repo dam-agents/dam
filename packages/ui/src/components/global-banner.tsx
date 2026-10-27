@@ -15,7 +15,7 @@ export function GlobalBanner() {
   const setView = useStore((s) => s.setView);
 
   return (
-    <header className="relative z-30 flex h-12 shrink-0 items-center border-b border-border bg-card px-3">
+    <header className="relative z-30 flex h-12 shrink-0 items-center bg-card px-3">
       <div className="flex items-center gap-2">
         <button
           type="button"
