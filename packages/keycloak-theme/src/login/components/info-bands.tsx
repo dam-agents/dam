@@ -1029,7 +1029,7 @@ export function BandDevOps() {
           </div>
 
           {/* Right — illustration with orange half-moon */}
-          <div className="flex flex-1 items-center justify-center">
+          <div className="flex flex-1 items-center justify-center -order-1 lg:order-none">
             <div className="relative">
               <div
                 className="absolute -right-12 -top-14"
