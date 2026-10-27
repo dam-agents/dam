@@ -4,9 +4,20 @@ export const CHANGE_SET_PATH_MAX = 4096;
 
 export const compareToSchema = z.enum(["base", "uncommitted"]);
 
+export const pullRequestStateSchema = z.enum([
+  "draft",
+  "pending",
+  "approved",
+  "changes-requested",
+  "merged",
+  "closed",
+]);
+
 export const pullRequestLinkSchema = z.object({
   number: z.number().int().positive(),
   url: z.string(),
+  state: pullRequestStateSchema.optional(),
+  conflicts: z.boolean().optional(),
 });
 
 export const changeSetRepositorySchema = z.object({

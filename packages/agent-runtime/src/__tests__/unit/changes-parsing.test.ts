@@ -403,19 +403,23 @@ describe("pull request finder", () => {
 
   /**
    * TEST_SCENARIO: With a connection the open pull request of the branch is
-   * looked up by head, and the answer is reused within its time to live.
+   * looked up by head over GitHub's GraphQL API, with where it stands, and
+   * the answer is reused within its time to live.
    */
   it("should find the open pull request of a branch", async () => {
-    const urls: string[] = [];
+    const bodies: { query: string; variables: Record<string, unknown> }[] = [];
     const finder = createPullRequestFinder({
       token: () => "gateway-placeholder",
-      fetch: async (input) => {
-        urls.push(String(input));
-        return new Response(
-          JSON.stringify([
-            { number: 12, html_url: "https://github.com/acme/app/pull/12" },
-          ]),
-        );
+      fetch: async (input, init) => {
+        expect(String(input)).toBe("https://api.github.com/graphql");
+        bodies.push(JSON.parse(String(init?.body)));
+        return graphql({
+          repository: {
+            pullRequests: {
+              nodes: [pullRequestNode(12, { reviewDecision: "APPROVED" })],
+            },
+          },
+        });
       },
       log: () => undefined,
     });
@@ -426,11 +430,170 @@ describe("pull request finder", () => {
     expect(first).toEqual({
       number: 12,
       url: "https://github.com/acme/app/pull/12",
+      state: "approved",
+      conflicts: false,
     });
     expect(second).toEqual(first);
-    expect(urls).toHaveLength(1);
-    expect(urls[0]).toContain(
-      "/repos/acme/app/pulls?head=acme%3Afeat%2Fx&state=open",
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]?.variables).toEqual({
+      owner: "acme",
+      repo: "app",
+      branch: "feat/x",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: GitHub matches a head branch by name alone, so a fork's
+   * pull request from a branch of the same name is not the branch's own.
+   */
+  it("should skip a pull request from a fork's branch of the same name", async () => {
+    const finder = createPullRequestFinder({
+      token: () => "gateway-placeholder",
+      fetch: async () =>
+        graphql({
+          repository: {
+            pullRequests: {
+              nodes: [
+                pullRequestNode(13, { owner: "someone" }),
+                pullRequestNode(12),
+              ],
+            },
+          },
+        }),
+      log: () => undefined,
+    });
+
+    expect(
+      (await finder.find("https://github.com/acme/app.git", "main"))?.number,
+    ).toBe(12);
+  });
+
+  /**
+   * TEST_SCENARIO: The badge colors come from the pull request's state:
+   * draft, review pending, approved, changes requested, merged, closed, and
+   * merge conflicts as a flag of their own. A pull request on a branch
+   * without required reviews has no review decision, so its latest reviews
+   * decide.
+   */
+  it("should read where each pull request stands, in one query", async () => {
+    const nodes: Record<string, unknown>[] = [
+      pullRequestNode(1, { isDraft: true }),
+      pullRequestNode(2),
+      pullRequestNode(3, { reviewDecision: "APPROVED" }),
+      pullRequestNode(4, { reviewDecision: "CHANGES_REQUESTED" }),
+      pullRequestNode(5, { state: "MERGED" }),
+      pullRequestNode(6, { state: "CLOSED" }),
+      pullRequestNode(7, { mergeable: "CONFLICTING" }),
+      pullRequestNode(8, { reviewDecision: null, reviews: ["APPROVED"] }),
+      pullRequestNode(9, {
+        reviewDecision: null,
+        reviews: ["APPROVED", "CHANGES_REQUESTED"],
+      }),
+    ];
+    let calls = 0;
+    const finder = createPullRequestFinder({
+      token: () => "gateway-placeholder",
+      fetch: async (_input, init) => {
+        calls++;
+        const { variables } = JSON.parse(String(init?.body)) as {
+          variables: Record<string, unknown>;
+        };
+        expect(variables).toMatchObject({ o0: "acme", r0: "app", n0: 1 });
+        return graphql(
+          Object.fromEntries(
+            nodes.map((node, i) => [`p${i}`, { pullRequest: node }]),
+          ),
+        );
+      },
+      log: () => undefined,
+    });
+
+    const states = await finder.states(
+      nodes.map((_, i) => ({
+        number: i + 1,
+        url: `https://github.com/acme/app/pull/${i + 1}`,
+      })),
     );
+
+    expect(calls).toBe(1);
+    expect(states.map(({ state, conflicts }) => [state, conflicts])).toEqual([
+      ["draft", false],
+      ["pending", false],
+      ["approved", false],
+      ["changes-requested", false],
+      ["merged", false],
+      ["closed", false],
+      ["pending", true],
+      ["approved", false],
+      ["changes-requested", false],
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A branch's pull request is found waiting for review, then
+   * the state refresh reads it approved. A lookup of the branch within its
+   * time to live answers the newer state, not the one it cached, so the
+   * badge does not turn yellow again.
+   */
+  it("should not answer an older state than the refresh read", async () => {
+    let reviewDecision = "REVIEW_REQUIRED";
+    let clock = 0;
+    const finder = createPullRequestFinder({
+      token: () => "gateway-placeholder",
+      now: () => clock,
+      fetch: async (_input, init) => {
+        const { variables } = JSON.parse(String(init?.body)) as {
+          variables: Record<string, unknown>;
+        };
+        const node = pullRequestNode(12, { reviewDecision });
+        return graphql(
+          "branch" in variables
+            ? { repository: { pullRequests: { nodes: [node] } } }
+            : { p0: { pullRequest: node } },
+        );
+      },
+      log: () => undefined,
+    });
+
+    const first = await finder.find("https://github.com/acme/app", "feat/x");
+    reviewDecision = "APPROVED";
+    clock = 1_000;
+    await finder.states([first!]);
+    const again = await finder.find("https://github.com/acme/app", "feat/x");
+
+    expect(first?.state).toBe("pending");
+    expect(again?.state).toBe("approved");
   });
 });
+
+function graphql(data: unknown): Response {
+  return new Response(JSON.stringify({ data }));
+}
+
+function pullRequestNode(
+  number: number,
+  overrides: {
+    state?: string;
+    isDraft?: boolean;
+    reviewDecision?: string | null;
+    mergeable?: string;
+    owner?: string;
+    reviews?: string[];
+  } = {},
+): Record<string, unknown> {
+  return {
+    number,
+    url: `https://github.com/acme/app/pull/${number}`,
+    state: overrides.state ?? "OPEN",
+    isDraft: overrides.isDraft ?? false,
+    reviewDecision:
+      overrides.reviewDecision === undefined
+        ? "REVIEW_REQUIRED"
+        : overrides.reviewDecision,
+    mergeable: overrides.mergeable ?? "MERGEABLE",
+    headRepositoryOwner: { login: overrides.owner ?? "acme" },
+    latestOpinionatedReviews: {
+      nodes: (overrides.reviews ?? []).map((state) => ({ state })),
+    },
+  };
+}
