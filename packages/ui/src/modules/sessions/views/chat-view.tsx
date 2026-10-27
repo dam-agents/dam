@@ -842,7 +842,8 @@ export function ChatView() {
                           />
                         )}
                         {instantStart &&
-                          !instantStart.connectedProviderType && (
+                          !instantStart.connectedProviderType &&
+                          instantStart.curveBenderPayment !== "own-key" && (
                             <CurveBenderBudget
                               instantStart={instantStart}
                               onConfigure={() => setShowProviderModal(true)}
