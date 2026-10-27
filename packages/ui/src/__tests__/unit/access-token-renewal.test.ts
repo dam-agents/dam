@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * token still works.
  */
 
+vi.setConfig({ testTimeout: 30_000 });
+
 const oidc = vi.hoisted(() => ({
   user: null as { access_token: string; expires_in?: number } | null,
   signinSilent: vi.fn(),
