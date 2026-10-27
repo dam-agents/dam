@@ -148,7 +148,7 @@ export function ProviderSelect({
               setShowKeyForm(true);
             }
           }}
-          className="text-primary hover:underline"
+          className="text-[#0f62fe] hover:underline dark:text-[#78a9ff]"
         >
           Add your own key
         </span>
