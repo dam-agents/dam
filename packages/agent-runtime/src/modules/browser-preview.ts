@@ -111,8 +111,6 @@ export const CDP_URL = ["get", "cdp-url"];
 
 export const timedOut = (err: Error) => /timed out/i.test(err.message);
 
-// agent-browser's CLI stops reading after 30 s and gives up with EAGAIN while
-// its daemon still launches Chromium, so a launch that got no answer is busy.
 export const unanswered = (err: Error) =>
   timedOut(err) ||
   /no response came back|Resource temporarily unavailable/i.test(err.message);
