@@ -232,6 +232,8 @@ export function ChatView() {
     useState<SandboxSection | null>(null);
   const [autoOpenProvider, setAutoOpenProvider] = useState(false);
   const [showProviderModal, setShowProviderModal] = useState(false);
+  const [providerModalShowKeyForm, setProviderModalShowKeyForm] =
+    useState(false);
   const instantStart = useInstantStart();
 
   const isMock = import.meta.env.VITE_MOCK === "true";
@@ -967,7 +969,13 @@ export function ChatView() {
         </Suspense>
       )}
       {showProviderModal && (
-        <ConfigureProviderModal onClose={() => setShowProviderModal(false)} />
+        <ConfigureProviderModal
+          onClose={() => {
+            setShowProviderModal(false);
+            setProviderModalShowKeyForm(false);
+          }}
+          initialShowKeyForm={providerModalShowKeyForm}
+        />
       )}
     </div>
   );
@@ -1009,43 +1017,64 @@ function CurveBenderBudget({
   instantStart: NonNullable<ReturnType<typeof useInstantStart>>;
   onConfigure: () => void;
 }) {
-  const { freeBudget, budgetExhausted, firstLanding } = instantStart;
+  const { freeBudget, budgetExhausted, firstLanding, curveBenderPayment } =
+    instantStart;
+
   const pct = Math.round(
     ((freeBudget.limit - freeBudget.used) / freeBudget.limit) * 100,
   );
   const isLow = !budgetExhausted && pct <= 10;
 
-  const popover = budgetExhausted
-    ? {
-        title: "Budget used up — 0% remaining",
-        body: "Your free budget has been used up. Change your provider to keep going.",
-      }
-    : isLow
-      ? {
-          title: `${pct}% remaining`,
-          body: "You’re running low on free budget. Change your provider before it runs out.",
-        }
-      : firstLanding
+  const popover =
+    curveBenderPayment === "own-key"
+      ? null
+      : budgetExhausted
         ? {
-            title: "CurveBender budget",
-            body: "You’ve been given free budget to get started. You can switch to your own provider any time.",
+            title: "Budget used up — 0% remaining",
+            body: "Your free budget has been used up. Change your provider to keep going.",
           }
-        : null;
+        : isLow
+          ? {
+              title: `${pct}% remaining`,
+              body: "You’re running low on free budget. Change your provider before it runs out.",
+            }
+          : firstLanding
+            ? {
+                title: "CurveBender budget",
+                body: "You’ve been given free budget to get started. You can switch to your own provider any time.",
+              }
+            : null;
 
   const [open, setOpen] = useState(!!popover);
   const prevKey = useRef<string | null>(null);
-  const key = budgetExhausted
-    ? "exhausted"
-    : isLow
-      ? "low"
-      : firstLanding
-        ? "landing"
-        : null;
+  const key =
+    curveBenderPayment === "own-key"
+      ? null
+      : budgetExhausted
+        ? "exhausted"
+        : isLow
+          ? "low"
+          : firstLanding
+            ? "landing"
+            : null;
 
   useEffect(() => {
     if (key && key !== prevKey.current) setOpen(true);
     prevKey.current = key;
   }, [key]);
+
+  if (curveBenderPayment === "own-key") {
+    return (
+      <button
+        type="button"
+        onClick={onConfigure}
+        className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <img src="/curvebender-logo.svg" alt="" className="size-3.5" />
+        CurveBender &middot; Your key
+      </button>
+    );
+  }
 
   const label = budgetExhausted ? "0% remaining" : `${pct}% remaining`;
 
@@ -1066,10 +1095,7 @@ function CurveBenderBudget({
   if (!popover) return trigger;
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={firstLanding ? undefined : setOpen}
-    >
+    <Popover open={open} onOpenChange={firstLanding ? undefined : setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         side="top"
@@ -1078,9 +1104,7 @@ function CurveBenderBudget({
         onPointerDownOutside={
           firstLanding ? (e) => e.preventDefault() : undefined
         }
-        onInteractOutside={
-          firstLanding ? (e) => e.preventDefault() : undefined
-        }
+        onInteractOutside={firstLanding ? (e) => e.preventDefault() : undefined}
       >
         <div className="flex items-start gap-1.5">
           <img src="/curvebender-logo.svg" alt="" className="mt-0.5 size-4" />

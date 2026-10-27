@@ -21,8 +21,10 @@ function CurveBenderLogo({ className }: { className?: string }) {
 
 export function FreeBudgetBanner({
   onConfigureProvider,
+  onAddCurveBenderKey,
 }: {
   onConfigureProvider?: () => void;
+  onAddCurveBenderKey?: () => void;
 }) {
   const ctx = useInstantStart();
   if (!ctx || ctx.connectedProviderType) return null;
@@ -42,18 +44,37 @@ export function FreeBudgetBanner({
           </p>
           <p className="text-sm text-muted-foreground">
             {budgetExhausted
-              ? `${formatUsd(freeBudget.limit)} free budget used up — connect a provider to continue`
+              ? `${formatUsd(freeBudget.limit)} free budget used up — add your own key or switch provider`
               : `${formatUsd(freeBudget.used)} of ${formatUsd(freeBudget.limit)} used`}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onConfigureProvider}
-          className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
-        >
-          {budgetExhausted ? "Connect provider" : "Use own provider"}
-          <ArrowRight size={16} />
-        </button>
+        {budgetExhausted ? (
+          <div className="flex shrink-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={onAddCurveBenderKey}
+              className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Add CurveBender key
+            </button>
+            <button
+              type="button"
+              onClick={onConfigureProvider}
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Use another provider
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onConfigureProvider}
+            className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+          >
+            Use own provider
+            <ArrowRight size={16} />
+          </button>
+        )}
       </div>
       <div className="h-1.5 bg-muted">
         <div
@@ -73,10 +94,14 @@ export function SidebarBudget({ expanded }: { expanded: boolean }) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   if (!ctx || ctx.connectedProviderType) return null;
 
-  const { freeBudget, budgetExhausted } = ctx;
-  const dollars = budgetExhausted
-    ? "Budget used up"
-    : `${formatUsd(freeBudget.used)} / ${formatUsd(freeBudget.limit)}`;
+  const { freeBudget, budgetExhausted, curveBenderPayment } = ctx;
+
+  const dollars =
+    curveBenderPayment === "own-key"
+      ? "Your key"
+      : budgetExhausted
+        ? "Budget used up"
+        : `${formatUsd(freeBudget.used)} / ${formatUsd(freeBudget.limit)}`;
 
   const button = (
     <button

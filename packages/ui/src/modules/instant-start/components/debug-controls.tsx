@@ -6,8 +6,7 @@ import { useInstantStart } from "../context.js";
 type DemoState = "landing" | "low" | "exhausted" | null;
 
 const PROVIDER_OPTIONS: { value: ActiveProvider; label: string }[] = [
-  { value: "curvebender-free", label: "CB Free" },
-  { value: "curvebender-own", label: "CB Own" },
+  { value: "curvebender", label: "CurveBender" },
   { value: "ibm-litellm", label: "LiteLLM" },
   { value: "anthropic", label: "Anthropic" },
   { value: "openai", label: "OpenAI" },
@@ -76,21 +75,35 @@ export function InstantStartDebugControls() {
         >
           Budget up
         </button>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-muted-foreground">
+          CurveBender payment:
+        </span>
         <button
           type="button"
           onClick={() => {
-            const next = !ctx.ownCurveBenderKey;
-            ctx.setOwnCurveBenderKey(next);
-            if (next) {
-              ctx.setActiveProvider("curvebender-own");
-              ctx.setProviderAdded(true);
-            } else {
-              ctx.setActiveProvider("curvebender-free");
-            }
+            ctx.setCurveBenderPayment("free");
+            ctx.setActiveProvider("curvebender");
+            ctx.setConnectedProviderType(null);
+            ctx.setCurveBenderEnabled(true);
           }}
-          className={cn(btn, ctx.ownCurveBenderKey ? on : off)}
+          className={cn(btn, ctx.curveBenderPayment === "free" ? on : off)}
         >
-          Own CB key
+          Free
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            ctx.setCurveBenderPayment("own-key");
+            ctx.setOwnCurveBenderKey(true);
+            ctx.setOwnCurveBenderKeyLast4("7x2Q");
+            ctx.setActiveProvider("curvebender");
+            ctx.setConnectedProviderType(null);
+          }}
+          className={cn(btn, ctx.curveBenderPayment === "own-key" ? on : off)}
+        >
+          Your key
         </button>
       </div>
       <div className="flex items-center gap-1.5">
@@ -100,14 +113,10 @@ export function InstantStartDebugControls() {
           onChange={(e) => {
             const val = e.target.value as ActiveProvider;
             ctx.setActiveProvider(val);
-            if (val === "curvebender-free") {
+            if (val === "curvebender") {
               ctx.setConnectedProviderType(null);
               ctx.setCurveBenderEnabled(true);
               ctx.setProviderAdded(false);
-            } else if (val === "curvebender-own") {
-              ctx.setConnectedProviderType(null);
-              ctx.setOwnCurveBenderKey(true);
-              ctx.setProviderAdded(true);
             } else {
               ctx.setConnectedProviderType(val);
               ctx.setProviderAdded(true);
