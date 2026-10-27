@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { PaletteInput } from "../../modules/command-palette/lib/commands.js";
+import type { PaletteInput } from "../../modules/command-palette/lib/palette-command.js";
 import type { AgentView } from "../../types.js";
 
 const owner = (id: string, name: string) =>

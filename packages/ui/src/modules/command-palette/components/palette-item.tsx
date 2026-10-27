@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-import type { PaletteCommand } from "../lib/commands.js";
+import type { PaletteCommand } from "../lib/palette-command.js";
 
 export function PaletteItem({
   id,

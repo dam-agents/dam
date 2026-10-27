@@ -16,7 +16,7 @@ import { SECTIONS } from "../../sandboxes/components/sandbox-section-nav.js";
 import { useAgentSession } from "../../sessions/api/queries.js";
 import { useSettingsTabs } from "../../settings/hooks/use-settings-tabs.js";
 import { useStarterKits } from "../../starter-kits/api/queries.js";
-import type { PaletteInput } from "../lib/commands.js";
+import type { PaletteInput } from "../lib/palette-command.js";
 import {
   indexedArtifactSchema,
   indexedSessionSchema,

@@ -6,11 +6,8 @@ import { DialogHeader, Modal } from "@/components/modal";
 
 import { usePaletteInput } from "../hooks/use-palette-input.js";
 import { useFrecency } from "../hooks/use-palette-storage.js";
-import {
-  buildCommands,
-  type PaletteActions,
-  type PaletteCommand,
-} from "../lib/commands.js";
+import { buildCommands } from "../lib/commands.js";
+import type { PaletteActions, PaletteCommand } from "../lib/palette-command.js";
 import { rankCommands } from "../lib/ranking.js";
 import { PaletteItem } from "./palette-item.js";
 import { PalettePrompt } from "./palette-prompt.js";

@@ -6,11 +6,11 @@ import {
 } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  buildCommands,
-  type PaletteActions,
-  type PaletteInput,
-} from "../../modules/command-palette/lib/commands.js";
+import { buildCommands } from "../../modules/command-palette/lib/commands.js";
+import type {
+  PaletteActions,
+  PaletteInput,
+} from "../../modules/command-palette/lib/palette-command.js";
 import type { AgentView } from "../../types.js";
 
 const owned = (id: string, name: string, over: Partial<AgentView> = {}) =>

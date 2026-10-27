@@ -21,7 +21,7 @@ import { useConfirmDeleteSession } from "../../sessions/hooks/use-confirm-delete
 import { useOpenSession } from "../../sessions/hooks/use-open-session.js";
 import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
-import type { PaletteActions } from "../lib/commands.js";
+import type { PaletteActions } from "../lib/palette-command.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what each palette command does, wired to the
