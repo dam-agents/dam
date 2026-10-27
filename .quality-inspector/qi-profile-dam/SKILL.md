@@ -22,6 +22,7 @@ DAM has no teams or workspaces: every account owns its own agents, connections, 
 | `OUTSIDER`  | `qa-outsider`  | the same as `MEMBER` — kept apart for checks that someone else cannot see or change the owner's work |
 
 No account sees the Slack workspaces tab in Settings: the QA install sets no Slack app.
+Every Settings page still asks `GET /api/slack/install/status` and gets a 404; that is expected (`expected_requests` in `profile.json`), not a defect.
 None of them can see, open or change another account's agents, connections, schedules or artifacts unless it was shared with them.
 There is no read-only account: any signed-in user may create their own agents, so DAM provides no `VIEWER`.
 Builds published before these accounts were added have only `qa-owner`; there another account cannot sign in, so a check that needs one is `blocked` on such a build, never failed.
