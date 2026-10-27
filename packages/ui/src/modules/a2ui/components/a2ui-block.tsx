@@ -13,6 +13,7 @@ import { A2uiFormsOff } from "./a2ui-forms-off.js";
 
 const STANDALONE_MESSAGE = "standalone";
 const NOTHING_ANSWERED: ReadonlySet<string> = new Set();
+const NOTHING_OPEN: ReadonlySet<string> = new Set();
 
 interface Props {
   blockKey: string;
@@ -45,6 +46,10 @@ function A2uiStandaloneBlock({ blockKey, source, closed, interactive }: Props) {
       conversation,
       sessionKey,
       liveMessageId: interactive && closed ? STANDALONE_MESSAGE : null,
+      openSurfaces:
+        interactive && closed
+          ? new Set(conversation.surfaces.keys())
+          : NOTHING_OPEN,
       withRendererMetadata,
       answeredCalls: NOTHING_ANSWERED,
       pendingResponses: [],

@@ -18,7 +18,7 @@ export function A2uiSurface({ surface }: Props) {
   const conversation = useA2uiConversationState();
   const state = useA2uiSurfaceState(
     surface,
-    conversation?.liveMessageId === surface.lastTouchMessageId,
+    conversation?.openSurfaces.has(surface.id) ?? false,
     conversation?.sessionKey ?? "",
     conversation?.withRendererMetadata ?? ((text) => text),
   );
