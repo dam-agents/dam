@@ -1,5 +1,6 @@
 # Sourced by harness-chat, harness-terminal and the login profile: point Claude
-# Code at the Model Router for every provider but Bedrock; see
+# Code at the Model Router; a Bedrock process stays in Claude Code's Bedrock
+# mode, with the router as its Bedrock base URL. See
 # docs/architecture/harness-config.md. Provider env never reaches the harness,
 # so PLATFORM_MODEL_ROUTER_SERVES is what switches Claude Code to the router.
 _ROUTER_BASE="http://127.0.0.1:${PLATFORM_MODEL_ROUTER_PORT:-24180}"
@@ -13,6 +14,12 @@ esac
 # its env carries.
 if [ -z "${PLATFORM_MODEL_ROUTER_SERVES:-}" ] && [ -n "${AWS_BEARER_TOKEN_BEDROCK:-}" ]; then
 	export CLAUDE_CODE_USE_BEDROCK=1
+	case "${ANTHROPIC_BEDROCK_BASE_URL:-}" in
+	http://127.0.0.1:*)
+		export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"
+		export no_proxy="127.0.0.1,localhost,::1${no_proxy:+,$no_proxy}"
+		;;
+	esac
 	if [ -n "${AWS_BEDROCK_MODEL:-}" ] && [ -z "${ANTHROPIC_DEFAULT_MODEL:-}" ]; then
 		export ANTHROPIC_DEFAULT_MODEL="$AWS_BEDROCK_MODEL"
 	fi

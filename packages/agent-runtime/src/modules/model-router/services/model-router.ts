@@ -20,6 +20,14 @@ import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 import type { RuntimeEnvState } from "../../runtime-channel/infrastructure/env-state-store.js";
 import { ANTHROPIC_OAUTH_TEMPLATE } from "../../model-catalog/index.js";
 import { anthropicBetaFor } from "../domain/anthropic-beta.js";
+import {
+  BEDROCK_TEMPLATE,
+  bedrockModelCallOf,
+  bedrockRootOf,
+  bedrockRouteOf,
+  createBedrockUsageScanner,
+  type BedrockRoute,
+} from "../domain/bedrock.js";
 import { bobGatewayPath, classify } from "../domain/classify.js";
 import { processClassifierName } from "../domain/harness-env.js";
 import {
@@ -549,17 +557,195 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     );
   };
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a call of a Claude Code process on a Bedrock
+   * Connection, passed on unchanged to the Connection's region with its key
+   * placeholder, which the gateway swaps: Bedrock speaks its own paths and
+   * streams AWS event-stream frames, so nothing is resolved or rewritten. The
+   * router adds what it adds to every call, the Session it books the call to
+   * and its call id, and reports a model call's usage read from the passing
+   * stream or body.
+   */
+  const handleBedrock = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    route: BedrockRoute,
+    search: string,
+    harness: string,
+  ): Promise<void> => {
+    const layer = deps
+      .envState()
+      .providers.find(
+        (l) => l.id === route.connectionId && l.template === BEDROCK_TEMPLATE,
+      );
+    const call = bedrockModelCallOf(route.path);
+    const root = layer
+      ? bedrockRootOf(layer.env, route.path.startsWith("/model/"))
+      : null;
+    if (!layer || !root)
+      return reply(
+        res,
+        404,
+        null,
+        `no Bedrock Connection ${route.connectionId} in this machine's env`,
+      );
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const raw = Buffer.concat(chunks);
+    let body: Record<string, unknown> = {};
+    if (call) {
+      try {
+        const parsed: unknown = JSON.parse(raw.toString("utf8"));
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+          body = parsed as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+    }
+    const handle = call ? (deps.sessionOf?.(req, body, harness) ?? null) : null;
+    const session = handle
+      ? (handle.parentSessionId ?? handle.sessionId)
+      : null;
+    const booked =
+      call && deps.bookedSessionOf
+        ? await deps.bookedSessionOf({ req, harness, routed: session })
+        : session;
+    const headers: Record<string, string> = keep(
+      Object.entries(req.headers),
+      REQ_DROP,
+    );
+    const token = layer.env.AWS_BEARER_TOKEN_BEDROCK;
+    if (token) headers.authorization = `Bearer ${token}`;
+    if (STAMP_VALUE.test(harness)) headers[HARNESS_HEADER] = harness;
+    if (booked && STAMP_VALUE.test(booked)) headers[SESSION_HEADER] = booked;
+    const callId = randomUUID();
+    headers[CALL_HEADER] = callId;
+
+    const ac = new AbortController();
+    const startedAt = new Date();
+    const trace = traceOf(req.headers.traceparent);
+    let recorded = false;
+    let upstreamHeaders: Headers | null = null;
+    const record = (status: number, usage: ModelUsage | null): void => {
+      if (recorded || !call) return;
+      recorded = true;
+      deps.onCallEnded?.(session, status < 400);
+      deps.onCall?.({
+        callId,
+        connectionId: layer.id,
+        alias: BEDROCK_TEMPLATE,
+        upstreamId: call.modelId,
+        requestedModel: call.modelId,
+        dialect: "anthropic-messages",
+        harness,
+        session: booked,
+        stream: route.path.endsWith("stream"),
+        status,
+        startedAt: startedAt.toISOString(),
+        durationMs: Date.now() - startedAt.getTime(),
+        usage,
+        uncounted:
+          usage === null
+            ? status >= 400 && status !== 499
+              ? "error"
+              : "no-usage-event"
+            : null,
+        requestId:
+          upstreamHeaders?.get("x-amzn-requestid") ??
+          upstreamHeaders?.get("x-amzn-request-id") ??
+          null,
+        trace,
+      });
+    };
+    let streamed: { usage(): ModelUsage | null; completed(): boolean } | null =
+      null;
+    res.on("close", () => {
+      if (res.writableEnded) return;
+      ac.abort();
+      record(streamed?.completed() ? 200 : 499, streamed?.usage() ?? null);
+    });
+    if (call) deps.onCallStarted?.(session);
+    let upstream: Response;
+    try {
+      upstream = await doFetch(`${root}${route.path}${search}`, {
+        method: req.method ?? "POST",
+        headers,
+        ...(req.method !== "GET" && req.method !== "HEAD" && { body: raw }),
+        signal: ac.signal,
+      });
+    } catch (err) {
+      if (ac.signal.aborted) return record(499, null);
+      const reason =
+        (err as { cause?: Error }).cause?.message ?? (err as Error).message;
+      deps.log(`[model-router] bedrock ${route.path}: unreachable (${reason})`);
+      record(502, null);
+      return reply(res, 502, null, `upstream unreachable: ${reason}`);
+    }
+    upstreamHeaders = upstream.headers;
+    const resHeaders = keep([...upstream.headers], RES_DROP);
+    const eventStream = (upstream.headers.get("content-type") ?? "").includes(
+      "vnd.amazon.eventstream",
+    );
+    if (upstream.ok && upstream.body && eventStream && call?.messages) {
+      const scanner = createBedrockUsageScanner();
+      streamed = scanner;
+      res.writeHead(upstream.status, resHeaders);
+      res.on("finish", () => record(upstream.status, scanner.usage()));
+      const source = Readable.fromWeb(upstream.body as never);
+      source.on("error", () => res.destroy());
+      source.pipe(scanner).pipe(res);
+      return;
+    }
+    if (upstream.ok && upstream.body && eventStream) {
+      res.writeHead(upstream.status, resHeaders);
+      res.on("finish", () => record(upstream.status, null));
+      Readable.fromWeb(upstream.body as never).pipe(res);
+      return;
+    }
+    const text = await upstream.text().catch(() => "");
+    if (upstream.status >= 400)
+      deps.log(
+        `[model-router] bedrock ${route.path} → ${upstream.status}: ${text.replace(/\s+/g, " ").slice(0, 400)}`,
+      );
+    res.writeHead(upstream.status, resHeaders);
+    res.on("finish", () =>
+      record(
+        upstream.status,
+        upstream.ok && call?.messages
+          ? usageOfBody("anthropic-messages", text)
+          : null,
+      ),
+    );
+    res.end(text);
+  };
+
   const bobHarness = Object.entries(deps.harnesses).find(
     ([, binding]) => binding?.bobGateway,
   )?.[0];
+  const bedrockHarness =
+    Object.entries(deps.harnesses).find(([, binding]) =>
+      binding?.native?.templates.includes(BEDROCK_TEMPLATE),
+    )?.[0] ?? deps.defaultHarness;
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const bedrock = bedrockRouteOf(url.pathname);
     const harness =
       (req.headers[HARNESS_HEADER] as string | undefined)?.trim() ||
       (bobHarness && bobGatewayPath(url.pathname) ? bobHarness : null) ||
       deps.defaultHarness;
     const route = classify(req.method ?? "GET", url.pathname);
     void (async () => {
+      if (bedrock) {
+        await handleBedrock(
+          req,
+          res,
+          bedrock,
+          url.search,
+          (req.headers[HARNESS_HEADER] as string | undefined)?.trim() ||
+            bedrockHarness,
+        );
+        return;
+      }
       if (route.kind === "model") {
         await handleModel(
           req,

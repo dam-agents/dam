@@ -61,3 +61,9 @@ export {
   createCallerSessionLookup,
   type CallerSessionLookup,
 } from "./infrastructure/caller-session.js";
+export {
+  BEDROCK_TEMPLATE,
+  bedrockRouterEnv,
+  createBedrockUsageScanner,
+  type BedrockUsageScanner,
+} from "./domain/bedrock.js";
