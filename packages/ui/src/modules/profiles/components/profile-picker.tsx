@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { keepOpenWhileDialog } from "../../sessions/hooks/use-connect-on-pick.js";
 import { useProfiles } from "../api/queries.js";
 import { useProfileAttach } from "../hooks/use-profile-attach.js";
 import { profileSummary } from "../lib/profile-detail.js";
@@ -83,7 +84,11 @@ export function ProfilePicker({
           <ChevronDown size={12} aria-hidden className="shrink-0" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-1">
+      <PopoverContent
+        align="start"
+        onInteractOutside={keepOpenWhileDialog}
+        className="w-80 p-1"
+      >
         <ProfileChoices
           profiles={profiles}
           carried={carried}

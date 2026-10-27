@@ -85,7 +85,7 @@ describe("the profile rows", () => {
     expect(rows([profile()])).not.toContain("aria-current");
   });
 
-  /** TEST_SCENARIO: a provider nobody connected offers the page that connects one; one the owner holds and the agent lacks offers the grant (QA D3). */
+  /** TEST_SCENARIO: a provider nobody connected offers the page that connects one; one the owner holds and the agent lacks reads like any other profile, with no reason and no link, since its pick asks to connect it. */
   it("offers the action each unavailable profile allows", () => {
     const notConnected = rows([
       profile({
@@ -108,7 +108,9 @@ describe("the profile rows", () => {
         },
       }),
     ]);
-    expect(attachable).toContain("Connect this provider");
+    expect(attachable).not.toContain("Connect this provider");
+    expect(attachable).not.toContain("isn&#x27;t attached");
     expect(attachable).not.toContain('disabled=""');
+    expect(attachable).toContain("Fast review");
   });
 });

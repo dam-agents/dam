@@ -351,9 +351,8 @@ describe("the profile view a routed picker opens on", () => {
 
   /** TEST_SCENARIO: an owner with no profile still gets the profile view when
    * the model name is clicked, Custom selection its only row in the primary
-   * slot, and the subagent slot marked on Let the agent pick, so one row of
-   * each slot is always the selected one (QA R9); its hint counts only the
-   * harnesses that list a model (QA P1). */
+   * slot, and the subagent slot's choices hidden behind its heading's
+   * unchecked checkbox, which is the agent picking. */
   it("opens on the profile view with no profile, Custom selection alone", () => {
     profilesState = [];
     const html = renderToStaticMarkup(
@@ -367,29 +366,16 @@ describe("the profile view a routed picker opens on", () => {
     );
     expect(html).toContain("Primary model");
     expect(html).toContain("Subagent model");
-    expect(html.match(/Custom selection/g)).toHaveLength(2);
+    expect(html.match(/Custom selection/g)).toHaveLength(1);
     expect(html).toMatch(
-      /aria-current="true"[^>]*><span[^>]*>Let the agent pick/,
+      /<label for="([^"]+)"[^>]*><input id="\1" type="checkbox" class="[^"]*"\/>/,
     );
+    expect(html).not.toContain("Let the agent pick");
     expect(html).not.toContain("No profiles yet");
     expect(html).not.toContain('aria-label="Harness"');
-    expect(html).toContain("1 harness");
-    state.catalog = { ...routedCatalog, providers: [] };
-    expect(
-      renderToStaticMarkup(
-        createElement(SessionPairPicker, {
-          agentId: "agent",
-          defaultHarness: "pi",
-          carried,
-          routed: true,
-          onConnectProviders: state.connectProviders,
-        }),
-      ),
-    ).toContain("0 harnesses");
-    state.catalog = routedCatalog;
   });
 
-  /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on them: a primary-model section, a subagent section led by Let the agent pick, each ending in Custom selection; an unavailable profile is disabled with its reason and the one action that would fix it. */
+  /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on them: a primary-model section ending in Custom selection, and a subagent section behind its checkbox; an unavailable profile is disabled with its reason and the one action that would fix it. */
   it("lists the profiles under both headings, and disables the unavailable one", () => {
     state.chosen = {
       harness: "pi",
@@ -436,7 +422,7 @@ describe("the profile view a routed picker opens on", () => {
       );
       expect(html).toContain("Primary model");
       expect(html).toContain("Subagent model");
-      expect(html).toContain("Let the agent pick");
+      expect(html).toContain('type="checkbox"');
       expect(html).toContain("Fast review");
       expect(html).toContain("Custom selection");
       expect(html).toContain("1 harness");
@@ -1230,8 +1216,9 @@ describe("the picker editing a profile in Settings", () => {
 
 describe("a model from a provider the agent is not connected to", () => {
   /** TEST_SCENARIO: the picker lists an owner's provider the agent does not
-   * hold, marked not connected; picking its model asks to connect it, and
-   * only a confirmed connect grants it and applies the pick. */
+   * hold like any other, with no visible marker, only a screen-reader hint;
+   * picking its model asks to connect it, and only a confirmed connect grants
+   * it and applies the pick. */
   it("asks to connect the provider, then grants it and applies the pick", async () => {
     state.catalog = {
       ...routedCatalog,
@@ -1278,8 +1265,9 @@ describe("a model from a provider the agent is not connected to", () => {
           ?.click(),
       );
       expect(container.innerHTML).toMatch(
-        /OpenAI<svg[^>]*aria-label="not connected"/,
+        /OpenAI<span class="sr-only">, not connected<\/span>/,
       );
+      expect(container.innerHTML).not.toContain('aria-label="not connected"');
       expect(container.textContent).not.toContain("(not connected)");
       const custom = [...container.querySelectorAll("button")].find((b) =>
         b.textContent?.includes("Custom selection"),
@@ -1513,8 +1501,8 @@ describe("the profile a pick matches, after a reload", () => {
 });
 
 describe("the subagent slot while its provider is gone", () => {
-  /** TEST_SCENARIO: a next chat that fell back, its provider detached, still shows the custom subagent pick the saved default holds, in the one summary with its provider and marked not connected, rather than Let the agent pick (QA N3, N4). */
-  it("shows the held pick, marked not connected", () => {
+  /** TEST_SCENARIO: a next chat that fell back, its provider detached, still shows the custom subagent pick the saved default holds, its checkbox checked, in the one summary with its provider and a screen-reader hint that it is not connected, rather than the agent picking (QA N3, N4). */
+  it("shows the held pick", () => {
     profilesState = [];
     state.chosen = { harness: "pi", provider: "curve", model: null };
     state.owned = [{ id: "anth", name: "Anthropic", type: "anthropic" }];
@@ -1536,17 +1524,84 @@ describe("the subagent slot while its provider is gone", () => {
           onConnectProviders: state.connectProviders,
         }),
       );
-      expect(html).not.toMatch(
-        /aria-current="true"[^>]*><span[^>]*>Let the agent pick/,
-      );
+      expect(html).toMatch(/type="checkbox"[^>]*checked=""/);
       expect(html).toMatch(
-        /\(Anthropic\)<\/span>[^]*aria-label="not connected"/,
+        /\(Anthropic\)<\/span><span class="sr-only">, not connected<\/span>/,
       );
     } finally {
       state.chosen = null;
       state.owned = [];
       state.saved = undefined;
       state.catalog = routedCatalog;
+    }
+  });
+});
+
+describe("the subagent slot's checkbox", () => {
+  /** TEST_SCENARIO: checking the box with nothing picked shows the subagent choices, whose Custom selection hint counts only the harnesses that list a model (QA P1), and writes nothing, so the slot stays the agent's until a row is picked; unchecking a slot that holds a pick clears it back to the agent picking. */
+  it("shows the choices, and unchecking clears the slot", () => {
+    profilesState = [];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalog = routedCatalog;
+    state.chosenModel.mockReset();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = () =>
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+    const box = () =>
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const customRows = () =>
+      [...container.querySelectorAll("button")].filter((b) =>
+        b.textContent?.startsWith("Custom selection"),
+      ).length;
+    try {
+      render();
+      expect(box().checked).toBe(false);
+      expect(customRows()).toBe(1);
+      act(() => box().click());
+      expect(box().checked).toBe(true);
+      expect(customRows()).toBe(2);
+      expect(container.textContent).toContain("1 harness");
+      state.catalog = { ...routedCatalog, providers: [] };
+      render();
+      expect(container.textContent).toContain("0 harnesses");
+      state.catalog = routedCatalog;
+      render();
+      expect(state.chosenModel).not.toHaveBeenCalled();
+      state.chosen = {
+        ...state.chosen,
+        settings: {
+          "platformSubagent.harness": "pi",
+          "platformSubagent.model": "ibm/gpt-5.5",
+        },
+      };
+      render();
+      act(() => box().click());
+      expect(state.chosenModel).toHaveBeenCalledWith(
+        "agent",
+        expect.not.objectContaining({
+          settings: expect.objectContaining({
+            "platformSubagent.model": expect.anything(),
+          }),
+        }),
+      );
+    } finally {
+      act(() => root.unmount());
+      state.chosen = null;
     }
   });
 });

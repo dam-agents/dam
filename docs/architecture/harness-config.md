@@ -16,7 +16,7 @@ A routed picker, a session's or a [schedule](schedules.md#session-choices)'s, re
 The session picker offers named models, not a generic default-model choice.
 It shows loading, unavailable and empty listings explicitly, with a retry for failed discovery; a failed listing never falls back to the harness's static catalog.
 The catalog remains usable where discovery is not configured.
-Before a session starts, the picker lists every provider the harness accepts, in order: a routed picker groups models by family, shows the owner's unattached providers as not connected, and ends with a Connect more providers row; the old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
+Before a session starts, the picker lists every provider the harness accepts, in order: a routed picker groups models by family, lists the owner's unattached providers and the profiles on them like the agent's own, and ends with a Connect more providers row; the old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
 A web terminal starts from a row of harness buttons on the agent's General page: a button stores its harness, with the first attached provider it accepts, as the next session pair, and the terminal sends that pair when it connects.
 The empty chat's Browser Terminal card opens a web terminal on the pair the session picker holds.
 A harness that only providers the owner holds but has not attached accept opens the attach dialog, then opens on the provider attached; a harness no provider the owner holds accepts is grayed, and its tooltip names the harness and says why.

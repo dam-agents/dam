@@ -33,6 +33,7 @@ import {
   useProviderConnections,
   useProviderModels,
 } from "../api/session-pair.js";
+import { keepOpenWhileDialog } from "../hooks/use-connect-on-pick.js";
 import {
   findModel,
   modelGroups,
@@ -223,6 +224,7 @@ export function ModelIndicator({
           align="start"
           aria-label="Session harness and model"
           collisionPadding={8}
+          onInteractOutside={keepOpenWhileDialog}
           className="flex max-h-[var(--radix-popover-content-available-height)] w-[340px] flex-col gap-3 overflow-y-auto text-sm"
         >
           <div className="flex items-center gap-2 px-1">

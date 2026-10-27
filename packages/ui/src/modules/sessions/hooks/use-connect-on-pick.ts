@@ -3,6 +3,11 @@ import { useGrantProvider } from "../api/session-pair.js";
 import type { ModelGroup } from "../lib/catalog-groups.js";
 import { pairSummary } from "../lib/session-settings.js";
 
+/** UNIT_BOUNDARY_DESCRIPTION: a picker's popover stays open while a dialog it opened, such as the connect warning, is up: the dialog takes focus and clicks outside the popover, and a confirm or a cancel returns to the open picker, on the screen it was on, with focus back on the row that asked. */
+export function keepOpenWhileDialog(event: Event): void {
+  if (useStore.getState().dialog?.open) event.preventDefault();
+}
+
 /** UNIT_BOUNDARY_DESCRIPTION: the one warning before a provider is connected to an agent from a pick, a model's or a profile's: the agent can then use all of the provider's models. */
 export function useConfirmConnect() {
   const showConfirm = useStore((s) => s.showConfirm);

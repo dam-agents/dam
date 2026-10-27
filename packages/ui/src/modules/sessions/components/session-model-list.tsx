@@ -1,4 +1,4 @@
-import { Add, ChevronDown, ErrorOutline } from "@carbon/icons-react";
+import { Add, ChevronDown } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -280,7 +280,7 @@ function ModelRow({
         <span className="min-w-0 flex-1 truncate">{entry.label}</span>
         {entry.options.length === 1 && (
           <span
-            title={providerLabel(option.group)}
+            title={option.group.displayName}
             className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-normal text-muted-foreground"
           >
             <ProviderName group={option.group} />
@@ -320,7 +320,7 @@ function ProviderChoice({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          title={providerLabel(selected.group)}
+          title={selected.group.displayName}
           aria-label={`Provider for ${label}: ${providerLabel(selected.group)}`}
           className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-normal text-muted-foreground hover:bg-background hover:text-foreground"
         >
@@ -347,7 +347,7 @@ function ProviderChoice({
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a provider's name in the model list, with an outlined error icon, named for a screen reader, when the agent is not connected to it. */
+/** UNIT_BOUNDARY_DESCRIPTION: a provider's name in the model list, read the same whether or not the agent is connected to it; a pick that connects it says so in its dialog. */
 function ProviderName({ group }: { group: ModelGroup }) {
   return (
     <>
@@ -357,9 +357,7 @@ function ProviderName({ group }: { group: ModelGroup }) {
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the outlined error icon that marks a pick on a provider the agent is not connected to, named for a screen reader. */
+/** UNIT_BOUNDARY_DESCRIPTION: a pick on a provider the agent is not connected to, said to a screen reader only: it looks like any other, and the connect dialog its pick opens is where a person learns of it. */
 export function NotConnectedMark() {
-  return (
-    <ErrorOutline size={12} aria-label="not connected" className="shrink-0" />
-  );
+  return <span className="sr-only">, not connected</span>;
 }

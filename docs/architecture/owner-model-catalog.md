@@ -6,7 +6,7 @@ Last verified: 2026-10-26
 
 The api-server keeps an **owner catalog** beside each agent's catalog: every model provider Connection the owner holds, listed from that Connection's env pins and its stored credential, with no agent involved.
 It is the read behind every routed picker: Settings › Profiles lists every provider the owner holds, and an agent's picker (`connections.agentCatalog`) lists the agent's granted providers.
-A chat picker also asks for the owner's other providers, which it marks not connected; picking one of their models asks to connect that provider to the agent, warning that the agent can then use all of its models, and grants it before the pick applies.
+A chat picker also asks for the owner's other providers, which it lists like the agent's own; picking one of their models, or a profile on one, asks to connect that provider to the agent, warning that the agent can then use all of its models, and grants it before the pick applies, with the picker still open on the screen it was on.
 
 ## Listing without an agent
 

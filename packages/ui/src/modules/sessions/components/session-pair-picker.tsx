@@ -37,6 +37,7 @@ import {
   useProviderModels,
   useSessionDefaults,
 } from "../api/session-pair.js";
+import { keepOpenWhileDialog } from "../hooks/use-connect-on-pick.js";
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useProviderUsage } from "../hooks/use-provider-usage.js";
 import {
@@ -365,6 +366,7 @@ export function SessionPairPicker(props: Props) {
           aria-label={
             edit ? "Profile harness and model" : "New session harness and model"
           }
+          onInteractOutside={keepOpenWhileDialog}
           className="flex w-[340px] flex-col gap-2 p-1 text-sm"
         >
           {showProfiles ? (

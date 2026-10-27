@@ -1,7 +1,7 @@
 import { Checkmark, ChevronRight, Settings } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { ProfileWithUsage } from "api-server-api";
-import type { ReactNode } from "react";
+import { type ReactNode, useId, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -20,11 +20,13 @@ export interface ProfileSlot {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what a chat picker opens on: the profiles for the
- * primary model and for subagents, each ending in Custom selection, the
- * subagent slot led by Let the agent pick, so one row of each slot is always
- * the marked one. A profile that cannot run on the agent stays listed,
- * disabled, with its reason and the one action that fixes it; picking one
- * whose provider the owner holds grants it first.
+ * primary model and for subagents, each ending in Custom selection. The
+ * subagent slot's choices sit behind the checkbox on its heading: unchecked,
+ * the agent picks; checked with nothing picked yet, the slot stays the
+ * agent's until a row is. A profile on a provider the owner holds but the
+ * agent lacks reads like any other, and picking it asks to connect that
+ * provider; one that cannot run at all stays listed, disabled, with its
+ * reason and the action that fixes it.
  */
 export function ModelConfiguration({
   agentId,
@@ -66,7 +68,9 @@ export function ModelConfiguration({
       />
     </>
   );
-  const agentPicks = subagent.selectedId === null && subagent.custom === null;
+  const picked = subagent.selectedId !== null || subagent.custom !== null;
+  const [revealed, setRevealed] = useState(false);
+  const subagentId = useId();
   return (
     <div className="flex flex-col">
       <SectionHeading
@@ -85,20 +89,20 @@ export function ModelConfiguration({
         Primary model
       </SectionHeading>
       {choices(primary)}
-      <SectionHeading>Subagent model</SectionHeading>
-      <button
-        type="button"
-        aria-current={agentPicks || undefined}
-        onClick={onAgentPicks}
-        className={cn(
-          "flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left hover:bg-muted",
-          agentPicks && "bg-muted font-medium",
-        )}
-      >
-        <span className="truncate text-foreground">Let the agent pick</span>
-        {agentPicks && <Checkmark size={16} aria-hidden className="shrink-0" />}
-      </button>
-      {choices(subagent)}
+      <SectionHeading htmlFor={subagentId} className="mt-2">
+        <input
+          id={subagentId}
+          type="checkbox"
+          checked={picked || revealed}
+          onChange={(e) => {
+            setRevealed(e.target.checked);
+            if (!e.target.checked && picked) onAgentPicks();
+          }}
+          className="mr-2 align-middle"
+        />
+        Subagent model
+      </SectionHeading>
+      {(picked || revealed) && choices(subagent)}
     </div>
   );
 }
@@ -106,14 +110,32 @@ export function ModelConfiguration({
 function SectionHeading({
   children,
   action,
+  htmlFor,
+  className,
 }: {
-  children: string;
+  children: ReactNode;
   action?: ReactNode;
+  /** UNIT_BOUNDARY_DESCRIPTION: the heading labels the checkbox it holds. */
+  htmlFor?: string;
+  className?: string;
 }) {
+  const text =
+    "truncate text-2xs font-medium uppercase leading-[17px] tracking-[1.65px] text-muted-foreground";
   return (
-    <div className="flex h-6 items-center justify-between px-2 pt-1">
-      <h3 className="truncate text-2xs font-medium uppercase leading-[17px] tracking-[1.65px] text-muted-foreground">
-        {children}
+    <div
+      className={cn(
+        "flex h-6 items-center justify-between px-2 pt-1",
+        className,
+      )}
+    >
+      <h3 className={text}>
+        {htmlFor ? (
+          <label htmlFor={htmlFor} className="cursor-pointer">
+            {children}
+          </label>
+        ) : (
+          children
+        )}
       </h3>
       {action}
     </div>
@@ -149,6 +171,8 @@ export function ProfileChoices({
           attachable: false,
           reason: null,
         };
+        /* UNIT_BOUNDARY_DESCRIPTION: a provider the owner holds and the agent lacks is a pick like any other; only the connect dialog the pick opens says so. */
+        const note = available ? null : reason;
         const selected = profile.id === selectedId;
         const summary = profileSummary(
           profile,
@@ -166,7 +190,7 @@ export function ProfileChoices({
               type="button"
               aria-current={selected || undefined}
               disabled={!available}
-              title={reason ?? summary}
+              title={note ?? summary}
               onClick={() => (attachable ? onAttach(profile) : onPick(profile))}
               className="flex min-w-0 flex-1 flex-col px-2 py-1 text-left disabled:pointer-events-none disabled:opacity-60"
             >
@@ -174,26 +198,26 @@ export function ProfileChoices({
                 className={cn(
                   "truncate",
                   selected && "font-medium",
-                  (!available || attachable) && "text-muted-foreground",
+                  !available && "text-muted-foreground",
                 )}
               >
                 {profile.name}
               </span>
               <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                {reason ? (
-                  <span className="whitespace-normal">{reason}</span>
+                {note ? (
+                  <span className="whitespace-normal">{note}</span>
                 ) : (
                   <PairSummary harness={profile.harness} label={summary} />
                 )}
               </span>
             </button>
-            {!available || attachable ? (
+            {!available ? (
               <button
                 type="button"
-                onClick={() => (attachable ? onAttach(profile) : onManage())}
+                onClick={onManage}
                 className="shrink-0 px-2 py-1 text-xs text-accent underline-offset-2 hover:underline"
               >
-                {attachable ? "Connect this provider" : "Configure providers"}
+                Configure providers
               </button>
             ) : (
               selected && (
