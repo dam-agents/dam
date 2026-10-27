@@ -1,4 +1,4 @@
-import { parseQualifiedModel } from "api-server-api";
+import { parseQualifiedModel, type SessionSteering } from "api-server-api";
 import { config } from "../config.js";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { ArtifactTouch } from "./infrastructure/tool-call-outcome.js";
@@ -146,6 +146,7 @@ export interface HarnessRuntime extends SessionHarness {
   sessionModel: boolean;
   initialize?: Record<string, unknown>;
   harnessState?: HarnessStateDialect;
+  steering?: SessionSteering;
   loadTimeoutMs?: number;
   nonClaudeModelEnv?: Record<string, string>;
 }
@@ -505,6 +506,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         ...(harness?.harnessState && {
           harnessState: HARNESS_STATE_PORTS[harness.harnessState],
         }),
+        ...(harness?.steering && { steering: harness.steering }),
         ...(harness?.loadTimeoutMs && {
           harnessLoadTimeoutMs: harness.loadTimeoutMs,
         }),

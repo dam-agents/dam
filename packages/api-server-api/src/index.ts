@@ -936,6 +936,7 @@ export {
   STEER_METHOD,
   steerResponseSchema,
   steeringSupported,
+  sessionSteeringSchema,
   isNonNullObject,
   isRequest,
   isResponse,
@@ -971,6 +972,7 @@ export type {
   PlatformSessionResetParams,
   PlatformUpdateQueuedParams,
   PlatformRewriteFromParams,
+  SessionSteering,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

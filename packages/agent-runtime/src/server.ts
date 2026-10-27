@@ -583,6 +583,7 @@ const {
           ...(manifest.harnessState && {
             harnessState: manifest.harnessState,
           }),
+          ...(manifest.steering && { steering: manifest.steering }),
           ...(manifest.sessionLoadTimeoutSeconds && {
             loadTimeoutMs: manifest.sessionLoadTimeoutSeconds * 1000,
           }),

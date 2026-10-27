@@ -12,6 +12,7 @@ import type {
   PlatformUndeliveredPrompt,
   PlatformVerdict,
   QueuedPrompt,
+  SessionSteering,
 } from "api-server-api";
 import type { ReplayClip, SessionTranscript } from "./session-transcript.js";
 
@@ -72,9 +73,14 @@ export interface SessionBootstrap {
   clear(): void;
 }
 
+export interface SessionCapabilities {
+  forks?: boolean;
+  steering?: SessionSteering;
+}
+
 export interface SessionBootstrapDeps {
   transcript: SessionTranscript;
-  forks?: boolean;
+  capabilities(): SessionCapabilities;
   engage(channel: ClientChannel, sessionId: string): void;
   openLoadRoute(sessionId: string): number;
   sendToAgent(frame: unknown): void;
@@ -154,10 +160,9 @@ export function createSessionBootstrap(
     queue: QueuedPrompt[],
     continuedFrom: PlatformContinuedFrom | null,
     attribution: Attribution,
-    forks: boolean | undefined,
+    capabilities: SessionCapabilities,
   ): unknown {
-    const extras: Record<string, unknown> = {};
-    if (forks !== undefined) extras.forks = forks;
+    const extras: Record<string, unknown> = { ...capabilities };
     if (clip.clipped)
       extras.clipped = clip.older !== undefined ? { older: clip.older } : {};
     if (turn !== null) extras.turn = turn;
@@ -243,7 +248,7 @@ export function createSessionBootstrap(
         kind === "load" ? deps.queueOf(sessionId) : [],
         kind === "load" ? deps.continuedFromOf(sessionId) : null,
         kind === "load" ? deps.attributionOf(sessionId) : NO_ATTRIBUTION,
-        kind === "load" ? deps.forks : undefined,
+        deps.capabilities(),
       ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
@@ -435,7 +440,7 @@ export function createSessionBootstrap(
               [],
               null,
               NO_ATTRIBUTION,
-              deps.forks,
+              deps.capabilities(),
             ),
           });
           if (channel.isOpen()) channel.send(rewriteAuthError(response));

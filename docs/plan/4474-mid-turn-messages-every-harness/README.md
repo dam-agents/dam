@@ -46,6 +46,7 @@ These answer the issue's open questions and the questions that came up while the
   The **Send now** tooltip says what it does on that harness.
 - **Pi and Codex** read a steered message at their next model request, so one more step on the old instruction is possible.
   Only Stop stops at once.
+- **Steering value:** the manifest key is the session's value, known before any harness process runs; the live `initialize` answer only gates the runtime's own native steer (decided during implementation, 2026-10-27).
 - **Slack and Telegram** follow the same steering rules as the web UI, which is the user-visible goal of #4475.
   Follow-ups merge into the running turn again, as they did before 2026-10-15.
 
@@ -164,6 +165,11 @@ The channel queue in the api-server keeps what is its own: the quiet period, the
 ### Two ways to steer
 
 A harness's runtime manifest names its way in a new key, `steering: native | interrupt`.
+The key is the session's steering value on every session result, so a client knows it before any harness process runs, as it knows `forks` from the manifest's copy of the harness's `initialize` answer.
+A session result can come before the harness answers `initialize`: a load that the session-history provider fills, a hot `session/resume`, and a load served from the log do, on a waking agent and after every harness recycle.
+On `native`, the runtime steers only when the harness's own `initialize` answer also says it can; a turn always starts after that answer, so this check cannot race.
+A mismatch logs one warning, and **Send now** then answers that the agent cannot take a message mid-turn.
+`test:harness-initialize-capabilities` checks `steering: native` against the live pinned harness, so an adapter upgrade that drops steering fails there.
 Without the key, a harness steers natively when its own `initialize` answer says it can, and otherwise it does not steer; a mid-turn message then waits for the next turn, as today.
 
 - **Native.** The runtime sends `_session/steering` to the harness, which adds the message to its running turn.
@@ -180,6 +186,7 @@ On an interrupt harness, a steer point counts only when no tool call starts for 
 The slices meet at these points.
 
 - **Session results.** `session/new`, `session/load` and `session/resume` results carry `_meta.platform.steering: "native" | "interrupt"` when the session can steer, beside the existing `_meta.platform.forks`.
+  The value is the manifest key; without the key, it is the harness's live `initialize` answer, when the harness has given it.
   The web UI shows **Send now** on an editable queued prompt only when the session has it, and words the tooltip by its value.
 - **Router `initialize`.** The router's own `initialize` answer adds `_meta.platform.servesSteering: true`, beside `runEnded`.
   The api-server steers only against a runtime that says so; an older runtime forwards a steer raw to the harness.
@@ -200,16 +207,16 @@ The slices meet at these points.
 
 ## Sub-issues
 
-| #   | Title                                                                                              | Scope                                                                                                                               | Depends on |
-| --- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [Clients see whether a session steers](01-clients-see-whether-a-session-steers.md)                 | The `steering` manifest key; `_meta.platform.steering` on session results; **Send now** per session.                                | —          |
-| 02  | [Pi steers, and Codex starts no hidden turn](02-pi-steers-codex-no-hidden-turn.md)                 | Steering edits in the pi-acp patch, with an answer that waits until Pi takes the message; one codex-acp patch edit.                 | 01         |
-| 03  | [The runtime serves a client's steer](03-runtime-serves-a-clients-steer.md)                        | Steer-only entries with a target turn, idempotency and one disposal rule; relay stamp; router short-cut; `servesSteering`.          | 01         |
-| 04  | [Slack and Telegram steer through the runtime](04-slack-and-telegram-steer-through-the-runtime.md) | The channel queue steers through the runtime with no deadline, never sends a steered batch again, and keeps thread supersede right. | 02, 03     |
-| 05  | [A late follow-up gets an answer](05-a-late-follow-up-gets-an-answer.md)                           | Frame wording, the per-message answered rule, a nudge for unanswered follow-ups, Telegram logging.                                  | 04         |
-| 06  | [Interrupt and continue, on for Bob](06-interrupt-and-continue-on-for-bob.md)                      | The interrupt steer and its restarting state; the notice; Bob's compaction patch; Bob set to `interrupt`.                           | 03         |
-| 07  | [Send now cuts a running command](07-send-now-cuts-a-running-command.md)                           | Pending permission requests, the cut tool's look, the notice for a cut command, the process check.                                  | 06         |
-| 08  | [Copilot steers, and the per-harness docs](08-copilot-steers-and-docs.md)                          | Copilot set to `interrupt` with its checks; the per-harness table in the docs; the whole-feature walk.                              | 05, 07     |
+| #   | Title                                                                                              | Scope                                                                                                                               | Depends on | Done |
+| --- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
+| 01  | [Clients see whether a session steers](01-clients-see-whether-a-session-steers.md)                 | The `steering` manifest key; `_meta.platform.steering` on session results; **Send now** per session.                                | —          | ✅   |
+| 02  | [Pi steers, and Codex starts no hidden turn](02-pi-steers-codex-no-hidden-turn.md)                 | Steering edits in the pi-acp patch, with an answer that waits until Pi takes the message; one codex-acp patch edit.                 | 01         |      |
+| 03  | [The runtime serves a client's steer](03-runtime-serves-a-clients-steer.md)                        | Steer-only entries with a target turn, idempotency and one disposal rule; relay stamp; router short-cut; `servesSteering`.          | 01         |      |
+| 04  | [Slack and Telegram steer through the runtime](04-slack-and-telegram-steer-through-the-runtime.md) | The channel queue steers through the runtime with no deadline, never sends a steered batch again, and keeps thread supersede right. | 02, 03     |      |
+| 05  | [A late follow-up gets an answer](05-a-late-follow-up-gets-an-answer.md)                           | Frame wording, the per-message answered rule, a nudge for unanswered follow-ups, Telegram logging.                                  | 04         |      |
+| 06  | [Interrupt and continue, on for Bob](06-interrupt-and-continue-on-for-bob.md)                      | The interrupt steer and its restarting state; the notice; Bob's compaction patch; Bob set to `interrupt`.                           | 03         |      |
+| 07  | [Send now cuts a running command](07-send-now-cuts-a-running-command.md)                           | Pending permission requests, the cut tool's look, the notice for a cut command, the process check.                                  | 06         |      |
+| 08  | [Copilot steers, and the per-harness docs](08-copilot-steers-and-docs.md)                          | Copilot set to `interrupt` with its checks; the per-harness table in the docs; the whole-feature walk.                              | 05, 07     |      |
 
 ```mermaid
 graph LR

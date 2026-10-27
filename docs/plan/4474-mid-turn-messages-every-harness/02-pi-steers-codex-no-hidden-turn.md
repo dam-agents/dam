@@ -24,6 +24,8 @@ In pi-acp, read `dist/index.js`; in Pi, read `dist/modes/rpc/rpc-mode.js` and `d
 
 1. **Advertise steering.**
    In `PiAcpAgent`'s `async initialize(params)`, add `_meta: { steering: { supported: true } }` to the returned object; it has no other top-level `_meta`.
+   Add `steering: native` to [`packages/agents/pi-agent/rootfs/app/runtime-manifest.yaml`](../../../packages/agents/pi-agent/rootfs/app/runtime-manifest.yaml), with a comment that the steering comes from the patch.
+   In `test:harness-initialize-capabilities`, start Pi through the same patch loader as `harness-chat`, so that the drift check of 01 sees the patched answer.
 
 2. **Serve `_session/steering`.**
    The ACP SDK that pi-acp imports (`@agentclientprotocol/sdk` 0.26.0) sends any unknown request method to `agent.extMethod`.
@@ -59,6 +61,7 @@ In pi-acp, read `dist/index.js`; in Pi, read `dist/modes/rpc/rpc-mode.js` and `d
 
 6. **Checks.**
    Run `mise run //packages/agents:check:pi-acp-patch`, `mise run //packages/agents:check:codex-acp-patch`, `mise run //packages/agents:test:pi-session-ref`, and `mise run //packages/agents:test:codex-acp-patch` with `CODEX_ACP` set to the pinned bundle (the test skips without it).
+   Run `mise run //packages/agents:test:harness-initialize-capabilities` with `PI_ACP` and `CODEX_ACP` set.
 
 ## Acceptance criteria
 

@@ -100,6 +100,9 @@ export const steerResponseSchema = z.object({
   outcome: z.string().optional(),
 });
 
+export const sessionSteeringSchema = z.enum(["native", "interrupt"]);
+export type SessionSteering = z.infer<typeof sessionSteeringSchema>;
+
 export function steeringSupported(initializeResult: unknown): boolean {
   const parsed = z
     .object({

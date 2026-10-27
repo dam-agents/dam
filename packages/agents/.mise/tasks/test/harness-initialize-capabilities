@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test (with the real adapters, when CLAUDE_AGENT_ACP, CODEX_ACP, PI_ACP, BOB_CLI, COPILOT_CLI or HERMES_CLI name them) that each manifest's declared initialize capabilities match what the live harness answers"
+//MISE description="Test (with the real adapters, when CLAUDE_AGENT_ACP, CODEX_ACP, PI_ACP, BOB_CLI, COPILOT_CLI or HERMES_CLI name them) that each manifest's declared initialize capabilities and native steering match what the live harness answers"
 //MISE sources=["*/rootfs/app/runtime-manifest.yaml", "test-lib/acp-client.mjs", ".mise/tasks/test/harness-initialize-capabilities"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -27,7 +27,8 @@ const targets = [
 let checked = 0;
 try {
   for (const t of targets) {
-    const declared = manifest(t.name).initializeCapabilities;
+    const declaredManifest = manifest(t.name);
+    const declared = declaredManifest.initializeCapabilities;
     assert.ok(declared?.agentCapabilities, `${t.name}: the manifest declares no initializeCapabilities`);
     if (!t.bin) {
       console.log(`${t.name}: skipped (binary not named)`);
@@ -36,11 +37,12 @@ try {
     const [cmd, args] = t.args(t.bin);
     const c = acpClient(cmd, args, { env: { ...base, ...t.env }, cwd: home, name: t.name, onRequest: () => { throw new Error("none"); } });
     try {
-      // TEST_SCENARIO: The runtime answers a client's initialize from the manifest before any harness runs, so what it declares must be what the pinned harness itself answers: capabilities and auth methods, field for field.
+      // TEST_SCENARIO: The runtime answers a client's initialize from the manifest before any harness runs, and stamps a session's steering from the manifest before the harness answers, so what it declares must be what the pinned harness itself answers: capabilities and auth methods, field for field, and `steering: native` exactly when the harness advertises _session/steering.
       const live = await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true }, clientInfo: { name: "dam", version: "0" } }, 60_000);
       assert.deepEqual(live.agentCapabilities, declared.agentCapabilities, `${t.name}: agentCapabilities drifted`);
       assert.deepEqual(t.authMethods ? t.authMethods(live.authMethods) : (live.authMethods ?? []), declared.authMethods ?? [], `${t.name}: authMethods drifted`);
       if (declared.agentInfo) assert.deepEqual({ name: live.agentInfo?.name, title: live.agentInfo?.title }, declared.agentInfo, `${t.name}: agentInfo drifted`);
+      assert.equal(declaredManifest.steering === "native", live._meta?.steering?.supported === true, `${t.name}: native steering drifted`);
       checked++;
       console.log(`${t.name}: manifest matches ${live.agentInfo?.name ?? t.name} ${live.agentInfo?.version ?? ""}`);
     } finally {

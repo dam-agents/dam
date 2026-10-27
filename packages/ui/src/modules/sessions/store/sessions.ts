@@ -9,6 +9,7 @@ import {
   type SessionCategory,
   type SessionMode,
   type SessionPair,
+  type SessionSteering,
 } from "api-server-api";
 import type { StateCreator } from "zustand";
 
@@ -85,7 +86,7 @@ export interface SessionsSlice {
   queuedPrompts: QueuedPrompt[];
   reportedCommands: ReportedCommands | null;
   harnessForks: boolean;
-  harnessSteers: boolean;
+  sessionSteering: SessionSteering | null;
   rewriting: Rewriting | null;
   rewritePending: PendingRewrite | null;
   nextSessionPair: Record<string, SessionPair>;
@@ -123,7 +124,7 @@ export interface SessionsSlice {
   setQueuedPrompts: (items: QueuedPrompt[]) => void;
   setReportedCommands: (sessionId: string, commands: SkillCommand[]) => void;
   setHarnessForks: (forks: boolean) => void;
-  setHarnessSteers: (steers: boolean) => void;
+  setSessionSteering: (steering: SessionSteering | null) => void;
   setRewriting: (rewriting: Rewriting | null) => void;
   setRewritePending: (pending: PendingRewrite | null) => void;
   addRunStart: (at: string) => void;
@@ -217,7 +218,7 @@ export const createSessionsSlice: StateCreator<
     queuedPrompts: [],
     reportedCommands: null,
     harnessForks: false,
-    harnessSteers: false,
+    sessionSteering: null,
     rewriting: null,
     rewritePending: null,
     nextSessionPair: {},
@@ -287,7 +288,7 @@ export const createSessionsSlice: StateCreator<
     setReportedCommands: (sessionId, commands) =>
       set({ reportedCommands: { sessionId, commands } }),
     setHarnessForks: (forks) => set({ harnessForks: forks }),
-    setHarnessSteers: (steers) => set({ harnessSteers: steers }),
+    setSessionSteering: (steering) => set({ sessionSteering: steering }),
     setRewriting: (rewriting) => set({ rewriting }),
     setRewritePending: (pending) => set({ rewritePending: pending }),
     setNextSessionPair: (agentId, pair) =>

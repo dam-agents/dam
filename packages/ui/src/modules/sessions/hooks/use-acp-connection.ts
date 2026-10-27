@@ -18,7 +18,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
-import { openInitializedConnection, sessionForksIn } from "../../acp/acp.js";
+import {
+  openInitializedConnection,
+  sessionForksIn,
+  sessionSteeringIn,
+} from "../../acp/acp.js";
 import { unstoredSessionPrompts } from "../../acp/errors.js";
 import {
   appendInterruptedNotice,
@@ -236,13 +240,12 @@ export function useAcpConnection(
       let settled = false;
       let kept = false;
       const handler = makeUpdateHandler();
-      const { connection, ws, forksSessions, steers } =
-        await openInitializedConnection(
-          selectedAgent,
-          withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
-            if (listening) handler(update, updateSessionId, frame);
-          }),
-        );
+      const { connection, ws, forksSessions } = await openInitializedConnection(
+        selectedAgent,
+        withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
+          if (listening) handler(update, updateSessionId, frame);
+        }),
+      );
       ws.addEventListener("close", () => releaseStartSlot(holders));
 
       let startedSessionId: string;
@@ -267,7 +270,7 @@ export function useAcpConnection(
         useStore
           .getState()
           .setHarnessForks(sessionForksIn(session, forksSessions));
-        useStore.getState().setHarnessSteers(steers);
+        useStore.getState().setSessionSteering(sessionSteeringIn(session));
         seedStartedSession(agentId, startedSessionId, next?.pair ?? null);
       } catch (err) {
         try {
@@ -333,26 +336,24 @@ export function useAcpConnection(
     if (existing && existing.ws.readyState === WebSocket.OPEN) return existing;
     if (!selectedAgent) throw new Error("No agent selected");
     const handler = makeUpdateHandler();
-    const { connection, ws, forksSessions, steers } =
-      await openInitializedConnection(
-        selectedAgent,
-        withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
-          const collector = collectorRef.current;
-          if (
-            collector &&
-            updateSessionId === collector.sid &&
-            frame?.replayFor === collector.token
-          ) {
-            collector.updates.push({ update, frame });
-            return;
-          }
-          handler(update, updateSessionId, frame);
-        }),
-      );
+    const { connection, ws, forksSessions } = await openInitializedConnection(
+      selectedAgent,
+      withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
+        const collector = collectorRef.current;
+        if (
+          collector &&
+          updateSessionId === collector.sid &&
+          frame?.replayFor === collector.token
+        ) {
+          collector.updates.push({ update, frame });
+          return;
+        }
+        handler(update, updateSessionId, frame);
+      }),
+    );
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
     agentForksRef.current = forksSessions;
-    useStore.getState().setHarnessSteers(steers);
     return connectionRef.current;
   }, [selectedAgent, makeUpdateHandler, delivery, attachCloseHandler]);
 
@@ -403,10 +404,12 @@ export function useAcpConnection(
           };
         } | null
       )?._meta?.platform;
-      if (useStore.getState().sessionId === sid)
+      if (useStore.getState().sessionId === sid) {
         useStore
           .getState()
           .setHarnessForks(sessionForksIn(result, agentForksRef.current));
+        useStore.getState().setSessionSteering(sessionSteeringIn(result));
+      }
       const clippedRaw = platformMeta?.clipped;
       const turn = platformReplayTurnMetaSchema.safeParse(platformMeta?.turn);
       const undelivered = platformUndeliveredMetaSchema.safeParse(

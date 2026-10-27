@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Session inside the machine
 
@@ -113,6 +113,8 @@ The queue marks a prompt that waits only for its session — nothing running ahe
 Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
 
 A harness that can **steer** takes a prompt into the turn it is running rather than after it.
+A client learns whether a Session steers from `_meta.platform.steering` on `session/new`, `session/load` and `session/resume`, as it learns `forks`, because the client's `initialize` answer is the default harness's and carries no steering.
+The value comes from the harness image's manifest key, so it is known before any harness process runs, as a load filled by the session-history provider needs; the runtime still steers natively only when the harness's own `initialize` answer also advertises it, and an image without the key steers when that answer says it can.
 A web UI prompt sent mid-turn is then **steered** — a fourth fate, reported in place of a start — and queued prompts drain into a running turn the same way.
 The harness takes a steer by aborting whatever the agent is generating, so a steer waits for a **steer point** — the agent neither writing nor running a tool, which is right after its tool calls finish — and the agent reads the prompt beside their results instead of having a reply cut off.
 Prompts waiting together go as one batch — one message carrying each of them in order — since a later one may change what an earlier one asked; separate steers sent together would be merged by the harness on its own, in no reliable order.

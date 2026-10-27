@@ -4,6 +4,7 @@ import {
   type PromptBlock,
   type QueuedPrompt,
   separateRendererBlocks,
+  type SessionSteering,
 } from "api-server-api";
 import { useState } from "react";
 
@@ -24,6 +25,11 @@ import { ChatMessage } from "./chat-message.js";
 import { MessageEditor } from "./message-editor.js";
 
 const ALREADY_SENT = "Already sent — it can no longer be changed.";
+
+const SEND_NOW_TOOLTIP: Record<SessionSteering, string> = {
+  native: "Send now (interrupts the agent)",
+  interrupt: "Send now (stops the running command)",
+};
 
 function queuedMessage(item: QueuedPrompt, index: number): Message {
   return {
@@ -78,7 +84,7 @@ function QueuedPromptItem({
 }) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
-  const steers = useStore((s) => s.harnessSteers);
+  const steering = useStore((s) => s.sessionSteering);
   const sentBy = useSenderNames(agentId).otherName(item?.sender);
   const [draft, setDraft] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -167,11 +173,11 @@ function QueuedPromptItem({
         </span>
         {target !== null && (
           <>
-            {steers && (
+            {steering !== null && (
               <Button
                 variant="ghost"
                 size="icon-xs"
-                tooltip="Send now (interrupts the agent)"
+                tooltip={SEND_NOW_TOOLTIP[steering]}
                 aria-label="Send now"
                 disabled={pending}
                 onClick={sendNow}

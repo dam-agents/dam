@@ -31,6 +31,7 @@ import {
   steerResponseSchema,
   steeringSupported,
   type PromptBlock,
+  type SessionSteering,
   type PlatformContinuedFrom,
   type PlatformTurnEndedParams,
   type JsonRpcResponse,
@@ -117,7 +118,10 @@ import {
   type PromptSubmission,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
-import { createSessionBootstrap } from "./session-bootstrap.js";
+import {
+  createSessionBootstrap,
+  type SessionCapabilities,
+} from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
 import { platformOf, withPlatform } from "../../domain/platform-meta.js";
@@ -206,6 +210,7 @@ export interface AcpRuntimeDeps {
   historyProvider?: HistoryProvider;
   sessionCut?: SessionCutProvider;
   harnessForks?: boolean;
+  steering?: SessionSteering;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
@@ -293,6 +298,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let sessionCloseSupported = true;
   let sessionResumeSupported = false;
   let harnessSteers = false;
+  const sessionSteering = (): SessionSteering | null =>
+    deps.steering ?? (harnessSteers ? "native" : null);
+  const sessionCapabilities = (): SessionCapabilities => {
+    const steering = sessionSteering();
+    return {
+      ...(deps.harnessForks !== undefined && { forks: deps.harnessForks }),
+      ...(steering !== null && { steering }),
+    };
+  };
   const openToolCalls = new Map<string, Set<string>>();
   const generating = new Set<string>();
   const turnSenders = new Map<string, Sender>();
@@ -466,7 +480,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
       checkPendingRestart();
     },
-    canSteer: () => harnessSteers,
+    canSteer: () => sessionSteering() === "native" && harnessSteers,
     atSteerPoint: (sessionId) =>
       !generating.has(sessionId) && !(openToolCalls.get(sessionId)?.size ?? 0),
     steer: (entry) => steerIntoTurn(entry),
@@ -594,7 +608,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const toolActivityIn = createToolActivityReader();
   const bootstrap = createSessionBootstrap({
     transcript,
-    ...(deps.harnessForks !== undefined && { forks: deps.harnessForks }),
+    capabilities: sessionCapabilities,
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
     },
@@ -2076,6 +2090,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           harnessSteers = steeringSupported(
             (frame as { result?: unknown }).result,
           );
+          if (deps.steering === "native" && !harnessSteers)
+            deps.log?.(
+              "the manifest says the harness steers natively, but its initialize answer does not advertise steering; mid-turn messages wait for the next turn",
+            );
           const { result, error } = frame as {
             result?: unknown;
             error?: unknown;
@@ -2182,9 +2200,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                   sessionIsRunning,
                   deps.terminalSessionPins?.(),
                 )
-              : mapping.method === "session/new" &&
-                  deps.harnessForks !== undefined
-                ? withForks(frame, deps.harnessForks)
+              : mapping.method === "session/new"
+                ? withSessionCapabilities(frame, sessionCapabilities())
                 : (frame as object);
           const out = JSON.stringify({
             ...responseFrame,
@@ -3038,14 +3055,21 @@ function injectPlatformMetaIntoList(
   return { ...frame, result: { ...result, sessions } };
 }
 
-function withForks(frame: unknown, forks: boolean): object {
+function withSessionCapabilities(
+  frame: unknown,
+  capabilities: SessionCapabilities,
+): object {
   const result = resultOf(frame);
-  if (result === null) return frame as object;
+  if (result === null || Object.keys(capabilities).length === 0)
+    return frame as object;
   const meta = isNonNullObject(result._meta) ? result._meta : {};
   const platform = isNonNullObject(meta.platform) ? meta.platform : {};
   return {
     ...(frame as object),
-    result: { ...result, _meta: { ...meta, platform: { ...platform, forks } } },
+    result: {
+      ...result,
+      _meta: { ...meta, platform: { ...platform, ...capabilities } },
+    },
   };
 }
 

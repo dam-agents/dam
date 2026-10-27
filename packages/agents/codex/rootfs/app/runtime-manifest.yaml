@@ -25,6 +25,11 @@ initializeCapabilities:
   authMethods: [{"id": "api-key", "name": "API Key", "description": "Use an API key to authenticate", "_meta": {"api-key": {"provider": "openai"}}}, {"id": "chat-gpt", "name": "ChatGPT", "description": "Use ChatGPT to authenticate"}]
   agentInfo: {"name": "@agentclientprotocol/codex-acp", "title": "Codex"}
 
+# codex-acp takes a message into the running turn (_session/steering).
+# Declared so a session result says so before any harness process runs;
+# checked against the live initialize by test:harness-initialize-capabilities.
+steering: native
+
 # Codex sets the thread id on every shell command it runs; codex-acp uses the
 # thread id as the session's id, so git's trace names the session that ran a
 # commit or push.
