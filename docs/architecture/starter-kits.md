@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-25
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -125,7 +125,7 @@ flowchart LR
   A new agent has it on by default, so a kit that names nothing gets that; `true` says so explicitly, and `false` turns it off for an agent whose tools need credentials added to requests that name no Connection.
   Agent settings show the same switch, so the owner can change it later.
 - **Install Command** — optional `install.command`: shell the agent-runtime runs once in the new agent's workspace, queued as a `workspace-command` event right after create and before anything else the apply queues, so a bootstrap has run by the time the initialization session opens.
-  The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`, `copilot`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
+  The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`, `copilot`, `hermes`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
   The command runs **inside the agent's own sandbox** — the same machine, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
   This is how the two wiki kits run their toolkit's bootstrap: from the checkout their `seed` brought in, pinned to the commit the catalog resolved, instead of fetching a script from the network at install.
 - **Kit Writes Into the Agent's Home** — an install command, a startup item or a bootstrap script that edits the agent's own configuration (`~/.claude/settings.json` for hooks, `autoMode` rules or a theme) writes a file the platform's own writers also write, so it follows the same rule ([writing a file](runtime-delivery.md#writing-a-file)): take `~/.claude/settings.json.lock` for the whole read-modify-write, read the file again once the lock is held, stage the replacement **in `~/.claude/`** so the rename stays on one filesystem — a file staged in `/tmp` is on another one, so moving it is a copy and a reader can see half a file — and never write `{}` over a file it could not read.
