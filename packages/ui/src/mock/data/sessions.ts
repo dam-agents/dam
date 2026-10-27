@@ -58,6 +58,7 @@ export const MOCK_SESSION_IDS = {
   artifact: "sess-artifact-example",
   browser: "sess-browser-example",
   longChat: "sess-long-chat-example",
+  devFlow: "sess-dev-flow",
 };
 
 export const KIT_SESSION_TO_PACK: Record<string, string> = {};
@@ -93,6 +94,12 @@ const ciPipelineSessions = [
     AGENT_IDS.codexResearch,
     "Long chat stream example",
     8 * hr,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.devFlow,
+    AGENT_IDS.codexResearch,
+    "Add CSV export to reports page",
+    1 * hr,
   ),
   makeSession(
     "sess-ci-006",
