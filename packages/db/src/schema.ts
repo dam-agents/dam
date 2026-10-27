@@ -39,12 +39,27 @@ export const channels = pgTable(
     profileId: text("profile_id").references(() => profiles.id, {
       onDelete: "restrict",
     }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the rest of the chat default's two slots, so a binding runs on what a chat starts on: values of its own in place of the profile, and a subagent profile or values; neither subagent column is the agent picking. */
+    sessionPair: jsonb("session_pair"),
+    platformSubagentProfile: text("platform_subagent_profile").references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    platformSubagentSettings: jsonb("platform_subagent_settings"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
   (table) => [
     index("channels_agent_type_idx").on(table.agentId, table.type),
+    check(
+      "channels_session_pair_xor_profile",
+      sql`${table.profileId} is null or ${table.sessionPair} is null`,
+    ),
+    check(
+      "channels_platform_subagent_xor_profile",
+      sql`${table.platformSubagentProfile} is null or ${table.platformSubagentSettings} is null`,
+    ),
     uniqueIndex("channels_slack_agent_channel_idx")
       .on(
         table.agentId,
@@ -148,11 +163,28 @@ export const telegramConversations = pgTable(
     profileId: text("profile_id").references(() => profiles.id, {
       onDelete: "restrict",
     }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the rest of the chat default's two slots, so a binding runs on what a chat starts on: values of its own in place of the profile, and a subagent profile or values; neither subagent column is the agent picking. */
+    sessionPair: jsonb("session_pair"),
+    platformSubagentProfile: text("platform_subagent_profile").references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    platformSubagentSettings: jsonb("platform_subagent_settings"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
-  (table) => [index("telegram_conversations_agent_idx").on(table.agentId)],
+  (table) => [
+    index("telegram_conversations_agent_idx").on(table.agentId),
+    check(
+      "telegram_conversations_session_pair_xor_profile",
+      sql`${table.profileId} is null or ${table.sessionPair} is null`,
+    ),
+    check(
+      "telegram_conversations_platform_subagent_xor_profile",
+      sql`${table.platformSubagentProfile} is null or ${table.platformSubagentSettings} is null`,
+    ),
+  ],
 );
 
 export const egressRules = pgTable(

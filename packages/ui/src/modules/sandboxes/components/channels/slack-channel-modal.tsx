@@ -20,11 +20,10 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { getBrand } from "../../../../brand.js";
 import type { AgentView } from "../../../../types.js";
 import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
-import { useProfiles } from "../../../profiles/api/queries.js";
-import { ProfilePicker } from "../../../profiles/components/profile-picker.js";
 import { SlackChannelPicker } from "../../../slack/components/slack-channel-picker.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
+import { ChannelChoicePicker, NO_CHOICE } from "./channel-profile-line.js";
 import { ChannelSwitchCard } from "./channel-switch-card.js";
 
 export function SlackChannelModal({
@@ -78,20 +77,23 @@ export function SlackChannelModal({
 
           {!channel && (
             <FormField
-              label="Profile"
-              hint="What these channels' turns run on. Every turn is resolved from it, so editing the profile changes what they run on. Starts on the profile your newest channel uses, else the one your chats use."
+              label="Runs on"
+              hint="What these channels' turns run on, picked as a chat's model is. A profile is resolved on every turn, so editing it changes what they run on. Starts on the profile your newest channel uses, else the one your chats use."
             >
               <Controller
                 control={control}
-                name="profile"
+                name="choice"
                 render={({ field }) => (
-                  <ProfileControls
+                  <ChannelChoicePicker
                     agentId={agent.id}
-                    value={field.value || null}
-                    onChange={field.onChange}
+                    slots={field.value?.slots ?? NO_CHOICE}
+                    onChoose={(slots, request) =>
+                      field.onChange({ slots, request })
+                    }
                   />
                 )}
               />
+              <FormError message={errors.choice?.message} />
             </FormField>
           )}
 
@@ -201,37 +203,5 @@ function ConnectedChannel({ slackChannelId }: { slackChannelId: string }) {
         agent from somewhere else, connect that channel and disconnect this one.
       </p>
     </div>
-  );
-}
-
-/* UNIT_BOUNDARY_DESCRIPTION: the profile a new binding starts on (D91), picked
- * before the channel exists; the pick is written to each channel's row once the
- * binding succeeds. */
-function ProfileControls({
-  agentId,
-  value,
-  onChange,
-}: {
-  agentId: string;
-  value: string | null;
-  onChange: (id: string) => void;
-}) {
-  const { data: profiles = [] } = useProfiles(agentId);
-  if (profiles.length === 0)
-    return (
-      <p className="text-sm text-muted-foreground">
-        No profiles yet, so these channels follow the agent's chat default. Save
-        one from a chat's model picker to give them a profile of their own.
-      </p>
-    );
-  return (
-    <ProfilePicker
-      agentId={agentId}
-      label="Profile"
-      value={value}
-      placeholder="the agent's chat default"
-      testId="slack-channel-profile"
-      onPick={(profile) => onChange(profile.id)}
-    />
   );
 }

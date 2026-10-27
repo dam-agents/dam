@@ -49,12 +49,28 @@ async function started(h: ReturnType<typeof telegramWorkerHarness>) {
   return h;
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: a binding row in the chat default's two slots, read through the real query; `resolved` answers each profile it names. */
 function channelRow(
   profileId: string | null,
-  resolved: ResolvedProfile | null,
+  resolved: ResolvedProfile | null | ((id: string) => ResolvedProfile | null),
+  subagent: {
+    platformSubagentProfileId?: string;
+    platformSubagentSettings?: Record<string, string>;
+  } = {},
 ) {
-  const db = drizzle(async () => ({ rows: [[profileId]] })) as unknown as Db;
-  return createChannelProfiles(db, async () => resolved).pair("agent-1", {
+  const db = drizzle(async () => ({
+    rows: [
+      [
+        profileId,
+        null,
+        subagent.platformSubagentProfileId ?? null,
+        subagent.platformSubagentSettings ?? null,
+      ],
+    ],
+  })) as unknown as Db;
+  return createChannelProfiles(db, async ({ profileId: id }) =>
+    typeof resolved === "function" ? resolved(id) : resolved,
+  ).pair("agent-1", {
     type: "slack",
     id: "C1",
   });
@@ -81,6 +97,52 @@ describe("a channel's turn", () => {
       }),
     ).rejects.toThrow(ChannelProfileRefusedError);
     await expect(channelRow(null, null)).resolves.toBeNull();
+  });
+
+  /** TEST_SCENARIO: a channel's turn runs on both slots, as a chat start does: the primary profile's pair with the subagent profile's harness and model, or the subagent values the channel keeps; a subagent profile that cannot run leaves the subagent to the agent. */
+  it("runs on both slots of the channel's pick", async () => {
+    const profile = (name: string, pair: SessionPair): ResolvedProfile => ({
+      profile: { name } as ResolvedProfile["profile"],
+      pair,
+      unavailable: null,
+      attachable: false,
+    });
+    const haiku = { harness: "pi", provider: "conn-2", model: "cb/haiku" };
+    await expect(
+      channelRow(
+        "p-primary",
+        (id) =>
+          id === "p-primary"
+            ? profile("Primary", PAIR)
+            : profile("Subagent", haiku),
+        { platformSubagentProfileId: "p-subagent" },
+      ),
+    ).resolves.toEqual({
+      ...PAIR,
+      settings: {
+        "platformSubagent.harness": "pi",
+        "platformSubagent.model": "cb/haiku",
+      },
+    });
+    const own = {
+      "platformSubagent.harness": "codex",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+    };
+    await expect(
+      channelRow("p-primary", profile("Primary", PAIR), {
+        platformSubagentSettings: own,
+      }),
+    ).resolves.toEqual({ ...PAIR, settings: own });
+    await expect(
+      channelRow(
+        "p-primary",
+        (id) =>
+          id === "p-primary"
+            ? profile("Primary", PAIR)
+            : { ...profile("Subagent", haiku), unavailable: "not connected" },
+        { platformSubagentProfileId: "p-subagent" },
+      ),
+    ).resolves.toEqual(PAIR);
   });
 
   /** TEST_SCENARIO: the channel names a profile, so the fresh session is created on that profile's pair rather than on whatever the agent defaults to. */

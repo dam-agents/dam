@@ -1654,3 +1654,162 @@ describe("the profile order and the pick it matches", () => {
     }
   });
 });
+
+describe("the subagent slot before and after a chat's first message", () => {
+  /** TEST_SCENARIO: a Claude primary chat picks a runnable Codex subagent profile in the new-chat picker and in the running chat's picker alike (unification item 1), while the Codex profile stays out of the running chat's primary slot, whose harness is fixed. */
+  it("offers every profile to the subagent slot, the session's harness to the primary", () => {
+    const harnesses: HarnessCapability[] = [
+      ...carried,
+      { ...carried[0]!, name: "claude-code" },
+      { ...carried[0]!, name: "codex" },
+    ];
+    const runnable = {
+      providerTemplate: "curve-bender",
+      model: "cb/rits/zai-org/glm-5-3",
+      settings: {},
+      newAgentDefault: false,
+      usage: { agents: 0, channels: 0, schedules: 0 },
+      availability: { available: true, reason: null, attachable: false },
+    };
+    profilesState = [
+      {
+        ...runnable,
+        id: "p-claude",
+        name: "Claude high",
+        harness: "claude-code",
+      },
+      { ...runnable, id: "p-codex", name: "Codex deep", harness: "codex" },
+    ];
+    state.chosen = {
+      harness: "claude-code",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalog = { ...routedCatalog, harness: "claude-code" };
+    const onConfigure = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const rows = () =>
+      [...container.querySelectorAll("button")].filter((b) =>
+        b.textContent?.includes("Codex deep"),
+      );
+    const showSubagent = (before: number) => {
+      expect(rows()).toHaveLength(before);
+      act(() =>
+        container
+          .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+          .click(),
+      );
+      expect(rows()).toHaveLength(before + 1);
+      expect(rows().every((row) => !row.disabled)).toBe(true);
+    };
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "claude-code",
+            carried: harnesses,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+      showSubagent(1);
+      act(() =>
+        root.render(
+          createElement(ModelIndicator, {
+            onToolApproval: () => {},
+            agentId: "agent",
+            sessionId: "s1",
+            harness: "claude-code",
+            provider: "curve",
+            model: "cb/rits/zai-org/glm-5-3",
+            carried: harnesses,
+            routed: true,
+            onChoose: vi.fn(),
+            onConfigure,
+            onNewSession: state.newSession,
+          }),
+        ),
+      );
+      showSubagent(0);
+      act(() => rows()[0]!.click());
+      expect(onConfigure).toHaveBeenCalledWith(
+        expect.objectContaining({ "platformSubagent.harness": "codex" }),
+      );
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the picker choosing for a schedule or a channel", () => {
+  /** TEST_SCENARIO: given a target, the chat's picker opens on the target's two slots, marks the profiles the target names, offers no tool approval, and hands a pick to the target with the slot references instead of saving the chat default. */
+  it("opens on the target's slots and hands a pick back", () => {
+    const runnable = {
+      harness: "pi",
+      providerTemplate: "curve-bender",
+      model: "cb/rits/zai-org/glm-5-3",
+      settings: {},
+      newAgentDefault: false,
+      usage: { agents: 0, channels: 0, schedules: 0 },
+      availability: { available: true, reason: null, attachable: false },
+    };
+    profilesState = [
+      { ...runnable, id: "p-main", name: "Main" },
+      { ...runnable, id: "p-twin", name: "Twin" },
+    ];
+    state.catalog = routedCatalog;
+    state.chosenModel.mockReset();
+    const onChoose = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+            target: {
+              slots: {
+                profileId: "p-twin",
+                pair: null,
+                platformSubagentProfileId: "p-main",
+                platformSubagentSettings: null,
+              },
+              label: "Schedule harness and model",
+              placeholder: "The agent's chat default",
+              onChoose,
+            },
+          }),
+        ),
+      );
+      const current = [
+        ...container.querySelectorAll('[aria-current="true"]'),
+      ].map((row) => row.textContent);
+      expect(current).toEqual([
+        expect.stringContaining("Twin"),
+        expect.stringContaining("Main"),
+      ]);
+      expect(container.innerHTML).not.toContain("Tool approval");
+      const main = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.startsWith("Main"),
+      );
+      act(() => main!.click());
+      expect(onChoose).toHaveBeenCalledWith(
+        expect.objectContaining({ harness: "pi" }),
+        expect.objectContaining({ profileId: "p-main" }),
+      );
+      expect(state.chosenModel).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+    }
+  });
+});

@@ -24,6 +24,11 @@ vi.mock("@/components/ui/tooltip", () => ({
   HintTooltip: ({ children }: { children: ReactNode }) => children,
 }));
 
+vi.mock("../../modules/sessions/components/session-pair-picker.js", () => ({
+  SessionPairPicker: (props: { target?: { label: string } }) =>
+    createElement("output", { "data-picker": props.target?.label }),
+}));
+
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
     select({ showConfirm: vi.fn(), navigateToSandboxHome: vi.fn() }),
@@ -127,11 +132,18 @@ interface Choices {
   model: string;
   settings: Record<string, string>;
   profile: string;
+  platformSubagentProfile: string;
 }
 
 function Field() {
   const { control } = useForm<Choices>({
-    defaultValues: { harness: "", model: "", settings: {}, profile: "" },
+    defaultValues: {
+      harness: "",
+      model: "",
+      settings: {},
+      profile: "",
+      platformSubagentProfile: "",
+    },
   });
   return createElement(ScheduleChoicesField<Choices>, {
     agentId: "agent",
@@ -149,11 +161,10 @@ describe("the schedule form's model on a sleeping agent", () => {
     state.comingUp = false;
   });
 
-  // TEST_SCENARIO: On a routed runtime the catalog needs no running agent, so a sleeping agent's schedule lists its harness and models on the chat's Custom screen, with no start button.
+  // TEST_SCENARIO: On a routed runtime the catalog needs no running agent, so a sleeping agent's schedule offers the chat's picker, with no start button.
   it("lists the models of a sleeping agent on a routed runtime", () => {
     const asleep = render();
-    expect(asleep).toContain('aria-label="Harness"');
-    expect(asleep).toContain('aria-label="GPT"');
+    expect(asleep).toContain('data-picker="Schedule harness and model"');
     expect(asleep).not.toContain("Start agent to edit");
   });
 
@@ -188,7 +199,7 @@ describe("the schedule form's model on a sleeping agent", () => {
   it("shows the model picker once the agent is up", () => {
     state.operable = true;
     const html = render();
-    expect(html).toContain('aria-label="Harness"');
+    expect(html).toContain('data-picker="Schedule harness and model"');
     expect(html).not.toContain("Start agent to edit");
   });
 });

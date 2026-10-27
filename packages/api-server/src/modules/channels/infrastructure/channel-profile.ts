@@ -7,7 +7,11 @@ import {
   type Db,
 } from "db";
 import { TRPCError } from "@trpc/server";
-import type { SessionPair } from "api-server-api";
+import type { SessionChoiceReferences, SessionPair } from "api-server-api";
+import {
+  choiceSlots,
+  resolvedChoice,
+} from "../../harness-config/domain/session-pair.js";
 import type { ProfileResolver } from "../../profiles/index.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: a channel whose profile cannot run on its agent refuses the turn with the reason, rather than running on a substitute the owner never chose (D91). */
@@ -33,10 +37,11 @@ export type ChannelPair = (
 ) => Promise<SessionPair | null>;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the profile a channel's turns run on (D91). Read
+ * UNIT_BOUNDARY_DESCRIPTION: what a channel's turns run on (D91), kept in the
+ * chat default's two slots and resolved as a chat start resolves them. Read
  * only when a turn creates a session, so a resumed thread keeps the values it
- * runs on (D94 A, D119); null is a binding that predates profiles and keeps the
- * agent's channel default.
+ * runs on (D94 A, D119); null is a binding with no pick of its own, as one bound
+ * before profiles, which keeps the agent's channel default.
  */
 export function createChannelProfiles(
   db: Db,
@@ -44,10 +49,10 @@ export function createChannelProfiles(
 ): {
   pair: ChannelPair;
   set: (input: {
-    owner: string;
     agentId: string;
     channel: ChannelRef;
-    profileId: string | null;
+    pair: SessionPair | null;
+    references: SessionChoiceReferences;
   }) => Promise<void>;
 } {
   const slackRow = (agentId: string, id: string) =>
@@ -64,53 +69,65 @@ export function createChannelProfiles(
 
   return {
     async pair(agentId, channel) {
-      const rows =
-        channel.type === "slack"
-          ? await db
-              .select({ profileId: channelsTable.profileId })
-              .from(channelsTable)
-              .where(slackRow(agentId, channel.id))
-          : await db
-              .select({ profileId: telegramConversations.profileId })
-              .from(telegramConversations)
-              .where(telegramRow(agentId, channel.id));
-      const profileId = rows[0]?.profileId;
-      if (!profileId) return null;
-      const resolved = await resolveProfile({ profileId, agentId });
-      if (!resolved)
-        throw new ChannelProfileRefusedError(profileId, "it no longer exists");
-      if (resolved.unavailable)
+      const table =
+        channel.type === "slack" ? channelsTable : telegramConversations;
+      const rows = await db
+        .select({
+          profileId: table.profileId,
+          pair: table.sessionPair,
+          platformSubagentProfileId: table.platformSubagentProfile,
+          platformSubagentSettings: table.platformSubagentSettings,
+        })
+        .from(table)
+        .where(
+          channel.type === "slack"
+            ? slackRow(agentId, channel.id)
+            : telegramRow(agentId, channel.id),
+        );
+      const row = rows[0];
+      if (!row) return null;
+      const resolved = await resolvedChoice(
+        {
+          profileId: row.profileId,
+          pair: row.pair as SessionPair | null,
+          platformSubagentProfileId: row.platformSubagentProfileId,
+          platformSubagentSettings: row.platformSubagentSettings as Record<
+            string,
+            string
+          > | null,
+        },
+        resolveProfile,
+        agentId,
+      );
+      if (resolved.refused)
         throw new ChannelProfileRefusedError(
-          resolved.profile.name,
-          resolved.unavailable,
+          resolved.refused.profile,
+          resolved.refused.detail,
         );
       return resolved.pair;
     },
 
-    async set({ owner, agentId, channel, profileId }) {
-      if (profileId !== null) {
-        const resolved = await resolveProfile({ profileId, agentId, owner });
-        if (!resolved)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Profile not found.",
-          });
-        if (resolved.unavailable)
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `That profile cannot run on this agent: ${resolved.unavailable}.`,
-          });
-      }
+    /* UNIT_BOUNDARY_DESCRIPTION: stores a pick the caller has checked as a chat default's pick is checked; an omitted subagent reference leaves that slot as it is. */
+    async set({ agentId, channel, pair, references }) {
+      const slots = choiceSlots(pair, references);
+      const values = {
+        profileId: slots.profileId,
+        sessionPair: slots.pair,
+        ...(slots.platformSubagentProfileId !== undefined && {
+          platformSubagentProfile: slots.platformSubagentProfileId,
+          platformSubagentSettings: slots.platformSubagentSettings,
+        }),
+      };
       const rows =
         channel.type === "slack"
           ? await db
               .update(channelsTable)
-              .set({ profileId })
+              .set(values)
               .where(slackRow(agentId, channel.id))
               .returning({ agentId: channelsTable.agentId })
           : await db
               .update(telegramConversations)
-              .set({ profileId })
+              .set(values)
               .where(telegramRow(agentId, channel.id))
               .returning({ agentId: telegramConversations.agentId });
       if (rows.length === 0)

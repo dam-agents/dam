@@ -298,6 +298,7 @@ export function ModelIndicator({
             <ModelConfiguration
               agentId={agentId}
               profiles={sessionProfiles}
+              subagentProfiles={profiles}
               carried={carried}
               customHint={harnessName ?? harness}
               primary={{

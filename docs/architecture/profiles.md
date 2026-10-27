@@ -8,11 +8,13 @@ A **profile** is one owner's named harness, provider template, model and setting
 It names the kind of provider, not one Connection, so it runs on whatever Connection of that template the agent holds; a rival Connection of the same alias never stands in for it.
 Profiles are saved from a chat's model picker (Save as a profile, or on a pick that came from or matches one Update beside Save as a new profile) or made with New profile in Settings › Providers › Profiles, and edited in a chat or in that list, whose rows open the same picker on its Custom selection, listing models from the [owner catalog](owner-model-catalog.md).
 Every list of profiles, in Settings and in each picker, shows the default for new agents first, then the most used (the agents, channels and schedules that name one), then by name.
-Custom selection is one screen wherever a pick is made: a new or running chat's primary model and subagent slot, a profile in Settings and a schedule's own values; none of them holds tool approval.
+Custom selection is one screen wherever a pick is made: a new or running chat's primary model and subagent slot, a channel's and a schedule's, and a profile in Settings; none of them holds tool approval.
+A channel and a schedule pick in the chat's own picker, both slots in it.
+A running chat's subagent slot offers every profile, as a new chat's does; its primary offers only the profiles on the session's harness, which it keeps.
 
 ## What follows a profile
 
-The chat default's primary model and its subagent slot, each Slack and Telegram channel, and each schedule hold either a profile reference or values of their own, never both.
+The chat default, each Slack and Telegram channel, and each schedule hold the same two slots, a primary model and a subagent, each either a profile reference or values of their own, never both; an empty subagent slot lets the agent pick.
 The api-server resolves a reference into the pair the runtime is sent, so an edit reaches every later run that follows it, while a session that picked keeps its own ([harness configuration](harness-config.md#session-settings)).
 A channel or schedule naming none follows its kind's legacy pair; picking a profile grants its provider on the agent.
 An edit that no agent using the profile can run is put back, and that revert never undoes a newer edit made meanwhile.

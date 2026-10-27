@@ -841,6 +841,13 @@
       "when": 1793023281651,
       "tag": "0119_safe_cerebro",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1793090585515,
+      "tag": "0120_binding_slots",
+      "breakpoints": true
     }
   ]
 }

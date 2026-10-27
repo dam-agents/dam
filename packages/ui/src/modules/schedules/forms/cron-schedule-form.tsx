@@ -101,6 +101,7 @@ export function CronScheduleForm({
       model: v.model.trim() || null,
       settings: Object.keys(settings).length > 0 ? settings : null,
       profile: v.profile || null,
+      platformSubagentProfile: v.platformSubagentProfile || null,
       sessionTitle: v.sessionTitle.trim() || null,
       sessionMode: v.sessionMode,
     };

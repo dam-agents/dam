@@ -8,10 +8,9 @@ import { useState } from "react";
 
 import { Card } from "@/components/ui/card";
 
-import { useStore } from "../../../store.js";
 import type { ProviderPresetType } from "../../../types.js";
-import { useDeleteConnection } from "../../connections/api/mutations.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
+import { useDisconnectConnection } from "../../connections/hooks/use-disconnect-connection.js";
 import { useProviderStatus } from "../../provider-status/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { AllAgentsSpendBadge } from "../../spend/components/all-agents-provider-limit.js";
@@ -55,8 +54,7 @@ export function ProviderSection({
     !!status &&
     (status.damSide !== null ||
       status.outages.some((o) => o.templateId === templateId));
-  const showConfirm = useStore((s) => s.showConfirm);
-  const deleteConnection = useDeleteConnection();
+  const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const recheck = useRecheckProviderKeys({ silent: true });
   const loading = isPending || catalogPending || templatesPending;
   const checkable = rows.some((row) => {
@@ -73,14 +71,8 @@ export function ProviderSection({
   const [infoOpen, setInfoOpen] = useState(false);
 
   const disconnectProvider = async (item: ProviderItem) => {
-    const ok = await showConfirm(
-      "Agents using this provider can no longer reach its models.",
-      "Disconnect provider?",
-      { kind: "destructive", confirmLabel: "Disconnect provider" },
-    );
-    if (!ok) return;
-    deleteConnection.mutate({ id: item.id });
-    setDialog(null);
+    if (deletingId !== null) return;
+    if (await confirmAndDelete(item.id, item.conn.name)) setDialog(null);
   };
 
   const connectedItem = dialog?.item;
@@ -170,6 +162,7 @@ export function ProviderSection({
             setDialog(null);
             onConnected?.(id);
           }}
+          disconnectPending={deletingId !== null}
           onDisconnect={
             connectedItem && (() => void disconnectProvider(connectedItem))
           }

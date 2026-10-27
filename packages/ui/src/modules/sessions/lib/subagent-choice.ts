@@ -6,7 +6,12 @@ import {
   platformSubagentChoice,
   SUBAGENT_MODEL_SETTING,
 } from "agent-runtime-api";
-import type { ProfileWithUsage, SessionPair } from "api-server-api";
+import type {
+  ProfileWithUsage,
+  SessionChoiceReferences,
+  SessionChoiceSlots,
+  SessionPair,
+} from "api-server-api";
 
 import {
   type ProviderConnectionRef,
@@ -254,4 +259,40 @@ export function subagentProfileOf(
       (p) => p.harness === slot?.harness && p.model === slot.model,
     ) ?? null
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a pick in the chat default's shape onto the slots a schedule or a channel keeps, as the server writes a chat default: a named profile stands in for the values, and an omitted subagent reference keeps that slot as it is. */
+export function nextSlots(
+  current: SessionChoiceSlots,
+  pair: SessionPair,
+  references: SessionChoiceReferences,
+): SessionChoiceSlots {
+  const { settings = {}, ...rest } = pair;
+  const part = (own: boolean) =>
+    Object.fromEntries(
+      Object.entries(settings).filter(
+        ([id]) => isPlatformSubagentSetting(id) === own,
+      ),
+    );
+  const primary = part(false);
+  const subagent = part(true);
+  const slotId = references.platformSubagentProfileId;
+  return {
+    profileId: references.profileId ?? null,
+    pair: references.profileId
+      ? null
+      : Object.keys(primary).length > 0
+        ? { ...rest, settings: primary }
+        : rest,
+    ...(slotId === undefined
+      ? {
+          platformSubagentProfileId: current.platformSubagentProfileId,
+          platformSubagentSettings: current.platformSubagentSettings,
+        }
+      : {
+          platformSubagentProfileId: slotId,
+          platformSubagentSettings:
+            slotId || Object.keys(subagent).length === 0 ? null : subagent,
+        }),
+  };
 }

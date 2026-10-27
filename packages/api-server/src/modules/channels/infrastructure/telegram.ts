@@ -16,7 +16,12 @@ import {
   type Thread,
   type StateAdapter,
 } from "chat";
-import { ChannelType, SessionType, type AgentsService } from "api-server-api";
+import {
+  ChannelType,
+  SessionType,
+  type AgentsService,
+  type SessionChoiceSlots,
+} from "api-server-api";
 import { TelegramConversationAdapter } from "./telegram-conversation-adapter.js";
 import type {
   ChannelWorker,
@@ -85,7 +90,7 @@ export interface TelegramConversationsPort {
   ): Promise<"bound" | "conflict">;
   listByAgent(
     agentId: string,
-  ): Promise<{ conversationId: string; profileId: string | null }[]>;
+  ): Promise<({ conversationId: string } & SessionChoiceSlots)[]>;
   unbind(conversationId: string): Promise<void>;
   setAmbient(conversationId: string, ambient: boolean): Promise<void>;
 }
@@ -96,10 +101,9 @@ export interface TelegramOwnerChatsPort {
   ): Promise<{ conversationId: string; agentId: string }[]>;
 }
 
-export interface ChannelConversation {
+export interface ChannelConversation extends Partial<SessionChoiceSlots> {
   id: string;
   title: string;
-  profileId?: string | null;
 }
 
 export interface TelegramWorker extends ChannelWorker {
@@ -977,10 +981,10 @@ export function createTelegramWorker(deps: {
       const adapter = bot.adapter;
       const bound = await deps.conversations.listByAgent(agentId);
       return Promise.all(
-        bound.map(async ({ conversationId, profileId }) => {
+        bound.map(async ({ conversationId, ...slots }) => {
           const { chatId } = adapter.decodeThreadId(conversationId);
           const title = await fetchTelegramChatTitle(botToken, chatId);
-          return { id: conversationId, title, profileId };
+          return { id: conversationId, title, ...slots };
         }),
       );
     },

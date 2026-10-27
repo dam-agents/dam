@@ -41,6 +41,8 @@ function toView(sched: Schedule) {
     harness: sched.spec.harness ?? null,
     model: sched.spec.model ?? null,
     profile: sched.spec.profile ?? null,
+    platformSubagentProfile: sched.spec.platformSubagentProfile ?? null,
+    platformSubagentSettings: sched.spec.platformSubagentSettings ?? null,
     settings: sched.spec.settings ?? null,
     migrationNote: sched.spec.migrationNote ?? null,
     sessionTitle: sched.spec.sessionTitle ?? null,

@@ -39,8 +39,11 @@ vi.mock("../../store.js", () => ({
 vi.mock("../../modules/features/api/queries.js", () => ({
   useFeatures: () => ({ data: state.flags, isPending: false }),
 }));
-vi.mock("../../modules/connections/api/mutations.js", () => ({
-  useDeleteConnection: () => ({ mutate: vi.fn() }),
+vi.mock("../../modules/connections/hooks/use-disconnect-connection.js", () => ({
+  useDisconnectConnection: () => ({
+    confirmAndDelete: vi.fn(),
+    deletingId: null,
+  }),
 }));
 vi.mock("../../modules/connections/api/queries.js", () => ({
   useConnectionTemplates: () => ({

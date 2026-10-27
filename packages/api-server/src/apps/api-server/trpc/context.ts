@@ -481,19 +481,22 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       channels: {
         available: channelManager.availableChannels(),
         telegramBotUsername: () => channelManager.telegramBotUsername(),
-        setProfile: ({
+        setChoice: async ({
           agentId,
           type,
           slackChannelId,
           conversationId,
-          profileId,
-        }) =>
-          createChannelProfiles(db, resolveProfile).set({
-            owner: user.sub,
+          pair,
+          ...references
+        }) => {
+          await harnessConfig.validateChoice(agentId, pair, references);
+          await createChannelProfiles(db, resolveProfile).set({
             agentId,
             channel: { type, id: slackChannelId ?? conversationId ?? "" },
-            profileId,
-          }),
+            pair,
+            references,
+          });
+        },
         slackChannelChoices: async () => {
           const [choices, installs] = await Promise.all([
             channelManager.slackChannelChoices(user.actingEditor ?? user.sub),

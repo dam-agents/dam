@@ -18,6 +18,7 @@ export const onceFormSchema = z
     model: z.string(),
     settings: z.record(z.string(), z.string()),
     profile: z.string(),
+    platformSubagentProfile: z.string(),
     sessionTitle: z
       .string()
       .trim()
@@ -51,8 +52,12 @@ export function onceFormDefaults(existing?: Schedule): OnceFormValues {
     timezone,
     harness: existing?.harness ?? "",
     model: existing?.model ?? "",
-    settings: existing?.settings ?? {},
+    settings: {
+      ...existing?.settings,
+      ...existing?.platformSubagentSettings,
+    },
     profile: existing?.profile ?? "",
+    platformSubagentProfile: existing?.platformSubagentProfile ?? "",
     sessionTitle: existing?.sessionTitle ?? "",
   };
 }

@@ -69,6 +69,7 @@ export function AnthropicForm({
       }
       onSubmit={onSubmit}
       onCancel={onCancel}
+      closeDisabled={isSubmitting}
     >
       {lockMode ? (
         <div className="flex items-center gap-4 border-b border-border">

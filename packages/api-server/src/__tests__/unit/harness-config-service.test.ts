@@ -672,6 +672,7 @@ describe("the chat default's slots", () => {
       db,
       async () =>
         ({
+          profile: { name: "Opus" },
           pair: null,
           unavailable: "AWS Bedrock isn't attached to this agent",
         }) as never,

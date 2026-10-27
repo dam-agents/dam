@@ -194,7 +194,15 @@ export interface AgentView {
     attempts: number;
     maxAttempts: number;
   }[];
-  channels: (SlackChannel & Pick<ChannelConfig, "profileId" | "createdAt">)[];
+  channels: (SlackChannel &
+    Pick<
+      ChannelConfig,
+      | "profileId"
+      | "pair"
+      | "platformSubagentProfileId"
+      | "platformSubagentSettings"
+      | "createdAt"
+    >)[];
   kbTemplateId: string | null;
   kbShareRoots?: string[];
   starterKit: string | null;
@@ -228,6 +236,9 @@ export interface Schedule {
    * schedule that carries its own harness, model and settings. */
   profile: string | null;
   profileIssue?: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the subagent slot, as a chat default keeps it: a profile, values of its own, or neither, which lets the agent pick. */
+  platformSubagentProfile?: string | null;
+  platformSubagentSettings?: Record<string, string> | null;
   migrationNote: string | null;
   sessionTitle: string | null;
   timezone: string | null;

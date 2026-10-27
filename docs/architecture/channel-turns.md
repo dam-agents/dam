@@ -99,7 +99,8 @@ A few observations the diagram glosses over:
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (the home does not hold it, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
-  A fresh session opens on the pair the channel's own profile resolves to ([harness configuration](harness-config.md)); a channel that names none, one written before profiles, follows the Agent's channel or chat default, and picking a profile on the channel's row changes what its next fresh session runs on.
+  A fresh session opens on the pair the channel's own profile resolves to ([harness configuration](harness-config.md)); a channel that names none, one written before profiles, follows the Agent's channel or chat default, and picking on the channel's row, in the chat's own picker, changes what its next fresh session runs on.
+  The channel's subagent slot, a profile or values of its own, joins the primary as a chat default's does; an empty one lets the Agent pick.
   A profile that cannot run on the Agent refuses the turn with its reason and a reply that names the profile and the row to change it on, never the Agent's default.
   With no default model, or one on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the agent's Providers section, and when no granted provider fits, it fails rather than running elsewhere.
   A resumed session from before the Model Router, which carries no model, gets the channel default pinned on it first.

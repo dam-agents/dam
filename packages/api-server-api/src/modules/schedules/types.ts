@@ -27,6 +27,9 @@ export interface ScheduleSpecCron {
    * own values; the pair is resolved at read so every fire and every view sees
    * values. */
   profile?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the subagent slot, as a chat default keeps it: a profile, values of its own (platform sub-agent settings), or neither, which lets the agent pick. */
+  platformSubagentProfile?: string;
+  platformSubagentSettings?: Record<string, string>;
   migrationNote?: string;
   sessionTitle?: string;
   enabled: boolean;
@@ -49,6 +52,9 @@ export interface ScheduleSpecRRule {
    * own values; the pair is resolved at read so every fire and every view sees
    * values. */
   profile?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the subagent slot, as a chat default keeps it: a profile, values of its own (platform sub-agent settings), or neither, which lets the agent pick. */
+  platformSubagentProfile?: string;
+  platformSubagentSettings?: Record<string, string>;
   migrationNote?: string;
   sessionTitle?: string;
   enabled: boolean;
@@ -76,6 +82,9 @@ export interface ScheduleSpecOnce {
    * own values; the pair is resolved at read so every fire and every view sees
    * values. */
   profile?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the subagent slot, as a chat default keeps it: a profile, values of its own (platform sub-agent settings), or neither, which lets the agent pick. */
+  platformSubagentProfile?: string;
+  platformSubagentSettings?: Record<string, string>;
   migrationNote?: string;
   sessionTitle?: string;
   task?: string;
@@ -108,6 +117,8 @@ export interface Schedule {
   spec: ScheduleSpec;
   /** UNIT_BOUNDARY_DESCRIPTION: why the profile this schedule names cannot run on its agent, so a fire refuses with that reason instead of running another model. */
   profileIssue?: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: the subagent slot resolved for a fire: the subagent profile's harness and model, or the values the schedule keeps; absent, the agent picks. */
+  subagentSettings?: Record<string, string>;
   status?: ScheduleStatus;
 }
 

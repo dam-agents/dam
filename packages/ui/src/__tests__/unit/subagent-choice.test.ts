@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   heldSubagent,
+  nextSlots,
   pickProfile,
   primaryProfileOf,
   settingChanges,
@@ -221,5 +222,51 @@ describe("a subagent choice", () => {
         [{ id: "conn-a", name: "Anthropic", type: "anthropic" }],
       ),
     ).toBe("Claude Sonnet 5.5 (Anthropic)");
+  });
+});
+
+describe("a pick onto the slots a schedule or a channel keeps", () => {
+  const custom = {
+    "platformSubagent.harness": "codex",
+    "platformSubagent.model": "openai/gpt-5.5",
+  };
+  const current = {
+    profileId: null,
+    pair: null,
+    platformSubagentProfileId: null,
+    platformSubagentSettings: custom,
+  };
+  const pair: SessionPair = {
+    harness: "claude-code",
+    provider: null,
+    model: "bedrock/opus",
+    settings: { effort: "high", ...custom },
+  };
+  /** TEST_SCENARIO: as the server writes a chat default, a named primary profile stands in for its values, a primary pick that names no subagent reference keeps the subagent slot, and a subagent profile replaces the subagent's own values. */
+  it("keeps both slots in the chat default's shape", () => {
+    expect(nextSlots(current, pair, { profileId: "p1" })).toEqual({
+      ...current,
+      profileId: "p1",
+    });
+    expect(nextSlots(current, pair, {})).toEqual({
+      ...current,
+      pair: {
+        harness: "claude-code",
+        provider: null,
+        model: "bedrock/opus",
+        settings: { effort: "high" },
+      },
+    });
+    expect(
+      nextSlots(current, pair, {
+        profileId: "p1",
+        platformSubagentProfileId: "p2",
+      }),
+    ).toEqual({
+      profileId: "p1",
+      pair: null,
+      platformSubagentProfileId: "p2",
+      platformSubagentSettings: null,
+    });
   });
 });

@@ -45,6 +45,7 @@ export const scheduleCreateCronInputSchema = z.object({
   model: scheduleModelSchema.optional(),
   settings: scheduleSettingsSchema.optional(),
   profile: z.string().min(1).nullable().optional(),
+  platformSubagentProfile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.optional(),
 });
 
@@ -59,6 +60,7 @@ export const scheduleUpdateCronInputSchema = z.object({
   model: scheduleModelSchema.nullable().optional(),
   settings: scheduleSettingsSchema.nullable().optional(),
   profile: z.string().min(1).nullable().optional(),
+  platformSubagentProfile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
@@ -75,6 +77,7 @@ export const scheduleCreateRRuleInputSchema = z.object({
   model: scheduleModelSchema.optional(),
   settings: scheduleSettingsSchema.optional(),
   profile: z.string().min(1).nullable().optional(),
+  platformSubagentProfile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.optional(),
 });
 
@@ -94,6 +97,7 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   model: scheduleModelSchema.nullable().optional(),
   settings: scheduleSettingsSchema.nullable().optional(),
   profile: z.string().min(1).nullable().optional(),
+  platformSubagentProfile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
@@ -115,6 +119,7 @@ export const scheduleCreateOnceInputSchema = z
     model: z.string().min(1).optional(),
     settings: scheduleSettingsSchema.optional(),
     profile: z.string().min(1).nullable().optional(),
+    platformSubagentProfile: z.string().min(1).nullable().optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();
@@ -130,6 +135,7 @@ export const scheduleUpdateOnceInputSchema = z
     model: z.string().min(1).optional(),
     settings: scheduleSettingsSchema.optional(),
     profile: z.string().min(1).nullable().optional(),
+    platformSubagentProfile: z.string().min(1).nullable().optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();

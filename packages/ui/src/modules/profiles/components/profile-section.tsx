@@ -332,7 +332,7 @@ function NewProfileDialog({
     );
   };
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={() => !create.isPending && onClose()}>
       <DialogHeader
         onClose={onClose}
         closeDisabled={create.isPending}
@@ -359,6 +359,7 @@ function NewProfileDialog({
               inline
               onChoose={setPair}
               onManageProviders={() => {
+                if (create.isPending) return;
                 onClose();
                 navigateToSettings("providers");
               }}

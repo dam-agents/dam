@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { isPlatformSubagentSetting } from "agent-runtime-api";
 import type {
   Schedule,
   SchedulesService,
@@ -123,19 +124,74 @@ function applyProfile(
     delete spec.profile;
 }
 
-function choicesChanged(
+/* UNIT_BOUNDARY_DESCRIPTION: the subagent slot as a chat default keeps it (D124): a named profile, or the platform sub-agent values a pick's settings carry, kept apart from the primary's settings; neither is the agent picking. An omitted reference whose settings carry no such values leaves the slot as it is. */
+function applySubagent(
+  spec: {
+    settings?: Record<string, string>;
+    platformSubagentProfile?: string;
+    platformSubagentSettings?: Record<string, string>;
+  },
   input: {
-    harness?: string | null;
-    model?: string | null;
+    platformSubagentProfile?: string | null;
     settings?: Record<string, string> | null;
   },
-  spec: {
-    harness?: string;
-    model?: string;
-    settings?: Record<string, string>;
-  },
-): boolean {
-  return JSON.stringify(choicesOf(input)) !== JSON.stringify(choicesOf(spec));
+): void {
+  const subagent = (settings: Record<string, string>, own: boolean) =>
+    Object.fromEntries(
+      Object.entries(settings).filter(
+        ([id]) => isPlatformSubagentSetting(id) === own,
+      ),
+    );
+  if (spec.settings) {
+    const primary = subagent(spec.settings, false);
+    const inline = subagent(spec.settings, true);
+    if (Object.keys(primary).length > 0) spec.settings = primary;
+    else delete spec.settings;
+    /* UNIT_BOUNDARY_DESCRIPTION: a row written before the split keeps its subagent values inline; they move to the slot rather than going with an unrelated edit. */
+    if (
+      Object.keys(inline).length > 0 &&
+      !spec.platformSubagentProfile &&
+      !spec.platformSubagentSettings
+    )
+      spec.platformSubagentSettings = inline;
+  }
+  const own = input.settings ? subagent(input.settings, true) : {};
+  const held = Object.keys(own).length > 0;
+  const reference =
+    input.platformSubagentProfile !== undefined
+      ? input.platformSubagentProfile
+      : held
+        ? null
+        : undefined;
+  if (reference === undefined) return;
+  delete spec.platformSubagentProfile;
+  delete spec.platformSubagentSettings;
+  if (reference) spec.platformSubagentProfile = reference;
+  else if (held) spec.platformSubagentSettings = own;
+}
+
+type SpecChoices = {
+  profile?: string;
+  harness?: string;
+  model?: string;
+  settings?: Record<string, string>;
+  platformSubagentSettings?: Record<string, string>;
+};
+
+/* UNIT_BOUNDARY_DESCRIPTION: a schedule's choices as its fire composes them: the primary's profile or its own values, with the subagent's own values merged into the settings, as a run merges them. */
+function composedChoices(spec: SpecChoices) {
+  const settings =
+    spec.settings || spec.platformSubagentSettings
+      ? { ...spec.settings, ...spec.platformSubagentSettings }
+      : undefined;
+  return choicesOf({ ...spec, settings });
+}
+
+function choicesChanged(spec: SpecChoices, current: SpecChoices): boolean {
+  return (
+    JSON.stringify([composedChoices(spec), spec.platformSubagentSettings]) !==
+    JSON.stringify([composedChoices(current), current.platformSubagentSettings])
+  );
 }
 
 export function createSchedulesService(deps: {
@@ -206,6 +262,35 @@ export function createSchedulesService(deps: {
     if (refusal) throw badRequest(refusal);
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the composed choices checked as the fire checks them: a profile primary alone is ensureProfileRuns's, and its subagent values are checked on the pair the profile resolves to. */
+  async function ensureSpecChoices(
+    agentId: string,
+    spec: SpecChoices,
+    origin: ScheduleOnceOrigin | undefined,
+  ): Promise<void> {
+    if (!spec.profile)
+      return ensureSessionChoices(agentId, composedChoices(spec), origin);
+    if (!spec.platformSubagentSettings) return;
+    const resolved = await deps.resolveProfile?.({
+      profileId: spec.profile,
+      agentId,
+      owner: deps.owner,
+    });
+    if (!resolved) return;
+    await ensureSessionChoices(
+      agentId,
+      {
+        harness: resolved.pair.harness,
+        ...(resolved.pair.model ? { model: resolved.pair.model } : {}),
+        settings: {
+          ...resolved.pair.settings,
+          ...spec.platformSubagentSettings,
+        },
+      },
+      origin,
+    );
+  }
+
   async function ensureAgentWithinLimits(agentId: string): Promise<void> {
     const limits = deps.agentOnceLimits;
     if (!limits) return;
@@ -245,8 +330,7 @@ export function createSchedulesService(deps: {
       asBadRequest(() => validateCron(input.cron));
       await ensureAgent(input.agentId);
       await ensureProfileRuns(input.profile, input.agentId);
-      if (!input.profile)
-        await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
+      await ensureProfileRuns(input.platformSubagentProfile, input.agentId);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "cron",
@@ -259,6 +343,8 @@ export function createSchedulesService(deps: {
         ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
+      applySubagent(spec, input);
+      await ensureSpecChoices(input.agentId, spec, undefined);
       const schedule = await deps.repo.create({
         agentId: input.agentId,
         owner: deps.owner,
@@ -298,8 +384,7 @@ export function createSchedulesService(deps: {
       );
       await ensureAgent(input.agentId);
       await ensureProfileRuns(input.profile, input.agentId);
-      if (!input.profile)
-        await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
+      await ensureProfileRuns(input.platformSubagentProfile, input.agentId);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "rrule",
@@ -316,6 +401,8 @@ export function createSchedulesService(deps: {
         ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
+      applySubagent(spec, input);
+      await ensureSpecChoices(input.agentId, spec, undefined);
       const schedule = await deps.repo.create({
         agentId: input.agentId,
         owner: deps.owner,
@@ -356,8 +443,7 @@ export function createSchedulesService(deps: {
       const at = resolveMoment(input.at, input.timezone, now());
       await ensureAgent(input.agentId);
       await ensureProfileRuns(input.profile, input.agentId);
-      if (!input.profile)
-        await ensureSessionChoices(input.agentId, choicesOf(input), origin);
+      await ensureProfileRuns(input.platformSubagentProfile, input.agentId);
       if (input.sessionTitle && origin?.mode === "continue")
         throw badRequest(
           "a task that continues its session keeps that session's title; drop the session title or run it fresh",
@@ -375,6 +461,8 @@ export function createSchedulesService(deps: {
         ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
+      applySubagent(spec, input);
+      await ensureSpecChoices(input.agentId, spec, origin);
       const schedule = await deps.repo.create({
         agentId: input.agentId,
         owner: deps.owner,
@@ -414,6 +502,7 @@ export function createSchedulesService(deps: {
       if (current.status?.lastRun)
         throw badRequest("a one-time schedule cannot be edited once it fired");
       await ensureProfileRuns(input.profile, current.agentId);
+      await ensureProfileRuns(input.platformSubagentProfile, current.agentId);
       const at = resolveMoment(input.at, input.timezone, now());
       if (input.sessionTitle && current.spec.origin?.mode === "continue")
         throw badRequest(
@@ -436,12 +525,9 @@ export function createSchedulesService(deps: {
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       applyProfile(spec, input);
-      if (!spec.profile && choicesChanged(spec, current.spec))
-        await ensureSessionChoices(
-          current.agentId,
-          choicesOf(spec),
-          current.spec.origin,
-        );
+      applySubagent(spec, input);
+      if (choicesChanged(spec, current.spec))
+        await ensureSpecChoices(current.agentId, spec, current.spec.origin);
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (!updated) return null;
@@ -462,6 +548,7 @@ export function createSchedulesService(deps: {
       if (current.spec.type !== "cron")
         throw badRequest("only a cron schedule is edited with updateCron");
       await ensureProfileRuns(input.profile, current.agentId);
+      await ensureProfileRuns(input.platformSubagentProfile, current.agentId);
       const spec: ScheduleSpec = {
         ...current.spec,
         cron: input.cron,
@@ -480,8 +567,9 @@ export function createSchedulesService(deps: {
       if (input.model !== undefined || input.harness !== undefined)
         delete spec.migrationNote;
       applyProfile(spec, input);
-      if (!spec.profile && choicesChanged(spec, current.spec))
-        await ensureSessionChoices(current.agentId, choicesOf(spec), undefined);
+      applySubagent(spec, input);
+      if (choicesChanged(spec, current.spec))
+        await ensureSpecChoices(current.agentId, spec, undefined);
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);
@@ -510,6 +598,7 @@ export function createSchedulesService(deps: {
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
       await ensureProfileRuns(input.profile, current.agentId);
+      await ensureProfileRuns(input.platformSubagentProfile, current.agentId);
       const { cron: _cron, ...unchanged } =
         current.spec.type === "cron"
           ? current.spec
@@ -538,8 +627,9 @@ export function createSchedulesService(deps: {
       if (input.model !== undefined || input.harness !== undefined)
         delete spec.migrationNote;
       applyProfile(spec, input);
-      if (!spec.profile && choicesChanged(spec, current.spec))
-        await ensureSessionChoices(current.agentId, choicesOf(spec), undefined);
+      applySubagent(spec, input);
+      if (choicesChanged(spec, current.spec))
+        await ensureSpecChoices(current.agentId, spec, undefined);
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);

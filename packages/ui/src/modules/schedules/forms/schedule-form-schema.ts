@@ -1,4 +1,6 @@
+import { isPlatformSubagentSetting } from "agent-runtime-api";
 import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
+import type { SessionChoiceSlots, SessionPair } from "api-server-api";
 import {
   ALL_DAYS,
   buildRRule,
@@ -26,6 +28,7 @@ export const scheduleFormSchema = z
     model: z.string(),
     settings: z.record(z.string(), z.string()),
     profile: z.string(),
+    platformSubagentProfile: z.string(),
     sessionTitle: z
       .string()
       .trim()
@@ -163,36 +166,61 @@ type ChoiceValues = {
   harness?: string | null;
   model?: string | null;
   settings?: Record<string, string> | null;
+  platformSubagentProfile?: string | null;
 };
 
-/** UNIT_BOUNDARY_DESCRIPTION: a schedule's choices as a save sends them: its profile alone, so values it resolves to are never taken for a detach, or its own values with the profile cleared. A recurring update clears an empty choice with null; a create or a one-time update, whose contract clears what it leaves out, omits it. */
+/** UNIT_BOUNDARY_DESCRIPTION: a schedule's choices as a save sends them, in the chat default's shape: its profile with only the subagent's own values beside it, so values the profile resolves to are never taken for a detach, or its own values with the profile cleared; the subagent reference always named. A recurring update clears an empty choice with null; a create or a one-time update, whose contract clears what it leaves out, omits it. */
 export function scheduleChoices(
   v: ChoiceValues,
   clear: true,
 ):
-  | { profile: string }
+  | {
+      profile: string;
+      settings?: Record<string, string>;
+      platformSubagentProfile: string | null;
+    }
   | {
       profile: null;
       harness: string | null;
       model: string | null;
       settings: Record<string, string> | null;
+      platformSubagentProfile: string | null;
     };
 export function scheduleChoices(
   v: ChoiceValues,
   clear: false,
 ):
-  | { profile: string }
+  | {
+      profile: string;
+      settings?: Record<string, string>;
+      platformSubagentProfile: string | null;
+    }
   | {
       profile: null;
       harness?: string;
       model?: string;
       settings?: Record<string, string>;
+      platformSubagentProfile: string | null;
     };
 export function scheduleChoices(v: ChoiceValues, clear: boolean) {
-  if (v.profile) return { profile: v.profile };
+  const platformSubagentProfile = v.platformSubagentProfile || null;
   const settings = Object.fromEntries(
-    Object.entries(v.settings ?? {}).filter(([, value]) => value !== ""),
+    Object.entries(v.settings ?? {}).filter(
+      ([id, value]) =>
+        value !== "" &&
+        !(platformSubagentProfile && isPlatformSubagentSetting(id)),
+    ),
   );
+  if (v.profile) {
+    const own = Object.fromEntries(
+      Object.entries(settings).filter(([id]) => isPlatformSubagentSetting(id)),
+    );
+    return {
+      profile: v.profile,
+      platformSubagentProfile,
+      ...(Object.keys(own).length > 0 && { settings: own }),
+    };
+  }
   const values = {
     harness: v.harness?.trim() || null,
     model: v.model?.trim() || null,
@@ -200,11 +228,66 @@ export function scheduleChoices(v: ChoiceValues, clear: boolean) {
   };
   return {
     profile: null,
+    platformSubagentProfile,
     ...(clear
       ? values
       : Object.fromEntries(
           Object.entries(values).filter(([, value]) => value !== null),
         )),
+  };
+}
+
+type ChoiceFields = {
+  profile: string;
+  harness: string;
+  model: string;
+  settings: Record<string, string>;
+  platformSubagentProfile: string;
+};
+
+const settingsPart = (settings: Record<string, string>, subagent: boolean) =>
+  Object.fromEntries(
+    Object.entries(settings).filter(
+      ([id]) => isPlatformSubagentSetting(id) === subagent,
+    ),
+  );
+
+/** UNIT_BOUNDARY_DESCRIPTION: the schedule form's choice fields as the chat default's two slots the picker shows: the form keeps the subagent's own values in its settings, as a chat pair does. */
+export function scheduleSlots(v: ChoiceFields): SessionChoiceSlots {
+  const subagent = settingsPart(v.settings, true);
+  return {
+    profileId: v.profile || null,
+    pair:
+      !v.profile && v.harness
+        ? {
+            harness: v.harness,
+            provider: null,
+            model: v.model || null,
+            settings: settingsPart(v.settings, false),
+          }
+        : null,
+    platformSubagentProfileId: v.platformSubagentProfile || null,
+    platformSubagentSettings:
+      !v.platformSubagentProfile && Object.keys(subagent).length > 0
+        ? subagent
+        : null,
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the slots a pick leaves, back in the form's fields, with the picked pair's harness and model kept beside a profile so a later detach starts from what it ran on. */
+export function scheduleFields(
+  slots: SessionChoiceSlots,
+  pair: SessionPair,
+): ChoiceFields {
+  return {
+    profile: slots.profileId ?? "",
+    harness: pair.harness,
+    model: pair.model ?? "",
+    settings: {
+      ...slots.pair?.settings,
+      ...slots.platformSubagentSettings,
+    },
+    platformSubagentProfile: slots.platformSubagentProfileId ?? "",
   };
 }
 
@@ -270,8 +353,12 @@ export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
     precheck: existing?.precheck ?? "",
     harness: existing?.harness ?? "",
     model: existing?.model ?? "",
-    settings: existing?.settings ?? {},
+    settings: {
+      ...existing?.settings,
+      ...existing?.platformSubagentSettings,
+    },
     profile: existing?.profile ?? "",
+    platformSubagentProfile: existing?.platformSubagentProfile ?? "",
     sessionTitle: existing?.sessionTitle ?? "",
     timezone: existing?.timezone ?? detectTimezone(),
     sessionMode: existing?.sessionMode ?? "fresh",

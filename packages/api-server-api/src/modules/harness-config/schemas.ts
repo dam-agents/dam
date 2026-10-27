@@ -56,14 +56,33 @@ export const sessionPairSchema = z.object({
   settings: sessionSettingsSchema.optional(),
 });
 
-/* UNIT_BOUNDARY_DESCRIPTION: a chat default is a profile reference or an inline
- * pair. A reference names the profile instead of the values, and the runtime is
- * sent the pair it resolves to, so the two never travel as one record. */
-export const rememberSessionPairInputSchema = sessionPairSchema.extend({
-  agentId: z.string().min(1),
-  kind: defaultKindSchema.default("chat"),
+/* UNIT_BOUNDARY_DESCRIPTION: a pick in the chat default's shape, which a
+ * channel and a schedule take too: a pair whose settings may carry the
+ * subagent's own values, and the profile either slot names in their place. A
+ * reference names the profile instead of the values, and the runtime is sent
+ * the pair it resolves to, so the two never travel as one record; an omitted
+ * subagent reference leaves that slot as it is. */
+export const sessionChoiceReferencesSchema = z.object({
   profileId: z.string().min(1).nullable().optional(),
   platformSubagentProfileId: z.string().min(1).nullable().optional(),
+});
+
+export const rememberSessionPairInputSchema = sessionPairSchema
+  .extend({
+    agentId: z.string().min(1),
+    kind: defaultKindSchema.default("chat"),
+  })
+  .merge(sessionChoiceReferencesSchema);
+
+/* UNIT_BOUNDARY_DESCRIPTION: the chat default's two slots as stored, which a
+ * channel binding keeps the same way: the primary a profile or values of its
+ * own, the subagent a profile, values of its own, or neither, which lets the
+ * agent pick. */
+export const sessionChoiceSlotsSchema = z.object({
+  profileId: z.string().nullable(),
+  pair: sessionPairSchema.nullable(),
+  platformSubagentProfileId: z.string().nullable(),
+  platformSubagentSettings: z.record(z.string(), z.string()).nullable(),
 });
 
 export const clearSessionDefaultInputSchema = z.object({

@@ -20,6 +20,7 @@ import type {
   HarnessConfigSnapshotPatch,
   ProviderPresetType,
   SessionPair,
+  SessionChoiceReferences,
 } from "api-server-api";
 import { z } from "zod";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
@@ -194,12 +195,35 @@ export function createHarnessConfigService(deps: {
 
     async rememberSessionPair(agentId, kind, pair, references) {
       await requireOwned(agentId);
-      const profileId = references?.profileId ?? null;
-      if (profileId !== null && kind !== "chat")
+      if ((references?.profileId ?? null) !== null && kind !== "chat")
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "only the chat default can name a profile",
         });
+      await deps.pairRepo.write(
+        agentId,
+        kind,
+        await validChoice(agentId, pair, references),
+        references,
+      );
+      await deps.publishDefaults(agentId);
+      notifyDefaultChanged(agentId);
+    },
+
+    async validateChoice(agentId, pair, references) {
+      await requireOwned(agentId);
+      await validChoice(agentId, pair, references);
+    },
+  };
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the pair a pick in the chat default's shape runs on, checked as a saved default is: each profile it names the caller's and runnable, and the composed pair one the agent can start on. */
+  async function validChoice(
+    agentId: string,
+    pair: SessionPair | null,
+    references: SessionChoiceReferences | undefined,
+  ): Promise<SessionPair> {
+    const profileId = references?.profileId ?? null;
+    {
       const owned = async (id: string) => {
         const resolved = await deps.resolveProfile({
           profileId: id,
@@ -218,19 +242,23 @@ export function createHarnessConfigService(deps: {
           });
         return resolved.pair;
       };
-      const [, ownSlot] = splitPlatformSubagent(pair);
-      if (profileId !== null) pair = await owned(profileId);
+      const [, ownSlot] = pair ? splitPlatformSubagent(pair) : [null, null];
+      const primary = profileId !== null ? await owned(profileId) : pair;
+      if (!primary)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "pick a profile or a model",
+        });
       const slotId = references?.platformSubagentProfileId ?? null;
-      pair = withPlatformSubagent(
-        pair,
-        slotId === null ? ownSlot : platformSubagentOf(await owned(slotId)),
+      return validDefaultPair(
+        agentId,
+        withPlatformSubagent(
+          primary,
+          slotId === null ? ownSlot : platformSubagentOf(await owned(slotId)),
+        ),
       );
-      pair = await validDefaultPair(agentId, pair);
-      await deps.pairRepo.write(agentId, kind, pair, references);
-      await deps.publishDefaults(agentId);
-      notifyDefaultChanged(agentId);
-    },
-  };
+    }
+  }
 
   async function validDefaultPair(
     agentId: string,

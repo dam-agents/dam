@@ -16,7 +16,15 @@ const SCHEDULE_ID = "sched-1";
 const RRULE = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0";
 const TIMEZONE = "Europe/Prague";
 const runs: ProfileResolver = async () =>
-  ({ unavailable: null }) as ResolvedProfile;
+  ({
+    unavailable: null,
+    pair: {
+      harness: "claude-code",
+      provider: null,
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      settings: { effort: "high" },
+    },
+  }) as unknown as ResolvedProfile;
 
 function makeCurrent(
   sessionMode?: "continuous" | "fresh",
@@ -709,6 +717,100 @@ describe("a schedule's profile", () => {
     });
     expect(created?.profile).toBe("profile-1");
     expect(created?.harness).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: a schedule keeps its subagent slot as a chat default does: a profile primary beside the subagent values its pick's settings carry, kept apart from the primary's settings; a named subagent profile replaces them, and a null one with no values lets the agent pick. */
+  it("stores the subagent slot beside the primary", async () => {
+    const own = {
+      "platformSubagent.harness": "pi",
+      "platformSubagent.model": "cb/haiku",
+    };
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({
+      ...baseUpdate,
+      profile: "profile-1",
+      settings: own,
+    });
+    expect(getSavedSpec()).toMatchObject({
+      profile: "profile-1",
+      platformSubagentSettings: own,
+    });
+    expect(getSavedSpec()?.settings).toBeUndefined();
+    await service.updateRRule({
+      ...baseUpdate,
+      profile: "profile-1",
+      platformSubagentProfile: "profile-2",
+    });
+    expect(getSavedSpec()?.platformSubagentProfile).toBe("profile-2");
+    expect(getSavedSpec()?.platformSubagentSettings).toBeUndefined();
+    await service.updateRRule({
+      ...baseUpdate,
+      harness: "codex",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high", ...own },
+      platformSubagentProfile: null,
+    });
+    expect(getSavedSpec()).toMatchObject({
+      settings: { effort: "high" },
+      platformSubagentSettings: own,
+    });
+  });
+
+  /** TEST_SCENARIO: a row written before the split keeps its subagent values inline in its settings; an unrelated edit moves them to the slot rather than dropping them. */
+  it("keeps a legacy inline subagent through an unrelated edit", async () => {
+    const own = {
+      "platformSubagent.harness": "pi",
+      "platformSubagent.model": "cb/haiku",
+    };
+    const legacy: Schedule = {
+      ...makeCurrent(),
+      spec: {
+        ...makeCurrent().spec,
+        harness: "codex",
+        model: "openai/gpt-5.5",
+        settings: { effort: "high", ...own },
+      },
+    };
+    const { service, getSavedSpec } = makeDeps(legacy);
+    await service.updateRRule({ ...baseUpdate, task: "another thing" });
+    expect(getSavedSpec()).toMatchObject({
+      settings: { effort: "high" },
+      platformSubagentSettings: own,
+    });
+  });
+
+  /** TEST_SCENARIO: the subagent's own values are checked at save on the pair the fire composes, beside a profile primary too and on an update that changes only them, so a value the sub-agent harness does not offer is refused rather than failing every fire. */
+  it("checks the subagent's own values at save", async () => {
+    const seen: Record<string, string>[] = [];
+    const refuseMode = async (
+      _agentId: string,
+      choices: { settings?: Record<string, string> },
+    ) => {
+      seen.push(choices.settings ?? {});
+      return choices.settings?.["platformSubagent.mode"]
+        ? "platformSubagent.mode is not offered"
+        : undefined;
+    };
+    const { service } = makeDeps(profiled(), refuseMode);
+    await expect(
+      service.updateRRule({
+        ...baseUpdate,
+        profile: "profile-1",
+        settings: {
+          "platformSubagent.harness": "pi",
+          "platformSubagent.mode": "plan",
+        },
+      }),
+    ).rejects.toThrow(/not offered/);
+    expect(seen).toEqual([
+      {
+        effort: "high",
+        "platformSubagent.harness": "pi",
+        "platformSubagent.mode": "plan",
+      },
+    ]);
+    await service.updateRRule({ ...baseUpdate, task: "another thing" });
+    expect(seen).toHaveLength(1);
   });
 
   /** TEST_SCENARIO: a save that names no choice is a task edit, and keeps the profile. */

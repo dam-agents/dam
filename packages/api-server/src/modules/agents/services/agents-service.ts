@@ -29,6 +29,7 @@ import {
   type RuntimeFleetAgent,
   type TemplateUpdate,
   type UpgradeAgentError,
+  type SessionChoiceSlots,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -148,7 +149,7 @@ export interface TelegramBindingPort {
   ): Promise<{ ok: true } | { error: string }>;
   listConversations(
     agentId: string,
-  ): Promise<{ id: string; title: string; profileId?: string | null }[]>;
+  ): Promise<({ id: string; title: string } & Partial<SessionChoiceSlots>)[]>;
   unbind(conversationId: string): Promise<void>;
 }
 
@@ -1851,6 +1852,9 @@ export function createAgentsService(deps: {
           title: c.title,
           direct: isTelegramDirectConversation(c.id),
           profileId: c.profileId ?? null,
+          pair: c.pair ?? null,
+          platformSubagentProfileId: c.platformSubagentProfileId ?? null,
+          platformSubagentSettings: c.platformSubagentSettings ?? null,
         })),
       });
     },

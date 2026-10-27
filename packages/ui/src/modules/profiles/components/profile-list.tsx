@@ -31,6 +31,7 @@ export interface ProfileSlot {
 export function ModelConfiguration({
   agentId,
   profiles,
+  subagentProfiles = profiles,
   carried,
   primary,
   subagent,
@@ -39,18 +40,21 @@ export function ModelConfiguration({
 }: {
   agentId: string | null;
   profiles: readonly ProfileWithUsage[];
+  /** UNIT_BOUNDARY_DESCRIPTION: a running session keeps its harness, so only its primary list narrows; a subagent may run on any harness. */
+  subagentProfiles?: readonly ProfileWithUsage[];
   carried: readonly HarnessCapability[];
   primary: ProfileSlot;
-  subagent: ProfileSlot;
+  /** UNIT_BOUNDARY_DESCRIPTION: absent while there is no primary pick to add a subagent to. */
+  subagent?: ProfileSlot;
   customHint: string;
   onAgentPicks: () => void;
 }) {
   const { attach, manage } = useProfileAttach(agentId);
-  const choices = (slot: ProfileSlot) => (
+  const choices = (slot: ProfileSlot, listed: readonly ProfileWithUsage[]) => (
     <>
-      {profiles.length > 0 && (
+      {listed.length > 0 && (
         <ProfileChoices
-          profiles={profiles}
+          profiles={listed}
           carried={carried}
           selectedId={slot.selectedId}
           onPick={slot.onPick}
@@ -68,7 +72,8 @@ export function ModelConfiguration({
       />
     </>
   );
-  const picked = subagent.selectedId !== null || subagent.custom !== null;
+  const picked =
+    !!subagent && (subagent.selectedId !== null || subagent.custom !== null);
   const [revealed, setRevealed] = useState(false);
   const subagentId = useId();
   return (
@@ -88,21 +93,25 @@ export function ModelConfiguration({
       >
         Primary model
       </SectionHeading>
-      {choices(primary)}
-      <SectionHeading htmlFor={subagentId} className="mt-2">
-        <input
-          id={subagentId}
-          type="checkbox"
-          checked={picked || revealed}
-          onChange={(e) => {
-            setRevealed(e.target.checked);
-            if (!e.target.checked && picked) onAgentPicks();
-          }}
-          className="mr-2 align-middle"
-        />
-        Subagent model
-      </SectionHeading>
-      {(picked || revealed) && choices(subagent)}
+      {choices(primary, profiles)}
+      {subagent && (
+        <>
+          <SectionHeading htmlFor={subagentId} className="mt-2">
+            <input
+              id={subagentId}
+              type="checkbox"
+              checked={picked || revealed}
+              onChange={(e) => {
+                setRevealed(e.target.checked);
+                if (!e.target.checked && picked) onAgentPicks();
+              }}
+              className="mr-2 align-middle"
+            />
+            Subagent model
+          </SectionHeading>
+          {(picked || revealed) && choices(subagent, subagentProfiles)}
+        </>
+      )}
     </div>
   );
 }

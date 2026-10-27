@@ -98,6 +98,7 @@ export function LiteLlmProxyForm({
       keyPage={{ href: keyGuideUrl, hint: keyGuideHint }}
       onSubmit={onSubmit}
       onCancel={onCancel}
+      closeDisabled={isSubmitting}
     >
       <ProviderSecretRow
         register={register("value")}

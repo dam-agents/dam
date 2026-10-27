@@ -6,12 +6,15 @@ import { useForm } from "react-hook-form";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultProfileId } from "../../modules/profiles/lib/default-profile.js";
+import { ScheduleDetails } from "../../modules/schedules/components/schedule-details.js";
 import { ScheduleChoicesField } from "../../modules/schedules/forms/schedule-fields.js";
 import {
   customChoiceError,
   quietHoursChange,
   scheduleChoices,
+  scheduleFields,
   scheduleInheritsChoices,
+  scheduleSlots,
 } from "../../modules/schedules/forms/schedule-form-schema.js";
 import type { Schedule } from "../../types.js";
 
@@ -38,6 +41,17 @@ vi.mock("@/components/ui/popover", () => {
     PopoverContent: passthrough,
   };
 });
+
+vi.mock("../../modules/sessions/components/session-pair-picker.js", () => ({
+  SessionPairPicker: (props: {
+    target?: { slots: unknown; label: string; placeholder: string };
+  }) =>
+    createElement(
+      "output",
+      { "data-picker": props.target?.label },
+      JSON.stringify(props.target?.slots),
+    ),
+}));
 
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
@@ -166,6 +180,7 @@ interface Choices {
   model: string;
   settings: Record<string, string>;
   profile: string;
+  platformSubagentProfile: string;
 }
 
 function Field({
@@ -176,7 +191,13 @@ function Field({
   inheritChoice?: boolean;
 }) {
   const { control } = useForm<Choices>({
-    defaultValues: { harness: "", model: "", settings: {}, profile: value },
+    defaultValues: {
+      harness: "",
+      model: "",
+      settings: {},
+      profile: value,
+      platformSubagentProfile: "",
+    },
   });
   return createElement(ScheduleChoicesField<Choices>, {
     agentId: "a1",
@@ -204,28 +225,94 @@ describe("what a new schedule or channel starts on", () => {
 });
 
 describe("what a schedule save sends", () => {
-  /** TEST_SCENARIO: a schedule on a profile sends the profile alone, so the values the form shows, which the profile resolves to, are never taken for a detach; a custom one sends its own values and clears the profile, and a recurring update clears an emptied choice with null. */
+  /** TEST_SCENARIO: a schedule on a profile sends the profile with only the subagent's own values beside it, so the values the form shows, which the profile resolves to, are never taken for a detach; a custom one sends its own values and clears the profile; the subagent reference is always named; a recurring update clears an emptied choice with null. */
   it("sends the profile alone, or the values with the profile cleared", () => {
+    const subagent = {
+      "platformSubagent.harness": "pi",
+      "platformSubagent.model": "cb/haiku",
+    };
     const values = {
       harness: "claude-code",
       model: "cb/x",
-      settings: { effort: "high", mode: "" },
+      settings: { effort: "high", mode: "", ...subagent },
     };
     expect(scheduleChoices({ ...values, profile: "p1" }, true)).toEqual({
       profile: "p1",
+      platformSubagentProfile: null,
+      settings: subagent,
     });
+    expect(
+      scheduleChoices(
+        { ...values, profile: "p1", platformSubagentProfile: "p2" },
+        true,
+      ),
+    ).toEqual({ profile: "p1", platformSubagentProfile: "p2" });
     expect(scheduleChoices({ ...values, profile: "" }, false)).toEqual({
       profile: null,
+      platformSubagentProfile: null,
       harness: "claude-code",
       model: "cb/x",
-      settings: { effort: "high" },
+      settings: { effort: "high", ...subagent },
     });
     expect(
       scheduleChoices(
         { profile: "", harness: "codex", model: "", settings: {} },
         true,
       ),
-    ).toEqual({ profile: null, harness: "codex", model: null, settings: null });
+    ).toEqual({
+      profile: null,
+      platformSubagentProfile: null,
+      harness: "codex",
+      model: null,
+      settings: null,
+    });
+  });
+
+  /** TEST_SCENARIO: the form's fields read as the chat default's two slots for the picker, and a pick's slots go back into the same fields, both slots kept. */
+  it("maps the form's fields to the picker's slots and back", () => {
+    const subagent = {
+      "platformSubagent.harness": "pi",
+      "platformSubagent.model": "cb/haiku",
+    };
+    const fields = {
+      profile: "",
+      harness: "codex",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high", ...subagent },
+      platformSubagentProfile: "",
+    };
+    const slots = scheduleSlots(fields);
+    expect(slots).toEqual({
+      profileId: null,
+      pair: {
+        harness: "codex",
+        provider: null,
+        model: "openai/gpt-5.5",
+        settings: { effort: "high" },
+      },
+      platformSubagentProfileId: null,
+      platformSubagentSettings: subagent,
+    });
+    expect(
+      scheduleFields(slots, {
+        harness: "codex",
+        provider: null,
+        model: "openai/gpt-5.5",
+        settings: { effort: "high", ...subagent },
+      }),
+    ).toEqual(fields);
+    expect(
+      scheduleSlots({
+        ...fields,
+        profile: "p1",
+        platformSubagentProfile: "p2",
+      }),
+    ).toMatchObject({
+      profileId: "p1",
+      pair: null,
+      platformSubagentProfileId: "p2",
+      platformSubagentSettings: null,
+    });
   });
 });
 
@@ -247,29 +334,21 @@ describe("what a schedule edit sends for quiet hours", () => {
   });
 });
 
-describe("the schedule form's Profile field", () => {
-  /** TEST_SCENARIO: a schedule on a profile shows the profile and no pickers of its own. */
-  it("shows one profile field and hides the custom pickers", () => {
+describe("the schedule form's Runs on field", () => {
+  /** TEST_SCENARIO: the field is the chat's own picker, given the schedule's two slots (QA unification): a profile primary names the profile, and values of its own make the custom pair. */
+  it("hands the chat picker the schedule's slots", () => {
     state.profiles = [profile()];
-    const html = renderToStaticMarkup(createElement(Field, { profile: "p1" }));
-    expect(html).toContain("Profile");
-    expect(html).toContain("Default");
-    expect(html).not.toContain("Harness");
-  });
-
-  /** TEST_SCENARIO: a schedule with its own values reads as a custom selection on the chat's Custom screen, its harness list included (QA R11). */
-  it("reads a schedule of its own values as Custom selection", () => {
-    state.profiles = [profile()];
-    const html = renderToStaticMarkup(createElement(Field, { profile: "" }));
-    expect(html).toContain("Custom selection");
-    expect(html).toContain('aria-label="Harness"');
+    const onProfile = renderToStaticMarkup(
+      createElement(Field, { profile: "p1" }),
+    );
+    expect(onProfile).toContain('data-picker="Schedule harness and model"');
+    expect(onProfile).toContain("&quot;profileId&quot;:&quot;p1&quot;");
   });
 
   /** TEST_SCENARIO: a schedule written before profiles that follows the
    * agent's chat default says so, which is what its empty values mean now
-   * that nothing writes a scheduled default (D90/D92), names the default in
-   * the one summary and shows no harness or settings as selected while it
-   * follows; a new one does not offer it (D123). */
+   * that nothing writes a scheduled default (D90/D92), and names the default
+   * in the one summary; a new one does not offer it (D123). */
   it("names the empty choice the agent's chat default, only where it is the row's own", () => {
     state.profiles = [profile()];
     state.fallback = {
@@ -285,18 +364,9 @@ describe("the schedule form's Profile field", () => {
     expect(follows).toContain("fable · Low (AWS Bedrock)");
     expect(follows).toContain("follows the agent&#x27;s chat default");
     expect(follows).not.toContain("Scheduled default");
-    expect(follows).not.toContain('aria-pressed="true"');
-    expect(follows).not.toContain('aria-label="Session settings"');
     expect(
       renderToStaticMarkup(createElement(Field, { profile: "" })),
-    ).not.toContain("chat default");
-  });
-
-  /** TEST_SCENARIO: an install with no profile at all keeps the pickers alone, so nothing new blocks a schedule. */
-  it("leaves the pickers alone when the owner has no profile", () => {
-    const html = renderToStaticMarkup(createElement(Field, { profile: "" }));
-    expect(html).toContain("Harness");
-    expect(html).not.toContain("Custom selection");
+    ).not.toContain("follows the agent");
   });
 });
 
@@ -332,5 +402,45 @@ describe("the chat default choice on Custom selection", () => {
       } as Schedule),
     ).toBe(false);
     expect(scheduleInheritsChoices(schedule("p1"))).toBe(false);
+  });
+});
+
+describe("what a schedule's details say it runs on", () => {
+  /** TEST_SCENARIO: a profile that cannot run shows the server's reason and never the chat default it would not fall back to; a healthy custom choice reads the same model, effort and provider as the schedule's row and the picker, which share the one summary (unification item 2). */
+  it("shows the profile's issue, or the one summary of its own values", () => {
+    state.profiles = [profile()];
+    state.fallback = {
+      harness: "claude-code",
+      provider: null,
+      model: "bedrock/fable",
+      settings: { effort: "low" },
+    };
+    try {
+      const broken = renderToStaticMarkup(
+        createElement(ScheduleDetails, {
+          schedule: {
+            ...schedule("p1"),
+            profileIssue: "Its provider is no longer attached.",
+          },
+        }),
+      );
+      expect(broken).toContain("Its provider is no longer attached.");
+      expect(broken).not.toContain("chat default");
+      expect(broken).not.toContain("fable");
+      const custom = renderToStaticMarkup(
+        createElement(ScheduleDetails, {
+          schedule: {
+            ...schedule(null),
+            harness: "claude-code",
+            model: "bedrock/fable",
+            settings: { effort: "low" },
+          },
+        }),
+      );
+      expect(custom).toContain("fable · Low (AWS Bedrock)");
+      expect(custom).not.toContain("chat default");
+    } finally {
+      state.fallback = undefined;
+    }
   });
 });

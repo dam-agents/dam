@@ -18,6 +18,7 @@ export const cronFormSchema = z
     model: z.string(),
     settings: z.record(z.string(), z.string()),
     profile: z.string(),
+    platformSubagentProfile: z.string(),
     sessionTitle: z
       .string()
       .trim()
@@ -47,8 +48,12 @@ export function cronFormDefaults(existing: Schedule): CronFormValues {
     precheck: existing.precheck ?? "",
     harness: existing.harness ?? "",
     model: existing.model ?? "",
-    settings: existing.settings ?? {},
+    settings: {
+      ...existing.settings,
+      ...existing.platformSubagentSettings,
+    },
     profile: existing.profile ?? "",
+    platformSubagentProfile: existing.platformSubagentProfile ?? "",
     sessionTitle: existing.sessionTitle ?? "",
     sessionMode: existing.sessionMode ?? "fresh",
   };

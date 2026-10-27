@@ -23,6 +23,7 @@ export function ProviderFormShell({
   keyPage,
   onSubmit,
   onCancel,
+  closeDisabled,
   children,
 }: {
   provider: ProviderPresetType;
@@ -31,6 +32,7 @@ export function ProviderFormShell({
   keyPage?: ProviderKeyPage;
   onSubmit: FormEventHandler<HTMLFormElement>;
   onCancel?: () => void;
+  closeDisabled?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -40,6 +42,7 @@ export function ProviderFormShell({
         title={title}
         subtitle={description}
         onClose={onCancel}
+        closeDisabled={closeDisabled}
       />
       <DialogBody className="flex flex-col gap-6">
         {keyPage && <ProviderKeyLink {...keyPage} />}

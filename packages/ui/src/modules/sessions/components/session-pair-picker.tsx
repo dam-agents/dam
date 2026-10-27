@@ -5,7 +5,12 @@ import {
   WarningAltFilled,
 } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
-import type { DefaultKind, SessionPair } from "api-server-api";
+import type {
+  DefaultKind,
+  SessionChoiceReferences,
+  SessionChoiceSlots,
+  SessionPair,
+} from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -102,6 +107,16 @@ type Props = CommonProps &
           providerName: string;
           onChoose: (pair: SessionPair) => void;
         };
+        /** UNIT_BOUNDARY_DESCRIPTION: the pick a schedule or a channel holds, in the chat default's two slots: the whole picker on those values, and a pick goes to `onChoose` in the chat default's shape, never to the agent's next session or chat default. `placeholder` names what it runs on while neither primary slot is set. */
+        target?: {
+          slots: SessionChoiceSlots;
+          label: string;
+          placeholder: string;
+          onChoose: (
+            pair: SessionPair,
+            references: SessionChoiceReferences,
+          ) => void;
+        };
       }
   );
 
@@ -117,13 +132,14 @@ export function SessionPairPicker(props: Props) {
   const carried = props.pending ? [] : props.carried;
   const routed = props.pending ? false : (props.routed ?? false);
   const edit = props.pending ? undefined : props.edit;
+  const target = props.pending ? undefined : props.target;
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
   const picked = useStore((s) =>
     agentId ? (s.nextSessionPair[agentId] ?? null) : null,
   );
-  const chosen = edit ? null : picked;
+  const chosen = edit || target ? null : picked;
   const firstView = edit ? "custom" : "profiles";
   const [view, setView] = useState<"profiles" | "custom" | "subagent">(
     firstView,
@@ -163,12 +179,31 @@ export function SessionPairPicker(props: Props) {
     ? (names[0] ?? "")
     : props.defaultHarness;
   const next = useNextSessionPair(agentId, names, defaultHarness);
-  const pair =
-    edit?.pair ??
-    next ??
-    (props.pending && names[0]
-      ? { harness: names[0], provider: null, model: null }
-      : null);
+  const targetProfile = target
+    ? (profiles.find((p) => p.id === target.slots.profileId) ?? null)
+    : null;
+  const targetPrimary = targetProfile
+    ? {
+        harness: targetProfile.harness,
+        provider: null,
+        model: targetProfile.model,
+        settings: targetProfile.settings,
+      }
+    : (target?.slots.pair ?? null);
+  const targetSubagent = target ? heldSubagent(target.slots, profiles) : null;
+  const pair = target
+    ? targetPrimary &&
+      (targetSubagent
+        ? {
+            ...targetPrimary,
+            settings: { ...targetPrimary.settings, ...targetSubagent },
+          }
+        : targetPrimary)
+    : (edit?.pair ??
+      next ??
+      (props.pending && names[0]
+        ? { harness: names[0], provider: null, model: null }
+        : null));
   const harness =
     (chosen && names.includes(chosen.harness) ? chosen.harness : null) ??
     pair?.harness ??
@@ -210,6 +245,7 @@ export function SessionPairPicker(props: Props) {
     },
   ) => {
     if (edit) return edit.onChoose(chosenPair);
+    if (target) return target.onChoose(chosenPair, references ?? {});
     if (!agentId) return;
     setPair(agentId, chosenPair);
     /* UNIT_BOUNDARY_DESCRIPTION: a harness picked without a model waits for its model; the server keeps no chat default without one. */
@@ -227,14 +263,20 @@ export function SessionPairPicker(props: Props) {
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
   const models = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
-  const primary = primaryProfileOf(pair, profiles, capability);
-  const saved = useSessionDefaults(edit ? null : agentId).data;
+  /* UNIT_BOUNDARY_DESCRIPTION: a target names its profiles, so its rows mark those rather than a profile its values happen to match. */
+  const primary = target
+    ? targetProfile
+    : primaryProfileOf(pair, profiles, capability);
+  const saved = useSessionDefaults(edit || target ? null : agentId).data;
   const held = withHeldSubagent(
     pair,
     heldSubagent(saved, profiles),
     pair?.harness ?? defaultHarness,
   );
-  const slot = subagentProfileOf(held, profiles);
+  const slot = target
+    ? (profiles.find((p) => p.id === target.slots.platformSubagentProfileId) ??
+      null)
+    : subagentProfileOf(held, profiles);
   const customSlot = subagentOf(held);
   const slotProvider = providerOfModel(customSlot?.model, providers.owned);
   const slotConnected = providers.granted.some(
@@ -357,14 +399,22 @@ export function SessionPairPicker(props: Props) {
         <PopoverTrigger asChild>
           <SessionPairTrigger
             harness={pair?.harness}
-            label={catalog && (pair ? label : "Choose a harness and model")}
+            label={
+              catalog &&
+              (pair
+                ? label
+                : (target?.placeholder ?? "Choose a harness and model"))
+            }
           />
         </PopoverTrigger>
         <PopoverContent
           side="top"
           align="start"
           aria-label={
-            edit ? "Profile harness and model" : "New session harness and model"
+            target?.label ??
+            (edit
+              ? "Profile harness and model"
+              : "New session harness and model")
           }
           onInteractOutside={keepOpenWhileDialog}
           className="flex w-[340px] flex-col gap-2 p-1 text-sm"
@@ -408,30 +458,37 @@ export function SessionPairPicker(props: Props) {
                     setView("custom");
                   },
                 }}
-                subagent={{
-                  selectedId: slot?.id ?? null,
-                  custom:
-                    slot || !customSlot ? null : (
-                      <>
-                        <PairSummary
-                          harness={customSlot.harness}
-                          label={
-                            subagentSummary(held, carried, providers.owned) ??
-                            ""
-                          }
-                        />
-                        {!slotConnected && <NotConnectedMark />}
-                      </>
-                    ),
-                  onPick: (profile) =>
-                    pair &&
-                    held &&
-                    chooseSubagent(
-                      withSubagent(held, profile, capability, models),
-                      profile.id,
-                    ),
-                  onCustom: () => setView("subagent"),
-                }}
+                subagent={
+                  target && !pair
+                    ? undefined
+                    : {
+                        selectedId: slot?.id ?? null,
+                        custom:
+                          slot || !customSlot ? null : (
+                            <>
+                              <PairSummary
+                                harness={customSlot.harness}
+                                label={
+                                  subagentSummary(
+                                    held,
+                                    carried,
+                                    providers.owned,
+                                  ) ?? ""
+                                }
+                              />
+                              {!slotConnected && <NotConnectedMark />}
+                            </>
+                          ),
+                        onPick: (profile) =>
+                          pair &&
+                          held &&
+                          chooseSubagent(
+                            withSubagent(held, profile, capability, models),
+                            profile.id,
+                          ),
+                        onCustom: () => setView("subagent"),
+                      }
+                }
                 onAgentPicks={() =>
                   pair &&
                   chooseSubagent(
@@ -550,7 +607,7 @@ export function SessionPairPicker(props: Props) {
           )}
         </PopoverContent>
       </Popover>
-      {pair && !edit && (
+      {pair && !edit && !target && (
         <ToolApprovalPicker
           capability={capability}
           settings={settings}

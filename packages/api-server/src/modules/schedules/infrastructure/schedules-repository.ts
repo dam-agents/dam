@@ -12,6 +12,7 @@ import {
   type DbTx,
   schedules as schedulesTable,
 } from "db";
+import { resolvedSubagent } from "../../harness-config/domain/session-pair.js";
 import type { ProfileResolver } from "../../profiles/index.js";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
@@ -135,9 +136,21 @@ export function createSchedulesRepository(
   db: Db,
   resolveProfile: ProfileResolver,
 ): SchedulesRepository {
-  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile is read with the values the profile resolves to now, so the fire, the panel and the CLI all see them; one that cannot run carries none, and why. A write stores the reference alone. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile is read with the values the profile resolves to now, so the fire, the panel and the CLI all see them; one that cannot run carries none, and why. Its subagent slot is resolved beside them, as a chat start resolves it. A write stores the references alone. */
   async function effective(row: InternalRow): Promise<Schedule> {
-    const schedule = rowToSchedule(row);
+    const primary = await withProfile(rowToSchedule(row));
+    const subagentSettings = await resolvedSubagent(
+      {
+        platformSubagentProfileId: primary.spec.platformSubagentProfile ?? null,
+        platformSubagentSettings: primary.spec.platformSubagentSettings ?? null,
+      },
+      resolveProfile,
+      primary.agentId,
+    );
+    return subagentSettings ? { ...primary, subagentSettings } : primary;
+  }
+
+  async function withProfile(schedule: Schedule): Promise<Schedule> {
     const profileId = schedule.spec.profile;
     if (profileId === undefined) return schedule;
     const resolved = await resolveProfile({

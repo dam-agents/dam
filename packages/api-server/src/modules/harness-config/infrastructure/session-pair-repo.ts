@@ -22,10 +22,9 @@ import {
 } from "api-server-api";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import {
-  platformSubagentOf,
-  splitPlatformSubagent,
+  choiceSlots,
+  resolvedChoice,
   withoutPairApproval,
-  withPlatformSubagent,
   type GrantedProvider,
 } from "../domain/session-pair.js";
 import { harnessCapability } from "agent-runtime-api";
@@ -97,39 +96,22 @@ export function createSessionPairRepo(
         carried.find((h) => h.name === pair.harness)?.harnessConfigCatalog,
       );
     const chatProfileId = row?.sessionProfile ?? null;
-    const resolve = (profileId: string | null | undefined) =>
-      profileId ? resolveProfile({ profileId, agentId }) : null;
-    const [profile, slot] = await Promise.all([
-      resolve(chatProfileId),
-      resolve(row?.platformSubagentProfile),
-    ]);
-    const chat = chatProfileId
-      ? profile?.unavailable === null
-        ? profile.pair
-        : null
-      : parsePair(row?.chat);
-    return {
-      chat: plain(
-        chat &&
-          withPlatformSubagent(
-            chat,
-            row?.platformSubagentProfile
-              ? slot?.unavailable === null
-                ? platformSubagentOf(slot.pair)
-                : null
-              : ((row?.platformSubagentSettings as Record<
-                  string,
-                  string
-                > | null) ?? null),
-          ),
-      ),
-      channel: plain(parsePair(row?.channel)),
-      scheduled: plain(parsePair(row?.scheduled)),
-      chatProfileId,
+    const slots = {
+      profileId: chatProfileId,
+      pair: parsePair(row?.chat),
       platformSubagentProfileId: row?.platformSubagentProfile ?? null,
       platformSubagentSettings:
         (row?.platformSubagentSettings as Record<string, string> | null) ??
         null,
+    };
+    const chat = await resolvedChoice(slots, resolveProfile, agentId);
+    return {
+      chat: plain(chat.refused ? null : chat.pair),
+      channel: plain(parsePair(row?.channel)),
+      scheduled: plain(parsePair(row?.scheduled)),
+      chatProfileId,
+      platformSubagentProfileId: slots.platformSubagentProfileId,
+      platformSubagentSettings: slots.platformSubagentSettings,
     };
   }
 
@@ -146,18 +128,17 @@ export function createSessionPairRepo(
     },
 
     async write(agentId, kind, pair, references) {
-      const [primary, slot] = splitPlatformSubagent(pair);
-      const slotId = references?.platformSubagentProfileId;
+      const slots = choiceSlots(pair, references);
       await db
         .update(agentsTable)
         .set(
           match(kind)
             .with("chat", () => ({
-              sessionPair: references?.profileId ? null : primary,
-              sessionProfile: references?.profileId ?? null,
-              ...(slotId !== undefined && {
-                platformSubagentProfile: slotId,
-                platformSubagentSettings: slotId ? null : slot,
+              sessionPair: slots.pair,
+              sessionProfile: slots.profileId,
+              ...(slots.platformSubagentProfileId !== undefined && {
+                platformSubagentProfile: slots.platformSubagentProfileId,
+                platformSubagentSettings: slots.platformSubagentSettings,
               }),
               defaultModelNote: null,
             }))

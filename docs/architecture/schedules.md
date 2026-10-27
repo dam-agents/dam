@@ -189,13 +189,15 @@ How the title reaches the session list belongs to [platform topology](platform-t
 A schedule, recurring or [one-time](#one-time-schedules), carries the same choices as a session: the **harness** its sessions run on, their **model** as a qualified name (`<alias>/<model id>`, [harness configuration](harness-config.md#the-model-router)) and the harness's per-session **settings** (an effort level, a reasoning mode), which include the session's platform sub-agent settings ([session settings](harness-config.md#session-settings)).
 A schedule's choices live on its sessions alone.
 A new schedule names a **profile** rather than its own choices: one harness, model and settings the agent's owner holds, kept on the schedule and resolved when the schedule is read, so an edit of the profile reaches every later fire.
-Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else the owner's seeded Default, and offers Custom selection, the chat's own Custom screen, for a schedule with a reason of its own.
+Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else the owner's seeded Default, and picks in the chat's own picker, Custom selection included, for a schedule with a reason of its own.
+The picker sets the subagent slot beside the primary, kept as the chat default keeps it: a profile, values of its own, or neither, which lets the agent pick, and a fire runs on both slots.
 The form saves a Custom selection only with a model; a schedule written before profiles that still follows the chat default is the one exception, and its form shows the default's values as a hint, not as a selection.
 A schedule names a profile or its own values, never both: a save that names the profile keeps it, and one that gives values detaches it, keeping the profile's values for the choices it did not give.
 A profile that cannot run on the agent fails the fire with its reason, and the run is never reported as following the agent's default.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.
 The schedule tools tell the agent that the owner sets that default and that a schedule names choices of its own only for a reason the task gives.
-A schedule row names the profile it runs on, or its own choices where it carries them.
+A schedule row names the profile it runs on, or its own choices where it carries them, in the picker's summary.
+Its details read the same, or the reason its profile cannot run, never the chat default the fire would not fall back to.
 With no default model saved, a fire fails with that reason on its first attempt, with no retry, and Run Now refuses with it.
 On a runtime that takes no model per session, a fire drops a schedule model that names the agent's own model setting (the copy the upgrade made) and runs as before; one that names another model is refused.
 

@@ -118,6 +118,8 @@ export type {
   DefaultKind,
   SessionDefaults,
   SessionDefaultsView,
+  SessionChoiceReferences,
+  SessionChoiceSlots,
   SessionPair,
   HarnessConfigService,
   HarnessConfigSnapshot,

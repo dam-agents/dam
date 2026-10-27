@@ -120,7 +120,7 @@ export function useSaveAsProfile({
       </div>
     ),
     dialog: open && (
-      <Modal onClose={() => setOpen(null)}>
+      <Modal onClose={() => !saving && setOpen(null)}>
         <DialogHeader
           onClose={() => setOpen(null)}
           closeDisabled={saving}

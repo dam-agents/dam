@@ -60,6 +60,7 @@ export function kitScheduleFormValues(
     model: "",
     settings: {},
     profile: "",
+    platformSubagentProfile: "",
     sessionTitle: "",
   };
 }

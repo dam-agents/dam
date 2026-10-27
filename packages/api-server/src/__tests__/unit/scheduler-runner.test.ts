@@ -515,6 +515,51 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     });
   });
 
+  /** TEST_SCENARIO: A schedule runs on both slots, as a chat start does: the
+   * fire checks and carries the primary's settings with the subagent slot's
+   * values the repository resolved. */
+  it("fires on both slots of the schedule's pick", async () => {
+    const checked: unknown[] = [];
+    const schedule = makeSchedule(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        harness: "codex",
+        model: "openai/gpt-5.5",
+        settings: { effort: "high" },
+      },
+    );
+    const subagent = {
+      "platformSubagent.harness": "pi",
+      "platformSubagent.model": "cb/haiku",
+    };
+    const { runner, payloads } = makeDeps({
+      schedule: { ...schedule, subagentSettings: subagent },
+      validateSessionChoices: async (_agentId, choices) => {
+        checked.push(choices);
+        return undefined;
+      },
+      firePair: async () => ({
+        harness: "codex",
+        provider: "oai",
+        model: "openai/gpt-5.5",
+      }),
+    });
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    const both = { effort: "high", ...subagent };
+    expect(checked).toEqual([
+      { harness: "codex", model: "openai/gpt-5.5", settings: both },
+    ]);
+    expect(payloads[0]).toMatchObject({ settings: both });
+  });
+
   /** TEST_SCENARIO: Since the schedule was saved the agent lost the provider
    * its model names. The fire fails with that reason on the schedule rather
    * than running on a substitute model. */

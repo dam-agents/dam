@@ -65,6 +65,7 @@ describe("the cron schedule editor", () => {
       model: "",
       settings: {},
       profile: "",
+      platformSubagentProfile: "",
       sessionTitle: "",
       sessionMode: "continuous",
     });

@@ -21,7 +21,7 @@ import { hasAgentContent } from "../../acp/session-projection.js";
 import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { activityItems } from "../lib/activity-groups.js";
-import { modelDisplayName } from "../lib/model-name.js";
+import { prettyModelLabel } from "../lib/model-families.js";
 import { repliesOnlyWithError } from "../lib/replies-only-with-error.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ActivityGroup } from "./activity-group.js";
@@ -292,7 +292,7 @@ export const ChatMessage = memo(function ChatMessage({
             data-testid="reply-model"
             className="text-2xs text-muted-foreground cursor-default"
           >
-            {modelDisplayName(message.model)}
+            {prettyModelLabel(message.model) ?? message.model}
           </span>
         </Tooltip>
       )}

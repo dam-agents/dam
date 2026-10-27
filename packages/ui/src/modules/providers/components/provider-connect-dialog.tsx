@@ -36,6 +36,7 @@ interface Props {
   onConnected: (ref: ProviderRef) => void;
   onClose: () => void;
   onDisconnect?: () => void;
+  disconnectPending?: boolean;
 }
 
 export function ProviderConnectDialog({
@@ -44,10 +45,15 @@ export function ProviderConnectDialog({
   onConnected,
   onClose,
   onDisconnect,
+  disconnectPending = false,
 }: Props) {
   const createConnection = useCreateConnection();
   const updateConnection = useUpdateConnection();
 
+  const saving = createConnection.isPending || updateConnection.isPending;
+  const dismiss = () => {
+    if (!saving) onClose();
+  };
   const variant = item ? "edit" : "wizard";
 
   const persist = async (args: {
@@ -56,13 +62,17 @@ export function ProviderConnectDialog({
     updateInput?: ConnectionUpdateInput;
   }) => {
     if (item) {
-      await updateConnection.mutateAsync(
-        args.updateInput ?? { id: item.id, value: args.value },
-      );
-      onConnected({ id: item.id });
+      await updateConnection
+        .mutateAsync(args.updateInput ?? { id: item.id, value: args.value })
+        .then(
+          () => onConnected({ id: item.id }),
+          () => {},
+        );
     } else {
-      const created = await createConnection.mutateAsync(args.createInput);
-      onConnected({ id: created.id });
+      await createConnection.mutateAsync(args.createInput).then(
+        (created) => onConnected({ id: created.id }),
+        () => {},
+      );
     }
   };
 
@@ -77,13 +87,13 @@ export function ProviderConnectDialog({
     : undefined;
 
   return (
-    <Modal onClose={onClose} size="sm">
+    <Modal onClose={dismiss} size="sm">
       {provider === "anthropic" && (
         <AnthropicForm
           variant={variant}
           initialMode={anthropicMode}
           lockMode={!!item}
-          onCancel={onClose}
+          onCancel={dismiss}
           onSave={({ mode, value }) =>
             persist({
               value,
@@ -101,7 +111,7 @@ export function ProviderConnectDialog({
         <BobForm
           variant={variant}
           initialPins={bobPins}
-          onCancel={onClose}
+          onCancel={dismiss}
           onSave={({ value, pins }) =>
             persist({
               value,
@@ -120,7 +130,7 @@ export function ProviderConnectDialog({
       {provider === "openai" && (
         <OpenAIForm
           variant={variant}
-          onCancel={onClose}
+          onCancel={dismiss}
           onSave={({ value }) =>
             persist({
               value,
@@ -137,7 +147,7 @@ export function ProviderConnectDialog({
       {provider === "bedrock" && (
         <BedrockForm
           variant={variant}
-          onCancel={onClose}
+          onCancel={dismiss}
           onSave={({ value, pins }) =>
             persist({
               value,
@@ -156,7 +166,7 @@ export function ProviderConnectDialog({
         <LiteLlmProxyForm
           provider={provider}
           variant={variant}
-          onCancel={onClose}
+          onCancel={dismiss}
           onSave={({ value }) =>
             persist({
               value,
@@ -178,6 +188,7 @@ export function ProviderConnectDialog({
             tone="danger"
             size="sm"
             onClick={onDisconnect}
+            disabled={saving || disconnectPending}
           >
             Disconnect this provider
           </Button>

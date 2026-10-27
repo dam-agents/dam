@@ -34,6 +34,7 @@ type DialogValues = FieldValues & {
   model: string;
   settings: Record<string, string>;
   profile: string;
+  platformSubagentProfile: string;
 };
 
 interface DeleteCopy {

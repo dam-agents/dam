@@ -187,7 +187,12 @@ function SlackChannelRow({
       <ChannelProfileLine
         agentId={agentId}
         channel={{ type: "slack", slackChannelId: channel.slackChannelId }}
-        profileId={channel.profileId ?? null}
+        slots={{
+          profileId: channel.profileId ?? null,
+          pair: channel.pair ?? null,
+          platformSubagentProfileId: channel.platformSubagentProfileId ?? null,
+          platformSubagentSettings: channel.platformSubagentSettings ?? null,
+        }}
         readOnly={readOnly}
       />
       {channel.loopGuard && <SlackLoopGuardNotice drops={channel.loopGuard} />}

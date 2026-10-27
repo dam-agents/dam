@@ -100,7 +100,7 @@ export function TelegramChannelCard({
                 type: "telegram",
                 conversationId: chat.conversationId,
               }}
-              profileId={chat.profileId ?? null}
+              slots={chat}
               readOnly={readOnly}
             />
           </div>

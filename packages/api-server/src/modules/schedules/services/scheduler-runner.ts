@@ -232,10 +232,15 @@ export function createSchedulerRunner(
       ? await deps.scheduleModelFor(sched.agentId, sched.spec.model)
       : sched.spec.model;
     if (model) payload.model = model;
+    /* UNIT_BOUNDARY_DESCRIPTION: both slots reach the run, as a chat start sends them: the primary's settings with the subagent slot's values. */
+    const settings =
+      sched.spec.settings || sched.subagentSettings
+        ? { ...sched.spec.settings, ...sched.subagentSettings }
+        : undefined;
     const choices = {
       ...(sched.spec.harness && { harness: sched.spec.harness }),
       ...(model && { model }),
-      ...(sched.spec.settings && { settings: sched.spec.settings }),
+      ...(settings && { settings }),
     };
     if (!continues && Object.keys(choices).length > 0) {
       const refusal = await deps.validateSessionChoices?.(
@@ -265,7 +270,7 @@ export function createSchedulerRunner(
       else delete payload.model;
       if (pair.settings) payload.settings = pair.settings;
     }
-    if (sched.spec.settings) payload.settings = sched.spec.settings;
+    if (settings) payload.settings = settings;
     if (pair && Object.keys(choices).length === 0) payload.onDefault = true;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {

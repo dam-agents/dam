@@ -59,7 +59,31 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
       return { agents: [], channels: [], schedules: [] };
     const scoped = (column: Parameters<typeof inArray>[0]) =>
       agentIds === undefined ? undefined : inArray(column, [...agentIds]);
-    const scheduleProfile = sql<string>`${schedules.spec}->>'profile'`;
+    const scheduleProfile = sql<string | null>`${schedules.spec}->>'profile'`;
+    const scheduleSubagent = sql<
+      string | null
+    >`${schedules.spec}->>'platformSubagentProfile'`;
+    /* UNIT_BOUNDARY_DESCRIPTION: a binding or a schedule names a profile in either slot, as an agent's chat default does; one row naming it twice is one use. */
+    const naming = (
+      primary: Parameters<typeof eq>[0],
+      subagent: Parameters<typeof eq>[0],
+    ) =>
+      profileId === undefined
+        ? or(sql`${primary} is not null`, sql`${subagent} is not null`)
+        : or(sql`${primary} = ${profileId}`, sql`${subagent} = ${profileId}`);
+    const perProfile = <
+      T extends { primary: string | null; subagent: string | null },
+    >(
+      rows: T[],
+    ) =>
+      rows.flatMap(({ primary, subagent, ...row }) =>
+        [...new Set([primary, subagent])]
+          .filter(
+            (id): id is string =>
+              id !== null && (profileId === undefined || id === profileId),
+          )
+          .map((id) => ({ ...row, profileId: id })),
+      );
     const [agentRows, channelRows, telegramRows, scheduleRows] =
       await Promise.all([
         executor
@@ -86,7 +110,8 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
           ),
         executor
           .select({
-            profileId: sql<string>`${channels.profileId}`,
+            primary: channels.profileId,
+            subagent: channels.platformSubagentProfile,
             agentId: channels.agentId,
             label: sql<string>`coalesce(${channels.config}->>'slackChannelId', ${channels.config}->>'conversationId', ${channels.type})`,
           })
@@ -94,30 +119,31 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
           .where(
             and(
               eq(channels.owner, owner),
-              profileId === undefined
-                ? sql`${channels.profileId} is not null`
-                : eq(channels.profileId, profileId),
+              naming(channels.profileId, channels.platformSubagentProfile),
               scoped(channels.agentId),
             ),
           ),
         executor
           .select({
-            profileId: sql<string>`${telegramConversations.profileId}`,
+            primary: telegramConversations.profileId,
+            subagent: telegramConversations.platformSubagentProfile,
             agentId: telegramConversations.agentId,
             label: telegramConversations.conversationId,
           })
           .from(telegramConversations)
           .where(
             and(
-              profileId === undefined
-                ? sql`${telegramConversations.profileId} is not null`
-                : eq(telegramConversations.profileId, profileId),
+              naming(
+                telegramConversations.profileId,
+                telegramConversations.platformSubagentProfile,
+              ),
               scoped(telegramConversations.agentId),
             ),
           ),
         executor
           .select({
-            profileId: scheduleProfile,
+            primary: scheduleProfile,
+            subagent: scheduleSubagent,
             id: schedules.id,
             name: schedules.name,
             agentId: schedules.agentId,
@@ -126,17 +152,15 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
           .where(
             and(
               eq(schedules.owner, owner),
-              profileId === undefined
-                ? sql`${scheduleProfile} is not null`
-                : sql`${scheduleProfile} = ${profileId}`,
+              naming(scheduleProfile, scheduleSubagent),
               scoped(schedules.agentId),
             ),
           ),
       ]);
     return {
       agents: agentRows,
-      channels: [...channelRows, ...telegramRows],
-      schedules: scheduleRows,
+      channels: [...perProfile(channelRows), ...perProfile(telegramRows)],
+      schedules: perProfile(scheduleRows),
     };
   }
 
