@@ -55,7 +55,7 @@ export function useInstantStartRequired(): InstantStartState {
 }
 
 export function InstantStartProvider({ children }: { children: ReactNode }) {
-  const [budgetUsed, setBudgetUsed] = useState(0);
+  const [budgetUsed, setBudgetUsed] = useState(BUDGET_LIMIT * 0.36);
   const [budgetExhausted, setBudgetExhausted] = useState(false);
   const [providerAdded, setProviderAdded] = useState(false);
   const [agentCreated, setAgentCreated] = useState(false);
