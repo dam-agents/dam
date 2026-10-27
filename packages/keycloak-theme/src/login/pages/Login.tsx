@@ -265,9 +265,11 @@ function ScrollPage({
     (kcContext.message.type !== "warning" || !kcContext.isAppInitiatedAction);
 
   return (
-    <div className="min-h-screen snap-y snap-proximity bg-background" style={{ overflowY: "auto", height: "100dvh" }}>
+    <div className="min-h-screen snap-y snap-proximity bg-background" style={{ overflowY: "auto", overflowX: "hidden", height: "100dvh" }}>
       <section className="relative min-h-screen snap-start overflow-hidden">
-        <HeroBgShapes />
+        <div className="hidden lg:block">
+          <HeroBgShapes />
+        </div>
 
         <div className="absolute inset-y-0 right-0 z-10 hidden w-1/2 items-center md:flex">
           <div className="w-[140%] max-w-[860px] -ml-[8%] pr-10">
@@ -325,7 +327,7 @@ function ScrollPage({
         </div>
       </section>
 
-      <div id="info-bands">
+      <div id="info-bands" className="overflow-x-hidden">
         <BandCapabilities brandName={kcContext.realm.displayName || "Platform"} />
         <BandChannels />
         <BandSandbox />
