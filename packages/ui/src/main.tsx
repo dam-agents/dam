@@ -56,7 +56,7 @@ async function main() {
     const route = parseRoute(window.location.pathname);
     const urlSession =
       route.view === "chat" && "session" in route ? route.session : null;
-    const defaultSession = urlSession ?? MOCK_SESSION_IDS.artifact;
+    const defaultSession = urlSession ?? MOCK_SESSION_IDS.devFlow;
     const packId = KIT_SESSION_TO_PACK[defaultSession] ?? null;
 
     history.replaceState(null, "", `/chat/${agents[0]!.id}`);
