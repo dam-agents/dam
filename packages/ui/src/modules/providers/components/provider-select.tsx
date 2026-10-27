@@ -3,16 +3,25 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { RichSelect, type RichSelectOption } from "@/components/ui/rich-select";
+import { cn } from "@/lib/utils";
 
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 import { useInstantStart } from "../../instant-start/context.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
 import { offeredProviderRows } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
+import { CurveBenderForm } from "./curvebender/form.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import { type ProviderRef, providerRef } from "./provider-item.js";
 
 const CURVEBENDER_TYPE = "curvebender" as ProviderPresetType;
+
+function formatUsd(value: number): string {
+  return `$${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
 interface Props {
   selected: ProviderRef | null;
@@ -45,6 +54,7 @@ export function ProviderSelect({
     id: string;
     type: ProviderPresetType;
   } | null>(null);
+  const [showKeyForm, setShowKeyForm] = useState(false);
   const rows = useMemo(
     () => offeredProviderRows(allow, recommended),
     [allow, recommended],
@@ -100,13 +110,28 @@ export function ProviderSelect({
 
   if (isPending) return <Card className="h-[76px] animate-pulse" />;
 
+  const cbPayment = instantStart?.curveBenderPayment ?? "free";
+
+  function getCurveBenderDescription() {
+    if (!instantStart) return "Free sponsored budget — no API key required.";
+    if (cbPayment === "own-key") {
+      return instantStart.ownCurveBenderKey
+        ? `Your key (···${instantStart.ownCurveBenderKeyLast4 || "••••"})`
+        : "Your own API key";
+    }
+    const { freeBudget, budgetExhausted } = instantStart;
+    if (budgetExhausted)
+      return `${formatUsd(freeBudget.limit)} free budget used up`;
+    return `Free budget — ${formatUsd(freeBudget.used)} of ${formatUsd(freeBudget.limit)} used`;
+  }
+
   const options: RichSelectOption<ProviderPresetType>[] = [];
 
   if (showCurveBender) {
     options.push({
       value: CURVEBENDER_TYPE,
       title: "CurveBender",
-      description: "Free sponsored budget — no API key required.",
+      description: getCurveBenderDescription(),
       icon: (
         <img src="/curvebender-logo.svg" alt="" className="size-6 shrink-0" />
       ),
@@ -139,6 +164,27 @@ export function ProviderSelect({
     });
   }
 
+  const isCurveBenderSelected = selectedType === CURVEBENDER_TYPE;
+
+  const handlePaymentChange = (v: "free" | "own-key") => {
+    instantStart?.setCurveBenderPayment(v);
+    if (v === "own-key" && !instantStart?.ownCurveBenderKey) {
+      setShowKeyForm(true);
+    } else {
+      setShowKeyForm(false);
+    }
+  };
+
+  const handleKeyFormSave = async (input: { value: string }) => {
+    const last4 = input.value.slice(-4);
+    instantStart?.setOwnCurveBenderKey(true);
+    instantStart?.setOwnCurveBenderKeyLast4(last4);
+    instantStart?.setCurveBenderPayment("own-key");
+    instantStart?.setActiveProvider("curvebender");
+    instantStart?.setConnectedProviderType(null);
+    setShowKeyForm(false);
+  };
+
   return (
     <>
       <RichSelect
@@ -152,6 +198,88 @@ export function ProviderSelect({
         testId="provider-select"
         defaultOpen={defaultOpen}
       />
+
+      {isCurveBenderSelected && instantStart && (
+        <div className="mt-3 space-y-3">
+          <div className="flex h-8 rounded-lg border border-border bg-muted/50 p-0.5">
+            <button
+              type="button"
+              onClick={() => handlePaymentChange("free")}
+              className={cn(
+                "flex-1 rounded-md px-3 text-xs font-medium transition-colors",
+                cbPayment === "free"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Free budget
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePaymentChange("own-key")}
+              className={cn(
+                "flex-1 rounded-md px-3 text-xs font-medium transition-colors",
+                cbPayment === "own-key"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Your key
+            </button>
+          </div>
+
+          {cbPayment === "own-key" && showKeyForm && (
+            <div className="rounded-lg border border-border p-3">
+              <CurveBenderForm
+                onSave={handleKeyFormSave}
+                onCancel={() => {
+                  instantStart.setCurveBenderPayment("free");
+                  setShowKeyForm(false);
+                }}
+              />
+            </div>
+          )}
+
+          {cbPayment === "own-key" &&
+            instantStart.ownCurveBenderKey &&
+            !showKeyForm && (
+              <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <img
+                    src="/curvebender-logo.svg"
+                    alt=""
+                    className="size-3.5"
+                  />
+                  <span className="text-sm text-foreground">
+                    ···· ···· ···· {instantStart.ownCurveBenderKeyLast4 || "••••"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowKeyForm(true)}
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    Replace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      instantStart.setOwnCurveBenderKey(false);
+                      instantStart.setOwnCurveBenderKeyLast4("");
+                      instantStart.setCurveBenderPayment("free");
+                      setShowKeyForm(false);
+                    }}
+                    className="text-sm font-medium text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )}
+        </div>
+      )}
+
       {connecting && (
         <ProviderConnectDialog
           provider={connecting}
