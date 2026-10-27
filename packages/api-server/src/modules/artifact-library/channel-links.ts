@@ -1,7 +1,7 @@
 import { ARTIFACT_INTERNAL_LINK_PREFIX } from "api-server-api";
 
 const INTERNAL_LINK = new RegExp(
-  `${ARTIFACT_INTERNAL_LINK_PREFIX.replace(/[/.]/g, "\\$&")}([A-Za-z0-9-]+)`,
+  `${ARTIFACT_INTERNAL_LINK_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([A-Za-z0-9-]+)`,
   "g",
 );
 
