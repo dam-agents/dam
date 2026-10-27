@@ -65,6 +65,7 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
         callStarted: async () => {},
         record: async () => {},
         settleUnrecordedCalls: async () => {},
+        bookStampedCalls: async () => {},
       },
     });
     stop = app.stop;

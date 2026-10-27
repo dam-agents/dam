@@ -1266,6 +1266,7 @@ export const spendCalls = pgTable(
     ownerSub: text("owner_sub").notNull(),
     payerAgentId: text("payer_agent_id").notNull(),
     sessionId: text("session_id").notNull().default(""),
+    stampedSessionId: text("stamped_session_id").notNull().default(""),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     unit: text("unit").notNull(),
     costMicros: bigint("cost_micros", { mode: "number" }).notNull(),
@@ -1304,6 +1305,9 @@ export const spendCalls = pgTable(
     ),
     index("spend_calls_started_idx").on(table.startedAt),
     index("spend_calls_router_call_idx").on(table.ownerSub, table.routerCallId),
+    index("spend_calls_unbooked_idx")
+      .on(table.startedAt)
+      .where(sql`${table.sessionId} = '' AND ${table.stampedSessionId} <> ''`),
   ],
 );
 
