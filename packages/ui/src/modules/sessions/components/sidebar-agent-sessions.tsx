@@ -27,9 +27,9 @@ import {
   provisionalSessionView,
 } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
+import { useConfirmDeleteSession } from "../hooks/use-confirm-delete-session.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
 import { useAgentSessionFilter } from "../lib/agent-session-filters.js";
-import { sessionTitleLabel } from "../lib/session-title.js";
 import {
   newestFirst,
   SIDEBAR_SESSION_STEP,
@@ -80,7 +80,7 @@ export function SidebarAgentSessions({
   );
   const [renaming, setRenaming] = useState<SessionView | null>(null);
   const deleteSession = useStore((s) => s.deleteSession);
-  const showConfirm = useStore((s) => s.showConfirm);
+  const confirmDelete = useConfirmDeleteSession();
   const actWhenAwake = useActWhenAwake(agentId);
   const filter = useAgentSessionFilter(agentId);
   const filtered = !!filter && isFiltered(filter);
@@ -88,14 +88,7 @@ export function SidebarAgentSessions({
   const sessionActions: SessionActions = {
     rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),
     delete: async (s) => {
-      const label = s.title ? `“${s.title}”` : sessionTitleLabel(s);
-      if (
-        await showConfirm(
-          "Its transcript is deleted and cannot be recovered.",
-          `Delete session ${label}?`,
-          { kind: "destructive", confirmLabel: "Delete session" },
-        )
-      )
+      if (await confirmDelete(s))
         actWhenAwake(`delete:${s.sessionId}`, () =>
           deleteSession(s.sessionId, agentId),
         );

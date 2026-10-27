@@ -40,6 +40,7 @@
     "api-server-api": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "cron-parser": "^5.10.2",
     "cronstrue": "^3.32.0",
     "fflate": "^0.8.2",

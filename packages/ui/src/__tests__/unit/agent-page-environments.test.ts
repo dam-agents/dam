@@ -61,6 +61,7 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
 vi.mock("../../modules/agents/api/mutations.js", () => ({
   useDeleteAgent: () => ({ mutate: vi.fn(), isPending: false }),
   useSetAgentDisabled: () => ({ mutate: vi.fn(), isPending: false }),
+  useLeaveAgent: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("../../modules/agents/hooks/use-confirm-delete-agent.js", () => ({
   useConfirmDeleteAgent: () => vi.fn(),
