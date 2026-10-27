@@ -60,6 +60,7 @@ import {
   textResult,
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
+import { withChannelArtifactLinks } from "../../modules/artifact-library/channel-links.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
@@ -260,6 +261,11 @@ export function createMcpSession(
     })
     .optional();
 
+  const channelLinks = (text: string, surface: string) =>
+    withChannelArtifactLinks(text, surface, (id) =>
+      deps.artifactLibrary.get(id),
+    );
+
   async function loadAttachment(
     attachment: NonNullable<z.infer<typeof attachmentInput>>,
   ): Promise<
@@ -350,7 +356,20 @@ export function createMcpSession(
           "Slack only: whether Slack should unfurl media. Omit for Slack's default behavior.",
         ),
     },
-    async ({ channel, text, chatId, attachment, unfurlLinks, unfurlMedia }) => {
+    async ({
+      channel,
+      text: written,
+      chatId,
+      attachment,
+      unfurlLinks,
+      unfurlMedia,
+    }) => {
+      const linked = await channelLinks(
+        written,
+        channel === ChannelType.Slack ? "Slack" : "Telegram",
+      );
+      if ("error" in linked) return errorResult(linked.error);
+      const { text } = linked;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const resolved = loaded?.resolved;
@@ -642,7 +661,7 @@ export function createMcpSession(
         ),
     },
     async ({
-      text,
+      text: written,
       attachment,
       threadTs,
       chatId,
@@ -650,6 +669,9 @@ export function createMcpSession(
       unfurlLinks,
       unfurlMedia,
     }) => {
+      const linked = await channelLinks(written, "Slack");
+      if ("error" in linked) return errorResult(linked.error);
+      const { text } = linked;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const result = await deps.channelManager.reply(
