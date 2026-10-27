@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#MISE description="release:set-version stamps every version field with BSD and GNU sed, and a failed bump leaves the tree clean"
+#MISE sources=[".mise/tasks/release/set-version", ".mise/tasks/check/set-version", ".mise/tasks/check/version", "helm/Chart.yaml", "packages/cli/package.json", "skills/dam/SKILL.md"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+tasks="$(cd "$(dirname "$0")/.." && pwd)"
+t="$(mktemp -d)"
+trap 'rm -rf "$t"' EXIT
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=check GIT_AUTHOR_EMAIL=check@example.com GIT_COMMITTER_NAME=check GIT_COMMITTER_EMAIL=check@example.com
+
+# The release ran on macOS, whose /usr/bin/sed is BSD; mise's own is GNU.
+seds=("$(command -v sed)")
+if [[ $(uname) == Darwin ]]; then mkdir "$t/bsd" && ln -s /usr/bin/sed "$t/bsd/sed" && seds+=("$t/bsd/sed"); fi
+
+for sed in "${seds[@]}"; do
+  r="$t/repo"
+  rm -rf "$r"
+  mkdir -p "$r/helm" "$r/packages/cli" "$r/skills/dam"
+  for f in helm/Chart.yaml packages/cli/package.json skills/dam/SKILL.md; do cp "$f" "$r/$f"; done
+  git -C "$r" init -q && git -C "$r" add . && git -C "$r" commit -qm base
+  (cd "$r" && PATH="$(dirname "$sed"):$PATH" usage_version=10.0.1-rc10 "$tasks/release/set-version" >/dev/null 2>&1) \
+    || { echo "FAIL: release:set-version failed with $sed" >&2; exit 1; }
+  got="$(cd "$r" && "$tasks/check/version")"
+  [ "$got" = "OK: version 10.0.1-rc10" ] || { echo "FAIL: with $sed: $got" >&2; exit 1; }
+  [ -z "$(git -C "$r" status --porcelain)" ] && [ "$(git -C "$r" log -1 --format=%s)" = "bump: v10.0.1-rc10" ] \
+    || { echo "FAIL: with $sed the bump is not one clean commit" >&2; exit 1; }
+done
+
+# The last file it reads is broken, so the first is already edited when it fails.
+echo '{' > "$r/packages/cli/package.json"
+git -C "$r" commit -qam broken
+if (cd "$r" && usage_version=10.0.2 "$tasks/release/set-version" >/dev/null 2>&1); then echo "FAIL: a bump of broken JSON succeeded" >&2; exit 1; fi
+[ -z "$(git -C "$r" status --porcelain)" ] || { echo "FAIL: a failed bump left the tree dirty" >&2; exit 1; }
+echo "set-version check OK (${#seds[@]} sed)"
