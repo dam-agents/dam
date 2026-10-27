@@ -300,8 +300,6 @@ export function createChangesService(deps: {
     if (location === null) return;
     const path = location.toplevel;
     const { name, branch, remote } = await describe(path);
-    // Only a push that names its Session links a pull request: one given to
-    // the only Session running may have been run by someone else.
     const push = command.push && command.sessionId !== null;
     const upstream =
       push && branch
