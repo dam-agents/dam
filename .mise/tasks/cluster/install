@@ -270,6 +270,22 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   for _ in $(seq 1 60); do env_tunnel && break; sleep 2; done
   wait_for_nodes
 elif [ -n "${IS_SANDBOX:-}" ]; then
+  # On an overlay root the VM runner pod's volumes go to the home disk, before
+  # k3s starts where it can (see sandbox_kubelet_root in .mise/lib/cluster.sh).
+  # The node directories come from this install's own values, so the e2e
+  # lane's cache root is mounted as the dev install's is.
+  mapfile -t NODE_DIRS < <(node_dir_roots helm/values.yaml helm/values-local.yaml ${HELM_VALUES:+"$HELM_VALUES"} -- ${HELM_EXTRA_ARGS[@]+"${HELM_EXTRA_ARGS[@]}"} | sort -u)
+  sandbox_host_dirs ${NODE_DIRS[@]+"${NODE_DIRS[@]}"}
+  MOUNTED_LATE=(${SANDBOX_MOUNTED[@]+"${SANDBOX_MOUNTED[@]}"})
+  # A running kubelet keeps its root, and its pods their volumes there: stop
+  # k3s, its pods and their mounts with it, for the start below.
+  if sandbox_kubelet_root && k3s_running; then
+    echo "Stopping k3s, to start it on the kubelet's new root..."
+    mise run cluster:stop
+  fi
+  # A pod that started before its directory was mounted keeps the overlay one,
+  # so with k3s already up the pods that mount one are deleted below.
+  k3s_running || MOUNTED_LATE=()
   # A running systemd, not an installed systemctl: containers often ship the
   # binary with something else as PID 1, and the k3s installer then fails
   # to enable a unit nothing will ever start.
@@ -404,6 +420,20 @@ else
   wait_for_nodes
 fi
 kubectl wait --for=condition=Ready node --all --timeout=120s
+if [ ${#MOUNTED_LATE[@]} -gt 0 ]; then
+  kubectl get pods -A -o json | yq -r '.items[] | .metadata.namespace as $ns | .metadata.name as $pod
+      | .spec.volumes[]? | select(.hostPath != null) | $ns + " " + $pod + " " + .hostPath.path' |
+    while read -r ns pod path; do
+      for dir in "${MOUNTED_LATE[@]}"; do
+        case "$path/" in
+          "$dir"/*)
+            echo "Restarting $ns/$pod onto $dir as now mounted..."
+            kubectl -n "$ns" delete pod "$pod" --wait=false --ignore-not-found
+            break ;;
+        esac
+      done
+    done
+fi
 
 # 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
 # path for VMs created before this flag was added). New VMs already have

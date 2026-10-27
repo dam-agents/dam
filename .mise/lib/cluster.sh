@@ -330,6 +330,91 @@ k3s_running() {
   fi
 }
 
+# A sandbox's machine root can be an overlay, as the platform's own agent
+# images' is, and runc cannot idmap a mount whose source is on one. The VM
+# runner pod runs in a user namespace (hostUsers: false), so every volume it
+# takes from there — its emptyDirs under the kubelet's root, and the node
+# directories the chart hands it — fails its start with "MOUNT_ATTR_IDMAP ...
+# invalid argument". Those go to the home disk instead, which an overlay root
+# leaves a plain filesystem. A host where the path is no overlay keeps it.
+SANDBOX_NODE_HOME="$HOME/.local/share"
+# After 50-container-log-rotation.yaml: its plain `kubelet-arg:` replaces every
+# append in a drop-in that sorts before it.
+SANDBOX_KUBELET_DROPIN=/etc/rancher/k3s/config.yaml.d/60-kubelet-root.yaml
+
+# on_overlay <path>: whether the path, or its nearest parent that exists, is on
+# an overlay.
+on_overlay() {
+  local p="$1"
+  while [ ! -e "$p" ]; do p="$(dirname "$p")"; done
+  [ "$(stat -f -c %T "$p" 2>/dev/null)" = overlayfs ]
+}
+
+# sandbox_kubelet_root: moves the kubelet's root to the home disk when its own
+# is on an overlay. Returns 0 when it wrote the drop-in, which a running k3s
+# takes only at its next start, and 1 when there was nothing to write.
+sandbox_kubelet_root() {
+  local want
+  on_overlay /var/lib/kubelet || return 1
+  if on_overlay "$SANDBOX_NODE_HOME"; then
+    echo "WARNING: /var/lib/kubelet and $SANDBOX_NODE_HOME are both on an overlay; the VM runner pod cannot start here." >&2
+    return 1
+  fi
+  want="# The machine root is an overlay, where runc cannot idmap the VM runner pod's
+# volumes: the kubelet keeps them on the home disk (cluster:install).
+kubelet-arg+:
+  - \"root-dir=$SANDBOX_NODE_HOME/kubelet\""
+  ! as_root grep -qF "root-dir=$SANDBOX_NODE_HOME/kubelet" "$SANDBOX_KUBELET_DROPIN" 2>/dev/null || return 1
+  as_root mkdir -p "$(dirname "$SANDBOX_KUBELET_DROPIN")" "$SANDBOX_NODE_HOME/kubelet"
+  printf '%s\n' "$want" | as_root tee "$SANDBOX_KUBELET_DROPIN" >/dev/null
+}
+
+# node_dir_roots <values file>... -- <helm flag>...: the node directories an
+# install's values hand the VM runners (image cache, its legacy path, runner
+# releases), one per line: the values files merged in order, and a --set or
+# --set-string of one of those keys over them, as helm takes them.
+node_dir_roots() {
+  local files=() flag key value
+  local -A dirs=()
+  while [ $# -gt 0 ] && [ "$1" != -- ]; do files+=("$1"); shift; done
+  [ $# = 0 ] || shift
+  while IFS='=' read -r key value; do dirs[$key]="$value"; done < <(
+    yq eval-all '. as $l ireduce ({}; . * $l) | .virtualization as $v | [
+        "imageCache.hostPath=" + ($v.imageCache.hostPath // ""),
+        "imageCache.legacyPath=" + ($v.imageCache.legacyPath // ""),
+        "runner.releaseHostPath=" + ($v.runner.releaseHostPath // "")] | .[]' "${files[@]}")
+  for flag in "$@"; do
+    flag="${flag#--set=}"; flag="${flag#--set-string=}"
+    key="${flag%%=*}"; key="${key#virtualization.}"
+    [ -z "${dirs[$key]+set}" ] || dirs[$key]="${flag#*=}"
+  done
+  for key in "${!dirs[@]}"; do [ -z "${dirs[$key]}" ] || printf '%s\n' "${dirs[$key]}"; done
+}
+
+# sandbox_host_dirs <dir>...: bind-mounts $SANDBOX_NODE_HOME/host-<name> over
+# each node directory that is on an overlay and not yet a mount point, and
+# names the ones it mounted in SANDBOX_MOUNTED. A bind mount does not outlive
+# the machine, so every install makes it again, and the directory behind it
+# keeps what was staged there.
+sandbox_host_dirs() {
+  local dir src
+  SANDBOX_MOUNTED=()
+  for dir in "$@"; do
+    [ -n "$dir" ] || continue
+    ! mountpoint -q "$dir" 2>/dev/null || continue
+    on_overlay "$dir" || continue
+    on_overlay "$SANDBOX_NODE_HOME" && {
+      echo "WARNING: $dir and $SANDBOX_NODE_HOME are both on an overlay; the VM runner pod cannot mount it." >&2
+      continue
+    }
+    src="$SANDBOX_NODE_HOME/host-$(basename "$dir")"
+    echo "Mounting $src over $dir (the machine root is an overlay)..."
+    as_root mkdir -p "$src" "$dir"
+    as_root mount --bind "$src" "$dir"
+    SANDBOX_MOUNTED+=("$dir")
+  done
+}
+
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
 # names, and does nothing without it. CI's two lanes set it, and e2e:timings
 # turns the marks into the job's per-phase timing summary.
