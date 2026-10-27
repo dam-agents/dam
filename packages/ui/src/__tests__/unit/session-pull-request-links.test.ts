@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { SessionRepositoryBadges } from "../../modules/changes/components/session-repository-badges.js";
-
 import {
   badgeRepositories,
   pullRequestLinks,
