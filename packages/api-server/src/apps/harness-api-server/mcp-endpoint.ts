@@ -704,7 +704,7 @@ export function createMcpSession(
 
   server.tool(
     "react",
-    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — a quiet acknowledgement that notifies no one (e.g. eyes on a reported bug, white_check_mark when a task is done).",
+    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — in place of a reply when the emoji says enough by itself (e.g. white_check_mark when a task is done, bug on a reported bug); it notifies no one. A reaction or a reply, not both, unless the reaction says something the reply does not.",
     {
       emoji: z
         .string()
