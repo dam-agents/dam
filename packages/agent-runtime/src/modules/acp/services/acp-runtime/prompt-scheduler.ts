@@ -25,6 +25,20 @@ export type SteerOutcome = "injected" | "refused";
 export type QueueDropCause =
   "park-expired" | "session-forgotten" | "scheduler-cleared";
 
+export type SteerOnlyAnswer =
+  "injected" | "noRunningTurn" | "notYourTurn" | "queueFull";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a steer a client asked for with
+ * `_session/steering`. It may only join the turn its target prompt runs, and
+ * it is answered once, at the moment it joins or leaves the queue, never with
+ * a turn's stopReason.
+ */
+export interface SteerOnly {
+  targetPromptId: string;
+  answer: (answer: SteerOnlyAnswer) => void;
+}
+
 export interface PromptSubmission {
   sessionId: string;
   channel: ClientChannel;
@@ -44,6 +58,7 @@ export interface PromptSubmission {
   queuedAt?: string;
   modeRole?: ModeRole;
   sender?: Sender;
+  steerOnly?: SteerOnly;
 }
 
 /**
@@ -116,6 +131,8 @@ export interface PromptScheduler {
   ): boolean;
   remove(sessionId: string, promptId: string): PromptSubmission | null;
   steerNow(sessionId: string, promptId: string): SteerNowFate;
+  adoptSteer(sessionId: string, promptId: string, channel: ClientChannel): void;
+  withdraw(channel: ClientChannel): PromptSubmission[];
   onSteerPoint(sessionId: string): void;
   forget(sessionId: string): void;
   clear(): void;
@@ -250,6 +267,66 @@ export function createPromptScheduler(
     parkTimers.delete(sessionId);
   }
 
+  function joinsActiveTurn(entry: PromptSubmission): boolean {
+    return (
+      entry.steerOnly === undefined ||
+      entry.steerOnly.targetPromptId ===
+        activeTurns.get(entry.sessionId)?.promptId
+    );
+  }
+
+  function targetLive(sessionId: string, targetPromptId: string): boolean {
+    return (
+      activeTurns.get(sessionId)?.promptId === targetPromptId ||
+      (queues.get(sessionId) ?? []).some(
+        (entry) =>
+          entry.steerOnly === undefined && entry.promptId === targetPromptId,
+      )
+    );
+  }
+
+  function strandedAnswer(sessionId: string): SteerOnlyAnswer {
+    return activeTurns.has(sessionId) ? "notYourTurn" : "noRunningTurn";
+  }
+
+  function answerSteerOnly(
+    entries: PromptSubmission[],
+    answer: SteerOnlyAnswer,
+  ): PromptSubmission[] {
+    const ordinary: PromptSubmission[] = [];
+    for (const entry of entries) {
+      if (entry.steerOnly === undefined) ordinary.push(entry);
+      else entry.steerOnly.answer(answer);
+    }
+    return ordinary;
+  }
+
+  function replaceQueue(sessionId: string, kept: PromptSubmission[]): void {
+    if (kept.length > 0) {
+      queues.set(sessionId, kept);
+    } else {
+      queues.delete(sessionId);
+      clearParkTimer(sessionId);
+    }
+    deps.onQueueChanged?.(sessionId);
+  }
+
+  function answerStrandedSteers(sessionId: string): void {
+    const queue = queues.get(sessionId);
+    if (queue === undefined) return;
+    const stranded = queue.filter(
+      (entry) =>
+        entry.steerOnly !== undefined &&
+        !targetLive(sessionId, entry.steerOnly.targetPromptId),
+    );
+    if (stranded.length === 0) return;
+    replaceQueue(
+      sessionId,
+      queue.filter((entry) => !stranded.includes(entry)),
+    );
+    answerSteerOnly(stranded, strandedAnswer(sessionId));
+  }
+
   function refuseSettings(sessionId: string, message: string): void {
     const settings = pendingSettings.get(sessionId);
     pendingSettings.delete(sessionId);
@@ -300,14 +377,22 @@ export function createPromptScheduler(
     clearParkTimer(sessionId);
     const inFlight = steering.get(sessionId);
     steering.delete(sessionId);
+    const inFlightOrdinary =
+      inFlight === undefined
+        ? []
+        : answerSteerOnly(
+            steeringBatches.get(inFlight) ?? [inFlight],
+            "noRunningTurn",
+          );
+    const queued = queues.get(sessionId);
     const dropped = [
-      ...(inFlight === undefined ? [] : [inFlight]),
-      ...(queues.get(sessionId) ?? []),
+      ...(inFlightOrdinary.length === 0 ? [] : [leadOf(inFlightOrdinary)]),
+      ...answerSteerOnly(queued ?? [], "noRunningTurn"),
     ];
     queues.delete(sessionId);
-    if (dropped.length === 0) return;
+    if (inFlight === undefined && queued === undefined) return;
     deps.onQueueChanged?.(sessionId);
-    deps.onQueueDropped(sessionId, dropped, cause);
+    if (dropped.length > 0) deps.onQueueDropped(sessionId, dropped, cause);
   }
 
   function sendToChannel(channel: ClientChannel, line: string): void {
@@ -319,7 +404,7 @@ export function createPromptScheduler(
     queued: boolean,
     steered = false,
   ): void {
-    if (entry.promptId === null) return;
+    if (entry.promptId === null || entry.steerOnly !== undefined) return;
     sendToChannel(
       entry.channel,
       JSON.stringify(
@@ -347,6 +432,7 @@ export function createPromptScheduler(
     return (
       entry.steerable === true &&
       entry.steerRefused !== true &&
+      joinsActiveTurn(entry) &&
       ((deps.atSteerPoint?.(sessionId) ?? true) ||
         waitedOut(entry) ||
         entry.steerNow === true) &&
@@ -360,13 +446,18 @@ export function createPromptScheduler(
     );
   }
 
-  function takeBatch(queue: PromptSubmission[]): PromptSubmission[] {
+  function takeBatch(
+    queue: PromptSubmission[],
+    into: "steer" | "start",
+  ): PromptSubmission[] {
     const head = queue.shift();
     if (head === undefined) return [];
     const batch = [head];
     while (
       head.steerable === true &&
       queue[0]?.steerable === true &&
+      (queue[0].steerOnly === undefined ||
+        (into === "steer" && joinsActiveTurn(queue[0]))) &&
       deps.canStart(queue[0])
     )
       batch.push(queue.shift()!);
@@ -398,15 +489,22 @@ export function createPromptScheduler(
   }
 
   function firstBatchSize(queue: readonly PromptSubmission[]): number {
-    if (queue.length === 0) return 0;
+    if (queue.length === 0 || queue[0]!.steerOnly !== undefined) return 0;
     if (queue[0]!.steerable !== true) return 1;
-    const plain = queue.findIndex((entry) => entry.steerable !== true);
+    const plain = queue.findIndex(
+      (entry) => entry.steerable !== true || entry.steerOnly !== undefined,
+    );
     return plain === -1 ? queue.length : plain;
   }
 
   function joinTurn(sessionId: string, follower: PromptSubmission): void {
-    notifyAccepted(follower, false, true);
     const active = activeTurns.get(sessionId);
+    if (follower.steerOnly !== undefined) {
+      deps.onSteered?.(follower, active === undefined);
+      follower.steerOnly.answer("injected");
+      return;
+    }
+    notifyAccepted(follower, false, true);
     active?.steered.push(follower);
     deps.onSteered?.(follower, active === undefined);
   }
@@ -425,11 +523,12 @@ export function createPromptScheduler(
 
   function steerFromQueue(sessionId: string): void {
     clearSteerTimer(sessionId);
+    answerStrandedSteers(sessionId);
     const queue = queues.get(sessionId);
     const head = queue?.[0];
     if (queue === undefined || head === undefined) return;
     if (canSteerNow(head)) {
-      const batch = takeBatch(queue);
+      const batch = takeBatch(queue, "steer");
       if (queue.length === 0) queues.delete(sessionId);
       deps.onQueueChanged?.(sessionId);
       beginSteer(batch);
@@ -457,11 +556,12 @@ export function createPromptScheduler(
     steering.delete(sessionId);
     const batch = steeringBatches.get(entry) ?? [entry];
     if (outcome === "refused") {
-      for (const member of [...batch].reverse()) {
+      const ordinary = answerSteerOnly(batch, "noRunningTurn");
+      for (const member of [...ordinary].reverse()) {
         member.steerRefused = true;
         enqueue(member, true);
       }
-      for (const member of batch) notifyAccepted(member, true);
+      for (const member of ordinary) notifyAccepted(member, true);
       maybeStartNext(sessionId);
       return;
     }
@@ -501,11 +601,12 @@ export function createPromptScheduler(
     if (pendingSettings.has(sessionId)) return;
     if (settingsInFlight.has(sessionId)) return;
     if (activeTurns.has(sessionId) || steering.has(sessionId)) return;
+    answerStrandedSteers(sessionId);
     const queue = queues.get(sessionId);
     const next = queue?.[0];
     if (queue === undefined || next === undefined) return;
     if (!deps.canStart(next)) return;
-    const batch = takeBatch(queue);
+    const batch = takeBatch(queue, "start");
     if (!start(leadOf(batch))) {
       queue.unshift(...batch);
       return;
@@ -514,6 +615,28 @@ export function createPromptScheduler(
     deps.onQueueChanged?.(sessionId);
     for (const follower of batch.slice(1)) joinTurn(sessionId, follower);
     steerFromQueue(sessionId);
+  }
+
+  function submitSteerOnly(
+    submission: PromptSubmission,
+    steerOnly: SteerOnly,
+  ): PromptFate {
+    const sessionId = submission.sessionId;
+    if (!targetLive(sessionId, steerOnly.targetPromptId)) {
+      steerOnly.answer(strandedAnswer(sessionId));
+      return "refused";
+    }
+    if (!queues.get(sessionId)?.length && canSteerNow(submission)) {
+      beginSteer([submission]);
+      return "steering";
+    }
+    if ((queues.get(sessionId)?.length ?? 0) >= PROMPT_QUEUE_CAP) {
+      steerOnly.answer("queueFull");
+      return "refused";
+    }
+    enqueue(submission, false);
+    if (queues.get(sessionId)?.[0] === submission) steerFromQueue(sessionId);
+    return "queued";
   }
 
   function refuse(entry: PromptSubmission, message?: string): void {
@@ -537,6 +660,8 @@ export function createPromptScheduler(
 
   return {
     submit(submission) {
+      if (submission.steerOnly !== undefined)
+        return submitSteerOnly(submission, submission.steerOnly);
       const sessionId = submission.sessionId;
       if (!queues.get(sessionId)?.length && canSteerNow(submission)) {
         beginSteer([submission]);
@@ -642,6 +767,7 @@ export function createPromptScheduler(
       activeTurns.delete(sessionId);
       clearSteerTimer(sessionId);
       deps.onTurnEnded?.(sessionId);
+      answerStrandedSteers(sessionId);
       if (queues.get(sessionId)?.length || pendingSettings.has(sessionId))
         maybeStartNext(sessionId);
       else queues.delete(sessionId);
@@ -716,7 +842,8 @@ export function createPromptScheduler(
       queues.delete(sessionId);
       clearParkTimer(sessionId);
       deps.onQueueChanged?.(sessionId);
-      for (const entry of queue) refuse(entry, message);
+      for (const entry of answerSteerOnly(queue, "noRunningTurn"))
+        refuse(entry, message);
     },
 
     update(sessionId, promptId, edit) {
@@ -759,6 +886,30 @@ export function createPromptScheduler(
       if (!activeTurns.has(sessionId) || steering.has(sessionId)) return "sent";
       target.steerNow = false;
       return "cannot-steer";
+    },
+
+    adoptSteer(sessionId, promptId, channel) {
+      const entry = queues
+        .get(sessionId)
+        ?.find((e) => e.steerOnly !== undefined && e.promptId === promptId);
+      if (entry !== undefined) entry.channel = channel;
+    },
+
+    withdraw(channel) {
+      const withdrawn: PromptSubmission[] = [];
+      for (const [sessionId, queue] of [...queues]) {
+        const gone = queue.filter(
+          (entry) => entry.steerOnly !== undefined && entry.channel === channel,
+        );
+        if (gone.length === 0) continue;
+        withdrawn.push(...gone);
+        replaceQueue(
+          sessionId,
+          queue.filter((entry) => !gone.includes(entry)),
+        );
+        steerFromQueue(sessionId);
+      }
+      return withdrawn;
     },
 
     onSteerPoint(sessionId) {

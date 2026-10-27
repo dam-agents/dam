@@ -28,6 +28,7 @@ import {
   separateRendererBlocks,
   SessionType,
   STEER_METHOD,
+  steerRequestParamsSchema,
   steerResponseSchema,
   steeringSupported,
   type PromptBlock,
@@ -118,6 +119,7 @@ import {
   type PromptSubmission,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
+import { createServedSteers } from "./served-steers.js";
 import {
   createSessionBootstrap,
   type SessionCapabilities,
@@ -169,6 +171,7 @@ export interface AcpRuntime {
   prestart(): void;
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
+  hasSessionWork(sessionId: string): boolean;
   toolCallsOpen(sessionId: string): boolean;
   harnessBusy(sessionId: string): boolean;
   sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
@@ -300,6 +303,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let harnessSteers = false;
   const sessionSteering = (): SessionSteering | null =>
     deps.steering ?? (harnessSteers ? "native" : null);
+  const runtimeSteers = (): boolean =>
+    sessionSteering() === "native" && harnessSteers;
+  const servedSteers = createServedSteers();
   const sessionCapabilities = (): SessionCapabilities => {
     const steering = sessionSteering();
     return {
@@ -480,7 +486,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
       checkPendingRestart();
     },
-    canSteer: () => sessionSteering() === "native" && harnessSteers,
+    canSteer: () => runtimeSteers(),
     atSteerPoint: (sessionId) =>
       !generating.has(sessionId) && !(openToolCalls.get(sessionId)?.size ?? 0),
     steer: (entry) => steerIntoTurn(entry),
@@ -1457,6 +1463,78 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     });
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a client's `_session/steering` request is
+   * served here and never forwarded to the harness: it becomes a steer-only
+   * entry of the Prompt Scheduler, so a channel's steer follows the steer
+   * points, batches and order a typed message follows, and joins only the turn
+   * its target prompt runs. Its sender is the one the relay stamped, as on a
+   * prompt.
+   */
+  function serveSteer(channel: ClientChannel, id: JsonRpcId, params: unknown) {
+    const parsed = steerRequestParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      sendToChannel(
+        channel,
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32602, message: "invalid _session/steering params" },
+        }),
+      );
+      return;
+    }
+    const { sessionId, prompt } = parsed.data;
+    const { promptId, targetPromptId } = parsed.data._meta.platform;
+    if (servedSteers.join(sessionId, promptId, { channel, id })) {
+      promptScheduler.adoptSteer(sessionId, promptId, channel);
+      return;
+    }
+    if (!promptScheduler.hasWork(sessionId)) {
+      servedSteers.settle(sessionId, promptId, "noRunningTurn");
+      return;
+    }
+    if (!runtimeSteers()) {
+      servedSteers.drop(sessionId, promptId);
+      sendToChannel(
+        channel,
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: -32601,
+            message: "This session's harness cannot take a message mid-turn",
+          },
+        }),
+      );
+      return;
+    }
+    engage(channel, sessionId);
+    const sender = stampedSenderOf(params, "sender");
+    const outboundId = nextOutboundId++;
+    promptScheduler.submit({
+      sessionId,
+      channel,
+      outboundId,
+      originalId: null,
+      frame: {
+        jsonrpc: "2.0",
+        id: outboundId,
+        method: "session/prompt",
+        params: { sessionId, prompt },
+      },
+      promptId,
+      typed: prompt,
+      blocks: queueableBlocks(prompt),
+      steerable: true,
+      ...(sender !== null && { sender }),
+      steerOnly: {
+        targetPromptId,
+        answer: (answer) => servedSteers.settle(sessionId, promptId, answer),
+      },
+    });
+  }
+
   function rewriteRefusal(
     sessionId: string,
   ): { message: string; code: string } | null {
@@ -1496,6 +1574,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.runResults?.forgetSession(sessionId);
     heldRuns.delete(sessionId);
     supersededEchoes.delete(sessionId);
+    servedSteers.forget(sessionId);
   }
 
   function rewriteFrom(
@@ -1975,6 +2054,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         outboundIdToClient.delete(outId);
       }
     }
+    for (const withdrawn of promptScheduler.withdraw(channel))
+      if (withdrawn.promptId !== null)
+        servedSteers.drop(withdrawn.sessionId, withdrawn.promptId);
 
     if (sessions) {
       for (const sid of sessions) {
@@ -2419,6 +2501,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
+      if (method === STEER_METHOD) {
+        serveSteer(channel, frame.id, (frame as { params?: unknown }).params);
+        return;
+      }
+
       if (method === "platform/steerQueued" && paramsSid) {
         const parsed = platformSteerQueuedParamsSchema.safeParse(
           (frame as { params?: unknown }).params,
@@ -2809,6 +2896,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         idle: !runtimeBusy(),
         backgroundWork: deps.backgroundWork.held(),
       };
+    },
+
+    hasSessionWork(sessionId) {
+      return promptScheduler.hasWork(sessionId);
     },
 
     isSessionRunning(sessionId) {

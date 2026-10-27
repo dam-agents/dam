@@ -39,7 +39,7 @@ A thread draws each of those beside the prompt that opens its run, so a run boun
 A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
 
 The runtime keeps who did what in a Session the same way, in its metadata, for [Agent Editors](agent-editors.md#who-did-what).
-A prompt, a queue edit or a rewrite that carries a **Sender** in `_meta.platform.sender`, which the api-server's relay writes, records that Sender with its prompt id and the time the prompt started, and the first one recorded is the Session's **Session Starter**; the harness never sees it.
+A prompt, a steer, a queue edit or a rewrite that carries a **Sender** in `_meta.platform.sender`, which the api-server's relay writes, records that Sender with its prompt id and the time the prompt started, and the first one recorded is the Session's **Session Starter**; the harness never sees it.
 A permission answer that carries who answered in `result._meta.platform.answeredBy` records the verdict under the harness's tool call id.
 Engaged viewers hear each Sender and verdict as it is recorded, and the Sender of each turn as it starts; a load hands back the Senders, the verdicts and the running turn's Sender, and the session list carries the Session Starter.
 A client matches a Sender to its message by prompt id, and by time when the log was rebuilt from the harness's history and the ids changed, as it places run starts.
@@ -126,6 +126,13 @@ A refused steer queues again at the head, so the agent receives each prompt once
 Scheduled fires, invocation outcomes and CLI runs always queue.
 A message from another of the agent's sessions is steered like a typed one.
 
+A client can ask for a steer itself with `_session/steering`, as the channel workers do; the runtime serves it and never forwards it to the harness.
+The request names its own batch (`promptId`) and the turn it may join (`targetPromptId`), and becomes a **steer-only** entry of the same queue: it waits for a steer point as any steer does, joins only while its target turn runs, and waits behind its target while that prompt is still queued or starting.
+It is answered `injected` the moment it joins, and `promptRequired` on every other way out of the queue — its target ended or never ran, the harness refused it, the queue was dropped — and its sender then sends it as a prompt; it never starts a turn and is never recorded as undelivered.
+A request sent again with the same `promptId` gets the first answer, so the message reaches the agent once.
+A steer-only entry still waiting is withdrawn when its connection closes; one already sent to the harness is always answered.
+The router answers `promptRequired` itself when no harness process holds work for the Session, so a steer never starts a harness, and its `initialize` answer says `servesSteering`, which a sender checks before it steers.
+
 ### Messages between sessions
 
 An agent can send a message from one of its sessions into another, for example from a Slack thread into a session that is working on the change the thread is about.
@@ -151,7 +158,7 @@ A client fails a prompt on evidence instead:
 - **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs.
   The user is told it is waiting, which is true.
 
-A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, so the last channel leaving **parks** the queue for a grace window, and a client engaging again within it resumes it.
+A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, except steer-only entries, which belong to their sender, so the last channel leaving **parks** the queue for a grace window, and a client engaging again within it resumes it.
 A queue holding only unattended fires is never parked: nobody is coming back for it, and it needs nobody.
 A queue leaves the scheduler by four routes — the window expiring, the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the machine, whole, inline images capped; the refusal errors each sender instead.
 Each session load hands the records back, marked on the conversation to send again or delete, and says whether a turn is still running; a record sent again or deleted is **retired** so its earlier echo drops from the replay rather than doubling.

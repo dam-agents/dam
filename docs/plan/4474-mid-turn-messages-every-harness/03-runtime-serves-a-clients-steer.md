@@ -60,15 +60,15 @@ Read [sessions](../../architecture/sessions.md) "Prompt delivery" first.
 
 ## Acceptance criteria
 
-- [ ] A steer whose target turn runs is answered `injected` at the next steer point, and its text shows in the session's log as a steered message.
-- [ ] A steer whose target prompt is still queued waits, and joins that turn when it runs.
-- [ ] A steer whose target turn has ended, or that names another turn, is answered `promptRequired`, and the agent never receives it.
-- [ ] A steer repeated with the same `promptId` gets the same answer and reaches the agent once.
-- [ ] A steer whose connection closes while it waits is never delivered.
-- [ ] A steer on a session that runs on no lease is answered `promptRequired` and starts no harness.
-- [ ] A steer that carries a forged `_meta.platform.sender` is recorded with the signed-in person.
-- [ ] A steer on a running Bob session is answered with error `-32601`.
-- [ ] `mise run check` and `mise run test` pass for `agent-runtime`, `api-server-api` and `api-server`.
+- [x] A steer whose target turn runs is answered `injected` at the next steer point, and its text shows in the session's log as a steered message.
+- [x] A steer whose target prompt is still queued waits, and joins that turn when it runs.
+- [x] A steer whose target turn has ended, or that names another turn, is answered `promptRequired`, and the agent never receives it.
+- [x] A steer repeated with the same `promptId` gets the same answer and reaches the agent once.
+- [x] A steer whose connection closes while it waits is never delivered.
+- [x] A steer on a session that runs on no lease is answered `promptRequired` and starts no harness.
+- [x] A steer that carries a forged `_meta.platform.sender` is recorded with the signed-in person.
+- [x] A steer on a running Bob session is answered with error `-32601`.
+- [x] `mise run check` and `mise run test` pass for `agent-runtime`, `api-server-api` and `api-server`.
 
 ## Smoke test
 

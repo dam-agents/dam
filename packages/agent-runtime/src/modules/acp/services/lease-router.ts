@@ -29,7 +29,12 @@ import {
   type SessionDefaultsEventPayload,
   type SessionSettings,
 } from "agent-runtime-api";
-import { parseQualifiedModel, RUN_ENDED_CAPABILITY } from "api-server-api";
+import {
+  parseQualifiedModel,
+  RUN_ENDED_CAPABILITY,
+  SERVES_STEERING_CAPABILITY,
+  STEER_METHOD,
+} from "api-server-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
 import type { KeepPolicy } from "../../processes/index.js";
 import { platformOf, withPlatform } from "../domain/platform-meta.js";
@@ -537,7 +542,12 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
             agentCapabilities: {},
             authMethods: [],
           }),
-          _meta: { platform: { [RUN_ENDED_CAPABILITY]: true } },
+          _meta: {
+            platform: {
+              [RUN_ENDED_CAPABILITY]: true,
+              [SERVES_STEERING_CAPABILITY]: true,
+            },
+          },
         });
       return;
     }
@@ -633,6 +643,17 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       );
       v.used = true;
       v.deliver(data);
+      return;
+    }
+    if (
+      method === STEER_METHOD &&
+      isRequest(frame) &&
+      !(leaseOfSession(sessionId)?.runtime.hasSessionWork(sessionId) ?? false)
+    ) {
+      reply(real, frame.id, {
+        outcome: "promptRequired",
+        reason: "noRunningTurn",
+      });
       return;
     }
     if (method === "session/prompt" || method === REWRITE_FROM_METHOD)
@@ -948,6 +969,12 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     },
 
     isSessionRunning,
+
+    hasSessionWork(sessionId) {
+      return (
+        leaseOfSession(sessionId)?.runtime.hasSessionWork(sessionId) ?? false
+      );
+    },
 
     toolCallsOpen: (sessionId) =>
       leaseOfSession(sessionId)?.runtime.toolCallsOpen(sessionId) ?? false,
