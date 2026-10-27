@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 export interface RichSelectOption<T extends string = string> {
   value: T;
   title: string;
-  description?: string;
+  description?: ReactNode;
   icon?: ReactNode;
   triggerIcon?: ReactNode;
   badge?: ReactNode;

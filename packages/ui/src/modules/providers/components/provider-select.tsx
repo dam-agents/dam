@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -118,17 +119,41 @@ export function ProviderSelect({
       )
     : 100;
 
-  function getCurveBenderDescription() {
+  function getCurveBenderDescription(): ReactNode {
     if (!instantStart) return "Free sponsored budget — no API key required.";
-    if (cbPayment === "own-key") {
-      return instantStart.ownCurveBenderKey
-        ? `Your key (···${instantStart.ownCurveBenderKeyLast4 || "••••"})`
-        : "Your own API key";
+    if (cbPayment === "own-key" && instantStart.ownCurveBenderKey) {
+      return `Your key (···${instantStart.ownCurveBenderKeyLast4 || "••••"})`;
     }
-    const { freeBudget, budgetExhausted } = instantStart;
-    if (budgetExhausted)
-      return `${formatUsd(freeBudget.limit)} free budget used up`;
-    return `Free budget — ${formatUsd(freeBudget.used)} of ${formatUsd(freeBudget.limit)} used`;
+    const { budgetExhausted } = instantStart;
+    return (
+      <span className="flex items-center gap-1.5">
+        <span>
+          {budgetExhausted
+            ? "Free budget — 0% remaining"
+            : `Free budget — ${budgetPct}% remaining`}
+        </span>
+        <span className="text-muted-foreground">·</span>
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            setShowKeyForm(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              e.preventDefault();
+              setShowKeyForm(true);
+            }
+          }}
+          className="text-primary hover:underline"
+        >
+          Add your own key
+        </span>
+      </span>
+    );
   }
 
   const options: RichSelectOption<ProviderPresetType>[] = [];
@@ -195,63 +220,54 @@ export function ProviderSelect({
         defaultOpen={defaultOpen}
       />
 
-      {isCurveBenderSelected && instantStart && (
-        <div className="mt-3 space-y-3">
-          {cbPayment === "own-key" && instantStart.ownCurveBenderKey && !showKeyForm ? (
-            <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
-              <div className="flex items-center gap-2">
-                <img
-                  src="/curvebender-logo.svg"
-                  alt=""
-                  className="size-3.5"
-                />
-                <span className="text-sm text-foreground">
-                  ···· ···· ···· {instantStart.ownCurveBenderKeyLast4 || "••••"}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowKeyForm(true)}
-                  className="text-sm font-medium text-primary hover:underline"
-                >
-                  Replace
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    instantStart.setOwnCurveBenderKey(false);
-                    instantStart.setOwnCurveBenderKeyLast4("");
-                    instantStart.setCurveBenderPayment("free");
-                    setShowKeyForm(false);
-                  }}
-                  className="text-sm font-medium text-muted-foreground hover:text-foreground hover:underline"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ) : showKeyForm ? (
-            <CurveBenderForm
-              onSave={handleKeyFormSave}
-              onCancel={() => setShowKeyForm(false)}
-            />
-          ) : (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                Free budget &mdash; {budgetPct}% remaining
+      {isCurveBenderSelected && instantStart && showKeyForm && (
+        <div className="mt-3">
+          <CurveBenderForm
+            onSave={handleKeyFormSave}
+            onCancel={() => setShowKeyForm(false)}
+          />
+        </div>
+      )}
+
+      {isCurveBenderSelected &&
+        instantStart &&
+        cbPayment === "own-key" &&
+        instantStart.ownCurveBenderKey &&
+        !showKeyForm && (
+          <div className="mt-3 flex items-center justify-between rounded-lg border border-border px-4 py-3">
+            <div className="flex items-center gap-2">
+              <img
+                src="/curvebender-logo.svg"
+                alt=""
+                className="size-3.5"
+              />
+              <span className="text-sm text-foreground">
+                ···· ···· ···· {instantStart.ownCurveBenderKeyLast4 || "••••"}
               </span>
+            </div>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowKeyForm(true)}
                 className="text-sm font-medium text-primary hover:underline"
               >
-                Add your own key
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  instantStart.setOwnCurveBenderKey(false);
+                  instantStart.setOwnCurveBenderKeyLast4("");
+                  instantStart.setCurveBenderPayment("free");
+                  setShowKeyForm(false);
+                }}
+                className="text-sm font-medium text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Remove
               </button>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
       {connecting && (
         <ProviderConnectDialog
