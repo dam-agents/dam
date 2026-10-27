@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
-#MISE description="Wait until the e2e cluster stably serves the UI and Keycloak on :6555"
+#MISE description="Wait until the e2e cluster stably serves the UI and Keycloak where the suite reaches them"
 #MISE hide=true
 #MISE raw=true
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
+#USAGE flag "--environment <name>" help="Wait for the lane in this agent's Environment of that name, on its forwarded backchannel"
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+trap env_e2e_forward_close EXIT
+e2e_endpoint
 
 # The install (or a warm --rebuild) rolls traefik, keycloak, and the
 # apiserver, and their routes come up at different moments — a single lucky
 # 200 on the UI root is not "serving". Require the UI root AND the keycloak
 # realm to answer on three consecutive ticks before any spec dials in;
 # otherwise the auth specs die at ERR_CONNECTION_REFUSED mid-login-redirect.
-echo "Waiting for the cluster to serve UI + Keycloak on :6555 ..."
+echo "Waiting for the cluster to serve UI + Keycloak at $E2E_BASE_URL ..."
 STREAK=0
 for _ in $(seq 1 100); do
-  if curl -fsS -o /dev/null --max-time 3 http://localhost:6555/ 2>/dev/null &&
-     curl -fsS -o /dev/null --max-time 3 http://keycloak.localhost:6555/realms/platform 2>/dev/null; then
+  if curl -fsS -o /dev/null --max-time 3 "$E2E_BASE_URL/" 2>/dev/null &&
+     curl -fsS -o /dev/null --max-time 3 "$E2E_KEYCLOAK_URL/realms/platform" 2>/dev/null; then
     STREAK=$((STREAK + 1))
     [ "$STREAK" -ge 3 ] && break
   else
@@ -25,7 +28,11 @@ for _ in $(seq 1 100); do
   sleep 3
 done
 if [ "$STREAK" -lt 3 ]; then
-  echo "ERROR: e2e cluster is up but not stably routing on :6555 (UI + keycloak)." >&2
+  echo "ERROR: e2e cluster is up but not stably routing at $E2E_BASE_URL (UI + keycloak)." >&2
+  if [ "$CLUSTER_TARGET" = environment ]; then
+    echo "It does not auto-heal — reinstall with 'mise run e2e:install -- --environment $CLUSTER_ENVIRONMENT', or look at 'mise run cluster:status --environment $CLUSTER_ENVIRONMENT'." >&2
+    exit 1
+  fi
   echo "It does not auto-heal — reprovision with 'mise run e2e', or check" >&2
   echo "'LIMA_INSTANCE=$LIMA_INSTANCE mise run cluster:fix-certs'." >&2
   # Turns the generic advice above into a verdict.

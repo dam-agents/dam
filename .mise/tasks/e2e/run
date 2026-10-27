@@ -5,8 +5,13 @@
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 #USAGE flag "--headed" help="Run Playwright headed"
 #USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/"
+#USAGE flag "--environment <name>" help="Refused: this run deletes its cluster, and an Environment's install goes with the Environment"
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+if [ "$CLUSTER_TARGET" = environment ]; then
+  echo "FATAL: e2e:run deletes its cluster before and after the suite, and an Environment's install goes with the Environment. Run 'mise run e2e:loop -- --environment $CLUSTER_ENVIRONMENT'; for a fresh one, delete the Environment and create it again." >&2
+  exit 1
+fi
 
 PLAYWRIGHT_ARGS=()
 [ "${usage_headed:-}" != true ] || PLAYWRIGHT_ARGS+=(--headed)

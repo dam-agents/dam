@@ -83,17 +83,21 @@ fi
 SH
 }
 
-# env_describe: the Environment as the list_environments tool returns it,
-# asked through the image's platform-env, which finds the agent's platform MCP
-# address itself.
-env_describe() {
+# env_list: this agent's Environments as the list_environments tool returns
+# them, asked through the image's platform-env, which finds the agent's
+# platform MCP address itself.
+env_list() {
   python3 -I -c '
 import importlib.machinery, importlib.util, json, sys
 loader = importlib.machinery.SourceFileLoader("platform_env", "/usr/local/bin/platform-env")
 module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
 loader.exec_module(module)
-print(json.dumps(module.mcp("list_environments", {}) or []))' |
-    jq -e --arg n "$CLUSTER_ENVIRONMENT" '.[] | select(.name == $n)' ||
+print(json.dumps(module.mcp("list_environments", {}) or []))'
+}
+
+# env_describe: this Environment, out of env_list.
+env_describe() {
+  env_list | jq -e --arg n "$CLUSTER_ENVIRONMENT" '.[] | select(.name == $n)' ||
     { echo "FATAL: you own no Environment named $CLUSTER_ENVIRONMENT; platform-env list shows yours" >&2; return 1; }
 }
 
@@ -217,4 +221,100 @@ env_reuse_ref() {
 env_pull_as() {
   node_env_sh sh -c 'k3s crictl pull "$1" >/dev/null &&
     k3s ctr -n k8s.io images tag --force "$1" "docker.io/library/platform-$2:latest" >/dev/null' _ "$1" "$2"
+}
+
+# env_image_id <ref>: the ID of the image the node holds under that reference,
+# or nothing when it holds none.
+env_image_id() {
+  node_env_sh k3s crictl inspecti -o go-template --template '{{.status.id}}' "$1" 2>/dev/null || true
+}
+
+# env_build_id <tar or layout>: the ID a local build imports as, its config's
+# digest, or nothing when the file names none.
+env_build_id() {
+  local m
+  if [ -d "$1" ]; then m="$(cat "$1/manifest.json" 2>/dev/null)"; else m="$(tar -xOf "$1" manifest.json 2>/dev/null)"; fi
+  m="$(printf '%s' "$m" | jq -r '.[0].Config // empty' 2>/dev/null)" || return 0
+  [ -n "$m" ] || return 0
+  m="${m##*/}"
+  printf 'sha256:%s' "${m%.json}"
+}
+
+
+# The ports the e2e lane's backchannel takes in an Environment, one per
+# Environment, so the suites of several Environments, and the local lane on
+# 6555, run side by side on one agent: the forward listens on the same port
+# on this agent's loopback, since the port is part of every address.
+E2E_ENV_PORT_MIN=6560 E2E_ENV_PORT_MAX=6599
+
+# env_e2e_port: the port the e2e lane takes in this Environment. The one its
+# install already answers on, when it is in the range, so a rerun keeps the
+# addresses its realm and cookies name; else the one this agent recorded for
+# it; else the first port of the range that no other Environment of this agent
+# still holds and nothing here listens on. The record is this agent's only, so
+# a lock keeps two runs that start at once off one port, and the record of an
+# Environment that is gone frees its port.
+env_e2e_port() {
+  local port
+  port="$(cluster_install_port 2>/dev/null || true)"
+  if [ -n "$port" ] && [ "$port" -ge "$E2E_ENV_PORT_MIN" ] && [ "$port" -le "$E2E_ENV_PORT_MAX" ]; then
+    echo "$port" > "$ENV_DIR/e2e-port"
+    printf '%s' "$port"
+    return 0
+  fi
+  (
+    flock 9
+    [ ! -s "$ENV_DIR/e2e-port" ] || exit 0
+    names="$(env_list | jq -r '.[].name')" ||
+      { echo "FATAL: cannot list this agent's Environments, so cannot tell which e2e ports are still taken" >&2; exit 1; }
+    names=" $(printf '%s\n' "$names" | xargs) "
+    used=" "
+    for f in "${ENV_DIR%/*}"/env-*/e2e-port; do
+      [ -f "$f" ] || continue
+      n="${f%/e2e-port}"; n="${n##*/env-}"
+      case "$names" in *" $n "*) used="$used$(cat "$f") " ;; esac
+    done
+    for p in $(seq "$E2E_ENV_PORT_MIN" "$E2E_ENV_PORT_MAX"); do
+      case "$used" in *" $p "*) continue ;; esac
+      (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && continue
+      echo "$p" > "$ENV_DIR/e2e-port"
+      exit 0
+    done
+    echo "FATAL: every port of $E2E_ENV_PORT_MIN-$E2E_ENV_PORT_MAX is taken by another of this agent's Environments, or listened on here" >&2
+    exit 1
+  ) 9>"${ENV_DIR%/*}/e2e-port.lock" || return 1
+  cat "$ENV_DIR/e2e-port"
+}
+
+# env_e2e_forward <port>: forwards the lane's backchannel port, and a port of
+# its own to the k3s API, to this agent's loopback, and writes the suite's
+# kubeconfig for that API port. An SSH link of its own, not the control
+# master's, which closes after ten idle minutes while a suite can wait longer
+# than that between two calls to the API. It runs until
+# env_e2e_forward_close stops it.
+ENV_E2E_KUBECONFIG="$ENV_DIR/e2e-kubeconfig.yaml"
+export ENV_E2E_KUBECONFIG
+env_e2e_forward() {
+  local port="$1" api
+  api="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+  (umask 077 && sed "s#https://127.0.0.1:[0-9]*#https://127.0.0.1:$api#" "$KUBECONFIG" > "$ENV_E2E_KUBECONFIG")
+  ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+    -L "127.0.0.1:$port:127.0.0.1:$port" -L "127.0.0.1:$api:127.0.0.1:6443" "$ENV_HOST" </dev/null &
+  ENV_E2E_FORWARD_PID=$!
+  for _ in $(seq 1 90); do
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && (exec 3<>"/dev/tcp/127.0.0.1/$api") 2>/dev/null && return 0
+    kill -0 "$ENV_E2E_FORWARD_PID" 2>/dev/null || {
+      echo "FATAL: could not forward port $port from Environment $CLUSTER_ENVIRONMENT; another task of this lane, or a local e2e cluster, may hold it here" >&2
+      return 1
+    }
+    sleep 1
+  done
+  echo "FATAL: the forward of port $port from Environment $CLUSTER_ENVIRONMENT did not open in 90s" >&2
+  return 1
+}
+env_e2e_forward_close() {
+  [ -n "${ENV_E2E_FORWARD_PID:-}" ] || return 0
+  kill "$ENV_E2E_FORWARD_PID" 2>/dev/null || true
+  wait "$ENV_E2E_FORWARD_PID" 2>/dev/null || true
+  ENV_E2E_FORWARD_PID=""
 }
