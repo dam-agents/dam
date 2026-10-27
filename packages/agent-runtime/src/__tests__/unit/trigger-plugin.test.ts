@@ -355,6 +355,34 @@ describe("trigger plugin one-time tasks", () => {
     });
   });
 
+  // TEST_SCENARIO: a continued Session was not opened by the task, so the plugin records the schedule on it — that is how the schedule's results reach the chat the turn ran in; a task that fell back to a fresh Session already carries the schedule and records nothing.
+  it("records the schedule on the session it continued, and not on a fresh fallback", async () => {
+    const { driver } = fakeDriver();
+    const recordContinuation = vi.fn();
+    const plugin = (found: string | undefined) =>
+      createTriggerPlugin({
+        driver,
+        stateStore: idleStore(),
+        runPrecheck: allows,
+        log: () => {},
+        reporter: { report: async () => {} },
+        invocationWatch: { watch: () => {} },
+        findSessionByRef: () => found,
+        recordContinuation,
+      }).bindEvent!("trigger", { impl: "trigger" });
+    const payload = {
+      scheduleId: "sch-1",
+      task: "do it",
+      once: true as const,
+      origin,
+    };
+
+    await plugin("origin-session")(payload, ctx);
+    await plugin(undefined)(payload, ctx);
+
+    expect(recordContinuation.mock.calls).toEqual([["new-session", "sch-1"]]);
+  });
+
   // TEST_SCENARIO: a task that reports back runs fresh and carries the scheduling Session's reference in its metadata, which is what the runtime reads when the turn ends to hand the result over.
   it("marks a report-back task's fresh session with where its result goes", async () => {
     const { driver, calls } = fakeDriver();
