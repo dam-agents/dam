@@ -49,6 +49,7 @@ import {
 import {
   composeModelRouter,
   routerEnvFor,
+  createCallerSessionLookup,
   createModelCallExporter,
 } from "./modules/model-router/index.js";
 import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
@@ -348,6 +349,10 @@ const modelRouter = composeModelRouter({
   isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
   terminalSessionOf,
   runningSessionsOf: (harness) => runningSessionsOf?.(harness) ?? [],
+  callerSessions: createCallerSessionLookup({
+    variables: sessionEnvVars,
+    log: modelRouterLog,
+  }),
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(

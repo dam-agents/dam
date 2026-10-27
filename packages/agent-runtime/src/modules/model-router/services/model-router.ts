@@ -101,6 +101,11 @@ export interface ModelRouterDeps {
     body: Record<string, unknown>,
     harness: string,
   ) => SessionHandle | null;
+  bookedSessionOf?: (call: {
+    req: IncomingMessage;
+    harness: string;
+    routed: string | null;
+  }) => Promise<string | null>;
   sessionModelOf?: (sessionId: string) => SessionModelChoice | null;
   prepareBody?: (
     body: Record<string, unknown>,
@@ -314,6 +319,9 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const session = handle
       ? (handle.parentSessionId ?? handle.sessionId)
       : null;
+    const booked = deps.bookedSessionOf
+      ? await deps.bookedSessionOf({ req, harness, routed: session })
+      : session;
     const binding = deps.harnesses[harness];
     const target = resolveTarget({
       model: modelFor(
@@ -368,7 +376,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     if (wire.credential)
       headers[wire.credential.header] = wire.credential.value;
     if (STAMP_VALUE.test(harness)) headers[HARNESS_HEADER] = harness;
-    if (session && STAMP_VALUE.test(session)) headers[SESSION_HEADER] = session;
+    if (booked && STAMP_VALUE.test(booked)) headers[SESSION_HEADER] = booked;
     const callId = randomUUID();
     headers[CALL_HEADER] = callId;
     const beta = anthropicBetaFor(
@@ -402,7 +410,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         requestedModel: body.model as string,
         dialect,
         harness,
-        session,
+        session: booked,
         stream,
         status,
         startedAt: startedAt.toISOString(),

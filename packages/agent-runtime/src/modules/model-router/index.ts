@@ -56,3 +56,7 @@ export {
   type OtlpTarget,
 } from "./infrastructure/call-exporter.js";
 export { createSseModelRewrite, rewriteBody } from "./domain/model-rewrite.js";
+export {
+  createCallerSessionLookup,
+  type CallerSessionLookup,
+} from "./infrastructure/caller-session.js";
