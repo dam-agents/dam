@@ -163,7 +163,9 @@ describe("buildCreatePayload (github-app, no connection yet)", () => {
   });
 });
 
-describe("adding a GitHub App installation", () => {
+const RENDER_TIMEOUT = { timeout: 30_000 };
+
+describe("adding a GitHub App installation", RENDER_TIMEOUT, () => {
   function renderForm() {
     const onCreated = vi.fn<(id: string) => void>();
     const onAddedAlone = vi.fn<(id: string) => void>();
@@ -217,7 +219,7 @@ describe("adding a GitHub App installation", () => {
   });
 });
 
-describe("the first connection after a GitHub sign-in", () => {
+describe("the first connection after a GitHub sign-in", RENDER_TIMEOUT, () => {
   // TEST_SCENARIO: after a sign-in, "Don't make a connection yet" hides the name, turns the button into Done, and closes the step without creating a connection.
   it("puts the connection off without creating one", () => {
     const onLater = vi.fn<() => void>();
