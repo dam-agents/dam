@@ -21,30 +21,6 @@ brand:
   # a visitor arriving from Slack that the platform is open to them. Empty
   # string drops that sentence.
   vendor: "IBM Research"
-  # What `name` stands for. The sign-in page shows one meaning above its
-  # heading and swaps it for another at random every few seconds, never the
-  # same one twice in a row. An empty list shows no meaning.
-  nameMeanings:
-    - Deploy Agents Massively
-    - Diabolical Agent Masterminds
-    - Debugging At Midnight
-    - Dispatch Agents Mindfully
-    - Does Anything, Mostly
-    - Distributed Algorithmic Madness
-    - Delightfully Aggressive Multitasking
-    - Drive Agents, Make Coffee
-    - Did Anyone Merge?
-    - Dashboards And Mayhem
-    - Diagnosing Another Mystery
-    - Deny, Allow, Mediate
-    - Dangerously Autonomous Machines
-    - Don't Ask Me
-    - Digital Army of Minions
-    - Delegated Autonomous Magic
-    - Denier of AI Mischief
-    - Distributed Actors of Malevolence
-    - Damage Avoidance Mechanism
-    - Don't Approve Manually
   # UI theme — applied at runtime as CSS custom properties so a brand
   # change requires no UI rebuild.
   theme:
@@ -1087,6 +1063,8 @@ keycloak:
   # below it.
   login:
     allowPassword: true
+    # Shown as a "Request access" link on the sign-in page. Empty hides it.
+    requestAccessUrl: ""
 
   # -- Event logging. Login + admin events are emitted to stdout via the
   # built-in `jboss-logging` event listener so they ride the cluster log

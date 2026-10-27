@@ -5,13 +5,11 @@ import { useStore } from "../store.js";
 export function DialogOverlay() {
   const dialog = useStore((s) => s.dialog);
   const closeDialog = useStore((s) => s.closeDialog);
-  const clearClosedDialog = useStore((s) => s.clearClosedDialog);
 
   return (
     <ConfirmDialog
-      open={dialog?.open ?? false}
+      open={!!dialog}
       onOpenChange={(open) => !open && closeDialog(false)}
-      onCloseAnimationEnd={clearClosedDialog}
       kind={dialog?.kind ?? "default"}
       icon={dialog?.icon}
       title={dialog?.title ?? ""}

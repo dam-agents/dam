@@ -1,38 +1,25 @@
 import { Asleep, Light, Logout, Screen } from "@carbon/icons-react";
-import {
-  ColorContrast,
-  FoundationModel,
-  UserProfile,
-} from "@carbon/pictograms-react";
-import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
 import { PageHeader } from "@/components/ui/page-header";
+import { SectionLabel } from "@/components/ui/section-label";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
-import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
-import { useOperatorAvailability } from "../../operator/api/queries.js";
-import { OperatorView } from "../../operator/views/operator-view.js";
-import { routeToPath, type SettingsTab } from "../../platform/lib/routes.js";
+import type { SettingsTab } from "../../platform/lib/routes.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
-import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
 import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
-import { useUsageInspectAvailability } from "../../usage/api/queries.js";
-import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
-import { AboutTab } from "../components/about-tab.js";
-import { ToolActivitySetting } from "../components/tool-activity-setting.js";
+import { AppVersionRow } from "../components/app-version-row.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "account", label: "Account" },
@@ -41,7 +28,6 @@ const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "connections", label: "Connections" },
   { value: "api-keys", label: "API keys" },
   { value: "usage", label: "Usage" },
-  { value: "schedules", label: "Schedules" },
 ];
 
 const themeOptions = [
@@ -66,97 +52,56 @@ const themeOptions = [
 ];
 
 export function SettingsView() {
-  const { data: flags, isSuccess: flagsLoaded } = useFeatures();
+  const { data: flags } = useFeatures();
   const featuresMenuRevealed = useStore((s) => s.featuresMenuRevealed);
   const showFeatures =
     featuresMenuRevealed || Object.values(flags ?? {}).some(Boolean);
   const slackInstall = useSlackInstallAvailability();
   const showSlackWorkspaces = slackInstall.data === true;
-  const usageInspect = useUsageInspectAvailability();
-  const showAnalytics = usageInspect.data === true;
-  const operatorAccess = useOperatorAvailability();
-  const showOperator = operatorAccess.data?.isOperator === true;
   const tabs = [
     ...baseTabs,
     ...(showSlackWorkspaces
       ? [{ value: "slack-workspaces" as const, label: "Slack workspaces" }]
       : []),
-    ...(showAnalytics
-      ? [{ value: "analytics" as const, label: "Analytics" }]
-      : []),
-    ...(showOperator
-      ? [{ value: "operator" as const, label: "Operator" }]
-      : []),
     ...(showFeatures
       ? [{ value: "features" as const, label: "Experimental features" }]
       : []),
-    { value: "about" as const, label: `About ${getBrand().name}` },
   ];
   const rawTab = useStore((s) => s.settingsTab);
   const hiddenTab =
     (rawTab === "features" && !showFeatures) ||
-    (rawTab === "slack-workspaces" && !showSlackWorkspaces) ||
-    (rawTab === "analytics" && !showAnalytics) ||
-    (rawTab === "operator" && !showOperator);
+    (rawTab === "slack-workspaces" && !showSlackWorkspaces);
   const activeTab = hiddenTab ? "account" : rawTab;
-  const tabStrip = useRef<HTMLDivElement>(null);
-  const hiddenTabSettled =
-    (rawTab === "features" && !showFeatures && flagsLoaded) ||
-    (rawTab === "slack-workspaces" &&
-      slackInstall.isSuccess &&
-      !showSlackWorkspaces) ||
-    (rawTab === "analytics" && usageInspect.isSuccess && !showAnalytics) ||
-    (rawTab === "operator" && operatorAccess.isSuccess && !showOperator);
-  useEffect(() => {
-    if (!hiddenTabSettled) return;
-    history.replaceState(
-      history.state,
-      "",
-      routeToPath({ view: "settings", settingsTab: "account" }),
-    );
-    useStore.setState({ settingsTab: "account" });
-  }, [hiddenTabSettled]);
-  useEffect(() => {
-    tabStrip.current
-      ?.querySelector('[aria-selected="true"]')
-      ?.scrollIntoView({ block: "nearest", inline: "center" });
-  }, [activeTab]);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
+  const setView = useStore((s) => s.setView);
   const user = getUser();
-  const newLayout = useNewLayout();
 
   return (
-    <div
-      className={cn(
-        "flex gap-6 md:gap-10 flex-col md:flex-row",
-        newLayout && "md:pt-5",
-      )}
-    >
-      <div ref={tabStrip} className="contents">
-        <Tabs
-          ariaLabel="Settings sections"
-          tabs={tabs}
-          value={activeTab}
-          onValueChange={navigateToSettings}
-          variant="pill"
-          size="sm"
-          orientation="vertical"
-          className="flex-row overflow-x-auto px-1.5 py-1 [mask-image:linear-gradient(to_right,black_calc(100%-24px),transparent)] [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:px-0 md:py-0 md:w-[180px] md:[mask-image:none] shrink-0"
-        />
-      </div>
+    <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
+      <Tabs
+        ariaLabel="Settings sections"
+        tabs={tabs}
+        value={activeTab}
+        onValueChange={navigateToSettings}
+        variant="pill"
+        size="sm"
+        orientation="vertical"
+        className="flex-row overflow-x-auto px-1.5 py-1 [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:px-0 md:py-0 md:w-[180px] shrink-0"
+      />
 
-      <div key={activeTab} className="anim-in min-w-0 max-w-2xl flex-1">
+      <div className="flex-1 min-w-0">
         {activeTab === "appearance" && (
-          <div>
+          <div className="anim-in">
             <PageHeader
-              pictogram={<ColorContrast aria-hidden />}
               title="Appearance"
-              description="Choose how the interface looks."
+              description="Customize the look and feel of the interface."
             />
 
+            {}
             <div className="mb-8">
+              <SectionLabel spaced>Theme</SectionLabel>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {themeOptions.map(
                   ({ value, icon: Icon, label, description }) => (
@@ -188,21 +133,19 @@ export function SettingsView() {
                 )}
               </div>
             </div>
-
-            <ToolActivitySetting />
           </div>
         )}
 
         {activeTab === "api-keys" && <ApiKeysList />}
 
         {activeTab === "account" && (
-          <div>
+          <div className="anim-in">
             <PageHeader
-              pictogram={<UserProfile aria-hidden />}
               title="Account"
-              description="See who you are signed in as, and sign out."
+              description="Manage your account and session."
             />
 
+            <SectionLabel spaced>Profile</SectionLabel>
             <Card className="flex items-center gap-4 p-4">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
                 {(user?.profile.preferred_username ??
@@ -217,21 +160,32 @@ export function SettingsView() {
                 </div>
                 <div className="text-xs text-muted-foreground">Signed in</div>
               </div>
-              <Button variant="ghost" onClick={() => logout()} tone="danger">
+              <Button
+                variant="ghost"
+                onClick={() => logout()}
+                className="text-foreground/80 hover:text-destructive hover:bg-destructive/10"
+              >
                 <Logout size={14} />
                 Log out
               </Button>
             </Card>
+
+            <div className="mt-6">
+              <Button variant="link" onClick={() => setView("terms")}>
+                View Terms of Use
+              </Button>
+            </div>
+
+            <AppVersionRow />
           </div>
         )}
 
         {activeTab === "providers" && (
-          <div>
-            <div>
+          <div className="anim-in">
+            <div className="w-full max-w-2xl">
               <PageHeader
-                pictogram={<FoundationModel aria-hidden />}
                 title="Providers"
-                description="Connect an LLM provider to give agents access to its models."
+                description="Agents need an API key from a provider to reach a model."
               />
 
               <section className="mb-8">
@@ -242,27 +196,20 @@ export function SettingsView() {
         )}
 
         {activeTab === "connections" && (
-          <div>
+          <div className="anim-in">
             <ConnectionsView />
           </div>
         )}
 
         {activeTab === "usage" && (
-          <div>
+          <div className="anim-in">
             <UsageView />
           </div>
         )}
 
-        {activeTab === "schedules" && <OwnerSchedulesView />}
-
         {activeTab === "slack-workspaces" && <SlackWorkspacesView />}
 
-        {activeTab === "analytics" && <UsageAnalyticsView />}
-        {activeTab === "operator" && <OperatorView />}
-
         {activeTab === "features" && <FeaturesTab />}
-
-        {activeTab === "about" && <AboutTab />}
       </div>
     </div>
   );

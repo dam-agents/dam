@@ -24,7 +24,10 @@ import_one() {
   if [ -n "${IS_SANDBOX:-}" ]; then
     as_root k3s ctr images import "$t"
   else
-    g="/tmp/${t##*/}"
+    # /var/tmp, not /tmp: lima mounts /tmp as a tmpfs half the VM's memory, and
+    # an agent image tar is gigabytes — a 3.9 GiB /tmp ran out importing one
+    # while the disk had 30 GiB free. The file is a copy of the disk's own tar.
+    g="/var/tmp/${t##*/}"
     limactl copy "$t" "$LIMA_INSTANCE:$g"
     limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$g"
     limactl shell "$LIMA_INSTANCE" rm -f "$g"

@@ -32,7 +32,7 @@ function createAgentTrpc(agentId: string): AgentTrpcClient {
   const wsClient = createWSClient({
     url: () => agentTrpcUrl(agentId),
     lazy: { enabled: true, closeMs: IDLE_CLOSE_MS },
-    keepAlive: { enabled: true, pongTimeoutMs: 5_000 },
+    keepAlive: { enabled: true },
     retryDelayMs: backoff.retryDelayMs,
     onOpen: () => {
       backoff.onOpen();

@@ -1,66 +1,42 @@
-import {
-  type EgressPreset,
-  isProtectedAgentEnvName,
-  providerTypeForTemplateId,
-} from "api-server-api";
+import { providerTypeForTemplateId } from "api-server-api";
 import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
-import { useChatFormPreferences } from "../../a2ui/api/queries.js";
-import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import {
+  useHarnessConfigCurrent,
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
+  useStaleModel,
 } from "../../agents/api/harness-config.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import {
   useSkillSourceCount,
   useSkillsState,
 } from "../../agents/api/skills.js";
-import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
+import {
+  type SandboxSubtitleLookup,
+  sandboxSubtitleParts,
+} from "../../agents/utils/sandbox-subtitle.js";
+import { useArtifacts } from "../../artifacts/api/queries.js";
 import {
   useAppConnections,
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
-import { useCurrentPreset } from "../../egress-rules/api/queries.js";
-import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
-import {
-  defaultModelHeadline,
-  defaultModelStopsRuns,
-} from "../../home/lib/default-model-copy.js";
+import { useAgentMonthSpend } from "../../metrics/api/queries.js";
+import { formatUsdCents } from "../../metrics/lib/format.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
-import { isUpcoming } from "../../schedules/lib/once-schedule.js";
-import { useProviderConnections } from "../../sessions/api/session-pair.js";
-import { useAgentSpendStatus } from "../../spend/api/queries.js";
-import { agentLimitOf } from "../../spend/lib/agent-limit.js";
-import { agentLimitCoverage } from "../../spend/lib/coverage.js";
-import {
-  formatSpend,
-  formatSpendOf,
-  formatSpent,
-} from "../../spend/lib/format.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
+import { useTemplates } from "../../templates/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
 type SectionWarnings = Partial<Record<SandboxSection, string>>;
 
+const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
 const NO_PROVIDER_WARNING =
-  "No model provider attached — the agent cannot reach a model";
-
-const PRESET_SUMMARY: Record<EgressPreset, string> = {
-  trusted: "Trusted defaults",
-  none: "Default-deny",
-  all: "Allow everything",
-};
-
-const CHAT_FORMS_SUMMARY = {
-  all: "Whenever they help",
-  input: "Only to ask for input",
-  off: "Off",
-} as const;
+  "No provider connected — the agent cannot reach a model";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -75,6 +51,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   summaries: SectionSummaries;
   warnings: SectionWarnings;
 } {
+  const { data: templates = [] } = useTemplates();
   const { data: apps = [], isSuccess: appsLoaded } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
   const { data: satellites = NO_SATELLITES } = useSatellites();
@@ -82,6 +59,16 @@ export function useSectionSummaries(agent: AgentView | null): {
   const { data: schedules = [] } = useSchedules(agent?.id ?? null);
   const skillsState = useSkillsState(agent?.id ?? null);
   const { data: configStatus } = useHarnessConfigStatus(agent?.id ?? null);
+  const { data: currentConfig } = useHarnessConfigCurrent(agent?.id ?? null);
+
+  const modelName = useMemo(() => {
+    const value = currentConfig?.model;
+    if (!value) return null;
+    const modelGroup = configStatus?.catalog?.options.find(
+      (g) => g.id === "model",
+    );
+    return modelGroup?.choices.find((c) => c.value === value)?.name ?? value;
+  }, [currentConfig?.model, configStatus?.catalog]);
 
   const providerAppIds = useMemo(
     () =>
@@ -100,28 +87,23 @@ export function useSectionSummaries(agent: AgentView | null): {
     );
   }, [appsLoaded, connectionsQuery.data, providerAppIds]);
 
-  const defaultNotice = useDefaultModelNotices()
-    .byAgentEvenDismissed.get(agent?.id ?? "")
-    ?.find(defaultModelStopsRuns);
+  const staleModel = useStaleModel(agent?.id ?? null);
   const sourceCount = useSkillSourceCount(agent?.id ?? null);
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(
     agent?.id ?? null,
   );
 
-  const setup = "Manage this agent";
-
-  const { data: currentPreset } = useCurrentPreset(agent?.id ?? null);
-  const network = currentPreset ? PRESET_SUMMARY[currentPreset] : undefined;
-
-  const envCount = agent?.env?.filter(
-    (e) => !isProtectedAgentEnvName(e.name),
-  ).length;
-  const environment =
-    envCount === undefined
-      ? undefined
-      : envCount === 0
-        ? "No variables"
-        : plural(envCount, "variable");
+  const setup = useMemo(() => {
+    if (!agent) return undefined;
+    const lookup: SandboxSubtitleLookup = {
+      templateNameById: new Map(templates.map((t) => [t.id, t.name])),
+      connectionTemplateIdById: new Map(apps.map((a) => [a.id, a.templateId])),
+      slotUnit: null,
+    };
+    const { harness, provider } = sandboxSubtitleParts(agent, lookup);
+    const base = [harness, provider, modelName].filter(Boolean).join(", ");
+    return staleModel.stale ? `${base} · not offered` : base;
+  }, [agent, templates, apps, modelName, staleModel.stale]);
 
   const connectionTemplates = useConnectionTemplates();
   const templateById = useMemo(
@@ -143,14 +125,11 @@ export function useSectionSummaries(agent: AgentView | null): {
         (s) => agentId !== undefined && s.grantedAgentIds.includes(agentId),
       )
       .map((s) => s.name);
-    const names =
+    return (
       formatNameList([...new Set(titles), ...satelliteNames]) ??
-      "No connections added";
-    return agent?.requireConnectionAddress
-      ? `${names} · addressed only`
-      : names;
+      "No connections added"
+    );
   }, [
-    agent?.requireConnectionAddress,
     connectionsQuery.data,
     apps,
     providerAppIds,
@@ -167,10 +146,9 @@ export function useSectionSummaries(agent: AgentView | null): {
     const on = state.installed.length;
     const created = state.standalone.length;
     if (on === 0 && created === 0 && sourceCount === 0) return "None yet";
-    const enabled = on === 0 ? "None enabled" : `${on} enabled`;
-    return sourceCount
-      ? `${enabled} from ${plural(sourceCount, "source")}`
-      : enabled;
+    return sourceCount === null
+      ? `${on} on`
+      : `${on} on across ${plural(sourceCount, "source")}`;
   }, [hasRun, configPending, skillsState.data, sourceCount]);
 
   const availableChannels = useAgents().data?.availableChannels;
@@ -190,85 +168,44 @@ export function useSectionSummaries(agent: AgentView | null): {
 
   const schedulesSummary = useMemo(() => {
     if (!agent) return undefined;
-    const running = schedules.filter(isUpcoming).length;
+    const running = schedules.filter((s) => s.enabled).length;
     if (running === 0) return "No schedules";
-    return `${plural(running, "schedule")} running`;
+    return `${running} Schedule${running === 1 ? "" : "s"} running`;
   }, [agent, schedules]);
 
-  const providers = useProviderConnections(agent?.id ?? null);
-  const providersSummary = providers.loaded
-    ? providers.granted.length === 0
-      ? "None attached"
-      : providers.granted.map((p) => p.name).join(", ")
-    : undefined;
+  const { data: agentArtifacts } = useArtifacts(
+    agent ? { agentId: agent.id } : null,
+  );
+  const artifactsSummary = useMemo(() => {
+    if (!agent || !agentArtifacts) return undefined;
+    if (agentArtifacts.length === 0) return "No artifacts";
+    const shared = agentArtifacts.filter((a) => a.shareUrl !== null).length;
+    const base = `${agentArtifacts.length} artifact${agentArtifacts.length === 1 ? "" : "s"}`;
+    return shared > 0 ? `${base} · ${shared} shared` : base;
+  }, [agent, agentArtifacts]);
 
-  const limitCoverage = agentLimitCoverage(
-    providers.granted.map((p) => p.templateId),
-  );
-  const root = useRootDriver(agentId ?? null);
-  const rootName = root?.name;
-  const { data: spendStatus, isError: spendUnavailable } = useAgentSpendStatus(
-    agentId && root === null ? agentId : null,
-  );
+  const { data: monthSpend } = useAgentMonthSpend(agent?.id ?? null);
   const usageSummary = useMemo(() => {
-    if (rootName !== undefined) return `Counts toward ${rootName}`;
-    if (spendUnavailable) return "Not available";
-    if (!spendStatus || !agentId) return undefined;
-    const usdMicros =
-      spendStatus.spent.find((total) => total.unit === "usd")?.costMicros ?? 0;
-    const limit = agentLimitOf(spendStatus, agentId);
-    const paid = !providers.loaded || limitCoverage.paid;
-    const parts = [
-      ...(limit && paid
-        ? [formatSpendOf(usdMicros, limit.effectiveMicros, "usd")]
-        : usdMicros > 0
-          ? [formatSpend(usdMicros, "usd")]
-          : []),
-      ...spendStatus.spent
-        .filter((total) => total.unit !== "usd" && total.costMicros > 0)
-        .map((total) => formatSpent(total.costMicros, total.unit)),
-    ];
-    return parts.length > 0 ? `${parts.join(" · ")} today` : "No spend today";
-  }, [
-    rootName,
-    spendUnavailable,
-    spendStatus,
-    agentId,
-    providers.loaded,
-    limitCoverage.paid,
-  ]);
-
-  const chatFormsEnabled = useChatFormsEnabled();
-  const { data: chatForms } = useChatFormPreferences(
-    chatFormsEnabled ? (agentId ?? null) : null,
-  );
-  const chatFormsSummary = chatForms
-    ? [
-        CHAT_FORMS_SUMMARY[chatForms.forms],
-        ...(chatForms.forms !== "off" && chatForms.pacing === "one-at-a-time"
-          ? ["one at a time"]
-          : []),
-      ].join(" · ")
-    : undefined;
+    if (monthSpend === undefined) return undefined;
+    return monthSpend > 0
+      ? `${formatUsdCents(monthSpend)} this month`
+      : "No spend this month";
+  }, [monthSpend]);
 
   return {
     summaries: {
       setup,
-      "chat-forms": chatFormsSummary,
-      providers: providersSummary,
       connections,
-      network,
-      environment,
       channels: channelsSummary,
       skills,
       schedules: schedulesSummary,
+      artifacts: artifactsSummary,
       usage: usageSummary,
     },
-    warnings:
-      missingProvider && !configStatus?.harnesses
-        ? { providers: NO_PROVIDER_WARNING }
-        : defaultNotice
-          ? { providers: defaultModelHeadline(defaultNotice) }
-          : {},
+    warnings: missingProvider
+      ? { setup: NO_PROVIDER_WARNING }
+      : staleModel.stale
+        ? { setup: STALE_MODEL_WARNING }
+        : {},
   };
 }

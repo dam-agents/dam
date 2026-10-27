@@ -1,100 +1,22 @@
-import { Add } from "@carbon/icons-react";
-import { useState } from "react";
-
-import {
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { AddRow, ListSection } from "@/components/ui/list-section";
 import { externalLinkProps } from "@/lib/external-link";
 
-import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
 import { useUnbindTelegramChat } from "../../../telegram/api/mutations.js";
 import {
   useTelegramBot,
   useTelegramChats,
 } from "../../../telegram/api/queries.js";
+import { ChannelCard } from "./channel-card.js";
 import { ChannelRow } from "./channel-row.js";
 
 export function TelegramChannelCard({ agentId }: { agentId: string }) {
-  const chats = useTelegramChats(agentId);
-  const unbind = useUnbindTelegramChat();
-  const [instructionsOpen, setInstructionsOpen] = useState(false);
-  const list = chats.data?.chats ?? [];
+  const bot = useTelegramBot();
+  const handle = bot.data?.username;
 
   return (
-    <>
-      <ListSection
-        label={
-          <span className="flex items-center gap-2">
-            <ConnectionIcon iconSlug="telegram" alt="" size={14} />
-            Telegram chats
-          </span>
-        }
-        onNew={() => setInstructionsOpen(true)}
-        newTestId="telegram-connect"
-        newLabel="Add Telegram chat"
-        loading={chats.isPending}
-        error={chats.isError && "Couldn't load the connected chats."}
-        isEmpty={list.length === 0}
-        empty="No chats connected yet."
-        addRow={
-          <AddRow
-            onClick={() => setInstructionsOpen(true)}
-            testId="telegram-connect"
-          >
-            <Add size={16} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium text-foreground">
-                Add Telegram chat
-              </p>
-              <p className="truncate text-sm text-muted-foreground">
-                People message this agent from a chat it is added to.
-              </p>
-            </div>
-          </AddRow>
-        }
-      >
-        {list.map((chat) => (
-          <ChannelRow
-            key={chat.conversationId}
-            title={chat.title}
-            actionsLabel={`Telegram chat ${chat.title} actions`}
-            menuTestId="telegram-chat-menu"
-            actions={
-              <DropdownMenuItem
-                tone="danger"
-                disabled={unbind.isPending}
-                onSelect={() =>
-                  unbind.mutate({
-                    agentId,
-                    conversationId: chat.conversationId,
-                  })
-                }
-              >
-                Disconnect
-              </DropdownMenuItem>
-            }
-          />
-        ))}
-      </ListSection>
-      {instructionsOpen && (
-        <TelegramBindModal onClose={() => setInstructionsOpen(false)} />
-      )}
-    </>
-  );
-}
-
-function TelegramBindModal({ onClose }: { onClose: () => void }) {
-  const handle = useTelegramBot().data?.username;
-  return (
-    <Modal onClose={onClose}>
-      <DialogHeader onClose={onClose} title="Connect a Telegram chat" />
-      <DialogBody>
+    <ChannelCard iconSlug="telegram" title="Telegram Chat">
+      <div className="flex flex-col gap-3 px-4 py-4">
+        <ConnectedChats agentId={agentId} />
         <p className="text-sm text-muted-foreground">
           Add{" "}
           {handle ? (
@@ -112,10 +34,46 @@ function TelegramBindModal({ onClose }: { onClose: () => void }) {
           the agent in the browser. Send <code>/unbind</code> in the chat to
           disconnect.
         </p>
-      </DialogBody>
-      <DialogFooter>
-        <Button onClick={onClose}>Done</Button>
-      </DialogFooter>
-    </Modal>
+      </div>
+    </ChannelCard>
+  );
+}
+
+function ConnectedChats({ agentId }: { agentId: string }) {
+  const chats = useTelegramChats(agentId);
+  const unbind = useUnbindTelegramChat();
+
+  if (chats.isPending)
+    return (
+      <p className="text-sm text-muted-foreground">Loading connected chats…</p>
+    );
+  if (chats.isError || !chats.data) return null;
+  if (chats.data.chats.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">No chats connected yet.</p>
+    );
+
+  return (
+    <div className="flex flex-col gap-2">
+      {chats.data.chats.map((chat) => (
+        <ChannelRow
+          key={chat.conversationId}
+          title={chat.title}
+          actionsLabel={`Telegram chat ${chat.title} actions`}
+          menuTestId="telegram-chat-menu"
+          actions={
+            <DropdownMenuItem
+              tone="danger"
+              disabled={unbind.isPending}
+              onSelect={() =>
+                unbind.mutate({ agentId, conversationId: chat.conversationId })
+              }
+            >
+              Disconnect
+            </DropdownMenuItem>
+          }
+        />
+      ))}
+    </div>
   );
 }

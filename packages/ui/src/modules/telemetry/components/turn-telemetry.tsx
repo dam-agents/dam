@@ -1,35 +1,28 @@
 import { ChevronDown, ChevronRight } from "@carbon/icons-react";
-import type { SpendAmount, TurnSummary } from "api-server-api";
+import type { TurnSummary } from "api-server-api";
 import { useMemo, useState } from "react";
 
-import { Tooltip } from "@/components/ui/tooltip";
 import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens } from "../../metrics/lib/format.js";
-import { useCallCosts } from "../../spend/api/queries.js";
-import { amountsLabel } from "../../spend/lib/amounts-label.js";
-import { turnLineHelp } from "../../spend/lib/copy.js";
 import { useTurn } from "../api/queries.js";
-import { callCostOf, routerCallIdsOf } from "../lib/call-costs.js";
 import { RecordDetail, SpanDetail } from "./record-detail.js";
 import { TraceWaterfall } from "./trace-waterfall.js";
 
-function summaryBits(turn: TurnSummary, cost: string | null): string[] {
+function summaryBits(turn: TurnSummary): string[] {
   const bits = [formatDurationMs(turn.durationMs)];
   if (turn.calls > 0) {
     bits.push(turn.calls === 1 ? "1 call" : `${turn.calls} calls`);
   }
   const tokens = turn.inputTokens + turn.outputTokens;
   if (tokens > 0) bits.push(`${formatTokens(tokens)} tokens`);
-  if (cost) bits.push(cost);
   return bits;
 }
 
 type Props = {
   agentId: string;
   turn: TurnSummary;
-  spend?: readonly SpendAmount[] | undefined;
   className?: string;
   triggerClassName?: string;
 } & ({ sessionId: string } | { invocationId: string });
@@ -37,14 +30,12 @@ type Props = {
 export function TurnTelemetry({
   agentId,
   turn,
-  spend,
-  className,
+  className = "-mt-7",
   triggerClassName,
   ...scope
 }: Props) {
   const [open, setOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const cost = spend ? amountsLabel(spend) : null;
 
   const detail = useTurn(
     agentId,
@@ -54,16 +45,6 @@ export function TurnTelemetry({
     turn.promptId,
   );
   const loaded = detail.data?.available === true ? detail.data.turn : undefined;
-  const routerCallIds = useMemo(
-    () => (loaded ? routerCallIdsOf(loaded) : []),
-    [loaded],
-  );
-  const callCosts = useCallCosts(agentId, routerCallIds, turn.endedAt);
-  const costOf = useMemo(
-    () =>
-      loaded ? callCostOf(loaded, callCosts.data ?? new Map()) : undefined,
-    [loaded, callCosts.data],
-  );
   const selectedSpan = useMemo(
     () =>
       selectedKey?.startsWith("span:") === true
@@ -81,39 +62,41 @@ export function TurnTelemetry({
 
   return (
     <div className={className}>
-      <Tooltip content={turnLineHelp(cost !== null)}>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className={cn(
-            "group inline-flex items-center gap-1.5 rounded-sm py-0.5 text-2xs text-muted-foreground/70",
-            "hover:text-foreground focus-visible:text-foreground",
-            triggerClassName,
-          )}
-        >
-          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span className="font-mono tabular-nums">
-            {summaryBits(turn, cost).join(" · ")}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={cn(
+          "group inline-flex items-center gap-1.5 rounded-sm py-0.5 text-[11px] text-muted-foreground/70",
+          "hover:text-foreground focus-visible:text-foreground",
+          triggerClassName,
+        )}
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span className="font-mono tabular-nums">
+          {summaryBits(turn).join(" · ")}
+        </span>
+        {turn.errorCount > 0 && (
+          <span className="font-mono text-destructive">
+            {turn.errorCount} err
           </span>
-          {turn.errorCount > 0 && (
-            <span className="font-mono text-danger">{turn.errorCount} err</span>
-          )}
-        </button>
-      </Tooltip>
+        )}
+      </button>
 
       {open && (
         <div className="mt-1 overflow-hidden rounded-md border border-border bg-muted/20">
           {detail.isPending && (
-            <p className="px-3 py-3 text-2xs text-muted-foreground">Loading…</p>
+            <p className="px-3 py-3 text-[11px] text-muted-foreground">
+              Loading…
+            </p>
           )}
           {detail.isError && (
-            <p className="px-3 py-3 text-2xs text-muted-foreground">
+            <p className="px-3 py-3 text-[11px] text-muted-foreground">
               Couldn’t load this turn’s telemetry.
             </p>
           )}
           {detail.data?.available === false && (
-            <p className="px-3 py-3 text-2xs text-muted-foreground">
+            <p className="px-3 py-3 text-[11px] text-muted-foreground">
               {detail.data.reason}
             </p>
           )}
@@ -121,38 +104,25 @@ export function TurnTelemetry({
             <>
               <TraceWaterfall
                 turn={loaded}
-                costOf={costOf}
                 selectedKey={selectedKey}
                 onSelect={(key) =>
                   setSelectedKey((current) => (current === key ? null : key))
                 }
               />
               {(loaded.spansTruncated || loaded.logsTruncated) && (
-                <p className="border-t border-border px-4 py-2 text-2xs text-muted-foreground">
+                <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
                   This turn is larger than the display cap; some records are not
                   shown.
                 </p>
               )}
               {selectedSpan && (
                 <div className="border-t border-border">
-                  <SpanDetail
-                    trace={loaded}
-                    span={selectedSpan}
-                    cost={costOf?.span(
-                      selectedSpan,
-                      loaded.logs.filter(
-                        (l) => l.attachedTo === selectedSpan.spanId,
-                      ),
-                    )}
-                  />
+                  <SpanDetail trace={loaded} span={selectedSpan} />
                 </div>
               )}
               {selectedLog && (
                 <div className="border-t border-border">
-                  <RecordDetail
-                    log={selectedLog}
-                    cost={costOf?.log(selectedLog)}
-                  />
+                  <RecordDetail log={selectedLog} />
                 </div>
               )}
             </>

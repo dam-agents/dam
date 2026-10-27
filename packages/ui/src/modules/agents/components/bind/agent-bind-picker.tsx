@@ -1,17 +1,13 @@
-import { Add } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
 import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { AgentView } from "../../../../types.js";
-import { SharedChannelsNotice } from "../../../connections/components/shared-channels-notice.js";
-import type { SharedChannel } from "../../../sandboxes/lib/shared-channels.js";
 import { useActiveScheduleCounts } from "../../hooks/use-active-schedule-counts.js";
-import { useBindSharingConfirm } from "../../hooks/use-bind-sharing-confirm.js";
 import { useInlineAgentCreate } from "../../hooks/use-inline-agent-create.js";
+import { CreateAgentInline } from "../create-agent-inline.js";
 import { type BindMessenger, BindPage } from "./bind-page.js";
-import { withCommandChips } from "./command-chip.js";
 import { PickerFooter } from "./picker-footer.js";
 import { PickerSearch } from "./picker-search.js";
 import { PickerSectionList } from "./picker-section-list.js";
@@ -24,7 +20,6 @@ export interface BindPickerCopy {
   emptySubtitle: string;
   consent: string;
   action: string;
-  audience: SharedChannel | null;
 }
 
 interface Props {
@@ -42,8 +37,14 @@ export function AgentBindPicker({
   onPick,
   onAgentCreated,
 }: Props) {
-  const { isLoading, displayedAgents, creating, canCreate, create } =
-    useInlineAgentCreate();
+  const {
+    isLoading,
+    displayedAgents,
+    justCreatedId,
+    creating,
+    openCreateForm,
+    markCreated,
+  } = useInlineAgentCreate();
   const [query, setQuery] = useState("");
   const [pickedId, setPickedId] = useState<string | null>(null);
   const scheduleCounts = useActiveScheduleCounts();
@@ -52,37 +53,14 @@ export function AgentBindPicker({
     () => pickerSections(displayedAgents, query),
     [displayedAgents, query],
   );
-  const selected = displayedAgents.find((a) => a.id === pickedId) ?? null;
-  const bindConfirm = useBindSharingConfirm(selected);
-  const whisper = copy.messenger === "slack" && selected?.whisper === true;
-  const sharing = bindConfirm.body(copy.audience, whisper);
+  const selectedId = pickedId ?? justCreatedId;
+  const selected = displayedAgents.find((a) => a.id === selectedId) ?? null;
 
-  const confirmPick = async () => {
-    if (!selected) return;
-    if (!(await bindConfirm.confirm(copy.audience, copy.action, whisper)))
-      return;
-    onPick(selected);
-  };
-
-  const createAgent = async () => {
-    const agent = await create();
-    if (!agent) return;
+  const handleCreated = (agent: AgentView) => {
+    markCreated(agent);
     setPickedId(agent.id);
     onAgentCreated();
   };
-
-  const createButton = (
-    <Button
-      variant="link"
-      size="inline"
-      onClick={() => void createAgent()}
-      disabled={!canCreate}
-      tone="muted"
-      className="mt-6 text-sm"
-    >
-      <Add size={16} /> {creating ? "Creating…" : "Create a new agent"}
-    </Button>
-  );
 
   if (isLoading) {
     return (
@@ -106,7 +84,9 @@ export function AgentBindPicker({
         subtitle={copy.emptySubtitle}
       >
         <PickerError error={error} />
-        {createButton}
+        <div className="mt-6">
+          <CreateAgentInline onCreated={handleCreated} />
+        </div>
       </BindPage>
     );
   }
@@ -119,18 +99,10 @@ export function AgentBindPicker({
       footer={
         <PickerFooter
           consent={copy.consent}
-          notice={
-            bindConfirm.dismissed &&
-            sharing && (
-              <SharedChannelsNotice className="mb-4">
-                {sharing}
-              </SharedChannelsNotice>
-            )
-          }
           action={copy.action}
           enabled={selected !== null}
           pending={pending}
-          onConfirm={() => void confirmPick()}
+          onConfirm={() => selected && onPick(selected)}
         />
       }
     >
@@ -148,7 +120,20 @@ export function AgentBindPicker({
           onSelect={(agent) => setPickedId(agent.id)}
         />
       )}
-      {createButton}
+      {creating ? (
+        <div className="mt-6">
+          <CreateAgentInline onCreated={handleCreated} />
+        </div>
+      ) : (
+        <Button
+          variant="link"
+          size="inline"
+          onClick={openCreateForm}
+          className="mt-6 text-sm text-muted-foreground hover:text-foreground"
+        >
+          + Create a new agent
+        </Button>
+      )}
     </BindPage>
   );
 }
@@ -157,7 +142,7 @@ function PickerError({ error }: { error: Props["error"] }) {
   if (!error) return null;
   return (
     <p className="mt-4 text-sm text-danger">
-      {error.title} — {withCommandChips(error.hint)}
+      {error.title} — {error.hint}
     </p>
   );
 }

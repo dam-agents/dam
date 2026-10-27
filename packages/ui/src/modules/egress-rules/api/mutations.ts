@@ -9,7 +9,7 @@ export function useCreateEgressRule() {
     ...trpc.egressRules.create.mutationOptions(),
     meta: {
       invalidates: [egressRulesKeys.all, approvalsKeys.all],
-      errorToast: "Couldn't add the rule",
+      errorToast: "Couldn't add egress rule",
     },
   });
 }
@@ -19,7 +19,7 @@ export function useRevokeEgressRule() {
     ...trpc.egressRules.revoke.mutationOptions(),
     meta: {
       invalidates: [egressRulesKeys.all, approvalsKeys.all],
-      errorToast: "Couldn't revoke the rule",
+      errorToast: "Couldn't revoke egress rule",
     },
   });
 }

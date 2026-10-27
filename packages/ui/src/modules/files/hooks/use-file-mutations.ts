@@ -68,14 +68,8 @@ async function fileToBase64(file: File): Promise<string> {
 
 export function useFileMutations(agentId: string | null) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const openFilePath = useStore((s) =>
-    s.dock?.kind === "file" ? s.dock.path : null,
-  );
-  const setDock = useStore((s) => s.setDock);
-  const setOpenFile = useCallback(
-    (path: string) => setDock({ kind: "file", path }),
-    [setDock],
-  );
+  const openFilePath = useStore((s) => s.openFilePath);
+  const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const renameExpandedDir = useStore((s) => s.renameExpandedDir);
   const pruneExpandedDir = useStore((s) => s.pruneExpandedDir);
 
@@ -103,9 +97,7 @@ export function useFileMutations(agentId: string | null) {
       } catch (err) {
         emitToast({
           kind: "error",
-          message: isConflictError(err)
-            ? `"${path}" already exists`
-            : getErrorMessage(err, "Create failed"),
+          message: getErrorMessage(err, "Create failed"),
         });
       }
     },
@@ -124,9 +116,9 @@ export function useFileMutations(agentId: string | null) {
       const tryRename = async (overwrite: boolean) => {
         await renameMutation.mutateAsync({ from, to, overwrite });
         if (agentId) renameExpandedDir(agentId, from, to);
-        if (openFilePath === from) setOpenFile(to);
+        if (openFilePath === from) setOpenFilePath(to);
         else if (openFilePath?.startsWith(from + "/"))
-          setOpenFile(to + openFilePath.slice(from.length));
+          setOpenFilePath(to + openFilePath.slice(from.length));
       };
 
       try {
@@ -148,8 +140,7 @@ export function useFileMutations(agentId: string | null) {
         }
         const ok = await showConfirm(
           `"${nameOf(to)}" already exists. Overwrite?`,
-          "Overwrite file?",
-          { confirmLabel: "Overwrite" },
+          "Overwrite",
         );
         if (!ok) return;
         try {
@@ -167,7 +158,7 @@ export function useFileMutations(agentId: string | null) {
       agentId,
       renameExpandedDir,
       openFilePath,
-      setOpenFile,
+      setOpenFilePath,
       showConfirm,
     ],
   );
@@ -193,10 +184,7 @@ export function useFileMutations(agentId: string | null) {
       const msg = isDir
         ? `Delete ${path}/? This will remove its contents.`
         : `Delete ${path}?`;
-      const ok = await showConfirm(msg, "Delete?", {
-        kind: "destructive",
-        confirmLabel: "Delete",
-      });
+      const ok = await showConfirm(msg, "Delete");
       if (!ok) return;
       try {
         await deleteMutation.mutateAsync({ path });
@@ -205,7 +193,7 @@ export function useFileMutations(agentId: string | null) {
           openFilePath === path ||
           (openFilePath ?? "").startsWith(path + "/")
         ) {
-          setDock(null);
+          setOpenFilePath(null);
         }
         emitToast({ kind: "success", message: `Deleted ${path}` });
       } catch (err) {
@@ -220,7 +208,7 @@ export function useFileMutations(agentId: string | null) {
       agentId,
       pruneExpandedDir,
       openFilePath,
-      setDock,
+      setOpenFilePath,
       showConfirm,
     ],
   );

@@ -1,16 +1,16 @@
-import { Information } from "@carbon/icons-react";
+import { Help } from "@carbon/icons-react";
 
-import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
-import { formatGi } from "../../../lib/format-size.js";
+import { COMPUTE_REQUEST_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
+import { useLinks } from "../../links/api/queries.js";
 import { useBudgetReserved } from "../api/queries.js";
-import { formatCores } from "../lib/format.js";
+import { formatCores, formatGi } from "../lib/format.js";
 import {
   BYTES_PER_MI,
   type ComputeCellState,
@@ -20,9 +20,14 @@ import {
   type SlotUnit,
   slotUnitOf,
 } from "../lib/slots.js";
-import { SEGMENT_FILL, SlotBar } from "./slot-bar.js";
+import { SlotBar } from "./slot-bar.js";
 
 type HeldState = Exclude<ComputeCellState, "available">;
+
+const STATE_DOT: Record<HeldState, string> = {
+  running: "bg-success",
+  awake: "bg-accent",
+};
 
 const STATE_LABEL: Record<HeldState, string> = {
   running: "Working",
@@ -40,37 +45,34 @@ function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
 
 function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const agents = useAgentsList();
   return (
     <div className="flex flex-col gap-2">
       <p className="text-foreground">
         {segment.agentName && (
           <AgentAvatar
             name={segment.agentName}
-            avatar={agents.find((a) => a.id === segment.agentId)?.avatar}
             size={16}
             className="mr-1.5 inline-block align-text-bottom"
           />
         )}
         <span className="font-semibold">{segment.agentName}</span> (
         {formatCores(segment.cpuMilli)} CPU ·{" "}
-        {formatGi(segment.memoryMi * BYTES_PER_MI)} GiB)
+        {formatGi(segment.memoryMi * BYTES_PER_MI)} Gi)
       </p>
       {segment.alwaysOn && (
         <>
           <p className="text-muted-foreground">
             Always on — holds compute even while idle.
           </p>
-          <Button
-            variant="link"
-            size="inline"
-            className="self-end"
+          <button
+            type="button"
+            className="self-end text-accent hover:underline"
             onClick={() =>
               segment.agentId && navigateToSandboxHome(segment.agentId, "setup")
             }
           >
             Manage
-          </Button>
+          </button>
         </>
       )}
     </div>
@@ -84,6 +86,7 @@ interface Props {
 
 export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const { data: budget } = useBudgetReserved();
+  const { data: links } = useLinks();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   if (!budget) return null;
 
@@ -96,15 +99,19 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
         <span className="flex items-center gap-1.5 text-foreground">
           Compute allocated
           <Tooltip
-            content="What your running agents reserve, not what they are using. Disable an agent you aren't using to free up compute."
+            content="What your running agents reserve, not what they are using. Stop or pause an agent to free up compute."
             side="bottom"
           >
-            <Information
-              size={14}
-              className="cursor-help text-muted-foreground/60"
-            />
+            <Help size={14} className="cursor-help text-muted-foreground/60" />
           </Tooltip>
         </span>
+        <a
+          href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
+          {...externalLinkProps}
+          className="shrink-0 text-muted-foreground/60 hover:underline"
+        >
+          Request more
+        </a>
       </div>
       <div className="mb-3">
         <p className="text-2xl font-semibold tabular-nums text-foreground">
@@ -140,7 +147,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
                 <span
                   className={cn(
                     "inline-block size-2 shrink-0 rounded-full",
-                    SEGMENT_FILL[group.state],
+                    STATE_DOT[group.state],
                   )}
                 />
                 {STATE_LABEL[group.state]}

@@ -1,36 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
-import { LINKED_KIT_CATALOG } from "api-server-api";
 
 import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
-import { kitLinkUrl } from "../lib/kit-link.js";
 
 export function useStarterKits(enabled = true) {
   return useQuery({
     ...trpc.starterKits.list.queryOptions(),
     enabled,
+    meta: { errorToast: "Couldn't load starter kits" },
   });
 }
 
 export function useStarterKit(catalog: string | null, id: string | null) {
-  const linked = catalog === LINKED_KIT_CATALOG;
-  const catalogKit = useQuery({
+  return useQuery({
     ...trpc.starterKits.get.queryOptions({
       catalog: catalog ?? "",
       id: id ?? "",
     }),
-    enabled: !linked && catalog !== null && id !== null,
-    retry: (failures, error) =>
-      error.data?.code !== "NOT_FOUND" && failures < 3,
+    enabled: catalog !== null && id !== null,
+    meta: { errorToast: "Couldn't load the starter kit" },
   });
-  const linkedKit = useQuery({
-    ...trpc.starterKits.inspect.queryOptions({ url: kitLinkUrl(id ?? "") }),
-    enabled: linked && id !== null,
-    staleTime: Infinity,
-    retry: (failures, error) =>
-      error.data?.code === "BAD_GATEWAY" && failures < 2,
-  });
-  return linked ? linkedKit : catalogKit;
 }
 
 export function useKitUpdates() {

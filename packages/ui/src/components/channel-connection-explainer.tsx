@@ -1,9 +1,7 @@
 import { ArrowRight } from "@carbon/icons-react";
 
 import { ExplainerPopover } from "@/components/explainer-popover";
-import { Button } from "@/components/ui/button";
 
-import { getBrand } from "../brand.js";
 import { useSlackInstallRequestUrl } from "../modules/links/api/queries.js";
 import { SlackInstallRequest } from "../modules/slack/components/slack-install-request.js";
 
@@ -17,14 +15,13 @@ function CrossLink({
   if (!onFollow)
     return <span className="font-medium text-muted-foreground">{label}</span>;
   return (
-    <Button
-      variant="link"
-      size="inline"
+    <button
+      type="button"
       onClick={onFollow}
-      className="inline-flex w-fit items-center gap-1 font-medium"
+      className="inline-flex w-fit items-center gap-1 font-medium text-accent hover:underline"
     >
       {label} <ArrowRight size={14} />
-    </Button>
+    </button>
   );
 }
 
@@ -36,52 +33,48 @@ export function SlackChannelExplainer({
   const installRequestUrl = useSlackInstallRequestUrl();
   return (
     <ExplainerPopover
-      label="How a Slack channel differs from a Slack account connection"
+      label="How a Slack Channel differs from a Slack Account connection"
       footer={
         installRequestUrl && <SlackInstallRequest href={installRequestUrl} />
       }
     >
       <p>
-        Lets people chat with this agent in a Slack DM or channel. Messages come
-        from the {getBrand().name} bot, signed with the agent&apos;s name.
+        With Channels, you can DM or bind your agent to a team channel. The
+        agent answers as itself always.
       </p>
       <p>
-        Want the agent to use your Slack access to monitor or post on your
-        behalf?{" "}
-        <CrossLink
-          label="Use a Slack connection"
-          onFollow={onGoToConnections}
-        />
+        If you want to give this agent access to your Slack Account, that&apos;s
+        a Connection.
       </p>
+      <CrossLink label="Go to Connections" onFollow={onGoToConnections} />
     </ExplainerPopover>
   );
 }
 
 export function SlackAccountExplainer({
-  forAgent,
   onGoToChannels,
 }: {
-  forAgent: boolean;
   onGoToChannels?: () => void;
 }) {
   const installRequestUrl = useSlackInstallRequestUrl();
   return (
     <ExplainerPopover
       side="bottom"
-      label="How a Slack account connection differs from a Slack channel"
+      label="How a Slack Account connection differs from a Slack Channel"
       footer={
         installRequestUrl && <SlackInstallRequest href={installRequestUrl} />
       }
     >
       <p>
-        Lets {forAgent ? "this agent" : "an agent"} use your Slack account to
-        search, read, and post anywhere you can. Its posts come from you, not
-        the {getBrand().name} bot.
+        With a Slack Account connection, the agent works in your Slack as you.
+        It can search, read and post anywhere your account can — including
+        private channels and DMs.
       </p>
       <p>
-        Want people to chat with {forAgent ? "the agent" : "an agent"} in Slack?{" "}
-        <CrossLink label="Add a Slack channel" onFollow={onGoToChannels} />
+        If you want to DM your agent or use it collaboratively with others in a
+        team channel, add it to a channel instead.
       </p>
+      <CrossLink label="Go to Channels" onFollow={onGoToChannels} />
     </ExplainerPopover>
   );
 }

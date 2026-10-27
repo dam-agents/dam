@@ -1,7 +1,5 @@
 export const DOCS_URL = "https://pages.github.ibm.com/dam-agents/docs/";
 
-export const SOURCE_URL = "https://github.com/dam-agents/dam/";
-
 export const CUSTOM_IMAGE_DOCS_URL =
   "https://pages.github.ibm.com/dam-agents/docs/guides/custom-image/";
 
@@ -16,6 +14,3 @@ export const MCP_DOCS_URL =
 
 export const COMPUTE_REQUEST_URL =
   "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759";
-
-export const LOOP_GUARD_DOCS_URL =
-  "https://github.com/dam-agents/dam/blob/main/docs/architecture/channels.md#posts-by-agents-and-apps";

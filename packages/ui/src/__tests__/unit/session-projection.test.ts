@@ -2,11 +2,11 @@ import { describe, expect, test } from "vitest";
 
 import {
   appendInterruptedNotice,
+  appendQueuedSends,
   applyUpdate,
   failQueuedOnDisconnect,
   finalizeAllStreaming,
   hasStreamingAssistant,
-  heldStillUndelivered,
   mergeLocalFailures,
 } from "../../modules/acp/session-projection.js";
 import type { Message, ToolChip } from "../../types.js";
@@ -101,22 +101,6 @@ describe("applyUpdate — agent content", () => {
     expect(messages[0].parts).toEqual([{ kind: "text", text: "hello world" }]);
   });
 
-  test("keeps separate agent messages in separate text parts", () => {
-    const chunk = (text: string, messageId: string) => ({
-      ...txtChunk(text),
-      messageId,
-    });
-    let messages: Message[] = [];
-    messages = applyUpdate(messages, chunk("capture the ", "m1"));
-    messages = applyUpdate(messages, chunk("final line.", "m1"));
-    messages = applyUpdate(messages, chunk("Output:", "m2"));
-    expect(messages).toHaveLength(1);
-    expect(messages[0].parts.map((p) => p.kind === "text" && p.text)).toEqual([
-      "capture the final line.",
-      "Output:",
-    ]);
-  });
-
   test("appends image as a new part after text", () => {
     let messages: Message[] = [];
     messages = applyUpdate(messages, txtChunk("see:"));
@@ -128,6 +112,15 @@ describe("applyUpdate — agent content", () => {
       { kind: "text", text: "see:" },
       { kind: "image", data: "AAAA", mimeType: "image/png" },
     ]);
+  });
+
+  test("agent_thought_chunk produces a thought part distinct from text", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "thinking" },
+    });
+    expect(out[0].role).toBe("assistant");
+    expect(out[0].parts).toEqual([{ kind: "thought", text: "thinking" }]);
   });
 
   test("consecutive thought chunks merge into one part", () => {
@@ -171,6 +164,18 @@ describe("applyUpdate — agent content", () => {
 });
 
 describe("applyUpdate — turn boundaries", () => {
+  test("platform_turn_ended closes the active assistant", () => {
+    const start: Message[] = [
+      userMsg("u1", "hi"),
+      assistantMsg("a1", "hello", true),
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
+    expect(out[1].streaming).toBe(false);
+  });
+
   test("platform_turn_ended closes the active bubble and leaves queued ones alone", () => {
     const start: Message[] = [
       userMsg("u1", "first"),
@@ -187,17 +192,24 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[3].queued).toBe(true);
   });
 
-  test("platform_turn_ended is a no-op with no active bubble to close", () => {
-    const ended = {
-      sessionUpdate: "platform_turn_ended",
-      sessionId: "test-sid",
-    } as const;
+  test("platform_turn_ended skips queued-only states (no active to close)", () => {
     const start: Message[] = [
       userMsg("u1", "first"),
       assistantMsg("a1", "", true, true),
     ];
-    expect(applyUpdate(start, ended)).toEqual(start);
-    expect(applyUpdate([], ended)).toEqual([]);
+    const out = applyUpdate(start, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
+    expect(out).toEqual(start);
+  });
+
+  test("platform_turn_ended on empty state is a no-op", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
+    expect(out).toEqual([]);
   });
 
   test("user_message_chunk closes the previous assistant and opens a user message", () => {
@@ -262,29 +274,6 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out).toEqual([]);
   });
 
-  test("a subagent's hand-back report is not shown as a user message", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "user_message_chunk" as const,
-      messageId: "u1",
-      content: {
-        type: "text" as const,
-        text: '<agent-message from="aa5f0dd75068513b3">\n[Subagent hand-back] The report follows:\n  **Bottom line:** done.\n</agent-message>',
-      },
-    });
-    expect(out).toEqual([]);
-  });
-
-  test("a self-closed plumbing tag hides none of the user's text after it", () => {
-    const text = 'hello <agent-message from="a"/> keep me </agent-message> bye';
-    const out = applyUpdate([], {
-      sessionUpdate: "user_message_chunk" as const,
-      messageId: "u1",
-      content: { type: "text" as const, text },
-    });
-    expect(out).toHaveLength(1);
-    expect(out[0].parts).toEqual([{ kind: "text", text }]);
-  });
-
   test("a system wrapper with nested elements still closes the active bubble", () => {
     const start: Message[] = [
       userMsg("u1", "go"),
@@ -331,32 +320,6 @@ describe("applyUpdate — turn boundaries", () => {
     ]);
   });
 
-  /**
-   * TEST_SCENARIO: A follow-up chat's first prompt reaches the harness with the
-   * sub-agent's copy in front of the typed text. A reload from the harness's
-   * own history replays that prompt whole; the bubble must still show only
-   * what the user typed, whatever markup the escaped label holds.
-   */
-  test("a follow-up chat's copied block never shows in the first bubble", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "user_message_chunk" as const,
-      messageId: "u1",
-      content: {
-        type: "text" as const,
-        text: [
-          '<continued-from label="Refactor &lt;Button/&gt; props">',
-          "This chat continues the work of a sub-agent that has finished.",
-          "<prompt>\nRename the size prop.\n</prompt>",
-          "<result>\nDone.\n</result>",
-          "</continued-from>",
-          "",
-          "why that name?",
-        ].join("\n"),
-      },
-    });
-    expect(out[0].parts).toEqual([{ kind: "text", text: "why that name?" }]);
-  });
-
   test("replayed channel history shows as a history part, the frame does not", () => {
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,
@@ -377,6 +340,22 @@ describe("applyUpdate — turn boundaries", () => {
       },
       { kind: "text", text: "what now?" },
     ]);
+  });
+
+  // TEST_SCENARIO: Claude Code delivers a subagent's report as a prompt of its own, wrapped in `<agent-message from="…">`. It is plumbing like a task notification, and the tag names an attribute, so neither the report nor the wrapper shows under the owner's name.
+  test("a subagent hand-back with an attribute is hidden as plumbing", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: [
+          '<agent-message from="agent-7">\nfound three issues\n</agent-message>',
+          "carry on",
+        ].join("\n\n"),
+      },
+    });
+    expect(out[0].parts).toEqual([{ kind: "text", text: "carry on" }]);
   });
 
   test("a lowercase tag that is not platform plumbing stays visible", () => {
@@ -402,23 +381,6 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[0].parts).toEqual([
       { kind: "text", text: "look at" },
       { kind: "file", name: "image.png", mimeType: "" },
-    ]);
-  });
-
-  test("user_message_chunk resource_link replays as a file chip", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "user_message_chunk" as const,
-      messageId: "u1",
-      content: {
-        type: "resource_link" as const,
-        uri: "file:///workspace/second.txt",
-        name: "second.txt",
-        mimeType: "text/plain",
-        size: 22,
-      },
-    });
-    expect(out[0].parts).toEqual([
-      { kind: "file", name: "second.txt", mimeType: "text/plain", size: 22 },
     ]);
   });
 });
@@ -484,48 +446,6 @@ describe("applyUpdate — tool calls", () => {
     });
     expect((out[0].parts[0] as ToolChip).status).toBe("completed");
     expect(out[2].parts).toHaveLength(0);
-  });
-
-  test("tool_call keeps a diff's path and old and new text on the chip", () => {
-    const out = applyUpdate([assistantMsg("a1", "", true)], {
-      sessionUpdate: "tool_call",
-      toolCallId: "t1",
-      title: "Edit src/a.ts",
-      kind: "edit",
-      status: "pending",
-      content: [
-        { type: "diff", path: "/w/src/a.ts", oldText: "a", newText: "b" },
-        { type: "diff", path: "/w/new.ts", newText: "x" },
-      ],
-    });
-    expect((out[0].parts[0] as ToolChip).content).toEqual([
-      { type: "diff", path: "/w/src/a.ts", oldText: "a", newText: "b" },
-      { type: "diff", path: "/w/new.ts", oldText: null, newText: "x" },
-    ]);
-  });
-
-  test("tool_call_update with a diff replaces the chip's content", () => {
-    const start: Message[] = [
-      {
-        id: "a1",
-        role: "assistant",
-        parts: [
-          { kind: "tool", toolCallId: "t1", title: "Write", status: "pending" },
-        ],
-        streaming: true,
-      },
-    ];
-    const out = applyUpdate(start, {
-      sessionUpdate: "tool_call_update",
-      toolCallId: "t1",
-      status: "completed",
-      content: [
-        { type: "diff", path: "/w/f.md", oldText: null, newText: "hi" },
-      ],
-    });
-    expect((out[0].parts[0] as ToolChip).content).toEqual([
-      { type: "diff", path: "/w/f.md", oldText: null, newText: "hi" },
-    ]);
   });
 
   test("tool_call_update for unknown chip is a no-op", () => {
@@ -722,27 +642,27 @@ describe("appendInterruptedNotice", () => {
     });
     expect(out).toHaveLength(2);
     expect(out[1].notice).toBe(true);
-    expect(out[1].parts[0]).toMatchObject({
-      kind: "text",
-      text: expect.stringContaining("out of memory"),
-    });
+    expect(out[1].parts[0]).toMatchObject({ kind: "text" });
   });
 
-  /** TEST_SCENARIO: the platform stopped the turn, as a user's Sleep does, so
-   * the notice names the stop and does not blame memory. */
-  test("names a stop instead of memory when the platform stopped the turn", () => {
-    const out = appendInterruptedNotice([userMsg("u1", "hi")], {
+  // TEST_SCENARIO: the runtime now says whether a Sleep, restart or move cut the turn, which is not the crash the old notice named. A turn still running says nothing at all.
+  test("says a stop cut the turn, and stays quiet about a turn in flight", () => {
+    const stopped = appendInterruptedNotice([], {
       inFlight: false,
       interruptedAt: "2026-09-07T00:00:00Z",
       interruptedByStop: true,
     });
-    expect(out[1].parts[0]).toMatchObject({
-      kind: "text",
-      text: expect.stringContaining("put to sleep"),
-    });
-    expect(out[1].parts[0]).not.toMatchObject({
-      text: expect.stringContaining("memory"),
-    });
+    expect(stopped[0].parts[0]).toMatchObject({ kind: "text" });
+    expect((stopped[0].parts[0] as { text: string }).text).toMatch(
+      /was stopped/,
+    );
+    const inFlight = [userMsg("u1", "hi")];
+    expect(
+      appendInterruptedNotice(inFlight, {
+        inFlight: true,
+        interruptedAt: "2026-09-07T00:00:00Z",
+      }),
+    ).toBe(inFlight);
   });
 
   test("no-op when the session was not interrupted", () => {
@@ -853,31 +773,6 @@ describe("mergeLocalFailures", () => {
   });
 });
 
-describe("heldStillUndelivered", () => {
-  const held = (id: string) => ({
-    id,
-    recordedAt: "2026-10-09T00:00:00.000Z",
-    blocks: [{ type: "text" as const, text: id }],
-    droppedAttachments: [],
-    reason: "Not delivered",
-  });
-
-  // TEST_SCENARIO: the browser recorded sends as undelivered when no acceptance came in time. On the next session load the replay shows the runtime echoed one of them, so it reached the pod, and another was retried, so the pod superseded it. Only the send the runtime never saw is still undelivered and handed over; the others would otherwise be marked undelivered on the pod for good.
-  test("keeps only the sends the runtime never received", () => {
-    const replay = [
-      userMsg("echoed", "say mango"),
-      assistantMsg("a", "Mango."),
-    ];
-    expect(
-      heldStillUndelivered(
-        [held("echoed"), held("retried"), held("lost")],
-        replay,
-        ["retried"],
-      ).map((r) => r.id),
-    ).toEqual(["lost"]);
-  });
-});
-
 describe("applyUpdate — the harness's name for the prompt", () => {
   test("a replayed frame's prompt id lands on the reply being streamed", () => {
     /**
@@ -885,9 +780,7 @@ describe("applyUpdate — the harness's name for the prompt", () => {
      * turnEnded to carry the id, so each replayed chunk names it instead.
      */
     const start: Message[] = [userMsg("u1", "hi")];
-    const out = applyUpdate(start, txtChunk("hello"), {
-      telemetryPromptId: "otel-2",
-    });
+    const out = applyUpdate(start, txtChunk("hello"), undefined, "otel-2");
     expect(out[1].role).toBe("assistant");
     expect(out[1].telemetryPromptId).toBe("otel-2");
   });
@@ -899,5 +792,94 @@ describe("applyUpdate — the harness's name for the prompt", () => {
     ];
     const out = applyUpdate(start, txtChunk("lo"));
     expect(out[1].telemetryPromptId).toBe("otel-3");
+  });
+});
+
+describe("applyUpdate — turn correlation", () => {
+  // TEST_SCENARIO: the runtime stamps each frame with its turn and names the turn it ends. Two turns stream at once (a background task's answer and the chat's own), so the ending of one closes only its reply and leaves the other streaming.
+  test("a named turn end closes only that turn's reply", () => {
+    let messages = applyUpdate(
+      [],
+      txtChunk("background result"),
+      undefined,
+      undefined,
+      "turn-bg",
+    );
+    messages = applyUpdate(
+      messages,
+      txtChunk("foreground answer"),
+      undefined,
+      undefined,
+      "turn-fg",
+    );
+    expect(messages.map((m) => m.turnId)).toEqual(["turn-bg", "turn-fg"]);
+    const closed = applyUpdate(messages, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+      turnId: "turn-bg",
+    });
+    expect(closed.map((m) => m.streaming)).toEqual([false, true]);
+  });
+
+  // TEST_SCENARIO: a frame with no turn id (an older runtime, a replay) keeps the old rule of closing the reply being streamed, so nothing regresses before the runtime speaks turns.
+  test("a turn end without a turn id still closes the active reply", () => {
+    const out = applyUpdate(
+      [userMsg("u1", "hi"), assistantMsg("a1", "hello", true)],
+      { sessionUpdate: "platform_turn_ended", sessionId: "test-sid" },
+    );
+    expect(out[1].streaming).toBe(false);
+  });
+});
+
+describe("queued and steered prompts", () => {
+  // TEST_SCENARIO: A prompt sent mid-turn is steered into the running turn rather than queued. Its bubble stays, its waiting placeholder goes, and the turn opens a reply below it, where the agent's next output lands.
+  test("a steered prompt keeps its message and continues the turn below it", () => {
+    const start: Message[] = [
+      userMsg("turn-a", "first"),
+      { ...assistantMsg("a1", "working", true), promptId: "turn-a" },
+      userMsg("turn-b", "mid-turn"),
+      { ...assistantMsg("a2", "", true, true), promptId: "turn-b" },
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "platform_prompt_accepted",
+      sessionId: "s",
+      promptId: "turn-b",
+      queued: true,
+      steered: true,
+    });
+    expect(out.map((m) => [m.role, m.id, m.streaming, m.queued])).toEqual([
+      ["user", "turn-a", false, undefined],
+      ["assistant", "a1", false, undefined],
+      ["user", "turn-b", false, false],
+      ["assistant", out[3]!.id, true, undefined],
+    ]);
+    expect(out[3]!.turnId).toBe("turn-a");
+  });
+
+  // TEST_SCENARIO: A reload brings back the runtime's queue, so a prompt still waiting behind a turn shows as waiting again rather than vanishing.
+  test("the runtime's queue comes back as waiting sends", () => {
+    const out = appendQueuedSends(
+      [],
+      [
+        {
+          promptId: "queued-1",
+          blocks: [{ type: "text", text: "waiting" }],
+          queuedAt: "2026-10-27T00:00:00Z",
+          editable: true,
+        },
+      ],
+    );
+    expect(out.map((m) => [m.role, m.id, m.queued, m.promptId])).toEqual([
+      ["user", "queued-1", undefined, undefined],
+      ["assistant", out[1]!.id, true, "queued-1"],
+    ]);
+    expect(firstTextPart(out[0]!)).toBe("waiting");
+    const started = applyUpdate(out, {
+      sessionUpdate: "platform_prompt_started",
+      sessionId: "s",
+      promptId: "queued-1",
+    });
+    expect(started[1]!.queued).toBe(false);
+    expect(started).toHaveLength(2);
   });
 });

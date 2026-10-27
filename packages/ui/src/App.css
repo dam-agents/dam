@@ -37,16 +37,6 @@
   --color-kit-surface: var(--c-kit-surface);
   --color-kit-line: var(--c-kit-line);
   --color-kit-rule: var(--c-kit-rule);
-  --color-icon-blue: #5b738b;
-  --color-icon-clay: #996c59;
-  --color-icon-green: #5d7d70;
-  --color-icon-violet: #7c6f8b;
-  --color-icon-ochre: #8a7351;
-  --color-icon-rose: #8b6672;
-  --color-icon-teal: #4a7b83;
-  --color-icon-cb: #4d7e88;
-  --color-icon-cb-deep: #38626a;
-  --color-icon-litellm: #4962ab;
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
@@ -57,16 +47,12 @@
   /* Type scale in absolute pixels, each step paired with its leading. Body
      sizes share the app's 1.55 leading; display sizes tighten as they grow.
      Leading is unitless so nested text at another size scales with it.
-     These eight steps are the whole scale — Tailwind's other steps keep their
-     own rem sizes and leading, so reach for text-2xl rather than text-xl. */
-  --text-2xs: 11px;
-  --text-2xs--line-height: 1.45;
+     These six steps are the whole scale — Tailwind's other steps keep their own
+     rem sizes and leading, so reach for text-2xl rather than text-xl. */
   --text-xs: 12px;
   --text-xs--line-height: 1.55;
   --text-sm: 14px;
   --text-sm--line-height: 1.55;
-  --text-md: 15px;
-  --text-md--line-height: 1.5;
   --text-base: 16px;
   --text-base--line-height: 1.55;
   --text-lg: 18px;
@@ -80,7 +66,6 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
-  --color-chrome: var(--chrome);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
@@ -103,8 +88,7 @@
 
   /* ── z-index ladder — the ordered source of truth for stacking.
      Use the matching z-* utilities below; never raw z numbers.
-     The Sonner toaster manages its own (higher) z-index and sits above z-toast,
-     modals included: an error a dialog raises must stay readable over its backdrop. ── */
+     The Sonner toaster manages its own (higher) z-index and sits above z-toast. ── */
   --z-content: 10;
   --z-raised: 20;
   --z-nav: 30;
@@ -113,11 +97,22 @@
   --z-popover: 60;
   --z-tooltip: 70;
   --z-toast: 80;
+
+  /* Sticky submit bar (StickyFooterLayout). The inset is zero until a bar is on
+     screen, so anything fixed to the bottom clears it without knowing which
+     pages have one. */
+  --bottom-bar-h: 52px;
+  --bottom-bar-inset: 0px;
 }
 
-/* A Radix modal sets pointer-events: none on the body; keep the toasts above it dismissable. */
-[data-sonner-toaster] {
-  pointer-events: auto;
+:root[data-bottom-bar] {
+  --bottom-bar-inset: var(--bottom-bar-h);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --bottom-bar-h: 70px;
+  }
 }
 
 @utility z-content {
@@ -175,7 +170,6 @@
   --background: #ffffff;
   --foreground: #121619;
   --card: #ffffff;
-  --chrome: var(--background);
   --card-foreground: #121619;
   --popover: #ffffff;
   --popover-foreground: #121619;
@@ -225,7 +219,6 @@
   --background: #161616;
   --foreground: #fafaf9;
   --card: #161616;
-  --chrome: var(--background);
   --card-foreground: #fafaf9;
   --popover: #161616;
   --popover-foreground: #fafaf9;
@@ -241,14 +234,6 @@
   --border-ui: #393939;
   --input: #393939;
   --ring: #ffffff;
-}
-
-/* JanUI sets its side chrome apart from the page. */
-:root[data-layout="new"] {
-  --chrome: #fafafa;
-}
-:root.dark[data-layout="new"] {
-  --chrome: #0e0e0e;
 }
 
 @layer base {
@@ -480,17 +465,6 @@
 }
 .prose p:last-child {
   margin: 0;
-}
-.prose-flush > :first-child {
-  margin-top: 0;
-}
-.prose-flush > :last-child {
-  margin-bottom: 0;
-}
-.prose-caption {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--muted-foreground);
 }
 .prose h1,
 .prose h2,

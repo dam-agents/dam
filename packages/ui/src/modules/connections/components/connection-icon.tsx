@@ -1,33 +1,9 @@
-import {
-  BareMetalServer,
-  Link,
-  LogoKubernetes,
-  LogoSlack,
-  LogoYoutube,
-  Password,
-} from "@carbon/icons-react";
-import type { ComponentType, SVGProps } from "react";
+import { BareMetalServer, Link, Password } from "@carbon/icons-react";
 
-import {
-  GithubIcon,
-  SpotifyIcon,
-  TelegramIcon,
-} from "@/components/brand-icons";
-
-const MONOCHROME_BY_SLUG = new Map<
-  string,
-  ComponentType<SVGProps<SVGSVGElement>>
->([
-  ["github", GithubIcon],
-  ["github-enterprise", GithubIcon],
-  ["kubernetes", LogoKubernetes],
-  ["slack", LogoSlack],
-  ["spotify", SpotifyIcon],
-  ["telegram", TelegramIcon],
-  ["youtube", LogoYoutube],
-]);
+import { GithubIcon } from "@/components/brand-icons";
 
 const SVG_BY_SLUG = new Set([
+  "github-enterprise",
   "gmail",
   "google-admin",
   "google-analytics",
@@ -43,6 +19,11 @@ const SVG_BY_SLUG = new Set([
   "google-sheets",
   "google-slides",
   "google-tasks",
+  "kubernetes",
+  "slack",
+  "spotify",
+  "telegram",
+  "youtube",
 ]);
 
 interface Props {
@@ -53,15 +34,12 @@ interface Props {
 }
 
 export function ConnectionIcon({ iconSlug, alt, size = 16, className }: Props) {
-  const Monochrome = iconSlug ? MONOCHROME_BY_SLUG.get(iconSlug) : undefined;
-  if (Monochrome) {
+  if (iconSlug === "github") {
     return (
-      <Monochrome
+      <GithubIcon
         width={size}
         height={size}
-        {...(alt
-          ? { role: "img", "aria-label": alt }
-          : { "aria-hidden": true })}
+        aria-label={alt}
         className={`block ${className ?? ""}`.trim()}
       />
     );

@@ -1,16 +1,14 @@
+import { Checkmark, Copy } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 
-import { CopyButton } from "@/components/ui/copy-button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
+import { useCopy } from "@/hooks/use-copy";
 
-import {
-  ProviderFormShell,
-  ProviderKeyLink,
-  ProviderSecretRow,
-  stripWhitespace,
-} from "../provider-form-shell.js";
+import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
 import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,
@@ -87,23 +85,37 @@ export function AnthropicForm({
       )}
 
       {mode === "oauth" && <QuickSetupHint />}
-      {MODES[mode].keyPage && <ProviderKeyLink {...MODES[mode].keyPage} />}
 
-      <ProviderSecretRow
-        register={register("value")}
-        placeholder={MODES[mode].placeholder}
-        ariaLabel={`Anthropic ${MODES[mode].label}`}
-        isEdit={isEdit}
-        isSubmitting={isSubmitting}
-        submitDisabled={submitDisabled}
-        value={value}
-        error={errors.value}
-      />
+      <div className="flex gap-3">
+        <Input
+          type="password"
+          autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
+          placeholder={MODES[mode].placeholder}
+          {...register("value")}
+        />
+        <Button type="submit" disabled={submitDisabled} className="shrink-0">
+          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+        </Button>
+      </div>
+
+      {}
+      {errors.value &&
+        value.length > 0 &&
+        errors.value.message !== "Required" && (
+          <div className="text-xs font-medium text-destructive">
+            {errors.value.message}
+          </div>
+        )}
     </ProviderFormShell>
   );
 }
 
 function QuickSetupHint() {
+  const { copy: copyText, copied } = useCopy();
+  const copy = () => void copyText("claude setup-token");
   return (
     <div className="text-sm text-foreground/80">
       Run{" "}
@@ -111,7 +123,20 @@ function QuickSetupHint() {
         <code className="font-mono font-semibold text-primary">
           claude setup-token
         </code>
-        <CopyButton value="claude setup-token" label="Copy command" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          onClick={copy}
+          aria-label="Copy command"
+          tooltip="Copy command"
+        >
+          {copied ? (
+            <Checkmark size={12} className="text-success" />
+          ) : (
+            <Copy size={12} />
+          )}
+        </Button>
       </span>{" "}
       on your own machine (with Claude Code installed) to generate a token.
     </div>

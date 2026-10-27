@@ -1,11 +1,9 @@
-import { nextUtcMidnight, OnceResult, rruleToText } from "api-server-api";
+import { rruleToText } from "api-server-api";
 import cronstrue from "cronstrue";
 
 import { sameLocalDay } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
-import { localResetTime } from "../../spend/lib/format.js";
-import { scheduleOnceState } from "./once-schedule.js";
 
 export function formatRunTime(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);
@@ -36,22 +34,11 @@ export function cronToText(cron: string): string {
 }
 
 export function scheduleCadenceText(schedule: Schedule): string {
-  switch (schedule.type) {
-    case "once": {
-      const when = schedule.at
-        ? `Once · ${formatRunTime(schedule.at)}`
-        : "Once";
-      if (schedule.inSession === "continue")
-        return `${when} · continues the session that scheduled it`;
-      if (schedule.inSession === "report")
-        return `${when} · reports back to the session that scheduled it`;
-      return when;
-    }
-    case "rrule":
-      return schedule.rrule ? rruleToText(schedule.rrule) : "";
-    case "cron":
-      return schedule.cron ?? "";
-  }
+  if (schedule.type === "rrule" && schedule.rrule)
+    return rruleToText(schedule.rrule);
+  if (schedule.type === "once")
+    return schedule.at ? `Once, ${formatRunTime(schedule.at)}` : "Once";
+  return schedule.cron ?? "";
 }
 
 export function runNowConfirmText(schedule: Schedule): string {
@@ -64,78 +51,27 @@ export function runNowConfirmText(schedule: Schedule): string {
   return `Run "${schedule.name}" now? ${decides} ${cadence}`;
 }
 
-export function runNowErrorText(detail: string): string {
-  const reset = localResetTime(nextUtcMidnight());
-  if (/spend ceiling/i.test(detail))
-    return `Couldn't run schedule: the agent's owner reached the spend ceiling for today. The platform operator can raise it; otherwise wait until ${reset} your time.`;
-  if (/spend limit/i.test(detail))
-    return `Couldn't run schedule: the agent reached its spend limit for today. Continue it on Home, or wait until ${reset} your time.`;
-  return detail ? `Couldn't run schedule: ${detail}` : "Couldn't run schedule";
-}
-
 export function runNowStartedText(schedule: Schedule): string {
   return schedule.precheck
     ? `Started "${schedule.name}" — the precheck decides next. A run appears under View results only if it allows.`
     : `Started "${schedule.name}" — the run appears under View results.`;
 }
 
-export interface LastRunStatus {
+interface LastRunStatus {
   label: string;
   className: string;
-  failed: boolean;
 }
 
 export function lastRunStatus(lastResult?: string): LastRunStatus | null {
   if (!lastResult) return null;
-  if (lastResult === OnceResult.Success)
-    return { label: "Succeeded", className: "text-success", failed: false };
-  if (lastResult === OnceResult.Delivering)
-    return {
-      label: "On its way",
-      className: "text-muted-foreground",
-      failed: false,
-    };
-  if (lastResult === OnceResult.Missed)
-    return {
-      label: "Missed: the agent could not take it in time",
-      className: "text-danger",
-      failed: true,
-    };
+  if (lastResult === "success")
+    return { label: "Succeeded", className: "text-success" };
   if (lastResult.startsWith("held:"))
     return {
       label: `Held: ${lastResult.slice("held:".length).trim()}`,
       className: "text-muted-foreground",
-      failed: false,
     };
-  return {
-    label: `Failed: ${lastResult}`,
-    className: "text-danger",
-    failed: true,
-  };
-}
-
-export function cardOutcome(schedule: Schedule): LastRunStatus | null {
-  const status = lastRunStatus(schedule.status?.lastResult);
-  if (!status) return null;
-  if (schedule.type !== "once") return status.failed ? status : null;
-  return scheduleOnceState(schedule) === "pending" ? null : status;
-}
-
-export interface RunOutcomeLine {
-  lastRunText: string | null;
-  resultText: string | null;
-  className: string | null;
-}
-
-export function runOutcomeLine(schedule: Schedule): RunOutcomeLine | null {
-  const status = lastRunStatus(schedule.status?.lastResult);
-  const lastRun = schedule.status?.lastRun;
-  if (!status && !lastRun) return null;
-  return {
-    lastRunText: lastRun ? formatRunTime(lastRun) : null,
-    resultText: status ? `Last result: ${status.label}` : null,
-    className: status?.className ?? null,
-  };
+  return { label: `Failed: ${lastResult}`, className: "text-destructive" };
 }
 
 export function declinedSummary(status?: {

@@ -15,7 +15,7 @@ export function ContributionFailuresBadge({
       : `${failures.length} installs failed`;
   const detail = failures.map((f) => `${f.kind}: ${f.message}`).join("\n");
   return (
-    <Badge variant="danger" title={detail}>
+    <Badge variant="warning" title={detail}>
       {label}
     </Badge>
   );

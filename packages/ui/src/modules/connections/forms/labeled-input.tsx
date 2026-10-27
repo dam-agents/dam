@@ -16,7 +16,7 @@ export function LabeledInput({
   help,
   error,
   autoFocus,
-  disabled,
+  disabled = false,
 }: {
   label: string;
   testId?: string;
@@ -32,7 +32,7 @@ export function LabeledInput({
   disabled?: boolean;
 }) {
   return (
-    <FormField label={label} hint={help} error={error}>
+    <FormField label={label} hint={help} error={error} disableInset>
       {multiline ? (
         <Textarea
           variant={error ? "invalid" : "monospace"}

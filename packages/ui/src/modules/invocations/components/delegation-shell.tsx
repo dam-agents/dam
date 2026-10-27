@@ -44,10 +44,12 @@ export function DelegationShell({
             {verb} {total} temporary agent{total === 1 ? "" : "s"}
           </span>
           {counts.running > 0 && (
-            <span className="shrink-0 text-2xs">{counts.running} working</span>
+            <span className="shrink-0 text-[11px]">
+              {counts.running} working
+            </span>
           )}
           {counts.failed > 0 && (
-            <span className="shrink-0 text-2xs text-danger">
+            <span className="shrink-0 text-[11px] text-danger">
               {counts.failed} failed
             </span>
           )}

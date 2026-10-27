@@ -1,79 +1,160 @@
-import type { ReactNode } from "react";
+import { Chat, OverflowMenuVertical } from "@carbon/icons-react";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tooltip } from "@/components/ui/tooltip";
 
-import { AlwaysOnTag } from "../../../components/status-indicator.js";
+import {
+  AlwaysOnTag,
+  StatusBadge,
+} from "../../../components/status-indicator.js";
+import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { AgentRuntimeStatus } from "../../agents/components/agent-runtime-status.js";
-import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
-import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
-import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
+import { useDeleteAgent } from "../../agents/api/mutations.js";
+import {
+  AgentAvatar,
+  isAsleep,
+} from "../../agents/components/avatar/agent-avatar.js";
+import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
+import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
+import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
+import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
+import { useFeed } from "../../home/api/queries.js";
+import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
+  avatarName?: string;
 }
 
-export function SandboxIdentity({ agent, display }: Props) {
-  const newLayout = useNewLayout();
-  return (
-    <div className="mb-4 flex flex-col gap-2 px-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <EditableAgentIdentity
-          agent={agent}
-          avatarSize={36}
-          mood={avatarMood(display.state, agent)}
-          nameClassName="text-lg font-semibold text-foreground"
-          nameTag="h2"
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-2 empty:hidden">
-        <GatewayFailureBadge agent={agent} />
-        {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-      </div>
-      {!newLayout && <AgentRuntimeStatus agent={agent} />}
-    </div>
-  );
-}
+export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
+  const working = useFeed().workingByAgent.get(agent.id);
+  const setView = useStore((s) => s.setView);
+  const selectAgent = useStore((s) => s.selectAgent);
+  const showConfirm = useStore((s) => s.showConfirm);
+  const wakeAgent = useWakeAgent();
+  const { restart } = useRestartAgent();
+  const deleteAgent = useDeleteAgent();
+  const suspend = useSuspendAgent();
+  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
 
-export type SectionHeaderSlot = (actions?: ReactNode) => ReactNode;
+  const openChat = () => selectAgent(agent.id);
 
-export function SandboxHomeHeader({
-  agent,
-  title,
-  description,
-  pictogram,
-  actions,
-  showUpdate = true,
-}: {
-  agent: AgentView;
-  title: string;
-  description?: string;
-  pictogram?: ReactNode;
-  actions?: ReactNode;
-  showUpdate?: boolean;
-}) {
-  const { updateOne, updatingId } = useUpdateSandbox();
+  const onStop = async () => {
+    const schedules = await fetchSchedulesForAgent(agent.id);
+    const scheduleNote =
+      schedules.length > 0 ? (
+        <>
+          {" "}
+          This agent has <strong>{schedules.length} schedule(s)</strong> — the
+          next fire will start it again.
+        </>
+      ) : null;
+    const msg = (
+      <>
+        Stop agent <strong className="text-foreground">"{agent.name}"</strong>?
+        It stays stopped until you start it.{scheduleNote}
+      </>
+    );
+    if (!(await showConfirm(msg, "Stop Agent"))) return;
+    suspend.stop(agent.id);
+  };
+
+  const onDelete = async () => {
+    const msg = (
+      <>
+        Delete agent <strong className="text-foreground">"{agent.name}"</strong>
+        ? This will also delete <strong>all persistent data</strong> and cannot
+        be undone.
+      </>
+    );
+    if (!(await showConfirm(msg, "Delete Agent", { kind: "destructive" })))
+      return;
+    deleteAgent.mutate({ id: agent.id }, { onSuccess: () => setView("home") });
+  };
+
   return (
     <PageHeader
-      title={title}
-      description={description}
-      pictogram={pictogram}
+      leading={
+        <AgentAvatar
+          name={avatarName ?? agent.name}
+          size={44}
+          sleeping={isAsleep(display.state)}
+          stopped={agent.stopRequested}
+        />
+      }
+      title={agent.name}
+      adornment={
+        <>
+          <StatusBadge state={display.state} working={working} />
+          {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
+        </>
+      }
       actions={
         <>
-          {showUpdate && (
-            <UpdateAvailableAction
-              agent={agent}
-              pending={updatingId === agent.id}
-              busy={updatingId !== null}
-              onUpdate={() => void updateOne(agent)}
-            />
-          )}
-          {actions}
+          <UpdateAvailableAction
+            agent={agent}
+            pending={updatingId === agent.id}
+            busy={updatingId !== null || updatingAll}
+            onUpdate={() => void updateOne(agent)}
+          />
+          <Tooltip content="Open chat">
+            <Button
+              size="icon"
+              aria-label="Open chat"
+              variant="outline"
+              onClick={openChat}
+            >
+              <Chat />
+            </Button>
+          </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" aria-label="Agent actions">
+                <OverflowMenuVertical />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {display.state === "running" && (
+                <FreeUpComputeItems
+                  agent={agent}
+                  onPause={() => suspend.pause(agent.id)}
+                  onStop={() => void onStop()}
+                />
+              )}
+              {display.powerAction === "start" ? (
+                <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
+                  Wake
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  disabled={display.powerAction === null}
+                  onSelect={() => restart(agent.id)}
+                >
+                  Restart
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                tone="danger"
+                disabled={deleteAgent.isPending}
+                onSelect={() => void onDelete()}
+              >
+                Delete Agent
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </>
       }
     />

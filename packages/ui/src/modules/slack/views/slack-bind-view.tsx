@@ -1,14 +1,22 @@
+import { useState } from "react";
+
 import { getBrand } from "../../../brand.js";
-import type { BindPickerCopy } from "../../agents/components/bind/agent-bind-picker.js";
+import type { AgentView } from "../../../types.js";
 import {
-  readCallbackErrorFromSearch,
-  readFlowIdFromSearch,
-} from "../../agents/components/bind/bind-flow.js";
-import { ChannelBindView } from "../../agents/components/bind/channel-bind-view.js";
-import { isSlackDirectMessageId } from "../../sandboxes/lib/shared-channels.js";
+  AgentBindPicker,
+  type BindPickerCopy,
+} from "../../agents/components/bind/agent-bind-picker.js";
+import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
 import { useBindSlackChannel } from "../api/mutations.js";
 import { useSlackBindFlow } from "../api/queries.js";
-import { bindErrorCopy, callbackErrorCopy } from "../lib/bind-flow.js";
+import {
+  type BindErrorCopy,
+  bindErrorCopy,
+  callbackErrorCopy,
+  flowIsGone,
+  readCallbackErrorFromSearch,
+  readFlowIdFromSearch,
+} from "../lib/bind-flow.js";
 import { SlackBindSuccess } from "./slack-bind-success.js";
 
 const flowId = readFlowIdFromSearch(window.location.search);
@@ -18,36 +26,72 @@ export function SlackBindView() {
   const brandShort = getBrand().short;
   const bind = useBindSlackChannel();
   const flow = useSlackBindFlow(flowId);
+  const [error, setError] = useState<BindErrorCopy | null>(null);
+  const [bound, setBound] = useState<{
+    agentId: string;
+    agentName: string;
+    slackChannelId: string;
+    channelTitle: string | null;
+  } | null>(null);
+
+  if (callbackError) {
+    return (
+      <TerminalError copy={callbackErrorCopy(callbackError, brandShort)} />
+    );
+  }
+  if (!flowId) {
+    return (
+      <TerminalError
+        copy={{
+          title: "This page is opened from Slack",
+          hint: `Run \`/${brandShort} bind\` in your channel to get a fresh link.`,
+          terminal: true,
+        }}
+      />
+    );
+  }
+  if (bound) {
+    return <SlackBindSuccess {...bound} />;
+  }
+  if (error?.terminal) {
+    return <TerminalError copy={error} />;
+  }
+  if (flowIsGone(flow)) {
+    return <TerminalError copy={bindErrorCopy("BAD_REQUEST", brandShort)} />;
+  }
+
+  const pick = (agent: AgentView) => {
+    setError(null);
+    bind.mutate(
+      { agentId: agent.id, flowId },
+      {
+        onSuccess: (res) =>
+          setBound({
+            agentId: agent.id,
+            agentName: agent.name,
+            slackChannelId: res.slackChannelId,
+            channelTitle: flow.data?.name ?? res.channelTitle,
+          }),
+        onError: (e) => {
+          const code = (e as { data?: { code?: string } }).data?.code;
+          setError(bindErrorCopy(code, brandShort));
+        },
+      },
+    );
+  };
+
   return (
-    <ChannelBindView
-      messenger="slack"
-      flowId={flowId}
-      callbackError={callbackError}
-      missingFlow={{
-        title: "This page is opened from Slack",
-        hint: `Run \`/${brandShort} bind\` in the channel to get a fresh link.`,
-        terminal: true,
-      }}
-      flow={flow}
-      bind={bind}
-      bound={(agent, result, flow) => ({
-        agentId: agent.id,
-        agentName: agent.name,
-        slackChannelId: result.slackChannelId,
-        channelTitle: flow?.name ?? result.channelTitle,
-      })}
-      success={(bound) => <SlackBindSuccess {...bound} />}
-      pickerCopy={pickerCopy}
-      callbackCopy={(code) => callbackErrorCopy(code, brandShort)}
-      errorCopy={(code) => bindErrorCopy(code, brandShort)}
+    <AgentBindPicker
+      copy={pickerCopy(flow.data?.name)}
+      error={error}
+      pending={bind.isPending}
+      onPick={pick}
+      onAgentCreated={() => setError(null)}
     />
   );
 }
 
-function pickerCopy(
-  flow: { slackChannelId: string; name?: string } | null | undefined,
-): BindPickerCopy {
-  const channelName = flow?.name;
+function pickerCopy(channelName: string | undefined): BindPickerCopy {
   return {
     messenger: "slack",
     title: channelName
@@ -60,13 +104,13 @@ function pickerCopy(
     consent:
       "Everyone in the channel will be able to use the agent. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn.",
     action: "Add to channel",
-    audience: !flow
-      ? { kind: "unknown-conversation" }
-      : isSlackDirectMessageId(flow.slackChannelId)
-        ? null
-        : {
-            kind: "slack-channel",
-            name: channelName ? `#${channelName}` : null,
-          },
   };
+}
+
+function TerminalError({ copy }: { copy: BindErrorCopy }) {
+  return (
+    <BindTerminalPage messenger="slack" title={copy.title}>
+      <p>{copy.hint}</p>
+    </BindTerminalPage>
+  );
 }

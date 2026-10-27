@@ -18,14 +18,13 @@ export function CatalogPaneHeader({
         size="icon-sm"
         onClick={onBack}
         aria-label="Back"
-        tooltip="Back"
         data-testid="catalog-back"
         className="shrink-0 text-muted-foreground"
       >
         <ArrowLeft size={18} />
       </Button>
       <div>
-        <h3 className="text-md font-semibold text-foreground">{title}</h3>
+        <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
         {subtitle && (
           <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
         )}

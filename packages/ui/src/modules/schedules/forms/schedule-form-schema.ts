@@ -1,4 +1,3 @@
-import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
 import {
   ALL_DAYS,
   buildRRule,
@@ -7,7 +6,6 @@ import {
   type FrequencyPreset,
   hasVisibleOccurrence,
   PRECHECK_MAX_LENGTH,
-  rruleNextFire,
   rruleToText,
 } from "api-server-api";
 import { z } from "zod";
@@ -22,16 +20,6 @@ export const scheduleFormSchema = z
       .string()
       .trim()
       .max(PRECHECK_MAX_LENGTH, `Max ${PRECHECK_MAX_LENGTH} characters`),
-    harness: z.string(),
-    model: z.string(),
-    settings: z.record(z.string(), z.string()),
-    sessionTitle: z
-      .string()
-      .trim()
-      .max(
-        SESSION_TITLE_MAX_LENGTH,
-        `Max ${SESSION_TITLE_MAX_LENGTH} characters`,
-      ),
     timezone: z.string().trim().min(1, "Required"),
     sessionMode: z.enum(["fresh", "continuous"]),
     kind: z.enum(["daily", "hourly", "minutely", "custom"]),
@@ -54,11 +42,20 @@ export const scheduleFormSchema = z
         path: ["days"],
         message: "Pick at least one day",
       });
+    if (
+      (v.kind === "minutely" || v.kind === "hourly") &&
+      !(Number.parseInt(v.interval, 10) >= 1)
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["interval"],
+        message: "Enter a number of 1 or more",
+      });
     const { body, error } = buildRRuleParts(v);
     if (error) {
       ctx.addIssue({
         code: "custom",
-        path: [errorField(v.kind)],
+        path: [v.kind === "custom" ? "customRRule" : "kind"],
         message: error,
       });
       return;
@@ -82,20 +79,8 @@ export const scheduleFormSchema = z
 
 export type ScheduleFormValues = z.infer<typeof scheduleFormSchema>;
 
-export function errorField(
-  kind: ScheduleFormValues["kind"],
-): "customRRule" | "interval" | "kind" {
-  if (kind === "custom") return "customRRule";
-  return kind === "minutely" || kind === "hourly" ? "interval" : "kind";
-}
-
 function toFrequencyPreset(v: ScheduleFormValues): FrequencyPreset {
-  const interval = Number(v.interval);
-  if (
-    (v.kind === "minutely" || v.kind === "hourly") &&
-    !(v.interval.trim() !== "" && Number.isInteger(interval) && interval >= 1)
-  )
-    throw new Error("Enter a whole number of 1 or more");
+  const interval = Math.max(1, Number.parseInt(v.interval, 10) || 1);
   switch (v.kind) {
     case "minutely":
       return { kind: v.kind, interval, days: v.days };
@@ -117,12 +102,6 @@ export function buildRRuleParts(v: ScheduleFormValues): {
 } {
   try {
     const body = buildRRule(toFrequencyPreset(v));
-    const serverCheckOnly = !("Temporal" in globalThis);
-    const next = serverCheckOnly
-      ? null
-      : rruleNextFire(body, v.timezone, Temporal.Now.instant(), []);
-    if (next?.kind === "stopped")
-      return { body: "", summary: "", error: `Not accepted: ${next.reason}` };
     return { body, summary: rruleToText(body), error: null };
   } catch (e) {
     return { body: "", summary: "", error: (e as Error).message };
@@ -133,16 +112,16 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-const DEFAULT_RRULE = "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30";
-
-export function presetFormValues(
-  preset: FrequencyPreset,
-  customRRuleFallback = DEFAULT_RRULE,
-): Pick<
-  ScheduleFormValues,
-  "kind" | "interval" | "time" | "days" | "customRRule"
-> {
+export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
+  const preset: FrequencyPreset = existing?.rrule
+    ? detectPreset(existing.rrule)
+    : { kind: "daily", hour: 9, minute: 0, days: [...ALL_DAYS] };
   return {
+    name: existing?.name ?? "",
+    task: existing?.task ?? "",
+    precheck: existing?.precheck ?? "",
+    timezone: existing?.timezone ?? detectTimezone(),
+    sessionMode: existing?.sessionMode ?? "fresh",
     kind: preset.kind,
     interval:
       preset.kind === "minutely" || preset.kind === "hourly"
@@ -153,25 +132,10 @@ export function presetFormValues(
         ? `${pad(preset.hour)}:${pad(preset.minute)}`
         : "09:00",
     days: preset.kind === "custom" ? [...ALL_DAYS] : preset.days,
-    customRRule: preset.kind === "custom" ? preset.rrule : customRRuleFallback,
-  };
-}
-
-export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
-  const preset: FrequencyPreset = existing?.rrule
-    ? detectPreset(existing.rrule)
-    : { kind: "daily", hour: 9, minute: 0, days: [...ALL_DAYS] };
-  return {
-    name: existing?.name ?? "",
-    task: existing?.task ?? "",
-    precheck: existing?.precheck ?? "",
-    harness: existing?.harness ?? "",
-    model: existing?.model ?? "",
-    settings: existing?.settings ?? {},
-    sessionTitle: existing?.sessionTitle ?? "",
-    timezone: existing?.timezone ?? detectTimezone(),
-    sessionMode: existing?.sessionMode ?? "fresh",
-    ...presetFormValues(preset, existing?.rrule ?? undefined),
+    customRRule:
+      preset.kind === "custom"
+        ? preset.rrule
+        : (existing?.rrule ?? "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"),
     quietHours: existing?.quietHours ?? [],
   };
 }

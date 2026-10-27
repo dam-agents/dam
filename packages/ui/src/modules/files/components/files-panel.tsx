@@ -4,8 +4,6 @@ import {
   FolderAdd,
   Folders,
   Upload,
-  View,
-  ViewOff,
 } from "@carbon/icons-react";
 import type { CSSProperties, Ref } from "react";
 
@@ -16,10 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { EmptyState } from "@/components/ui/empty-state";
 
-import { useStore } from "../../../store.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { DirContents } from "./dir-contents.js";
 import {
@@ -37,62 +32,42 @@ export function FilesPanel({
   onOpenFile,
 }: {
   open: boolean;
-  onToggle?: () => void;
+  onToggle: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
-  const controller = useFilesPanelController({ open, onOpenFile });
-  const newLayout = useNewLayout();
-  const showHiddenFiles = useStore((s) => s.showHiddenFiles);
-  const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
-  const hiddenFilesLabel = showHiddenFiles
-    ? "Hide hidden files"
-    : "Show hidden files";
+  const controller = useFilesPanelController({ onOpenFile });
 
-  const headerActions = (
-    <div className="flex items-center gap-1">
-      {open && (
+  const addMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={hiddenFilesLabel}
-          aria-pressed={showHiddenFiles}
-          tooltip={hiddenFilesLabel}
-          onClick={() => setShowHiddenFiles(!showHiddenFiles)}
+          variant="outline"
+          size="xs"
+          className="text-sm"
+          disabled={controller.isUploading}
+          tooltip={controller.isUploading ? "Upload in progress…" : undefined}
         >
-          {showHiddenFiles ? <View size={14} /> : <ViewOff size={14} />}
+          <Add size={12} /> Add
         </Button>
-      )}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Add"
-            disabled={controller.isUploading}
-            tooltip={controller.isUploading ? "Upload in progress…" : "Add"}
-          >
-            <Add size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => controller.openFilePickerFor("")}>
-            <Upload size={14} /> Upload file
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={controller.openFolderPicker}>
-            <Folders size={14} /> Upload folder
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => controller.startNewIn("file", "")}>
-            <DocumentAdd size={14} /> New file
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => controller.startNewIn("dir", "")}>
-            <FolderAdd size={14} /> New folder
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => controller.openFilePickerFor("")}>
+          <Upload size={13} /> Upload file
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={controller.openFolderPicker}>
+          <Folders size={13} /> Upload folder
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => controller.startNewIn("file", "")}>
+          <DocumentAdd size={13} /> New file
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => controller.startNewIn("dir", "")}>
+          <FolderAdd size={13} /> New folder
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   return (
@@ -100,10 +75,9 @@ export function FilesPanel({
       title="Files"
       open={open}
       onToggle={onToggle}
-      headerRight={headerActions}
+      headerRight={addMenu}
       className={className}
-      // UNIT_BOUNDARY_DESCRIPTION: under JanUI the Files tab is the whole of the panel, so the rule that divided it from the section above it would draw a line nothing else has.
-      headerClassName={newLayout ? undefined : "border-t border-border"}
+      headerClassName="border-t border-border"
       style={style}
       ref={ref}
     >
@@ -131,7 +105,7 @@ export function FilesPanel({
         onDragLeave={controller.handlePanelDragLeave}
         onDrop={controller.handlePanelDrop}
       >
-        {open && controller.ctxValue && (
+        {controller.ctxValue && (
           <FilesPanelContext.Provider value={controller.ctxValue}>
             {controller.pendingNew && controller.pendingNew.dir === "" && (
               <InlineNameRow
@@ -146,9 +120,10 @@ export function FilesPanel({
                 onCancel={controller.handleCancelNew}
               />
             )}
-            {controller.rootLoading && <FileListSkeleton />}
             {controller.rootIsLoadedEmpty && (
-              <EmptyState bordered={false}>No files yet.</EmptyState>
+              <p className="px-4 py-5 text-xs text-muted-foreground">
+                No files yet
+              </p>
             )}
             <DirContents path="" depth={0} />
           </FilesPanelContext.Provider>
@@ -162,19 +137,5 @@ export function FilesPanel({
         )}
       </div>
     </SidebarSection>
-  );
-}
-
-function FileListSkeleton() {
-  return (
-    <div aria-hidden className="animate-pulse">
-      {["w-1/3", "w-1/2", "w-2/5"].map((width) => (
-        <div key={width} className="px-4 py-1.5 text-sm">
-          <span
-            className={`inline-block h-[0.7em] ${width} rounded bg-muted align-middle`}
-          />
-        </div>
-      ))}
-    </div>
   );
 }

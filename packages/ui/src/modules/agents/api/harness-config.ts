@@ -1,17 +1,36 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
 import type { HarnessConfigCurrent } from "agent-runtime-api";
-import type { HarnessConfigChange } from "api-server-api";
+import type {
+  AgentConnections,
+  ConnectionView,
+  HarnessConfigChange,
+} from "api-server-api";
 import { useRef } from "react";
 
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
+import { unavailableModel } from "../../sessions/components/model-settings-snapshot.js";
+import { chatDefaultFor } from "../../sessions/lib/chat-default.js";
 import { agentTrpc, agentTrpcHttp } from "../agent-trpc.js";
-import { useAgentLacksLiveUpdates, useIsAgentOperable } from "./queries.js";
+import {
+  agentsKeys,
+  useAgentLacksLiveUpdates,
+  useIsAgentOperable,
+} from "./queries.js";
 
 export function useHarnessConfigStatus(agentId: string | null) {
   return useQuery({
     ...trpc.harnessConfig.status.queryOptions(
+      agentId ? { agentId } : skipToken,
+    ),
+    retry: false,
+  });
+}
+
+export function useChatDefault(agentId: string | null) {
+  return useQuery({
+    ...trpc.harnessConfig.sessionPair.queryOptions(
       agentId ? { agentId } : skipToken,
     ),
     retry: false,
@@ -108,6 +127,20 @@ export function useResolvedHarnessConfig(
   };
 }
 
+export function useStaleModel(agentId: string | null): {
+  stale: boolean;
+  model: string | null;
+} {
+  const operable = useIsAgentOperable(agentId);
+  const { data } = useHarnessConfigSnapshot(agentId);
+  const snapshot = data?.snapshot;
+  const model = snapshot?.model ?? null;
+  if (operable || !snapshot || snapshot.modelAtDiscovery !== model) {
+    return { stale: false, model };
+  }
+  return { stale: unavailableModel(snapshot) !== null, model };
+}
+
 function withDeclared(
   prev: HarnessConfigCurrent,
   change: HarnessConfigChange,
@@ -131,20 +164,56 @@ interface HarnessConfigRollback {
   previous: HarnessConfigCurrent;
 }
 
+function rememberChatDefault(
+  agentId: string,
+  model: string | undefined,
+): Promise<void> {
+  if (model === undefined) return Promise.resolve();
+  const status = queryClient.getQueryData<{ defaultHarness: string | null }>(
+    trpc.harnessConfig.status.queryKey({ agentId }),
+  );
+  const agent = queryClient
+    .getQueryData<{ list: { id: string; harness?: string }[] }>(
+      agentsKeys.listWithChannels(),
+    )
+    ?.list.find((a) => a.id === agentId);
+  const grants = queryClient.getQueryData<AgentConnections>(
+    trpc.connections.getAgentConnections.queryKey({ agentId }),
+  );
+  const pair = chatDefaultFor({
+    harness: status?.defaultHarness ?? agent?.harness,
+    model,
+    grantedConnectionIds: (grants?.connections ?? []).map(
+      (grant) => grant.connectionId,
+    ),
+    connections:
+      queryClient.getQueryData<ConnectionView[]>(
+        trpc.connections.list.queryKey(),
+      ) ?? [],
+  });
+  if (!pair) return Promise.resolve();
+  return api.harnessConfig.rememberSessionPair
+    .mutate({ agentId, kind: "chat", ...pair })
+    .then(() => {
+      void queryClient.invalidateQueries({
+        queryKey: trpc.harnessConfig.sessionPair.pathKey(),
+      });
+    });
+}
+
 export function useApplyHarnessConfig() {
   const rollback = useRef<HarnessConfigRollback | null>(null);
 
-  return useMutation({
-    ...trpc.harnessConfig.set.mutationOptions(),
+  return useMutation<void, Error, HarnessConfigChange & { agentId: string }>({
+    mutationFn: async (change) => {
+      await api.harnessConfig.set.mutate(change);
+      await rememberChatDefault(change.agentId, change.model);
+    },
     meta: {
-      errorToast: "Couldn't apply model settings",
+      errorToast: "Failed to apply model settings",
       invalidates: [trpc.harnessConfig.snapshot.queryKey()],
     },
     onMutate: async (change) => {
-      if (change.harness !== undefined) {
-        rollback.current = null;
-        return undefined;
-      }
       const key = harnessConfigCurrentKey(change.agentId);
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<HarnessConfigCurrent>(key);
@@ -154,10 +223,9 @@ export function useApplyHarnessConfig() {
       }
       return undefined;
     },
-    onSettled: (_data, error, change) => {
+    onSettled: (_data, error) => {
       const pending = rollback.current;
       rollback.current = null;
-      if (!error) askToRestartAfterSave(change.agentId);
       if (error && pending) {
         queryClient.setQueryData(pending.key, pending.previous);
         return;

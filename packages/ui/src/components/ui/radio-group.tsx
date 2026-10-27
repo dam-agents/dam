@@ -20,14 +20,12 @@ interface RadioGroupItemProps extends Omit<
   "children"
 > {
   label: string;
-  labelSuffix?: React.ReactNode;
   description?: string;
   testId?: string;
 }
 
 function RadioGroupItem({
   label,
-  labelSuffix,
   description,
   testId,
   className,
@@ -54,10 +52,7 @@ function RadioGroupItem({
         <RadioGroupPrimitive.Indicator className="size-2 rounded-full bg-primary" />
       </span>
       <span className="flex flex-1 flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">
-          {label}
-          {labelSuffix}
-        </span>
+        <span className="text-sm font-medium text-foreground">{label}</span>
         {description && (
           <span id={descriptionId} className="text-sm text-muted-foreground">
             {description}
@@ -102,7 +97,9 @@ function RadioGroupCard({
         {...props}
       >
         <span className="flex flex-1 flex-col gap-0.5">
-          <span className="text-md font-medium text-foreground">{label}</span>
+          <span className="text-[15px] font-medium text-foreground">
+            {label}
+          </span>
           {description && (
             <span id={descriptionId} className="text-sm text-muted-foreground">
               {description}

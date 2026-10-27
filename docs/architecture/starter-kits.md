@@ -96,6 +96,7 @@ flowchart LR
   The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
 - **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
+  An apply may name that harness itself: the restored 0.2.23 form lets its user pick one, and a named harness wins over the kit's first.
   Helm declares only harness images (`harnessTemplates`), never workloads.
 - **Kit Default Model** — optional `defaultModel`: the model the kit's job needs the Agent itself to run on, named the way the model is known whatever provider serves it (`claude-opus-5` for IBM's `aws/claude-opus-5`).
   The create stamps it on the Agent, and the [conversion](harness-config.md#conversion-of-an-old-default) saves it as the Agent's chat default when the granted provider lists it, so the kit's onboarding turn runs on it; a model that provider does not list leaves the conversion to the image's preset, and the owner changes the default afterwards like any other.

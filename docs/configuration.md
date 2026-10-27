@@ -156,7 +156,6 @@ Without the scope, an agent's post goes out as the app and its text opens with a
 The emoji is a robot face.
 To use the workspace's own emoji instead, upload one per agent avatar and turn on **Use custom emoji for agents** where the agent's Slack channel is connected or edited.
 The fields beside each avatar are prefilled `<brand.short>-agent-1` to `-8` (for example `dam-agent-1`).
-The footer under every agent post opens with the same emoji, then "Sent by" and the agent's name.
 
 **Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing.
 Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and re-run the install flow when Slack asks.

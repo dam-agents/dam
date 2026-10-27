@@ -30,6 +30,7 @@ import {
 import { acceptTerms } from "../../lib/auth.js";
 import {
   applyLegacyContainerAgent,
+  bootTimeoutMs,
   expectHomeFile,
   listSessionIds,
   refreshingToken,
@@ -51,7 +52,6 @@ let api: ApiClient;
 const token = refreshingToken();
 let agentId = "";
 let sessionsBefore: string[] = [];
-let checklistDismissed: boolean | undefined;
 
 function agentRow(page: Page, name: string) {
   return page.getByTestId("agent-row").filter({
@@ -79,7 +79,7 @@ async function migrationProgress(): Promise<string> {
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(300_000);
+  test.setTimeout(bootTimeoutMs(300_000));
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
@@ -90,15 +90,11 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   if (agentId) await api.agents.delete.mutate({ id: agentId });
-  if (checklistDismissed !== undefined)
-    await api.gettingStarted.setDismissed.mutate({
-      dismissed: checklistDismissed,
-    });
 });
 
 // TEST_SCENARIO: the Agent to migrate. It is a container Agent that can be migrated, it holds a file in HOME written through the files API, and it holds a Session from one chat turn. The later scenarios check each of these again on the vm Backend. For about a second after the pod turns Ready, the mesh may not route to it yet. A write whose connection was reset may have reached the agent, so the proxy answers it 502 and does not retry it; the write of the same bytes is idempotent, so the helper retries it.
 test("a container agent holds a HOME file and a session", async ({ page }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(bootTimeoutMs(300_000));
   await waitAgentState(api, agentId, "running");
   const agent = await api.agents.get.query({ id: agentId });
   expect(agent.vm, "the agent to migrate starts on the container Backend").toBe(
@@ -124,24 +120,16 @@ test("a container agent holds a HOME file and a session", async ({ page }) => {
     .toBeGreaterThan(0);
 });
 
-// TEST_SCENARIO: the operator asks for the move by annotating the Agent, the one trigger there is. The page offers none: the row carries no Migrate control, since a move is not the owner's to start. The request switches nothing at once. The row badges the move with its phase as the controller carries it out, and it is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, and the machine is running.
+// TEST_SCENARIO: the operator asks for the move by annotating the Agent, the one trigger there is. The page offers none: the row carries no Migrate control, since a move is not the owner's to start and the restored UI badges a move rather than offering it. The request switches nothing at once. The row badges the move with its phase as the controller carries it out, and it is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, and the machine is running.
 test("migrates to the vm Backend on an operator's request", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
-  checklistDismissed = (await api.gettingStarted.progress.query()).dismissed;
-  await api.gettingStarted.setDismissed.mutate({ dismissed: false });
+  test.setTimeout(bootTimeoutMs(400_000));
   await page.goto(baseUrl);
-  await page.getByTestId("side-panel-tab-getting-started").click();
-  await expect(
-    page
-      .getByTestId("side-panel")
-      .getByRole("heading", { name: "Get started" }),
-  ).toBeVisible();
   const row = agentRow(page, agentName);
   await expect(row).toBeVisible({ timeout: 30_000 });
   await expect(
-    row.getByRole("button", { name: "Migrate to the new runtime" }),
+    row.getByRole("button", { name: "Migrate", exact: true }),
   ).toHaveCount(0);
 
   requestRuntimeMigration(agentId);
@@ -167,7 +155,7 @@ test("migrates to the vm Backend on an operator's request", async ({
 test("keeps its id, HOME and sessions, and chats on the vm Backend", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(bootTimeoutMs(300_000));
   const named = (await api.agents.list.query()).filter(
     (a) => a.name === agentName,
   );

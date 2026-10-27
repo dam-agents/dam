@@ -1,7 +1,6 @@
-import {
-  type ConnectionCreateInput,
-  connectionCreateInputSchema,
-  type ConnectionTemplateView,
+import type {
+  ConnectionCreateInput,
+  ConnectionTemplateView,
 } from "api-server-api";
 
 import { validateConnectionName } from "./connection-name.js";
@@ -21,18 +20,6 @@ export interface CreateFormValues {
 }
 
 export function buildCreatePayload(
-  template: ConnectionTemplateView,
-  values: CreateFormValues,
-): ConnectionCreateInput | { error: string } {
-  const payload = buildUncheckedPayload(template, values);
-  if ("error" in payload) return payload;
-  const parsed = connectionCreateInputSchema.safeParse(payload);
-  return parsed.success
-    ? payload
-    : { error: parsed.error.issues[0]?.message ?? parsed.error.message };
-}
-
-function buildUncheckedPayload(
   template: ConnectionTemplateView,
   { name, fields, overrideDefaults }: CreateFormValues,
 ): ConnectionCreateInput | { error: string } {

@@ -15,8 +15,8 @@ const { getKcContextMock } = createGetKcContextMock({
     themeName: "platform",
     properties: {
       PLATFORM_ALLOW_PASSWORD: "true",
+      PLATFORM_REQUEST_ACCESS_URL: "",
       PLATFORM_SHARE_CLIENT_ID: "platform-share",
-      PLATFORM_BRAND_NAME_MEANINGS: "[]",
     },
   } satisfies KcContextExtension,
   kcContextExtensionPerPage: {},

@@ -60,7 +60,7 @@ test("recreating a disconnected connection regrants cleanly", async ({
   await test.step("open the sandbox connections page", async () => {
     await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
     await expect(
-      page.getByRole("heading", { level: 2, name: agentName }),
+      page.getByRole("heading", { level: 1, name: agentName }),
     ).toBeVisible();
     await expect(
       page.getByTestId(`catalog-connection-${originalId}`),
@@ -86,14 +86,8 @@ test("recreating a disconnected connection regrants cleanly", async ({
 
   await test.step("create a replacement of the same type", async () => {
     await page.getByTestId("catalog-new-custom-header").click();
-    const shareConfirm = page
-      .getByRole("alertdialog")
-      .getByRole("button", { name: "Add connection" });
-    const nameField = page.getByTestId("connection-field-name");
-    await expect(shareConfirm.or(nameField)).toBeVisible();
-    if (await shareConfirm.isVisible()) await shareConfirm.click();
 
-    await nameField.fill(recreatedName);
+    await page.getByTestId("connection-field-name").fill(recreatedName);
     await page.getByTestId("connection-field-host").fill(regrantHost);
     await page
       .getByTestId("connection-field-headerName")

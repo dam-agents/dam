@@ -9,7 +9,7 @@ export const wsClient = createWSClient({
     `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/trpc-ws`,
   connectionParams: async () => ({ token: await getAccessToken() }),
   lazy: { enabled: true, closeMs: 30_000 },
-  keepAlive: { enabled: true, pongTimeoutMs: 5_000 },
+  keepAlive: { enabled: true },
   onOpen: () => onFetchSuccess(),
   onError: () => onFetchError(),
   onClose: () => onFetchError(),

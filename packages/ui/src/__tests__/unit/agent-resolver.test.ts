@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  transitionPausingAgents,
   transitionRestartingAgents,
   transitionStartingSince,
 } from "../../modules/agents/store.js";
@@ -10,7 +11,6 @@ import type { AgentView } from "../../types.js";
 const agent = (id: string, state: AgentView["state"]): AgentView => ({
   id,
   name: id,
-  avatar: null,
   templateId: null,
   templateUpdate: null,
   features: { liveUpdates: true },
@@ -20,11 +20,9 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   image: "x:latest",
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
-  whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
-  disabled: false,
   overBudget: false,
   size: {},
   state,
@@ -34,7 +32,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   workspaceFailures: [],
   channels: [],
   spawnedBy: null,
-  environmentOf: null,
   vm: false,
   runtimeMigration: null,
 });
@@ -63,10 +60,32 @@ describe("resolveAgentDisplay", () => {
     expect(out.powerAction).toBe(null);
   });
 
+  test("pause override: running agent shows hibernating and actions are suppressed", () => {
+    const out = resolveAgentDisplay(
+      agent("a", "running"),
+      new Set(),
+      new Set(["a"]),
+    );
+    expect(out.state).toBe("hibernating");
+    expect(out.clickable).toBe(false);
+    expect(out.powerAction).toBe(null);
+  });
+
+  test("pause override only applies while running — a hibernated agent keeps Start", () => {
+    const out = resolveAgentDisplay(
+      agent("a", "hibernated"),
+      new Set(),
+      new Set(["a"]),
+    );
+    expect(out.state).toBe("hibernated");
+    expect(out.powerAction).toBe("start");
+  });
+
   // TEST_SCENARIO: a vm agent whose guest stopped answering reads as starting forever. Once it has been starting past the wake budget the user must be able to restart it, instead of only deleting it.
   test("an agent stuck starting offers Restart", () => {
     const out = resolveAgentDisplay(
       agent("a", "starting"),
+      new Set(),
       new Set(),
       new Set(["a"]),
     );
@@ -75,13 +94,19 @@ describe("resolveAgentDisplay", () => {
     expect(out.powerAction).toBe("restart");
   });
 
-  // TEST_SCENARIO: a disabled agent reads as disabled whatever its pod does, and offers neither Wake nor Restart, since only enabling it lets it run again.
-  test("a disabled agent shows disabled and offers no power action", () => {
+  test("an agent that just began starting offers no power action", () => {
+    const out = resolveAgentDisplay(agent("a", "starting"), new Set());
+    expect(out.slowStart).toBe(false);
+    expect(out.powerAction).toBe(null);
+  });
+
+  test("restart wins over pause when an id is in both sets", () => {
     const out = resolveAgentDisplay(
-      { ...agent("a", "hibernated"), disabled: true },
+      agent("a", "running"),
+      new Set(["a"]),
       new Set(["a"]),
     );
-    expect(out.state).toBe("disabled");
+    expect(out.state).toBe("starting");
     expect(out.powerAction).toBe(null);
   });
 });
@@ -155,6 +180,65 @@ describe("transitionRestartingAgents", () => {
     const current = new Map([["a", entry(false)]]);
     const next = transitionRestartingAgents(current, [], NOW);
     expect(next.has("a")).toBe(false);
+  });
+});
+
+describe("transitionPausingAgents", () => {
+  const NOW = 1_000_000_000_000;
+  const entry = (ageMs = 0) => ({ clickedAt: NOW - ageMs });
+
+  test("keeps entry while the poll still reads running", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    expect(next.get("a")).toEqual(entry());
+  });
+
+  test("drops entry once the pod reports down — the real hibernated state carries the pill", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(
+      current,
+      [agent("a", "hibernating")],
+      NOW,
+    );
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("drops entry on error so the real failure surfaces", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(current, [agent("a", "error")], NOW);
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("drops entry once it exceeds the TTL, even if state still looks running", () => {
+    const current = new Map([["a", entry(31_000)]]);
+    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("drops entry when the agent disappears", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(current, [], NOW);
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("returns the same reference when membership is unchanged (skips a re-render)", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    expect(next).toBe(current);
+  });
+
+  test("returns a new map when an entry is dropped", () => {
+    const current = new Map([
+      ["a", entry()],
+      ["b", entry()],
+    ]);
+    const next = transitionPausingAgents(
+      current,
+      [agent("a", "running"), agent("b", "hibernated")],
+      NOW,
+    );
+    expect(next).not.toBe(current);
+    expect([...next.keys()]).toEqual(["a"]);
   });
 });
 

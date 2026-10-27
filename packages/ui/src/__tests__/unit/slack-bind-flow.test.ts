@@ -1,0 +1,66 @@
+import { describe, expect, it } from "vitest";
+
+import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
+import {
+  bindErrorCopy,
+  callbackErrorCopy,
+  flowIsGone,
+  readCallbackErrorFromSearch,
+  readFlowIdFromSearch,
+} from "../../modules/slack/lib/bind-flow.js";
+
+const BRAND = "acme";
+
+describe("slack bind flow helpers", () => {
+  it("reads the flow id from the search string", () => {
+    expect(readFlowIdFromSearch("?flow=abc-123")).toBe("abc-123");
+    expect(readFlowIdFromSearch("?flow=abc&x=1")).toBe("abc");
+    expect(readFlowIdFromSearch("?x=1")).toBe(null);
+    expect(readFlowIdFromSearch("?flow=")).toBe(null);
+    expect(readFlowIdFromSearch("")).toBe(null);
+  });
+
+  it("reads the callback error", () => {
+    expect(readCallbackErrorFromSearch("?error=expired")).toBe("expired");
+    expect(readCallbackErrorFromSearch("?flow=abc")).toBe(null);
+  });
+
+  it("maps bind mutation error codes to brand-aware copy", () => {
+    expect(bindErrorCopy("BAD_REQUEST", BRAND).terminal).toBe(true);
+    expect(bindErrorCopy("CONFLICT", BRAND).terminal).toBe(false);
+    expect(bindErrorCopy("CONFLICT", BRAND).hint).toContain(
+      "Pick a different agent",
+    );
+    expect(bindErrorCopy("NOT_FOUND", BRAND).terminal).toBe(false);
+    expect(bindErrorCopy("UNPROCESSABLE_CONTENT", BRAND).terminal).toBe(true);
+    expect(bindErrorCopy("UNPROCESSABLE_CONTENT", BRAND).hint).toContain(
+      `/${BRAND} bind`,
+    );
+    expect(bindErrorCopy("SERVICE_UNAVAILABLE", BRAND).terminal).toBe(false);
+    expect(bindErrorCopy(undefined, BRAND).terminal).toBe(false);
+  });
+
+  it("maps callback error codes to terminal copy that names the brand command", () => {
+    for (const code of ["denied", "expired", "exchange_failed"]) {
+      const copy = callbackErrorCopy(code, BRAND);
+      expect(copy.terminal).toBe(true);
+      expect(copy.hint).toContain(`/${BRAND} bind`);
+    }
+  });
+});
+
+// TEST_SCENARIO: a bind link outlives the flow it names. The query then succeeds with no flow, and the page must end with the expired-link copy instead of an empty picker.
+describe("an expired bind link", () => {
+  it("is a finished query with no flow", () => {
+    expect(flowIsGone({ isSuccess: true, data: null })).toBe(true);
+    expect(flowIsGone({ isSuccess: true, data: { id: "f" } })).toBe(false);
+    expect(flowIsGone({ isSuccess: false, data: undefined })).toBe(false);
+  });
+});
+
+describe("slack bind route", () => {
+  it("round-trips /slack/bind", () => {
+    expect(parseRoute("/slack/bind")).toEqual({ view: "slack-bind" });
+    expect(routeToPath({ view: "slack-bind" })).toBe("/slack/bind");
+  });
+});

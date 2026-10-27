@@ -1,12 +1,9 @@
-// TEST_OVERVIEW: the runtime badges an agent row shows while someone moves the
-// TEST_OVERVIEW: agent to the new runtime. The move is started outside the app,
-// TEST_OVERVIEW: so the badge is the only thing the page says about it: the
-// TEST_OVERVIEW: phase in progress with the controller's reason as its tooltip,
-// TEST_OVERVIEW: and a failure distinctly. A settled agent carries no badge.
+// TEST_OVERVIEW: the agent row's and the chat header's runtime badge: a
+// TEST_OVERVIEW: migration under way shows its phase and the controller's
+// TEST_OVERVIEW: reason, and a failed one a badge of its own.
 import { describe, expect, test } from "vitest";
 
-import { overlayDescription } from "../../modules/agents/lib/overlay-copy.js";
-import { runtimeMigrationBadge } from "../../modules/agents/utils/runtime-migration.js";
+import { runtimeBadge } from "../../modules/agents/utils/runtime-migration.js";
 import type { AgentView, RuntimeMigrationView } from "../../types.js";
 
 function agent(extra: Partial<AgentView>): AgentView {
@@ -26,54 +23,31 @@ function migration(
   return { phase, ...extra };
 }
 
-// TEST_SCENARIO: a failed move says so in the overlay and names the operator who ends it, rather than promising a return the owner has no way to bring about.
-test("a failed move's overlay names the operator", () => {
-  const sentence = overlayDescription("migrating", {
-    ...agent({ runtimeMigration: migration("failed") }),
-    workspaceFailures: [],
-  } as AgentView);
-  expect(sentence).toMatch(/failed/);
-  expect(sentence).toContain("operator");
-  expect(sentence).not.toMatch(/a few minutes/);
-});
-
-describe("runtimeMigrationBadge", () => {
-  // TEST_SCENARIO: an agent with no migration under way is badged for nothing, on either runtime: a container agent is one nobody has come to move yet.
-  test("leaves a settled agent unbadged", () => {
-    expect(runtimeMigrationBadge(agent({}))).toBeNull();
-    expect(runtimeMigrationBadge(agent({ vm: true }))).toBeNull();
-  });
-
+describe("runtimeBadge during a migration", () => {
   // TEST_SCENARIO: a migration under way is badged with its phase, and a failed one with a badge of its own, so a stuck move is never mistaken for one still running.
   test("shows the phase, and a failure distinctly", () => {
-    expect(
-      runtimeMigrationBadge(agent({ runtimeMigration: migration("copying") })),
-    ).toMatchObject({ kind: "migrating", label: "Migrating: copying" });
-    expect(
-      runtimeMigrationBadge(
-        agent({
-          runtimeMigration: migration("failed", { message: "runner is full" }),
-        }),
-      ),
-    ).toEqual({
+    const copying = runtimeBadge(
+      agent({ runtimeMigration: migration("copying") }),
+    );
+    expect(copying).toMatchObject({
+      kind: "migrating",
+      label: "Migrating: copying",
+    });
+    const failed = runtimeBadge(
+      agent({
+        runtimeMigration: migration("failed", { message: "runner is full" }),
+      }),
+    );
+    expect(failed).toEqual({
       kind: "failed",
       label: "Migration failed",
       title: "runner is full",
     });
   });
 
-  // TEST_SCENARIO: each phase reads as what is happening to the agent, and one retried copy names its attempt.
-  test("names every phase, and a retried copy names its attempt", () => {
-    const label = (phase: RuntimeMigrationView["phase"]) =>
-      runtimeMigrationBadge(agent({ runtimeMigration: migration(phase) }))
-        ?.label;
-    expect(label("requested")).toBe("Migrating: preparing");
-    expect(label("stopping")).toBe("Migrating: stopping");
-    expect(label("booting")).toBe("Migrating: booting");
-    expect(label("verified")).toBe("Migrating: finishing");
-    expect(label("aborting")).toBe("Migrating: undoing");
+  test("names an attempt after the first", () => {
     expect(
-      runtimeMigrationBadge(
+      runtimeBadge(
         agent({ runtimeMigration: migration("copying", { attempts: 2 }) }),
       )?.title,
     ).toMatch(/attempt 2/);

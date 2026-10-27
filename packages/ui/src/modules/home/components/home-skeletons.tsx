@@ -2,7 +2,7 @@ import { TextSkeleton } from "@/components/ui/text-skeleton";
 
 export function WidgetSkeleton({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-6">
+    <div className="rounded-2xl border border-border bg-card p-6">
       <div className="mb-5 flex items-center justify-between">
         <p className="text-sm">
           <TextSkeleton width={112} tone="muted" />

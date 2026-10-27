@@ -4,7 +4,7 @@ import {
   Warning,
   WarningAlt,
 } from "@carbon/icons-react";
-import { type AnimationEvent, type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 
 import {
   AlertDialog,
@@ -30,7 +30,6 @@ const KIND_ICON = {
 export interface ConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCloseAnimationEnd?: () => void;
   kind?: ConfirmDialogKind;
   icon?: typeof Warning;
   title: ReactNode;
@@ -45,7 +44,6 @@ export interface ConfirmDialogProps {
 export function ConfirmDialog({
   open,
   onOpenChange,
-  onCloseAnimationEnd,
   kind = "default",
   icon,
   title,
@@ -58,17 +56,8 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const destructive = kind === "destructive";
   const Icon = icon ?? KIND_ICON[kind];
-  const resolvedConfirmLabel = confirmLabel ?? (showCancel ? "Confirm" : "OK");
-  const [wasOpen, setWasOpen] = useState(open);
-  const [opener, setOpener] = useState<HTMLElement | null>(null);
-  if (wasOpen !== open) {
-    setWasOpen(open);
-    if (open) setOpener(document.activeElement as HTMLElement | null);
-  }
-
-  function handleAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
-    if (!open && event.currentTarget === event.target) onCloseAnimationEnd?.();
-  }
+  const resolvedConfirmLabel =
+    confirmLabel ?? (showCancel ? (destructive ? "Remove" : "Confirm") : "OK");
 
   return (
     <AlertDialog
@@ -78,31 +67,19 @@ export function ConfirmDialog({
         onOpenChange(o);
       }}
     >
-      <AlertDialogContent
-        onAnimationEnd={handleAnimationEnd}
-        onCloseAutoFocus={(event) => {
-          if (!opener?.isConnected) return;
-          event.preventDefault();
-          opener.focus();
-          setOpener(null);
-        }}
-        onBackdropClick={() => {
-          onCancel?.();
-          onOpenChange(false);
-        }}
-      >
+      <AlertDialogContent>
         <AlertDialogHeader>
           <div className="flex items-center gap-3">
             <div
               className={cn(
                 "h-8 w-8 rounded-md flex items-center justify-center shrink-0",
-                destructive ? "bg-danger-light" : "bg-primary/10",
+                destructive ? "bg-destructive/10" : "bg-primary/10",
               )}
             >
               <Icon
                 className={cn(
                   "h-4 w-4",
-                  destructive ? "text-danger" : "text-primary",
+                  destructive ? "text-destructive" : "text-primary",
                 )}
               />
             </div>
@@ -124,14 +101,12 @@ export function ConfirmDialog({
           )}
           <AlertDialogAction
             onClick={() => onConfirm()}
-            autoFocus={!showCancel}
+            autoFocus
             className={cn(
               destructive && buttonVariants({ variant: "destructive" }),
             )}
           >
-            {destructive && /^(Delete|Remove)\b/.test(resolvedConfirmLabel) && (
-              <TrashCan size={16} />
-            )}
+            {destructive && <TrashCan size={16} />}
             {resolvedConfirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>

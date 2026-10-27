@@ -1,4 +1,4 @@
-import { Add } from "@carbon/icons-react";
+import { Add, TrashCan } from "@carbon/icons-react";
 import {
   type Control,
   Controller,
@@ -8,7 +8,6 @@ import {
 } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
-import { RemoveButton } from "@/components/ui/remove-button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -40,7 +39,7 @@ export function QuietHoursEditor({ control, register, error }: Props) {
     <Button
       type="button"
       variant="outline"
-      size="sm"
+      className="h-[30px] px-2.5 text-sm"
       onClick={() =>
         append({ startTime: "22:00", endTime: "06:00", enabled: true })
       }
@@ -74,6 +73,7 @@ export function QuietHoursEditor({ control, register, error }: Props) {
               <div key={field.id} className="flex items-center gap-2">
                 <div className="w-[120px]">
                   <Select
+                    className="h-10"
                     variant={variant}
                     {...register(`quietHours.${idx}.startTime`)}
                   >
@@ -83,6 +83,7 @@ export function QuietHoursEditor({ control, register, error }: Props) {
                 <span className="text-sm text-muted-foreground">→</span>
                 <div className="w-[120px]">
                   <Select
+                    className="h-10"
                     variant={variant}
                     {...register(`quietHours.${idx}.endTime`)}
                   >
@@ -101,11 +102,15 @@ export function QuietHoursEditor({ control, register, error }: Props) {
                     />
                   )}
                 />
-                <RemoveButton
-                  label="Remove quiet hours"
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="ml-auto text-muted-foreground hover:text-destructive"
                   onClick={() => remove(idx)}
-                  className="ml-auto"
-                />
+                >
+                  <TrashCan size={13} />
+                </Button>
               </div>
             );
           })}

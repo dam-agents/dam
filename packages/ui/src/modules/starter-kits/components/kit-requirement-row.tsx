@@ -50,19 +50,10 @@ export function KitRequirementRow({
 
   return (
     <li
-      className="overflow-hidden rounded-lg border border-kit-line bg-kit-surface"
+      className="border-t border-kit-rule px-4 py-4 first:border-t-0"
       data-testid={`starter-kit-requirement-${requirement.accepts.join("-")}`}
     >
-      {requirement.note && (
-        <div className="px-4 pt-3">
-          <div className="flex items-start gap-2.5 rounded-lg bg-kit-tint px-3 py-2.5">
-            <Information size={16} className="mt-0.5 shrink-0 text-kit" />
-            <p className="text-sm text-foreground/80">{requirement.note}</p>
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-4 px-4 py-4">
+      <div className="flex items-center gap-4">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
           {slug ? (
             <ConnectionIcon iconSlug={slug} alt="" size={16} />
@@ -77,7 +68,7 @@ export function KitRequirementRow({
               {title}
             </span>
             <Badge variant="kit" size="sm">
-              Starter kit
+              Starter Kit
             </Badge>
             <Badge
               variant={requirement.required ? "warning" : "muted"}
@@ -86,6 +77,11 @@ export function KitRequirementRow({
               {requirement.required ? "required" : "optional"}
             </Badge>
           </div>
+          {requirement.note && (
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {requirement.note}
+            </p>
+          )}
         </div>
 
         {granted.length > 0 ? (
@@ -111,7 +107,7 @@ export function KitRequirementRow({
       </div>
 
       {granted.length > 0 && (
-        <ul className="flex flex-col gap-3 px-4 pb-4">
+        <ul className="mt-3 flex flex-col gap-3">
           {granted.map((connection) => (
             <li key={connection.id}>
               <ConnectionRowCard

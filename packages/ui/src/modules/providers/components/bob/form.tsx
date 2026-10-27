@@ -1,63 +1,59 @@
+import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
 
 import { FormField } from "@/components/form-field";
+import { Button } from "@/components/ui/button";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
+import { externalLinkProps } from "@/lib/external-link";
 
 import { BOB_CHAT_MODES, type BobModelPins } from "../../../../types.js";
-import {
-  ProviderFormShell,
-  ProviderSecretRow,
-  stripWhitespace,
-} from "../provider-form-shell.js";
+import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
 
-const BOB_KEY_PAGE_URL = "https://bob.ibm.com/admin/apikeys";
+const bobCredentialSchema = z
+  .object({
+    value: z.string(),
+    model: z.string(),
+    agentId: z.string(),
+    teamId: z.string(),
+    maxCost: z.string(),
+    chatMode: z.string(),
+  })
+  .superRefine((data, ctx) => {
+    if (stripWhitespace(data.value).length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["value"],
+        message: "Required",
+      });
+    }
+    if (
+      data.maxCost.trim() !== "" &&
+      !/^(?:[1-9]\d*(?:\.\d+)?|0?\.\d*[1-9]\d*)$/.test(data.maxCost.trim())
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["maxCost"],
+        message: "Must be a positive amount, e.g. 0.50 or 5",
+      });
+    }
+    const cm = data.chatMode.trim();
+    if (
+      cm !== "" &&
+      !BOB_CHAT_MODES.includes(cm as (typeof BOB_CHAT_MODES)[number])
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["chatMode"],
+        message: `Must be one of: ${BOB_CHAT_MODES.join(", ")}`,
+      });
+    }
+  });
 
-export const bobCredentialSchema = (variant: "wizard" | "edit") =>
-  z
-    .object({
-      value: z.string(),
-      model: z.string(),
-      agentId: z.string(),
-      teamId: z.string(),
-      maxCost: z.string(),
-      chatMode: z.string(),
-    })
-    .superRefine((data, ctx) => {
-      if (variant === "wizard" && stripWhitespace(data.value).length === 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["value"],
-          message: "Required",
-        });
-      }
-      if (
-        data.maxCost.trim() !== "" &&
-        !/^(?:[1-9]\d*(?:\.\d+)?|0?\.\d*[1-9]\d*)$/.test(data.maxCost.trim())
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["maxCost"],
-          message: "Must be a positive amount, e.g. 0.50 or 5",
-        });
-      }
-      const cm = data.chatMode.trim();
-      if (
-        cm !== "" &&
-        !BOB_CHAT_MODES.includes(cm as (typeof BOB_CHAT_MODES)[number])
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["chatMode"],
-          message: `Must be one of: ${BOB_CHAT_MODES.join(", ")}`,
-        });
-      }
-    });
-
-type FormValues = z.infer<ReturnType<typeof bobCredentialSchema>>;
+type FormValues = z.infer<typeof bobCredentialSchema>;
 
 export function BobForm({
   variant,
@@ -72,7 +68,7 @@ export function BobForm({
 }) {
   const pins = initialPins ?? {};
   const { register, handleSubmit, formState } = useForm<FormValues>({
-    resolver: zodResolver(bobCredentialSchema(variant)),
+    resolver: zodResolver(bobCredentialSchema),
     mode: "onChange",
     defaultValues: {
       value: "",
@@ -83,14 +79,14 @@ export function BobForm({
       chatMode: pins.chatMode ?? "",
     },
   });
-  const { errors, isDirty, isSubmitting, isValid } = formState;
+  const { errors, isSubmitting, isValid } = formState;
   const hasAnyPin = Object.values(pins).some((v) => v && v.trim() !== "");
   const [advancedOpen, setAdvancedOpen] = useState(
     variant === "edit" && hasAnyPin,
   );
 
   const isEdit = variant === "edit";
-  const submitDisabled = isSubmitting || !isValid || (isEdit && !isDirty);
+  const submitDisabled = isSubmitting || !isValid;
 
   const onSubmit = handleSubmit(async (values) => {
     await onSave({
@@ -110,25 +106,36 @@ export function BobForm({
       provider="bob"
       title="Bob Shell"
       description={
-        isEdit
-          ? "Paste a new token to replace the existing one, or leave it empty to keep it. Advanced settings are passed to Bob as CLI flags / env."
-          : "IBM's AI shell assistant. Paste a Bob API key of type Inference to get started."
+        <>
+          {isEdit
+            ? "Paste a new token to replace the existing one. Advanced settings are passed to Bob as CLI flags / env."
+            : "IBM's AI shell assistant. Paste a Bob API key of type Inference to get started."}{" "}
+          <a
+            href="https://bob.ibm.com/admin/apikeys"
+            {...externalLinkProps}
+            className="text-primary hover:underline inline-flex items-center gap-1"
+          >
+            Manage keys <Launch size={11} />
+          </a>
+        </>
       }
-      keyPage={{
-        href: BOB_KEY_PAGE_URL,
-        hint: "Create a key of type Inference in the Bob admin console",
-      }}
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      <ProviderSecretRow
-        register={register("value")}
-        placeholder="bob_prod_bob-apikey_…"
-        ariaLabel="Bob API key"
-        isEdit={isEdit}
-        isSubmitting={isSubmitting}
-        submitDisabled={submitDisabled}
-      />
+      <div className="flex gap-3">
+        <Input
+          type="password"
+          autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
+          placeholder="bob_prod_bob-apikey_…"
+          {...register("value")}
+        />
+        <Button type="submit" disabled={submitDisabled} className="shrink-0">
+          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+        </Button>
+      </div>
 
       <DisclosureToggle
         open={advancedOpen}

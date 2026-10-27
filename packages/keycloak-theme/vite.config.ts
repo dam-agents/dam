@@ -13,8 +13,8 @@ export default defineConfig({
       accountThemeImplementation: "none",
       environmentVariables: [
         { name: "PLATFORM_ALLOW_PASSWORD", default: "true" },
+        { name: "PLATFORM_REQUEST_ACCESS_URL", default: "" },
         { name: "PLATFORM_SHARE_CLIENT_ID", default: "platform-share" },
-        { name: "PLATFORM_BRAND_NAME_MEANINGS", default: "[]" },
       ],
     }),
   ],

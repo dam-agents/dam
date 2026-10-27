@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
@@ -7,27 +7,17 @@ import { useSetPreferredConnection } from "../../connections/api/mutations.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
-import { useConfirmSharedConnection } from "../../connections/hooks/use-confirm-shared-connection.js";
-import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
+import { SatellitesGroupCard } from "../../satellites/components/satellites-group-card.js";
 import { useAgentSatellites } from "../../satellites/hooks/use-agent-satellites.js";
-import { useSharedChannels } from "../hooks/use-shared-channels.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
 import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
-import type { SectionHeaderSlot } from "./sandbox-home-header.js";
 
 interface Props {
   agentId: string;
   oauthReturnView: string;
-  header: SectionHeaderSlot;
-  leading?: ReactNode;
 }
 
-export function ConnectionsSection({
-  agentId,
-  oauthReturnView,
-  header,
-  leading,
-}: Props) {
+export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
   const connectionsQ = useAppConnections();
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
@@ -35,8 +25,6 @@ export function ConnectionsSection({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const satellites = useAgentSatellites(agentId);
-  const sharedChannels = useSharedChannels(agentId);
-  const shareConfirm = useConfirmSharedConnection(sharedChannels);
 
   const grantedIds = useMemo(
     () =>
@@ -72,9 +60,7 @@ export function ConnectionsSection({
   const { populated: groups, templateById } = useCatalogGroups(listed);
 
   return (
-    <>
-      {header()}
-      {leading}
+    <section>
       <GrantedConnectionsPanel
         groups={groups}
         granted={granted}
@@ -86,9 +72,9 @@ export function ConnectionsSection({
           setPreferred.mutate({ agentId, connectionId })
         }
         preferPending={setPreferred.isPending}
-        extraGroups={
+        leading={
           satellites.granted.length > 0 && (
-            <SatellitesGroup
+            <SatellitesGroupCard
               satellites={satellites.granted}
               showCount
               grant={(s) => ({
@@ -107,15 +93,10 @@ export function ConnectionsSection({
           }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
-          sharing={{
-            channels: sharedChannels,
-            confirm: shareConfirm.confirm,
-            dismissed: shareConfirm.dismissed,
-          }}
           satelliteGrant={satellites.grantControls}
           oauthReturnView={oauthReturnView}
         />
       )}
-    </>
+    </section>
   );
 }

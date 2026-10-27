@@ -1,26 +1,19 @@
-import { Checkmark, Close } from "@carbon/icons-react";
+import { Checkmark, Close, Copy, Warning } from "@carbon/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { CopyButton } from "@/components/ui/copy-button";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { VerdictPart } from "../../../types.js";
-import { denyAllPrompt } from "../../approvals/lib/deny-all.js";
-import { withAttachmentNames } from "../../files/lib/upload-path.js";
-import { denyOnceOption } from "../lib/permission-deny-all.js";
-import type {
-  PendingPermission,
-  PermissionOption,
-} from "../store/permissions.js";
+import type { PermissionOption } from "../store/permissions.js";
 import { ChatColumn } from "./chat-column.js";
-import { StatusLine } from "./status-line.js";
 
 export type PermissionVerdict = Omit<VerdictPart, "kind">;
 
-function rawToolTitle(toolCall: unknown): string {
+function toolTitle(toolCall: unknown): string {
   if (toolCall && typeof toolCall === "object") {
     const tc = toolCall as {
       title?: string;
@@ -32,36 +25,12 @@ function rawToolTitle(toolCall: unknown): string {
   return "this tool call";
 }
 
-function toolTitle(toolCall: unknown): string {
-  return withAttachmentNames(rawToolTitle(toolCall));
-}
-
-function rewrittenFrom(toolCall: unknown): string | undefined {
-  const raw = rawToolTitle(toolCall);
-  return withAttachmentNames(raw) === raw ? undefined : raw;
-}
-
 function toolLocation(toolCall: unknown): string | null {
   if (toolCall && typeof toolCall === "object") {
     const tc = toolCall as { locations?: { path?: string }[] };
     return tc.locations?.[0]?.path ?? null;
   }
   return null;
-}
-
-function optionLabel(opt: PermissionOption): string {
-  switch (opt.kind) {
-    case "allow_once":
-      return "Allow once";
-    case "allow_always":
-      return "Always allow…";
-    case "reject_once":
-      return "Deny";
-    case "reject_always":
-      return "Always deny…";
-    default:
-      return opt.name;
-  }
 }
 
 function verdictLabel(opt: PermissionOption): string {
@@ -87,22 +56,21 @@ export function PermissionStatusLine() {
     : undefined;
   if (!current) return null;
   return (
-    <StatusLine>
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 min-h-11 text-sm anim-in">
+      <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
       <span className="text-muted-foreground shrink-0">
         Awaiting approval —
       </span>
-      <span
-        className="font-semibold text-foreground truncate"
-        title={rewrittenFrom(current.toolCall)}
-      >
+      <span className="font-semibold text-foreground truncate">
         Allow {toolTitle(current.toolCall)}
       </span>
-    </StatusLine>
+    </div>
   );
 }
 
 export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
   const [expanded, setExpanded] = useState(false);
+  const { copy, copied, state: copyState } = useCopy();
 
   return (
     <div
@@ -113,7 +81,7 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
         {verdict.allowed ? (
           <Checkmark size={16} className="text-success shrink-0 mt-0.5" />
         ) : (
-          <Close size={16} className="text-danger shrink-0 mt-0.5" />
+          <Close size={16} className="text-destructive shrink-0 mt-0.5" />
         )}
         <span className="text-muted-foreground shrink-0">
           {verdict.label} —
@@ -128,12 +96,31 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
           {verdict.subject}
         </span>
       </div>
-      <CopyButton
-        value={`${verdict.label} — ${verdict.subject}`}
-        label="Copy decision"
-        stopPropagation
-        className={HOVER_ACTION}
-      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={copied ? "Copied" : "Copy"}
+        tooltip={copied ? "Copied" : "Copy"}
+        onClick={(e) => {
+          e.stopPropagation();
+          void copy(`${verdict.label} — ${verdict.subject}`);
+        }}
+        className={cn(
+          "text-muted-foreground hover:text-foreground shrink-0",
+          HOVER_ACTION,
+          copied && "text-success hover:text-success opacity-100",
+          copyState === "failed" && "text-danger hover:text-danger opacity-100",
+        )}
+      >
+        {copied ? (
+          <Checkmark size={12} />
+        ) : copyState === "failed" ? (
+          <Warning size={12} />
+        ) : (
+          <Copy size={12} />
+        )}
+      </Button>
     </div>
   );
 }
@@ -146,7 +133,6 @@ export function PermissionPrompt({
   const sessionId = useStore((s) => s.sessionId);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const resolve = useStore((s) => s.resolvePendingPermission);
-  const showConfirm = useStore((s) => s.showConfirm);
   const pending = sessionId
     ? pendingPermissions.filter((p) => p.sessionId === sessionId)
     : [];
@@ -164,50 +150,27 @@ export function PermissionPrompt({
     setClampable(!!el && el.scrollHeight > el.clientHeight + 1);
   }, [expanded, current?.toolCallId]);
 
-  const answer = useCallback(
-    (entry: PendingPermission, opt: PermissionOption) => {
+  const pick = useCallback(
+    (opt: PermissionOption) => {
+      if (!current) return;
       onResolved?.(
         {
           label: verdictLabel(opt),
-          subject: toolTitle(entry.toolCall),
+          subject: toolTitle(current.toolCall),
           allowed: opt.kind?.startsWith("allow") ?? false,
         },
-        entry.toolCallId,
+        current.toolCallId,
       );
-      resolve(entry.toolCallId, {
+      resolve(current.toolCallId, {
         outcome: { outcome: "selected", optionId: opt.optionId },
       });
     },
-    [resolve, onResolved],
+    [current, resolve, onResolved],
   );
-
-  const pick = useCallback(
-    (opt: PermissionOption) => {
-      if (current) answer(current, opt);
-    },
-    [current, answer],
-  );
-
-  const deniable = pending.filter((p) => denyOnceOption(p.options));
-  const denyAll = async () => {
-    const confirmed = new Set(deniable.map((p) => p.toolCallId));
-    const prompt = denyAllPrompt(confirmed.size);
-    const ok = await showConfirm(prompt.message, prompt.title, {
-      kind: "destructive",
-      confirmLabel: prompt.confirmLabel,
-    });
-    if (!ok) return;
-    for (const entry of useStore.getState().pendingPermissions) {
-      if (!confirmed.has(entry.toolCallId)) continue;
-      const opt = denyOnceOption(entry.options);
-      if (opt) answer(entry, opt);
-    }
-  };
 
   useEffect(() => {
     if (!current) return;
     const onKey = (e: KeyboardEvent) => {
-      if (useStore.getState().dialog?.open) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -236,11 +199,10 @@ export function PermissionPrompt({
       <ChatColumn className="flex flex-col gap-2">
         <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
           <div className="flex items-start gap-2 text-sm font-semibold text-foreground">
-            <span className="h-2 w-2 rounded-full bg-warning shrink-0 mt-1.5" />
+            <span className="h-2 w-2 rounded-full bg-accent shrink-0 mt-1.5" />
             <span
               ref={titleRef}
               className={cn("break-all min-w-0", !expanded && "line-clamp-3")}
-              title={rewrittenFrom(current.toolCall)}
             >
               Allow {title}?
             </span>
@@ -266,30 +228,17 @@ export function PermissionPrompt({
                 variant="outline"
                 size="sm"
                 onClick={() => pick(opt)}
-                className="bg-background max-w-full"
+                className="bg-background h-[26px] text-sm font-medium max-w-full"
                 tooltip={`${opt.name} — press ${i + 1}`}
               >
-                <span className="truncate">{optionLabel(opt)}</span>
+                <span className="truncate">{opt.name}</span>
               </Button>
             ))}
           </div>
           {pending.length > 1 && (
-            <div className="flex flex-wrap items-center gap-x-2 text-2xs text-muted-foreground">
-              <span>
-                {pending.length - 1} more request
-                {pending.length - 1 === 1 ? "" : "s"} queued
-              </span>
-              {deniable.length > 1 && (
-                <Button
-                  variant="link"
-                  size="inline"
-                  onClick={() => void denyAll()}
-                  data-testid="deny-all-permissions"
-                  className="text-2xs"
-                >
-                  Deny all {deniable.length}
-                </Button>
-              )}
+            <div className="text-[11px] text-muted-foreground">
+              {pending.length - 1} more request
+              {pending.length - 1 === 1 ? "" : "s"} queued
             </div>
           )}
         </div>

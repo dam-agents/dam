@@ -1,6 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 
+import { FIELD_INSET } from "@/components/ui/inset";
 import { cn } from "@/lib/utils";
 
 const calloutVariants = cva("rounded-lg border", {
@@ -26,16 +27,29 @@ const calloutVariants = cva("rounded-lg border", {
 });
 
 export interface CalloutProps
-  extends React.ComponentProps<"div">, VariantProps<typeof calloutVariants> {}
+  extends React.ComponentProps<"div">, VariantProps<typeof calloutVariants> {
+  inset?: boolean;
+}
 
-function Callout({ className, tone, variant, size, ...props }: CalloutProps) {
+function Callout({
+  className,
+  tone,
+  variant,
+  size,
+  inset,
+  ...props
+}: CalloutProps) {
   return (
     <div
       data-slot="callout"
-      className={cn(calloutVariants({ tone, variant, size }), className)}
+      className={cn(
+        calloutVariants({ tone, variant, size }),
+        inset && FIELD_INSET,
+        className,
+      )}
       {...props}
     />
   );
 }
 
-export { Callout };
+export { Callout, calloutVariants };

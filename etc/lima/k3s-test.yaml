@@ -12,7 +12,12 @@ cpus: 4
 # VM — `mise run e2e` always nukes the prior VM first, so this takes effect
 # on the next run.
 memory: 8GiB
-disk: 20GiB
+# 40 GiB, not 20: the lane imports the platform images, the vm runner, the
+# default agent image and the mock, stages the agent image trees the machines
+# boot from, and keeps each tar under /var/tmp while it imports. At 20 GiB the
+# agent image import died with "No space left on device" before the suite
+# started. Bumping doesn't resize an existing VM — `mise run e2e` nukes it first.
+disk: 40GiB
 
 # Skip lima's default rootless containerd + buildkit + stargz setup —
 # k3s ships its own containerd and we never invoke `nerdctl` from the host.

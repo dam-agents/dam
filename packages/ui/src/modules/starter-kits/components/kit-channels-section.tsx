@@ -4,6 +4,7 @@ import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { FIELD_INSET } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -12,13 +13,13 @@ import { ConnectionIcon } from "../../connections/components/connection-icon.js"
 const CHANNELS = [
   {
     type: "slack" as const,
-    title: "Slack channel",
+    title: "Slack Channel",
     blurb:
       "Your team can interact with the agent in a Slack channel or their DMs.",
   },
   {
     type: "telegram" as const,
-    title: "Telegram chat",
+    title: "Telegram Chat",
     blurb: "Your team can interact with the agent in a Telegram group or DM.",
   },
 ];
@@ -40,7 +41,7 @@ export function KitChannelsSection({
         Channels <span className="font-normal">(optional)</span>
       </SectionLabel>
 
-      <ul className="flex flex-col gap-2">
+      <ul className={cn(FIELD_INSET, "flex flex-col gap-2")}>
         {CHANNELS.map((channel) => {
           const fromKit = kit.channels.find((c) => c.type === channel.type);
           return (
@@ -65,7 +66,7 @@ export function KitChannelsSection({
                     </span>
                     {fromKit && (
                       <Badge variant="kit" size="sm">
-                        Starter kit
+                        Starter Kit
                       </Badge>
                     )}
                   </div>
@@ -94,10 +95,11 @@ export function KitChannelsSection({
                 <div className="mt-3 pl-7">
                   <FormField
                     label="Slack channel ID"
-
+                    disableInset
                     hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
                   >
                     <Input
+                      className="h-10"
                       value={slackChannelId}
                       onChange={(e) => onSlackChannelIdChange(e.target.value)}
                       placeholder="C0…"
@@ -109,8 +111,8 @@ export function KitChannelsSection({
 
               {channel.type === "telegram" && (
                 <p className="mt-2 pl-7 text-xs text-muted-foreground">
-                  Once the agent is running, send <code>/bind</code> to the bot
-                  in the Telegram chat to connect it.
+                  Bound in chat with /platform bind once the agent is running —
+                  no form can do it.
                 </p>
               )}
             </li>

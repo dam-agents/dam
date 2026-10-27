@@ -1,11 +1,9 @@
 import type {
   ContentChunk,
-  StopReason,
   ToolCall,
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
-import { resultObjectTexts, terminalOutputPart } from "agent-runtime-api";
 import type {
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
@@ -20,15 +18,28 @@ import type {
   ToolContent,
 } from "../../types.js";
 import { describeJsonRpcError } from "./errors.js";
-import { PLUMBING_TAGS } from "./plumbing-tags.js";
-import type { AcpUpdate, FrameMeta } from "./types.js";
+import type { AcpUpdate } from "./types.js";
 
-const OUTPUT_LIMIT_STOP_REASON: StopReason = "max_tokens";
-
-function isOutputLimitStop(stopReason: string | undefined): boolean {
-  return stopReason === OUTPUT_LIMIT_STOP_REASON;
-}
-
+const PLUMBING_TAGS = [
+  "continued-from",
+  "how-to-respond",
+  "addressed-to-you",
+  "reading-along",
+  "network-access",
+  "attached-files",
+  "turn-undelivered",
+  "turn-interrupted",
+  "system-reminder",
+  "task-notification",
+  "agent-message",
+  "command-name",
+  "command-message",
+  "command-args",
+  "local-command-stdout",
+  "local-command-stderr",
+  "local-command-caveat",
+  "user-prompt-submit-hook",
+];
 const PLUMBING_RE = new RegExp(
   `<(${PLUMBING_TAGS.join("|")})(?:\\s[^>]*(?<!/))?>[\\s\\S]*?<\\/\\1>`,
   "g",
@@ -37,52 +48,19 @@ function stripPlumbing(raw: string): string {
   return raw.replace(PLUMBING_RE, "").trim();
 }
 
-const INTERRUPT_MARKER_RE = /^\[Request interrupted by user[^\]]*\]$/;
-
 function mapToolContent(
   content: ToolCallContent[] | undefined | null,
 ): ToolContent[] | undefined {
-  return content?.flatMap((c): ToolContent[] => {
-    if (c.type === "diff")
-      return [
-        {
-          type: "diff",
-          path: c.path,
-          oldText: c.oldText ?? null,
-          newText: c.newText,
-        },
-      ];
-    if (c.type === "content" && c.content.type === "text" && c.content.text)
-      return [{ type: "content", text: c.content.text }];
-    return [];
-  });
-}
-
-const TERMINAL_TEXT_LIMIT = 50 * 1024;
-
-function withTerminalPart(
-  previous: ToolContent[] | undefined,
-  part: string,
-): ToolContent[] {
-  const blocks = previous ?? [];
-  const last = blocks[blocks.length - 1];
-  const kept = last?.type === "terminal" ? blocks.slice(0, -1) : blocks;
-  const text = `${last?.type === "terminal" ? last.text : ""}${part}`;
-  return [
-    ...kept,
-    { type: "terminal", text: text.slice(-TERMINAL_TEXT_LIMIT) },
-  ];
-}
-
-function adapterOutput(
-  u: ToolCall | ToolCallUpdate,
-  previous: ToolContent[] | undefined,
-): ToolContent[] | undefined {
-  const results = resultObjectTexts(u);
-  if (results.length > 0)
-    return results.map((text) => ({ type: "content", text }));
-  const part = terminalOutputPart(u);
-  return part === null ? undefined : withTerminalPart(previous, part);
+  return content
+    ?.map<ToolContent>((c) => {
+      if (c.type === "content")
+        return {
+          type: c.type,
+          text: c.content.type === "text" ? c.content.text : "",
+        };
+      return { type: c.type, text: "" };
+    })
+    .filter((c) => c.text);
 }
 
 const EMBEDDED_RE =
@@ -141,42 +119,42 @@ function parseUserText(text: string): MessagePart[][] {
 export function applyUpdate(
   messages: Message[],
   update: AcpUpdate,
-  frame: FrameMeta = {},
+  at?: string,
+  telemetryPromptId?: string,
+  turnId?: string,
 ): Message[] {
-  const { telemetryPromptId, model, stopReason } = frame;
-  const next = applyUpdateOf(messages, update, frame);
-  const named =
-    telemetryPromptId === undefined
-      ? next
-      : stampActiveReply(next, "telemetryPromptId", telemetryPromptId);
-  const modelled =
-    model === undefined ? named : stampActiveReply(named, "model", model);
-  return isOutputLimitStop(stopReason)
-    ? stampActiveReply(modelled, "stoppedAtOutputLimit", true)
-    : modelled;
+  const next = applyUpdateOf(messages, update, at, telemetryPromptId, turnId);
+  return telemetryPromptId === undefined
+    ? next
+    : stampActiveReply(next, telemetryPromptId);
 }
 
 function applyUpdateOf(
   messages: Message[],
   update: AcpUpdate,
-  { at, telemetryPromptId, turnId, block }: FrameMeta,
+  at?: string,
+  telemetryPromptId?: string,
+  turnId?: string,
 ): Message[] {
   switch (update.sessionUpdate) {
-    case "platform_turn_ended": {
-      const end: ReplyClose = {
+    case "platform_turn_ended":
+      if (update.turnId !== undefined)
+        return closeTurn(messages, update.turnId, {
+          at,
+          telemetryPromptId,
+          interruption:
+            update.error &&
+            describeJsonRpcError(update.error.message, update.error.details),
+          stopped: update.stopReason === "cancelled",
+        });
+      return closeActiveAssistant(
+        messages,
         at,
         telemetryPromptId,
-        interruption:
-          update.error &&
+        update.error &&
           describeJsonRpcError(update.error.message, update.error.details),
-        model: update.model,
-        stopped: update.stopReason === "cancelled",
-        stoppedAtOutputLimit: isOutputLimitStop(update.stopReason),
-      };
-      return update.turnId === undefined
-        ? closeActiveAssistant(messages, end)
-        : closeTurn(messages, update.turnId, end);
-    }
+        update.stopReason === "cancelled",
+      );
 
     case "platform_prompt_accepted":
       if (update.steered) return withSteeredSend(messages, update.promptId);
@@ -196,7 +174,7 @@ function applyUpdateOf(
       return appendClippedMarker(messages, update.older);
 
     case "user_message_chunk":
-      return handleUserChunk(messages, update, at, block);
+      return handleUserChunk(messages, update, at);
 
     case "agent_message_chunk":
       return handleAgentChunk(messages, update, "text", at, turnId);
@@ -215,52 +193,16 @@ function applyUpdateOf(
   }
 }
 
-function waitsBehindAnotherReply(
-  messages: Message[],
-  promptId: string,
-): boolean {
-  return messages.some(
-    (m) => m.role === "assistant" && m.streaming && m.promptId !== promptId,
-  );
-}
-
-function setQueuedByPromptId(
-  messages: Message[],
-  promptId: string,
-  queued: boolean,
-): Message[] {
-  return messages.map((m) => {
-    if (m.promptId === promptId && m.streaming && m.parts.length === 0)
-      return { ...m, queued };
-    if (m.role === "user" && m.id === promptId && m.queued !== queued)
-      return { ...m, queued };
-    return m;
-  });
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: A steered prompt joins the running turn where it
- * was injected and opens no reply of its own: the sent message drops its
- * placeholder, and the turn continues below it.
- */
+// UNIT_BOUNDARY_DESCRIPTION: a prompt the runtime steered into the running turn was already read by the agent: its own bubbles give way, and the turn carries on below it, where the working indicator and the next output land.
 function withSteeredSend(messages: Message[], promptId: string): Message[] {
   const marked = messages.flatMap((m): Message[] => {
     if (m.role === "user" && m.id === promptId)
-      return [{ ...m, steered: true, queued: false }];
+      return [{ ...m, queued: false }];
     return isPlaceholder(m) && m.promptId === promptId ? [] : [m];
   });
   return continueTurnBelow(marked, promptId) ?? marked;
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Once a message is steered into a running turn,
- * the agent reads it before anything it writes next, so the turn continues
- * below it: the reply above it ends (or goes, while still empty) and an empty
- * reply of the same turn opens right after the message, where the working
- * indicator now shows and the turn's next output lands. A reply that has no
- * output yet is known by its prompt's id, which names its turn. Null when no
- * running reply above the message belongs to a known turn.
- */
 function continueTurnBelow(
   messages: Message[],
   messageId: string,
@@ -290,87 +232,6 @@ function continueTurnBelow(
   });
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: The sender's own bubbles for a prompt the runtime
- * queued give way to the queue, which renders it for every viewer alike.
- */
-/**
- * UNIT_BOUNDARY_DESCRIPTION: A message sent while the agent answers is shown
- * in the queue below the conversation, not in it, until it starts: the user
- * message and its empty reply placeholder are queued sends.
- */
-export function isQueuedSend(m: Message): boolean {
-  if (m.queued !== true) return false;
-  return m.role === "user" || (m.streaming && m.parts.length === 0);
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Whether a message sent now must wait in the
- * queue. Only when the chat is sure the session is idle — no reply streaming,
- * nothing in the runtime's queue, no earlier send still waiting — does a sent
- * message show as sent at once; otherwise it joins the queue first and moves
- * into the conversation when the runtime starts or steers it.
- */
-export function sendWaits(
-  messages: Message[],
-  queue: readonly QueuedPrompt[],
-): boolean {
-  return (
-    queue.length > 0 ||
-    messages.some(
-      (m) => isQueuedSend(m) || (m.role === "assistant" && m.streaming),
-    )
-  );
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Whether the session has nothing yet, so the chat
- * shows the new-session hero. A send the runtime queues leaves the transcript
- * for the queue below it (`platform/queueChanged`); a new session's first
- * prompt waits there while its harness settings apply, and it still counts.
- */
-export function conversationEmpty(
-  messages: readonly Message[],
-  queue: readonly QueuedPrompt[],
-): boolean {
-  return messages.length === 0 && queue.length === 0;
-}
-
-export function withoutQueuedSends(
-  messages: Message[],
-  items: QueuedPrompt[],
-): Message[] {
-  const idsOf = (starting: boolean) =>
-    new Set(
-      items.flatMap((item) =>
-        item.promptId === null || (item.starting === true) !== starting
-          ? []
-          : [item.promptId],
-      ),
-    );
-  const queued = idsOf(false);
-  const starting = idsOf(true);
-  if (queued.size === 0 && starting.size === 0) return messages;
-  return messages
-    .filter(
-      (m) =>
-        !(m.role === "user" && queued.has(m.id)) &&
-        !(
-          m.role === "assistant" &&
-          m.promptId !== undefined &&
-          queued.has(m.promptId) &&
-          m.parts.length === 0
-        ),
-    )
-    .map((m) =>
-      m.queued === true &&
-      (starting.has(m.id) ||
-        (m.promptId !== undefined && starting.has(m.promptId)))
-        ? { ...m, queued: false }
-        : m,
-    );
-}
-
 function withReplyPlaceholder(
   messages: Message[],
   promptId: string,
@@ -386,6 +247,30 @@ function withReplyPlaceholder(
       promptId,
     },
   ];
+}
+
+function waitsBehindAnotherReply(
+  messages: Message[],
+  promptId: string,
+): boolean {
+  return messages.some(
+    (m) => m.role === "assistant" && m.streaming && m.promptId !== promptId,
+  );
+}
+
+function setQueuedByPromptId(
+  messages: Message[],
+  promptId: string,
+  queued: boolean,
+): Message[] {
+  return messages.map((m, i) =>
+    m.streaming &&
+    m.parts.length === 0 &&
+    (m.promptId === promptId ||
+      (m.promptId === undefined && messages[i - 1]?.id === promptId))
+      ? { ...m, promptId, queued }
+      : m,
+  );
 }
 
 function appendNotice(messages: Message[], text: string): Message[] {
@@ -425,45 +310,58 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
-export function finalizeRunningReply(messages: Message[]): Message[] {
-  return messages.map((m) => (m.queued ? m : finalizeStreaming(m)));
-}
-
 const UNDELIVERED_MESSAGE = "Not delivered — this never reached the agent.";
 
-function textOf({ blocks }: { blocks: PromptBlock[] }): string {
-  return blocks
+function textOf(record: PlatformUndeliveredPrompt): string {
+  return record.blocks
     .flatMap((b) => (b.type === "text" ? [b.text] : []))
     .join("\n\n");
 }
 
-export function fileChipOf(link: {
-  name: string;
-  mimeType?: string | null;
-  size?: number | null;
-}): MessagePart {
-  return {
-    kind: "file",
-    name: link.name,
-    mimeType: link.mimeType ?? "",
-    ...(typeof link.size === "number" && { size: link.size }),
-  };
-}
-
-export function partsOf(record: { blocks: PromptBlock[] }): MessagePart[] {
+function partsOfBlocks(blocks: readonly PromptBlock[]): MessagePart[] {
   const parts: MessagePart[] = [];
-  for (const block of record.blocks) {
+  for (const block of blocks) {
     if (block.type === "image")
       parts.push({
         kind: "image",
         data: block.data,
         mimeType: block.mimeType,
       });
-    else if (block.type === "resource_link") parts.push(fileChipOf(block));
+    else if (block.type === "resource_link")
+      parts.push({
+        kind: "file",
+        name: block.name,
+        mimeType: block.mimeType ?? "",
+      });
   }
-  const text = textOf(record);
+  const text = blocks
+    .flatMap((b) => (b.type === "text" ? [b.text] : []))
+    .join("\n\n");
   if (text) parts.push({ kind: "text", text });
   return parts.length > 0 ? parts : [{ kind: "text", text: "" }];
+}
+
+function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
+  return partsOfBlocks(record.blocks);
+}
+
+export function appendQueuedSends(
+  messages: Message[],
+  items: readonly QueuedPrompt[],
+): Message[] {
+  let out = messages;
+  for (const item of items) {
+    if (item.promptId === null) continue;
+    if (out.some((m) => m.role === "user" && m.id === item.promptId)) continue;
+    out = appendQueuedUser(
+      out,
+      item.promptId,
+      partsOfBlocks(item.blocks),
+      item.queuedAt,
+      item.promptId,
+    );
+  }
+  return out;
 }
 
 function undeliveredError(record: PlatformUndeliveredPrompt): Message["error"] {
@@ -531,18 +429,6 @@ export function dropSuperseded(messages: Message[], ids: string[]): Message[] {
     out.push(m);
   }
   return out;
-}
-
-export function heldStillUndelivered(
-  held: PlatformUndeliveredPrompt[],
-  replayed: Message[],
-  superseded: string[],
-): PlatformUndeliveredPrompt[] {
-  return held.filter(
-    (r) =>
-      !superseded.includes(r.id) &&
-      !replayed.some((m) => m.role === "user" && m.id === r.id),
-  );
 }
 
 export function appendUndelivered(
@@ -625,24 +511,18 @@ function handleUserChunk(
   messages: Message[],
   u: ContentChunk,
   at?: string,
-  block?: number,
 ): Message[] {
   const queued = u._meta?.queued === true;
-  const steered = u._meta?.steered === true;
   const mid = u.messageId ?? null;
 
   let bubbles: MessagePart[][] | null = null;
   if (u.content.type === "text") {
     const txt = stripPlumbing(u.content.text);
-    if (INTERRUPT_MARKER_RE.test(txt))
-      return markLastReplyStopped(closeActiveAssistant(messages));
     if (txt) bubbles = parseUserText(txt);
   } else if (u.content.type === "image") {
     bubbles = [
       [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
     ];
-  } else if (u.content.type === "resource_link") {
-    bubbles = [[fileChipOf(u.content)]];
   }
 
   if (bubbles === null)
@@ -650,26 +530,9 @@ function handleUserChunk(
 
   if (queued) return appendQueuedUser(messages, mid, bubbles.flat(), at);
 
-  if (block !== undefined && mid !== null && messages.some((m) => m.id === mid))
-    return withBatchBubble(messages, mid, bubbles.flat(), at, steered);
-
-  if (steered && mid !== null) {
-    if (messages.some((m) => m.id === mid))
-      return appendOrExtendUser(messages, mid, bubbles.flat(), at, true);
-    const echoed = appendOrExtendUser(messages, mid, bubbles.flat(), at, true);
-    const continued = continueTurnBelow(echoed, mid);
-    if (continued !== null) return continued;
-  }
-
   return bubbles.reduce(
     (acc, parts, i) =>
-      appendOrExtendUser(
-        acc,
-        i === 0 ? mid : mid && `${mid}:${i}`,
-        parts,
-        at,
-        steered,
-      ),
+      appendOrExtendUser(acc, i === 0 ? mid : mid && `${mid}:${i}`, parts, at),
     closeActiveAssistant(messages),
   );
 }
@@ -681,17 +544,10 @@ function handleAgentChunk(
   at?: string,
   turnId?: string,
 ): Message[] {
-  const messageId = kind === "text" ? (u.messageId ?? undefined) : undefined;
   if (u.content.type === "text") {
     const txt = u.content.text;
     if (!txt) return messages;
-    return appendAgentParts(
-      messages,
-      [{ kind, text: txt, ...(u.messageId && { messageId: u.messageId }) }],
-      at,
-      turnId,
-      messageId,
-    );
+    return appendAgentParts(messages, [{ kind, text: txt }], at, turnId);
   }
   if (u.content.type === "image") {
     return appendAgentParts(
@@ -699,7 +555,6 @@ function handleAgentChunk(
       [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
       at,
       turnId,
-      messageId,
     );
   }
   return messages;
@@ -713,17 +568,12 @@ function handleToolCall(
 ): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx !== null) return patchToolChip(messages, existingIdx, u, at);
-  const content = mapToolContent(u.content);
   const chip: ToolChip = {
     kind: "tool",
     toolCallId: u.toolCallId,
     title: u.title,
     status: u.status ?? "pending",
-    content: content?.length
-      ? content
-      : (adapterOutput(u, undefined) ?? content),
-    toolKind: u.kind,
-    description: toolDescription(u.rawInput),
+    content: mapToolContent(u.content),
   };
   return appendAgentParts(messages, [chip], at, turnId);
 }
@@ -754,14 +604,6 @@ function findToolIdx(
   return null;
 }
 
-function toolDescription(rawInput: unknown): string | undefined {
-  if (typeof rawInput !== "object" || rawInput === null) return undefined;
-  const description = (rawInput as { description?: unknown }).description;
-  return typeof description === "string" && description.trim()
-    ? description.trim()
-    : undefined;
-}
-
 function patchToolChip(
   messages: Message[],
   idx: number,
@@ -781,15 +623,114 @@ function patchToolChip(
                   ...p,
                   status: u.status ?? p.status,
                   title: u.title ?? p.title,
-                  content: content?.length
-                    ? content
-                    : (adapterOutput(u, p.content) ?? p.content),
-                  toolKind: u.kind ?? p.toolKind,
-                  description: toolDescription(u.rawInput) ?? p.description,
+                  content: content?.length ? content : p.content,
                 }
               : p,
           ),
         },
+  );
+}
+
+interface ActiveTarget {
+  idx: number;
+  promote: boolean;
+}
+
+function findActiveAssistant(messages: Message[]): ActiveTarget | null {
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.streaming && !m.queued)
+      return { idx: i, promote: false };
+  }
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.streaming && m.queued)
+      return { idx: i, promote: true };
+  }
+  return null;
+}
+
+function appendToActive(
+  messages: Message[],
+  newParts: MessagePart[],
+  at?: string,
+): Message[] {
+  const target = findActiveAssistant(messages);
+  if (target === null) {
+    const newMsg: Message = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: mergeParts([], newParts),
+      streaming: true,
+      ...(at !== undefined && { at }),
+    };
+    return [...messages, newMsg];
+  }
+  return messages.map((m, i) => {
+    if (i !== target.idx) return m;
+    return {
+      ...m,
+      ...(at !== undefined && { at }),
+      parts: mergeParts(m.parts, newParts),
+      streaming: true,
+      queued: target.promote ? false : m.queued,
+    };
+  });
+}
+
+function mergeParts(
+  existing: MessagePart[],
+  incoming: MessagePart[],
+): MessagePart[] {
+  const merged = [...existing];
+  for (const p of incoming) {
+    const last = merged[merged.length - 1];
+    if (p.kind === "text" && last?.kind === "text") {
+      merged[merged.length - 1] = { kind: "text", text: last.text + p.text };
+    } else if (p.kind === "thought" && last?.kind === "thought") {
+      merged[merged.length - 1] = { kind: "thought", text: last.text + p.text };
+    } else {
+      merged.push(p);
+    }
+  }
+  return merged;
+}
+
+function activeReplyIndex(messages: Message[]): number {
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.streaming && !m.queued) {
+      if (m.promptId !== undefined && m.parts.length === 0) continue;
+      return i;
+    }
+  }
+  return -1;
+}
+
+function closeActiveAssistant(
+  messages: Message[],
+  at?: string,
+  telemetryPromptId?: string,
+  interruption?: string,
+  stopped = false,
+): Message[] {
+  const i = activeReplyIndex(messages);
+  if (i === -1) return messages;
+  const toolStatus = endedToolStatus({ interruption, stopped });
+  return messages.map((x, j) =>
+    j === i
+      ? {
+          ...x,
+          ...(at !== undefined && { at }),
+          ...(telemetryPromptId !== undefined && { telemetryPromptId }),
+          ...(interruption !== undefined &&
+            hasAgentContent(x) && { error: { message: interruption } }),
+          ...(toolStatus !== null && {
+            parts: settleRunningTools(x.parts, toolStatus),
+          }),
+          streaming: false,
+        }
+      : x,
   );
 }
 
@@ -798,11 +739,10 @@ function appendAgentParts(
   newParts: MessagePart[],
   at: string | undefined,
   turnId: string | undefined,
-  messageId?: string,
 ): Message[] {
   return turnId === undefined
-    ? appendToActive(messages, newParts, at, messageId)
-    : appendToTurn(messages, newParts, at, turnId, messageId);
+    ? appendToActive(messages, newParts, at)
+    : appendToTurn(messages, newParts, at, turnId);
 }
 
 function lastIndexOf(
@@ -859,7 +799,6 @@ function appendToTurn(
   newParts: MessagePart[],
   at: string | undefined,
   turnId: string,
-  messageId?: string,
 ): Message[] {
   const fill = (i: number) =>
     messages.map((m, j) =>
@@ -867,7 +806,6 @@ function appendToTurn(
         ? {
             ...m,
             ...(at !== undefined && { at }),
-            ...(messageId !== undefined && { lastMessageId: messageId }),
             parts: mergeParts(m.parts, newParts),
             streaming: true,
             queued: false,
@@ -893,7 +831,6 @@ function appendToTurn(
     streaming: true,
     turnId,
     ...(at !== undefined && { at }),
-    ...(messageId !== undefined && { lastMessageId: messageId }),
   };
   const insertAt = pendingTailStart(settled);
   return [...settled.slice(0, insertAt), fresh, ...settled.slice(insertAt)];
@@ -902,7 +839,12 @@ function appendToTurn(
 function closeTurn(
   messages: Message[],
   turnId: string,
-  end: ReplyClose,
+  end: {
+    at?: string;
+    telemetryPromptId?: string;
+    interruption?: string;
+    stopped: boolean;
+  },
 ): Message[] {
   const owned = (m: Message) =>
     m.role === "assistant" &&
@@ -922,140 +864,13 @@ function closeTurn(
         ...(end.telemetryPromptId !== undefined && {
           telemetryPromptId: end.telemetryPromptId,
         }),
-        ...(end.model !== undefined && { model: end.model }),
         ...(end.interruption !== undefined &&
           hasAgentContent(m) && { error: { message: end.interruption } }),
-        ...(end.stopped && { stopped: true }),
-        ...(end.stoppedAtOutputLimit &&
-          hasAgentContent(m) && { stoppedAtOutputLimit: true }),
         streaming: false,
         queued: false,
       };
     return owned(m) && m.streaming ? { ...settled, streaming: false } : settled;
   });
-}
-
-interface ActiveTarget {
-  idx: number;
-  promote: boolean;
-}
-
-function findActiveAssistant(messages: Message[]): ActiveTarget | null {
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.role === "assistant" && m.streaming && !m.queued)
-      return { idx: i, promote: false };
-  }
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.role === "assistant" && m.streaming && m.queued)
-      return { idx: i, promote: true };
-  }
-  return null;
-}
-
-function appendToActive(
-  messages: Message[],
-  newParts: MessagePart[],
-  at?: string,
-  messageId?: string,
-): Message[] {
-  const target = findActiveAssistant(messages);
-  if (target === null) {
-    const newMsg: Message = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      parts: mergeParts([], newParts),
-      streaming: true,
-      ...(at !== undefined && { at }),
-      ...(messageId !== undefined && { lastMessageId: messageId }),
-    };
-    return [...messages, newMsg];
-  }
-  return messages.map((m, i) => {
-    if (i !== target.idx) return m;
-    return {
-      ...m,
-      ...(at !== undefined && { at }),
-      ...(messageId !== undefined && { lastMessageId: messageId }),
-      parts: mergeParts(m.parts, newParts),
-      streaming: true,
-      queued: target.promote ? false : m.queued,
-    };
-  });
-}
-
-function mergeParts(
-  existing: MessagePart[],
-  incoming: MessagePart[],
-): MessagePart[] {
-  const merged = [...existing];
-  for (const p of incoming) {
-    const last = merged[merged.length - 1];
-    const sameMessage =
-      (p.kind === "text" || p.kind === "thought") &&
-      last?.kind === p.kind &&
-      (!p.messageId || !last.messageId || p.messageId === last.messageId);
-    if (sameMessage)
-      merged[merged.length - 1] = { ...p, text: last.text + p.text };
-    else merged.push(p);
-  }
-  return merged;
-}
-
-function activeReplyIndex(messages: Message[]): number {
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.role === "assistant" && m.streaming && !m.queued) {
-      if (m.promptId !== undefined && m.parts.length === 0) continue;
-      return i;
-    }
-  }
-  return -1;
-}
-
-interface ReplyClose {
-  at?: string;
-  telemetryPromptId?: string;
-  interruption?: string;
-  model?: string;
-  stopped?: boolean;
-  stoppedAtOutputLimit?: boolean;
-}
-
-function closeActiveAssistant(
-  messages: Message[],
-  {
-    at,
-    telemetryPromptId,
-    interruption,
-    model,
-    stopped = false,
-    stoppedAtOutputLimit,
-  }: ReplyClose = {},
-): Message[] {
-  const i = activeReplyIndex(messages);
-  if (i === -1) return stopped ? markLastReplyStopped(messages) : messages;
-  const toolStatus = endedToolStatus({ interruption, stopped });
-  return messages.map((x, j) =>
-    j === i
-      ? {
-          ...x,
-          ...(at !== undefined && { at }),
-          ...(telemetryPromptId !== undefined && { telemetryPromptId }),
-          ...(model !== undefined && { model }),
-          ...(interruption !== undefined &&
-            hasAgentContent(x) && { error: { message: interruption } }),
-          ...(stopped && { stopped: true }),
-          ...(stoppedAtOutputLimit &&
-            hasAgentContent(x) && { stoppedAtOutputLimit }),
-          ...(toolStatus !== null && {
-            parts: settleRunningTools(x.parts, toolStatus),
-          }),
-          streaming: false,
-        }
-      : x,
-  );
 }
 
 function settleRunningTools(
@@ -1069,65 +884,29 @@ function settleRunningTools(
   );
 }
 
-function endedToolStatus(
-  end: Pick<ReplyClose, "interruption" | "stopped">,
-): "failed" | "cancelled" | null {
+function endedToolStatus(end: {
+  interruption?: string;
+  stopped: boolean;
+}): "failed" | "cancelled" | null {
   if (end.interruption !== undefined) return "failed";
   return end.stopped ? "cancelled" : null;
 }
 
-function markLastReplyStopped(messages: Message[]): Message[] {
-  const last = messages.length - 1;
-  const tail = messages[last];
-  if (tail?.role !== "assistant" || tail.notice) return messages;
-  return messages.map((m, i) => (i === last ? { ...m, stopped: true } : m));
-}
-
-type ReplyStampKey = "telemetryPromptId" | "model" | "stoppedAtOutputLimit";
-
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a replayed frame carries facts about its reply in
- * its metadata (the harness's prompt id, the model, a stop at the output
- * limit), because a replay rebuilt from the harness's own transcript carries
- * no end-of-turn notification to name them on. The reply being streamed is
- * the one the frame belongs to, so it takes them.
+ * UNIT_BOUNDARY_DESCRIPTION: a replayed frame names the harness's prompt id
+ * in its metadata, because a replay rebuilt from the harness's own transcript
+ * carries no end-of-turn notification to name it on. The reply being streamed
+ * is the one that prompt produced, so it takes the name.
  */
-function stampActiveReply<K extends ReplyStampKey>(
+function stampActiveReply(
   messages: Message[],
-  key: K,
-  value: NonNullable<Message[K]>,
+  telemetryPromptId: string,
 ): Message[] {
   const i = activeReplyIndex(messages);
-  if (i === -1 || messages[i][key] === value) return messages;
-  return messages.map((x, j) => (j === i ? { ...x, [key]: value } : x));
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Messages the agent took as one batch come back
- * from the harness's history as one user message with a text block each.
- * Each block is its own bubble, right after the batch's earlier ones, with an
- * id derived from the message's own.
- */
-function withBatchBubble(
-  messages: Message[],
-  mid: string,
-  parts: MessagePart[],
-  at: string | undefined,
-  steered: boolean,
-): Message[] {
-  const members = messages.flatMap((m, i) =>
-    m.id === mid || m.id.startsWith(`${mid}:`) ? [i] : [],
-  );
-  const after = members[members.length - 1]! + 1;
-  const bubble: Message = {
-    id: `${mid}:${String(members.length)}`,
-    role: "user",
-    parts,
-    streaming: false,
-    ...(at !== undefined && { at }),
-    ...(steered && { steered: true }),
-  };
-  return [...messages.slice(0, after), bubble, ...messages.slice(after)];
+  if (i === -1 || messages[i].telemetryPromptId === telemetryPromptId) {
+    return messages;
+  }
+  return messages.map((x, j) => (j === i ? { ...x, telemetryPromptId } : x));
 }
 
 function appendOrExtendUser(
@@ -1135,17 +914,13 @@ function appendOrExtendUser(
   mid: string | null,
   parts: MessagePart[],
   at?: string,
-  steered = false,
 ): Message[] {
   if (mid) {
     const idx = messages.findIndex((m) => m.id === mid);
     if (idx !== -1) {
-      return messages.map((m, i) => {
-        if (i !== idx) return m;
-        return m.sentHere
-          ? { ...m, parts, sentHere: false }
-          : { ...m, parts: mergeParts(m.parts, parts) };
-      });
+      return messages.map((m, i) =>
+        i !== idx ? m : { ...m, parts: mergeParts(m.parts, parts) },
+      );
     }
   }
   const newMsg: Message = {
@@ -1154,7 +929,6 @@ function appendOrExtendUser(
     parts,
     streaming: false,
     ...(at !== undefined && { at }),
-    ...(steered && { steered: true }),
   };
   return [...messages, newMsg];
 }
@@ -1164,6 +938,7 @@ function appendQueuedUser(
   mid: string | null,
   parts: MessagePart[],
   at?: string,
+  promptId?: string,
 ): Message[] {
   const n = messages.length;
   const tailAssistant = messages[n - 1];
@@ -1192,6 +967,7 @@ function appendQueuedUser(
     parts: [],
     streaming: true,
     queued: true,
+    ...(promptId !== undefined && { promptId }),
   };
   const parked =
     messages.length > 0 && !hasStreamingAssistant(messages)
@@ -1206,39 +982,4 @@ function appendQueuedUser(
         ]
       : messages;
   return [...parked, userMsg, pending];
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Which user messages a conversation can be
- * rewound or forked from, and the cut each one would take if the agent cannot
- * find it in its own history. Every sent message counts, a steered one too: a
- * rewrite keeps exactly what shows above the message. The fallback cut is the
- * reply just above it (its last harness message id), null for a message with
- * nothing above it, and undefined when what is above is not a reply with an id
- * — another message, or older history that is not loaded.
- */
-export function rewritePointsOf(
-  messages: Message[],
-): Map<string, string | null | undefined> {
-  const points = new Map<string, string | null | undefined>();
-  let above: Message | null = null;
-  let olderHidden = false;
-  for (const m of messages) {
-    if (m.notice) {
-      olderHidden = true;
-      continue;
-    }
-    if (m.role === "user" && !m.queued && m.error === undefined)
-      points.set(m.id, fallbackCutBelow(above, olderHidden));
-    above = m;
-  }
-  return points;
-}
-
-function fallbackCutBelow(
-  above: Message | null,
-  olderHidden: boolean,
-): string | null | undefined {
-  if (above === null) return olderHidden ? undefined : null;
-  return above.role === "assistant" ? above.lastMessageId : undefined;
 }

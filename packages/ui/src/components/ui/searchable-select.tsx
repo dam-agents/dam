@@ -104,7 +104,7 @@ export function SearchableSelect({
         aria-invalid={invalid || undefined}
         className={cn(
           "flex h-10 w-full items-center justify-between rounded-md border bg-background px-3 text-left text-sm",
-          invalid ? "border-danger" : "border-input",
+          invalid ? "border-destructive" : "border-input",
           className,
         )}
       >

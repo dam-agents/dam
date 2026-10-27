@@ -1,4 +1,5 @@
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import { trpc } from "../../../trpc.js";
 
@@ -23,6 +24,7 @@ export function useArtifact(id: string | null) {
   return useQuery({
     ...trpc.artifactLibrary.get.queryOptions(id ? { id } : skipToken),
     retry: false,
+    meta: { errorToast: "Couldn't load artifact" },
   });
 }
 
@@ -63,4 +65,19 @@ export function useArtifactPreview(id: string | null, version?: number) {
     staleTime: PREVIEW_STALE_MS,
     meta: { errorToast: "Couldn't render artifact preview" },
   });
+}
+
+export function usePrefetchArtifactPreview() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (id: string) => {
+      void queryClient
+        .query({
+          ...trpc.artifactLibrary.preview.queryOptions({ id }),
+          staleTime: PREVIEW_STALE_MS,
+        })
+        .catch(() => {});
+    },
+    [queryClient],
+  );
 }

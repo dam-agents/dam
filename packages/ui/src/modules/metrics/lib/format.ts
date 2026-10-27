@@ -18,6 +18,11 @@ export function formatUsdCents(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
+export function formatUsdCell(usd: number): string {
+  if (usd > 0 && usd < 0.01) return "<$0.01";
+  return `$${usd.toFixed(2)}`;
+}
+
 export function formatAxisUsd(value: number, step: number): string {
   const decimals = step >= 1 ? 0 : step >= 0.01 ? 2 : 4;
   return `$${value.toFixed(decimals)}`;

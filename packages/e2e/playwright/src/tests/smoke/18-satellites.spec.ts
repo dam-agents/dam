@@ -3,7 +3,13 @@ import { expect, test } from "@playwright/test";
 import { baseUrl } from "../../config.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import { ensureAgentRunning } from "../../lib/agents.js";
+import { bootTimeoutMs } from "../../lib/backend.js";
+import {
+  deleteAgentIfPresent,
+  ensureAgentRunning,
+  waitForAgentRunning,
+} from "../../lib/agents.js";
+import { harnessName } from "../../lib/fixtures.js";
 
 /**
  * TEST_OVERVIEW: Satellites against a real cluster, driven from the worker's
@@ -27,6 +33,7 @@ import { ensureAgentRunning } from "../../lib/agents.js";
 
 const SATELLITE = "e2e-satellite";
 const AGENT_NAME = "e2e-satellite-agent";
+const CREATED_AGENT_NAME = "e2e-satellite-created";
 
 const MANIFEST = {
   name: SATELLITE,
@@ -64,7 +71,9 @@ async function removeIfPresent(api: ApiClient): Promise<void> {
 test.afterAll(async () => {
   const api = createApiClient(await getAccessToken());
   const agents = await api.agents.list.query().catch(() => []);
-  for (const found of agents.filter((a) => a.name === AGENT_NAME))
+  for (const found of agents.filter((a) =>
+    [AGENT_NAME, CREATED_AGENT_NAME].includes(a.name),
+  ))
     await api.agents.delete.mutate({ id: found.id }).catch(() => {});
 });
 
@@ -165,7 +174,7 @@ test.describe("satellites", () => {
   test("a connected satellite shows among Connections and is added to an agent there", async ({
     page,
   }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(bootTimeoutMs(240_000));
     const api = createApiClient(await getAccessToken());
     await acceptTerms(api);
     await removeIfPresent(api);
@@ -201,6 +210,66 @@ test.describe("satellites", () => {
           ?.grantedAgentIds.includes(agentId),
       )
       .toBe(true);
+
+    await api.satellites.remove.mutate(SATELLITE);
+  });
+
+  /**
+   * TEST_SCENARIO: A satellite is per user, so nothing stops it being picked
+   * before the agent exists. The new-agent form offers the same catalogue tab;
+   * the pick is held in the draft and granted once the agent is created,
+   * because a grant needs an agent id.
+   *
+   * This is the second agent the suite brings up, and the earlier tests' agent
+   * is still running when it starts. On the single-node CI cluster the two do
+   * not fit at once, so the agent that is finished with is taken down first,
+   * and the wait still allows for a start that queues behind its removal.
+   */
+  test("a satellite picked on the new-agent form is granted once the agent exists", async ({
+    page,
+  }) => {
+    test.setTimeout(bootTimeoutMs(600_000));
+    const api = createApiClient(await getAccessToken());
+    await acceptTerms(api);
+    await removeIfPresent(api);
+    await deleteAgentIfPresent(api, AGENT_NAME);
+    await api.satellites.connect.mutate({
+      manifest: MANIFEST,
+      host: "e2e-host",
+    });
+
+    await page.goto(`${baseUrl}/agents/new`);
+    await page.getByTestId(`template-card-${harnessName}`).click();
+    await page.getByPlaceholder("my-agent").fill(CREATED_AGENT_NAME);
+
+    await page.getByTestId("provider-select").click();
+    await page.getByTestId("provider-option-openai").click();
+    const dialog = page.getByRole("dialog");
+    if (
+      await dialog.waitFor({ timeout: 2_000 }).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      await dialog.locator('input[type="password"]').fill("sk-e2e-dummy-key");
+      await dialog.getByRole("button", { name: "Save" }).click();
+      await expect(dialog).toBeHidden();
+    }
+
+    await page.getByTestId("open-connection-catalog").first().click();
+    await page.getByTestId("catalog-tab-mcp").click();
+    await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();
+    await page.getByTestId("catalog-close").click();
+    await expect(page.getByTestId(`satellite-${SATELLITE}`)).toBeVisible();
+    await page.getByRole("button", { name: /create agent/i }).click();
+
+    const agentId = await waitForAgentRunning(api, CREATED_AGENT_NAME, {
+      timeoutMs: bootTimeoutMs(360_000),
+    });
+    expect(
+      (await api.satellites.list.query()).find((s) => s.name === SATELLITE)
+        ?.grantedAgentIds,
+    ).toContain(agentId);
 
     await api.satellites.remove.mutate(SATELLITE);
   });
