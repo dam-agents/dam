@@ -112,6 +112,10 @@ export function notifyingSessionMetadataStore(
       store.recordSender(sessionId, entry);
       changes.notify();
     },
+    recordContinuation(sessionId, scheduleId) {
+      store.recordContinuation(sessionId, scheduleId);
+      changes.notify();
+    },
     recordVerdict(sessionId, verdict) {
       store.recordVerdict(sessionId, verdict);
     },

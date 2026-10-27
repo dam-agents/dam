@@ -139,8 +139,8 @@ describe("spawn applies an Agent Setup", () => {
     expect(String(created[0]?.name)).toMatch(/^invocation-[0-9a-f]{12}$/);
   });
 
-  // TEST_SCENARIO: the install must run before the task, so it is queued in the same bump and ahead of the trigger event.
-  test("the install is queued ahead of the task", async () => {
+  // TEST_SCENARIO: the install must finish before the task starts. The events of one bump share a version and reach the runtime in no set order, so the install gets a bump of its own, ahead of the task's.
+  test("the install is queued in a bump of its own, ahead of the task", async () => {
     const { service, bumped } = makeService();
 
     await service.spawn({
@@ -148,11 +148,10 @@ describe("spawn applies an Agent Setup", () => {
       setup: { install: { command: "uv pip install ." }, env: [], skills: [] },
     });
 
-    expect(bumped[bumped.length - 1]?.map((e) => e.kind)).toEqual([
-      "workspace-command",
-      "trigger",
-    ]);
-    expect(bumped[bumped.length - 1]?.[0]?.payload).toEqual({
+    expect(bumped.slice(-2).map((events) => events.map((e) => e.kind))).toEqual(
+      [["workspace-command"], ["trigger"]],
+    );
+    expect(bumped[bumped.length - 2]?.[0]?.payload).toEqual({
       command: "uv pip install .",
     });
   });
