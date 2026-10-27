@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   fuzzyScore,
   halfLifeDecay,
+  matchScore,
   type Rankable,
   rankCommands,
   RANKING,
@@ -42,6 +43,47 @@ describe("fuzzy match", () => {
     );
   });
 
+  // TEST_SCENARIO: typed letters that start words win over the same letters run together inside a word, so "ar" finds "agent: remove" before "start", with or without the space after the colon.
+  it("favours word beginnings over a run inside a word", () => {
+    expect(order([cmd("start"), cmd("agent: remove")], "ar")).toEqual([
+      "agent: remove",
+      "start",
+    ]);
+    expect(order([cmd("start"), cmd("agent:remove")], "ar")).toEqual([
+      "agent:remove",
+      "start",
+    ]);
+    expect(
+      order([cmd("instance"), cmd("insights"), cmd("new session")], "ns"),
+    ).toEqual(["new session", "insights", "instance"]);
+  });
+
+  // TEST_SCENARIO: a camelCase hump, a dash, an underscore and a slash start a word just as a space does.
+  it("treats humps and separators as word starts", () => {
+    for (const text of ["goToHome", "go-to-home", "go_to_home", "go/to/home"])
+      expect(matchScore(text, "gth")).toBeGreaterThan(0.75);
+    expect(matchScore("APIKeys", "ak")).toBeGreaterThan(0.75);
+    expect(matchScore("dogtothome", "gth")).toBeLessThan(0.05);
+  });
+
+  // TEST_SCENARIO: an exact prefix beats the same word later in the text, and the whole text beats a longer one it begins.
+  it("ranks an exact prefix first", () => {
+    expect(
+      order([cmd("agent: new session"), cmd("new session"), cmd("new")], "new"),
+    ).toEqual(["new", "new session", "agent: new session"]);
+    expect(matchScore("session", "ses")).toBeGreaterThan(
+      matchScore("new session", "ses"),
+    );
+  });
+
+  // TEST_SCENARIO: letters together inside a word still beat the same letters scattered through one.
+  it("ranks a run inside a word above scattered letters", () => {
+    expect(order([cmd("cabinetry"), cmd("start")], "ar")).toEqual([
+      "start",
+      "cabinetry",
+    ]);
+  });
+
   // TEST_SCENARIO: one word that matches nothing drops the command, however well the other words match.
   it("drops a command when one word does not match", () => {
     expect(fuzzyScore("agent Alice: configure Providers", "prov zzz")).toBe(0);
@@ -53,21 +95,21 @@ describe("fuzzy match", () => {
     expect(fuzzyScore("anything", "   ")).toBe(1);
   });
 
-  // TEST_SCENARIO: a word-start match beats a scattered one even when the scattered command carries the largest boosts, since the match is squared.
-  it("keeps a real match above a scattered one with every boost", () => {
-    const boosted = cmd("agent Alice: configure Providers", {
+  // TEST_SCENARIO: a word-start match beats a mid-word one even when the mid-word command carries the largest boosts, since the match is squared.
+  it("keeps a real match above a mid-word one with every boost", () => {
+    const boosted = cmd("agent Alice: approved reports", {
       prior: 1,
       agentId: "alice",
       activityAt: NOW,
     });
-    const plain = cmd("approvals: deny all");
+    const plain = cmd("settings: Providers");
     expect(
       order(
         [boosted, plain],
-        "approv",
+        "prov",
         ctx({ agentId: "alice", frecency: () => 100 }),
       ),
-    ).toEqual(["approvals: deny all", "agent Alice: configure Providers"]);
+    ).toEqual(["settings: Providers", "agent Alice: approved reports"]);
   });
 });
 
@@ -169,6 +211,36 @@ describe("signals", () => {
     );
     expect(own).toBeCloseTo(1 + RANKING.W_CONTEXT);
     expect(global).toBeCloseTo(1);
+  });
+});
+
+describe("destructive commands", () => {
+  // TEST_SCENARIO: with nothing typed no destructive command is suggested at all, however close it is to the open page; on a shared agent's page Leave would otherwise outrank every global command.
+  it("are not suggested on an empty query", () => {
+    const leave = cmd("agent Carol: leave", {
+      agentId: "carol",
+      prior: RANKING.PRIOR.destructive,
+      destructive: true,
+    });
+    const here = ctx({ agentId: "carol" });
+    expect(order([leave, cmd("agent: new")], "", here)).toEqual(["agent: new"]);
+    expect(order([leave], "leave", here)).toEqual(["agent Carol: leave"]);
+  });
+
+  // TEST_SCENARIO: running Deny all before, even if its confirmation was cancelled, never lifts it above the harmless Open panel for the same query.
+  it("take no frecency", () => {
+    const list = [
+      cmd("approvals: deny all", {
+        prior: RANKING.PRIOR.denyAll,
+        destructive: true,
+      }),
+      cmd("approvals: open panel", { prior: RANKING.PRIOR.approvalsPanel }),
+    ];
+    const habit = ctx({ frecency: () => 50 });
+    expect(order(list, "approvals", habit)).toEqual([
+      "approvals: open panel",
+      "approvals: deny all",
+    ]);
   });
 });
 

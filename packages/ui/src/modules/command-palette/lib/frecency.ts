@@ -2,10 +2,9 @@ import { z } from "zod";
 
 import { halfLifeDecay, RANKING } from "./ranking.js";
 
-export const frecencySchema = z.record(
-  z.string(),
-  z.object({ s: z.number().nonnegative(), t: z.number() }),
-);
+export const frecencySchema = z
+  .record(z.string(), z.object({ s: z.number().nonnegative(), t: z.number() }))
+  .refine((table) => Object.keys(table).length <= RANKING.MAX_FRECENCY_ENTRIES);
 export type Frecency = z.infer<typeof frecencySchema>;
 
 export function usesAt(table: Frecency, id: string, now: number): number {

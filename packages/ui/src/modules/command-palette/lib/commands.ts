@@ -63,7 +63,7 @@ export interface PaletteCommand extends Rankable {
   prefix: string;
   label: string;
   icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  danger: boolean;
+  destructive: boolean;
   perform: PalettePerform;
 }
 
@@ -79,6 +79,7 @@ export interface PaletteInput {
   route: PaletteRoute;
   agents: readonly AgentView[];
   ownAgents: readonly AgentView[];
+  restarting: ReadonlyMap<string, unknown>;
   sessions: readonly IndexedSession[];
   openSession: SessionView | null;
   artifacts: readonly IndexedArtifact[];
@@ -136,7 +137,7 @@ interface CommandSpec {
   agentId?: string | undefined;
   action?: string;
   activityAt?: number;
-  danger?: boolean;
+  destructive?: boolean;
   run?: () => unknown;
   input?: Extract<PalettePerform, { kind: "input" }>;
 }
@@ -144,7 +145,7 @@ interface CommandSpec {
 function command({
   prefix = "",
   keywords = [],
-  danger = false,
+  destructive = false,
   run,
   input,
   ...spec
@@ -152,7 +153,7 @@ function command({
   return {
     ...spec,
     prefix,
-    danger,
+    destructive,
     text: [`${prefix}${spec.label}`, ...keywords].join(" "),
     perform: input ?? { kind: "run", run: run ?? (() => undefined) },
   };
@@ -334,7 +335,7 @@ function approvalCommands(
             keywords: ["reject"],
             icon: Misuse,
             prior: PRIOR.denyAll,
-            danger: true,
+            destructive: true,
             run: () => act.denyAll(input.pendingApprovals),
           }),
         ]
@@ -361,8 +362,12 @@ function agentCommands(
       agentId: agent.id,
     });
   const ref = cliAgentRef(agent, input.ownAgents);
+  const settling = input.restarting.has(agent.id);
   const asleep =
-    agent.state === "hibernated" && !agent.disabled && !agent.overBudget;
+    agent.state === "hibernated" &&
+    !agent.disabled &&
+    !agent.overBudget &&
+    !settling;
   const session = inChat ? input.openSession : null;
 
   return [
@@ -479,7 +484,7 @@ function agentCommands(
             keywords: ["remove"],
             icon: TrashCan,
             prior: PRIOR.destructive,
-            danger: true,
+            destructive: true,
             run: () => act.deleteSession(agent.id, session),
           }),
         ]
@@ -514,7 +519,7 @@ function agentCommands(
                 }),
               ]
             : []),
-          ...(agent.state === "running" && !agent.disabled
+          ...(agent.state === "running" && !agent.disabled && !settling
             ? [
                 of({
                   id: "restart",
@@ -542,7 +547,7 @@ function agentCommands(
             keywords: ["remove"],
             icon: TrashCan,
             prior: PRIOR.destructive,
-            danger: true,
+            destructive: true,
             run: () => act.deleteAgent(agent),
           }),
         ]
@@ -555,7 +560,7 @@ function agentCommands(
             keywords: ["remove"],
             icon: Exit,
             prior: PRIOR.destructive,
-            danger: true,
+            destructive: true,
             run: () => act.leave(agent),
           }),
         ]

@@ -1,5 +1,3 @@
-import { defaultFilter } from "cmdk";
-
 const DAY_MS = 86_400_000;
 
 export const RANKING = {
@@ -14,6 +12,12 @@ export const RANKING = {
   RECENCY_HALF_LIFE_MS: 2 * DAY_MS,
   MAX_RESULTS: 50,
   MAX_FRECENCY_ENTRIES: 300,
+  MATCH_AT_START: 1,
+  MATCH_CONTINUED: 1,
+  MATCH_AT_WORD_START: 0.9,
+  MATCH_MID_WORD: 0.17,
+  MATCH_SKIP_PENALTY: 0.999,
+  MATCH_INCOMPLETE_PENALTY: 0.99,
   PRIOR: {
     newSession: 0.7,
     navigate: 0.6,
@@ -49,6 +53,7 @@ export interface Rankable {
   agentId?: string;
   action?: string;
   activityAt?: number;
+  destructive?: boolean;
 }
 
 export interface RankingContext {
@@ -62,11 +67,69 @@ export function halfLifeDecay(ageMs: number, halfLifeMs: number): number {
   return 2 ** (-Math.max(0, ageMs) / halfLifeMs);
 }
 
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+const LOWER = /\p{Ll}/u;
+const UPPER = /\p{Lu}/u;
+
+function startsWord(text: string, at: number): boolean {
+  if (at === 0) return true;
+  const before = text[at - 1]!;
+  const here = text[at]!;
+  if (!LETTER_OR_DIGIT.test(before)) return true;
+  if (!UPPER.test(here)) return false;
+  return (
+    LOWER.test(before) || (UPPER.test(before) && LOWER.test(text[at + 1] ?? ""))
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how well one typed word matches a command's
+ * text, from 0 (no match) to 1 (the whole text). Every typed character must
+ * appear in order. A character that starts a word in the text (the text's
+ * start, after any character that is not a letter or digit, or a camelCase
+ * hump) scores far above one that starts a run mid-word, and a character
+ * right after the previous match continues its run at full score. So "ar"
+ * picks the initials of "agent: remove" over the "ar" inside "start", a run
+ * inside a word still beats letters scattered through it, and an exact prefix
+ * scores highest. Of all the ways to place the characters, the best counts.
+ */
+export function matchScore(text: string, word: string): number {
+  const lower = Array.from({ length: text.length }, (_, at) =>
+    text[at]!.toLowerCase(),
+  );
+  const needle = word.toLowerCase();
+  const memo = new Map<number, number>();
+  const best = (i: number, from: number): number => {
+    if (i === needle.length)
+      return from === text.length ? 1 : RANKING.MATCH_INCOMPLETE_PENALTY;
+    const key = i * (text.length + 1) + from;
+    const known = memo.get(key);
+    if (known !== undefined) return known;
+    let score = 0;
+    for (let at = from; at < text.length; at++) {
+      if (lower[at] !== needle[i]) continue;
+      const weight =
+        i > 0 && at === from
+          ? RANKING.MATCH_CONTINUED
+          : at === 0
+            ? RANKING.MATCH_AT_START
+            : startsWord(text, at)
+              ? RANKING.MATCH_AT_WORD_START
+              : RANKING.MATCH_MID_WORD;
+      const skipped = RANKING.MATCH_SKIP_PENALTY ** (at - from);
+      score = Math.max(score, weight * skipped * best(i + 1, at + 1));
+    }
+    memo.set(key, score);
+    return score;
+  };
+  return best(0, 0);
+}
+
 export function fuzzyScore(text: string, query: string): number {
   const tokens = query.trim().split(/\s+/).filter(Boolean);
   let product = 1;
   for (const token of tokens) {
-    const score = defaultFilter(text, token);
+    const score = matchScore(text, token);
     if (score <= 0) return 0;
     product *= score;
   }
@@ -78,9 +141,10 @@ export function scoreCommand(
   query: string,
   ctx: RankingContext,
 ): number {
+  if (command.destructive && query.trim() === "") return 0;
   const match = fuzzyScore(command.text, query);
   if (match === 0) return 0;
-  const uses = ctx.frecency(command.id);
+  const uses = command.destructive ? 0 : ctx.frecency(command.id);
   const frecency = uses / (uses + RANKING.FRECENCY_SATURATION);
   const recency =
     command.activityAt === undefined

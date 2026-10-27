@@ -45,6 +45,7 @@ function input(over: Partial<PaletteInput> = {}): PaletteInput {
     },
     agents: [alice, bob],
     ownAgents: [alice, bob],
+    restarting: new Map(),
     sessions: [
       {
         agentId: "alice",
@@ -177,13 +178,30 @@ describe("agent commands", () => {
     expect(names).not.toContain("agent Off: wake");
   });
 
+  // TEST_SCENARIO: right after a restart or wake is clicked the server still reports the old state, so neither is offered again until the app stops showing the agent as restarting.
+  it("offers no second restart or wake while one is settling", () => {
+    const sleepy = owned("z", "Zed", { state: "hibernated" });
+    const names = titles(
+      input({
+        agents: [alice, sleepy],
+        ownAgents: [alice, sleepy],
+        restarting: new Map([
+          ["alice", {}],
+          ["z", {}],
+        ]),
+      }),
+    );
+    expect(names).not.toContain("agent Alice: restart");
+    expect(names).not.toContain("agent Zed: wake");
+  });
+
   // TEST_SCENARIO: delete is marked destructive and only runs through the action that holds the confirmation.
   it("routes delete through the confirming action", () => {
     const act = actions();
     const del = buildCommands(input(), act).find(
       (c) => c.id === "agent:alice:delete",
     )!;
-    expect(del.danger).toBe(true);
+    expect(del.destructive).toBe(true);
     expect(del.perform.kind).toBe("run");
     if (del.perform.kind === "run") del.perform.run();
     expect(act.deleteAgent).toHaveBeenCalledWith(alice);

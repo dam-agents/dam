@@ -3,7 +3,11 @@ import { z } from "zod";
 
 import { getUser } from "../../../auth.js";
 import { frecencySchema, recordUse, usesAt } from "../lib/frecency.js";
-import { readStored, writeStored } from "../lib/palette-storage.js";
+import {
+  readStored,
+  SNAPSHOT_CAP,
+  writeStored,
+} from "../lib/palette-storage.js";
 
 const ownerId = () => getUser()?.profile.sub ?? "";
 
@@ -20,7 +24,7 @@ export function useCachedList<T>(
 ): readonly T[] {
   const owner = ownerId();
   const [cached] = useState(
-    () => readStored(name, owner, z.array(schema)) ?? [],
+    () => readStored(name, owner, z.array(schema).max(SNAPSHOT_CAP)) ?? [],
   );
   useEffect(() => {
     if (fresh) writeStored(name, owner, fresh);

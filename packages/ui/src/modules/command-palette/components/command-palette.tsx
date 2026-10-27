@@ -8,10 +8,14 @@ import { usePaletteActions } from "../hooks/use-palette-actions.js";
 import { usePaletteHotkey } from "../hooks/use-palette-hotkey.js";
 import { PaletteDialog } from "./palette-dialog.js";
 
+const MODAL_OPEN = '[aria-modal="true"], [role="alertdialog"]';
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the command palette's place in the app: the
  * hotkey that toggles it, and the dialogs a command opens once the palette
- * has closed. Nothing else in the app shows or names it.
+ * has closed. Nothing else in the app shows or names it. The hotkey does not
+ * open it over another modal dialog or a confirmation, which keeps the
+ * keyboard and would take the palette's Enter.
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -24,7 +28,12 @@ export function CommandPalette() {
     onBind: setBinding,
     onRenameSession: (agentId, session) => setRenaming({ agentId, session }),
   });
-  usePaletteHotkey(useCallback(() => setOpen((was) => !was), []));
+  usePaletteHotkey(
+    useCallback(() => {
+      const covered = document.querySelector(MODAL_OPEN) !== null;
+      setOpen((was) => (was ? false : !covered));
+    }, []),
+  );
 
   return (
     <>

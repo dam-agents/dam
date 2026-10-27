@@ -64,6 +64,7 @@ beforeEach(() => {
     },
     agents: [owner("alice", "Alice"), owner("bob", "Bob")],
     ownAgents: [],
+    restarting: new Map(),
     sessions: [
       {
         agentId: "alice",
@@ -163,6 +164,61 @@ it("opens from the hotkey as a combobox and listbox", () => {
   expect(items().length).toBeGreaterThan(0);
 });
 
+// TEST_SCENARIO: the combobox points its active descendant at the selected option as soon as the palette opens and again after each change of the query, so a screen reader announces what Enter runs.
+it("keeps the active descendant on the selected option", () => {
+  hotkey("k");
+  const active = () =>
+    document.getElementById(
+      field().getAttribute("aria-activedescendant") ?? "",
+    );
+  const selected = () => document.querySelector('[aria-selected="true"]');
+  expect(selected()).not.toBeNull();
+  expect(active()).toBe(selected());
+  type("bob prov");
+  expect(selected()?.textContent).toBe("agent Bob: configure Providers");
+  expect(active()).toBe(selected());
+});
+
+// TEST_SCENARIO: the hotkey does nothing while a confirmation holds the keyboard, so Enter cannot reach the confirmation's button through a palette drawn over it.
+it("does not open over a confirmation", () => {
+  const confirmation = document.createElement("div");
+  confirmation.setAttribute("role", "alertdialog");
+  const ok = document.createElement("button");
+  confirmation.append(ok);
+  document.body.append(confirmation);
+  ok.focus();
+  hotkey("k");
+  expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(ok);
+});
+
+// TEST_SCENARIO: rename asks for the name inside the palette; an Enter that only ends an IME composition saves nothing, the next Enter saves the trimmed name.
+it("asks for a new name and ignores a composing Enter", async () => {
+  hotkey("k");
+  type("alice rename");
+  press(field(), "Enter");
+  const prompt = document.querySelector<HTMLInputElement>(
+    '[data-testid="command-palette-prompt"]',
+  )!;
+  expect(prompt.value).toBe("Alice");
+  act(() => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(prompt, "  Alicia ");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  press(prompt, "Enter", { isComposing: true });
+  expect(dialog()).not.toBeNull();
+  press(prompt, "Enter");
+  await flush();
+  expect(dialog()).toBeNull();
+  expect(fake.actions.renameAgent).toHaveBeenCalledWith(
+    expect.objectContaining({ id: "alice" }),
+    "Alicia",
+  );
+});
+
 // TEST_SCENARIO: Ctrl-Shift-P opens the same palette, and the hotkey pressed again closes it.
 it("opens with Shift-P too and toggles closed", () => {
   hotkey("P", true);
@@ -198,6 +254,33 @@ it("moves the selection with the arrow keys", async () => {
   press(field(), "Enter");
   await flush();
   expect(called()).toHaveLength(1);
+});
+
+// TEST_SCENARIO: sessions that arrive while the palette is open reorder the list, but the highlight stays on the command the person moved it to, so Enter runs what they saw.
+it("keeps the highlight on its command when the list reorders", () => {
+  hotkey("k");
+  type("alice");
+  press(field(), "ArrowDown");
+  const chosen = document.querySelector('[aria-selected="true"]')?.textContent;
+  const input = fake.input as PaletteInput;
+  fake.input = {
+    ...input,
+    sessions: [
+      {
+        agentId: "alice",
+        sessionId: "s9",
+        title: "Brand new",
+        mode: SessionMode.Chat,
+        activityAt: Date.now(),
+      },
+      ...input.sessions,
+    ],
+  };
+  act(() => root.render(createElement(CommandPalette)));
+  expect(items()).toContain("agent Alice: session “Brand new”");
+  expect(document.querySelector('[aria-selected="true"]')?.textContent).toBe(
+    chosen,
+  );
 });
 
 // TEST_SCENARIO: Escape closes the palette and runs nothing.

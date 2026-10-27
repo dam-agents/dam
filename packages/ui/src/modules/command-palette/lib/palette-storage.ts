@@ -45,7 +45,7 @@ export function writeStored(
 export const indexedSessionSchema = z.object({
   agentId: z.string(),
   sessionId: z.string(),
-  title: z.string().nullable(),
+  title: z.string().max(TITLE_MAX).nullable(),
   mode: sessionModeSchema,
   activityAt: z.number(),
 });
@@ -53,7 +53,7 @@ export type IndexedSession = z.infer<typeof indexedSessionSchema>;
 
 export const indexedArtifactSchema = z.object({
   id: z.string(),
-  title: z.string(),
+  title: z.string().max(TITLE_MAX),
   agentId: z.string().nullable(),
 });
 export type IndexedArtifact = z.infer<typeof indexedArtifactSchema>;

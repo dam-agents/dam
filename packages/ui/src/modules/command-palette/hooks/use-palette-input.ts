@@ -51,6 +51,7 @@ export function usePaletteInput(): PaletteInput {
   const showSleeping = useStore((s) => s.sidebarShowHibernating);
   const approvalsOpen = useStore((s) => s.sidePanelTab === "approvals");
   const dock = useStore((s) => s.dock);
+  const restarting = useStore((s) => s.restartingAgents);
 
   const agentsData = useAgents().data;
   const attention = useAttention().data;
@@ -112,6 +113,7 @@ export function usePaletteInput(): PaletteInput {
     },
     agents,
     ownAgents,
+    restarting,
     sessions,
     openSession,
     artifacts,

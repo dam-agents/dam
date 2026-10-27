@@ -11,7 +11,10 @@ import {
 } from "../../modules/command-palette/lib/frecency.js";
 import {
   clearPaletteStorage,
+  indexedSessionSchema,
   readStored,
+  SNAPSHOT_CAP,
+  TITLE_MAX,
   writeStored,
 } from "../../modules/command-palette/lib/palette-storage.js";
 import { RANKING } from "../../modules/command-palette/lib/ranking.js";
@@ -84,6 +87,36 @@ describe("stored lists", () => {
       readStored("sessions", "user-b", z.array(z.unknown()), store),
     ).toBeNull();
     expect(store.map.size).toBe(0);
+  });
+
+  // TEST_SCENARIO: a stored value past the caps, written by another version or by hand, is refused whole instead of growing what the palette indexes.
+  it("refuses values past the caps", () => {
+    const store = memoryStore();
+    const session = (title: string) => ({
+      agentId: "a",
+      sessionId: "s",
+      title,
+      mode: "chat",
+      activityAt: NOW,
+    });
+    const sessions = z.array(indexedSessionSchema).max(SNAPSHOT_CAP);
+    writeStored("sessions", "u", [session("x".repeat(TITLE_MAX + 1))], store);
+    expect(readStored("sessions", "u", sessions, store)).toBeNull();
+    writeStored(
+      "sessions",
+      "u",
+      Array.from({ length: SNAPSHOT_CAP + 1 }, () => session("t")),
+      store,
+    );
+    expect(readStored("sessions", "u", sessions, store)).toBeNull();
+    const big = Object.fromEntries(
+      Array.from({ length: RANKING.MAX_FRECENCY_ENTRIES + 1 }, (_, i) => [
+        `c${i}`,
+        { s: 1, t: NOW },
+      ]),
+    );
+    writeStored("frecency", "u", big, store);
+    expect(readStored("frecency", "u", frecencySchema, store)).toBeNull();
   });
 
   // TEST_SCENARIO: signing out empties every list the palette stored, of any version, and nothing else.

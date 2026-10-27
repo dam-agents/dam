@@ -1,9 +1,8 @@
 import { Search } from "@carbon/icons-react";
-import { Command } from "cmdk";
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { match } from "ts-pattern";
 
 import { DialogHeader, Modal } from "@/components/modal";
-import { cn } from "@/lib/utils";
 
 import { usePaletteInput } from "../hooks/use-palette-input.js";
 import { useFrecency } from "../hooks/use-palette-storage.js";
@@ -13,18 +12,30 @@ import {
   type PaletteCommand,
 } from "../lib/commands.js";
 import { rankCommands } from "../lib/ranking.js";
+import { PaletteItem } from "./palette-item.js";
 import { PalettePrompt } from "./palette-prompt.js";
 
 type Prompt = Extract<PaletteCommand["perform"], { kind: "input" }> & {
   id: string;
 };
 
+const IME_PROCESS_KEY = 229;
+
+const KEYS: Partial<Record<string, "down" | "up" | "run">> = {
+  ArrowDown: "down",
+  ArrowUp: "up",
+  Enter: "run",
+};
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the open command palette: a search field over
- * the ranked commands as a combobox and its listbox. Enter runs the selected
- * command after the palette closes, so focus is back where it was before a
- * confirmation the command asks for takes it; a command that needs a value,
- * such as a new name, asks for it in the palette first.
+ * the ranked commands as a combobox and its listbox, whose active descendant
+ * is always the highlighted command. Arrow keys move the highlight and wrap,
+ * a new query highlights its best command, and the highlight stays on its
+ * command when late data reorders the list. Enter runs it after the
+ * palette closes, so focus is back where it was before a confirmation the
+ * command asks for takes it; a command that needs a value, such as a new
+ * name, asks for it in the palette first.
  */
 export function PaletteDialog({
   actions,
@@ -35,9 +46,10 @@ export function PaletteDialog({
 }) {
   const input = usePaletteInput();
   const frecency = useFrecency();
+  const listId = useId();
   const [now] = useState(Date.now);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState("");
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
 
   const { route } = input;
@@ -50,20 +62,32 @@ export function PaletteDialog({
         : null,
     frecency: (id) => frecency.usesOf(id, now),
   });
-  const value = ranked.some((c) => c.id === selected)
-    ? selected
-    : (ranked[0]?.id ?? "");
+  const highlighted = Math.max(
+    0,
+    ranked.findIndex((command) => command.id === activeId),
+  );
+  const optionId = (index: number) => `${listId}-${index}`;
+
+  useEffect(() => {
+    document
+      .getElementById(`${listId}-${highlighted}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [listId, highlighted]);
 
   const finish = (id: string, run: () => unknown) => {
     frecency.record(id);
     onClose();
     setTimeout(run, 0);
   };
-  const choose = (command: PaletteCommand) => {
-    const { perform } = command;
-    if (perform.kind === "input") setPrompt({ ...perform, id: command.id });
-    else finish(command.id, perform.run);
-  };
+  const choose = (command: PaletteCommand) =>
+    match(command.perform)
+      .with({ kind: "run" }, ({ run }) => finish(command.id, run))
+      .with({ kind: "input" }, (perform) =>
+        setPrompt({ ...perform, id: command.id }),
+      )
+      .exhaustive();
+  const step = (by: number) =>
+    setActiveId(ranked[(highlighted + by + ranked.length) % ranked.length]!.id);
 
   return (
     <Modal size="md" heightClass="h-[min(28rem,80dvh)]" onClose={onClose}>
@@ -79,73 +103,71 @@ export function PaletteDialog({
           }
         />
       ) : (
-        <Command
-          label="Command palette"
-          shouldFilter={false}
-          loop
-          value={value}
-          onValueChange={setSelected}
-          className="flex min-h-0 flex-1 flex-col"
-        >
+        <>
           <div className="flex items-center gap-3 border-b border-border px-4">
             <Search
               size={16}
               className="shrink-0 text-muted-foreground"
               aria-hidden
             />
-            <Command.Input
-              value={query}
-              onValueChange={(next) => {
-                setQuery(next);
-                setSelected("");
-              }}
+            <input
+              role="combobox"
+              aria-label="Command palette"
+              aria-expanded
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={
+                ranked.length > 0 ? optionId(highlighted) : undefined
+              }
               autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setActiveId(null);
+              }}
+              onKeyDown={(event) => {
+                const key = KEYS[event.key];
+                if (
+                  !key ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === IME_PROCESS_KEY ||
+                  ranked.length === 0
+                )
+                  return;
+                event.preventDefault();
+                if (key === "run") choose(ranked[highlighted]!);
+                else step(key === "down" ? 1 : -1);
+              }}
               placeholder="Type a command or search"
               data-testid="command-palette-input"
               className="h-12 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
             />
           </div>
-          <Command.List
-            label="Commands"
+          {ranked.length === 0 && (
+            <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+              No matching commands
+            </p>
+          )}
+          <ul
+            id={listId}
+            role="listbox"
+            aria-label="Commands"
             className="min-h-0 flex-1 overflow-y-auto p-2 [scrollbar-gutter:stable]"
           >
-            <Command.Empty className="px-3 py-8 text-center text-sm text-muted-foreground">
-              No matching commands
-            </Command.Empty>
-            {ranked.map((command) => (
-              <Command.Item
+            {ranked.map((command, index) => (
+              <PaletteItem
                 key={command.id}
-                value={command.id}
+                id={optionId(index)}
+                command={command}
+                selected={index === highlighted}
+                onPoint={() => setActiveId(command.id)}
                 onSelect={() => choose(command)}
-                data-testid="command-palette-item"
-                className={cn(
-                  "flex h-9 cursor-pointer select-none items-center gap-3 rounded-md px-3 text-sm",
-                  command.danger
-                    ? "text-danger data-[selected=true]:bg-danger-light"
-                    : "text-foreground data-[selected=true]:bg-muted",
-                )}
-              >
-                <command.icon
-                  className={cn(
-                    "size-4 shrink-0",
-                    !command.danger && "text-muted-foreground",
-                  )}
-                  aria-hidden
-                />
-                <span className="min-w-0 truncate">
-                  {command.prefix && (
-                    <span
-                      className={cn(!command.danger && "text-muted-foreground")}
-                    >
-                      {command.prefix}
-                    </span>
-                  )}
-                  {command.label}
-                </span>
-              </Command.Item>
+              />
             ))}
-          </Command.List>
-        </Command>
+          </ul>
+        </>
       )}
     </Modal>
   );
