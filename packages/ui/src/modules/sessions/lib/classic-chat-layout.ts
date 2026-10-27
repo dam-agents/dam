@@ -41,32 +41,17 @@ export function classicColumns({
   };
 }
 
-export type ClassicAppTab = Extract<
-  SidePanelTab,
-  "approvals" | "getting-started"
->;
-
-export type ClassicPanel = "dock" | "getting-started";
+export type ClassicAppTab = Extract<SidePanelTab, "approvals">;
 
 export function classicAppTab(
   tab: SidePanelTab | null,
   hidden: ReadonlySet<SidePanelTab>,
 ): ClassicAppTab | null {
-  return (tab === "approvals" || tab === "getting-started") && !hidden.has(tab)
-    ? tab
-    : null;
+  return tab === "approvals" && !hidden.has(tab) ? tab : null;
 }
 
-export function classicPanel(
-  tab: SidePanelTab | null,
-  hidden: ReadonlySet<SidePanelTab>,
-  docked: boolean,
-): ClassicPanel | null {
-  return tab === "getting-started" && !hidden.has(tab)
-    ? "getting-started"
-    : docked
-      ? "dock"
-      : null;
+export function classicPanel(docked: boolean): "dock" | null {
+  return docked ? "dock" : null;
 }
 
 export type ClassicDockToggle = "reveal" | "close" | "open";
@@ -74,10 +59,10 @@ export type ClassicDockToggle = "reveal" | "close" | "open";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a top-bar toggle of the classic chat (browser,
  * changes) reads what the slot shows. Its item shown in the slot is pressed and
- * closes; its item docked behind the Get started panel, or hidden on a phone,
- * is not pressed and comes back to view; an item not docked, or covered by a
- * docked item, opens in front. Approvals is a drawer over the chat, so it never
- * takes the slot and leaves the docked item in view.
+ * closes; its item hidden on a phone is not pressed and comes back to view; an
+ * item not docked, or covered by a docked item, opens in front. Approvals is a
+ * drawer over the chat and Get started a dock below the top bar, so neither
+ * takes the slot and the docked item stays in view.
  */
 export function classicDockToggle({
   docked,
@@ -87,7 +72,7 @@ export function classicDockToggle({
 }: {
   docked: boolean;
   front: boolean;
-  panel: ClassicPanel | null;
+  panel: "dock" | null;
   hiddenOnPhone: boolean;
 }): { pressed: boolean; click: ClassicDockToggle } {
   if (!docked || !front) return { pressed: false, click: "open" };

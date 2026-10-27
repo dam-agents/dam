@@ -473,21 +473,27 @@ export function createChannelManager(deps: {
           )
         : Promise.reject(new Error("slack worker not available")),
     notifyPerson: async (keycloakSub: string, notice: PersonNotice) => {
+      const inSlack = slackWorker
+        ? await slackWorker
+            .notifyPerson(keycloakSub, notice.slack)
+            .catch((err: unknown) => {
+              process.stderr.write(
+                `[channels] could not notify ${keycloakSub} in Slack: ${err instanceof Error ? err.message : String(err)}\n`,
+              );
+              return { sent: 0 };
+            })
+        : { sent: 0 };
       const { telegram } = notice;
-      const results = await Promise.all([
-        slackWorker?.notifyPerson(keycloakSub, notice.slack) ?? { sent: 0 },
-        telegram !== undefined && telegramWorker
-          ? telegramWorker
-              .notifyPerson(keycloakSub, telegram)
-              .catch((err: unknown) => {
-                process.stderr.write(
-                  `[channels] could not notify ${keycloakSub} in Telegram: ${err instanceof Error ? err.message : String(err)}\n`,
-                );
-                return { sent: 0 };
-              })
-          : { sent: 0 },
-      ]);
-      return { sent: results.reduce((sum, r) => sum + r.sent, 0) };
+      if (inSlack.sent > 0 || telegram === undefined || !telegramWorker)
+        return inSlack;
+      return telegramWorker
+        .notifyPerson(keycloakSub, telegram)
+        .catch((err: unknown) => {
+          process.stderr.write(
+            `[channels] could not notify ${keycloakSub} in Telegram: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          return { sent: 0 };
+        });
     },
   };
 

@@ -183,6 +183,20 @@ describe("outbound MCP tools — Slack unfurls (#3499)", () => {
   });
 });
 
+describe("react MCP tool — a reaction or a reply (#5994)", () => {
+  it("describes a reaction as standing in for a reply, not as an acknowledgement", async () => {
+    const { client } = await mcpHarness();
+    const { tools } = await client.listTools();
+    const react = tools.find((t) => t.name === "react");
+
+    expect(react?.description).toContain(
+      "in place of a reply when the emoji says enough by itself",
+    );
+    expect(react?.description).toContain("A reaction or a reply, not both");
+    expect(react?.description).not.toContain("acknowledgement");
+  });
+});
+
 describe("reply MCP tool — broadcast to channel (#2973)", () => {
   beforeEach(() => {
     auditLines.length = 0;

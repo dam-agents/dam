@@ -280,7 +280,12 @@ describe("slack ambient inbound", () => {
     expect(prompt).toContain('the bot "DAM"');
     expect(prompt).toContain("@dam");
     expect(prompt).toContain("answer it as you would a mention");
-    expect(prompt).toContain("open with a fitting emoji reaction");
+    expect(prompt).toContain("with a reaction or a reply, not both");
+    expect(prompt).toContain("React instead of replying when an emoji says");
+    expect(prompt).toContain("Both together is the exception");
+    expect(prompt).not.toContain("before you do anything else");
+    expect(prompt).not.toContain("acknowledgement");
+    expect(prompt).toContain("in place of a reply when the emoji says enough");
     expect(prompt).not.toContain("agent-1");
 
     expect(h.gw.readOutbound()).toHaveLength(0);

@@ -10,11 +10,13 @@ import type {
   fileChangeStatusSchema,
   fileDiffSchema,
   pullRequestLinkSchema,
+  pullRequestStateSchema,
   sessionRepositorySchema,
 } from "./schemas.js";
 
 export type CompareTo = z.infer<typeof compareToSchema>;
 export type PullRequestLink = z.infer<typeof pullRequestLinkSchema>;
+export type PullRequestState = z.infer<typeof pullRequestStateSchema>;
 export type DiffStat = z.infer<typeof diffStatSchema>;
 export type ChangeSet = z.infer<typeof changeSetSchema>;
 export type ChangeSetList = z.infer<typeof changeSetListSchema>;

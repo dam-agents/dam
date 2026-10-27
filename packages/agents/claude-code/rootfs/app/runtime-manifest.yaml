@@ -31,9 +31,9 @@ modelRouter:
   namePrefix: "claude/"
   lowercaseNames: true
   claudeTiers: true
-  # Bedrock runs outside the router (its SigV4 signing is no header swap), so
-  # its Connection lists Claude Code's own tier names and a session on one
-  # runs in its own Claude process.
+  # Bedrock has paths and a stream of its own, so its Connection lists Claude
+  # Code's own tier names and a session on one runs in its own Claude process
+  # in Bedrock mode; the router passes its calls on unchanged.
   native:
     templates: [bedrock]
     models: [fable, opus, sonnet, haiku]

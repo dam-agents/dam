@@ -76,7 +76,10 @@ async function repository(dir: string, files: Record<string, string>) {
 
 const settles = { timeout: 20_000 };
 
-const noPullRequests: PullRequestFinder = { find: async () => null };
+const noPullRequests: PullRequestFinder = {
+  find: async () => null,
+  states: async () => [],
+};
 
 let running: string[] = [];
 
@@ -442,6 +445,7 @@ describe("changes service", { timeout: 30_000 }, () => {
         asked.push([remote, branch]);
         return branch === "feat/x" ? link : null;
       },
+      states: async () => [],
     });
     await traced(
       { CLAUDE_CODE_SESSION_ID: "s1" },
@@ -520,6 +524,7 @@ describe("session pushes", { timeout: 30_000 }, () => {
   const link = { number: 9, url: "https://github.com/acme/app/pull/9" };
   const findsFeature: PullRequestFinder = {
     find: async (_remote, branch) => (branch === "feat/push" ? link : null),
+    states: async () => [],
   };
 
   async function repositoryWithRemote(): Promise<{
@@ -552,6 +557,7 @@ describe("session pushes", { timeout: 30_000 }, () => {
         asked.push([remoteUrl, branch]);
         return findsFeature.find(remoteUrl, branch);
       },
+      states: async () => [],
     });
     running = ["s1", "s2"];
 
@@ -673,5 +679,63 @@ describe("session pushes", { timeout: 30_000 }, () => {
         pullRequest: link,
       }),
     ]);
+  });
+});
+
+describe("pull request states", { timeout: 30_000 }, () => {
+  /**
+   * TEST_SCENARIO: A session's pull request waits for review, and a reviewer
+   * approves it. The sessions list reads the session's repositories; the
+   * next refresh reads the new state, stores it on the record and tells the
+   * list to read again, so the badge turns green without a new push.
+   */
+  it("should refresh the state of a pull request the list shows", async () => {
+    const repo = path.join(home, "work", "app");
+    await repository(repo, { "a.txt": "a\n" });
+    await git(
+      repo,
+      "remote",
+      "add",
+      "origin",
+      "https://github.com/acme/app.git",
+    );
+    await git(repo, "checkout", "--quiet", "-b", "feat/x");
+    const url = "https://github.com/acme/app/pull/7";
+    let state: "pending" | "approved" = "pending";
+    const asked: string[][] = [];
+    service = serviceFor([home], {
+      find: async (_remote, branch) =>
+        branch === "feat/x"
+          ? { number: 7, url, state: "pending", conflicts: false }
+          : null,
+      states: async (links) => {
+        asked.push(links.map((link) => link.url));
+        return links.map((link) => ({ ...link, state, conflicts: false }));
+      },
+    });
+    let notices = 0;
+    service.onPullRequestsChanged(() => notices++);
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      repo,
+      "commit",
+      "--quiet",
+      "--allow-empty",
+      "-m",
+      "x",
+    );
+    service.onToolCallSettled("s1");
+    await expect
+      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest?.state, settles)
+      .toBe("pending");
+
+    state = "approved";
+    service.refreshPullRequests();
+
+    await expect
+      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest?.state, settles)
+      .toBe("approved");
+    expect(notices).toBe(1);
+    expect(asked.at(-1)).toEqual([url]);
   });
 });

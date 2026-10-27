@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Get started and Approvals.
+// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Approvals.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
@@ -25,10 +25,10 @@ function render(processes?: SidePanelBadge) {
   );
 }
 
-// TEST_SCENARIO: Get started and Approvals are tabs like the others, but they belong to every page, so they sit below the Agent's tabs, Get started above the bell, not between them.
+// TEST_SCENARIO: Approvals is a tab like the others, but it belongs to every page, so it sits below the Agent's tabs instead of between them.
 it("renders the tabs of every page after the Agent's tabs", () => {
   const html = render();
-  const order = ["processes", "getting-started", "approvals"].map((tab) =>
+  const order = ["processes", "approvals"].map((tab) =>
     html.indexOf(`data-testid="side-panel-tab-${tab}"`),
   );
   expect(order[0]).toBeGreaterThan(-1);
@@ -109,7 +109,7 @@ it("orders the tabs Artifacts, Files, Changes, Browser", () => {
   expect(order[0]).toBeGreaterThan(-1);
 });
 
-// TEST_SCENARIO: Home and every other page outside an Agent share the chat's icon bar with only Get started and Approvals: no Agent tab, and no Artifacts, which has its own page.
+// TEST_SCENARIO: Home and every other page outside an Agent share the chat's icon bar with only Approvals: no Agent tab, and no Artifacts, which has its own page.
 it("offers only the tabs that belong to no Agent outside a chat", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -123,7 +123,6 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
           canOpenBrowser: true,
           changes: false,
           processesEnabled: true,
-          gettingStarted: true,
         }),
         onSelect: () => {},
       }),
@@ -132,7 +131,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
   const tabs = [
     ...html.matchAll(/data-testid="side-panel-tab-([a-z-]+)"/g),
   ].map((m) => m[1]);
-  expect(tabs).toEqual(["getting-started", "approvals"]);
+  expect(tabs).toEqual(["approvals"]);
 });
 
 // TEST_SCENARIO: The bar reads like an activity bar: 48 px square buttons with 24 px icons, and only the open tab carries the bar on its inner edge.

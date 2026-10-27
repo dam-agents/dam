@@ -41,6 +41,7 @@ export interface TouchedRepositoryStore {
     branch: string | null,
     pullRequest: PullRequestLink,
   ): void;
+  updatePullRequest(pullRequest: PullRequestLink): boolean;
   editedAtOf(sessionId: string): Map<string, string>;
   paths(): string[];
   repositoriesOf(sessionId: string): SessionRepository[];
@@ -67,6 +68,16 @@ function bounded(sessions: TouchedBySession): TouchedBySession {
     .sort((a, b) => (latest(sessions[b]!) < latest(sessions[a]!) ? -1 : 1))
     .slice(0, MAX_TOUCHED_SESSIONS);
   return Object.fromEntries(kept.map((id) => [id, sessions[id]!]));
+}
+
+function sameLink(a: PullRequestLink | null, b: PullRequestLink): boolean {
+  return (
+    a !== null &&
+    a.url === b.url &&
+    a.number === b.number &&
+    a.state === b.state &&
+    a.conflicts === b.conflicts
+  );
 }
 
 function newestFirst(entries: Record<string, Touched>): [string, Touched][] {
@@ -112,13 +123,32 @@ export function createTouchedRepositoryStore(
         const stale =
           entry !== undefined &&
           entry.branch === branch &&
-          entry.pullRequest?.url !== pullRequest.url;
+          !sameLink(entry.pullRequest, pullRequest);
         if (stale) changed = true;
         next[sessionId] = stale
           ? { ...entries, [path]: { ...entry, pullRequest } }
           : entries;
       }
       if (changed) store.write({ sessions: next });
+    },
+
+    updatePullRequest(pullRequest) {
+      const { sessions } = store.read();
+      let changed = false;
+      const next: TouchedBySession = {};
+      for (const [sessionId, entries] of Object.entries(sessions)) {
+        next[sessionId] = Object.fromEntries(
+          Object.entries(entries).map(([path, entry]) => {
+            const stale =
+              entry.pullRequest?.url === pullRequest.url &&
+              !sameLink(entry.pullRequest, pullRequest);
+            if (stale) changed = true;
+            return [path, stale ? { ...entry, pullRequest } : entry];
+          }),
+        );
+      }
+      if (changed) store.write({ sessions: next });
+      return changed;
     },
 
     editedAtOf(sessionId) {

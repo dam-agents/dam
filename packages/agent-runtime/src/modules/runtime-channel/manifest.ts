@@ -132,9 +132,11 @@ export const initializeCapabilities = z.object({
 export type InitializeCapabilities = z.infer<typeof initializeCapabilities>;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: providers a harness runs on outside the Model
- * Router (Claude Code on Bedrock, whose SigV4 signing no header swap can do):
- * a session on one runs in a process of its own with the Connection's env.
+ * UNIT_BOUNDARY_DESCRIPTION: providers a harness runs on in its own mode
+ * rather than through the Model Router's catalog (Claude Code on Bedrock,
+ * whose paths and stream are Bedrock's own): a session on one runs in a
+ * process of its own with the Connection's env, and the router passes its
+ * calls on unchanged.
  */
 export const nativeProvidersBinding = z.object({
   templates: z.array(z.string().min(1)).nonempty(),
@@ -155,6 +157,7 @@ export const modelRouterBinding = z.object({
   credentialEnv: z.array(z.string().min(1)).optional(),
   defaultModelEnv: z.array(z.string().min(1)).optional(),
   sessionFromRunningTurn: z.boolean().optional(),
+  unmarkedOpeningCall: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
   classifierModelEnv: z.string().min(1).optional(),
   nonClaudeModelEnv: z
