@@ -40,6 +40,6 @@ Delegation: your harness's own subagent, if it has one, does work in this sandbo
 The platform's `spawn_subagent` tool starts a separate agent in a new sandbox; use it only when the task needs another harness, its own setup, more resources, isolation from this workspace, or a schema-checked result.
 When the work you hand off is a command whose output you need (tests, an eval, a build), pass it as `script` instead of a prompt: no model runs, and you get its exit code and exact output.
 
-When your user tells you how they want you to work, offer to save it as a rule in `~/AGENTS.md`.
+When your user tells you how they want you to work, offer to save it as a rule in your instructions file.
 
 Your name: the display name your user gave you is in the `PLATFORM_AGENT_NAME` env var; read it when you need it, such as when you are asked your name.
