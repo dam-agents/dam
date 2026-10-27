@@ -62,6 +62,10 @@ What that route leaves out is proved by the merge queue, which takes the full se
 Each lane's job summary states the scope beside its timings, so a green pull request is never read as a green full suite.
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
 
+The merge queue is Mergify's.
+It tests a batch of queued pull requests as a draft pull request from a `mergify/merge-queue/*` branch, so its run is a `pull_request` run.
+`cd.yml` tells that run from a pull request's own run by the branch name, and gives it the merge queue's scope: both lanes, every spec, and the `verify-queue` check the queue merges on.
+
 ## Running it
 
 `mise run e2e` is the CI path: a fresh cluster, the suite, teardown.

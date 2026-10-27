@@ -45,25 +45,26 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   Non-trivial merge → add `rereview.label` for a full guardian review.
 - Approved + green + mergeable → notify the user.
   Merge only if told to.
-- `main` merges through GitHub's merge queue; its one required check is `verify`.
-  A branch from before the queue reports no `verify`: merge the base branch.
-  Merging is enqueueing: `gh pr merge <n> --squash --auto`, or `gh stack merge <top> --yes --squash` for a stack, which enqueues the whole stack.
-  "The merge strategy for main is set by the merge queue" is a notice, not a failure: the PR is enqueued.
+- `main` merges through the Mergify merge queue (`.mergify.yml`); the ruleset's one required check is `verify`.
+  Merging is queueing: add the `queue` label, `gh api -X POST repos/<repo>/issues/<n>/labels -f 'labels[]=queue'`.
+  Mergify queues the PR once Code Guardian has approved it and its `verify` passed, so the label may go on before that.
+  Never `gh pr merge`: a direct merge skips the queue's full e2e and restarts every batch in flight.
+  A stack: queue the bottom PR; once it merges, merge `main` into the next one, wait for green, and queue it.
   Being behind `main` needs no merge; the queue tests the PR on top of `main` and the PRs ahead of it.
-- Enqueued → wait until `gh pr view <n> --json state` is `MERGED`.
-  The queue's run is a `merge_group` run on a `gh-readonly-queue/main/pr-<n>-<base-sha>` branch; `gh pr checks <n>` never shows it.
-  The queue groups by `HEADGREEN`: a group's failed run does not eject the PR when a later group that contains it passes, so a red `merge_group` run alone is no ejection; only `state` and the timeline below say so.
-- Kicked out → the PR is `OPEN` again with no `autoMergeRequest`, and nothing on the PR page names the failed check.
-  The timeline does: `gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){timelineItems(last:10,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){nodes{... on RemovedFromMergeQueueEvent{createdAt reason beforeCommit{oid}}}}}}}'`; `reason` is `failed_checks`, a conflict, or a manual removal.
-  Find the run: `gh run list --event merge_group --limit 100 --json databaseId,headBranch,conclusion,createdAt --jq '.[]|select(.headBranch|contains("pr-<n>-"))'`; it may show `cancelled`, not `failure`.
-  `verify` only aggregates: it fails when any job it needs failed or was cancelled, so read the jobs, not `verify`: `gh run view <run> --json jobs --jq '.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|"\(.name) \(.conclusion) \(.startedAt) \(.completedAt) \(.databaseId)"'`.
+- Queued → wait until `gh pr view <n> --json state` is `MERGED`.
+  While a freeze is on, nothing merges; the queue still tests.
+  Mergify tests a batch as a draft PR from a `mergify/merge-queue/*` branch; its status comment on the PR links it.
+  The batch PR's CI/CD run is a `pull_request` run that takes both e2e lanes in full and reports `verify-queue`; `gh pr checks <n>` on your PR never shows it.
+  A failed batch is retried once, then split; a PR whose batch failed still merges when a later batch that holds it passes, so a red batch run alone is no ejection.
+- Kicked out → the PR is `OPEN` and out of the queue; Mergify's status comment names the reason and the batch PR.
+  Find its runs: `gh run list --workflow cd.yml --branch <batch-branch> --json databaseId,conclusion,headSha`.
+  `verify-queue` only aggregates: it fails when any job it needs failed or was cancelled, so read the jobs, not `verify-queue`: `gh run view <run> --json jobs --jq '.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|"\(.name) \(.conclusion) \(.startedAt) \(.completedAt) \(.databaseId)"'`.
   A `cancelled` job whose run time equals its `timeout-minutes` timed out: `--json jobs` lists its steps with times, and `gh run view <run> --log --job <job-id>` shows the step it hung in.
-  The queue builds the agent images for arm64, which a PR run never does, so an arm64-only agent build can fail there first.
   Infra or flake when the failed job's log shows one of:
   - a download failing or timing out from a third-party host (S3, `archive.apache.org`, `registry.access.redhat.com`, the npm registry), often ending in `EOF`, `timeout` or a `mise install` that hangs;
   - the job `cancelled` at its `timeout-minutes`;
   - `ERR_NETWORK_CHANGED`;
   - a failure in a spec or area the PR does not touch, in a job that passed on the PR's own run.
-- Infra or flake → enqueue again at once with `gh pr merge <n> --squash --auto`; do not wait or ask.
+- Infra or flake → queue again at once with a `@mergifyio queue` comment; do not wait or ask.
   At most twice per PR: a third ejection → stop and report to the user.
-  A real failure, caused by the PR or by what merged ahead → fix on the branch, wait for green, enqueue again.
+  A real failure, caused by the PR or by what merged ahead → fix on the branch, wait for green, queue again.

@@ -19,7 +19,10 @@ on:
   # The merge queue's gate: a merge group verifies like a PR and publishes
   # nothing a consumer reads, only cache tags for later groups (build.yml's
   # build-images). The push to main that follows only builds and publishes;
-  # see e2e.
+  # see e2e. Mergify tests its batches as draft PRs from
+  # mergify/merge-queue/* branches, so a pull_request run on such a branch is
+  # a merge group too (`queue` below). merge_group stays while GitHub's queue
+  # is the rollback.
   merge_group:
     types: [checks_requested]
   push:
@@ -45,6 +48,10 @@ jobs:
     uses: $/.github/workflows/build.yml
     with:
       verify: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+      # A merge queue run, GitHub's or Mergify's. A fork cannot fake one with
+      # the branch name: its pull_request run gets no secrets, so the :mq push
+      # fails its own run and nothing else.
+      queue: &queue ${{ github.event_name == 'merge_group' || startsWith(github.head_ref, 'mergify/merge-queue/') }}
       # A tag, the nightly run and a dispatch publish every image afresh; a
       # PR, a merge group or a main push reuses what its source did not change.
       fresh: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
@@ -66,11 +73,12 @@ jobs:
     uses: $/.github/workflows/e2e.yml
     with:
       verify: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+      queue: *queue
       fresh: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
       save-caches: ${{ github.ref == 'refs/heads/main' }}
       # A pull request runs the reduced smoke set; the merge queue, the nightly
       # run and a tag run all of it.
-      pr-scope: ${{ github.event_name == 'pull_request' }}
+      pr-scope: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'mergify/merge-queue/') }}
     secrets:
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
@@ -147,9 +155,21 @@ jobs:
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    steps:
+    steps: &verify-steps
       - env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
           echo "$RESULTS"
           case " $RESULTS " in *" failure "* | *" cancelled "*) exit 1 ;; esac
+
+  verify-queue:
+    name: verify-queue
+    # Mergify's merge condition, on a batch PR only. A check the PR never
+    # passes keeps the queue two-step: Mergify's Direct Merge would otherwise
+    # merge a PR that is up to date with main on its PR-scope `verify` alone,
+    # without the full e2e.
+    needs: [build, e2e]
+    if: ${{ always() && startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps: *verify-steps

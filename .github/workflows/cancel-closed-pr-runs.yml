@@ -3,6 +3,10 @@ name: Cancel closed PR runs
 # GitHub keeps a PR's CI/CD run going after the PR merges or closes. Each run
 # holds about fifteen runner slots, so a run nobody will read keeps main's
 # run waiting for runners. Closing a PR cancels its unfinished CI/CD runs.
+# Only the runs of the PR's last head commit: Mergify closes a batch PR when
+# the batch is done, split or reset, and may open the next batch PR, with a
+# new commit, on the same mergify/merge-queue/* branch. An open PR's older
+# commits have no runs left to cancel; its concurrency group cancelled them.
 
 on:
   pull_request:
@@ -26,10 +30,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           gh run list -R "$GITHUB_REPOSITORY" --workflow cd.yml --event pull_request \
-            --branch "$BRANCH" --limit 50 --json databaseId,status \
+            --branch "$BRANCH" --commit "$HEAD_SHA" --limit 50 --json databaseId,status \
             -q '.[] | select(.status != "completed") | .databaseId' |
             while read -r id; do
               gh run cancel -R "$GITHUB_REPOSITORY" "$id" || true

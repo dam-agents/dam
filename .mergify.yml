@@ -1,0 +1,42 @@
+# The merge queue for main. A PR queues once its own CI/CD run's `verify`
+# passed (mise check and the reduced smoke set) and the ruleset's approval is
+# in; Mergify reads the approval and `verify` from the Main protection ruleset
+# itself. A batch is tested as a draft PR from mergify/merge-queue/*, whose
+# CI/CD run cd.yml treats as a merge group: both e2e lanes, in full.
+queue_rules:
+  - name: default
+    queue_conditions:
+      - base=main
+      - label=queue
+      - check-success=verify
+    # Evaluated on the batch's draft PR. A check distinct from `verify` makes
+    # the queue two-step, which turns off Direct Merge (merging an up-to-date
+    # PR on its own CI, without a batch run).
+    merge_conditions:
+      - check-success=verify-queue
+    merge_method: squash
+    # One PR per batch while the queue is light, up to 4 when it backs up.
+    # With 3 parallel checks a failed batch of 4 finds its culprit in one split
+    # round (sizes 1, 4, 13 keep all 3 checks busy).
+    batch_size:
+      min: 1
+      max: 4
+    # One rerun of a failed batch before it is split: a split whose parts all
+    # pass ejects the batch's last PR untested, so a flake would eject a good
+    # PR.
+    max_checks_retries: 1
+
+merge_queue:
+  max_parallel_checks: 3
+  # A PR whose batch failed still merges when a later batch holding it passes,
+  # as GitHub's queue did with HEADGREEN.
+  skip_intermediate_results: true
+
+pull_request_rules:
+  - name: queue on the queue label
+    conditions:
+      - base=main
+      - label=queue
+    actions:
+      queue:
+        name: default

@@ -21,6 +21,12 @@ on:
           A PR or a merge group: build the images here, and save nothing.
         type: boolean
         required: true
+      queue:
+        description: >-
+          A merge queue run, a merge_group event or a Mergify batch PR: reuse
+          an earlier queue run's images, as build.yml's `queue` input says.
+        type: boolean
+        required: true
       fresh:
         description: >-
           Every image is built afresh, as build.yml's `changes` job is told:
@@ -231,7 +237,7 @@ jobs:
         id: vm-runner-build
         if: inputs.verify
         env: &e2e-resolve-env
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ inputs.queue && 'merge_group' || github.event_name }}
         run: |
           decision="$(.mise/tasks/image/resolve resolve vm-runner)" || decision=BUILD
           [ "$decision" != BUILD ] || echo "build=true" >> "$GITHUB_OUTPUT"
@@ -300,7 +306,7 @@ jobs:
           # images stale. EVENT lets a merge group reuse an earlier group's
           # build; see image:resolve.
           RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ inputs.queue && 'merge_group' || github.event_name }}
           CI_BUILD_READY_DIR: ${{ runner.temp }}/ci-images.status.ready
         run: CI_IMAGES_FAMILY=platform nohup .mise/tasks/e2e/ci-images "$RUNNER_TEMP/ci-images-platform.status" > "$RUNNER_TEMP/ci-images.log" 2>&1 &
       # A run that builds the mock or the default image builds it here, the
@@ -500,7 +506,7 @@ jobs:
     # 13-minute runner per push and buys a failure reported a few minutes
     # earlier. The merge queue and the nightly run keep it.
     needs: [docs-only]
-    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && !inputs.pr-scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
