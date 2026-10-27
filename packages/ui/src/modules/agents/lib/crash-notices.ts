@@ -61,7 +61,7 @@ export function terminationNotice(
   const { text } = splitConsole(reason);
   const sentence = text.charAt(0).toUpperCase() + text.slice(1);
   if (code === TerminationCode.RunnerOutOfMemory)
-    return "Your VM agents ran out of memory together, so this agent restarted. Disable agents you aren't using to free memory.";
+    return "Your VM agents ran out of memory together, so this agent restarted. Stop agents you aren't using to free memory.";
   if (code === TerminationCode.MachineStorageFull)
     return `${subject} can't start: your VM agents' storage is full. ${sentence}`;
   if (code === TerminationCode.HomeVolumeFull)
@@ -127,7 +127,7 @@ export function nextCrashNotices(
   if (outOfMemory.length > 0)
     toasts.push({
       kind: "error",
-      message: `Your VM agents ran out of memory together, so ${joinNames(outOfMemory)} restarted. Disable agents you aren't using to free memory.`,
+      message: `Your VM agents ran out of memory together, so ${joinNames(outOfMemory)} restarted. Stop agents you aren't using to free memory.`,
     });
   return { marks, toasts };
 }

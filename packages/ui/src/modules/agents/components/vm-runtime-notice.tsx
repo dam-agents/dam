@@ -1,11 +1,9 @@
 import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
-import { useStore } from "../../../store.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 
 export function VmRuntimeNotice({ className }: { className?: string }) {
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const vmRuntime = useVmRuntime();
   if (vmRuntime.unknown)
     return (
@@ -21,15 +19,7 @@ export function VmRuntimeNotice({ className }: { className?: string }) {
       inset
       className={cn("text-sm text-foreground", className)}
     >
-      This agent runs as a microVM on the new sandbox runtime, enabled in{" "}
-      <button
-        type="button"
-        className="font-medium underline"
-        onClick={() => navigateToSettings("features")}
-      >
-        Experimental features
-      </button>
-      .
+      This agent runs as a microVM on the new sandbox runtime.
     </Callout>
   );
 }

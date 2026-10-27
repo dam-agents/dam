@@ -110,6 +110,7 @@ export interface ApiContext {
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
   vmAgentSizing: VmAgentSizing;
+  agentIdleTimeoutMinutes: { container: number; vm: number };
   featureModes: FeatureModes;
   telemetryBackend: boolean;
 }
