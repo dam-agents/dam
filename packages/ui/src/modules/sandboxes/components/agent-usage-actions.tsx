@@ -97,7 +97,11 @@ export function AgentUsageActions({
               ))
           }
         >
-          <Button variant="outline" className="shrink-0">
+          <Button
+            variant="outline"
+            className="shrink-0"
+            aria-label="Open a web terminal"
+          >
             Open <ChevronDown size={16} />
           </Button>
         </TerminalHarnessMenu>

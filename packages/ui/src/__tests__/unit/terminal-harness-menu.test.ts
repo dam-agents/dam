@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: the Browser Terminal button opens a menu of the harnesses a new web terminal can start with, the carried harnesses a provider fits, as menu items a keyboard reaches. Picking one stores the terminal's own pair and opens the terminal: the harness, with the first attached provider it accepts, and with no model and no settings, so the harness starts on its own default model. The chat picker's pair and the agent's chat default are neither copied nor changed.
+// TEST_OVERVIEW: the Browser Terminal button opens a menu of the harnesses a new web terminal can start with, the carried harnesses a provider fits, as menu items a keyboard reaches. Picking one stores the terminal's own pair and opens the terminal: the harness, with the first attached provider it accepts, and with no model and no settings, so the harness starts on its own default model. The chat picker's pair and the agent's chat default are neither copied nor changed. A harness that needs a provider first opens the attach dialog, which gives focus back to the button when it closes.
 import type { SessionPair } from "api-server-api";
-import { act, createElement } from "react";
+import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -15,21 +15,37 @@ const fake = vi.hoisted(() => {
     model: "i/claude-opus-4",
     settings: { effort: "high", profile: "reviewer" },
   };
+  const catalog = [
+    ["claude-code", "Claude", ["anthropic", "ibm-litellm"]],
+    ["codex", "Codex", ["openai"]],
+    ["bob", "Bob", ["bob"]],
+    ["pi", "Pi", ["anthropic"]],
+  ].map(([name, displayName, providers]) => ({
+    name,
+    displayName,
+    providers,
+    tags: [],
+    experimental: false,
+  }));
   return {
     anthropic,
     ibm,
     openai,
     picked,
+    catalog,
     store: {
       nextSessionPair: { a1: picked },
       setNextSessionPair: vi.fn(),
       setNextTerminalPair: vi.fn(),
     },
-    ask: vi.fn(),
+    attachAll: vi.fn(),
     onOpen: vi.fn(),
   };
 });
 
+vi.mock("@/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactElement }) => children,
+}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) => select(fake.store),
 }));
@@ -46,20 +62,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
     isPending: false,
     isError: false,
-    data: {
-      harnesses: [
-        ["claude-code", "Claude", ["anthropic", "ibm-litellm"]],
-        ["codex", "Codex", ["openai"]],
-        ["bob", "Bob", ["bob"]],
-        ["pi", "Pi", ["anthropic"]],
-      ].map(([name, displayName, providers]) => ({
-        name,
-        displayName,
-        providers,
-        tags: [],
-        experimental: false,
-      })),
-    },
+    data: { harnesses: fake.catalog },
   }),
   useProviderConnections: () => ({
     granted: [fake.anthropic, fake.ibm],
@@ -67,14 +70,8 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
     loaded: true,
     failed: false,
   }),
+  useGrantProvider: () => ({ attachAll: fake.attachAll }),
   useRememberedPair: () => ({ data: fake.picked }),
-}));
-vi.mock("../../modules/sessions/components/attach-providers-dialog.js", () => ({
-  useAttachProvidersDialog: () => ({
-    ask: fake.ask,
-    pending: false,
-    dialog: null,
-  }),
 }));
 
 const { TerminalHarnessMenu } =
@@ -117,11 +114,19 @@ const items = () => [
   ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
 ];
 const item = (name: string) => items().find((el) => el.textContent === name)!;
+const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve)));
 
 function openMenu() {
   act(() => {
     trigger().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   });
+}
+
+async function choose(name: string) {
+  act(() => item(name).click());
+  await settle();
 }
 
 async function press(key: string) {
@@ -130,7 +135,7 @@ async function press(key: string) {
       new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
     );
   });
-  await act(() => new Promise((resolve) => setTimeout(resolve)));
+  await settle();
 }
 
 function storedPair(): SessionPair {
@@ -165,9 +170,9 @@ it("works from the keyboard and returns focus to the button", async () => {
 });
 
 // TEST_SCENARIO: picking Claude opens a terminal on Claude with the first attached provider it accepts. The picker holds Claude on another provider with a model, an effort and a profile; none of them reaches the terminal, and the picker's pair is left as it was.
-it("opens the terminal on the picked harness with no model or settings", () => {
+it("opens the terminal on the picked harness with no model or settings", async () => {
   openMenu();
-  act(() => item("Claude").click());
+  await choose("Claude");
   expect(storedPair()).toEqual({
     harness: "claude-code",
     provider: "a",
@@ -194,25 +199,36 @@ it("opens the terminal on the picked harness with no model or settings", () => {
   ]);
 });
 
-// TEST_SCENARIO: picking Codex, which no attached provider fits, asks which of the owner's fitting providers to attach, then opens the terminal on Codex with the one attached and no model.
+// TEST_SCENARIO: a keyboard user picks Codex, which no attached provider fits. The attach dialog takes focus; Escape closes it, opens no terminal, and gives focus back to the button rather than to the menu item that is gone.
+it("gives focus back to the button when the attach dialog is cancelled", async () => {
+  act(() => trigger().focus());
+  await press("ArrowDown");
+  await press("ArrowDown");
+  await press("Enter");
+  expect(dialog()?.textContent).toContain("Attach a provider for Codex");
+  expect(dialog()?.contains(document.activeElement)).toBe(true);
+  await press("Escape");
+  expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(trigger());
+  expect(fake.store.setNextTerminalPair).not.toHaveBeenCalled();
+  expect(fake.onOpen).not.toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: picking Codex and attaching the owner's OpenAI provider in the dialog opens the terminal on Codex with that provider and no model.
 it("attaches a provider first for a harness that needs one", async () => {
-  fake.ask.mockResolvedValue(["o"]);
+  fake.attachAll.mockResolvedValue(true);
   openMenu();
-  await act(async () => item("Codex").click());
-  expect(fake.ask).toHaveBeenCalledWith("codex", [fake.openai]);
+  await choose("Codex");
+  act(() => dialog()!.querySelector<HTMLElement>('[role="switch"]')!.click());
+  const attach = [...dialog()!.querySelectorAll("button")].find(
+    (b) => b.textContent === "Attach",
+  )!;
+  await act(async () => attach.click());
+  expect(fake.attachAll).toHaveBeenCalledWith(["o"]);
   expect(storedPair()).toEqual({
     harness: "codex",
     provider: "o",
     model: null,
   });
   expect(fake.onOpen).toHaveBeenCalledOnce();
-});
-
-// TEST_SCENARIO: cancelling the attach dialog opens no terminal and stores no pair.
-it("opens nothing when the attach is cancelled", async () => {
-  fake.ask.mockResolvedValue(null);
-  openMenu();
-  await act(async () => item("Codex").click());
-  expect(fake.store.setNextTerminalPair).not.toHaveBeenCalled();
-  expect(fake.onOpen).not.toHaveBeenCalled();
 });
