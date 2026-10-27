@@ -63,7 +63,7 @@ A pi that serves no chat session, as in the terminal, starts on the image's blan
 ### The Model Router
 
 On the platform every model call Pi makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the machine's loopback.
-When `PLATFORM_MODEL_ROUTER_URL` is set, [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) registers one provider, `platform`, from the router's `/v1/models`: every granted provider's models under qualified names (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`), each on the API it speaks best among its provider's dialects (Responses for OpenAI-family ids, Messages for Claude ids, chat completions otherwise), with limits, reasoning, cache marks and thinking format from the catalog's metadata and prices as Pi's per-million costs.
+When `PLATFORM_MODEL_ROUTER_URL` is set, [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) registers one provider, `platform`, from the router's `/v1/models`: every granted provider's models under qualified names (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`), each on the API it speaks best among its provider's dialects (Responses for OpenAI-family ids, Messages for Claude ids, chat completions otherwise), with limits, reasoning, cache marks and thinking format from the catalog's metadata, and no prices (see "Session cost").
 The router owns the credential, so the provider's key is a placeholder for pi-acp's auth gate, and Pi's built-in `openai` and `anthropic` providers are turned off.
 `pi-platform` starts Pi on `--provider platform --model <session model>` with one shared config directory; a session switching among a GPT, a GLM and a Claude model sends each call on its own API to the router.
 The sections below describe Pi's native providers, which a routed runtime does not use (Bedrock included).
@@ -272,13 +272,21 @@ That check fails on any pi-acp bump while the patch is still in place, so a bump
 
 ## Session cost
 
-Pi prices every model call itself, at the per-token rates of the model it registered.
+On the Model Router, a Pi session's cost is the platform's measured spend, the figure the Usage page shows.
+Pi prices no router model itself: `pi-dynamic-providers` registers them at zero rates.
+The router returns each call's id in `x-platform-call`; the extension writes it into the session as a pending note (a `platform_cost_pending` custom entry) and asks the router's `/platform/call-costs` for its cost every `PI_CALL_COST_POLL_MS` (2 s).
+Once the api-server's ledger has priced the call, its cost joins the session as a Pi `usage` entry (`platform_cost`) with no tokens and the call id as its note, which `/session` and the status line add up.
+A turn never waits for its cost, so a call the ledger has not priced yet counts a moment later.
+The Pi process that made the call need not live to see it: the platform closes an unwatched chat 3 s after its turn, and the next time the session is opened, the extension asks again for every pending note that has no `usage` entry yet.
+A call on a free provider (Curve Bender) or one the platform does not price (OpenAI) adds nothing, as on the Usage page, and neither does one the ledger has no price for `PI_CALL_COST_WAIT_MS` (2 min) after it; each still gets a `usage` entry of no cost, so it is not asked about again.
+
+Without the router, Pi prices every model call itself, at the per-token rates of the model it registered.
 A model behind an OpenAI-compatible proxy (`openai-proxy`, `rits`) comes with no rates, so `pi-dynamic-providers` gives it the list price of the same model at its vendor in Pi's built-in catalog, matched by the id without its routing prefix (`aws/claude-opus-4-8` costs what `anthropic`'s `claude-opus-4-8` costs).
 Only vendors count (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI), not resellers such as Bedrock that list the same model at a markup; a model no vendor lists stays free.
 
 Pi has no OpenTelemetry exporter, so the `pi-platform-telemetry` extension posts one OTLP/HTTP JSON log record per model call (`pi.api_request`, with the token counters, `cost_usd_micros`, `session.id` and `prompt.id`) and one per prompt (`pi.user_prompt`) to `$OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs`.
 It stays off unless `OTEL_LOGS_EXPORTER=otlp`, which the harness catalog's `pi` telemetry rail sets when the telemetry backend is on.
-The platform reads those records like Claude Code's, so the session list and Usage show a Pi session's cost (see [observability](../../../docs/architecture/observability.md#agent-export)).
+On the router their `cost_usd_micros` is 0, and the platform takes the cost of each call from its own ledger instead (see [observability](../../../docs/architecture/observability.md#agent-export)).
 No prompt text or reply leaves the agent.
 
 ## Memory scopes

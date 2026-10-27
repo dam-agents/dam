@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-23
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -92,7 +92,8 @@ Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and 
   It batches for a second, retries a refused post once, then drops with a log line; a call never waits on it.
   Claude Code also exports metrics, logs and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP, with its own **log record per LLM call**; the [metrics](metrics.md) reader prefers the router's records where an agent has them.
   Pi exports **log records only**: the same per-call counters, and a prompt identifier on every record a prompt caused, but no traces, so its sessions never fold child runs by trace.
-  Its cost counter is Pi's own reckoning at the model vendor's list price; for a model behind an OpenAI-compatible proxy, which reports no prices, the image prices it from the vendor's entry in Pi's built-in catalog, and a model no vendor lists counts as free.
+  On the Model Router Pi prices no call, so its records carry no cost, and the session cost Pi shows its owner (`/session`, the status line) is the ledger's measured cost of each call, which its extension asks the router for after the call ends ([harness configuration](harness-config.md#the-model-router)).
+  Without the router its cost counter is Pi's own reckoning at the model vendor's list price; for a model behind an OpenAI-compatible proxy, which reports no prices, the image prices it from the vendor's entry in Pi's built-in catalog, and a model no vendor lists counts as free.
   Bob Shell exports **traces only**, and its per-call counters ride a generation span under GenAI semantic-convention names — there is no log-record equivalent to fall back to.
   The [metrics](metrics.md) read path takes its **spend** from log records alone, the router's, Claude Code's, Pi's or Codex's, so Bob's spans never count as spend.
   That path does also read the trace store, for the agent-facing span read alone — which is therefore the one read that answers something for a traces-only harness, though what it answers is span shape, not spend.

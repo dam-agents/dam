@@ -5,6 +5,7 @@ import { invocationsHarnessRouter } from "./modules/invocations/harness-router.j
 import { kbPublishHarnessRouter } from "./modules/kb-publish/harness-router.js";
 import { harnessRuntimeRouter } from "./modules/runtime/harness-router.js";
 import { harnessSessionDirectoryRouter } from "./modules/session-directory/harness-router.js";
+import { spendHarnessRouter } from "./modules/spend/harness-router.js";
 
 export const harnessRouter = harnessT.router({
   approvals: approvalsHarnessRouter,
@@ -13,6 +14,7 @@ export const harnessRouter = harnessT.router({
   kbPublish: kbPublishHarnessRouter,
   runtime: harnessRuntimeRouter,
   sessionDirectory: harnessSessionDirectoryRouter,
+  spend: spendHarnessRouter,
 });
 
 export type HarnessRouter = typeof harnessRouter;

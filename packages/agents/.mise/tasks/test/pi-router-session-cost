@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+//MISE description="Test that Pi on the Model Router shows the platform's measured cost of each call as its session cost, added once when the ledger prices the call, even after the Pi that made the call has exited"
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/**", "test-lib/acp-client.mjs", ".mise/tasks/test/pi-router-session-cost", "../../pnpm-lock.yaml"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { messagesText } from "../../../test-lib/acp-client.mjs";
+
+const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
+const extension = join(root, "rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts");
+const cli = join(dirname(extension), "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+const home = mkdtempSync(join(tmpdir(), "pi-router-session-cost-"));
+
+const PAID = "ibm/aws/claude-opus-5-5";
+const entry = (id, alias, upstreamId) => ({
+  id, object: "model", owned_by: alias, display_name: upstreamId, description: alias,
+  metadata: { alias, upstreamId, dialects: ["anthropic-messages"], contextWindow: 200000, maxOutputTokens: 8192, reasoning: false, vision: false, cacheControl: null, thinkingFormat: null },
+});
+const catalog = [entry(PAID, "ibm", "aws/claude-opus-5-5")];
+const ledger = new Map();
+const asked = [];
+let calls = 0;
+const router = createServer((req, res) => {
+  const url = new URL(req.url, "http://127.0.0.1");
+  const path = url.pathname.replace(/^\/v1\/v1\//, "/v1/");
+  res.setHeader("content-type", "application/json");
+  if (req.method === "GET" && path === "/v1/models") return res.end(JSON.stringify({ data: catalog, has_more: false }));
+  if (req.method === "GET" && path === "/platform/call-costs") {
+    const ids = url.searchParams.getAll("id");
+    asked.push(...ids);
+    return res.end(JSON.stringify({ data: ids.flatMap((id) => (ledger.has(id) ? [{ id, ...ledger.get(id) }] : [])) }));
+  }
+  let body = "";
+  req.on("data", (data) => { body += data; });
+  req.on("end", () => {
+    const json = JSON.parse(body);
+    const reply = messagesText(json.model, "ok", json.stream === true);
+    res.setHeader("content-type", reply.contentType);
+    res.setHeader("x-platform-call", `call-${++calls}`);
+    res.end(reply.body);
+  });
+});
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+const routerUrl = `http://127.0.0.1:${router.address().port}`;
+
+mkdirSync(join(home, ".pi/agent"), { recursive: true });
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
+writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("extensions=/usr/local/share/pi-platform/extensions", `extensions=${dirname(dirname(extension))}`);
+writeFileSync(join(home, "pi-platform"), wrapper);
+
+const sessions = join(home, "sessions");
+let child;
+let errors = "";
+const waiting = new Map();
+const startPi = async (...args) => {
+  child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--session-dir", sessions, ...args, "--no-extensions", "--no-skills", "--no-prompt-templates"], {
+    cwd: home,
+    env: {
+      PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
+      PLATFORM_MODEL_ROUTER_URL: routerUrl, PLATFORM_MODEL: PAID, PI_CALL_COST_POLL_MS: "100",
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stderr.on("data", (d) => { errors += d; });
+  let output = "";
+  child.stdout.on("data", (data) => {
+    output += data;
+    const lines = output.split("\n");
+    output = lines.pop() ?? "";
+    for (const line of lines) {
+      let message;
+      try { message = JSON.parse(line); } catch { continue; }
+      if (message.type === "response" && waiting.has(message.id)) waiting.get(message.id)(message);
+      if (message.type === "agent_end" && waiting.has("agent_end")) waiting.get("agent_end")(message);
+    }
+  });
+  const state = await rpc({ type: "get_state" });
+  assert.equal(state.data.model?.id, PAID, JSON.stringify(state).slice(0, 500));
+};
+const stopPi = async () => {
+  if (child.exitCode !== null) return;
+  const exited = once(child, "exit");
+  child.kill();
+  await exited;
+};
+const rpc = (msg) => new Promise((resolve, reject) => {
+  const id = `${msg.type}-${Math.random().toString(36).slice(2)}`;
+  const timer = setTimeout(() => reject(new Error(`${msg.type} timed out: ${errors.slice(-800)}`)), 30_000);
+  waiting.set(id, (m) => { clearTimeout(timer); waiting.delete(id); resolve(m); });
+  child.stdin.write(`${JSON.stringify({ ...msg, id })}\n`);
+});
+const turn = (text) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error(`turn timed out: ${errors.slice(-800)}`)), 30_000);
+  waiting.set("agent_end", () => { clearTimeout(timer); waiting.delete("agent_end"); resolve(); });
+  child.stdin.write(`${JSON.stringify({ type: "prompt", message: text })}\n`);
+});
+const cost = async () => (await rpc({ type: "get_session_stats" })).data.cost;
+const until = async (what, check) => {
+  const deadline = Date.now() + 10_000;
+  while (!(await check())) {
+    if (Date.now() > deadline) throw new Error(`${what}: ${errors.slice(-800)}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+};
+
+try {
+  // TEST_SCENARIO: a Claude model speaks the Messages API, which Pi serves with its own API code rather than the router provider's stream. The chat closes right after its turn, before the ledger prices the call, and the Pi that made the call exits. When the chat is opened again, the measured cost becomes the session's cost, the figure the Usage page shows; it is added once, however often Pi asks after or the chat is opened again.
+  await startPi();
+  await turn("Say ok.");
+  await until("Pi never asked for the cost of call-1", () => asked.includes("call-1"));
+  await stopPi();
+  ledger.set("call-1", { unit: "usd", costMicros: 7_600, estimated: false });
+  await startPi("--continue");
+  await until("the measured cost never reached the reopened session", async () => (await cost()) > 0);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.equal(await cost(), 0.0076);
+  await stopPi();
+  await startPi("--continue");
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.equal(await cost(), 0.0076);
+  console.log("pi-router-session-cost: Pi's session cost is the platform's measured cost, added once when the ledger prices the call, even in a chat reopened after it");
+} finally {
+  if (child && child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  router.close();
+  rmSync(home, { recursive: true, force: true });
+}

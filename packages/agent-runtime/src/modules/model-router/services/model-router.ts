@@ -475,7 +475,10 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       return reply(res, 502, dialect, `upstream unreachable: ${reason}`);
     }
     upstreamHeaders = upstream.headers;
-    const resHeaders = keep([...upstream.headers], RES_DROP);
+    const resHeaders = {
+      ...keep([...upstream.headers], RES_DROP),
+      [CALL_HEADER]: callId,
+    };
     const contentType = upstream.headers.get("content-type") ?? "";
     const isSse = contentType.includes("text/event-stream");
     if (upstream.status >= 400) {

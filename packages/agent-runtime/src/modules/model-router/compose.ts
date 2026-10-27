@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import type { SpendCallCost } from "api-server-api";
 import type { ModelCatalog } from "../model-catalog/index.js";
 import type { ModelRouterBinding } from "../runtime-channel/manifest.js";
 import type { RuntimeEnvState } from "../runtime-channel/infrastructure/env-state-store.js";
@@ -17,6 +18,7 @@ import {
   subagentSessionOf,
 } from "./domain/session-of.js";
 import type { CallerSessionLookup } from "./infrastructure/caller-session.js";
+import { createCallCostsEndpoint } from "./services/call-costs-endpoint.js";
 import { createCatalogEndpoints } from "./services/catalog-endpoints.js";
 import {
   createModelRouter,
@@ -35,6 +37,7 @@ export interface ComposeModelRouterOpts {
   isSession?: (sessionId: string) => boolean;
   terminalSessionOf?: (harnessSessionId: string) => string | undefined;
   runningSessionsOf?: (harness: string) => string[];
+  callCosts?: (routerCallIds: string[]) => Promise<SpendCallCost[]>;
   callerSessions?: CallerSessionLookup;
   turnStartedAt?: (sessionId: string) => number | null;
   onCall?: (record: ModelCallRecord) => void;
@@ -169,7 +172,12 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
         ),
         dialect,
       ),
-    extensions: [createCatalogEndpoints(opts.catalog)],
+    extensions: [
+      createCatalogEndpoints(opts.catalog),
+      ...(opts.callCosts
+        ? [createCallCostsEndpoint(opts.callCosts, opts.log)]
+        : []),
+    ],
     ...(opts.onCall && { onCall: opts.onCall }),
     ...(opts.onCallStarted && { onCallStarted: opts.onCallStarted }),
     ...(opts.onCallEnded && { onCallEnded: opts.onCallEnded }),
