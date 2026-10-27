@@ -9,6 +9,7 @@ import {
   ChannelProfileRefusedError,
   createChannelProfiles,
 } from "../../modules/channels/infrastructure/channel-profile.js";
+import { createChannelProviderOutage } from "../../modules/channels/infrastructure/provider-outage-copy.js";
 import type { ResolvedProfile } from "../../modules/profiles/index.js";
 import { slackWorkerHarness } from "../helpers/slack-worker.js";
 import { telegramWorkerHarness } from "../helpers/telegram-worker.js";
@@ -210,5 +211,46 @@ describe("a channel's turn", () => {
       harness: PAIR.harness,
       model: PAIR.model,
     });
+  });
+});
+
+describe("the outage a channel's failed turn names", () => {
+  /** TEST_SCENARIO: a channel on its own profile, whose provider is down, names that provider's outage rather than the agent's channel default's; a channel bound before profiles, with no pick of its own, names the default's. */
+  it("reads the channel's own pick before the agent's default", async () => {
+    const onProfile: SessionPair = {
+      harness: "claude-code",
+      provider: "conn-anthropic",
+      model: "anthropic/claude-sonnet",
+    };
+    const agentDefault: SessionPair = {
+      harness: "claude-code",
+      provider: "conn-bedrock",
+      model: "bedrock/claude-sonnet",
+    };
+    const outage = createChannelProviderOutage({
+      channelPair: async (_agentId, channel) =>
+        channel.id === "C-PROFILE" ? onProfile : null,
+      defaultPair: async () => agentDefault,
+      templateOf: async (_agentId, connectionId) =>
+        connectionId === "conn-anthropic" ? "anthropic" : "bedrock",
+      status: async () => ({
+        damSide: null,
+        checkedAt: null,
+        outages: [
+          {
+            templateId: "anthropic",
+            reason: "failing-calls",
+            since: "2026-10-27T10:00:00Z",
+            statusPageUrl: null,
+          },
+        ],
+      }),
+    });
+    expect(
+      (await outage("agent-1", { type: "slack", id: "C-PROFILE" }))?.templateId,
+    ).toBe("anthropic");
+    expect(
+      (await outage("agent-1", { type: "slack", id: "C-LEGACY" }))?.templateId,
+    ).toBe("bedrock");
   });
 });

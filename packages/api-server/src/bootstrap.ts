@@ -164,10 +164,8 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
-import {
-  type ChannelRef,
-  createChannelProfiles,
-} from "./modules/channels/infrastructure/channel-profile.js";
+import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
+import { createChannelProviderOutage } from "./modules/channels/infrastructure/provider-outage-copy.js";
 import {
   createSlackTokenRotation,
   noSlackTokenRotation,
@@ -1648,29 +1646,16 @@ export async function bootstrap() {
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
   const channelPair = createChannelProfiles(db, resolveProfile).pair;
   const grantedTemplates = createGrantedConnectionTemplates(db);
-  /* UNIT_BOUNDARY_DESCRIPTION: the template a channel's turn runs on: its own pick, else the agent's channel default, which a channel bound before profiles keeps. */
-  const channelTemplateOf = async (agentId: string, channel: ChannelRef) => {
-    const noDefault = (err: unknown) => {
-      if (isNoDefaultModelError(err)) return null;
-      throw err;
-    };
-    const pair =
-      (await channelPair(agentId, channel).catch(() => null)) ??
-      (await channelFirePair(agentId, "channel").catch(noDefault));
-    return pair?.provider
-      ? grantedTemplates.templateOf(agentId, pair.provider)
-      : null;
-  };
-  const channelProviderOutage = async (
-    agentId: string,
-    channel: ChannelRef,
-  ) => {
-    const [templateId, status] = await Promise.all([
-      channelTemplateOf(agentId, channel),
-      providerStatus.service.view(),
-    ]);
-    return { templateId, status };
-  };
+  const channelProviderOutage = createChannelProviderOutage({
+    channelPair,
+    defaultPair: (agentId) =>
+      channelFirePair(agentId, "channel").catch((err: unknown) => {
+        if (isNoDefaultModelError(err)) return null;
+        throw err;
+      }),
+    templateOf: grantedTemplates.templateOf,
+    status: () => providerStatus.service.view(),
+  });
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
