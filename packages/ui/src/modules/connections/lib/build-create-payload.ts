@@ -5,7 +5,7 @@ import {
 } from "api-server-api";
 
 import { validateConnectionName } from "./connection-name.js";
-import type { GithubAccess } from "./github-access.js";
+import type { FirstConnectionAccess } from "./github-access.js";
 import { NO_APP_SCOPE } from "./github-app-scope-fields.js";
 
 function compact<T extends Record<string, unknown>>(
@@ -20,7 +20,7 @@ export interface CreateFormValues {
   name: string;
   fields: Record<string, string>;
   overrideDefaults: boolean;
-  access?: GithubAccess;
+  access?: FirstConnectionAccess;
 }
 
 export function buildCreatePayload(
@@ -101,6 +101,7 @@ function buildUncheckedPayload(
       };
       if (access === "full")
         return compact({ ...credential, fullAccess: true });
+      if (access === "later") return compact(credential);
       const scope = {
         repositories: submitted("repositories"),
         repositoryIds: submitted("repositoryIds"),

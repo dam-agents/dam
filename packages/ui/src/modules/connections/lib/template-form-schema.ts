@@ -22,7 +22,7 @@ export function buildTemplateFormSchema(
     .object({
       name: z.string(),
       overrideDefaults: z.boolean(),
-      access: z.enum(["narrowed", "full"]),
+      access: z.enum(["narrowed", "full", "later"]),
       fields: z.record(z.string(), z.string()),
     })
     .superRefine((v, ctx) => {

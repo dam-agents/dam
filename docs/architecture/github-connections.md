@@ -1,6 +1,6 @@
 # GitHub Connections
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -41,7 +41,7 @@ An Agent holds a Connection made from it, with its own scope and its own per-Con
 Names are unique among a user's parents and among their other Connections, so a parent may share its name with its first Connection.
 The scope is chosen against what the credential reaches, read back from GitHub with the parent's credential: for a sign-in, one account the app is installed on and optionally repositories and permissions there, which needs the sign-in first, since before consent there is nothing to read; for an installation, repositories and permissions.
 Full access — everything the sign-in reaches through the app, or the whole installation — is a scope named on purpose, never what a Connection gets by naming nothing: one that names neither is refused, at create and on every edit.
-No Connection exists after a sign-in until the user picks one; a save of an installation that names a scope or full access makes the installation and its first Connection at once, and an Agent's own secret request may name only a scope.
+No Connection exists after a sign-in until the user picks one, and the user may put that off; a save of an installation that names a scope or full access makes the installation and its first Connection at once, one that names neither — the user chose to make no Connection yet — makes the installation alone, and an Agent's own secret request may name only a scope.
 A sign-in's Connection injects a scoped token GitHub derives from the user token, authorized by the app's client secret, or the user token itself for full access; a renewal of the sign-in, a re-consent, and an edit of the scope give the Connections a token from the current user token, under the sign-in's refresh lock, and the sign-in renews before the earliest expiry among them.
 A scope GitHub refuses parks that one Connection as expired without costing the sign-in or its siblings anything, and never falls back to a wider token.
 A narrowed token still never does more than the user could.

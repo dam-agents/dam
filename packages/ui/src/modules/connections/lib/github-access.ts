@@ -3,6 +3,8 @@ import { match } from "ts-pattern";
 
 export type GithubAccess = "narrowed" | "full";
 
+export type FirstConnectionAccess = GithubAccess | "later";
+
 export type GithubCredentialKind = "sign-in" | "installation";
 
 export function githubCredentialKind(
@@ -26,6 +28,18 @@ export interface FullAccessChoice {
 }
 
 export const FULL_ACCESS_LABEL = "Full access";
+
+export const LATER_LABEL = "Don't make a connection yet";
+
+export function laterDescription(
+  connection: Pick<ConnectionView, "authKind">,
+): string {
+  const parent = match(githubCredentialKind(connection))
+    .with("installation", () => "Add the installation")
+    .with("sign-in", () => "Keep the sign-in")
+    .exhaustive();
+  return `${parent} on its own, and make each connection from it when an agent needs one.`;
+}
 
 export function fullAccessReach(
   connection: Pick<ConnectionView, "authKind">,
