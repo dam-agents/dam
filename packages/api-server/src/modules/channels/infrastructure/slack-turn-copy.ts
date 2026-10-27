@@ -166,9 +166,10 @@ export function slackTurnContract(ctx: {
     ...(privateReply
       ? []
       : [
-          `• ${TOOL}react — add a fitting emoji reaction to the message you're ` +
-            "answering: a quiet acknowledgement that notifies no one (e.g. eyes on " +
-            `a bug report, tada on good news) (${reactIds}).`,
+          `• ${TOOL}react — add an emoji reaction to the message you're ` +
+            "answering, in place of a reply when the emoji says enough by " +
+            "itself (e.g. +1 for agreement, white_check_mark for done, bug on " +
+            `a bug report); it notifies no one (${reactIds}).`,
         ]),
     `• ${TOOL}no_reply_needed — end your turn without posting anything, when ` +
       "the message doesn't call for a response. Pass the same threadTs you " +
@@ -359,12 +360,13 @@ export function ambientGuidance(
       "you can clearly help — answer a question you know the answer to, pick " +
       "up a task someone described, or flag a clear mistake. If in doubt, " +
       `stay silent by calling ${TOOL}no_reply_needed.`,
-    "When a message is worth engaging with, open with a fitting emoji " +
-      "reaction before you do anything else — it notifies no one and is a " +
-      "quiet signal that you have picked it up. Choose an emoji that suits " +
-      "the message rather than a rote one, and let the reaction stand alone " +
-      "as your whole response when a full reply isn't warranted. Don't react " +
-      "to messages you would otherwise stay silent on.",
+    "Respond as a person would: with a reaction or a reply, not both. " +
+      "React instead of replying when an emoji says enough by itself — " +
+      'agreement, "done", "this is a bug" — and a full reply isn\'t ' +
+      "needed; that you picked a message up goes without saying, so never " +
+      "react just to show it. Both together is the exception, for when the " +
+      "reaction says something the reply does not. Don't react to messages " +
+      "you would otherwise stay silent on.",
     "</reading-along>",
   ].join("\n");
 }
