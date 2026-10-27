@@ -4,8 +4,8 @@ name: E2E
 # gateway and one gateway pod per owner — and the docs-only check that skips
 # both. Both install the same thing: every agent is a machine on its owner's VM
 # runner.
-# cd.yml calls it on every run but a push; the github context is the calling
-# run's. Its jobs report as `e2e / <name>`.
+# cd.yml calls it on every run but a tag push; the github context is the
+# calling run's. Its jobs report as `e2e / <name>`.
 #
 # Local actions are `./` and cache keys YAML anchors, for the reasons cd.yml
 # gives. An anchor cannot reach another file, so the keys of the caches
@@ -93,9 +93,8 @@ jobs:
     # gateway pod, which hibernation scales to zero. e2e-owner-gateway runs the
     # same suite on the same backend with one gateway pod per owner, so a
     # regression in either path fails on its own job.
-    # cd.yml calls neither on a push to main: the merge group before it ran
-    # them on the same tree. The nightly run still runs them on main, and
-    # saves their caches there.
+    # A push to main runs both, as no merge queue runs them before the merge.
+    # The nightly run runs them on main too, and both save their caches there.
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
     # a PR or a merge group, or waits for this run's build jobs, in the

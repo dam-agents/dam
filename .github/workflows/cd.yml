@@ -62,10 +62,10 @@ jobs:
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
       MEND_USER_KEY: ${{ secrets.MEND_USER_KEY }}
 
-  # A push skips both jobs: on main, the merge group before it ran them on the
-  # same tree; a tag only publishes.
+  # A tag skips both jobs: it only publishes. A push to main runs them while
+  # no merge queue runs them before the merge.
   e2e:
-    if: ${{ github.event_name != 'push' }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     permissions:
       contents: read
       # e2e:ci-images reads this run's jobs and downloads its artifacts.
