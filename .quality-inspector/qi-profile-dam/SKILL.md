@@ -32,7 +32,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
 - **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and wakes a sleeping agent.
-- **Asleep** — an agent hibernated after being idle for its *Sleep after being idle for* setting (5 minutes, 15 minutes, 1 hour, Never), shown in the owner's list of agents.
+- **Asleep** — an agent hibernated after being idle for the install's idle timeout (5 minutes by default; the UI has no setting for it), shown in the owner's list of agents.
   While waiting for an agent to fall asleep, watch only that list: opening its chat may wake it.
 - **Artifact** — a work product an agent or user publishes, shareable by link.
 - **Settings** — API keys, providers, connections, appearance, usage, schedules, about.

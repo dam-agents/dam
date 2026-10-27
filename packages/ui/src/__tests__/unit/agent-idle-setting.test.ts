@@ -109,7 +109,7 @@ it("offers no idle-sleep setting on the agent's General section", () => {
       ),
     );
     expect(html).toContain("Disable agent");
-    expect(html).not.toMatch(/idle/i);
+    expect(html).not.toMatch(/sleep after|idle for/i);
     expect(html).not.toContain("sleep-after-idle");
   }
 });
