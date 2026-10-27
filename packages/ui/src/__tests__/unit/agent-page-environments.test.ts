@@ -100,8 +100,8 @@ vi.mock("../../modules/sandboxes/components/sandbox-home-header.js", () => ({
   SandboxHomeHeader: () => null,
   SandboxIdentity: () => null,
 }));
-vi.mock("../../modules/sandboxes/components/sandbox-setup-section.js", () => ({
-  SandboxSetupSection: () => null,
+vi.mock("../../modules/sandboxes/components/agent-config-sections.js", () => ({
+  AgentModelSettingsSection: () => null,
 }));
 vi.mock("../../modules/metrics/components/sandbox-usage-section.js", () => ({
   SandboxUsageSection: () => null,
