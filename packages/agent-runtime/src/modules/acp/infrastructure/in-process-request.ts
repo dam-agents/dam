@@ -25,14 +25,9 @@ function describeError(
 }
 
 export class ConnectionClosedError extends Error {
-  constructor(
-    method: string,
-    readonly sent: boolean,
-  ) {
+  constructor(method: string) {
     super(
-      sent
-        ? `${method} failed: the runtime closed the connection before answering`
-        : `${method} not sent: the runtime had closed the connection`,
+      `${method} failed: the runtime closed the connection before answering`,
     );
     this.name = "ConnectionClosedError";
   }
@@ -101,12 +96,12 @@ export function createInProcessCaller(
   return {
     request<T>(method: string, params: unknown): Promise<T> {
       if (!channel.isOpen())
-        return Promise.reject(new ConnectionClosedError(method, false));
+        return Promise.reject(new ConnectionClosedError(method));
       return new Promise<T>((resolve, reject) => {
         const id = nextId++;
         pending.set(id, (frame) => {
           if (frame === null) {
-            reject(new ConnectionClosedError(method, true));
+            reject(new ConnectionClosedError(method));
             return;
           }
           if (frame.error) {

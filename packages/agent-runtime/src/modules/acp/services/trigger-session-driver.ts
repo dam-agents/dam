@@ -26,6 +26,7 @@ export interface TriggerSessionDriver {
     model?: string;
     keepSessionModel?: boolean;
     follows?: SessionDefaultKind | null;
+    onOpened?: (sessionId: string) => void;
   }): Promise<{ sessionId: string; openedOn: string | null }>;
 }
 
@@ -69,8 +70,8 @@ export class NoSessionModelError extends Error {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a fresh Session's first prompt was refused, or
- * never reached the runtime, so no turn ran and the Session holds nothing.
- * The run that opened it can be started again.
+ * never reached the Prompt Scheduler, so no turn ran and the Session holds
+ * nothing. The run that opened it can be started again.
  */
 export class PromptNotTakenError extends Error {
   constructor(
@@ -86,7 +87,10 @@ export class PromptNotTakenError extends Error {
  * UNIT_BOUNDARY_DESCRIPTION: how long a fresh Session's start waits for its
  * first turn. The prompt waits behind nothing but the Session's own settings,
  * so a refusal comes within seconds. A prompt still queued after this is left
- * to the runtime, as before: failing the start then could run the task twice.
+ * to the runtime, which writes down a refusal it meets later: failing the
+ * start then could run the task twice. A connection that closes once the
+ * Prompt Scheduler queued the prompt is the runtime dropping that queue, which
+ * it writes down the same way.
  */
 const FIRST_TURN_WAIT_MS = 30_000;
 
@@ -103,12 +107,14 @@ function firstTurn(
       if (err === undefined) resolve();
       else reject(err as Error);
     };
+    let accepted = false;
     caller.onNotification((method, notified) => {
       if (
-        method === "platform/promptStarted" &&
-        (notified as { promptId?: unknown } | undefined)?.promptId === promptId
+        (notified as { promptId?: unknown } | undefined)?.promptId !== promptId
       )
-        settle();
+        return;
+      if (method === "platform/promptAccepted") accepted = true;
+      if (method === "platform/promptStarted") settle();
     });
     caller
       .request("session/prompt", {
@@ -125,7 +131,7 @@ function firstTurn(
         () => settle(),
         (err: unknown) =>
           settle(
-            err instanceof ConnectionClosedError && err.sent ? undefined : err,
+            err instanceof ConnectionClosedError && accepted ? undefined : err,
           ),
       );
   });
@@ -148,6 +154,7 @@ export function createTriggerSessionDriver(deps: {
       model,
       keepSessionModel,
       follows,
+      onOpened,
     }) {
       const pins =
         !!resumeSessionId &&
@@ -223,6 +230,7 @@ export function createTriggerSessionDriver(deps: {
             ? SCHEDULE_SURFACE
             : null;
         const prompt = [{ type: "text", text: task }];
+        onOpened?.(sessionId);
         if (resumeSessionId) {
           caller.notify("session/prompt", {
             sessionId,

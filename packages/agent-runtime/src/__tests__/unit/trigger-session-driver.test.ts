@@ -4,19 +4,30 @@ import type { AcpRuntime } from "../../modules/acp/services/acp-runtime/acp-runt
 import {
   createTriggerSessionDriver,
   NoSessionModelError,
+  PromptNotTakenError,
 } from "../../modules/acp/services/trigger-session-driver.js";
 
-function startPrompt(channel: ClientChannel, frame: any): void {
+function notifyPrompt(
+  channel: ClientChannel,
+  frame: any,
+  method: "platform/promptAccepted" | "platform/promptStarted",
+): void {
   channel.send(
     JSON.stringify({
       jsonrpc: "2.0",
-      method: "platform/promptStarted",
+      method,
       params: {
         sessionId: frame.params.sessionId,
         promptId: frame.params._meta?.platform?.promptId,
+        ...(method === "platform/promptAccepted" && { queued: false }),
       },
     }),
   );
+}
+
+function startPrompt(channel: ClientChannel, frame: any): void {
+  notifyPrompt(channel, frame, "platform/promptAccepted");
+  notifyPrompt(channel, frame, "platform/promptStarted");
 }
 
 function fakeRuntime(
@@ -240,11 +251,14 @@ describe("createTriggerSessionDriver", () => {
   });
 
   /** TEST_SCENARIO: the harness went down with the fire's first prompt still
-   * queued. The runtime writes such a prompt down as undelivered and reports
-   * the run itself, so the start returns as delivered rather than fail and
-   * have the fire run a second time. */
-  it("returns when the runtime hangs up after it took the prompt", async () => {
-    const { runtime } = fakeRuntime((channel) => channel.close());
+   * queued. The runtime has already written that prompt down as undelivered
+   * and reported the run, so the start returns as before: a fire delivered
+   * again on top would be a second run beside a prompt kept for resending. */
+  it("returns when the runtime hangs up after it queued the prompt", async () => {
+    const { runtime } = fakeRuntime((channel, frame) => {
+      notifyPrompt(channel, frame, "platform/promptAccepted");
+      channel.close();
+    });
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
       modelRequired: () => false,
@@ -254,6 +268,25 @@ describe("createTriggerSessionDriver", () => {
     await expect(driver.start({ task: "do it" })).resolves.toMatchObject({
       sessionId: "s1",
     });
+  });
+
+  /** TEST_SCENARIO: the prompt went out on the connection but never reached
+   * the Prompt Scheduler, as when a new lease still holds it back for its
+   * spawn work and the connection closes. Nothing wrote it down, so the start
+   * fails and the empty session is retired. */
+  it("fails when the runtime hangs up before it queued the prompt", async () => {
+    const { runtime } = fakeRuntime((channel) => channel.close());
+    const tombstone = vi.fn();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+      sessionMetadata: { tombstone },
+    });
+    await expect(driver.start({ task: "do it" })).rejects.toBeInstanceOf(
+      PromptNotTakenError,
+    );
+    expect(tombstone).toHaveBeenCalledWith("s1");
   });
 
   /** TEST_SCENARIO: a harness that never answers the session's own settings

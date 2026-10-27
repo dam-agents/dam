@@ -22,7 +22,7 @@ export type SteerNowFate = "sent" | "not-queued" | "cannot-steer";
 export type SteerOutcome = "injected" | "refused";
 
 export type QueueDropCause =
-  "park-expired" | "session-forgotten" | "scheduler-cleared";
+  "park-expired" | "session-forgotten" | "scheduler-cleared" | "refused";
 
 export interface PromptSubmission {
   sessionId: string;
@@ -125,6 +125,7 @@ export interface PromptSchedulerDeps {
     sessionId: string,
     dropped: PromptSubmission[],
     cause: QueueDropCause,
+    refusal?: string,
   ) => void;
   onTurnStarted?: (submission: PromptSubmission) => void;
   canSteer?: (sessionId: string) => boolean;
@@ -193,6 +194,8 @@ export interface PromptSchedulerDeps {
  * outside this module ever removes a queue itself. refuseQueue is the one
  * exception and answers each sender with an error instead, so the loss is
  * reported to the client that is still there to hear it rather than recorded.
+ * A sender that is gone, such as a run whose start already returned, cannot
+ * hear it, so its prompts leave over onQueueDropped with the refusal instead.
  * A setting change for a session (its model or mode) waits in the same place
  * but is not a turn: it applies to the session's next turn, so it waits for
  * the turn in flight to end and for the session to be loaded back into the
@@ -711,7 +714,10 @@ export function createPromptScheduler(
       queues.delete(sessionId);
       clearParkTimer(sessionId);
       deps.onQueueChanged?.(sessionId);
+      const unheard = queue.filter((entry) => !entry.channel.isOpen());
       for (const entry of queue) refuse(entry, message);
+      if (unheard.length > 0)
+        deps.onQueueDropped(sessionId, unheard, "refused", message);
     },
 
     update(sessionId, promptId, edit) {

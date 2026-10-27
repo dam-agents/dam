@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { EventReportInput } from "agent-runtime-api";
+import { createTriggerPlugin } from "../../../../runtime-channel/drivers/trigger-plugin.js";
+import { createInvocationWatch } from "../../../../runtime-channel/services/invocation-watch.js";
 import { createSessionMetadataStore } from "../../../infrastructure/session-metadata-store.js";
 import { createTriggerSessionDriver } from "../../trigger-session-driver.js";
 import {
@@ -28,12 +31,17 @@ const FIRE_META = {
   fireEvent: "trigger:sched-1:1",
 };
 
-function fireWorld() {
+type TurnOutcome = { stopReason: string | null; error: string | null };
+
+function fireWorld(
+  onTurnOutcome: (sessionId: string, end: TurnOutcome) => void = () => {},
+) {
   const metadata = createSessionMetadataStore(memoryDocumentBackend());
   const undeliveredPrompts = createInMemoryUndeliveredStore();
   const world = createWorld({
     sessionMetadata: metadata,
     undeliveredPrompts,
+    onTurnOutcome,
     sessionSettingFrames: (sessionId) => [
       {
         method: "session/set_config_option",
@@ -58,8 +66,15 @@ function fireWorld() {
         () => "settled" as const,
         (err: Error) => err,
       );
-  return { world, metadata, undeliveredPrompts, fire };
+  return { world, metadata, undeliveredPrompts, driver, fire };
 }
+
+const refuseModel = (world: ReturnType<typeof createWorld>) =>
+  world.harness().refuseTo("session/set_config_option", {
+    code: -32602,
+    message: "Invalid params",
+    data: { details: `unknown model "${MODEL}"` },
+  });
 
 describe("acp-runtime: a fire's fresh session", () => {
   afterEach(() => {
@@ -81,15 +96,9 @@ describe("acp-runtime: a fire's fresh session", () => {
     await vi.waitFor(() =>
       world.harness().replyTo("session/new", { sessionId: "s-fire" }),
     );
-    const refuse = () =>
-      world.harness().refuseTo("session/set_config_option", {
-        code: -32602,
-        message: "Invalid params",
-        data: { details: `unknown model "${MODEL}"` },
-      });
-    refuse();
+    refuseModel(world);
     vi.advanceTimersByTime(2_500);
-    refuse();
+    refuseModel(world);
 
     const failed = await outcome;
     expect(failed).toBeInstanceOf(Error);
@@ -151,5 +160,107 @@ describe("acp-runtime: a fire's fresh session", () => {
     expect(promptTextsOf(world.harness())).toEqual([
       "Append the date to ~/qa-sched.txt",
     ]);
+  });
+
+  /**
+   * TEST_SCENARIO: the harness answers none of the session's settings for
+   * longer than the start waits, so the start returns with the prompt still
+   * queued, and the refusal comes later. Nobody is left to hear it, so the
+   * runtime writes the prompt down as undelivered and reports the turn's
+   * failure with the refusal, which fails a one-time fire's schedule, instead
+   * of leaving an empty session to vanish on its first open.
+   */
+  it("writes down a refusal that comes after the start gave up waiting", async () => {
+    vi.useFakeTimers();
+    const outcomes: [string, TurnOutcome][] = [];
+    const { world, undeliveredPrompts, fire } = fireWorld((sessionId, end) =>
+      outcomes.push([sessionId, end]),
+    );
+    const outcome = fire();
+    await vi.waitFor(() => world.harness().replyTo("initialize"));
+    await vi.waitFor(() =>
+      world.harness().replyTo("session/new", { sessionId: "s-fire" }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await outcome).toBe("settled");
+
+    refuseModel(world);
+    vi.advanceTimersByTime(2_500);
+    refuseModel(world);
+
+    expect(undeliveredPrompts.readFor("s-fire")).toHaveLength(1);
+    expect(outcomes).toEqual([
+      [
+        "s-fire",
+        {
+          stopReason: null,
+          error: expect.stringContaining("refused the session's model"),
+        },
+      ],
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: a sub-agent's Invocation opens its session, and the
+   * harness exits while the first prompt waits for the session's model. The
+   * runtime drops the queue and reports the turn's failure at once, before the
+   * start returns, so the Invocation's watch must already follow the session
+   * or the sub-agent reads running until its deadline.
+   */
+  it("fails an Invocation whose harness exits before its first turn", async () => {
+    const reports: EventReportInput[] = [];
+    const watch = createInvocationWatch({
+      reporter: { report: async (input) => void reports.push(input) },
+      turnRunning: () => false,
+      localWork: () => false,
+      subAgentsRunning: async () => false,
+      log: () => {},
+    });
+    const { world, driver } = fireWorld((sessionId, end) =>
+      watch.turnOutcome(sessionId, end),
+    );
+    const trigger = createTriggerPlugin({
+      driver,
+      stateStore: {
+        getSessionForSchedule: () => undefined,
+        setSessionForSchedule: () => {},
+        clearSessionForSchedule: () => {},
+      },
+      runPrecheck: async () => ({ verdict: "allowed" }),
+      log: () => {},
+      reporter: { report: async () => {} },
+      invocationWatch: watch,
+    }).bindEvent!("trigger", { impl: "trigger" });
+
+    await trigger(
+      {
+        scheduleId: "invocation:a",
+        task: "report a result",
+        sessionMode: "fresh",
+        invocation: true,
+      },
+      {
+        eventId: "invocation:a:1",
+        agentHome: "",
+        pluginStateDir: "",
+        log: () => {},
+      },
+    );
+    await vi.waitFor(() => world.harness().replyTo("initialize"));
+    await vi.waitFor(() =>
+      world.harness().replyTo("session/new", { sessionId: "s-sub" }),
+    );
+    world.harness().exit();
+
+    await vi.waitFor(() =>
+      expect(reports).toEqual([
+        {
+          eventId: "invocation:a:1",
+          outcome: "failed",
+          stage: "run",
+          detail: expect.stringContaining("the harness exited"),
+        },
+      ]),
+    );
   });
 });
