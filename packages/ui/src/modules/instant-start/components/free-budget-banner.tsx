@@ -15,11 +15,7 @@ function formatUsd(value: number): string {
 
 function CurveBenderLogo({ className }: { className?: string }) {
   return (
-    <img
-      src="/curvebender-logo.svg"
-      alt="CurveBender"
-      className={className}
-    />
+    <img src="/curvebender-logo.svg" alt="CurveBender" className={className} />
   );
 }
 

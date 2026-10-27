@@ -1,35 +1,55 @@
-import { useEffect, useState } from "react";
-
 import { Checkmark, ChevronDown } from "@carbon/icons-react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { CARD_SURFACE } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 import { DialogBody, DialogHeader, Modal } from "../../../components/modal.js";
-import { PROVIDERS, type ProviderPresetType } from "../../../types.js";
+import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 import { CardIcon } from "../../providers/components/card-icon.js";
-import { PROVIDER_ROWS } from "../../providers/lib/provider-rows.js";
+import { CurveBenderForm } from "../../providers/components/curvebender/form.js";
+import { IbmLitellmForm } from "../../providers/components/ibm-litellm/form.js";
+import {
+  CURVE_BENDER_DESCRIPTION,
+  PROVIDER_ROWS,
+} from "../../providers/lib/provider-rows.js";
 import { useInstantStart } from "../context.js";
 
-type Phase = "pick" | "connecting" | "connected";
+type Phase = "pick" | "form" | "connecting" | "connected";
+type SelectionType = ProviderPresetType | "curvebender-own";
 
 interface ProviderOption {
-  type: ProviderPresetType | "curvebender";
+  type: SelectionType | "curvebender-free";
   title: string;
   description: string;
   icon: React.ReactNode;
 }
 
-const CURVEBENDER_OPTION: ProviderOption = {
-  type: "curvebender",
+const CB_ICON = (
+  <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+    <img src="/curvebender-logo.svg" alt="CurveBender" className="size-5" />
+  </div>
+);
+
+const CB_ICON_SM = (
+  <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted">
+    <img src="/curvebender-logo.svg" alt="CurveBender" className="size-3.5" />
+  </div>
+);
+
+const CURVEBENDER_FREE_OPTION: ProviderOption = {
+  type: "curvebender-free",
   title: "CurveBender",
   description: "Free sponsored budget — no API key needed.",
-  icon: (
-    <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-      <img src="/curvebender-logo.svg" alt="CurveBender" className="size-5" />
-    </div>
-  ),
+  icon: CB_ICON_SM,
+};
+
+const CURVEBENDER_OWN_OPTION: ProviderOption = {
+  type: "curvebender-own",
+  title: "CurveBender (own key)",
+  description: CURVE_BENDER_DESCRIPTION,
+  icon: CB_ICON_SM,
 };
 
 interface Props {
@@ -39,15 +59,16 @@ interface Props {
 export function ConfigureProviderModal({ onClose }: Props) {
   const ctx = useInstantStart();
   const [phase, setPhase] = useState<Phase>("pick");
-  const [selected, setSelected] = useState<ProviderPresetType | null>(null);
+  const [selected, setSelected] = useState<SelectionType | null>(null);
 
   const currentProvider = ctx?.connectedProviderType ?? null;
   const isCurveBender = !currentProvider;
 
   const allOptions: ProviderOption[] = [
-    CURVEBENDER_OPTION,
+    CURVEBENDER_FREE_OPTION,
+    CURVEBENDER_OWN_OPTION,
     ...PROVIDER_ROWS.map((row) => ({
-      type: row.type as ProviderPresetType,
+      type: row.type as SelectionType,
       title: PROVIDERS[row.type].displayName,
       description: row.description,
       icon: <CardIcon provider={row.type} size="sm" />,
@@ -55,12 +76,21 @@ export function ConfigureProviderModal({ onClose }: Props) {
   ];
 
   const handleSelect = (opt: ProviderOption) => {
-    if (opt.type === "curvebender") {
+    if (opt.type === "curvebender-free") {
       ctx?.setConnectedProviderType(null);
       ctx?.setProviderAdded(false);
+      ctx?.setActiveProvider("curvebender-free");
+      ctx?.setCurveBenderEnabled(true);
       onClose();
       return;
     }
+
+    if (opt.type === "curvebender-own" || opt.type === "ibm-litellm") {
+      setSelected(opt.type);
+      setPhase("form");
+      return;
+    }
+
     const providerType = opt.type as ProviderPresetType;
     if (providerType === currentProvider) return;
     setSelected(providerType);
@@ -70,8 +100,10 @@ export function ConfigureProviderModal({ onClose }: Props) {
   useEffect(() => {
     if (phase !== "connecting" || !selected) return;
     const t = setTimeout(() => {
-      ctx?.setConnectedProviderType(selected);
+      const providerType = selected as ProviderPresetType;
+      ctx?.setConnectedProviderType(providerType);
       ctx?.setProviderAdded(true);
+      ctx?.setActiveProvider(providerType);
       setPhase("connected");
     }, 1200);
     return () => clearTimeout(t);
@@ -83,7 +115,45 @@ export function ConfigureProviderModal({ onClose }: Props) {
     return () => clearTimeout(t);
   }, [phase, onClose]);
 
-  const selectedName = selected ? PROVIDERS[selected].displayName : "";
+  const selectedName =
+    selected === "curvebender-own"
+      ? "CurveBender (own key)"
+      : selected
+        ? PROVIDERS[selected as ProviderPresetType].displayName
+        : "";
+
+  if (phase === "form" && selected) {
+    const handleFormSave = async (_input: { value: string }) => {
+      if (selected === "curvebender-own") {
+        ctx?.setOwnCurveBenderKey(true);
+        ctx?.setProviderAdded(true);
+        ctx?.setActiveProvider("curvebender-own");
+        ctx?.setConnectedProviderType(null);
+      } else if (selected === "ibm-litellm") {
+        ctx?.setConnectedProviderType("ibm-litellm");
+        ctx?.setProviderAdded(true);
+        ctx?.setActiveProvider("ibm-litellm");
+      }
+      setPhase("connected");
+    };
+
+    return (
+      <Modal widthClass="w-[505px]">
+        {selected === "curvebender-own" ? (
+          <CurveBenderForm
+            onSave={handleFormSave}
+            onCancel={() => setPhase("pick")}
+          />
+        ) : (
+          <IbmLitellmForm
+            variant="wizard"
+            onSave={handleFormSave}
+            onCancel={() => setPhase("pick")}
+          />
+        )}
+      </Modal>
+    );
+  }
 
   if (phase === "connecting") {
     return (
@@ -118,7 +188,10 @@ export function ConfigureProviderModal({ onClose }: Props) {
     );
   }
 
-  const activeType: string = currentProvider ?? "curvebender";
+  const activeType: string =
+    ctx?.activeProvider === "curvebender-own"
+      ? "curvebender-own"
+      : (currentProvider ?? "curvebender-free");
 
   return (
     <Modal widthClass="w-[505px]">
@@ -128,7 +201,6 @@ export function ConfigureProviderModal({ onClose }: Props) {
         onClose={onClose}
       />
       <DialogBody>
-        {/* Trigger-style card showing current selection */}
         <button
           type="button"
           className={cn(
@@ -136,25 +208,29 @@ export function ConfigureProviderModal({ onClose }: Props) {
             "group flex min-h-[76px] w-full items-center gap-3.5 p-4 text-left border-foreground",
           )}
         >
-          {isCurveBender ? (
-            CURVEBENDER_OPTION.icon
+          {activeType === "curvebender-own" || isCurveBender ? (
+            CB_ICON
           ) : (
-            <CardIcon provider={currentProvider} />
+            <CardIcon provider={currentProvider!} />
           )}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
               <p className="truncate text-base font-medium text-foreground">
-                {isCurveBender
+                {activeType === "curvebender-free"
                   ? "CurveBender"
-                  : PROVIDERS[currentProvider].displayName}
+                  : activeType === "curvebender-own"
+                    ? "CurveBender (own key)"
+                    : PROVIDERS[currentProvider!].displayName}
               </p>
               <Badge variant="success">Active</Badge>
             </div>
             <p className="truncate text-sm text-muted-foreground">
-              {isCurveBender
+              {activeType === "curvebender-free"
                 ? "Free sponsored budget — no API key needed."
-                : PROVIDER_ROWS.find((r) => r.type === currentProvider)
-                    ?.description ?? ""}
+                : activeType === "curvebender-own"
+                  ? CURVE_BENDER_DESCRIPTION
+                  : (PROVIDER_ROWS.find((r) => r.type === currentProvider)
+                      ?.description ?? "")}
             </p>
           </div>
           <ChevronDown
@@ -163,7 +239,6 @@ export function ConfigureProviderModal({ onClose }: Props) {
           />
         </button>
 
-        {/* Dropdown options — rendered open */}
         <div className="mt-2 rounded-lg border border-border bg-popover p-1.5 shadow-md">
           {allOptions.map((opt) => {
             const isActive = opt.type === activeType;
@@ -192,7 +267,7 @@ export function ConfigureProviderModal({ onClose }: Props) {
                   <Checkmark size={16} className="shrink-0 text-foreground" />
                 ) : (
                   <span className="shrink-0 text-sm text-muted-foreground">
-                    {opt.type === "curvebender" ? "Free" : "Connect"}
+                    {opt.type === "curvebender-free" ? "Free" : "Connect"}
                   </span>
                 )}
               </button>

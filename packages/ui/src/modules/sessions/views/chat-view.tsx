@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowLeft,
+  Close,
   Notification,
   OverflowMenuVertical,
   Renew,
@@ -87,6 +88,7 @@ import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-gr
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { ConfigureProviderModal } from "../../instant-start/components/configure-provider-modal.js";
 import { useInstantStart } from "../../instant-start/context.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
@@ -229,6 +231,7 @@ export function ChatView() {
   const [configureSection, setConfigureSection] =
     useState<SandboxSection | null>(null);
   const [autoOpenProvider, setAutoOpenProvider] = useState(false);
+  const [showProviderModal, setShowProviderModal] = useState(false);
   const instantStart = useInstantStart();
 
   const isMock = import.meta.env.VITE_MOCK === "true";
@@ -840,10 +843,7 @@ export function ChatView() {
                           !instantStart.connectedProviderType && (
                             <CurveBenderBudget
                               instantStart={instantStart}
-                              onConfigure={() => {
-                                setConfigureSection("setup");
-                                setAutoOpenProvider(false);
-                              }}
+                              onConfigure={() => setShowProviderModal(true)}
                             />
                           )}
                       </div>
@@ -966,6 +966,9 @@ export function ChatView() {
           />
         </Suspense>
       )}
+      {showProviderModal && (
+        <ConfigureProviderModal onClose={() => setShowProviderModal(false)} />
+      )}
     </div>
   );
 }
@@ -1063,12 +1066,35 @@ function CurveBenderBudget({
   if (!popover) return trigger;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={firstLanding ? undefined : setOpen}
+    >
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-64 p-3">
-        <div className="flex items-center gap-1.5">
-          <img src="/curvebender-logo.svg" alt="" className="size-4" />
-          <p className="text-sm font-medium text-foreground">{popover.title}</p>
+      <PopoverContent
+        side="top"
+        align="end"
+        className="w-64 p-3"
+        onPointerDownOutside={
+          firstLanding ? (e) => e.preventDefault() : undefined
+        }
+        onInteractOutside={
+          firstLanding ? (e) => e.preventDefault() : undefined
+        }
+      >
+        <div className="flex items-start gap-1.5">
+          <img src="/curvebender-logo.svg" alt="" className="mt-0.5 size-4" />
+          <p className="flex-1 text-sm font-medium text-foreground">
+            {popover.title}
+          </p>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="ml-1 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Dismiss"
+          >
+            <Close size={14} />
+          </button>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">{popover.body}</p>
         <button

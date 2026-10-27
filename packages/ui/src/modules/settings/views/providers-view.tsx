@@ -1,9 +1,11 @@
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 
 import { useInstantStart } from "../../instant-start/context.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
+import { CURVE_BENDER_DESCRIPTION } from "../../providers/lib/provider-rows.js";
 
 function formatUsd(value: number): string {
   return `$${value.toLocaleString("en-US", {
@@ -16,8 +18,9 @@ function CurveBenderProviderCard() {
   const ctx = useInstantStart();
   if (!ctx) return null;
 
-  const { freeBudget, budgetExhausted } = ctx;
+  const { freeBudget, budgetExhausted, activeProvider } = ctx;
   const pct = Math.min((freeBudget.used / freeBudget.limit) * 100, 100);
+  const isActive = activeProvider === "curvebender-free";
 
   return (
     <Card className="px-4 py-4">
@@ -30,7 +33,10 @@ function CurveBenderProviderCard() {
           />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-base font-medium text-foreground">CurveBender</p>
+          <div className="flex items-center gap-2">
+            <p className="text-base font-medium text-foreground">CurveBender</p>
+            {isActive && <Badge variant="success">Active</Badge>}
+          </div>
           <p className="text-sm text-muted-foreground">
             {budgetExhausted
               ? `${formatUsd(freeBudget.limit)} free budget used up`
@@ -45,6 +51,63 @@ function CurveBenderProviderCard() {
               style={{ width: `${pct}%` }}
             />
           </div>
+          {!isActive && !budgetExhausted && (
+            <button
+              type="button"
+              onClick={() => {
+                ctx.setActiveProvider("curvebender-free");
+                ctx.setCurveBenderEnabled(true);
+                ctx.setConnectedProviderType(null);
+              }}
+              className="mt-2 text-sm font-medium text-primary hover:underline"
+            >
+              Switch back to free budget
+            </button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function CurveBenderOwnKeyCard() {
+  const ctx = useInstantStart();
+  if (!ctx?.ownCurveBenderKey) return null;
+
+  const isActive = ctx.activeProvider === "curvebender-own";
+
+  return (
+    <Card className="px-4 py-4">
+      <div className="flex items-start gap-3">
+        <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+          <img
+            src="/curvebender-logo.svg"
+            alt="CurveBender"
+            className="size-5"
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="text-base font-medium text-foreground">
+              CurveBender (own key)
+            </p>
+            {isActive && <Badge variant="success">Active</Badge>}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {CURVE_BENDER_DESCRIPTION}
+          </p>
+          {!isActive && (
+            <button
+              type="button"
+              onClick={() => {
+                ctx.setActiveProvider("curvebender-own");
+                ctx.setProviderAdded(true);
+              }}
+              className="mt-2 text-sm font-medium text-primary hover:underline"
+            >
+              Switch to own key
+            </button>
+          )}
         </div>
       </div>
     </Card>
@@ -61,6 +124,7 @@ export function ProvidersView() {
 
       <section className="mb-8 flex flex-col gap-3">
         <CurveBenderProviderCard />
+        <CurveBenderOwnKeyCard />
         <ProviderSection />
       </section>
     </div>

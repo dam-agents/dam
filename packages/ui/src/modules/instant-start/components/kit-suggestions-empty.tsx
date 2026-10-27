@@ -3,12 +3,12 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { useStore } from "../../../store.js";
 import { transcriptMetaForPack } from "../../../mock/data/transcripts/index.js";
+import { useStore } from "../../../store.js";
 import { useCreateAgent } from "../../agents/api/mutations.js";
+import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
 import type { Pack } from "../../packs/data/packs.js";
 import { REAL_PACKS } from "../../packs/data/packs.js";
-import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
 
 const SUGGESTED_IDS = ["code-guardian", "personal-assistant", "llm-wiki"];
 const SUGGESTED = REAL_PACKS.filter((p) => SUGGESTED_IDS.includes(p.id));

@@ -34,8 +34,8 @@ export function UpdatePatternsShowcase() {
             <strong className="font-semibold text-foreground">
               2 sandboxes are out of date.
             </strong>{" "}
-            ci-pipeline and gemini-data-pipeline changed upstream since
-            they were installed.
+            ci-pipeline and gemini-data-pipeline changed upstream since they
+            were installed.
           </p>
           <Button
             variant="ghost"

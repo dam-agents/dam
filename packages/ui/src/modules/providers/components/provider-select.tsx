@@ -50,8 +50,7 @@ export function ProviderSelect({
     [allow, recommended],
   );
 
-  const showCurveBender =
-    !!instantStart && !instantStart.connectedProviderType;
+  const showCurveBender = !!instantStart && !instantStart.connectedProviderType;
 
   const resolvedType = selected
     ? (typeByConnectionId.get(selected.id) ??
@@ -84,7 +83,13 @@ export function ProviderSelect({
   const pick = async (type: ProviderPresetType) => {
     if (type === CURVEBENDER_TYPE) return;
     if (type === selectedType) return;
-    if (selectedType && selectedType !== CURVEBENDER_TYPE && confirmSwitch && !(await confirmSwitch())) return;
+    if (
+      selectedType &&
+      selectedType !== CURVEBENDER_TYPE &&
+      confirmSwitch &&
+      !(await confirmSwitch())
+    )
+      return;
     const item = itemByType.get(type);
     if (!item) {
       setConnecting(type);
@@ -103,18 +108,10 @@ export function ProviderSelect({
       title: "CurveBender",
       description: "Free sponsored budget — no API key required.",
       icon: (
-        <img
-          src="/curvebender-logo.svg"
-          alt=""
-          className="size-6 shrink-0"
-        />
+        <img src="/curvebender-logo.svg" alt="" className="size-6 shrink-0" />
       ),
       triggerIcon: (
-        <img
-          src="/curvebender-logo.svg"
-          alt=""
-          className="size-9 shrink-0"
-        />
+        <img src="/curvebender-logo.svg" alt="" className="size-9 shrink-0" />
       ),
       triggerBadge: <Badge variant="success">Active</Badge>,
       testId: "provider-option-curvebender",

@@ -26,11 +26,12 @@ export { ProgressRing };
 
 let checklistInitialized = false;
 
-export function useChecklistState() {
+export function useChecklistState(autoInit = false) {
   const { caught, rewards, working, celebrating, collected } =
     useCharacterUnlocks();
 
   useEffect(() => {
+    if (!autoInit) return;
     if (checklistInitialized) return;
     checklistInitialized = true;
     resetCharacterUnlocks();
@@ -39,7 +40,7 @@ export function useChecklistState() {
       clearTimeout(t);
       checklistInitialized = false;
     };
-  }, []);
+  }, [autoInit]);
 
   const inFlight = celebrating?.name ?? null;
   const settledQuest = (id: string) =>
@@ -79,7 +80,11 @@ export function useChecklistState() {
   };
 }
 
-export function ChecklistCelebration() {
+export function ChecklistCelebration({
+  onDismiss,
+}: {
+  onDismiss?: () => void;
+}) {
   const { celebrating, variant } = useChecklistState();
   if (!celebrating) return null;
   return (
@@ -89,7 +94,10 @@ export function ChecklistCelebration() {
         key={celebrating.name}
         name={celebrating.name}
         variant={variant}
-        onFinished={endCelebration}
+        onFinished={() => {
+          endCelebration();
+          onDismiss?.();
+        }}
       />
     </>
   );

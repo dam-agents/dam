@@ -1,12 +1,23 @@
 import { cn } from "@/lib/utils";
 
+import type { ActiveProvider } from "../context.js";
 import { useInstantStart } from "../context.js";
 
 type DemoState = "landing" | "low" | "exhausted" | null;
 
+const PROVIDER_OPTIONS: { value: ActiveProvider; label: string }[] = [
+  { value: "curvebender-free", label: "CB Free" },
+  { value: "curvebender-own", label: "CB Own" },
+  { value: "ibm-litellm", label: "LiteLLM" },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "bob", label: "Bob" },
+];
+
 export function InstantStartDebugControls() {
-  const ctx = useInstantStart();
-  if (!ctx) return null;
+  const maybeCtx = useInstantStart();
+  if (!maybeCtx) return null;
+  const ctx = maybeCtx;
 
   const activeState: DemoState = ctx.budgetExhausted
     ? "exhausted"
@@ -42,28 +53,75 @@ export function InstantStartDebugControls() {
   const on = "border-primary/40 bg-primary/10 text-primary";
 
   return (
-    <div className="fixed bottom-3 right-3 z-50 flex items-center gap-1.5 opacity-40 transition-opacity hover:opacity-100">
-      <button
-        type="button"
-        onClick={() => apply("landing")}
-        className={cn(btn, activeState === "landing" ? on : off)}
-      >
-        Landing
-      </button>
-      <button
-        type="button"
-        onClick={() => apply("low")}
-        className={cn(btn, activeState === "low" ? on : off)}
-      >
-        10% left
-      </button>
-      <button
-        type="button"
-        onClick={() => apply("exhausted")}
-        className={cn(btn, activeState === "exhausted" ? on : off)}
-      >
-        Budget up
-      </button>
+    <div className="fixed bottom-3 right-3 z-50 flex flex-col items-end gap-1.5 opacity-40 transition-opacity hover:opacity-100">
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => apply("landing")}
+          className={cn(btn, activeState === "landing" ? on : off)}
+        >
+          Landing
+        </button>
+        <button
+          type="button"
+          onClick={() => apply("low")}
+          className={cn(btn, activeState === "low" ? on : off)}
+        >
+          10% left
+        </button>
+        <button
+          type="button"
+          onClick={() => apply("exhausted")}
+          className={cn(btn, activeState === "exhausted" ? on : off)}
+        >
+          Budget up
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !ctx.ownCurveBenderKey;
+            ctx.setOwnCurveBenderKey(next);
+            if (next) {
+              ctx.setActiveProvider("curvebender-own");
+              ctx.setProviderAdded(true);
+            } else {
+              ctx.setActiveProvider("curvebender-free");
+            }
+          }}
+          className={cn(btn, ctx.ownCurveBenderKey ? on : off)}
+        >
+          Own CB key
+        </button>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-muted-foreground">Provider:</span>
+        <select
+          value={ctx.activeProvider}
+          onChange={(e) => {
+            const val = e.target.value as ActiveProvider;
+            ctx.setActiveProvider(val);
+            if (val === "curvebender-free") {
+              ctx.setConnectedProviderType(null);
+              ctx.setCurveBenderEnabled(true);
+              ctx.setProviderAdded(false);
+            } else if (val === "curvebender-own") {
+              ctx.setConnectedProviderType(null);
+              ctx.setOwnCurveBenderKey(true);
+              ctx.setProviderAdded(true);
+            } else {
+              ctx.setConnectedProviderType(val);
+              ctx.setProviderAdded(true);
+            }
+          }}
+          className="rounded-md border border-border/50 bg-card/80 px-1.5 py-0.5 text-[11px] text-muted-foreground backdrop-blur-sm"
+        >
+          {PROVIDER_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }

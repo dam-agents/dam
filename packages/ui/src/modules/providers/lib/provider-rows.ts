@@ -5,6 +5,9 @@ export interface ProviderRowDef {
   description: string;
 }
 
+export const CURVE_BENDER_DESCRIPTION =
+  "Open-source models hosted internally in IBM.";
+
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "ibm-litellm",

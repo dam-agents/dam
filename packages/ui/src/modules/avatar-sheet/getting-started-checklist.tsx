@@ -495,10 +495,12 @@ export function CatchBubble({
   variant = "new",
   animated,
   onDismiss,
+  arrowSide = "right",
 }: {
   variant?: CatchVariant;
   animated?: boolean;
   onDismiss?: () => void;
+  arrowSide?: "left" | "right";
 }) {
   const copy = BUBBLE_COPY[variant];
   return (
@@ -516,7 +518,11 @@ export function CatchBubble({
           Nice
         </Button>
       </div>
-      <span className="absolute -right-[7px] bottom-9 size-3.5 rotate-45 border-r border-t border-border bg-card" />
+      {arrowSide === "right" ? (
+        <span className="absolute -right-[7px] bottom-9 size-3.5 rotate-45 border-r border-t border-border bg-card" />
+      ) : (
+        <span className="absolute -left-[7px] bottom-9 size-3.5 rotate-45 border-b border-l border-border bg-card" />
+      )}
     </div>
   );
 }
@@ -562,15 +568,10 @@ export function CatchCelebration({
       role="status"
       aria-live="polite"
       className={cn(
-        "flex origin-bottom-right items-end gap-1",
+        "flex origin-bottom-left items-end gap-1",
         collecting && "animate-[catch-collect_0.45s_ease-in_forwards]",
       )}
     >
-      <CatchBubble
-        variant={variant}
-        animated
-        onDismiss={() => setCollecting(true)}
-      />
       <div className="relative size-32 shrink-0">
         <ConfettiBurst name={name} />
         <div className="absolute inset-9 animate-[catch-wobble_0.9s_ease-in-out]">
@@ -582,6 +583,12 @@ export function CatchCelebration({
           </div>
         </div>
       </div>
+      <CatchBubble
+        variant={variant}
+        animated
+        onDismiss={() => setCollecting(true)}
+        arrowSide="left"
+      />
     </div>
   );
 }

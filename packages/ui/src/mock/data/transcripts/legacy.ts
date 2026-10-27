@@ -1,5 +1,4 @@
 import type { Message } from "../../../types.js";
-
 import { msg } from "./helpers.js";
 
 function artifactTranscript(): Message[] {
@@ -684,7 +683,7 @@ function defaultTranscript(
 
 export {
   artifactTranscript,
-  longChatTranscript,
-  diffsTranscript,
   defaultTranscript,
+  diffsTranscript,
+  longChatTranscript,
 };

@@ -23,7 +23,6 @@ import {
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { BrandLogo } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +44,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
-import { getBrand } from "../brand.js";
 import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
 import { timeAgo } from "../lib/format-time.js";
@@ -434,20 +432,10 @@ export function IconRail({
       >
         <div
           className={cn(
-            "flex shrink-0 items-center px-2 pt-2",
-            expandedNav ? "w-full justify-between gap-2" : "justify-center",
+            "flex shrink-0 items-center px-2",
+            expandedNav ? "w-full justify-end gap-2" : "justify-center",
           )}
         >
-          {expandedNav && (
-            <button
-              type="button"
-              onClick={sandboxes.navigate}
-              aria-label={getBrand().name}
-              className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <BrandLogo />
-            </button>
-          )}
           <Tooltip
             content={expandedNav ? "Collapse navigation" : "Expand navigation"}
             side="right"
@@ -469,13 +457,7 @@ export function IconRail({
               {expandedNav ? (
                 <ChevronLeft size={16} />
               ) : (
-                <>
-                  <BrandLogo className="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
-                  <ChevronRight
-                    size={16}
-                    className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
-                  />
-                </>
+                <ChevronRight size={16} />
               )}
             </button>
           </Tooltip>
@@ -1555,7 +1537,9 @@ export function IconRail({
           </>
         )}
 
-        <SidebarChecklist expanded={expandedNav} />
+        <div className="shrink-0 px-2">
+          <SidebarChecklist expanded={expandedNav} />
+        </div>
         <div className="shrink-0 pb-2 pt-1">
           <div className="flex flex-col gap-px px-2">
             <RailLink
@@ -1582,31 +1566,21 @@ export function IconRail({
 
 function SidebarChecklist({ expanded }: { expanded: boolean }) {
   const ctx = useInstantStart();
-  const { done, total, celebrating, finished } = useChecklistState();
+  const { done, total, celebrating, finished } = useChecklistState(
+    !!ctx?.firstLanding,
+  );
   const [open, setOpen] = useState(false);
-  const prevCelebrating = useRef(false);
-  const prevLanding = useRef(false);
-
-  useEffect(() => {
-    if (celebrating && !prevCelebrating.current) {
-      setOpen(true);
-    }
-    prevCelebrating.current = !!celebrating;
-  }, [celebrating]);
-
-  useEffect(() => {
-    if (ctx?.firstLanding && !prevLanding.current) {
-      setOpen(true);
-    }
-    prevLanding.current = !!ctx?.firstLanding;
-  }, [ctx?.firstLanding]);
 
   if (!ctx?.firstLanding || finished) return null;
+
+  const showCelebration = !!celebrating;
 
   const trigger = (
     <button
       type="button"
-      onClick={() => setOpen(!open)}
+      onClick={() => {
+        if (!showCelebration) setOpen(!open);
+      }}
       className={cn(
         "flex h-[34px] w-full items-center gap-3 rounded-lg px-3 transition-colors",
         open
@@ -1614,12 +1588,39 @@ function SidebarChecklist({ expanded }: { expanded: boolean }) {
           : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
-      <ProgressRing done={done} total={total} size={16} />
+      <div className="flex w-4 items-center justify-center">
+        <ProgressRing done={done} total={total} size={20} />
+      </div>
       {expanded && (
         <span className="truncate text-sm font-medium">Get started</span>
       )}
     </button>
   );
+
+  if (showCelebration) {
+    return (
+      <Popover open>
+        <PopoverTrigger asChild>
+          {expanded ? (
+            trigger
+          ) : (
+            <Tooltip content="Get started" side="right">
+              {trigger}
+            </Tooltip>
+          )}
+        </PopoverTrigger>
+        <PopoverContent
+          side="right"
+          align="end"
+          sideOffset={8}
+          className="w-auto border-none bg-transparent p-0 shadow-none"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <ChecklistCelebration onDismiss={() => setOpen(true)} />
+        </PopoverContent>
+      </Popover>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1638,11 +1639,6 @@ function SidebarChecklist({ expanded }: { expanded: boolean }) {
         sideOffset={8}
         className="relative w-[340px] overflow-visible p-0"
       >
-        {celebrating && (
-          <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2">
-            <ChecklistCelebration />
-          </div>
-        )}
         <ChecklistPopoverContent onClose={() => setOpen(false)} />
       </PopoverContent>
     </Popover>

@@ -3,12 +3,12 @@ import { useState } from "react";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 
-import { useStore } from "../../../store.js";
 import { transcriptMetaForPack } from "../../../mock/data/transcripts/index.js";
+import { useStore } from "../../../store.js";
 import { useCreateAgent } from "../../agents/api/mutations.js";
+import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
 import type { Pack } from "../../packs/data/packs.js";
 import { REAL_PACKS } from "../../packs/data/packs.js";
-import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
 import { FreeBudgetBanner } from "./free-budget-banner.js";
 
 export function Approach2Modal({ onClose }: { onClose: () => void }) {

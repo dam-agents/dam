@@ -3,6 +3,11 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 import type { ProviderPresetType } from "../../types.js";
 
+export type ActiveProvider =
+  | "curvebender-free"
+  | "curvebender-own"
+  | ProviderPresetType;
+
 export interface FreeBudget {
   used: number;
   limit: number;
@@ -24,6 +29,10 @@ export interface InstantStartState {
   setCurveBenderEnabled: (v: boolean) => void;
   connectedProviderType: ProviderPresetType | null;
   setConnectedProviderType: (v: ProviderPresetType | null) => void;
+  activeProvider: ActiveProvider;
+  setActiveProvider: (v: ActiveProvider) => void;
+  ownCurveBenderKey: boolean;
+  setOwnCurveBenderKey: (v: boolean) => void;
   addBudgetUsage: (amount: number) => void;
   setBudgetUsed: (v: number) => void;
 }
@@ -51,6 +60,9 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
   const [curveBenderEnabled, setCurveBenderEnabled] = useState(true);
   const [connectedProviderType, setConnectedProviderType] =
     useState<ProviderPresetType | null>(null);
+  const [activeProvider, setActiveProvider] =
+    useState<ActiveProvider>("curvebender-free");
+  const [ownCurveBenderKey, setOwnCurveBenderKey] = useState(false);
 
   useEffect(() => {
     if (providerAdded) setCurveBenderEnabled(false);
@@ -89,6 +101,10 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
       setCurveBenderEnabled,
       connectedProviderType,
       setConnectedProviderType,
+      activeProvider,
+      setActiveProvider,
+      ownCurveBenderKey,
+      setOwnCurveBenderKey,
       addBudgetUsage,
       setBudgetUsed,
     }),
@@ -100,6 +116,8 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
       firstLanding,
       curveBenderEnabled,
       connectedProviderType,
+      activeProvider,
+      ownCurveBenderKey,
     ],
   );
 
