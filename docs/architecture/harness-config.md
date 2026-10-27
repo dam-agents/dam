@@ -17,10 +17,12 @@ The session picker offers named models, not a generic default-model choice.
 It shows loading, unavailable and empty listings explicitly, with a retry for failed discovery; a failed listing never falls back to the harness's static catalog.
 The catalog remains usable where discovery is not configured.
 Before a session starts, the picker lists every provider the harness accepts, in order: a routed picker groups models by family, lists the owner's unattached providers and the profiles on them like the agent's own, and ends with a Connect more providers row; the old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
-A web terminal starts from a row of harness buttons on the agent's General page: a button stores its harness, with the first attached provider it accepts, as the next session pair, and the terminal sends that pair when it connects.
-The empty chat's Browser Terminal card opens a web terminal on the pair the session picker holds.
-A harness that only providers the owner holds but has not attached accept opens the attach dialog, then opens on the provider attached; a harness no provider the owner holds accepts is grayed, and its tooltip names the harness and says why.
-The attach dialog, from the old runtime's picker or a harness button, lists only the owner's unattached providers the harness accepts and the agent can take, leaving out one of a kind the agent already holds, each as the agent's Providers section shows it, with the harnesses it runs.
+A web terminal starts from a menu of harnesses: the empty chat's Browser Terminal card opens it, and so does the Web terminal row on the agent's General page.
+The menu lists the harnesses the agent carries that a provider the owner holds accepts.
+Picking one stores its harness, with the first attached provider it accepts and no model, as the next terminal pair, and the terminal sends that pair when it connects.
+The terminal pair is its own: the menu neither reads nor changes the pair the session picker holds.
+A harness that only providers the owner holds but has not attached accept opens the attach dialog, then opens on the provider attached.
+The attach dialog, from the old runtime's picker or the terminal menu, lists only the owner's unattached providers the harness accepts and the agent can take, leaving out one of a kind the agent already holds, each as the agent's Providers section shows it, with the harnesses it runs.
 Its rows start switched off, except the provider the owner clicked in the picker; nothing is attached until at least one is on and the owner confirms.
 An agent holds one provider of a kind, so switching a row on locks the other rows of its kind.
 The UI names a provider by its Settings name, such as Bob Shell, not the connection's own name.
@@ -75,7 +77,7 @@ With no chat default model, the frame goes on as sent and the runtime refuses it
 The relay holds the frames after it until the default is read, so they reach the runtime in the order the client sent them.
 A session from before the Model Router carries no model, and it ran on the agent's one provider and its default model, so a channel turn or an api-server trigger that continues it pins the agent's default of that kind on it first, and a one-time task or a sub-agent result that continues it pins the model the event names.
 A scheduled run with no model, such a task when it names none, an interrupted turn on such a session, or a chat prompt in it is refused until a model is picked.
-A web terminal is the exception: the person sees its model in the harness's own screen and can switch it there, so a new terminal starts on the agent's default when the default is on its harness, and otherwise with no model, on the harness's own default.
+A web terminal is the exception: the person sees its model in the harness's own screen and can switch it there, so a new terminal starts with no model and no session settings, on the harness's own default.
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.
 The runtime sends it again whenever the session is loaded or resumed into a harness process.

@@ -1,5 +1,6 @@
 import {
   Chat,
+  ChevronDown,
   Code,
   Launch,
   LogoSlack,
@@ -12,6 +13,7 @@ import type { ReactNode } from "react";
 import { getBrand } from "@/brand";
 import { PromptIcon, TelegramIcon } from "@/components/brand-icons";
 import { CopyableCommand } from "@/components/copyable-command";
+import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { CLI_REFERENCE_URL } from "../../../constants.js";
@@ -20,7 +22,7 @@ import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
 import { useSlackInstallRequestUrl } from "../../links/api/queries.js";
-import { TerminalHarnessButtons } from "../../sessions/components/terminal-harness-buttons.js";
+import { TerminalHarnessMenu } from "../../sessions/components/terminal-harness-menu.js";
 import { SlackInstallRequest } from "../../slack/components/slack-install-request.js";
 import { cliAgentRef } from "../lib/cli-agent-ref.js";
 import { type Action, ActionList } from "./action-list.js";
@@ -80,9 +82,9 @@ export function AgentUsageActions({
       icon: <Terminal />,
       kind: "control",
       title: "Web terminal",
-      description: "Pick a harness:",
+      description: "Run a harness in this browser.",
       control: (
-        <TerminalHarnessButtons
+        <TerminalHarnessMenu
           agentId={agent.id}
           onOpen={
             onNewTerminal ??
@@ -94,7 +96,11 @@ export function AgentUsageActions({
                 true,
               ))
           }
-        />
+        >
+          <Button variant="outline" className="shrink-0">
+            Open <ChevronDown size={16} />
+          </Button>
+        </TerminalHarnessMenu>
       ),
     },
     {
