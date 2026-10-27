@@ -10,7 +10,7 @@ DAM runs the user's AI agents in isolated sandboxes on a server.
 The `dam` CLI on this machine is how you drive it: everything the DAM web app does has a `dam` command.
 You act as the user, with the user's own rights, so treat every command as if the user typed it.
 
-This page describes `dam` CLI 0.2.24-rc7.
+This page describes `dam` CLI 0.2.24-rc8.
 Before you rely on it, compare that with the CLI you have: see [Match this skill to the CLI](#match-this-skill-to-the-cli).
 
 ## Hard rules
