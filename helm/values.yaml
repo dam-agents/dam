@@ -419,14 +419,17 @@ virtualization:
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
     # or controller.agent.harnessTemplateDefaults.nestedVirtualization for all),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own
-    # install. Every other machine boots without them. A runner
+    # install, or an Environment that runs one. Every other machine boots
+    # without them. A runner
     # nests only where the node's KVM allows it, which is the kernel default
     # (kvm_intel and kvm_amd `nested=1`) and needs a module reload to change,
-    # so this value is the install's switch. A nesting guest reaches the host
-    # kernel's nested-virtualization code, which has had guest-to-host
-    # escapes. Changing this value rolls every runner, which reboots its
+    # so this value is the install's switch. On by default, with the template
+    # default below, so every agent and Environment gets /dev/kvm. A nesting
+    # guest reaches the host kernel's nested-virtualization code, which has
+    # had guest-to-host escapes: an install that does not want that risk sets
+    # this to false. Changing this value rolls every runner, which reboots its
     # owner's machines; an Agent changing its ask restarts only its own.
-    nestedVirtualization: false
+    nestedVirtualization: true
     # Machines are processes of their runner, so any change to the runner pod
     # — a controller release that renders the pod differently, or a runner
     # image the pod's loader cannot take in place — reboots every machine
@@ -1939,12 +1942,14 @@ controller:
       # its owner's pool. Set `MEM_REAPER=off` to disable.
       env: []
       # true = every vm agent asks for nested virtualization, as if its Agent
-      # set spec.backend.vm.nestedVirtualization. It is only an ask: a machine
+      # set spec.backend.vm.nestedVirtualization, Environments included. It is
+      # only an ask: a machine
       # nests only when `virtualization.runner.nestedVirtualization` lets the
       # runners nest and the node's KVM allows it. Applied at reconcile, so
       # turning it on or off also changes existing vm agents and restarts
-      # their machines. While it is on, an Agent cannot opt out.
-      nestedVirtualization: false
+      # their machines. While it is on, an Agent cannot opt out; false leaves
+      # nesting to the Agents that ask for it themselves.
+      nestedVirtualization: true
 
   # -- Per-user pool defaults: the CPU and memory one user's machines share.
   # Enforced by the owner's VM runner at the start of a machine (see

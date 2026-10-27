@@ -272,8 +272,9 @@ Every agent runs as a microVM, so the sandbox must be able to open `/dev/kvm`: `
 Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.harnessTemplateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
 Changing the ask restarts that agent's machine and no other; changing the template default restarts every agent's machine that does not ask itself, and while it is on no Agent can opt out.
 Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the chart value is the switch.
-It is off by default because a nesting guest reaches the host kernel's nested-virtualization code.
-The api-server offers no way to ask, so only someone who can edit Agent resources can turn it on for one agent, and only the install for all of them.
+Both values are on by default, so every vm agent and every Environment opens `/dev/kvm` wherever the node's KVM allows nesting: an agent can run a platform install of its own, in its sandbox or in an Environment.
+A nesting guest reaches the host kernel's nested-virtualization code, which has had guest-to-host escapes: an install that does not accept that sets `virtualization.runner.nestedVirtualization=false`, which no Agent can override, or `controller.agent.harnessTemplateDefaults.nestedVirtualization=false` to leave nesting to the Agents that ask for it.
+The api-server offers no way to ask, so with the template default off only someone who can edit Agent resources can turn it on for one agent.
 
 ### Agents (VM runner)
 
