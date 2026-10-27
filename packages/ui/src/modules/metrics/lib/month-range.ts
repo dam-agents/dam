@@ -3,24 +3,29 @@ import type { SpendByDay } from "api-server-api";
 import { formatDate } from "@/lib/format-time";
 
 export const monthStart = (base: Date, offset: number) =>
-  new Date(base.getFullYear(), base.getMonth() + offset, 1);
+  new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + offset, 1));
 
 export const monthLabel = (month: Date) =>
-  formatDate(month, { month: "long", year: "numeric" });
+  formatDate(month, { month: "long", year: "numeric", timeZone: "UTC" });
 
 const pad = (n: number) => String(n).padStart(2, "0");
+
+const yearMonth = (month: Date) =>
+  `${month.getUTCFullYear()}-${pad(month.getUTCMonth() + 1)}`;
+
+const daysIn = (month: Date) =>
+  new Date(
+    Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0),
+  ).getUTCDate();
 
 export function monthRange(month: Date): {
   from: string;
   to: string;
   isCurrentMonth: boolean;
 } {
-  const year = month.getFullYear();
-  const m = month.getMonth();
-  const prefix = `${year}-${pad(m + 1)}`;
   return {
-    from: `${prefix}-01`,
-    to: `${prefix}-${pad(new Date(year, m + 1, 0).getDate())}`,
+    from: `${yearMonth(month)}-01`,
+    to: `${yearMonth(month)}-${pad(daysIn(month))}`,
     isCurrentMonth: month >= monthStart(new Date(), 0),
   };
 }
@@ -31,13 +36,10 @@ export function fillMonthDays(
   rows: SpendByDay[] | undefined,
 ): SpendByDay[] {
   const byDay = new Map((rows ?? []).map((r) => [r.day, r.costUsd]));
-  const year = month.getFullYear();
-  const m = month.getMonth();
-  const daysInMonth = new Date(year, m + 1, 0).getDate();
-  const lastDay = isCurrentMonth ? new Date().getDate() : daysInMonth;
+  const lastDay = isCurrentMonth ? new Date().getUTCDate() : daysIn(month);
   const days: SpendByDay[] = [];
   for (let d = 1; d <= lastDay; d++) {
-    const day = `${year}-${pad(m + 1)}-${pad(d)}`;
+    const day = `${yearMonth(month)}-${pad(d)}`;
     days.push({ day, costUsd: byDay.get(day) ?? 0 });
   }
   return days;

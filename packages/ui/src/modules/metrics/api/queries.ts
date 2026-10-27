@@ -1,5 +1,6 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
+import type { SpendBreakdownInput } from "api-server-api";
 import { useEffect, useState } from "react";
 
 import { trpc } from "../../../trpc.js";
@@ -9,8 +10,7 @@ import { keyAgentId } from "../lib/spend-key.js";
 import { totalCostUsd } from "../lib/totals.js";
 
 export function useSpendBreakdown(
-  range:
-    { from: string; to: string } | { at: { fromAt: string; toAt: string } },
+  range: SpendBreakdownInput,
   agentId?: string,
 ) {
   const [metricsDisabled, setMetricsDisabled] = useState(false);

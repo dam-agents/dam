@@ -3,12 +3,15 @@ import {
   type SpendBreakdown,
   spendDailyInputSchema,
 } from "api-server-api";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({
-  read: vi.fn((input: unknown) => ({ queryKey: ["spend", input] })),
-  options: undefined as { select?: unknown } | undefined,
-}));
+const h = vi.hoisted(() => {
+  process.env.TZ = "America/Los_Angeles";
+  return {
+    read: vi.fn((input: unknown) => ({ queryKey: ["spend", input] })),
+    options: undefined as { select?: unknown } | undefined,
+  };
+});
 vi.mock("react", () => ({
   useEffect: () => {},
   useState: (value: unknown) => [value, () => {}],
@@ -27,7 +30,12 @@ vi.mock("../../trpc.js", () => ({
 import { spendRange } from "../../modules/home/lib/spend-period.js";
 import { useSpendBreakdown } from "../../modules/metrics/api/queries.js";
 import { legacySpendBreakdown } from "../../modules/metrics/lib/measured-spend.js";
-import { monthRange } from "../../modules/metrics/lib/month-range.js";
+import {
+  fillMonthDays,
+  monthLabel,
+  monthRange,
+  monthStart,
+} from "../../modules/metrics/lib/month-range.js";
 
 const counts = {
   calls: 2,
@@ -96,6 +104,10 @@ const measured: SpendBreakdown = {
   otherSubAgents: { count: 0, amounts: [] },
 };
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("the restored spend screens read measured spend", () => {
   // TEST_SCENARIO: a routed model's harness reports a zero cost, so Home and Usage read the gateway's measured spend instead of the harness telemetry. The query must go to spend.breakdown, scoped to the agent when one is given.
   it("queries the gateway's measured spend, scoped to the agent", () => {
@@ -146,9 +158,32 @@ describe("the restored spend screens read measured spend", () => {
 
   // TEST_SCENARIO: a month is read as UTC days, the ledger's unit, so a month from before the measuring start reads empty rather than an instant window the server widens to the start day.
   it("reads a month as its UTC days", () => {
-    const range = monthRange(new Date(2026, 1, 1));
+    const range = monthRange(new Date(Date.UTC(2026, 1, 1)));
     expect(range).toMatchObject({ from: "2026-02-01", to: "2026-02-28" });
     expect(spendDailyInputSchema.safeParse(range).success).toBe(true);
+  });
+
+  // TEST_SCENARIO: in a browser west of UTC just after UTC midnight, the ledger already keys today's calls under the new UTC day. The chart must show that day, so its bars add up to the total above it.
+  it("charts today's UTC day in a browser west of UTC", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-27T00:30:00Z"));
+    const days = fillMonthDays(monthStart(new Date(), 0), true, [
+      { day: "2026-10-27", costUsd: 0.3 },
+    ]);
+    expect(days[days.length - 1]).toEqual({ day: "2026-10-27", costUsd: 0.3 });
+  });
+
+  // TEST_SCENARIO: across a UTC month boundary the current month is the UTC one, labelled as such, so its spend is reachable while the local calendar still shows the old month.
+  it("starts the month at the UTC boundary", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-01T03:00:00Z"));
+    const month = monthStart(new Date(), 0);
+    expect(monthRange(month)).toEqual({
+      from: "2026-11-01",
+      to: "2026-11-30",
+      isCurrentMonth: true,
+    });
+    expect(monthLabel(month)).toContain("November");
   });
 
   // TEST_SCENARIO: Home's periods stay the 0.2.23 rolling windows, sent as an exact window; the year window fits the ledger's 366-day cap.
