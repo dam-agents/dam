@@ -112,6 +112,9 @@
     { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" }
   ],
   "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },
+  "expected_requests": [
+    { "method": "GET", "path": "/api/slack/install/status", "status": 404, "why": "the QA install sets no Slack app, so Settings asks and hides the Slack workspaces tab" }
+  ],
   "requires": { "root": true, "commands": ["k3s", "curl", "jq", "node"], "memory_gi": 12 },
   "sandbox": {
     "accounts": [
