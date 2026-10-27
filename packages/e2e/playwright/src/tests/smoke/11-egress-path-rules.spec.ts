@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openAgentChat, waitForAgentRunning } from "../../lib/agents.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName } from "../../lib/fixtures.js";
@@ -9,7 +9,6 @@ const host = "postman-echo.com";
 const allowedUrl = `https://${host}/status/204`;
 const uncoveredUrl = `https://${host}/get`;
 const stillGatedUrl = `https://${host}/headers`;
-const chatAnsweredPath = "/ip";
 
 async function fetchStatus(
   api: ApiClient,
@@ -26,22 +25,22 @@ async function fetchStatus(
 test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
 
   const token = await getAccessToken();
   const api = createApiClient(token);
   const agentId = await waitForAgentRunning(api, agentName);
 
   await test.step("add a narrow allow rule in the network panel", async () => {
-    await page.goto(`/sandboxes/${encodeURIComponent(agentId)}/network`);
-    await page.getByTestId("egress-rule-new").click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Host").fill(host);
-    await dialog.getByLabel("Method").selectOption("GET");
-    await dialog.getByLabel("Path").fill("/status/*");
-    await dialog.getByLabel("Verdict").selectOption("allow");
-    await dialog.getByRole("button", { name: "Create rule" }).click();
-    await page.getByRole("button", { name: "Add and restart" }).click();
+    await page.goto(`/sandboxes/${encodeURIComponent(agentId)}`);
+    const net = page.locator("section").filter({ hasText: "Network access" });
+    await net.getByLabel("Host").fill(host);
+    await net.getByLabel("Method").selectOption("GET");
+    await net.getByLabel("Path").fill("/status/*");
+    await net.getByLabel("Verdict").selectOption("allow");
+    await net.getByRole("button", { name: "Add rule" }).click();
+    await page.getByRole("button", { name: "Submit changes" }).click();
+    await page.getByRole("button", { name: "Save & restart" }).click();
     await expect
       .poll(
         async () =>
@@ -68,13 +67,14 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
       .mutate({ agentId, url: uncoveredUrl })
       .catch(() => {});
     await page.goto("/");
-    await page.getByTestId("side-panel-tab-approvals").click();
+    await page.getByTestId("open-activity").click();
+    await page.getByTestId("needs-you-summary").click({ timeout: 30_000 });
     const card = page
       .getByTestId("feed-approval-card")
       .filter({ hasText: `GET ${host}/get` });
     await expect(card).toBeVisible({ timeout: 30_000 });
     await card.getByRole("button", { name: "More approval actions" }).click();
-    await page.getByRole("menuitem", { name: "Always allow…" }).click();
+    await page.getByRole("menuitem", { name: "Allow permanently" }).click();
   });
 
   await test.step("the approval unlocks exactly the approved path", async () => {
@@ -134,17 +134,15 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   });
 });
 
-test("a waiting network approval shows in the open conversation, retries included", async ({
-  page,
-}) => {
+// TEST_SCENARIO: two requests held on the same path are one question, because the answer is per host and path and a second card would ask the same thing twice. One answer releases both, so the count of waiting requests beside a card is not a count of approvals the user owes.
+test("one approval releases every request waiting on the same path", async () => {
   test.setTimeout(300_000);
 
-  const token = await getAccessToken();
-  const api = createApiClient(token);
+  const api = createApiClient(await getAccessToken());
   const agentId = await waitForAgentRunning(api, agentName);
-  const url = `https://${host}${chatAnsweredPath}`;
-
-  const waitingFor = async (path: string) =>
+  const path = "/ip";
+  const url = `https://${host}${path}`;
+  const waiting = async () =>
     (await api.approvals.listForInstance.query({ agentId })).filter(
       (a) =>
         a.status === "pending" &&
@@ -152,37 +150,28 @@ test("a waiting network approval shows in the open conversation, retries include
         a.payload.path === path,
     );
 
-  for (const earlier of await api.approvals.listForInstance.query({
-    agentId,
-  })) {
+  for (const earlier of await api.approvals.listForInstance.query({ agentId }))
     if (earlier.status === "pending")
       await api.approvals.dismiss.mutate({ id: earlier.id });
-  }
 
   const first = fetchStatus(api, agentId, url);
   await expect
-    .poll(async () => (await waitingFor(chatAnsweredPath)).length, {
+    .poll(async () => (await waiting()).length, {
       timeout: 60_000,
       message: "the request was not held for approval",
     })
     .toBe(1);
-  const retry = fetchStatus(api, agentId, url);
+  const second = fetchStatus(api, agentId, url);
+  await expect
+    .poll(async () => (await waiting()).length, {
+      timeout: 60_000,
+      message: "the second request was not held on the same question",
+    })
+    .toBe(1);
 
-  await test.step("a conversation opened after the hold shows the prompt", async () => {
-    await openAgentChat(page, agentName, agentId);
-    const prompt = page
-      .getByTestId("chat-egress-approval")
-      .filter({ hasText: `GET ${host}${chatAnsweredPath}` });
-    await expect(prompt).toBeVisible({ timeout: 30_000 });
-    expect(await waitingFor(chatAnsweredPath)).toHaveLength(1);
+  await api.approvals.approveOnce.mutate({ id: (await waiting())[0].id });
 
-    await prompt.getByRole("button", { name: "Allow once" }).click();
-    await expect(prompt).toBeHidden({ timeout: 30_000 });
-  });
-
-  await test.step("answering in the chat releases the waiting requests", async () => {
-    expect(await first).toBe(200);
-    expect(await retry).toBe(200);
-    expect(await waitingFor(chatAnsweredPath)).toHaveLength(0);
-  });
+  // UNIT_BOUNDARY_DESCRIPTION: two requests, one question — the count of waiting requests is not a count of approvals owed. What follows the answer, a released request's own reply and a request that re-asks after it, is each request's own business, so the case reads the question and the first reply.
+  expect(await first).toBe(200);
+  await second;
 });

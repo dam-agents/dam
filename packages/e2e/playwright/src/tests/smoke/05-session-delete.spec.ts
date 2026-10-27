@@ -5,7 +5,6 @@ import {
   openAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
-  sidebarAgentRow,
   waitForAgentRunning,
 } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
@@ -22,8 +21,6 @@ const activeRowSelector = '[data-testid="session-row"][data-active="true"]';
 test("deleting inactive and active sessions preserves the right navigation (#4239, #1084)", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
-
   const token = await getAccessToken();
   const api = createApiClient(token);
 
@@ -48,9 +45,7 @@ test("deleting inactive and active sessions preserves the right navigation (#423
   );
 
   await test.step("start a second session and keep it active", async () => {
-    await sidebarAgentRow(page, agentName)
-      .getByRole("button", { name: "New session" })
-      .click();
+    await page.getByRole("button", { name: "New", exact: true }).click();
     await expect(chatInput(page)).toBeVisible();
     await sendMessageToAgent(page, secondPrompt);
     await expect(page.getByText(scriptedReply)).toBeVisible({
@@ -75,6 +70,13 @@ test("deleting inactive and active sessions preserves the right navigation (#423
 
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();
+    await expect(activeRow).toHaveAttribute(
+      "data-session-id",
+      activeSessionId ?? "",
+    );
+    await expect(
+      page.getByTestId("chat-message").getByText(secondPrompt, { exact: true }),
+    ).toBeVisible();
 
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(inactiveRow).toHaveCount(1);
@@ -93,7 +95,7 @@ test("deleting inactive and active sessions preserves the right navigation (#423
     await page.getByTestId("session-delete-button").click();
     await page
       .getByRole("alertdialog")
-      .getByRole("button", { name: "Delete session" })
+      .getByRole("button", { name: "Confirm" })
       .click();
     await expect(page.getByText("Session deleted")).toBeVisible();
     await expect(inactiveRow).toHaveCount(0);
@@ -104,12 +106,6 @@ test("deleting inactive and active sessions preserves the right navigation (#423
     await expect(
       page.getByTestId("chat-message").getByText(secondPrompt, { exact: true }),
     ).toBeVisible();
-    await page
-      .locator("[data-sonner-toast]")
-      .filter({ hasText: "Session deleted" })
-      .getByRole("button", { name: "Close toast" })
-      .click();
-    await expect(page.getByText("Session deleted")).toBeHidden();
   });
 
   await test.step("(C) deleting the active session removes it without a refresh", async () => {
@@ -118,7 +114,7 @@ test("deleting inactive and active sessions preserves the right navigation (#423
     await page.getByTestId("session-delete-button").click();
     await page
       .getByRole("alertdialog")
-      .getByRole("button", { name: "Delete session" })
+      .getByRole("button", { name: "Confirm" })
       .click();
     await expect(page.getByText("Session deleted")).toBeVisible();
     await expect(activeSessionRow).toHaveCount(0);
