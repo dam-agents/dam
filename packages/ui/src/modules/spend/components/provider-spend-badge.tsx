@@ -1,3 +1,4 @@
+import type { SpendLimitScope, SpendUnit } from "api-server-api";
 import { useState } from "react";
 
 import { Tooltip } from "@/components/ui/tooltip";
@@ -5,13 +6,14 @@ import { cn } from "@/lib/utils";
 
 import { badgeSpend, badgeSpendTip } from "../lib/copy.js";
 import { useConnectionSpendLimit } from "./connection-spend-limit.js";
-import { SpendLimitDialog } from "./spend-limit-dialog.js";
+import {
+  type LimitComparison,
+  SpendLimitDialog,
+} from "./spend-limit-dialog.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: one provider's spend in the Services panel, as a
- * badge on its row rather than a line under it: what it spent today of its
- * daily limit, the same dialog as the page when clicked, and a tooltip that
- * says when the amount is only a subscription's worth for comparison.
+ * UNIT_BOUNDARY_DESCRIPTION: one provider's spend for an agent, as a badge on
+ * its row rather than a line under it.
  */
 export function ProviderSpendBadge({
   agentId,
@@ -30,10 +32,41 @@ export function ProviderSpendBadge({
     connectionName,
     templateId,
   });
-  const [open, setOpen] = useState(false);
   if (!spend) return null;
-  const unit = spend.rule.unit;
-  const amountMicros = spend.view.current?.amountMicros ?? null;
+  return (
+    <SpendPill
+      spentMicros={spend.spentMicros}
+      amountMicros={spend.view.current?.amountMicros ?? null}
+      unit={spend.rule.unit}
+      scope={{ kind: "connection", agentId, connectionId }}
+      subject={spend.subject}
+      compare={spend.compare}
+    />
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a provider spent today of its daily limit,
+ * as a pill that opens the limit dialog, with a tooltip that says when the
+ * amount is only a subscription's worth for comparison. A provider row shows
+ * one: an agent's, or the owner's across all agents in Settings.
+ */
+export function SpendPill({
+  spentMicros,
+  amountMicros,
+  unit,
+  scope,
+  subject,
+  compare,
+}: {
+  spentMicros: number;
+  amountMicros: number | null;
+  unit: SpendUnit;
+  scope: SpendLimitScope;
+  subject: string;
+  compare?: LimitComparison;
+}) {
+  const [open, setOpen] = useState(false);
   return (
     <>
       <Tooltip content={badgeSpendTip(unit, amountMicros !== null)}>
@@ -47,16 +80,16 @@ export function ProviderSpendBadge({
             "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
           )}
         >
-          {badgeSpend(spend.spentMicros, amountMicros, unit)}
+          {badgeSpend(spentMicros, amountMicros, unit)}
         </button>
       </Tooltip>
       {open && (
         <SpendLimitDialog
-          scope={{ kind: "connection", agentId, connectionId }}
+          scope={scope}
           unit={unit}
-          subject={spend.subject}
+          subject={subject}
           amountMicros={amountMicros}
-          compare={spend.compare}
+          {...(compare && { compare })}
           onClose={() => setOpen(false)}
         />
       )}

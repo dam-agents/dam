@@ -39,6 +39,10 @@ import {
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
+import {
+  createProviderModelCatalog,
+  type ProviderModelCatalog,
+} from "./provider-model-catalog.js";
 import type {
   ConnectionTemplate,
   ConnectionTemplateRegistry,
@@ -261,7 +265,13 @@ export function createConnectionsService(deps: {
   maxSharedKbConnections?: number;
   curveBenderDeploymentKey?: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
+  providerModelCatalog?: ProviderModelCatalog;
 }): ConnectionsService & ManagedProviderConnections {
+  let catalog: ProviderModelCatalog | undefined;
+  const providerModelCatalog = () =>
+    (catalog ??=
+      deps.providerModelCatalog ??
+      createProviderModelCatalog({ secretStore: deps.secretStore }));
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
 
@@ -1631,6 +1641,22 @@ export function createConnectionsService(deps: {
   }
 
   const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
+    async modelCatalog(agentId) {
+      const owned = await deps.repo.listByOwner(deps.ownerId);
+      const granted =
+        agentId === undefined
+          ? null
+          : new Set(
+              (await deps.repo.listAgentGrants(agentId)).map(
+                (g) => g.connectionId,
+              ),
+            );
+      return providerModelCatalog().read(
+        granted ? owned.filter((c) => granted.has(c.id)) : owned,
+        deps.harnesses,
+      );
+    },
+
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
       const family = templates.some(inheritsFamily)

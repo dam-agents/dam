@@ -56,6 +56,7 @@ export function OpenAIForm({
       }}
       onSubmit={onSubmit}
       onCancel={onCancel}
+      closeDisabled={isSubmitting}
     >
       <ProviderSecretRow
         register={register("value")}

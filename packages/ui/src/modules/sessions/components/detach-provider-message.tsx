@@ -21,6 +21,16 @@ export function DetachProviderMessage({
           won&rsquo;t run until you choose another model.
         </p>
       )}
+      {usage.profiles.length > 0 && (
+        <div>
+          <p>These profiles run on it:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {usage.profiles.map((profile) => (
+              <li key={profile}>{profile}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {usage.schedules.length > 0 && (
         <div>
           <p>These schedules won&rsquo;t run:</p>

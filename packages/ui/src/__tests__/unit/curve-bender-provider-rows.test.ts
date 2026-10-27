@@ -31,7 +31,10 @@ vi.mock("@/components/modal", () => ({
   DialogFooter: passthrough,
 }));
 vi.mock("../../modules/spend/components/all-agents-provider-limit.js", () => ({
-  AllAgentsProviderLimit: () => null,
+  AllAgentsSpendBadge: () => null,
+}));
+vi.mock("@/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: unknown }) => children,
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: { showConfirm: () => void }) => unknown) =>
@@ -40,8 +43,11 @@ vi.mock("../../store.js", () => ({
 vi.mock("../../modules/features/api/queries.js", () => ({
   useFeatures: () => ({ data: state.flags, isPending: !state.flags }),
 }));
-vi.mock("../../modules/connections/api/mutations.js", () => ({
-  useDeleteConnection: () => ({ mutate: vi.fn() }),
+vi.mock("../../modules/connections/hooks/use-disconnect-connection.js", () => ({
+  useDisconnectConnection: () => ({
+    confirmAndDelete: vi.fn(),
+    deletingId: null,
+  }),
 }));
 vi.mock("../../modules/connections/api/queries.js", () => ({
   useConnectionTemplates: () => ({
@@ -99,13 +105,13 @@ describe("CurveBender provider rows", () => {
   // TEST_SCENARIO: the user-keyed integration keeps its Connect action under a name that says the key is the user's own.
   it("offers the custom-key integration to connect", () => {
     const html = render();
-    expect(html).toContain(`title="${CUSTOM}"`);
+    expect(html).toContain(`>${CUSTOM}<`);
     expect(html).toContain(`aria-label="Connect ${CUSTOM}"`);
   });
 
   // TEST_SCENARIO: an install that configures no deployment key shows no second CurveBender row.
   it("hides the deployment integration while unconfigured", () => {
-    expect(render()).not.toContain(`title="${SHARED}"`);
+    expect(render()).not.toContain(`>${SHARED}<`);
   });
 
   // TEST_SCENARIO: a configured install shows the deployment integration under the original name and Connected once its connection exists; its row is a button that opens the explainer, since the user holds no key to edit, and no connect form or Disconnect reaches it.
@@ -118,8 +124,8 @@ describe("CurveBender provider rows", () => {
       ],
     ]);
     const html = render();
-    expect(html).toContain(`title="${CUSTOM}"`);
-    expect(html).toContain(`title="${SHARED}"`);
+    expect(html).toContain(`>${CUSTOM}<`);
+    expect(html).toContain(`>${SHARED}<`);
     expect(html).toContain("Configured · Connected");
     expect(html).toMatch(
       /<button[^>]*aria-label="About CurveBender \(shared\)"/,

@@ -32,16 +32,22 @@ export function composeScheduleModule(
   const createService = (host: string): ScheduleService =>
     createScheduleService({ trpc: opts.buildTrpc(host) });
 
+  const findProfile = async (host: string, ref: string) =>
+    (await opts.buildTrpc(host).profiles.list.query()).find(
+      (p) => p.id === ref || p.name === ref,
+    ) ?? null;
   const agentScoped = {
     compatService: opts.compatService,
     configService: opts.configService,
     createAgentService: opts.createAgentService,
     createScheduleService: createService,
+    findProfile,
   };
   const idScoped = {
     compatService: opts.compatService,
     configService: opts.configService,
     createScheduleService: createService,
+    findProfile,
   };
 
   const parent = new Command("schedule").description(

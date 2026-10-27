@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -24,6 +24,7 @@ Bindings are **many-to-many**: an Agent may hold several at once — the same wo
 What a binding cannot be is doubled: one Agent connects to one conversation once.
 Agent delete releases all of that Agent's; a disconnect names the one to release.
 A binding **is** its (Agent, workspace, conversation) triple — a conversation id names one conversation only inside the Slack workspace it belongs to, so the workspace is part of what a binding is — and nothing moves one: reaching an Agent from somewhere else is a connect there and a release here, each its own deliberate act.
+A binding also names the **profile** its turns run on, set on its row and chosen in the bind dialog when the binding is made; a binding made before profiles names none and follows the Agent's defaults until its row names one, and a thread already running keeps the values it has, since the profile applies to the session a turn opens ([channel turns](channel-turns.md)).
 No surface offers a compound that could release a binding and then fail to replace it.
 A Slack "conversation" is any surface the bot is party to: a public/private **channel**, a **group DM**, or a **1:1 DM**.
 The binding key is the conversation id in every case, so DMs and group DMs reuse the channel binding mechanics wholesale.
@@ -101,7 +102,7 @@ A bot sender gets no private notices, since a notice needs a person, and a bot p
 A tag of an Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) starts no turn; whoever tagged it gets the reason instead — a person privately, a bot in one footer-less notice in the thread, which starts nothing.
 
 Ambient turns are deliberately unobtrusive on the platform's side: the platform posts no acknowledgment reaction and no wake notices, and failures are logged and evented but never posted — nobody summoned the agent, and a turn dropped after the wait is recovered by catch-up on the next one.
-Acknowledgement instead comes from the agent itself: when a message is worth engaging, the ambient frame has it open with a fitting emoji reaction — a quiet, notifies-no-one signal that it has picked the message up, chosen to suit the message rather than a rote mark.
+The agent answers as a person would, with a reaction or a reply, not both: the ambient frame has it react instead of replying when an emoji says enough by itself — agreement, "done", "this is a bug" — never just to show it picked the message up, and both together only when the reaction says something the reply does not.
 The agent declines explicitly, or by ending its turn without posting.
 The frame also announces how the agent appears in the channel — the install's bot name and Slack id, and the agent name its posts are signed with — so a message that calls it by any of them is answered like a mention; the persona behind that name comes from the agent's workspace setup, never from the relay.
 Each relayed message is still security-logged as a place-basis allow (marked as ambient-triggered), and the binding owner's Terms-of-Use acceptance gates ambient turns like any shared turn — silently.

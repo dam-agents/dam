@@ -29,6 +29,7 @@ const group = (connectionId: string, ...names: string[]): ModelGroup => ({
   status: "listed",
   listedAt: null,
   native: false,
+  attached: true,
   models: names.map(model),
 });
 

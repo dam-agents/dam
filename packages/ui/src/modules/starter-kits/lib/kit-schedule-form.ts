@@ -59,6 +59,8 @@ export function kitScheduleFormValues(
     harness: "",
     model: "",
     settings: {},
+    profile: "",
+    platformSubagentProfile: "",
     sessionTitle: "",
   };
 }

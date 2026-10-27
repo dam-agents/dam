@@ -14,7 +14,11 @@ import { PopoverClose } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-import { type ModelGroup, sameModel } from "../lib/catalog-groups.js";
+import {
+  type ModelGroup,
+  providerLabel,
+  sameModel,
+} from "../lib/catalog-groups.js";
 import {
   familyModelGroups,
   type FamilySection,
@@ -22,27 +26,18 @@ import {
   type ModelOption,
   type OtherSection,
 } from "../lib/model-families.js";
-import { AwakeModelsGate } from "./awake-models-gate.js";
 
 interface Props {
-  agentId: string;
   groups: readonly ModelGroup[];
   current: string | null;
   loading: boolean;
-  waiting?: boolean;
   failed: boolean;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
   onManageProviders: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the list sits in a form or a dialog, not a popover, so leaving it closes nothing. */
+  inline?: boolean;
 }
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a provider never listed while the catalog is
- * still being polled is waiting for its first listing, which follows a grant
- * by a gateway restart, not failing.
- */
-const firstListing = (group: ModelGroup, waiting: boolean) =>
-  waiting && group.status === "unavailable" && group.listedAt === null;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, grouped by
@@ -50,24 +45,16 @@ const firstListing = (group: ModelGroup, waiting: boolean) =>
  * providers of a model picked on the entry itself, and models of no known
  * family under Other.
  */
-export function SessionModelList({ agentId, ...listed }: Props) {
-  return (
-    <AwakeModelsGate agentId={agentId} className="px-1 py-1">
-      <ListedModels {...listed} />
-    </AwakeModelsGate>
-  );
-}
-
-function ListedModels({
+export function SessionModelList({
   groups,
   current,
   loading,
-  waiting = false,
   failed,
   onRetry,
   onChoose,
   onManageProviders,
-}: Omit<Props, "agentId">) {
+  inline = false,
+}: Props) {
   if (groups.length === 0)
     return (
       <>
@@ -93,7 +80,10 @@ function ListedModels({
             "No models available."
           )}
         </p>
-        <ConnectMoreProviders onManageProviders={onManageProviders} />
+        <ConnectMoreProviders
+          onManageProviders={onManageProviders}
+          inline={inline}
+        />
       </>
     );
   const { families, other } = familyModelGroups(groups);
@@ -111,11 +101,13 @@ function ListedModels({
         other={other}
         current={current}
         loading={loading}
-        waiting={waiting}
         onRetry={onRetry}
         onChoose={onChoose}
       />
-      <ConnectMoreProviders onManageProviders={onManageProviders} />
+      <ConnectMoreProviders
+        onManageProviders={onManageProviders}
+        inline={inline}
+      />
     </>
   );
 }
@@ -126,21 +118,22 @@ function ListedModels({
  */
 function ConnectMoreProviders({
   onManageProviders,
+  inline,
 }: {
   onManageProviders: () => void;
+  inline: boolean;
 }) {
-  return (
-    <PopoverClose asChild>
-      <button
-        type="button"
-        onClick={onManageProviders}
-        className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <Add size={14} aria-hidden />
-        Connect more providers
-      </button>
-    </PopoverClose>
+  const row = (
+    <button
+      type="button"
+      onClick={onManageProviders}
+      className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+      <Add size={14} aria-hidden />
+      Connect more providers
+    </button>
   );
+  return inline ? row : <PopoverClose asChild>{row}</PopoverClose>;
 }
 
 function FamilyModelSection({
@@ -199,14 +192,12 @@ function OtherModelSection({
   other,
   current,
   loading,
-  waiting,
   onRetry,
   onChoose,
 }: {
   other: OtherSection;
   current: string | null;
   loading: boolean;
-  waiting: boolean;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
 }) {
@@ -232,7 +223,7 @@ function OtherModelSection({
             className="px-2 py-1 text-muted-foreground"
           >
             {group.displayName}:{" "}
-            {loading || firstListing(group, waiting) ? (
+            {loading ? (
               <span className="inline-flex items-center gap-1.5">
                 <Spinner size={12} className="text-muted-foreground" />
                 Loading models…
@@ -242,17 +233,16 @@ function OtherModelSection({
             ) : (
               "No models listed."
             )}
-            {group.status === "unavailable" &&
-              !firstListing(group, waiting) && (
-                <Button
-                  variant="link"
-                  size="inline"
-                  className="ml-1"
-                  onClick={onRetry}
-                >
-                  Retry
-                </Button>
-              )}
+            {group.status === "unavailable" && (
+              <Button
+                variant="link"
+                size="inline"
+                className="ml-1"
+                onClick={onRetry}
+              >
+                Retry
+              </Button>
+            )}
           </li>
         ))}
       </ul>
@@ -274,35 +264,36 @@ function ModelRow({
     entry.options.find((o) => sameModel(current, o.model.name)) ??
     entry.options[0]!;
   return (
-    <li className="flex items-center gap-1">
-      <PopoverClose asChild>
-        <button
-          type="button"
-          aria-current={isCurrent ? "true" : undefined}
-          title={option.model.name}
-          onClick={() => onChoose(option.model.name, option.group)}
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground",
-            isCurrent && "font-medium text-foreground",
-          )}
-        >
-          <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-        </button>
-      </PopoverClose>
-      {entry.options.length > 1 ? (
+    <li
+      className={cn(
+        "flex items-center rounded pr-1 text-muted-foreground hover:bg-muted hover:text-foreground",
+        isCurrent && "font-medium text-foreground",
+      )}
+    >
+      <button
+        type="button"
+        aria-current={isCurrent ? "true" : undefined}
+        title={option.model.name}
+        onClick={() => onChoose(option.model.name, option.group)}
+        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left"
+      >
+        <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+        {entry.options.length === 1 && (
+          <span
+            title={option.group.displayName}
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-normal text-muted-foreground"
+          >
+            <ProviderName group={option.group} />
+          </span>
+        )}
+      </button>
+      {entry.options.length > 1 && (
         <ProviderChoice
           label={entry.label}
           options={entry.options}
           selected={option}
           onPick={(next) => onChoose(next.model.name, next.group)}
         />
-      ) : (
-        <span
-          title={option.group.displayName}
-          className="shrink-0 whitespace-nowrap px-1 py-1 text-xs text-muted-foreground"
-        >
-          {option.group.displayName}
-        </span>
       )}
     </li>
   );
@@ -330,10 +321,10 @@ function ProviderChoice({
         <button
           type="button"
           title={selected.group.displayName}
-          aria-label={`Provider for ${label}: ${selected.group.displayName}`}
-          className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label={`Provider for ${label}: ${providerLabel(selected.group)}`}
+          className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-normal text-muted-foreground hover:bg-background hover:text-foreground"
         >
-          {selected.group.displayName}
+          <ProviderName group={selected.group} />
           <ChevronDown size={12} aria-hidden />
         </button>
       </DropdownMenuTrigger>
@@ -345,11 +336,28 @@ function ProviderChoice({
               value={option.group.connectionId}
               onSelect={() => onPick(option)}
             >
-              {option.group.displayName}
+              <span className="flex items-center gap-1">
+                <ProviderName group={option.group} />
+              </span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a provider's name in the model list, read the same whether or not the agent is connected to it; a pick that connects it says so in its dialog. */
+function ProviderName({ group }: { group: ModelGroup }) {
+  return (
+    <>
+      {group.displayName}
+      {!group.attached && <NotConnectedMark />}
+    </>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a pick on a provider the agent is not connected to, said to a screen reader only: it looks like any other, and the connect dialog its pick opens is where a person learns of it. */
+export function NotConnectedMark() {
+  return <span className="sr-only">, not connected</span>;
 }

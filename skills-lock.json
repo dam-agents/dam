@@ -33,6 +33,10 @@
       "source": "./.agents/skills/dam-agent-creator",
       "sourceType": "local"
     },
+    "develop": {
+      "source": "./.agents/skills/develop",
+      "sourceType": "local"
+    },
     "doc-drift": {
       "source": "./.agents/skills/doc-drift",
       "sourceType": "local"

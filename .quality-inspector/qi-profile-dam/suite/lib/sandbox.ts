@@ -8,13 +8,18 @@
  * sandboxPull finds the newest pull request of the sandbox repository whose title holds the
  * run's id, and closeSandboxPull closes it and deletes its branch (a branch already gone is no error) —
  * the cleanup a test calls last, after its last criterion, so a failed run keeps both; neither reads the repository's
- * files. githubSignIn finishes DAM's "Connect with GitHub" on github.com as a sandbox test user
+ * files. githubSignIn finishes DAM's "Authorize with GitHub" on github.com as a sandbox test user
  * (the password, a TOTP code computed per RFC 6238 and never reused, the OAuth App's consent
  * when GitHub asks) and returns once the browser is back on DAM, so a test never names a
  * sandbox host. GitHub keeps a browser signed in and the sign-in's pages have no sign-out, so
  * each test user signs in in a browser of its own: the second from another account's session. The values come from the E2E_SANDBOX_* lines, which the inspector masks in
  * every run artefact; the install's GitHub OAuth App (overlay @sandbox:github), which both test
- * users sign in through, is on only while every E2E_SANDBOX_GITHUB_* line is filled. */
+ * users sign in through, is on only while every E2E_SANDBOX_GITHUB_* line is filled.
+ * connectSlackChannel finishes the open "Connect Slack channels" dialog: it adds the sandbox
+ * channel by its ID in the channel picker and connects. The picker lists a channel only for a
+ * DAM user whose Slack account is linked, and a user links it only with a slash command in
+ * Slack, which no Slack API sends; so on an unlinked account it throws SlackNotLinked, which
+ * the test reports as blocked by that limit, never as a product failure. */
 import { createHmac } from 'node:crypto';
 
 const env = process.env;
@@ -147,7 +152,11 @@ type Loc = {
   waitFor(o?: { state?: string; timeout?: number }): Promise<void>;
   first(): Loc;
 };
-type Scr = { getByLabel(t: string | RegExp): Loc; getByRole(r: string, n: string | RegExp): Loc };
+type Scr = {
+  getByLabel(t: string | RegExp): Loc;
+  getByRole(r: string, n: string | RegExp): Loc;
+  getByText(t: string | RegExp): Loc;
+};
 type Brw = { url(): Promise<string>; waitForURL(u: RegExp, o?: { timeout?: number }): Promise<void> };
 
 const onGitHub = async (browser: Brw) => /^https:\/\/github\.com\//.test(await browser.url());
@@ -182,4 +191,39 @@ export async function githubSignIn(
     }
   }
   await browser.waitForURL(app, { timeout });
+}
+
+export class SlackNotLinked extends Error {
+  constructor() {
+    super(
+      'blocked — the signed-in DAM account has no linked Slack account, so the channel picker lists no channel; ' +
+        'a person links it only with /dam login or /dam bind typed in Slack, which a test cannot send',
+    );
+    this.name = 'SlackNotLinked';
+  }
+}
+
+export async function connectSlackChannel({ screen }: { screen: Scr }, timeout = 30_000): Promise<void> {
+  if (!sandbox.slack()) throw new Error('the Slack sandbox is not set (E2E_SANDBOX_SLACK_*)');
+  const search = screen.getByRole('combobox', /channels/i).first();
+  const unlinked = screen.getByText(/link your slack account/i).first();
+  const until = Date.now() + timeout;
+  for (;;) {
+    if (await search.isVisible()) break;
+    if (await unlinked.isVisible()) throw new SlackNotLinked();
+    if (Date.now() > until) throw new Error('the "Connect Slack channels" dialog shows no channel picker');
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  await search.fill(sandbox.channelId());
+  const add = screen.getByRole('option', /^add\b/i).first();
+  await add.waitFor({ state: 'visible', timeout }).catch(async () => {
+    const refused = screen.getByText(/aren't both in/i).first();
+    throw new Error(
+      (await refused.isVisible())
+        ? 'the picker refuses the sandbox channel: the linked Slack person or the bot is not in it'
+        : 'the picker offers no option for the sandbox channel',
+    );
+  });
+  await add.tap();
+  await screen.getByRole('button', /^connect$/i).first().tap();
 }

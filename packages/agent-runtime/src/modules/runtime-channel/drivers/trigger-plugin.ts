@@ -88,6 +88,7 @@ export function createTriggerPlugin(deps: {
   log: (msg: string) => void;
   reporter: EventReporter;
   findSessionByRef?: (ref: string) => string | undefined;
+  recordContinuation?: (sessionId: string, scheduleId: string) => void;
   catalogListed?: () => Promise<void>;
   invocationWatch: Pick<InvocationWatch, "watch">;
 }): Plugin {
@@ -128,6 +129,7 @@ export function createTriggerPlugin(deps: {
           model,
           keepSessionModel: true,
         });
+        deps.recordContinuation?.(res.sessionId, payload.scheduleId);
         return res.sessionId;
       }
       deps.log(

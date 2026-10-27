@@ -1,6 +1,8 @@
 import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import {
+  type DefaultKind,
   SessionMode,
+  type SessionPair,
   SessionType,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
@@ -97,6 +99,7 @@ import { DockedProcessOutputPanel } from "../../processes/components/docked-proc
 import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
+import { useProfiles } from "../../profiles/api/queries.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
@@ -112,7 +115,7 @@ import {
 } from "../api/queries.js";
 import {
   attachProviderQuietly,
-  rememberFirstModel,
+  rememberSessionPair,
   useHarnessCatalogModels,
   useProviderConnections,
 } from "../api/session-pair.js";
@@ -177,12 +180,14 @@ import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import { sendPreparation } from "../lib/send-preparation.js";
+import { applySettingChanges } from "../lib/session-settings.js";
 import {
   type DockedItems,
   dockedItemTab,
   hiddenSidePanelTabs,
   maximizableView,
 } from "../lib/side-panel.js";
+import { primaryProfileOf, subagentProfileOf } from "../lib/subagent-choice.js";
 import {
   dividerLabel,
   setupMessageOf,
@@ -337,8 +342,8 @@ export function ChatView() {
   const sendHarness =
     (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
   const sendCatalog = useHarnessCatalogModels(
-    routed ? selectedAgent : null,
-    sendHarness ?? null,
+    selectedAgent,
+    routed ? (sendHarness ?? null) : null,
   );
   const curveBender = useCurveBender({
     agentId: selectedAgent,
@@ -354,6 +359,23 @@ export function ChatView() {
   });
   const setNextSessionPair = useStore((s) => s.setNextSessionPair);
   const setDraft = useStore((s) => s.setDraft);
+  const { data: profiles = [] } = useProfiles(selectedAgent);
+  /* UNIT_BOUNDARY_DESCRIPTION: a pick in a running chat is the next chat's default too (D90), with the profile references its values still match (QA D1, D2); a channel or scheduled session's pick stays its own. */
+  const rememberSessionChoice = (
+    kind: DefaultKind | null,
+    pair: SessionPair,
+  ) => {
+    if (!selectedAgent || kind !== "chat") return;
+    rememberSessionPair(selectedAgent, pair, "chat", undefined, {
+      profileId:
+        primaryProfileOf(
+          pair,
+          profiles,
+          harnessStatus?.harnesses?.find((h) => h.name === pair.harness),
+        )?.id ?? null,
+      platformSubagentProfileId: subagentProfileOf(pair, profiles)?.id ?? null,
+    });
+  };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
@@ -1124,16 +1146,7 @@ export function ChatView() {
                     <div className="flex min-w-0 items-center justify-between gap-3">
                       <ModelIndicator
                         agentId={selectedAgent}
-                        kind={defaultKindOf(sessionView?.type)}
-                        follows={currentSession.follows}
-                        followsDefaults={
-                          harnessStatus?.followsDefaults ?? false
-                        }
-                        onFollowDefault={(afterNextDefaults) => {
-                          const kind = defaultKindOf(sessionView?.type);
-                          if (kind)
-                            void configureSession({}, kind, afterNextDefaults);
-                        }}
+                        sessionId={sessionId}
                         harness={choice.harness}
                         provider={currentSession.provider ?? null}
                         model={currentSession.model ?? null}
@@ -1141,17 +1154,50 @@ export function ChatView() {
                         carried={harnessStatus?.harnesses ?? []}
                         routed={harnessStatus?.modelRouter ?? false}
                         turnRunning={busy}
-                        onChoose={(value) =>
-                          void chooseSessionModel(value, () => {
-                            if (harnessStatus?.modelRouter)
-                              void rememberFirstModel(selectedAgent, {
+                        onChoose={(value, change = {}) => {
+                          const remember = () =>
+                            rememberSessionChoice(
+                              defaultKindOf(sessionView?.type),
+                              {
                                 harness: choice.harness,
-                                provider: null,
+                                provider: currentSession.provider ?? null,
                                 model: value,
-                              });
-                          })
+                                settings: applySettingChanges(
+                                  currentSession.settings ?? {},
+                                  change,
+                                ),
+                              },
+                            );
+                          void chooseSessionModel(value, () =>
+                            Object.keys(change).length > 0
+                              ? void configureSession(
+                                  change,
+                                  null,
+                                  false,
+                                  remember,
+                                )
+                              : remember(),
+                          );
+                        }}
+                        onConfigure={(change) =>
+                          void configureSession(change, null, false, () =>
+                            rememberSessionChoice(
+                              defaultKindOf(sessionView?.type),
+                              {
+                                harness: choice.harness,
+                                provider: currentSession.provider ?? null,
+                                model: currentSession.model ?? null,
+                                settings: applySettingChanges(
+                                  currentSession.settings ?? {},
+                                  change,
+                                ),
+                              },
+                            ),
+                          )
                         }
-                        onConfigure={(change) => void configureSession(change)}
+                        onToolApproval={(change) =>
+                          void configureSession(change)
+                        }
                         onNewSession={() => handleNewSession(true)}
                       />
                       <SessionPullRequests

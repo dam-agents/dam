@@ -1,7 +1,7 @@
 # GitHub sandbox
 
 A throwaway GitHub user, an organization of its own, one repository, and an OAuth App there.
-The inspector's tests sign in as that user to connect GitHub to an agent through DAM's real **Connect with GitHub** (OAuth), and the agent works in that repository.
+The inspector's tests sign in as that user to connect GitHub to an agent through DAM's real **Authorize with GitHub** (OAuth), and the agent works in that repository.
 It holds nothing real and nobody else; never use `dam-agents`, your own account, or another organization you care about.
 
 1. **The test user.** Sign out of GitHub (or use a private window) and sign up a new account, for example `dam-qa-bot-<your initials>`, with an e-mail address you can read.
@@ -47,6 +47,6 @@ It holds nothing real and nobody else; never use `dam-agents`, your own account,
 
 7. **The egress.** The sign-in on `github.com` needs rules the inspector's kit denies by default (quality-inspector 3.9.0 or later): the inspector lists them as `by-hand` — add each one, with its method and path, in the agent's network settings.
 
-The nested DAM gets the OAuth App as its GitHub default (`apiServer.oauthAppDefaults.github`), so **Connect with GitHub** needs no client ID in the form.
+The nested DAM gets the OAuth App as its GitHub default (`apiServer.oauthAppDefaults.github`), so **Authorize with GitHub** needs no client ID in the form.
 Issues and pull requests the agent opens in the repository carry the run's id in their title; after a passing run the test closes them and deletes the pull request's branch, and after a failed run it keeps them for the report — close those yourself once you have read it.
 If GitHub ever asks the test user to verify a new device or to confirm its account settings, sign in as the user once yourself and answer it.

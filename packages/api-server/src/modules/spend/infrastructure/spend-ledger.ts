@@ -94,6 +94,16 @@ export interface SpendLedger {
   }): Promise<SpendCallCost[]>;
   callDetailSince(): Promise<Date | null>;
   deleteCallsBefore(before: Date): Promise<number>;
+  unbookedStamps(query: {
+    since: Date;
+    after: { callingAgentId: string; sessionId: string } | null;
+    limit: number;
+  }): Promise<{ callingAgentId: string; sessionId: string }[]>;
+  bookCalls(query: {
+    callingAgentId: string;
+    sessionId: string;
+    since: Date;
+  }): Promise<string[]>;
   meteringStart(): Promise<Date>;
 }
 
@@ -632,6 +642,7 @@ export function createSpendLedger(db: Db): SpendLedger {
         ownerSub: call.ownerSub,
         payerAgentId: call.payer,
         sessionId: call.sessionId,
+        stampedSessionId: call.stampedSessionId,
         startedAt: call.startedAt,
         unit: call.unit,
         costMicros: call.costMicros,
@@ -657,7 +668,10 @@ export function createSpendLedger(db: Db): SpendLedger {
         })
         .onConflictDoUpdate({
           target: [spendCalls.callingAgentId, spendCalls.callId],
-          set: row,
+          set: {
+            ...row,
+            sessionId: sql`case when ${spendCalls.sessionId} <> '' then ${spendCalls.sessionId} else excluded.session_id end`,
+          },
         });
     },
 
@@ -732,6 +746,126 @@ export function createSpendLedger(db: Db): SpendLedger {
         )
         SELECT count(*)::int AS deleted FROM gone`);
       return Number(row?.deleted ?? 0);
+    },
+
+    async unbookedStamps({ since, after, limit }) {
+      return db
+        .selectDistinct({
+          callingAgentId: spendCalls.callingAgentId,
+          sessionId: spendCalls.stampedSessionId,
+        })
+        .from(spendCalls)
+        .where(
+          and(
+            eq(spendCalls.sessionId, ""),
+            ne(spendCalls.stampedSessionId, ""),
+            gte(spendCalls.startedAt, since),
+            after
+              ? sql`(${spendCalls.callingAgentId}, ${spendCalls.stampedSessionId}) > (${after.callingAgentId}, ${after.sessionId})`
+              : undefined,
+          ),
+        )
+        .orderBy(
+          asc(spendCalls.callingAgentId),
+          asc(spendCalls.stampedSessionId),
+        )
+        .limit(limit);
+    },
+
+    async bookCalls({ callingAgentId, sessionId, since }) {
+      return db.transaction(async (tx) => {
+        const moved = await tx.execute<{ call_id: string }>(sql`
+          WITH moved AS (
+            UPDATE ${spendCalls}
+            SET session_id = ${sessionId}
+            WHERE calling_agent_id = ${callingAgentId}
+              AND session_id = ''
+              AND stamped_session_id = ${sessionId}
+              AND started_at >= ${since.toISOString()}::timestamptz
+            RETURNING *
+          ),
+          per_row AS (
+            SELECT
+              (started_at at time zone 'UTC')::date AS day,
+              payer_agent_id, connection_id, model, owner_sub,
+              provider_template, unit,
+              sum(cost_micros) AS cost_micros,
+              sum(uncached_input_tokens) AS uncached_input_tokens,
+              sum(output_tokens) AS output_tokens,
+              sum(cache_read_tokens) AS cache_read_tokens,
+              sum(cache_write_5m_tokens) AS cache_write_5m_tokens,
+              sum(cache_write_1h_tokens) AS cache_write_1h_tokens,
+              sum(web_searches)::int AS web_searches,
+              count(*)::int AS calls,
+              (count(*) FILTER (WHERE estimated))::int AS estimated_calls,
+              sum(duration_ms) AS duration_ms,
+              max(cost_micros) AS max_call_cost_micros
+            FROM moved
+            GROUP BY 1, 2, 3, 4, 5, 6, 7
+          ),
+          taken AS (
+            UPDATE ${spendDaily} d SET
+              cost_micros = d.cost_micros - p.cost_micros,
+              uncached_input_tokens = d.uncached_input_tokens - p.uncached_input_tokens,
+              output_tokens = d.output_tokens - p.output_tokens,
+              cache_read_tokens = d.cache_read_tokens - p.cache_read_tokens,
+              cache_write_5m_tokens = d.cache_write_5m_tokens - p.cache_write_5m_tokens,
+              cache_write_1h_tokens = d.cache_write_1h_tokens - p.cache_write_1h_tokens,
+              web_searches = d.web_searches - p.web_searches,
+              calls = d.calls - p.calls,
+              estimated_calls = d.estimated_calls - p.estimated_calls,
+              duration_ms = d.duration_ms - p.duration_ms,
+              updated_at = now()
+            FROM per_row p
+            WHERE d.day = p.day
+              AND d.payer_agent_id = p.payer_agent_id
+              AND d.connection_id = p.connection_id
+              AND d.model = p.model
+              AND d.session_id = ''
+              AND d.calling_agent_id = ${callingAgentId}
+            RETURNING 1
+          ),
+          added AS (
+            INSERT INTO ${spendDaily} (
+              day, payer_agent_id, connection_id, model, session_id,
+              calling_agent_id, owner_sub, provider_template, unit,
+              cost_micros, uncached_input_tokens, output_tokens,
+              cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
+              web_searches, calls, estimated_calls, duration_ms,
+              max_call_cost_micros
+            )
+            SELECT
+              day, payer_agent_id, connection_id, model, ${sessionId},
+              ${callingAgentId}, owner_sub, provider_template, unit,
+              cost_micros, uncached_input_tokens, output_tokens,
+              cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
+              web_searches, calls, estimated_calls, duration_ms,
+              max_call_cost_micros
+            FROM per_row
+            ON CONFLICT (day, payer_agent_id, connection_id, model, session_id, calling_agent_id)
+            DO UPDATE SET
+              cost_micros = ${spendDaily}.cost_micros + excluded.cost_micros,
+              uncached_input_tokens = ${spendDaily}.uncached_input_tokens + excluded.uncached_input_tokens,
+              output_tokens = ${spendDaily}.output_tokens + excluded.output_tokens,
+              cache_read_tokens = ${spendDaily}.cache_read_tokens + excluded.cache_read_tokens,
+              cache_write_5m_tokens = ${spendDaily}.cache_write_5m_tokens + excluded.cache_write_5m_tokens,
+              cache_write_1h_tokens = ${spendDaily}.cache_write_1h_tokens + excluded.cache_write_1h_tokens,
+              web_searches = ${spendDaily}.web_searches + excluded.web_searches,
+              calls = ${spendDaily}.calls + excluded.calls,
+              estimated_calls = ${spendDaily}.estimated_calls + excluded.estimated_calls,
+              duration_ms = ${spendDaily}.duration_ms + excluded.duration_ms,
+              max_call_cost_micros = greatest(${spendDaily}.max_call_cost_micros, excluded.max_call_cost_micros),
+              updated_at = now()
+            RETURNING 1
+          )
+          SELECT call_id FROM moved`);
+        await tx.execute(sql`
+          DELETE FROM ${spendDaily}
+          WHERE session_id = ''
+            AND calling_agent_id = ${callingAgentId}
+            AND calls = 0 AND refused_calls = 0`);
+        return moved.map((row) => row.call_id);
+      });
     },
 
     async meteringStart() {

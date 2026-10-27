@@ -46,11 +46,13 @@ const sessionMetaEntrySchema = z.object({
   senders: z.array(platformSenderEntrySchema).optional().catch(undefined),
   starter: senderSchema.optional().catch(undefined),
   verdicts: z.array(platformVerdictSchema).optional().catch(undefined),
+  continuedScheduleIds: z.array(z.string()).optional().catch(undefined),
 });
 
 const RUN_STARTS_CAP = 500;
 const SENDERS_CAP = 500;
 const VERDICTS_CAP = 500;
+const CONTINUED_SCHEDULES_CAP = 500;
 
 const sessionMetadataStateSchema = z
   .object({
@@ -82,6 +84,7 @@ export interface SessionMetadataStore {
   sendersOf(sessionId: string): PlatformSenderEntry[];
   recordVerdict(sessionId: string, verdict: PlatformVerdict): void;
   verdictsOf(sessionId: string): PlatformVerdict[];
+  recordContinuation(sessionId: string, scheduleId: string): void;
   copyAttribution(
     sessionId: string,
     fromSessionId: string,
@@ -175,6 +178,9 @@ export function createSessionMetadataStore(
             createdAt: from?.createdAt ?? now(),
             seenAt: now(),
             lastActivityAt: now(),
+            ...(from?.continuedScheduleIds !== undefined && {
+              continuedScheduleIds: from.continuedScheduleIds,
+            }),
           },
         },
       });
@@ -244,6 +250,25 @@ export function createSessionMetadataStore(
     },
     runStartsOf(sessionId) {
       return [...(store.read().sessions[sessionId]?.runStarts ?? [])];
+    },
+    recordContinuation(sessionId, scheduleId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing || existing.continuedScheduleIds?.includes(scheduleId))
+        return;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            ...existing,
+            continuedScheduleIds: [
+              ...(existing.continuedScheduleIds ?? []),
+              scheduleId,
+            ].slice(-CONTINUED_SCHEDULES_CAP),
+          },
+        },
+      });
     },
     recordSender(sessionId, entry) {
       const { sessions, tombstones } = store.read();

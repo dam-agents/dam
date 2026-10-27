@@ -62,6 +62,7 @@ import {
   textResult,
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
+import { withChannelArtifactLinks } from "../../modules/artifact-library/channel-links.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
@@ -201,7 +202,7 @@ export interface McpSessionDeps {
 const MCP_RUNTIME_TIMEOUT_MS = 60_000;
 
 const SESSION_SETTINGS_INSTRUCTIONS =
-  "Your model, effort and other session settings, apart from the permission mode, are not set in your harness's own settings file: a session runs on what was picked in it, else on the default the owner set for its kind (chat, Slack or Telegram, or schedules) on the agent's Providers page. Editing the settings file does not change them. When someone asks you to change your model or effort, tell them to pick it in this session's model menu, or to change the default on the Providers page.";
+  "Your model, effort, tool approval and other session settings are not set in your harness's own settings file: a chat session runs on what was picked in it, else on what the last chat picked, and a Slack, Telegram or scheduled session on the profile its channel or schedule names. Editing the settings file does not change them. When someone asks you to change your model or effort, tell them to pick it in this session's model menu.";
 
 const KB_SHARE_INSTRUCTIONS =
   "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";
@@ -258,6 +259,11 @@ export function createMcpSession(
       title: z.string().optional(),
     })
     .optional();
+
+  const channelLinks = (text: string, surface: string) =>
+    withChannelArtifactLinks(text, surface, (id) =>
+      deps.artifactLibrary.get(id),
+    );
 
   async function loadAttachment(
     attachment: NonNullable<z.infer<typeof attachmentInput>>,
@@ -349,7 +355,20 @@ export function createMcpSession(
           "Slack only: whether Slack should unfurl media. Omit for Slack's default behavior.",
         ),
     },
-    async ({ channel, text, chatId, attachment, unfurlLinks, unfurlMedia }) => {
+    async ({
+      channel,
+      text: written,
+      chatId,
+      attachment,
+      unfurlLinks,
+      unfurlMedia,
+    }) => {
+      const linked = await channelLinks(
+        written,
+        channel === ChannelType.Slack ? "Slack" : "Telegram",
+      );
+      if ("error" in linked) return errorResult(linked.error);
+      const { text } = linked;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const resolved = loaded?.resolved;
@@ -640,7 +659,7 @@ export function createMcpSession(
         ),
     },
     async ({
-      text,
+      text: written,
       attachment,
       threadTs,
       chatId,
@@ -648,6 +667,9 @@ export function createMcpSession(
       unfurlLinks,
       unfurlMedia,
     }) => {
+      const linked = await channelLinks(written, "Slack");
+      if ("error" in linked) return errorResult(linked.error);
+      const { text } = linked;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const result = await deps.channelManager.reply(
@@ -704,7 +726,7 @@ export function createMcpSession(
 
   server.tool(
     "react",
-    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — a quiet acknowledgement that notifies no one (e.g. eyes on a reported bug, white_check_mark when a task is done).",
+    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — in place of a reply when the emoji says enough by itself (e.g. white_check_mark when a task is done, bug on a reported bug); it notifies no one. A reaction or a reply, not both, unless the reaction says something the reply does not.",
     {
       emoji: z
         .string()

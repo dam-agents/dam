@@ -22,6 +22,7 @@ interface CreateScheduleInput {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  profile?: string | null;
   sessionTitle?: string;
 }
 
@@ -48,9 +49,10 @@ export interface UpdateCronScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
-  harness: string | null;
-  model: string | null;
-  settings: Record<string, string> | null;
+  harness?: string | null;
+  model?: string | null;
+  settings?: Record<string, string> | null;
+  profile?: string | null;
   sessionTitle: string | null;
 }
 
@@ -74,13 +76,16 @@ interface UpdateScheduleInput {
   name: string;
   rrule: string;
   timezone: string;
-  quietHours: { startTime: string; endTime: string; enabled: boolean }[];
+  /* UNIT_BOUNDARY_DESCRIPTION: a list travels only when a form changed it; an
+   * empty list clears the stored one, and an absent one leaves it. */
+  quietHours?: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
-  harness: string | null;
-  model: string | null;
-  settings: Record<string, string> | null;
+  harness?: string | null;
+  model?: string | null;
+  settings?: Record<string, string> | null;
+  profile?: string | null;
   sessionTitle: string | null;
 }
 
@@ -108,6 +113,7 @@ export interface CreateOnceScheduleInput {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  profile?: string | null;
   sessionTitle?: string;
 }
 
@@ -131,6 +137,7 @@ export interface UpdateOnceScheduleInput {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  profile?: string | null;
   sessionTitle?: string;
 }
 

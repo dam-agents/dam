@@ -1,4 +1,4 @@
-import { LINKED_KIT_CATALOG } from "api-server-api";
+import { LINKED_KIT_CATALOG, SANDBOX_SECTIONS } from "api-server-api";
 import { z } from "zod";
 
 const settingsTabSchema = z.enum([
@@ -17,20 +17,7 @@ const settingsTabSchema = z.enum([
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
-const sandboxSectionSchema = z.enum([
-  "setup",
-  "people",
-  "providers",
-  "connections",
-  "network",
-  "environment",
-  "channels",
-  "chat-forms",
-  "skills",
-  "schedules",
-  "environments",
-  "usage",
-]);
+const sandboxSectionSchema = z.enum(SANDBOX_SECTIONS);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
 export type Route =

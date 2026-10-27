@@ -9,7 +9,7 @@ Then the agent is listed among the owner's agents under that name
 ## AC-2 — the agent is connected to GitHub through the sign-in
 
 Given that agent
-When the owner connects GitHub with Connect with GitHub, signs in as the sandbox test user, and grants the connection to the agent
+When the owner connects GitHub with Authorize with GitHub, signs in as the sandbox test user, gives the connection full access, and grants it to the agent
 Then the agent's page shows the GitHub connection with the sandbox test user's account
 
 ## AC-3 — the agent opens a pull request asked for in its chat
@@ -20,8 +20,8 @@ Then within ten minutes the chat shows a link to a pull request of the sandbox r
 
 ## AC-4 — the agent is connected to the Slack channel
 
-Given that agent
-When the owner connects it to the sandbox Slack channel
+Given that agent, and the owner's Slack account linked to the test person
+When the owner picks the sandbox Slack channel by name and connects the agent to it
 Then the agent's page shows the Slack channel as connected
 
 ## AC-5 — the agent falls asleep before its task

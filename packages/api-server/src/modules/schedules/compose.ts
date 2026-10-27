@@ -27,6 +27,7 @@ import type { SpendHoldGate } from "../spend/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { startResumeHeldOnceSaga } from "./sagas/resume-held-once.js";
 import type { FirePair } from "../harness-config/index.js";
+import type { ProfileResolver } from "../profiles/index.js";
 
 const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
 
@@ -43,12 +44,14 @@ export interface SchedulesBoot {
   worker: RunningWorker;
   agentOnceLimits: AgentOnceLimits;
   validateSessionChoices?: SessionChoicesValidator;
+  resolveProfile: ProfileResolver;
   retentionTick(): Promise<void>;
   close(): Promise<void>;
 }
 
 export interface ComposeSchedulesAtBootOpts {
   db: Db;
+  resolveProfile: ProfileResolver;
   firePair?: FirePair;
   agentOnceLimits?: AgentOnceLimits;
   validateSessionChoices?: SessionChoicesValidator;
@@ -75,7 +78,7 @@ export function composeSchedulesAtBoot(
   opts: ComposeSchedulesAtBootOpts,
 ): SchedulesBoot {
   const log = (m: string) => process.stderr.write(`[schedules] ${m}\n`);
-  const repo = createSchedulesRepository(opts.db);
+  const repo = createSchedulesRepository(opts.db, opts.resolveProfile);
   const queue = createScheduleQueue(opts.bullConnection);
   const runner = createSchedulerRunner({
     ...(opts.firePair ? { firePair: opts.firePair } : {}),
@@ -113,6 +116,7 @@ export function composeSchedulesAtBoot(
     queue,
     runner,
     worker,
+    resolveProfile: opts.resolveProfile,
     agentOnceLimits: opts.agentOnceLimits ?? DEFAULT_AGENT_ONCE_LIMITS,
     ...(opts.validateSessionChoices
       ? { validateSessionChoices: opts.validateSessionChoices }
@@ -175,6 +179,7 @@ export function composeSchedulesForOwner(opts: ComposeSchedulesForOwnerOpts): {
         ? { validateSessionChoices: boot.validateSessionChoices }
         : {}),
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
+      resolveProfile: boot.resolveProfile,
     }),
     isOwnedSchedule: async (scheduleId) =>
       (await boot.repo.get(scheduleId, owner)) !== null,

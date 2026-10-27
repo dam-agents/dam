@@ -10,7 +10,6 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import { renderTable } from "../../shared/render-table.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
-import { withQualifiedNames } from "../domain/agent-models.js";
 import { resolveAgentOrExit } from "./errors.js";
 
 const STATUS_NOTE: Record<CatalogProviderView["status"], string> = {
@@ -93,9 +92,10 @@ export function buildModelsCommand(deps: {
 
         const catalog = await svc.catalog(agent.id, harness);
         exitOnServiceError(catalog, host);
-        const named = withQualifiedNames(catalog.value);
         process.stdout.write(
-          opts.json ? `${JSON.stringify(named)}\n` : renderCatalog(named),
+          opts.json
+            ? `${JSON.stringify(catalog.value)}\n`
+            : renderCatalog(catalog.value),
         );
         process.exit(EXIT_SUCCESS);
       },

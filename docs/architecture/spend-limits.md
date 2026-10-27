@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -127,12 +127,13 @@ A delete that no api-server replica sees leaves the agent with no name.
 
 **Session check.** The Session comes from the stamp in the machine, so it serves display only, and no total and no limit depends on it.
 A call's Session counts only when the calling agent reported that Session to the [Session directory](metrics.md#session-directory); a Session that the agent never reported, or a failed check, counts as no Session.
-Bob sends no `X-Task-Id` on the first call of a new task, which asks for the model `background`, so the Model Router stamps no Session on that call and it counts as no Session.
-The totals and the limits of that call stay correct, because they do not read the Session.
+The totals and the limits of such a call stay correct, because they do not read the Session.
 The agent's own machine writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
 The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
+A new Session's first prompt waits for that report, at most two seconds ([metrics](metrics.md#session-directory)).
+A call that still counted as no Session keeps its stamp, and a job every five minutes moves such calls of the last two days to their Session once the directory knows it.
 
-**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
+**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, its stamp when it counted as no Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
 The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
 It serves the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn, the cost of each call in the turn timeline, `get_metrics` and `dam metrics`, found by the router call id within the owner's rows, the reads in hours, and the first and last call time of a Session; no limit reads it.
 A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.
@@ -334,11 +335,10 @@ The screens:
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
-- **The agent's Providers section:** each granted Connection that takes a limit has one line for the agent's limit on it, in the Connection's unit: a meter, the share used, the spend against the limit, and the button.
-  Clicking the line opens the other limits that count those calls: the Connection limit for all agents and, on a dollar Connection, the agent limit, the total daily limit and the ceiling; a line that nothing else counts does not open.
+- **The agent's Providers section:** each provider is one line, and a granted Connection that takes a limit carries a pill with today's spend against the agent's limit on it, in the Connection's unit (`$1.23 / $4.56 today`); clicking the pill opens the limit dialog.
   The limit dialog says, while the user types, whether the new amount is already reached and which limit would stop the agent first.
-  A Connection that takes no limit says why.
-- **Settings, Providers tab:** under each connected Connection that takes a limit, one line for the Connection limit for all agents, the same as in the agent's Providers section; on a dollar Connection it opens to the total daily limit and the ceiling.
+  A Connection that takes no limit shows no pill.
+- **Settings, Providers tab:** each connected Connection that takes a limit carries the same pill for the Connection limit for all agents.
   The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
   Its "Also counted by" line holds the spend ceiling, when the operator has set one.

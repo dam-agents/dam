@@ -121,8 +121,8 @@ While the fault is on the platform's side, the line says that the platform canno
 The line also shows before a turn fails, so a user who waits on a turn that the harness retries learns the cause early.
 The session's provider is the one the session names, else the agent's default pair, else the template that all of the agent's provider Connections use.
 
-**The Providers badge.** In Settings › Providers, one pill on each row says whether the provider is configured, and, once it is, what its key is doing: verifying, connected, rejected, or unverified.
-The pill reads "Configured · Degraded" instead of "Configured · Connected" while that Connection's template has an outage, or while the fault is on the platform's side.
+**The Providers badge.** In Settings › Providers, one icon on each row says whether the provider is configured, and, once it is, what its key is doing: verifying, connected, rejected, or unverified; the state is its accessible name, gray for not configured, green for connected and red for trouble.
+The icon reads "Configured · Degraded", in red, instead of "Configured · Connected" while that Connection's template has an outage, or while the fault is on the platform's side.
 A key that the provider refused at its last check still reads as refused, because a new key is the fix for it whether or not the provider is down.
 
 **The banner.** At the top of the main area, on every page but the chat, a banner tells a user about outages of the providers that the user has a Connection to.

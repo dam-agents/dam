@@ -11,7 +11,6 @@ import {
   templateIdsForAlias,
 } from "api-server-api";
 
-import { providerName } from "../../providers/lib/provider-rows.js";
 import { prettyModelLabel } from "./model-families.js";
 import type { ProviderConnectionRef } from "./session-pair-options.js";
 
@@ -22,66 +21,38 @@ export interface ModelGroup {
   status: CatalogProviderView["status"];
   listedAt: string | null;
   native: boolean;
+  /* UNIT_BOUNDARY_DESCRIPTION: granted to the agent; a pick from a provider that is not connects it first. */
+  attached: boolean;
   models: CatalogModelView[];
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, in the
- * catalog's order, each with its listing state, so a provider that failed to
- * list shows as such rather than vanishing. A granted provider the pod has
- * not received yet follows them, never listed, so an attach never makes it
- * disappear.
+ * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, each with
+ * its listing state, so a provider that failed to list shows as such rather
+ * than vanishing. The agent's own providers come first, in the catalog's
+ * order, so a model several providers offer picks a connected one; with
+ * `granted` null (no agent) every provider counts as connected.
  */
 export function modelGroups(
   catalog: HarnessCatalogView | undefined,
-  granted: readonly ProviderConnectionRef[] = [],
+  granted: readonly string[] | null = null,
 ): ModelGroup[] {
-  const groups = (catalog?.providers ?? []).map((p) => ({
-    connectionId: p.connectionId,
-    alias: p.alias,
-    displayName: p.displayName,
-    status: p.status,
-    listedAt: p.listedAt,
-    native: p.native,
-    models: p.models,
-  }));
-  if (!catalog) return groups;
-  const held = new Set(groups.map((g) => g.connectionId));
-  return [
-    ...groups,
-    ...granted
-      .filter((c) => !held.has(c.id))
-      .map((c) => ({
-        connectionId: c.id,
-        alias: aliasForProviderType(c.type),
-        displayName: providerName(c.type, c.templateId),
-        status: "unavailable" as const,
-        listedAt: null,
-        native: false,
-        models: [],
-      })),
-  ];
+  return (catalog?.providers ?? [])
+    .map((p) => ({
+      connectionId: p.connectionId,
+      alias: p.alias,
+      displayName: p.displayName,
+      status: p.status,
+      listedAt: p.listedAt,
+      native: p.native,
+      attached: granted === null || granted.includes(p.connectionId),
+      models: p.models,
+    }))
+    .sort((a, b) => Number(b.attached) - Number(a.attached));
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a granted provider missing from the catalog has
- * not reached the pod yet, a revoked one still listed has not left it yet,
- * and an unavailable one has not listed yet; either way the UI asks again.
- */
-export function catalogSettled(
-  catalog: HarnessCatalogView | undefined,
-  grantedIds: readonly string[],
-): boolean {
-  if (!catalog) return false;
-  const held = new Set(catalog.providers.map((p) => p.connectionId));
-  const granted = new Set(grantedIds);
-  return (
-    grantedIds.every((id) => held.has(id)) &&
-    catalog.providers.every(
-      (p) => granted.has(p.connectionId) && p.status !== "unavailable",
-    )
-  );
-}
+export const providerLabel = (group: ModelGroup): string =>
+  group.attached ? group.displayName : `${group.displayName} (not connected)`;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one harness process reaches either the Model

@@ -3,9 +3,14 @@ import { match } from "ts-pattern";
 
 import type { AgentView } from "../../../types.js";
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Slack bindings of an Agent; a channel row
+ * carries the profile its turns run on (D91) and when it was created, which the
+ * bind dialog reads to start a new one on the same profile. */
+export type SlackChannelBinding = NonNullable<AgentView["channels"]>[number];
+
 export function findSlackChannels(
   agent: AgentView | undefined,
-): SlackChannel[] {
+): SlackChannelBinding[] {
   return agent?.channels.filter((c) => c.type === ChannelType.Slack) ?? [];
 }
 

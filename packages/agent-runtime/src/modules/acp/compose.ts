@@ -11,6 +11,7 @@ import {
   sessionSettingsError,
   type SessionRepository,
   type SubAgentHarnessConfig,
+  withoutApproval,
 } from "agent-runtime-api";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import { nonClaudeModelEnv } from "./domain/non-claude-env.js";
@@ -113,6 +114,7 @@ export interface ComposeAcpOptions {
   agentRequests: AgentRequestObserver;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
+  beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
   unroutedProviderEnv?: (harness: string) => Record<string, string>;
@@ -202,6 +204,13 @@ function inheritedSubAgentConfig(
     ...(Object.keys(configOptions).length > 0 && { configOptions }),
   };
 }
+
+const UNATTENDED_TYPES = new Set([
+  "channel_slack",
+  "channel_telegram",
+  "schedule_cron",
+  "schedule_once",
+]);
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the manifest's own value for each setting a
@@ -428,6 +437,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const ownPins = harness?.terminalSessionPins;
       const settingInput = (sessionId: string) => {
         const model = runtime.sessionChoice(sessionId).model;
+        const meta = sessionMetadata.get(sessionId)?.meta;
         return {
           sessionId,
           harness,
@@ -435,7 +445,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
           native: pair.native !== undefined,
           settings: {
             ...manifestDefaults(harness, "session", model),
-            ...sessionMetadata.get(sessionId)?.meta.settings,
+            /* UNIT_BOUNDARY_DESCRIPTION: a channel or schedule session runs on the default tool approval; only a chat session picks its own. */
+            ...(UNATTENDED_TYPES.has(meta?.type ?? "")
+              ? withoutApproval(harness?.catalog, meta?.settings)
+              : meta?.settings),
           },
         };
       };
@@ -500,6 +513,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
         agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
+        ...(opts.beforeFirstPrompt && {
+          beforeFirstPrompt: opts.beforeFirstPrompt,
+        }),
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
         ...(ownHistory ? { historyProvider: ownHistory } : {}),

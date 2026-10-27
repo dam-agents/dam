@@ -81,8 +81,8 @@ export const queryClient = new QueryClient({
         const detail = getErrorMessage(error, "");
         const message =
           title && detail
-            ? `${title}: ${detail}`
-            : title || detail || "Action failed";
+            ? `${title}: ${capitalised(detail)}`
+            : title || capitalised(detail) || "Action failed";
         emitToast({ kind: "error", message });
       },
     },
@@ -96,3 +96,9 @@ onlineManager.setEventListener((setOnline) =>
     if (connected) queryClient.invalidateQueries({ refetchType: "none" });
   }),
 );
+
+/* UNIT_BOUNDARY_DESCRIPTION: a server message is a sentence, so it reads as one
+ * wherever the UI shows it — the API writes it in the lower case a log line
+ * takes. */
+const capitalised = (text: string): string =>
+  text === "" ? "" : text[0]!.toUpperCase() + text.slice(1);

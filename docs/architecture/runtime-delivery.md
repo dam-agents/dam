@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-23
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -117,6 +117,7 @@ The computed state slice merges user-typed env, connection-granted contributions
 
 The server sends a per-agent monotonic `version` cursor, the **full desired state** (the post-capability-filter Contribution snapshot plus a deterministic hash that short-circuits no-op pushes), and the **currently pending events** in order.
 The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers in the agent-runtime.
+The order is the version order: the events of one bump share a version and have no order among themselves, so an event that must run before another goes in an earlier bump.
 
 The reply is a discriminated outcome, not a bare ack:
 
@@ -355,6 +356,7 @@ The kinds advertised on `hello` are derived at boot from the resolved drivers �
 Validated against a versioned schema at boot; fail-fast on a malformed manifest or an unknown kind.
 
 The default shipped manifest lives in the shared base, [`packages/agents/base/`](../../packages/agents/base/), a harness's own in its directory beside it.
+The api-server image also carries a copy of each harness manifest, so the [owner model catalog](owner-model-catalog.md) can answer a harness's settings catalog and native tiers without an agent.
 
 A harness that needs custom code for a kind — contribution or event — rebinds that kind to a fresh impl name supplied under `extensions.impls`, naming the module to load it from; the built-in stays registered but unbound.
 Custom impl names may not collide with a built-in name — registration rejects collision and boot fails loud.

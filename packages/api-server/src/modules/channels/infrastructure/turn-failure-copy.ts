@@ -1,6 +1,11 @@
-import { jsonRpcErrorDetails, saysProviderUnavailable } from "api-server-api";
+import {
+  agentPageUrl,
+  jsonRpcErrorDetails,
+  saysProviderUnavailable,
+} from "api-server-api";
 
 import { AcpTurnAbandonedError } from "../../../core/acp-client.js";
+import { ChannelProfileRefusedError } from "./channel-profile.js";
 import { PROVIDER_UNAVAILABLE_TURN_REASON } from "../../../events.js";
 import type { NoDefaultModelError } from "../../harness-config/index.js";
 import { isNoDefaultModelError } from "../../harness-config/index.js";
@@ -50,6 +55,13 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
       reason: "no-default-model",
       copy: ({ uiBaseUrl, agentId }) =>
         noDefaultModelUserCopy(err, uiBaseUrl, agentId),
+    };
+  if (err instanceof ChannelProfileRefusedError)
+    return {
+      kind: "plain",
+      reason: "profile-unavailable",
+      copy: ({ uiBaseUrl, agentId }) =>
+        `This channel runs on the profile “${err.profileName}”, which this agent can't use: ${err.detail}. Its owner can pick another profile on the channel's row at ${agentPageUrl(uiBaseUrl, agentId, "channels")}`,
     };
   if (saysProviderUnavailable(errorText(err)))
     return {
@@ -103,5 +115,5 @@ function noDefaultModelUserCopy(
 ): string {
   return err.pending
     ? "This agent is still setting up its default model after an update. Try again in a minute."
-    : `This agent has no default model, so it can't answer here yet. Its owner can set one at ${uiBaseUrl}/sandboxes/${agentId}/providers`;
+    : `This agent has no default model, so it can't answer here yet. Its owner can set one at ${agentPageUrl(uiBaseUrl, agentId, "providers")}`;
 }

@@ -13,6 +13,7 @@ import type { ExactCronConversion } from "../lib/cron-conversion.js";
 import { nextRRuleRuns } from "../lib/rrule-runs.js";
 import { TIMEZONE_OPTIONS } from "../lib/schedule-form-options.js";
 import { CRON_TIMEZONE, cronToText } from "../lib/schedule-format.js";
+import { scheduleChoices } from "./schedule-form-schema.js";
 
 interface Props {
   schedule: Schedule;
@@ -61,9 +62,16 @@ export function ConvertCronStep({
         task: schedule.task ?? "",
         sessionMode: schedule.sessionMode ?? "fresh",
         precheck: schedule.precheck,
-        harness: schedule.harness,
-        model: schedule.model,
-        settings: schedule.settings,
+        ...scheduleChoices(
+          {
+            ...schedule,
+            settings: {
+              ...schedule.settings,
+              ...schedule.platformSubagentSettings,
+            },
+          },
+          true,
+        ),
         sessionTitle: schedule.sessionTitle,
       },
       {

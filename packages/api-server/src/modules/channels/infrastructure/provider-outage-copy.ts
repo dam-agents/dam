@@ -2,11 +2,13 @@ import {
   PROVIDERS,
   providerTypeForTemplateId,
   type ProviderStatusView,
+  type SessionPair,
 } from "api-server-api";
 import { match } from "ts-pattern";
 
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
+import type { ChannelPair, ChannelRef } from "./channel-profile.js";
 import { escapeFrameText } from "./frame-text.js";
 
 export interface ProviderOutageLookup {
@@ -16,14 +18,38 @@ export interface ProviderOutageLookup {
 
 export type ChannelProviderOutage = (
   agentId: string,
+  channel: ChannelRef,
 ) => Promise<ProviderOutageLookup | null>;
+
+/* UNIT_BOUNDARY_DESCRIPTION: the outage a channel's failed turn names is the one on the template that turn runs on: the channel's own pick, else the agent's channel default, which a channel bound before profiles keeps. */
+export function createChannelProviderOutage(deps: {
+  channelPair: ChannelPair;
+  defaultPair: (agentId: string) => Promise<SessionPair | null | undefined>;
+  templateOf: (agentId: string, connectionId: string) => Promise<string | null>;
+  status: () => Promise<ProviderStatusView>;
+}): ChannelProviderOutage {
+  const templateOf = async (agentId: string, channel: ChannelRef) => {
+    const pair =
+      (await deps.channelPair(agentId, channel).catch(() => null)) ??
+      (await deps.defaultPair(agentId));
+    return pair?.provider ? deps.templateOf(agentId, pair.provider) : null;
+  };
+  return async (agentId, channel) => {
+    const [templateId, status] = await Promise.all([
+      templateOf(agentId, channel),
+      deps.status(),
+    ]);
+    return { templateId, status };
+  };
+}
 
 export async function lookUpProviderOutage(
   providerOutage: ChannelProviderOutage,
   agentId: string,
+  channel: ChannelRef,
 ): Promise<ProviderOutageLookup | null> {
   try {
-    return await providerOutage(agentId);
+    return await providerOutage(agentId, channel);
   } catch (err) {
     getLogger().warn(
       { agentId, reason: formatError(err) },

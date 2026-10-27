@@ -6,8 +6,9 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Card } from "@/components/ui/card";
 
-import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
+import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
 import { useGrantProvider, useHarnessCatalog } from "../api/session-pair.js";
 import { attachableProviders } from "../lib/catalog-groups.js";
 import {
@@ -23,7 +24,7 @@ interface Request {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: asks which of the owner's providers to attach to an agent before a harness can run on it, listing only providers that harness accepts, each as the row the agent's Providers page shows. Nothing is attached until the owner turns at least one on and confirms. Two providers of one kind cannot both be attached, so switching one on locks the others of its kind. While the grant runs the dialog cannot be dismissed, so a confirmed attach always reaches its caller. ask() resolves to the attached ids, or null when the owner cancels, the grant fails or the host goes away.
-export function useAttachProvidersDialog(agentId: string): {
+export function useAttachProvidersDialog(agentId: string | null): {
   ask: (
     harness: string,
     providers: readonly ProviderConnectionRef[],
@@ -98,21 +99,25 @@ function AttachProvidersDialog({
         onClose={onCancel}
         closeDisabled={pending}
       />
-      <DialogBody className="flex flex-col gap-3">
-        {request.providers.map((p) => (
-          <ProviderToggleRow
-            key={p.id}
-            provider={p}
-            harnesses={catalog && providerHarnesses(catalog, p)}
-            checked={selected.includes(p.id)}
-            disabled={pending || blocked(p)}
-            onCheckedChange={(on) =>
-              setSelected((s) =>
-                on ? [...s, p.id] : s.filter((id) => id !== p.id),
-              )
-            }
-          />
-        ))}
+      <DialogBody>
+        <Card className="divide-y divide-border overflow-hidden">
+          {request.providers.map((p) => (
+            <ProviderSpendRow
+              key={p.id}
+              agentId={null}
+              provider={p}
+              harnesses={catalog && providerHarnesses(catalog, p)}
+              showSpend={false}
+              checked={selected.includes(p.id)}
+              disabled={pending || blocked(p)}
+              onCheckedChange={(on) =>
+                setSelected((s) =>
+                  on ? [...s, p.id] : s.filter((id) => id !== p.id),
+                )
+              }
+            />
+          ))}
+        </Card>
       </DialogBody>
       <DialogActions
         onCancel={onCancel}

@@ -5,6 +5,7 @@ import { createConnectionsService } from "../../modules/connections/services/con
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { XactLock } from "../../core/xact-lock.js";
+import type { ProviderModelCatalog } from "../../modules/connections/services/provider-model-catalog.js";
 
 /**
  * TEST_OVERVIEW: the in-memory Connections store and service wiring the
@@ -91,6 +92,7 @@ export function serviceHarness(opts: {
   lock?: XactLock;
   brandName: string;
   curveBenderDeploymentKey?: string | null;
+  providerModelCatalog?: ProviderModelCatalog;
 }) {
   const { rows, grants, secrets } = opts.store ?? newConnectionsStore();
   const secretReads: SecretReads = { get: 0, getField: 0 };
@@ -152,6 +154,7 @@ export function serviceHarness(opts: {
     providerBalance: unused(),
     credentialProbe: { probe: async () => ({ status: "passed" }) },
     providerKeyProbe: { probe: async () => ({ ok: true }) },
+    providerModelCatalog: opts.providerModelCatalog ?? unused(),
     oauthCallbackUrl: "https://example.com/callback",
     brandName: opts.brandName,
     connectionLock: opts.lock ?? keyedMutex(),

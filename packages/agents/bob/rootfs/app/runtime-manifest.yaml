@@ -8,10 +8,14 @@ manifestVersion: 1
 # model by Bob's X-Task-Id and maps the tier aliases its subagents ask for to
 # the session's subagent model. bobGateway: the runtime points
 # BOB_GATEWAY_URL, the variable Bob's own client reads, at the router.
+# unmarkedOpeningCall: the first call of a new task (model `background`)
+# carries no X-Task-Id, so its spend is booked to the running turn still
+# waiting for its first call; its model is not touched.
 modelRouter:
   dialects: [openai-chat]
   modelFromSession: true
   tierAliases: [premium-ide, explorer, fast, premium, ultra]
+  unmarkedOpeningCall: true
   bobGateway: true
 
 # Declared so the runtime answers initialize before any harness process runs.

@@ -17,16 +17,33 @@ import {
   providerTypeForTemplateId,
   sessionPairSchema,
   type DefaultKind,
-  type SessionDefaults,
+  type SessionDefaultsView,
   type SessionPair,
 } from "api-server-api";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
-import type { GrantedProvider } from "../domain/session-pair.js";
+import {
+  choiceSlots,
+  resolvedChoice,
+  withoutPairApproval,
+  type GrantedProvider,
+} from "../domain/session-pair.js";
+import { harnessCapability } from "agent-runtime-api";
+import { z } from "zod";
+import type { ProfileResolver } from "../../profiles/index.js";
 
 export interface SessionPairRepo {
+  /** UNIT_BOUNDARY_DESCRIPTION: the effective pair of each kind, with every profile reference resolved, so no reader has to know a reference exists. */
   read(agentId: string, kind: DefaultKind): Promise<SessionPair | null>;
-  readSaved(agentId: string, lockIn?: DbTx): Promise<SessionDefaults>;
-  write(agentId: string, kind: DefaultKind, pair: SessionPair): Promise<void>;
+  readSaved(agentId: string, lockIn?: DbTx): Promise<SessionDefaultsView>;
+  write(
+    agentId: string,
+    kind: DefaultKind,
+    pair: SessionPair,
+    references?: {
+      profileId?: string | null;
+      platformSubagentProfileId?: string | null;
+    },
+  ): Promise<void>;
   clear(agentId: string, kind: Exclude<DefaultKind, "chat">): Promise<void>;
   grantedProviders(agentId: string): Promise<GrantedProvider[]>;
 }
@@ -44,24 +61,57 @@ export interface FillableSessionPairRepo extends SessionPairRepo {
   ): Promise<boolean>;
 }
 
-export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
+export function createSessionPairRepo(
+  db: Db,
+  resolveProfile: ProfileResolver,
+): FillableSessionPairRepo {
+  /* UNIT_BOUNDARY_DESCRIPTION: a chat profile that cannot run resolves to no pair, which every reader already reports as no default; it never falls back to another harness or model. A platform sub-agent profile that cannot run leaves the pair as it is, and the spawn refuses it with its reason. */
   async function readSaved(
     agentId: string,
     lockIn?: DbTx,
-  ): Promise<SessionDefaults> {
+  ): Promise<SessionDefaultsView> {
     const query = (lockIn ?? db)
       .select({
         chat: agentsTable.sessionPair,
         channel: agentsTable.channelSessionPair,
         scheduled: agentsTable.scheduledSessionPair,
+        sessionProfile: agentsTable.sessionProfile,
+        platformSubagentProfile: agentsTable.platformSubagentProfile,
+        platformSubagentSettings: agentsTable.platformSubagentSettings,
+        capabilities: agentsTable.runtimeCapabilities,
       })
       .from(agentsTable)
       .where(eq(agentsTable.id, agentId));
-    const rows = await (lockIn ? query.for("update") : query);
+    const row = (await (lockIn ? query.for("update") : query))[0];
+    const carried =
+      z
+        .array(harnessCapability)
+        .safeParse(
+          (row?.capabilities as { harnesses?: unknown } | null)?.harnesses,
+        ).data ?? [];
+    const plain = (pair: SessionPair | null) =>
+      pair &&
+      withoutPairApproval(
+        pair,
+        carried.find((h) => h.name === pair.harness)?.harnessConfigCatalog,
+      );
+    const chatProfileId = row?.sessionProfile ?? null;
+    const slots = {
+      profileId: chatProfileId,
+      pair: parsePair(row?.chat),
+      platformSubagentProfileId: row?.platformSubagentProfile ?? null,
+      platformSubagentSettings:
+        (row?.platformSubagentSettings as Record<string, string> | null) ??
+        null,
+    };
+    const chat = await resolvedChoice(slots, resolveProfile, agentId);
     return {
-      chat: parsePair(rows[0]?.chat),
-      channel: parsePair(rows[0]?.channel),
-      scheduled: parsePair(rows[0]?.scheduled),
+      chat: plain(chat.refused ? null : chat.pair),
+      channel: plain(parsePair(row?.channel)),
+      scheduled: plain(parsePair(row?.scheduled)),
+      chatProfileId,
+      platformSubagentProfileId: slots.platformSubagentProfileId,
+      platformSubagentSettings: slots.platformSubagentSettings,
     };
   }
 
@@ -77,12 +127,21 @@ export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
         .exhaustive();
     },
 
-    async write(agentId, kind, pair) {
+    async write(agentId, kind, pair, references) {
+      const slots = choiceSlots(pair, references);
       await db
         .update(agentsTable)
         .set(
           match(kind)
-            .with("chat", () => ({ sessionPair: pair, defaultModelNote: null }))
+            .with("chat", () => ({
+              sessionPair: slots.pair,
+              sessionProfile: slots.profileId,
+              ...(slots.platformSubagentProfileId !== undefined && {
+                platformSubagentProfile: slots.platformSubagentProfileId,
+                platformSubagentSettings: slots.platformSubagentSettings,
+              }),
+              defaultModelNote: null,
+            }))
             .with("channel", () => ({ channelSessionPair: pair }))
             .with("scheduled", () => ({ scheduledSessionPair: pair }))
             .exhaustive(),
@@ -107,7 +166,11 @@ export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
         .update(agentsTable)
         .set({ sessionPair: pair, defaultModelNote: note ?? null })
         .where(
-          and(eq(agentsTable.id, agentId), isNull(agentsTable.sessionPair)),
+          and(
+            eq(agentsTable.id, agentId),
+            isNull(agentsTable.sessionPair),
+            isNull(agentsTable.sessionProfile),
+          ),
         )
         .returning({ id: agentsTable.id });
       return rows.length > 0;

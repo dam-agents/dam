@@ -11,6 +11,7 @@ import { describeScheduleError } from "../domain/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { profileOrExit } from "./profile-ref.js";
 import {
   buildPresetFromFlags,
   parseQuietWindow,
@@ -31,6 +32,7 @@ interface CreateOpts {
   now?: boolean;
   harness?: string;
   model?: string;
+  profile?: string;
   setting: string[];
   daily?: string;
   every?: string;
@@ -49,6 +51,10 @@ export function buildCreateCommand(deps: {
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
   createScheduleService: (host: string) => ScheduleService;
+  findProfile: (
+    host: string,
+    ref: string,
+  ) => Promise<{ id: string; name: string } | null>;
 }): Command {
   return new Command("create")
     .description(
@@ -66,6 +72,10 @@ export function buildCreateCommand(deps: {
       "with --once: the local time (in --timezone) to run at",
     )
     .option("--now", "with --once: run immediately")
+    .option(
+      "--profile <name-or-id>",
+      "run it on one of your profiles, by name or id; replaces --harness, --model and --setting",
+    )
     .option(
       "--harness <name>",
       "harness its sessions run on, one the agent carries (default: the agent's)",
@@ -154,13 +164,20 @@ export function buildCreateCommand(deps: {
         process.stderr.write(`error: ${(e as Error).message}\n`);
         process.exit(EXIT_INVALID_INPUT);
       }
-      const choices = {
+      const inline = {
         ...(opts.harness ? { harness: opts.harness } : {}),
         ...(opts.model ? { model: opts.model } : {}),
         ...(settings ? { settings } : {}),
       };
-
+      if (opts.profile !== undefined && Object.keys(inline).length > 0) {
+        process.stderr.write(
+          "error: --profile names a profile instead of a harness, model or setting; pass one or the other\n",
+        );
+        process.exit(EXIT_INVALID_INPUT);
+      }
       const host = await resolveActiveHost(deps, opts.server);
+      const profile = await profileOrExit(deps, host, opts.profile);
+      const choices = profile !== null ? { profile } : inline;
 
       const agent = await resolveAgentOrExit(
         deps.createAgentService(host),

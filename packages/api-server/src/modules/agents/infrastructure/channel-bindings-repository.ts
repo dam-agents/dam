@@ -1,15 +1,37 @@
 import type { Db } from "db";
 import { channels, eq, and, inArray, sql } from "db";
-import { ChannelType, type ChannelConfig } from "api-server-api";
+import {
+  ChannelType,
+  type ChannelConfig,
+  type SessionPair,
+} from "api-server-api";
 import type { Tx } from "../../../core/unit-of-work.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 
 function toChannelConfig(row: {
   type: string;
   config: unknown;
+  profileId?: string | null;
+  sessionPair?: unknown;
+  platformSubagentProfile?: string | null;
+  platformSubagentSettings?: unknown;
+  createdAt?: Date;
 }): ChannelConfig {
   const config = row.config as Record<string, unknown>;
-  return { type: row.type as ChannelType, ...config } as ChannelConfig;
+  return {
+    type: row.type as ChannelType,
+    ...config,
+    ...(row.profileId !== undefined && {
+      profileId: row.profileId,
+      pair: (row.sessionPair as SessionPair | null | undefined) ?? null,
+      platformSubagentProfileId: row.platformSubagentProfile ?? null,
+      platformSubagentSettings:
+        (row.platformSubagentSettings as Record<string, string> | null) ?? null,
+    }),
+    ...(row.createdAt !== undefined && {
+      createdAt: row.createdAt.toISOString(),
+    }),
+  } as ChannelConfig;
 }
 
 export function listChannelsByOwner(db: Db, owner: string) {

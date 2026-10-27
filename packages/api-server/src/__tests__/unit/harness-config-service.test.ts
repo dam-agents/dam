@@ -10,6 +10,8 @@ import {
   sessionModelChoices,
 } from "../../modules/harness-config/services/harness-config-service.js";
 import { harnessConfigSupported } from "../../modules/harness-config/index.js";
+import { createSessionPairRepo } from "../../modules/harness-config/infrastructure/session-pair-repo.js";
+import type { ResolvedProfile } from "../../modules/profiles/index.js";
 
 type QueueCall = { agentId: string; change: unknown; inLock: boolean };
 type MergeCall = {
@@ -24,6 +26,9 @@ function makeService(opts?: {
   capabilities?: unknown;
   snapshot?: HarnessConfigSnapshot | null;
   granted?: GrantedProvider[];
+  resolved?: SessionPair;
+  profileOwner?: string;
+  unavailable?: string;
   hidden?: string[];
 }) {
   const calls = {
@@ -31,6 +36,7 @@ function makeService(opts?: {
     enqueues: [] as string[],
     merges: [] as MergeCall[],
     pairs: [] as SessionPair[],
+    references: [] as unknown[],
     locked: 0,
     retired: [] as {
       agentId: string;
@@ -41,6 +47,14 @@ function makeService(opts?: {
   let holdingLock = false;
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
+    resolveProfile: async ({ owner }) =>
+      opts?.resolved === undefined ||
+      (owner !== undefined && owner !== (opts.profileOwner ?? "owner-1"))
+        ? null
+        : ({
+            pair: opts.resolved,
+            unavailable: opts.unavailable ?? null,
+          } as ResolvedProfile),
     surface: "ui",
     eventQueue: {
       queue: async (agentId, change, tx) => {
@@ -76,9 +90,15 @@ function makeService(opts?: {
     },
     pairRepo: {
       read: async () => null,
-      readSaved: async () => ({ chat: null, channel: null, scheduled: null }),
-      write: async (_agentId, _kind, pair) => {
+      readSaved: async () => ({
+        chat: null,
+        channel: null,
+        scheduled: null,
+        chatProfileId: null,
+      }),
+      write: async (_agentId, _kind, pair, references) => {
         calls.pairs.push(pair);
+        calls.references.push(references ?? {});
       },
       clear: async () => {},
       grantedProviders: async () => opts?.granted ?? [],
@@ -450,5 +470,236 @@ describe("sessionModelChoices", () => {
       sessionModelChoices(capabilities, [{ value: "claude/haiku-x" }]),
     ).toEqual(["claude/haiku-x"]);
     expect(sessionModelChoices(capabilities, null)).toEqual(["sonnet"]);
+  });
+});
+
+describe("rememberSessionPair naming a profile", () => {
+  const resolvedPair = {
+    harness: "claude-code",
+    provider: "conn-1",
+    model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  };
+
+  it("writes the reference and the pair it resolves to", async () => {
+    const { service, calls } = makeService({
+      granted: [{ id: "conn-1", type: "openai" }],
+      capabilities: {
+        modelRouter: true,
+        defaultHarness: "codex",
+        harnesses: [
+          {
+            name: "codex",
+            harnessConfig: true,
+            sessionModel: true,
+            sessionSettings: [],
+          },
+        ],
+      },
+      resolved: {
+        harness: "codex",
+        provider: "conn-1",
+        model: "openai/gpt-6.1-sol",
+      },
+    });
+    const pair = {
+      harness: "codex",
+      provider: "conn-1",
+      model: "openai/gpt-6.1-sol",
+    };
+    await service.rememberSessionPair("agent-1", "chat", pair, {
+      profileId: "profile-1",
+    });
+    expect(calls.pairs).toEqual([pair]);
+    expect(calls.references).toEqual([{ profileId: "profile-1" }]);
+  });
+
+  it("refuses a profile that cannot run on the agent", async () => {
+    const { service, calls } = makeService({
+      resolved: {
+        harness: "codex",
+        provider: "conn-1",
+        model: "openai/gpt-6.1-sol",
+      },
+      unavailable: "CurveBender (shared) is not connected",
+    });
+    await expect(
+      service.rememberSessionPair("agent-1", "chat", resolvedPair, {
+        profileId: "profile-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "CurveBender (shared) is not connected",
+    });
+    expect(calls.pairs).toEqual([]);
+  });
+
+  it("refuses a profile named for a kind that keeps its own", async () => {
+    const { service } = makeService({});
+    await expect(
+      service.rememberSessionPair("agent-1", "scheduled", resolvedPair, {
+        profileId: "profile-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "only the chat default can name a profile",
+    });
+  });
+});
+
+describe("ownership of a profile a caller names", () => {
+  const codexPair = {
+    harness: "codex",
+    provider: "conn-1",
+    model: "openai/gpt-6.1-sol",
+  };
+  const carrying = {
+    modelRouter: true,
+    defaultHarness: "codex",
+    harnesses: [
+      {
+        name: "codex",
+        harnessConfig: true,
+        sessionModel: true,
+        sessionSettings: [],
+        platformSubagentSettings: true,
+      },
+    ],
+  };
+
+  it("refuses another owner's profile in the chat slot", async () => {
+    const { service, calls } = makeService({
+      capabilities: carrying,
+      granted: [{ id: "conn-1", type: "openai" }],
+      resolved: codexPair,
+      profileOwner: "owner-2",
+    });
+    await expect(
+      service.rememberSessionPair("agent-1", "chat", codexPair, {
+        profileId: "profile-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "profile not found",
+    });
+    expect(calls.pairs).toEqual([]);
+  });
+
+  it("takes only the harness and model of the slot's profile", async () => {
+    const { service, calls } = makeService({
+      capabilities: carrying,
+      granted: [{ id: "conn-1", type: "openai" }],
+      resolved: codexPair,
+    });
+    await service.rememberSessionPair("agent-1", "chat", codexPair, {
+      platformSubagentProfileId: "profile-1",
+    });
+    expect(calls.pairs[0]?.settings).toEqual({
+      "platformSubagent.harness": "codex",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+    });
+  });
+});
+
+describe("the chat default's slots", () => {
+  const codexPair = {
+    harness: "codex",
+    provider: "conn-1",
+    model: "openai/gpt-6.1-sol",
+  };
+  const capabilities = {
+    modelRouter: true,
+    defaultHarness: "codex",
+    harnesses: [
+      {
+        name: "codex",
+        harnessConfig: true,
+        sessionModel: true,
+        sessionSettings: ["mode"],
+        platformSubagentSettings: true,
+        harnessConfigCatalog: {
+          options: [
+            {
+              id: "mode",
+              name: "Mode",
+              category: "mode",
+              choices: [
+                { value: "auto", name: "Auto" },
+                { value: "bypassPermissions", name: "Bypass" },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  /** TEST_SCENARIO: a profile primary with a custom subagent keeps the subagent's values beside the reference (D124), and the session's tool approval is never saved (approval is per session only). */
+  it("keeps a custom subagent beside a profile and drops tool approval", async () => {
+    const { service, calls } = makeService({
+      capabilities,
+      granted: [{ id: "conn-1", type: "openai" }],
+      resolved: codexPair,
+    });
+    await service.rememberSessionPair(
+      "agent-1",
+      "chat",
+      {
+        ...codexPair,
+        settings: {
+          mode: "bypassPermissions",
+          "platformSubagent.harness": "codex",
+          "platformSubagent.model": "openai/gpt-6-luna",
+        },
+      },
+      { profileId: "profile-1", platformSubagentProfileId: null },
+    );
+    await service.rememberSessionPair(
+      "agent-1",
+      "chat",
+      { ...codexPair, settings: { mode: "bypassPermissions" } },
+      { platformSubagentProfileId: null },
+    );
+    expect(calls.pairs.map((p) => p.settings)).toEqual([
+      {
+        "platformSubagent.harness": "codex",
+        "platformSubagent.model": "openai/gpt-6-luna",
+      },
+      undefined,
+    ]);
+  });
+
+  /** TEST_SCENARIO: while the chat profile cannot run, the saved chat default is none, yet the view still names the subagent slot as stored, so the picker shows the custom pick it holds rather than Let the agent pick (QA N3). */
+  it("names the stored subagent slot while the chat profile cannot run", async () => {
+    const slot = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "bedrock/haiku",
+    };
+    const row = {
+      chat: null,
+      channel: null,
+      scheduled: null,
+      sessionProfile: "profile-1",
+      platformSubagentProfile: null,
+      platformSubagentSettings: slot,
+      capabilities: null,
+    };
+    const db = {
+      select: () => ({ from: () => ({ where: async () => [row] }) }),
+    } as never;
+    const repo = createSessionPairRepo(
+      db,
+      async () =>
+        ({
+          profile: { name: "Opus" },
+          pair: null,
+          unavailable: "AWS Bedrock isn't attached to this agent",
+        }) as never,
+    );
+    expect(await repo.readSaved("agent-1")).toMatchObject({
+      chat: null,
+      chatProfileId: "profile-1",
+      platformSubagentProfileId: null,
+      platformSubagentSettings: slot,
+    });
   });
 });

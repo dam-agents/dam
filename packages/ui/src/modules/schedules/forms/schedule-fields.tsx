@@ -8,7 +8,7 @@ import type {
   UseFormRegister,
   UseFormRegisterReturn,
 } from "react-hook-form";
-import { Controller, useController, useWatch } from "react-hook-form";
+import { Controller, useController } from "react-hook-form";
 
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -20,33 +20,17 @@ import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
+import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import {
-  useHarnessCatalog,
-  useHarnessCatalogModels,
-  useHarnessConfigured,
-  useProviderConnections,
-  useSessionDefaults,
-} from "../../sessions/api/session-pair.js";
 import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
 import {
   type Choice,
   OptionPicker,
 } from "../../sessions/components/model-settings-panel.js";
-import { SessionSettingsControls } from "../../sessions/components/session-settings-controls.js";
-import {
-  findModel,
-  modelGroups,
-  modelIndicatorLabel,
-  sameSideGroups,
-} from "../../sessions/lib/catalog-groups.js";
-import { fittingProviders } from "../../sessions/lib/session-pair-options.js";
-import {
-  applySettingChanges,
-  settingDefaults,
-  settingsForModel,
-} from "../../sessions/lib/session-settings.js";
+import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
+import { StoredPairSummary } from "../../sessions/components/stored-pair-summary.js";
+import { nextSlots } from "../../sessions/lib/subagent-choice.js";
 import {
   useHasHarnessDefault,
   useScheduleDefault,
@@ -62,7 +46,9 @@ import {
 import {
   buildRRuleParts,
   errorField,
+  scheduleFields,
   type ScheduleFormValues,
+  scheduleSlots,
 } from "./schedule-form-schema.js";
 
 const SESSION_TOOLTIP =
@@ -506,29 +492,49 @@ interface ChoicesControl {
   harness: string;
   model: string;
   settings: Record<string, string>;
+  profile: string;
+  platformSubagentProfile: string;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the same three choices a session picks.
- * "Scheduled default" is the empty choice and says what that default is now,
- * and whether it is the chat default, set on the Providers page. On
- * a runtime without the Model Router the old single model field stands.
+ * UNIT_BOUNDARY_DESCRIPTION: what a schedule runs on (D92), picked with the
+ * chat's own picker in both slots and kept in the form's fields: the primary a
+ * profile or the harness, model and settings of its own, the subagent a
+ * profile or the platform sub-agent values its settings carry. Empty primary
+ * fields are not a scheduled default — nothing writes one any more (D90) —
+ * they are the agent's chat default, which only a row already following it
+ * keeps (D123), saying what it is now in the hint. On a runtime without the
+ * Model Router the old single model field stands.
  */
 export function ScheduleChoicesField<T extends ChoicesControl>({
   agentId,
   control,
   migrationNote,
+  inheritChoice = false,
 }: {
   agentId: string;
   control: Control<T>;
   migrationNote: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the empty choice is offered only where it is the
+   * schedule's own current selection — a schedule written before profiles that
+   * follows the chat default — so such a row opens and saves untouched, and
+   * every other form asks for concrete values (D123). */
+  inheritChoice?: boolean;
 }) {
   const typed = control as unknown as Control<ChoicesControl>;
   const { data: status } = useHarnessConfigStatus(agentId || null);
   const agentOperable = useIsAgentOperable(agentId || null);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const routed = status?.modelRouter ?? false;
-  const harnessValue = useWatch({ control: typed, name: "harness" });
-  const { field: modelField } = useController({
+  const { field: profileField } = useController({
+    control: typed,
+    name: "profile",
+  });
+  const { field: harnessField } = useController({
+    control: typed,
+    name: "harness",
+  });
+  const { field: modelField, fieldState: modelState } = useController({
     control: typed,
     name: "model",
   });
@@ -536,34 +542,13 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     control: typed,
     name: "settings",
   });
-  const { data: savedDefaults } = useSessionDefaults(
-    routed && agentId ? agentId : null,
-  );
-  const sameAsChat = savedDefaults !== undefined && !savedDefaults.scheduled;
-  const storedModel = modelField.value;
-  const settingsValue = settingsField.value;
-  const { data: catalog } = useHarnessCatalog();
-  const carried = status?.harnesses ?? [];
+  const { field: subagentField } = useController({
+    control: typed,
+    name: "platformSubagentProfile",
+  });
   const { data: fallback } = useScheduleDefault(
     routed && agentId ? agentId : null,
-    harnessValue || null,
-  );
-  const harness =
-    harnessValue ||
-    fallback?.harness ||
-    status?.defaultHarness ||
-    carried[0]?.name ||
-    "";
-  const { data: catalogModels } = useHarnessCatalogModels(
-    routed && agentId ? agentId : null,
-    routed ? harness || null : null,
-  );
-  const { granted } = useProviderConnections(routed ? agentId : null);
-  const capability = carried.find((h) => h.name === harness);
-  const defaults = settingDefaults(
-    capability,
-    useHarnessConfigured(agentId, harness),
-    storedModel || fallback?.model || null,
+    null,
   );
   const listedByRunningAgent =
     !status?.harnesses ||
@@ -582,132 +567,89 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
         onChange={modelField.onChange}
       />
     );
-  const groups = modelGroups(catalogModels);
-  const modelValue = storedModel
-    ? (findModel(groups, storedModel)?.model.name ?? storedModel)
-    : storedModel;
-  const fitting = fittingProviders(catalog?.harnesses ?? [], granted);
-  const harnessChoices: Choice[] = carried
-    .filter((h) => h.name === harnessValue || fitting(h.name).length > 0)
-    .map((h) => ({
-      id: h.name,
-      name:
-        catalog?.harnesses.find((v) => v.name === h.name)?.displayName ??
-        h.name,
-    }));
-  const modelChoices: Choice[] = groups.flatMap((g) =>
-    g.models.map((m) => ({
-      id: m.name,
-      name: `${m.upstreamId} · ${g.displayName}`,
-    })),
-  );
-  if (modelValue && !modelChoices.some((c) => c.id === modelValue))
-    modelChoices.push({
-      id: modelValue,
-      name: modelValue,
-      ...(catalogModels !== undefined && {
-        description: "Not in this agent's model list",
-      }),
-    });
-  const todayModel = fallback?.model
-    ? modelIndicatorLabel(groups, fallback.model)
-    : null;
-  const now = (value: string) =>
-    sameAsChat ? `Now: ${value}, same as chat` : `Now: ${value}`;
-  const defaultHint = sameAsChat
-    ? "Scheduled default runs on the agent's scheduled default, set on its Providers page, which is the same as its chat default."
-    : "Scheduled default runs on the agent's scheduled default, set on its Providers page.";
+  const slots = scheduleSlots({
+    profile: profileField.value,
+    harness: harnessField.value,
+    model: modelField.value,
+    settings: settingsField.value ?? {},
+    platformSubagentProfile: subagentField.value,
+  });
+  const follows =
+    inheritChoice &&
+    !slots.profileId &&
+    !harnessField.value &&
+    !modelField.value;
   return (
-    <div className="flex flex-col gap-4">
-      <FormField label="Harness" hint={defaultHint}>
-        <Controller
-          control={typed}
-          name="harness"
-          render={({ field }) => (
-            <OptionPicker
-              title="Harness"
-              choices={harnessChoices}
-              value={field.value || null}
-              clearable
-              placeholder="Scheduled default"
-              clearedLabel="Scheduled default"
-              clearedDescription={
-                fallback?.harness
-                  ? now(
-                      harnessChoices.find((c) => c.id === fallback.harness)
-                        ?.name ?? fallback.harness,
-                    )
-                  : "Follows the agent's scheduled default"
-              }
-              onSelect={(id) => {
-                field.onChange(id ?? "");
-                modelField.onChange("");
-                settingsField.onChange({});
-              }}
-            />
-          )}
-        />
-      </FormField>
-      <FormField
-        label="Model"
-        hint="Each model is named with its provider. Scheduled default uses the scheduled default's model for the harness."
-        {...(migrationNote ? { error: migrationNote } : {})}
-      >
-        <AwakeModelsGate agentId={agentId}>
-          <OptionPicker
-            title="Model"
-            choices={modelChoices}
-            value={modelValue || null}
-            clearable
-            placeholder="Scheduled default"
-            clearedLabel="Scheduled default"
-            clearedDescription={
-              todayModel
-                ? now(todayModel)
-                : "Follows the scheduled default's model for the harness"
-            }
-            onSelect={(id) => {
-              modelField.onChange(id ?? "");
-              if (!id && fallback === undefined) return;
-              const current = settingsValue ?? {};
-              const kept = settingsForModel(
-                capability,
-                groups,
-                id || fallback?.model || null,
-                current,
-              );
-              if (Object.keys(kept).length !== Object.keys(current).length)
-                settingsField.onChange(kept);
-            }}
-          />
-        </AwakeModelsGate>
-      </FormField>
-      {capability?.sessionSettings && capability.sessionSettings.length > 0 && (
-        <FormField label="Session settings">
-          <SessionSettingsControls
-            agentId={agentId}
-            carried={carried}
-            capability={capability}
-            model={modelValue || fallback?.model || null}
-            settings={settingsValue ?? {}}
-            defaults={defaults}
-            modelChoices={sameSideGroups(
-              groups,
-              modelValue || fallback?.model || null,
-            ).flatMap((g) =>
-              g.models.map((m) => ({
-                value: m.name,
-                name: `${m.upstreamId} · ${g.displayName}`,
-              })),
-            )}
-            onChange={(changes) =>
-              settingsField.onChange(
-                applySettingChanges(settingsValue ?? {}, changes),
-              )
-            }
-          />
-        </FormField>
+    <div role="group" aria-label="Runs on" className="flex flex-col gap-2">
+      <SectionLabel>Runs on</SectionLabel>
+      <SessionPairPicker
+        agentId={agentId}
+        carried={status?.harnesses ?? []}
+        defaultHarness={status?.defaultHarness ?? ""}
+        routed
+        onConnectProviders={() =>
+          agentId && navigateToSandboxHome(agentId, "providers")
+        }
+        target={{
+          slots,
+          label: "Schedule harness and model",
+          placeholder: "The agent's chat default",
+          onChoose: (pair, references) => {
+            const next = scheduleFields(
+              nextSlots(slots, pair, references),
+              pair,
+            );
+            profileField.onChange(next.profile);
+            harnessField.onChange(next.harness);
+            modelField.onChange(next.model);
+            settingsField.onChange(next.settings);
+            subagentField.onChange(next.platformSubagentProfile);
+          },
+        }}
+      />
+      {inheritChoice && !follows && (
+        <button
+          type="button"
+          onClick={() => {
+            profileField.onChange("");
+            harnessField.onChange("");
+            modelField.onChange("");
+            settingsField.onChange({});
+            subagentField.onChange("");
+          }}
+          className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        >
+          Follow the agent's chat default again
+        </button>
       )}
+      <span className="text-sm text-muted-foreground">
+        {follows ? (
+          <>
+            This schedule follows the agent&apos;s chat default
+            {fallback?.model && (
+              <>
+                {" (now: "}
+                <span className="inline-flex items-center gap-1 align-bottom">
+                  <StoredPairSummary
+                    agentId={agentId}
+                    harness={fallback.harness}
+                    model={fallback.model}
+                    settings={fallback.settings ?? {}}
+                  />
+                </span>
+                {")"}
+              </>
+            )}
+            , which a chat&apos;s model picker sets. Pick a profile or a model
+            to give it values of its own.
+          </>
+        ) : (
+          "What this schedule runs on, picked as a chat's model is. Editing a profile changes every schedule that names it; Custom selection gives this one its own."
+        )}
+      </span>
+      <FormError
+        message={modelState.error?.message ?? migrationNote ?? undefined}
+      />
     </div>
   );
 }

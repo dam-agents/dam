@@ -18,7 +18,7 @@ const { onFetchError, onFetchSuccess } =
 const { trpc } = await import("../../trpc.js");
 const { changesKeys } = await import("../../modules/changes/api/keys.js");
 const { processKeys } = await import("../../modules/processes/api/keys.js");
-const { harnessConfigCurrentKey, harnessCatalogModelsKey, providerModelsKey } =
+const { harnessConfigCurrentKey, providerModelsKey } =
   await import("../../modules/sessions/api/session-pair.js");
 const { scheduleSessionsKey } =
   await import("../../modules/schedules/api/queries.js");
@@ -210,7 +210,7 @@ it("refreshes the families a runtime without live updates cannot watch", async (
   await expectRefetchedOnReturnAndReconnect({
     "harness config": harnessConfigCurrentKey("a", "harness-1"),
     "provider models": providerModelsKey("a", "harness-1", "provider-1"),
-    "catalog models": harnessCatalogModelsKey("a", "harness-1", []),
+    "catalog models": trpc.connections.agentCatalog.queryKey({ agentId: "a" }),
     changes: changesKeys.list("a", "session-1"),
     processes: processKeys.list("a"),
     "session query": acpSessionsKeys.query("a", {}),

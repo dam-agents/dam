@@ -156,6 +156,10 @@ export interface PlatformSessionMeta {
   threadTs?: string;
   createdAt?: string;
   customTitle?: string;
+  harness?: string;
+  provider?: string;
+  model?: string;
+  settings?: Record<string, string>;
   title?: string;
 }
 
@@ -447,15 +451,19 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
-function pairMeta(pair: SessionPair | undefined): Record<string, unknown> {
+/** UNIT_BOUNDARY_DESCRIPTION: a pair as `_meta.platform` fields; a session created with them alone runs on them as its own, and follows no default. */
+export function pairFields(pair: SessionPair | null | undefined) {
   if (!pair) return {};
   return {
-    follows: "channel",
     harness: pair.harness,
     ...(pair.provider !== null && { provider: pair.provider }),
     ...(pair.model !== null && { model: pair.model }),
     ...(pair.settings && { settings: pair.settings }),
   };
+}
+
+function pairMeta(pair: SessionPair | undefined): Record<string, unknown> {
+  return pair ? { follows: "channel", ...pairFields(pair) } : {};
 }
 
 async function resolvePair(
@@ -608,8 +616,12 @@ export function createAcpClient(opts: {
             sessionId = sendOpts.resumeSessionId;
             watchSessionId = sessionId;
           } else {
-            const pair = await resolvePair(opts.firePair, agentId);
-            const platform = { ...sendOpts.platformMeta, ...pairMeta(pair) };
+            const caller = sendOpts.platformMeta;
+            const platform = {
+              ...(caller?.harness === undefined &&
+                pairMeta(await resolvePair(opts.firePair, agentId))),
+              ...caller,
+            };
             const newSession: NewSessionRequest = {
               cwd: ".",
               mcpServers: [],

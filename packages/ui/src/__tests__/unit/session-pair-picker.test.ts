@@ -1,5 +1,7 @@
+// @vitest-environment happy-dom
 import type { HarnessCapability } from "agent-runtime-api";
-import { createElement, Fragment, type PropsWithChildren } from "react";
+import { act, createElement, Fragment, type PropsWithChildren } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,7 +25,7 @@ const carried: HarnessCapability[] = [
         {
           id: "mode",
           name: "Thinking",
-          category: "mode",
+          category: "thought_level",
           default: "low",
           choices: [
             { value: "low", name: "Low" },
@@ -90,12 +92,22 @@ const state = vi.hoisted(() => ({
       }
     | undefined,
   chosenModel: vi.fn(),
+  grant: vi.fn(async (_id: string) => true),
+  remember: vi.fn(),
+  saved: undefined as
+    | {
+        platformSubagentProfileId?: string | null;
+        platformSubagentSettings?: Record<string, string> | null;
+      }
+    | undefined,
 }));
 
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
     select({
-      nextSessionPair: state.chosen ? { agent: state.chosen } : {},
+      nextSessionPair: state.chosen
+        ? { agent: state.chosen, "agent-b": state.chosen }
+        : {},
       setNextSessionPair: state.chosenModel,
       navigateToSandboxHome: vi.fn(),
       showConfirm: state.showConfirm,
@@ -147,7 +159,7 @@ vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
 }));
 
 vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
-  useProviderUsage: () => () => ({ kinds: [], schedules: [] }),
+  useProviderUsage: () => () => ({ kinds: [], schedules: [], profiles: [] }),
 }));
 
 vi.mock("../../modules/home/hooks/use-default-model-notices.js", () => ({
@@ -165,6 +177,44 @@ vi.mock("../../modules/schedules/api/queries.js", () => ({
 
 vi.mock("../../modules/schedules/api/mutations.js", () => ({
   useClearScheduleChoices: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+let profilesState: readonly unknown[] = [];
+let agentAccess: "owner" | "editor" = "owner";
+vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgent: () => ({
+    access: {
+      role: agentAccess,
+      editors: [],
+      permissions: [],
+      ...(agentAccess === "editor" ? { ownerEmail: "alice@example.com" } : {}),
+    },
+  }),
+}));
+
+vi.mock("../../modules/profiles/api/queries.js", () => ({
+  useProfiles: () => ({ data: profilesState }),
+}));
+
+vi.mock(
+  "../../modules/profiles/lib/profile-detail.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    profileSummary: () => "",
+    profileProviderName: () => "",
+  }),
+);
+
+vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
+  useProfileAttach: () => ({
+    attach: async () => "conn-oai",
+    manage: () => {},
+  }),
+}));
+
+vi.mock("../../modules/profiles/api/mutations.js", () => ({
+  useCreateProfile: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateProfile: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
@@ -209,25 +259,44 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
             ? []
             : [
                 { id: "ibm", name: "IBM", type: "ibm-litellm" },
-                { id: "curve", name: "Curve", type: "curve-bender" },
+                {
+                  id: "curve",
+                  name: "Curve",
+                  type: "curve-bender",
+                  templateId: "curve-bender",
+                },
                 ...state.granted,
               ],
           owned: [
             { id: "ibm", name: "IBM", type: "ibm-litellm" },
-            { id: "curve", name: "Curve", type: "curve-bender" },
+            {
+              id: "curve",
+              name: "Curve",
+              type: "curve-bender",
+              templateId: "curve-bender",
+            },
             ...state.granted,
             ...state.owned,
           ],
         },
   useGrantProvider: () => ({
-    grant: vi.fn(),
+    grant: state.grant,
     revoke: state.revoke,
     pending: false,
   }),
-  rememberSessionPair: vi.fn(),
+  rememberSessionPair: state.remember,
   useHarnessConfigured: () => state.configured,
-  useHarnessCatalogModels: () => ({
+  useSessionDefaults: () => ({ data: state.saved }),
+  useHarnessCatalogModels: (agentId: string | null) => ({
+    granted:
+      agentId === null
+        ? null
+        : ["ibm", "curve", ...state.granted.map((g) => g.id)],
     data: state.catalog,
+    modelCount: (name: string) =>
+      state.catalog?.harness === name
+        ? state.catalog.providers.reduce((n, p) => n + p.models.length, 0)
+        : 0,
     isLoading: state.loading,
     isError: false,
     operable: state.operable,
@@ -247,6 +316,21 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   },
 }));
 
+/* UNIT_BOUNDARY_DESCRIPTION: a routed picker opens on its profile view; this
+ * mounts it and opens Custom selection, where the model list is. */
+function custom(element: ReturnType<typeof createElement>): string {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  act(() => root.render(element));
+  const open = [...container.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Custom selection"),
+  );
+  if (open) act(() => open.click());
+  const html = container.innerHTML;
+  act(() => root.unmount());
+  return html;
+}
+
 function renderPicker() {
   return renderToStaticMarkup(
     createElement(SessionPairPicker, {
@@ -258,38 +342,102 @@ function renderPicker() {
   );
 }
 
-// TEST_SCENARIO: the popover's last row holds the two acts on the default — back to it, and set the pick as it — and is blank while the pick already is the default; the provider shortcut is not in that row.
-it("offers the two acts on the default only off it", () => {
-  state.followsDefaults = true;
-  state.chosen = { harness: "pi", provider: "curve", model: "glm" };
-  const off = renderToStaticMarkup(
-    createElement(SessionPairPicker, {
-      agentId: "agent",
-      defaultHarness: "pi",
-      carried,
-      routed: true,
-      onConnectProviders: state.connectProviders,
-    }),
-  );
-  expect(off).toContain("Back to default");
-  expect(off).toContain("Set as default");
-  expect(off).not.toContain("On the chat default");
-  expect(off).not.toContain("Own choice");
-  expect(off).not.toContain("Configure providers and defaults");
+describe("the profile view a routed picker opens on", () => {
+  beforeEach(() => {
+    state.loading = false;
+    state.fetching = false;
+    state.operable = true;
+    state.owned = [];
+    state.catalogLoaded = true;
+    state.chosen = null;
+    state.catalog = routedCatalog;
+  });
 
-  state.chosen = null;
-  const on = renderToStaticMarkup(
-    createElement(SessionPairPicker, {
-      agentId: "agent",
-      defaultHarness: "pi",
-      carried,
-      routed: true,
-      onConnectProviders: state.connectProviders,
-    }),
-  );
-  expect(on).not.toContain("Back to default");
-  expect(on).not.toContain("Set as default");
-  state.followsDefaults = false;
+  /** TEST_SCENARIO: an owner with no profile still gets the profile view when
+   * the model name is clicked, Custom selection its only row in the primary
+   * slot, and the subagent slot's choices hidden behind its heading's
+   * unchecked checkbox, which is the agent picking. */
+  it("opens on the profile view with no profile, Custom selection alone", () => {
+    profilesState = [];
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain("Primary model");
+    expect(html).toContain("Subagent model");
+    expect(html.match(/Custom selection/g)).toHaveLength(1);
+    expect(html).toMatch(
+      /<label for="([^"]+)"[^>]*><input id="\1" type="checkbox" class="[^"]*"\/>/,
+    );
+    expect(html).not.toContain("Let the agent pick");
+    expect(html).not.toContain("No profiles yet");
+    expect(html).not.toContain('aria-label="Harness"');
+  });
+
+  /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on them: a primary-model section ending in Custom selection, and a subagent section behind its checkbox; an unavailable profile is disabled with its reason and the one action that would fix it. */
+  it("lists the profiles under both headings, and disables the unavailable one", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/gpt-5.5",
+    };
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "ibm-litellm",
+        model: "ibm/gpt-5.5",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 1, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+      {
+        id: "p2",
+        name: "Local only",
+        harness: "pi",
+        providerTemplate: "curve-bender-deployment",
+        model: "cb/local",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 0, channels: 0, schedules: 0 },
+        availability: {
+          available: false,
+          reason: "CurveBender (shared) is not connected",
+          attachable: false,
+        },
+      },
+    ];
+    try {
+      const html = renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+      expect(html).toContain("Primary model");
+      expect(html).toContain("Subagent model");
+      expect(html).toContain('type="checkbox"');
+      expect(html).toContain("Fast review");
+      expect(html).toContain("Custom selection");
+      expect(html).toContain("1 harness");
+      expect(html).not.toContain("line-through");
+      expect(html).toContain("CurveBender (shared) is not connected");
+      expect(html).toContain("Configure providers");
+    } finally {
+      profilesState = [];
+      state.chosen = null;
+    }
+  });
 });
 
 describe("session pair model choices", () => {
@@ -347,13 +495,6 @@ describe("session pair model choices", () => {
     expect(html).toMatch(/<button type="button" disabled=""[^>]*>.*?Codex/);
     expect(html).not.toMatch(/<button type="button" disabled=""[^>]*>.*?Pi</);
     expect(html).toContain('aria-label="Why Codex is unavailable"');
-  });
-
-  it("starts a setting on the harness's configured value over the catalog default", () => {
-    state.configured = { mode: "high", configOptions: {} };
-    expect(renderPicker()).toContain(
-      '<option value="high" selected="">High</option>',
-    );
   });
 
   it("asks before disconnecting a provider, and disconnects only on yes", async () => {
@@ -444,7 +585,7 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain(">IBM</span></button>");
+    expect(html).toMatch(/>IBM<\/span><svg[^>]*>.*?<\/svg><\/button>/);
     expect(html).toContain("Loading models…");
     expect(html).not.toContain("Configure");
     expect(html).not.toContain("Connect an LLM provider");
@@ -469,9 +610,9 @@ describe("session pair model choices", () => {
       renderPicker(),
       renderToStaticMarkup(
         createElement(ModelIndicator, {
-          kind: "chat",
-          onFollowDefault: () => {},
+          onToolApproval: () => {},
           agentId: "agent",
+          sessionId: "s1",
           harness: "pi",
           provider: "ibm",
           model: null,
@@ -500,7 +641,9 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain(">glm (Curve)</span></button>");
+    expect(html).toMatch(
+      />glm \(Curve\)<\/span><svg[^>]*>.*?<\/svg><\/button>/,
+    );
   });
 
   it("warns before the agent answers when no provider is connected", () => {
@@ -541,9 +684,9 @@ describe("session pair model choices", () => {
       state.fetching = true;
       const html = renderToStaticMarkup(
         createElement(ModelIndicator, {
-          kind: "chat",
-          onFollowDefault: () => {},
+          onToolApproval: () => {},
           agentId: "agent",
+          sessionId: "s1",
           harness: "pi",
           provider: "curve",
           model: "static",
@@ -578,9 +721,9 @@ describe("session pair model choices", () => {
       /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(
         renderToStaticMarkup(
           createElement(ModelIndicator, {
-            kind: "chat",
-            onFollowDefault: () => {},
+            onToolApproval: () => {},
             agentId: "agent",
+            sessionId: "s1",
             harness: "pi",
             provider: "curve",
             model,
@@ -659,7 +802,7 @@ describe("one model list on a runtime that routes by model name", () => {
    * family under Other, and the per-provider model hooks of the old runtime
    * are never asked. */
   it("lists every provider's models in one grouped list", () => {
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(SessionPairPicker, {
         agentId: "agent",
         defaultHarness: "pi",
@@ -680,89 +823,22 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(state.providersAsked).toEqual([]);
   });
 
-  /** TEST_SCENARIO: A runtime may list a provider the harness does not fit,
-   * as one listing Bob's gateway under Pi does; both menus, a new session's
-   * and a running session's, offer only the providers the harness fits, so a
-   * pick from one is never dropped. Until the harness catalog that says what
-   * fits arrives, the menus keep every group rather than hide them all. */
-  it("hides a provider the harness does not fit", () => {
-    state.catalogLoaded = true;
-    state.granted = [{ id: "bob", name: "Bob Shell", type: "bob" }];
-    state.catalog = {
-      ...routedCatalog,
-      providers: [
-        ...routedCatalog.providers,
-        {
-          connectionId: "bob",
-          alias: "bob",
-          template: "bob",
-          displayName: "Bob Shell",
-          status: "listed" as const,
-          listedAt: null,
-          models: [model("bob", "granite-4-1-8b")],
-        },
-      ],
-    };
-    const picker = () =>
-      renderToStaticMarkup(
-        createElement(SessionPairPicker, {
-          agentId: "agent",
-          defaultHarness: "pi",
-          carried,
-          routed: true,
-          onConnectProviders: state.connectProviders,
-        }),
-      );
-    const indicator = () =>
-      renderToStaticMarkup(
-        createElement(ModelIndicator, {
-          kind: "chat",
-          onFollowDefault: () => {},
-          agentId: "agent",
-          harness: "pi",
-          provider: "ibm",
-          model: "ibm/gpt-5.5",
-          carried,
-          routed: true,
-          onChoose: vi.fn(),
-          onConfigure: vi.fn(),
-          onNewSession: state.newSession,
-        }),
-      );
-    expect(picker()).toContain('aria-label="GPT"');
-    expect(picker()).not.toContain("bob/granite-4-1-8b");
-    expect(picker()).not.toContain("Bob Shell");
-    expect(indicator()).toContain("GPT 5.5");
-    expect(indicator()).not.toContain("bob/granite-4-1-8b");
-    state.catalogLoaded = false;
-    expect(picker()).toContain("bob/granite-4-1-8b");
-    expect(indicator()).toContain("bob/granite-4-1-8b");
-    state.catalogLoaded = true;
-  });
-
-  /** TEST_SCENARIO: The model list is read from the running agent, so on a
-   * sleeping agent the list gives way to the start button rather than an
-   * empty list, and to "Agent is starting…" once the start is under way. */
-  it("offers to start a sleeping agent instead of an empty model list", () => {
-    const render = () =>
-      renderToStaticMarkup(
-        createElement(SessionPairPicker, {
-          agentId: "agent",
-          defaultHarness: "pi",
-          carried,
-          routed: true,
-          onConnectProviders: state.connectProviders,
-        }),
-      );
+  /** TEST_SCENARIO: The model list comes from the api-server's catalog, not
+   * the running agent, so a sleeping agent still lists its models. */
+  it("lists the models while the agent sleeps", () => {
     state.operable = false;
-    const asleep = render();
-    expect(asleep).toContain("Start agent to edit");
-    expect(asleep).not.toContain("gpt-5.5");
-    state.answerable = true;
-    const starting = render();
-    expect(starting).toContain("Agent is starting…");
-    expect(starting).not.toContain("Start agent to edit");
-    state.answerable = undefined;
+    const html = custom(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain("GPT");
+    expect(html).not.toContain("Start agent to edit");
+    state.operable = true;
   });
 
   /** TEST_SCENARIO: Known models are grouped by family and size, one entry
@@ -808,7 +884,7 @@ describe("one model list on a runtime that routes by model name", () => {
         },
       ],
     };
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(SessionPairPicker, {
         agentId: "agent",
         defaultHarness: "pi",
@@ -839,11 +915,11 @@ describe("one model list on a runtime that routes by model name", () => {
    * on the next message while a turn runs; the label under the composer
    * reads the pretty family name. */
   it("offers every provider's models to a running session", () => {
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(ModelIndicator, {
-        kind: "chat",
-        onFollowDefault: () => {},
+        onToolApproval: () => {},
         agentId: "agent",
+        sessionId: "s1",
         harness: "pi",
         provider: "ibm",
         model: "ibm/gpt-5.5",
@@ -862,13 +938,13 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).not.toContain(">Change<");
   });
 
-  /** TEST_SCENARIO: The label under the composer is the model family's pretty name for a matched model, not its provider. */
-  it("shows the pretty model name under the composer", () => {
+  /** TEST_SCENARIO: The label under the composer reads the model family's pretty name, the harness's effort and the provider in parentheses. */
+  it("shows the pretty model name, effort and provider under the composer", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
-        kind: "chat",
-        onFollowDefault: () => {},
+        onToolApproval: () => {},
         agentId: "agent",
+        sessionId: "s1",
         harness: "pi",
         provider: "curve",
         model: "cb/rits/zai-org/glm-5-3",
@@ -881,8 +957,7 @@ describe("one model list on a runtime that routes by model name", () => {
     );
     const trigger =
       /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(html)?.[1];
-    expect(trigger).toContain("GLM 5.3");
-    expect(trigger).not.toContain("Curve");
+    expect(trigger).toContain(">GLM 5.3 · Low (Curve)</span>");
   });
 
   /** TEST_SCENARIO: The provider a running session's model names (the
@@ -902,11 +977,11 @@ describe("one model list on a runtime that routes by model name", () => {
         templateId: "anthropic",
       } as never,
     ];
-    const html = renderToStaticMarkup(
+    const html = custom(
       createElement(ModelIndicator, {
-        kind: "chat",
-        onFollowDefault: () => {},
+        onToolApproval: () => {},
         agentId: "agent",
+        sessionId: "s1",
         harness: "pi",
         provider: null,
         model: "anthropic/claude-sonnet-5-5",
@@ -938,7 +1013,7 @@ describe("the picker's provider rows", () => {
   });
 
   const render = (props: Record<string, unknown>) =>
-    renderToStaticMarkup(
+    custom(
       createElement(SessionPairPicker, {
         agentId: "agent",
         defaultHarness: "pi",
@@ -959,5 +1034,782 @@ describe("the picker's provider rows", () => {
     expect(html).not.toContain("Attach this provider");
     expect(html).not.toContain("Manage providers");
     expect(html).not.toContain("Configure providers and defaults");
+  });
+});
+
+describe("the profile save on a shared agent", () => {
+  /** TEST_SCENARIO: An Agent Editor may use the owner's profiles and may not
+   * change that set, so the picker offers no save there. */
+  it("offers the save on an agent the person owns, and not on a shared one", () => {
+    profilesState = [];
+    state.loading = false;
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalogLoaded = true;
+    const render = () =>
+      custom(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+    const own = render();
+    expect(own).toContain("Save as a profile");
+    agentAccess = "editor";
+    try {
+      expect(render()).not.toContain("Save as a profile");
+    } finally {
+      agentAccess = "owner";
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the profile a session's pick came from", () => {
+  /** TEST_SCENARIO: A profile picked in one session makes its Save row
+   * Update that profile; after a switch to another session, the row saves a
+   * new profile instead of overwriting the first session's. A routed session
+   * that names no Connection still gets the row, from its model's provider
+   * (QA R10). */
+  it("does not carry the picked profile into another session", () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "curve-bender",
+        model: "cb/rits/zai-org/glm-5-3",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 1, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+    ];
+    state.catalog = routedCatalog;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = (sessionId: string) =>
+      act(() =>
+        root.render(
+          createElement(ModelIndicator, {
+            onToolApproval: () => {},
+            agentId: "agent",
+            sessionId,
+            harness: "pi",
+            provider: sessionId === "s2" ? null : "curve",
+            model: "cb/rits/zai-org/glm-5-3",
+            carried,
+            routed: true,
+            onChoose: vi.fn(),
+            onConfigure: vi.fn(),
+            onNewSession: state.newSession,
+          }),
+        ),
+      );
+    const click = (text: string) => {
+      const button = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes(text),
+      );
+      act(() => button?.click());
+    };
+    try {
+      render("s1");
+      click("Fast review");
+      click("Custom selection");
+      expect(container.textContent).toContain("Update “Fast review”");
+      render("s2");
+      expect(container.textContent).toContain("Save as a profile");
+      expect(container.textContent).not.toContain("Update “Fast review”");
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+    }
+  });
+});
+
+describe("the picker editing a profile in Settings", () => {
+  /** TEST_SCENARIO: Settings opens the picker on its Custom screen with no
+   * profile view, Save row or tool approval, every provider the owner holds,
+   * and a pick goes to the profile, never to the agent's next
+   * session. */
+  it("shows the Custom screen and hands a pick to the profile", () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "curve-bender",
+        model: "cb/rits/zai-org/glm-5-3",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 1, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+    ];
+    state.catalog = {
+      harness: "pi",
+      routed: true,
+      providers: [
+        {
+          connectionId: "curve",
+          alias: "cb",
+          template: "curve-bender",
+          displayName: "Curve",
+          status: "listed",
+          listedAt: null,
+          models: [model("cb", "owner-only")],
+        },
+      ],
+    };
+    state.chosenModel.mockReset();
+    const onChoose = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: null,
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+            edit: {
+              pair: {
+                harness: "pi",
+                provider: "curve",
+                model: "cb/rits/zai-org/glm-5-3",
+              },
+              providerName: "Curve",
+              onChoose,
+            },
+          }),
+        ),
+      );
+      const text = container.textContent ?? "";
+      expect(text).not.toContain("Primary model");
+      expect(text).not.toContain("Use a profile");
+      expect(text).not.toContain("Save as a profile");
+      expect(text).toContain("owner-only");
+      expect(
+        container.querySelector('[data-testid="tool-approval-picker"]'),
+      ).toBeNull();
+      const pi = [
+        ...container.querySelectorAll('[aria-label="Harness"] button'),
+      ].find((b) => b.textContent?.includes("Pi")) as HTMLButtonElement;
+      act(() => pi.click());
+      expect(onChoose).toHaveBeenCalledWith({
+        harness: "pi",
+        provider: "ibm",
+        model: null,
+      });
+      expect(state.chosenModel).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+      state.catalog = routedCatalog;
+    }
+  });
+});
+
+describe("a model from a provider the agent is not connected to", () => {
+  /** TEST_SCENARIO: the picker lists an owner's provider the agent does not
+   * hold like any other, with no visible marker, only a screen-reader hint;
+   * picking its model asks to connect it, and only a confirmed connect grants
+   * it and applies the pick. */
+  it("asks to connect the provider, then grants it and applies the pick", async () => {
+    state.catalog = {
+      ...routedCatalog,
+      providers: [
+        ...routedCatalog.providers,
+        {
+          connectionId: "conn-oai",
+          alias: "openai",
+          template: "openai",
+          displayName: "OpenAI",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("openai", "zz-unattached")],
+        },
+      ],
+    };
+    state.chosenModel.mockReset();
+    state.grant.mockClear();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = () =>
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+    const pick = () =>
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find((b) => b.textContent?.includes("zz-unattached"))!
+          .click(),
+      );
+    try {
+      render();
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find((b) => b.textContent?.includes("Custom selection"))
+          ?.click(),
+      );
+      expect(container.innerHTML).toMatch(
+        /OpenAI<span class="sr-only">, not connected<\/span>/,
+      );
+      expect(container.innerHTML).not.toContain('aria-label="not connected"');
+      expect(container.textContent).not.toContain("(not connected)");
+      const custom = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("Custom selection"),
+      );
+      if (custom) act(() => custom.click());
+
+      state.showConfirm.mockResolvedValueOnce(false);
+      pick();
+      await act(async () => {});
+      expect(state.showConfirm).toHaveBeenLastCalledWith(
+        expect.stringContaining("every model OpenAI offers"),
+        "Connect OpenAI to this agent?",
+        { confirmLabel: "Connect" },
+      );
+      expect(state.grant).not.toHaveBeenCalled();
+      expect(state.chosenModel).not.toHaveBeenCalled();
+
+      state.showConfirm.mockResolvedValueOnce(true);
+      pick();
+      await act(async () => {});
+      expect(state.grant).toHaveBeenCalledWith("conn-oai");
+      expect(state.chosenModel).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({
+          provider: "conn-oai",
+          model: "openai/zz-unattached",
+        }),
+      );
+    } finally {
+      act(() => root.unmount());
+      state.catalog = routedCatalog;
+    }
+  });
+});
+
+describe("a profile whose provider a pick connects", () => {
+  /** TEST_SCENARIO: the profile's provider is the owner's but not the
+   * agent's; the pick grants it, and the new chat starts on that provider and
+   * the profile's model, not on another provider with no model, though the
+   * agent's grant list read before the grant does not show it yet. */
+  it("starts the new chat on the provider the pick just granted", async () => {
+    profilesState = [
+      {
+        id: "p-oai",
+        name: "OpenAI review",
+        harness: "pi",
+        providerTemplate: "openai",
+        model: "openai/gpt-5.5",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 0, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: true },
+      },
+    ];
+    state.chosenModel.mockReset();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+      const row = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("OpenAI review"),
+      )!;
+      await act(async () => row.click());
+      expect(state.chosenModel).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({
+          harness: "pi",
+          provider: "conn-oai",
+          model: "openai/gpt-5.5",
+        }),
+      );
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+    }
+  });
+});
+
+describe("a harness picked without a model", () => {
+  /** TEST_SCENARIO: picking a harness in the new chat's picker clears the
+   * model; the pick waits for a model there and saves no chat default, which
+   * the server refuses without one. */
+  it("waits for a model before it saves the chat default", () => {
+    state.chosenModel.mockReset();
+    state.remember.mockReset();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find((b) => b.textContent?.includes("Custom selection"))
+          ?.click(),
+      );
+      const pi = [
+        ...container.querySelectorAll('[aria-label="Harness"] button'),
+      ].find((b) => b.textContent?.includes("Pi")) as HTMLButtonElement;
+      act(() => pi.click());
+      expect(state.chosenModel).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({ harness: "pi", model: null }),
+      );
+      expect(state.remember).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+});
+
+describe("the profile a new chat's pick came from", () => {
+  /** TEST_SCENARIO: a profile picked for one agent's next chat makes the Save
+   * row Update that profile, beside Save as a new profile, so a pick can still
+   * fork it (QA R4); once the picker shows another agent, whose pick never
+   * came from it, the row saves a new profile instead of writing that agent's
+   * pick into the first one. */
+  it("does not carry the picked profile to another agent", async () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "curve-bender",
+        model: "cb/rits/zai-org/glm-5-3",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 0, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+    ];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = (agentId: string) =>
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId,
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+    const click = (text: string) =>
+      act(() =>
+        [...container.querySelectorAll("button")]
+          .find((b) => b.textContent?.includes(text))!
+          .click(),
+      );
+    try {
+      render("agent");
+      click("Fast review");
+      click("Custom selection");
+      expect(container.textContent).toContain("Update “Fast review”");
+      expect(container.textContent).toContain("Save as a new profile");
+      render("agent-b");
+      expect(container.textContent).toContain("Save as a profile");
+      expect(container.textContent).not.toContain("Update “Fast review”");
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the profile a pick matches, after a reload", () => {
+  /** TEST_SCENARIO: a next chat whose values match a profile, with no pick made since the page loaded, still offers Update for that profile beside Save as a new profile once Custom selection opens (QA N2). */
+  it("offers Update for the matched profile", () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "curve-bender",
+        model: "cb/rits/zai-org/glm-5-3",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 1, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+    ];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalog = routedCatalog;
+    try {
+      const html = custom(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+      expect(html).toContain("Update “Fast review”");
+      expect(html).toContain("Save as a new profile");
+    } finally {
+      profilesState = [];
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the subagent slot while its provider is gone", () => {
+  /** TEST_SCENARIO: a next chat that fell back, its provider detached, still shows the custom subagent pick the saved default holds, its checkbox checked, in the one summary with its provider and a screen-reader hint that it is not connected, rather than the agent picking (QA N3, N4). */
+  it("shows the held pick", () => {
+    profilesState = [];
+    state.chosen = { harness: "pi", provider: "curve", model: null };
+    state.owned = [{ id: "anth", name: "Anthropic", type: "anthropic" }];
+    state.saved = {
+      platformSubagentProfileId: null,
+      platformSubagentSettings: {
+        "platformSubagent.harness": "pi",
+        "platformSubagent.model": "anthropic/claude-haiku-4-5",
+      },
+    };
+    state.catalog = { ...routedCatalog, providers: [] };
+    try {
+      const html = renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+      expect(html).toMatch(/type="checkbox"[^>]*checked=""/);
+      expect(html).toMatch(
+        /\(Anthropic\)<\/span><span class="sr-only">, not connected<\/span>/,
+      );
+    } finally {
+      state.chosen = null;
+      state.owned = [];
+      state.saved = undefined;
+      state.catalog = routedCatalog;
+    }
+  });
+});
+
+describe("the subagent slot's checkbox", () => {
+  /** TEST_SCENARIO: checking the box with nothing picked shows the subagent choices, whose Custom selection hint counts only the harnesses that list a model (QA P1), and writes nothing, so the slot stays the agent's until a row is picked; unchecking a slot that holds a pick clears it back to the agent picking. */
+  it("shows the choices, and unchecking clears the slot", () => {
+    profilesState = [];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalog = routedCatalog;
+    state.chosenModel.mockReset();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = () =>
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+    const box = () =>
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const customRows = () =>
+      [...container.querySelectorAll("button")].filter((b) =>
+        b.textContent?.startsWith("Custom selection"),
+      ).length;
+    try {
+      render();
+      expect(box().checked).toBe(false);
+      expect(customRows()).toBe(1);
+      act(() => box().click());
+      expect(box().checked).toBe(true);
+      expect(customRows()).toBe(2);
+      expect(container.textContent).toContain("1 harness");
+      state.catalog = { ...routedCatalog, providers: [] };
+      render();
+      expect(container.textContent).toContain("0 harnesses");
+      state.catalog = routedCatalog;
+      render();
+      expect(state.chosenModel).not.toHaveBeenCalled();
+      state.chosen = {
+        ...state.chosen,
+        settings: {
+          "platformSubagent.harness": "pi",
+          "platformSubagent.model": "ibm/gpt-5.5",
+        },
+      };
+      render();
+      act(() => box().click());
+      expect(state.chosenModel).toHaveBeenCalledWith(
+        "agent",
+        expect.not.objectContaining({
+          settings: expect.objectContaining({
+            "platformSubagent.model": expect.anything(),
+          }),
+        }),
+      );
+    } finally {
+      act(() => root.unmount());
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the profile order and the pick it matches", () => {
+  /** TEST_SCENARIO: the rows show the default for new agents first, yet a pick whose values two profiles share stays matched to the one first in the server's order, so sorting the list never moves a saved reference to its twin. */
+  it("sorts the rows without changing the matched profile", () => {
+    const twin = {
+      harness: "pi",
+      providerTemplate: "curve-bender",
+      model: "cb/rits/zai-org/glm-5-3",
+      settings: {},
+      usage: { agents: 0, channels: 0, schedules: 0 },
+      availability: { available: true, reason: null, attachable: false },
+    };
+    profilesState = [
+      { ...twin, id: "p-old", name: "Twin old", newAgentDefault: false },
+      { ...twin, id: "p-new", name: "Twin default", newAgentDefault: true },
+    ];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalog = routedCatalog;
+    try {
+      const html = renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+      expect(html.indexOf("Twin default")).toBeLessThan(
+        html.indexOf("Twin old"),
+      );
+      expect(html).toMatch(/aria-current="true"[^>]*><span[^>]*>Twin old/);
+      expect(html).not.toMatch(
+        /aria-current="true"[^>]*><span[^>]*>Twin default/,
+      );
+    } finally {
+      profilesState = [];
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the subagent slot before and after a chat's first message", () => {
+  /** TEST_SCENARIO: a Claude primary chat picks a runnable Codex subagent profile in the new-chat picker and in the running chat's picker alike (unification item 1), while the Codex profile stays out of the running chat's primary slot, whose harness is fixed. */
+  it("offers every profile to the subagent slot, the session's harness to the primary", () => {
+    const harnesses: HarnessCapability[] = [
+      ...carried,
+      { ...carried[0]!, name: "claude-code" },
+      { ...carried[0]!, name: "codex" },
+    ];
+    const runnable = {
+      providerTemplate: "curve-bender",
+      model: "cb/rits/zai-org/glm-5-3",
+      settings: {},
+      newAgentDefault: false,
+      usage: { agents: 0, channels: 0, schedules: 0 },
+      availability: { available: true, reason: null, attachable: false },
+    };
+    profilesState = [
+      {
+        ...runnable,
+        id: "p-claude",
+        name: "Claude high",
+        harness: "claude-code",
+      },
+      { ...runnable, id: "p-codex", name: "Codex deep", harness: "codex" },
+    ];
+    state.chosen = {
+      harness: "claude-code",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalog = { ...routedCatalog, harness: "claude-code" };
+    const onConfigure = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const rows = () =>
+      [...container.querySelectorAll("button")].filter((b) =>
+        b.textContent?.includes("Codex deep"),
+      );
+    const showSubagent = (before: number) => {
+      expect(rows()).toHaveLength(before);
+      act(() =>
+        container
+          .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+          .click(),
+      );
+      expect(rows()).toHaveLength(before + 1);
+      expect(rows().every((row) => !row.disabled)).toBe(true);
+    };
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "claude-code",
+            carried: harnesses,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+      showSubagent(1);
+      act(() =>
+        root.render(
+          createElement(ModelIndicator, {
+            onToolApproval: () => {},
+            agentId: "agent",
+            sessionId: "s1",
+            harness: "claude-code",
+            provider: "curve",
+            model: "cb/rits/zai-org/glm-5-3",
+            carried: harnesses,
+            routed: true,
+            onChoose: vi.fn(),
+            onConfigure,
+            onNewSession: state.newSession,
+          }),
+        ),
+      );
+      showSubagent(0);
+      act(() => rows()[0]!.click());
+      expect(onConfigure).toHaveBeenCalledWith(
+        expect.objectContaining({ "platformSubagent.harness": "codex" }),
+      );
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the picker choosing for a schedule or a channel", () => {
+  /** TEST_SCENARIO: given a target, the chat's picker opens on the target's two slots, marks the profiles the target names, offers no tool approval, and hands a pick to the target with the slot references instead of saving the chat default. */
+  it("opens on the target's slots and hands a pick back", () => {
+    const runnable = {
+      harness: "pi",
+      providerTemplate: "curve-bender",
+      model: "cb/rits/zai-org/glm-5-3",
+      settings: {},
+      newAgentDefault: false,
+      usage: { agents: 0, channels: 0, schedules: 0 },
+      availability: { available: true, reason: null, attachable: false },
+    };
+    profilesState = [
+      { ...runnable, id: "p-main", name: "Main" },
+      { ...runnable, id: "p-twin", name: "Twin" },
+    ];
+    state.catalog = routedCatalog;
+    state.chosenModel.mockReset();
+    const onChoose = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+            target: {
+              slots: {
+                profileId: "p-twin",
+                pair: null,
+                platformSubagentProfileId: "p-main",
+                platformSubagentSettings: null,
+              },
+              label: "Schedule harness and model",
+              placeholder: "The agent's chat default",
+              onChoose,
+            },
+          }),
+        ),
+      );
+      const current = [
+        ...container.querySelectorAll('[aria-current="true"]'),
+      ].map((row) => row.textContent);
+      expect(current).toEqual([
+        expect.stringContaining("Twin"),
+        expect.stringContaining("Main"),
+      ]);
+      expect(container.innerHTML).not.toContain("Tool approval");
+      const main = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.startsWith("Main"),
+      );
+      act(() => main!.click());
+      expect(onChoose).toHaveBeenCalledWith(
+        expect.objectContaining({ harness: "pi" }),
+        expect.objectContaining({ profileId: "p-main" }),
+      );
+      expect(state.chosenModel).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+    }
   });
 });
