@@ -147,6 +147,9 @@ function toSessionViewFromApi(agentId: string, s: Session): SessionView {
     mode: SESSION_MODE[s.mode],
     createdAt: s.createdAt,
     scheduleId: s.scheduleId,
+    ...(s.continuedScheduleIds !== undefined && {
+      continuedScheduleIds: s.continuedScheduleIds,
+    }),
     initialization: s.initialization ?? null,
     threadTs: s.threadTs,
     title: s.title,

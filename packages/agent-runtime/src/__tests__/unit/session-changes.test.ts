@@ -18,6 +18,7 @@ function fakeStore(): SessionMetadataStore {
     finishRun: () => {},
     runStartsOf: () => [],
     recordSender: () => {},
+    recordContinuation: () => {},
     sendersOf: () => [],
     recordVerdict: () => {},
     verdictsOf: () => [],
