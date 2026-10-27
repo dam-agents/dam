@@ -48,12 +48,12 @@ Read [channel turns](../../architecture/channel-turns.md) "The turn watch" ("Wha
 
 ## Acceptance criteria
 
-- [ ] In a Slack thread, an agent asked to post READY, then wait 60 seconds, then post nothing more, answers a question that mentions it during the wait, in another reply within five minutes.
-- [ ] The same holds on Codex and on Claude.
-- [ ] A follow-up that the agent answered in its single reply gets no nudge and no second reply.
-- [ ] A follow-up that needs no answer, such as "thanks", can end with `no_reply_needed` and gets no reply.
+- [x] In a Slack thread, an agent asked to post READY, then wait 60 seconds, then post nothing more, answers a question that mentions it during the wait, in another reply within five minutes.
+- [x] The same holds on Codex and on Claude.
+- [x] A follow-up that the agent answered in its single reply gets no nudge and no second reply.
+- [x] A follow-up that needs no answer, such as "thanks", can end with `no_reply_needed` and gets no reply.
 - [ ] In Telegram, a steered follow-up that the agent leaves unanswered leaves a warning in the api-server log.
-- [ ] `mise run check` and `mise run test` pass for `api-server`.
+- [x] `mise run check` and `mise run test` pass for `api-server`.
 
 ## Smoke test
 

@@ -1154,10 +1154,38 @@ function mayLeaveHarnessRunning(
   );
 }
 
+export interface UnansweredFollowUp {
+  eventTs: string;
+  speaker?: string;
+  text?: string;
+}
+
+function followUpNudge(
+  threadTs: string,
+  followUps: readonly UnansweredFollowUp[],
+): string {
+  return [
+    "<turn-undelivered>",
+    "You replied in this Slack conversation, but these messages arrived while you were working and got no answer:",
+    ...followUps.map(
+      (m) => `[ts ${m.eventTs}] ${m.speaker ?? "someone"}: ${m.text ?? ""}`,
+    ),
+    `Answer only these messages now with the reply tool (threadTs="${threadTs}"); do not repeat what you already posted.`,
+    "If they need no answer, call no_reply_needed instead.",
+    "</turn-undelivered>",
+  ].join("\n");
+}
+
 export function undeliveredNudge(
   threadTs: string,
-  opts: { sawFailure: boolean; outOfMemory?: boolean },
+  opts: {
+    sawFailure: boolean;
+    outOfMemory?: boolean;
+    followUps?: readonly UnansweredFollowUp[];
+  },
 ): string {
+  if (opts.followUps !== undefined && opts.followUps.length > 0)
+    return followUpNudge(threadTs, opts.followUps);
   return [
     "<turn-undelivered>",
     opts.sawFailure
@@ -1515,6 +1543,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     hasThread?: boolean;
     hadAttachments?: boolean;
     whisper?: SlackTurnWhisper;
+    steered?: boolean;
+    speaker?: string;
   };
 
   type AddressedMessage = {
@@ -1846,7 +1876,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     match: (ref: TurnRef) => boolean,
     opts: { messaged?: boolean; replyText?: string } = {},
   ) {
-    const engaged = findTurnRef(instanceName, match);
+    noteEngaged(findTurnRef(instanceName, match), opts);
+  }
+
+  function noteEngaged(
+    engaged: TurnRef | undefined,
+    opts: { messaged?: boolean; replyText?: string } = {},
+  ) {
     if (!engaged) return;
     engaged.posted = true;
     if (opts.messaged) engaged.messaged = true;
@@ -2661,6 +2697,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }),
     ]);
     const footer = { ...base, emoji };
+    const engaged = findTurnRef(
+      instanceName,
+      (ref) => ref.channel === turn.channel && ref.threadTs === turn.threadTs,
+    );
     try {
       await gw.postEphemeral({
         channel: turn.channel,
@@ -2673,11 +2713,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch (err) {
       return { error: formatError(err) };
     }
-    noteEngagedTurn(
-      instanceName,
-      (ref) => ref.channel === turn.channel && ref.threadTs === turn.threadTs,
-      { messaged: true, replyText: args.text },
-    );
+    noteEngaged(engaged, { messaged: true, replyText: args.text });
     return { ok: true as const };
   }
 
@@ -2782,6 +2818,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     sawFailure: boolean;
     restartsAtStart?: PodRestartState;
     externalActorId?: string;
+    followUps?: readonly UnansweredFollowUp[];
   }): Promise<void> {
     const { instanceName, sessionId, threadKey, threadTs } = args;
     const disposition = () =>
@@ -2812,6 +2849,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             undeliveredNudge(threadTs, {
               sawFailure: args.sawFailure,
               outOfMemory,
+              ...(args.followUps && { followUps: args.followUps }),
             }),
             { resumeSessionId: sessionId },
           );
@@ -2843,10 +2881,44 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
   }
 
-  function deliveredBy(refs: TurnRef[], end: WatchedTurnEnd): boolean {
+  function answeredRef(ref: TurnRef, end: WatchedTurnEnd): boolean {
     return end === "interrupted"
-      ? refs.some((ref) => ref.declined || ref.handedOff)
-      : refs.some((ref) => ref.posted || ref.declined || ref.handedOff);
+      ? ref.declined === true || ref.handedOff === true
+      : ref.posted === true || ref.declined === true || ref.handedOff === true;
+  }
+
+  function newestSteeredPerTarget(refs: TurnRef[]): TurnRef[] {
+    const newest = new Map<string, TurnRef>();
+    for (const ref of refs) if (ref.steered) newest.set(ref.threadTs, ref);
+    return [...newest.values()];
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a turn is answered when its agent replied,
+   * declined, handed off or reacted. A message steered into the turn joins it
+   * after the agent may already have replied, so a turn carrying steered
+   * messages is answered only when, for each reply target, its newest steered
+   * message got its own reply, decline, hand-off or reaction.
+   */
+  function deliveredBy(refs: TurnRef[], end: WatchedTurnEnd): boolean {
+    const steered = newestSteeredPerTarget(refs);
+    return steered.length === 0
+      ? refs.some((ref) => answeredRef(ref, end))
+      : steered.every((ref) => answeredRef(ref, end));
+  }
+
+  function unansweredFollowUps(refs: TurnRef[]): TurnRef[] {
+    const open = new Set(
+      newestSteeredPerTarget(refs)
+        .filter((ref) => !answeredRef(ref, "clean"))
+        .map((ref) => ref.threadTs),
+    );
+    return refs.filter(
+      (ref) =>
+        ref.steered === true &&
+        open.has(ref.threadTs) &&
+        !answeredRef(ref, "clean"),
+    );
   }
 
   function watchUndeliveredTurn(turn: {
@@ -2860,6 +2932,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     restartsAtStart?: PodRestartState;
     externalActorId?: string;
     endedAs?: WatchedTurnEnd;
+    followUps?: readonly UnansweredFollowUp[];
   }): void {
     const { instanceName, sessionId, refs, endedAs, ...nudge } = turn;
     if (!serving) {
@@ -3056,15 +3129,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       sawFailure: boolean,
       ending:
         { endedAs: WatchedTurnEnd } | { restartsAtStart?: PodRestartState },
+      followUps: TurnRef[] = [],
     ) =>
       watchUndeliveredTurn({
         instanceName,
         sessionId,
         threadKey,
-        threadTs: replyThreadTs,
+        threadTs: followUps.at(-1)?.threadTs ?? replyThreadTs,
         refs,
-        anchorRef: turnRefs.at(-1)!,
+        anchorRef: followUps.at(-1) ?? turnRefs.at(-1)!,
         sawFailure,
+        ...(followUps.length > 0 && { followUps }),
         ...(ctx.externalActorId
           ? { externalActorId: ctx.externalActorId }
           : {}),
@@ -3356,18 +3431,30 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         !stopped() &&
         !deliveredBy(settledRefs, "clean")
       ) {
+        const followUps = settledRefs.some((ref) => ref.posted)
+          ? unansweredFollowUps(settledRefs)
+          : [];
         getLogger().warn(
           {
             agentId: instanceName,
             channelId: ctx.channel,
             threadTs: replyThreadTs,
             eventTs,
+            unansweredFollowUps: followUps.length,
           },
-          "slack.turn.unanswered: the agent finished an addressed turn without " +
-            "posting a reply or a reaction",
+          followUps.length > 0
+            ? "slack.turn.unanswered: the agent replied, but messages steered into the turn after it got no answer"
+            : "slack.turn.unanswered: the agent finished an addressed turn without " +
+                "posting a reply or a reaction",
         );
         if (nudgeSessionId !== undefined)
-          watchTurn(nudgeSessionId, settledRefs, false, { endedAs: "clean" });
+          watchTurn(
+            nudgeSessionId,
+            settledRefs,
+            false,
+            { endedAs: "clean" },
+            followUps,
+          );
       }
       await presenter.clearStatus();
       annotateSpan({
@@ -5206,9 +5293,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     batch: PendingMessage[],
   ): string {
     const one = batch.length === 1;
+    const them = one ? "it" : "them";
     return [
       "<new-messages>",
-      `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Answer everything in one reply rather than replying more than once.`,
+      `${one ? "Another message" : `${batch.length} more messages`} arrived in this same Slack conversation while you were working.`,
+      "If you have not posted a reply yet, answer everything in one reply.",
+      conversation.oneThread
+        ? `If you already posted a reply that does not cover ${them}, post one more reply that answers only ${them}, with the reply tool and threadTs="${conversation.threadTs}".`
+        : `If you already posted a reply that does not cover ${them}, post one more reply that answers only ${them}, with the reply tool.`,
+      `If ${one ? "it needs" : "they need"} no answer, call no_reply_needed for ${them}.`,
       ...(conversation.oneThread
         ? []
         : [
@@ -5333,6 +5426,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               ...(conversation.whisper
                 ? { whisper: conversation.whisper }
                 : {}),
+              steered: true,
+              speaker: msg.speaker,
             };
             beginTurn(conversation.instanceName, ref);
             steeredRefs.push(ref);
@@ -6322,6 +6417,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ]);
       const footer = { ...base, emoji };
       const contextBlock = agentContextBlock(footer);
+      const engaged = findTurnRef(
+        instanceName,
+        (ref) => ref.channel === target.id,
+      );
 
       try {
         let attachmentError: string | null = null;
@@ -6361,7 +6460,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             return { error: formatError(err) };
           }
         }
-        noteEngagedTurn(instanceName, (ref) => ref.channel === target.id, {
+        noteEngaged(engaged, {
           messaged: true,
           ...(text ? { replyText: text } : {}),
         });
@@ -6637,6 +6736,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         agentPersona(gw, instanceName, target),
       ]);
       const footer = { ...base, emoji };
+      const engaged = findTurnRef(
+        instanceName,
+        (ref) => ref.threadTs === threadTs && ref.channel === target.id,
+      );
       if (attachmentOnly) {
         try {
           await gw.uploadFile({
@@ -6651,11 +6754,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         } catch (err) {
           return { error: formatError(err) };
         }
-        noteEngagedTurn(
-          instanceName,
-          (ref) => ref.threadTs === threadTs && ref.channel === target.id,
-          { messaged: true },
-        );
+        noteEngaged(engaged, { messaged: true });
         return { ok: true as const };
       }
       try {
@@ -6688,11 +6787,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             ? null
             : fileShareBlocks(sign(args.text, "**"), agentContextBlock(footer)),
         );
-        noteEngagedTurn(
-          instanceName,
-          (ref) => ref.threadTs === threadTs && ref.channel === target.id,
-          { messaged: true, replyText: args.text },
-        );
+        noteEngaged(engaged, { messaged: true, replyText: args.text });
         return uploadError
           ? { ok: true as const, attachmentError: uploadError }
           : { ok: true as const };

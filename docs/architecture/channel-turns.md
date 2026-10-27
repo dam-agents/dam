@@ -198,6 +198,9 @@ The watch runs on Slack's addressed turns only: an ambient turn is never nudged 
 
 What counts as answered spans everything the turn gathered, not the batch it opened with: a message steered into a running turn takes its own place in that turn, and the agent's one reply may land against it rather than the message that started things.
 Judging on the opening batch alone reads an answered turn as silent — and then repairs it, which is how a person ends up sent the same answer twice.
+A steered message can arrive after the agent already replied, so a turn carrying one is answered only when, for each reply target, its newest steered message got a reply, decline, hand-off or reaction of its own; a reply counts for the message that was newest when the agent called the tool.
+A turn that replied but left such messages unanswered gets a nudge that names them, and only them.
+Telegram has no nudge: such a turn leaves a warning in the log.
 
 A turn that never lost its relay needs no watch, and is judged the moment it ends.
 An addressed Slack turn that finishes having posted nothing, declined nothing and handed nothing on has left its answer undelivered — the agent wrote it as ordinary text, and the relay discards that — so it goes to the same watch with its ending already known: no poll, the verdict runs at once, and the recovery is the one the watch would have reached anyway.

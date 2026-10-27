@@ -627,6 +627,9 @@ export function createTelegramWorker(deps: {
   } | null = null;
   let username: string | null = deps.configuredBotUsername ?? null;
   const lastThread = new Map<string, Thread>();
+  const lastPostAt = new Map<string, number>();
+  const notePost = (agentId: string, chatId: string) =>
+    lastPostAt.set(`${agentId}|${chatId}`, Date.now());
 
   async function findThreadSession(agentId: string, threadId: string) {
     const acp = makeAcpClient(agentId);
@@ -820,11 +823,18 @@ export function createTelegramWorker(deps: {
     ConversationQueue<TelegramPendingMessage>
   >();
 
-  function steerFrame(batch: TelegramPendingMessage[]): string {
+  function steerFrame(
+    threadId: string,
+    batch: TelegramPendingMessage[],
+  ): string {
     const one = batch.length === 1;
+    const them = one ? "it" : "them";
     return [
       "<new-messages>",
-      `${one ? "Another message" : `${batch.length} more messages`} arrived in this chat while you were working. Read ${one ? "it" : "them"} before you reply, and answer everything in one reply rather than replying more than once.`,
+      `${one ? "Another message" : `${batch.length} more messages`} arrived in this same Telegram chat while you were working.`,
+      "If you have not sent a reply yet, answer everything in one reply.",
+      `If you already sent a reply that does not cover ${them}, send one more message that answers only ${them}, with the \`${OUTBOUND_TOOL_PREFIX}send_channel_message\` tool, channel="telegram" and chatId="${threadId}".`,
+      `If ${one ? "it needs" : "they need"} no answer, call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` for ${them}.`,
       ...batch.map((m) => `[@${m.author.userName}] ${m.text}`),
       "</new-messages>",
     ].join("\n");
@@ -836,11 +846,13 @@ export function createTelegramWorker(deps: {
     threadId: string,
   ): ConversationQueue<TelegramPendingMessage> {
     let ambientTurnRunning = false;
+    let steeredAt: number | null = null;
     return createConversationQueue<TelegramPendingMessage>({
       settleMs: deps.settleMs ?? 0,
       canSteer: (message) => !message.ambient,
       runTurn: async (batch, onSession, steersSettled) => {
         ambientTurnRunning = batch.every((m) => m.ambient);
+        steeredAt = null;
         try {
           await relayToInstance(
             agentId,
@@ -851,6 +863,11 @@ export function createTelegramWorker(deps: {
           );
         } finally {
           ambientTurnRunning = false;
+          if (steeredAt !== null && (lastPostAt.get(key) ?? 0) < steeredAt)
+            getLogger().warn(
+              { agentId, threadId },
+              "telegram.turn.steer_unanswered: a message steered into the turn got no send_channel_message after it",
+            );
         }
       },
       steer: async (sessionId, batch, request) => {
@@ -858,7 +875,7 @@ export function createTelegramWorker(deps: {
         return steerChannelTurn(
           makeAcpClient(agentId),
           sessionId,
-          steerFrame(batch),
+          steerFrame(threadId, batch),
           request,
           { surface: "telegram", fields: { agentId, threadId } },
         );
@@ -883,6 +900,7 @@ export function createTelegramWorker(deps: {
           { agentId, threadId, messages: batch.length },
           "telegram.turn.steered",
         );
+        steeredAt = Date.now();
       },
       onEmpty: () => {
         telegramQueues.delete(key);
@@ -1079,6 +1097,7 @@ export function createTelegramWorker(deps: {
           return { error: "conversation is not connected to this agent" };
         try {
           await bot.adapter.postMessage(conversationId, payload);
+          notePost(agentId, conversationId);
           return { ok: true as const };
         } catch (err) {
           return { error: err instanceof Error ? err.message : String(err) };
@@ -1093,6 +1112,7 @@ export function createTelegramWorker(deps: {
         };
       try {
         await thread.post(payload);
+        notePost(agentId, thread.id);
         return { ok: true as const };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
