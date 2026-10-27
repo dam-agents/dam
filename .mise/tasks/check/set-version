@@ -21,7 +21,8 @@ for sed in "${seds[@]}"; do
   git -C "$r" init -q && git -C "$r" add . && git -C "$r" commit -qm base
   (cd "$r" && PATH="$(dirname "$sed"):$PATH" usage_version=10.0.1-rc10 "$tasks/release/set-version" >/dev/null 2>&1) \
     || { echo "FAIL: release:set-version failed with $sed" >&2; exit 1; }
-  got="$(cd "$r" && "$tasks/check/version")"
+  # A tag run of CI exports its own GITHUB_REF, which check:version compares.
+  got="$(cd "$r" && GITHUB_REF=refs/tags/v10.0.1-rc10 "$tasks/check/version")"
   [ "$got" = "OK: version 10.0.1-rc10" ] || { echo "FAIL: with $sed: $got" >&2; exit 1; }
   [ -z "$(git -C "$r" status --porcelain)" ] && [ "$(git -C "$r" log -1 --format=%s)" = "bump: v10.0.1-rc10" ] \
     || { echo "FAIL: with $sed the bump is not one clean commit" >&2; exit 1; }
