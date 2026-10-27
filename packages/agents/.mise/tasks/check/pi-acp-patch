@@ -18,8 +18,10 @@ if (pinned === undefined || pinned !== patched) {
       "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72), " +
       "reports a reply cut at the output limit as max_tokens, " +
       "fails a turn whose model request failed (https://github.com/svkozak/pi-acp/issues/135), " +
-      "writes no retry notice into the reply " +
-      "or hands pi the session ref of session/new and session/load, drop the edits it makes unnecessary " +
+      "writes no retry notice into the reply, " +
+      "hands pi the session ref of session/new and session/load " +
+      "or serves _session/steering and answers promptRequired for a steer that reaches pi after its run settled " +
+      "(https://github.com/svkozak/pi-acp/pull/115 does not), drop the edits it makes unnecessary " +
       "(packages/agents/pi-agent/README.md, \"pi-acp patch\"); " +
       "otherwise confirm its edits still apply and update PATCHED_VERSION.",
   );

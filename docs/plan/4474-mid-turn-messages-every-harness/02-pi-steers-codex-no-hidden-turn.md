@@ -65,11 +65,11 @@ In pi-acp, read `dist/index.js`; in Pi, read `dist/modes/rpc/rpc-mode.js` and `d
 
 ## Acceptance criteria
 
-- [ ] On a Pi agent, the machine log has no `pi-acp-patch: not applied` line, and a Pi session's `session/new` result carries `_meta.platform.steering: "native"`.
-- [ ] In a Pi chat, a message sent while a command runs joins the running work at the next steer point, and the agent acts on it in that work.
-- [ ] Driven directly over stdio, pi-acp answers `promptRequired` to a steer on an idle session, and answers `promptRequired` again, after clearing Pi's queue, to a steer that reaches Pi after its run ended.
-- [ ] On a Codex agent, the machine log has no `codex-acp-patch: not applied` line, and a mid-turn message still steers as before.
-- [ ] The four checks of step 6 pass.
+- [x] On a Pi agent, the machine log has no `pi-acp-patch: not applied` line, and a Pi session's `session/new` result carries `_meta.platform.steering: "native"`.
+- [x] In a Pi chat, a message sent while a command runs joins the running work at the next steer point, and the agent acts on it in that work.
+- [x] Driven directly over stdio, pi-acp answers `promptRequired` to a steer on an idle session, and answers `promptRequired` again, after clearing Pi's queue, to a steer that reaches Pi after its run ended.
+- [x] On a Codex agent, the machine log has no `codex-acp-patch: not applied` line, and a mid-turn message still steers as before.
+- [x] The four checks of step 6 pass.
 
 ## Smoke test
 
