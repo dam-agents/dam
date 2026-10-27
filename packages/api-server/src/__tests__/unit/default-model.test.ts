@@ -341,6 +341,7 @@ describe("the one-time default conversion", () => {
           chat: saved,
           channel: null,
           scheduled: null,
+          chatProfileId: null,
         }),
         write: async () => {},
         clear: async () => {},
@@ -733,5 +734,34 @@ describe("defaultModelNoticesOf", () => {
         runsUnattended: false,
       }),
     ).toBe("changed");
+  });
+});
+
+describe("defaultModelNoticesOf — a chat default held by a profile", () => {
+  const input = {
+    agentId: "agent-1",
+    routed: true,
+    saved: {
+      chat: {
+        harness: "claude-code",
+        provider: "conn-1",
+        model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      },
+      channel: null,
+      scheduled: null,
+    },
+    note: null,
+    grantedAliases: new Set(["cb"]),
+    runsUnattended: true,
+  };
+
+  /** TEST_SCENARIO: a chat profile whose provider the Agent cannot run reads as a gone provider, not as a working default. */
+  it("says the provider is gone when the profile cannot run here", () => {
+    expect(
+      defaultModelNoticesOf({ ...input, profileUnavailable: true }).map(
+        (n) => n.state,
+      ),
+    ).toEqual(["provider-gone"]);
+    expect(defaultModelNoticesOf(input)).toEqual([]);
   });
 });

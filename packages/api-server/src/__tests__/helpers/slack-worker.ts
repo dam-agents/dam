@@ -8,6 +8,7 @@ import {
 } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient, AcpSessionInfo } from "../../core/acp-client.js";
 import type { AgentWorkspaceFilesFactory } from "../../modules/channels/infrastructure/agent-workspace-files.js";
+import type { ChannelPair } from "../../modules/channels/infrastructure/channel-profile.js";
 import { stubTurnAttendance } from "./turn-attendance.js";
 import { stubWorkspaceFiles } from "./workspace-files.js";
 
@@ -27,6 +28,7 @@ export function slackWorkerHarness(
     settleMs?: number;
     makeAcp?: (base: AcpClient) => AcpClient;
     workspaceFiles?: AgentWorkspaceFilesFactory;
+    channelPair?: ChannelPair;
   } = {},
 ) {
   const boundChannelId = opts.boundChannelId ?? "C1";
@@ -60,6 +62,7 @@ export function slackWorkerHarness(
 
   const worker = createSlackWorker({
     makeAcpClient: () => acp,
+    ...(opts.channelPair ? { channelPair: opts.channelPair } : {}),
     createGateway: () => gw,
     agents: () => agents,
     identityLinks: { resolve: async () => null } as never,
@@ -106,5 +109,5 @@ export function slackWorkerHarness(
     return done();
   }
 
-  return { gw, prompts, worker, settled };
+  return { gw, prompts, created, worker, settled };
 }

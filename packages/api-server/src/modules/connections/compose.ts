@@ -6,6 +6,7 @@ import {
   type SecretRequestsService,
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
+import { getLogger } from "../../core/logger.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
 import { readConnectionTemplateIds } from "./infrastructure/connection-template-ids.js";
@@ -34,6 +35,11 @@ import {
   REMOVED_PROVIDER_TEMPLATE_IDS,
   type ManagedProviderConnections,
 } from "./services/connections-service.js";
+import {
+  createProviderModelCatalog,
+  type ProviderModelCatalog,
+} from "./services/provider-model-catalog.js";
+import { loadShippedHarnessFacts } from "./infrastructure/shipped-harness-manifests.js";
 import {
   createContributionFanOut,
   type FanOutPort,
@@ -80,6 +86,7 @@ export interface ConnectionsBootCompose {
   providerKeyProbe: ProviderKeyProbe;
   refreshLoop: OAuthRefreshLoop;
   accountLabelBackfill: AccountLabelBackfill;
+  providerModelCatalog: ProviderModelCatalog;
 }
 
 export interface ComposeConnectionsAtBootOpts {
@@ -137,6 +144,12 @@ export function composeConnectionsAtBoot(
     providerKeyProbe,
     refreshLoop,
     accountLabelBackfill,
+    providerModelCatalog: createProviderModelCatalog({
+      secretStore: opts.secretStore,
+      shipped: loadShippedHarnessFacts({
+        log: (m) => getLogger().warn(m),
+      }),
+    }),
   };
 }
 
@@ -243,6 +256,7 @@ export function composeConnectionsForOwner(opts: {
   maxSharedKbConnections?: number;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
+  providerModelCatalog: ProviderModelCatalog;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -295,6 +309,7 @@ export function composeConnectionsForOwner(opts: {
     resolveKbShare: createKbShareResolver(opts.db),
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey,
     harnesses: opts.harnesses,
+    providerModelCatalog: opts.providerModelCatalog,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),

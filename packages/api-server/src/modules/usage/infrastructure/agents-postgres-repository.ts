@@ -122,11 +122,17 @@ export function fillAgentStarterKitFacts(db: Db) {
   };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: a deleted Agent drops its profile references, or its hidden row would keep those profiles undeletable; restored, it has no chat default and converts one on its first hello. */
 export function markAgentDeleted(db: Db) {
   return async (id: string): Promise<void> => {
     await db
       .update(agents)
-      .set({ deletedAt: sql`NOW()`, ...CLEARED_RUNTIME_STATE })
+      .set({
+        deletedAt: sql`NOW()`,
+        sessionProfile: null,
+        platformSubagentProfile: null,
+        ...CLEARED_RUNTIME_STATE,
+      })
       .where(and(eq(agents.id, id), isNull(agents.deletedAt)));
   };
 }

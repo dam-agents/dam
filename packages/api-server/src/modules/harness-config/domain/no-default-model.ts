@@ -6,7 +6,7 @@ export class NoDefaultModelError extends Error {
       opts.pending
         ? "this agent is still setting up its default model; try again in a minute"
         : model === undefined
-          ? "this agent has no default model; set one on its Providers page"
+          ? "this agent has no default model; pick a model in one of its chats"
           : `no provider this agent holds serves ${model}; attach its provider or pick another model`,
     );
     this.name = "NoDefaultModelError";

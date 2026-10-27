@@ -12,6 +12,8 @@ import {
   type DbTx,
   schedules as schedulesTable,
 } from "db";
+import { resolvedSubagent } from "../../harness-config/domain/session-pair.js";
+import type { ProfileResolver } from "../../profiles/index.js";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
 import type {
@@ -129,7 +131,49 @@ function rowToSchedule(row: InternalRow): Schedule {
   };
 }
 
-export function createSchedulesRepository(db: Db): SchedulesRepository {
+export function createSchedulesRepository(
+  db: Db,
+  resolveProfile: ProfileResolver,
+): SchedulesRepository {
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile is read with the values the profile resolves to now, so the fire, the panel and the CLI all see them; one that cannot run carries none, and why. Its subagent slot is resolved beside them, as a chat start resolves it. A write stores the references alone. */
+  async function effective(row: InternalRow): Promise<Schedule> {
+    const primary = await withProfile(rowToSchedule(row));
+    const subagentSettings = await resolvedSubagent(
+      {
+        platformSubagentProfileId: primary.spec.platformSubagentProfile ?? null,
+        platformSubagentSettings: primary.spec.platformSubagentSettings ?? null,
+      },
+      resolveProfile,
+      primary.agentId,
+    );
+    return subagentSettings ? { ...primary, subagentSettings } : primary;
+  }
+
+  async function withProfile(schedule: Schedule): Promise<Schedule> {
+    const profileId = schedule.spec.profile;
+    if (profileId === undefined) return schedule;
+    const resolved = await resolveProfile({
+      profileId,
+      agentId: schedule.agentId,
+    });
+    const { harness: _h, model: _m, settings: _s, ...spec } = schedule.spec;
+    if (resolved && !resolved.unavailable)
+      return {
+        ...schedule,
+        spec: {
+          ...spec,
+          harness: resolved.pair.harness,
+          model: resolved.profile.model,
+          ...(resolved.pair.settings && { settings: resolved.pair.settings }),
+        },
+      };
+    return {
+      ...schedule,
+      spec,
+      profileIssue: resolved?.unavailable ?? "its profile is gone",
+    };
+  }
+
   return {
     async listForOwner(owner, opts): Promise<Schedule[]> {
       const agentIds = opts?.agentIds;
@@ -151,7 +195,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
             ? DEFAULT_LIMIT
             : Math.min(Math.max(1, Math.trunc(opts.limit)), MAX_LIMIT),
         )) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return Promise.all(rows.map(effective));
     },
 
     async list(agentId, owner): Promise<Schedule[]> {
@@ -165,7 +209,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           ),
         )
         .orderBy(asc(schedulesTable.createdAt))) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return Promise.all(rows.map(effective));
     },
 
     async get(id, owner): Promise<Schedule | null> {
@@ -175,7 +219,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .where(
           and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)),
         )) as InternalRow[];
-      return rows[0] ? rowToSchedule(rows[0]) : null;
+      return rows[0] ? effective(rows[0]) : null;
     },
 
     async getById(id): Promise<Schedule | null> {
@@ -183,7 +227,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .select()
         .from(schedulesTable)
         .where(eq(schedulesTable.id, id))) as InternalRow[];
-      return rows[0] ? rowToSchedule(rows[0]) : null;
+      return rows[0] ? effective(rows[0]) : null;
     },
 
     async getOwnerById(id): Promise<string | null> {
@@ -199,7 +243,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .select()
         .from(schedulesTable)
         .where(eq(schedulesTable.enabled, true))) as InternalRow[];
-      return rows.map(rowToSchedule);
+      return Promise.all(rows.map(effective));
     },
 
     async create(input): Promise<Schedule> {
@@ -219,9 +263,14 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
     },
 
     async updateSpec(id, owner, spec): Promise<Schedule | null> {
+      const { harness: _h, model: _m, settings: _s, ...reference } = spec;
       const result = await db
         .update(schedulesTable)
-        .set({ spec, enabled: spec.enabled, updatedAt: new Date() })
+        .set({
+          spec: spec.profile ? reference : spec,
+          enabled: spec.enabled,
+          updatedAt: new Date(),
+        })
         .where(and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)))
         .returning();
       if (result.length === 0) return null;

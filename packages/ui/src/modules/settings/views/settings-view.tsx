@@ -16,6 +16,7 @@ import { FeaturesTab } from "../../features/components/features-tab.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { ProfileSection } from "../../profiles/components/profile-section.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
@@ -172,6 +173,8 @@ export function SettingsView() {
               <section className="mb-8">
                 <ProviderSection />
               </section>
+
+              <ProfileSection />
             </div>
           </div>
         )}

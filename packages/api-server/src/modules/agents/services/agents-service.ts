@@ -29,6 +29,7 @@ import {
   type RuntimeFleetAgent,
   type TemplateUpdate,
   type UpgradeAgentError,
+  type SessionChoiceSlots,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -146,7 +147,9 @@ export interface TelegramBindingPort {
     conversationId: string,
     text: string,
   ): Promise<{ ok: true } | { error: string }>;
-  listConversations(agentId: string): Promise<{ id: string; title: string }[]>;
+  listConversations(
+    agentId: string,
+  ): Promise<({ id: string; title: string } & Partial<SessionChoiceSlots>)[]>;
   unbind(conversationId: string): Promise<void>;
 }
 
@@ -573,6 +576,12 @@ export function createAgentsService(deps: {
   defaultHarness?: string;
   telemetry?: boolean;
   storageGate?: StorageGatePort;
+  /** UNIT_BOUNDARY_DESCRIPTION: the owner's default for new agents: its harness, the Connection a new Agent on that harness is granted in place of the harness's provider order, and the binding of the Agent's chat default to it, which answers why it did not bind; null while the owner has none to offer. */
+  defaultProfile?: () => Promise<{
+    harness: string;
+    connectionId: string;
+    bind: (agentId: string) => Promise<string | null>;
+  } | null>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -1246,6 +1255,19 @@ export function createAgentsService(deps: {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;
+      /* UNIT_BOUNDARY_DESCRIPTION: a kit that names its model and an Environment decide their own default, so the owner's default profile stays out of them. */
+      const profileDefault =
+        deps.defaultProfile &&
+        input.starterKitDefaultModel === undefined &&
+        input.environmentOf === undefined
+          ? await deps.defaultProfile().catch((err: unknown) => {
+              getLogger().warn(
+                { err },
+                "agent create: the default profile could not be read; the harness's provider order decides",
+              );
+              return null;
+            })
+          : null;
       const requestedTemplate =
         input.templateId ??
         (input.image === undefined ? DEFAULT_TEMPLATE_ID : undefined);
@@ -1278,7 +1300,7 @@ export function createAgentsService(deps: {
         if (Object.hasOwn(RETIRED_TEMPLATE_HARNESS, requestedTemplate))
           spec.harness ??= RETIRED_TEMPLATE_HARNESS[requestedTemplate];
         if (requestedTemplate === DEFAULT_TEMPLATE_ID)
-          spec.harness ??= deps.defaultHarness;
+          spec.harness ??= profileDefault?.harness ?? deps.defaultHarness;
         templateId = requestedTemplate;
         templateProviders = tmpl.spec.providers;
       } else {
@@ -1315,7 +1337,9 @@ export function createAgentsService(deps: {
         spec.requireConnectionAddress = true;
 
       const providerConnectionId = input.providerConnectionId;
-      const defaultProviders =
+      const startsOnProfile =
+        profileDefault?.harness === spec.harness ? profileDefault : null;
+      const orderedProviders =
         providerConnectionId === undefined &&
         templateId !== undefined &&
         !input.noDefaultProvider
@@ -1329,6 +1353,11 @@ export function createAgentsService(deps: {
               },
             )) ?? [])
           : [];
+      /* UNIT_BOUNDARY_DESCRIPTION: one provider either way (#5578): the default profile's in place of the first in harness order, so the chat default exists before the first hello and the onboarding turn has a model. */
+      const defaultProviders =
+        orderedProviders.length > 0 && startsOnProfile
+          ? [startsOnProfile.connectionId]
+          : orderedProviders;
       const grantSel = {
         connectionIds: Array.from(
           new Set([
@@ -1455,6 +1484,19 @@ export function createAgentsService(deps: {
 
       if (deps.grantProvisioner && hasInitialGrants) {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
+      }
+
+      if (startsOnProfile) {
+        const missed = await startsOnProfile
+          .bind(infra.id)
+          .catch((err: unknown) =>
+            err instanceof Error ? err.message : String(err),
+          );
+        if (missed)
+          getLogger().warn(
+            { agentId: infra.id, reason: missed },
+            "agent create: the new agent does not start on the default profile; its first hello converts the default instead",
+          );
       }
 
       const agent = assembleAgent(
@@ -1809,6 +1851,10 @@ export function createAgentsService(deps: {
           conversationId: c.id,
           title: c.title,
           direct: isTelegramDirectConversation(c.id),
+          profileId: c.profileId ?? null,
+          pair: c.pair ?? null,
+          platformSubagentProfileId: c.platformSubagentProfileId ?? null,
+          platformSubagentSettings: c.platformSubagentSettings ?? null,
         })),
       });
     },

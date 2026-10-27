@@ -1,4 +1,3 @@
-import { Renew } from "@carbon/icons-react";
 import {
   BALANCE_PROVIDER_TYPES,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
@@ -7,16 +6,14 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { Card } from "@/components/ui/card";
 
-import { useStore } from "../../../store.js";
 import type { ProviderPresetType } from "../../../types.js";
-import { useDeleteConnection } from "../../connections/api/mutations.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
+import { useDisconnectConnection } from "../../connections/hooks/use-disconnect-connection.js";
 import { useProviderStatus } from "../../provider-status/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
-import { AllAgentsProviderLimit } from "../../spend/components/all-agents-provider-limit.js";
+import { AllAgentsSpendBadge } from "../../spend/components/all-agents-provider-limit.js";
 import { useRecheckProviderKeys } from "../api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
 import { useRecheckOnOpen } from "../hooks/use-recheck-on-open.js";
@@ -57,17 +54,16 @@ export function ProviderSection({
     !!status &&
     (status.damSide !== null ||
       status.outages.some((o) => o.templateId === templateId));
-  const showConfirm = useStore((s) => s.showConfirm);
-  const deleteConnection = useDeleteConnection();
-  const recheck = useRecheckProviderKeys();
-  const autoRecheck = useRecheckProviderKeys({ silent: true });
+  const { confirmAndDelete, deletingId } = useDisconnectConnection();
+  const recheck = useRecheckProviderKeys({ silent: true });
   const loading = isPending || catalogPending || templatesPending;
   const checkable = rows.some((row) => {
     const item = itemOf(row);
     return !!item && hasKeyCheck(item.conn.templateId);
   });
-  useRecheckOnOpen(() => autoRecheck.mutate(), !loading && checkable);
-  const checking = recheck.isPending || autoRecheck.isPending;
+  /* UNIT_BOUNDARY_DESCRIPTION: keys are checked again on every visit, so the page offers no button for it. */
+  useRecheckOnOpen(() => recheck.mutate(), !loading && checkable);
+  const checking = recheck.isPending;
   const [dialog, setDialog] = useState<{
     provider: ProviderPresetType;
     item?: ProviderItem;
@@ -75,34 +71,15 @@ export function ProviderSection({
   const [infoOpen, setInfoOpen] = useState(false);
 
   const disconnectProvider = async (item: ProviderItem) => {
-    const ok = await showConfirm(
-      "Agents using this provider can no longer reach its models.",
-      "Disconnect provider?",
-      { kind: "destructive", confirmLabel: "Disconnect provider" },
-    );
-    if (!ok) return;
-    deleteConnection.mutate({ id: item.id });
-    setDialog(null);
+    if (deletingId !== null) return;
+    if (await confirmAndDelete(item.id, item.conn.name)) setDialog(null);
   };
 
   const connectedItem = dialog?.item;
 
   return (
     <>
-      <div className="flex flex-col gap-3">
-        {!loading && checkable && (
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => recheck.mutate()}
-              disabled={checking}
-            >
-              {checking ? <Spinner size={14} /> : <Renew size={14} />}
-              {checking ? "Rechecking…" : "Recheck keys"}
-            </Button>
-          </div>
-        )}
+      <Card className="divide-y divide-border overflow-hidden">
         {loading
           ? rows.map((row) => (
               <ProviderRow.Skeleton
@@ -119,14 +96,6 @@ export function ProviderSection({
                   type={row.type}
                   templateId={row.templateId}
                   name={providerRowName(row)}
-                  connected={!!item}
-                  degraded={!!item && degradedTemplate(item.conn.templateId)}
-                  keyCheck={
-                    item && !managed ? (item.conn.keyCheck ?? null) : undefined
-                  }
-                  checking={
-                    checking && !!item && hasKeyCheck(item.conn.templateId)
-                  }
                   harnesses={catalog?.harnesses
                     .filter((h) =>
                       harnessFits(
@@ -137,6 +106,14 @@ export function ProviderSection({
                       ),
                     )
                     .map((h) => h.name)}
+                  connected={!!item}
+                  degraded={!!item && degradedTemplate(item.conn.templateId)}
+                  keyCheck={
+                    item && !managed ? (item.conn.keyCheck ?? null) : undefined
+                  }
+                  checking={
+                    checking && !!item && hasKeyCheck(item.conn.templateId)
+                  }
                   balance={
                     item &&
                     !managed &&
@@ -144,10 +121,10 @@ export function ProviderSection({
                       <ProviderBalance connectionId={item.id} />
                     )
                   }
-                  footer={
+                  spend={
                     item &&
                     !onConnected && (
-                      <AllAgentsProviderLimit
+                      <AllAgentsSpendBadge
                         connectionId={item.id}
                         connectionName={item.conn.name}
                         templateId={item.conn.templateId}
@@ -173,7 +150,7 @@ export function ProviderSection({
                 />
               );
             })}
-      </div>
+      </Card>
 
       {infoOpen && <CurveBenderInfoDialog onClose={() => setInfoOpen(false)} />}
 
@@ -185,6 +162,7 @@ export function ProviderSection({
             setDialog(null);
             onConnected?.(id);
           }}
+          disconnectPending={deletingId !== null}
           onDisconnect={
             connectedItem && (() => void disconnectProvider(connectedItem))
           }

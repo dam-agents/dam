@@ -2,6 +2,7 @@ import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
 import type { AgentPermission } from "./permissions.js";
+import type { SessionChoiceSlots } from "../harness-config/types.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
 import type {
   KitUpdatePending,
@@ -101,7 +102,14 @@ export interface SlackChannel extends Channel {
   loopGuard?: SlackLoopGuardDrops;
 }
 
-export type ChannelConfig = SlackChannel;
+/* UNIT_BOUNDARY_DESCRIPTION: a channel runs on a profile of its own (D91), kept
+ * on its row; null is a channel that predates profiles and still falls back to
+ * the agent's chat default. `createdAt` orders the rows, so a new channel's
+ * bind dialog starts on the profile the newest one runs on. */
+export type ChannelConfig = SlackChannel &
+  Partial<SessionChoiceSlots> & {
+    createdAt?: string;
+  };
 
 export type AgentState =
   | "starting"
@@ -266,7 +274,8 @@ export type BindTelegramChatResult =
 export type ListTelegramChatsError =
   { type: "AgentNotFound" } | { type: "TelegramUnavailable" };
 
-export interface TelegramChatView {
+/** UNIT_BOUNDARY_DESCRIPTION: a bound chat and what its turns run on (D91), in the chat default's two slots; neither primary slot set is a chat bound before profiles. */
+export interface TelegramChatView extends SessionChoiceSlots {
   conversationId: string;
   title: string;
   direct: boolean;

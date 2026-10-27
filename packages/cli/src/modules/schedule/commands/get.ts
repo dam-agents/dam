@@ -37,6 +37,7 @@ function renderSchedule(view: ScheduleView): string {
   } else {
     lines.push(`Cron:        ${view.cron ?? ""}`);
   }
+  if (view.profile) lines.push(`Profile:     ${view.profile}`);
   if (view.precheck) lines.push(`Precheck:    ${view.precheck}`);
   lines.push(`Session:     ${view.sessionMode ?? "fresh"}`);
   lines.push(`Enabled:     ${view.enabled}`);

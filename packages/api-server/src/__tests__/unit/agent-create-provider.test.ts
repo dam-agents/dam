@@ -8,6 +8,11 @@ import type {
 } from "api-server-api";
 import { appRouter } from "api-server-api/router";
 import { markTermsProven } from "api-server-api/trpc";
+import {
+  configureLogger,
+  getLogger,
+  type LogLevel,
+} from "../../core/logger.js";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
@@ -98,6 +103,14 @@ function setup(
   const writeEnv = vi.fn(async () => {});
   const runtimeBump = vi.fn(async () => 1);
   const defaultProviders = vi.fn(async (): Promise<string[]> => []);
+  const bind = vi.fn(async (_agentId: string): Promise<string | null> => null);
+  const defaultProfile = vi.fn(
+    async (): Promise<{
+      harness: string;
+      connectionId: string;
+      bind: typeof bind;
+    } | null> => null,
+  );
   const agents = createAgentsService({
     defaultHarness: "claude-code",
     owner: "owner-1",
@@ -131,6 +144,7 @@ function setup(
       defaultProviders,
       applyAfterCreate: applyGrants,
     },
+    defaultProfile,
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
     deleteChannelByType: async () => {},
@@ -165,6 +179,8 @@ function setup(
     writeEnv,
     runtimeBump,
     defaultProviders,
+    defaultProfile,
+    bind,
     connections,
     agents,
   };
@@ -268,6 +284,107 @@ describe("agent creation with a designated provider", () => {
     });
     expect(result.grantedConnectionIds).toEqual([]);
   });
+});
+
+describe("the default profile a new agent starts on", () => {
+  const templates = { default: { image: "platform/default:latest" } };
+  const byTemplate = { name: "test-agent", templateId: "default" };
+  const onPi = (bind: ReturnType<typeof setup>["bind"]) => ({
+    harness: "pi",
+    connectionId: "conn-profile",
+    bind,
+  });
+
+  /** TEST_SCENARIO: An owner's default for new agents decides a new agent's
+   * harness and its one provider in place of the harness's provider order,
+   * and the agent's chat default is bound to it, so a default exists before
+   * the first hello and the onboarding turn has a model to run on (#5578). */
+  it("starts on the default profile, with its provider alone", async () => {
+    const { caller, defaultProfile, defaultProviders, bind, persist } = setup(
+      [provider],
+      templates,
+    );
+    defaultProfile.mockResolvedValue(onPi(bind));
+    defaultProviders.mockResolvedValue(["conn-first-in-order"]);
+    const created = await caller.agents.create(byTemplate);
+    expect(created.grantedConnectionIds).toEqual(["conn-profile"]);
+    expect(persist.mock.calls[0]![0]).toMatchObject({ harness: "pi" });
+    expect(bind).toHaveBeenCalledWith(created.id);
+  });
+
+  /** TEST_SCENARIO: A create that names its harness keeps it; a default
+   * profile on another harness leaves the provider order and the first-hello
+   * conversion as before. */
+  it("leaves an agent on another harness to the provider order", async () => {
+    const { caller, defaultProfile, defaultProviders, bind } = setup(
+      [provider],
+      templates,
+    );
+    defaultProfile.mockResolvedValue(onPi(bind));
+    defaultProviders.mockResolvedValue(["conn-first-in-order"]);
+    const created = await caller.agents.create({
+      ...byTemplate,
+      harness: "codex",
+    });
+    expect(created.grantedConnectionIds).toEqual(["conn-first-in-order"]);
+    expect(bind).not.toHaveBeenCalled();
+  });
+
+  /** TEST_SCENARIO: A kit that names the model its agent needs decides the
+   * default, and an Environment never starts a session, so neither asks for
+   * the default profile. */
+  it("stays out of a kit that names the model and of an environment", async () => {
+    const { agents, defaultProfile } = setup([provider], templates);
+    await agents.create({
+      ...byTemplate,
+      providerConnectionId: provider.id,
+      starterKitDefaultModel: "cb/some-model",
+    });
+    await agents.create({
+      ...byTemplate,
+      providerConnectionId: provider.id,
+      environmentOf: "agent-root",
+    });
+    expect(defaultProfile).not.toHaveBeenCalled();
+  });
+
+  /** TEST_SCENARIO: A failed binding is not a failed create; the first-hello
+   * conversion still gives the agent a default, and the log says why the
+   * agent missed the default profile, whether the binder threw or declined. */
+  it.each([
+    ["throws", () => Promise.reject(new Error("boom")), "boom"],
+    [
+      "declines",
+      () => Promise.resolve("the agent already holds a chat default"),
+      "the agent already holds a chat default",
+    ],
+  ])(
+    "does not fail the create, and logs why, when the binder %s",
+    async (_how, outcome, reason) => {
+      const lines: string[] = [];
+      const level = getLogger().level as LogLevel;
+      configureLogger({ level: "warn", write: (line) => lines.push(line) });
+      try {
+        const { caller, defaultProfile, bind, persist } = setup(
+          [provider],
+          templates,
+        );
+        defaultProfile.mockResolvedValue(onPi(bind));
+        bind.mockImplementationOnce(outcome);
+        await expect(caller.agents.create(byTemplate)).resolves.toMatchObject({
+          name: "test-agent",
+        });
+        expect(persist).toHaveBeenCalledOnce();
+        expect(
+          lines
+            .map((line) => JSON.parse(line) as { reason?: string; msg: string })
+            .find((entry) => entry.msg.includes("default profile")),
+        ).toMatchObject({ reason });
+      } finally {
+        configureLogger({ level });
+      }
+    },
+  );
 });
 
 describe("the harness and default provider a new agent gets", () => {

@@ -92,6 +92,8 @@ function makeDeps(opts?: {
   onceResult?: string;
   agentDisabled?: boolean;
   enabled?: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: a schedule as the repository hands it back, for a shape the parameters cannot express. */
+  schedule?: Schedule;
   firePair?: FirePair;
   ensureDefault?: (agentId: string) => Promise<AgentActivityStamp | null>;
   defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
@@ -132,6 +134,8 @@ function makeDeps(opts?: {
 
   const repo = {
     async getById(id: string) {
+      if (id === SCHEDULE_ID && opts?.schedule !== undefined)
+        return opts.schedule;
       if (id === SCHEDULE_ID && opts?.once)
         return opts.onceResult
           ? {
@@ -367,6 +371,31 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     expect(stampedResults[0]?.result).toMatch(/no model provider granted/);
   });
 
+  /** TEST_SCENARIO: A schedule that names a profile which cannot run on its
+   * agent fails with that reason; it never runs the agent's default and is
+   * never recorded as following one. */
+  it("fails a fire whose profile cannot run, without falling back", async () => {
+    let fired = 0;
+    const { runner, events } = makeDeps({
+      firePair: async () => {
+        fired += 1;
+        return { harness: "claude-code", provider: "conn-1", model: "m" };
+      },
+      schedule: {
+        ...makeSchedule(),
+        spec: { ...makeSchedule().spec, profile: "profile-1" },
+        profileIssue: "CurveBender (shared) is not connected",
+      },
+    });
+    await expect(
+      runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
+    ).rejects.toThrow(
+      /profile cannot run: CurveBender \(shared\) is not connected/,
+    );
+    expect(fired).toBe(0);
+    expect(events).toEqual([]);
+  });
+
   /** TEST_SCENARIO: The agent has no default model. A retry cannot change
    * that, so the first attempt records the reason, queues the next run and
    * ends the job instead of waking the agent again on every retry. */
@@ -484,6 +513,51 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
       model: "openai/gpt-5.5",
       settings: { effort: "high" },
     });
+  });
+
+  /** TEST_SCENARIO: A schedule runs on both slots, as a chat start does: the
+   * fire checks and carries the primary's settings with the subagent slot's
+   * values the repository resolved. */
+  it("fires on both slots of the schedule's pick", async () => {
+    const checked: unknown[] = [];
+    const schedule = makeSchedule(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        harness: "codex",
+        model: "openai/gpt-5.5",
+        settings: { effort: "high" },
+      },
+    );
+    const subagent = {
+      "platformSubagent.harness": "pi",
+      "platformSubagent.model": "cb/haiku",
+    };
+    const { runner, payloads } = makeDeps({
+      schedule: { ...schedule, subagentSettings: subagent },
+      validateSessionChoices: async (_agentId, choices) => {
+        checked.push(choices);
+        return undefined;
+      },
+      firePair: async () => ({
+        harness: "codex",
+        provider: "oai",
+        model: "openai/gpt-5.5",
+      }),
+    });
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    const both = { effort: "high", ...subagent };
+    expect(checked).toEqual([
+      { harness: "codex", model: "openai/gpt-5.5", settings: both },
+    ]);
+    expect(payloads[0]).toMatchObject({ settings: both });
   });
 
   /** TEST_SCENARIO: Since the schedule was saved the agent lost the provider

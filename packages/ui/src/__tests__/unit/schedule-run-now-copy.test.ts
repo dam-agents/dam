@@ -26,6 +26,7 @@ const base: Schedule = {
   harness: null,
   model: null,
   settings: null,
+  profile: null,
   migrationNote: null,
   sessionTitle: null,
 };

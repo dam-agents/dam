@@ -11,6 +11,7 @@ import {
   sessionSettingsError,
   type SessionRepository,
   type SubAgentHarnessConfig,
+  withoutApproval,
 } from "agent-runtime-api";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import { nonClaudeModelEnv } from "./domain/non-claude-env.js";
@@ -203,6 +204,13 @@ function inheritedSubAgentConfig(
     ...(Object.keys(configOptions).length > 0 && { configOptions }),
   };
 }
+
+const UNATTENDED_TYPES = new Set([
+  "channel_slack",
+  "channel_telegram",
+  "schedule_cron",
+  "schedule_once",
+]);
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the manifest's own value for each setting a
@@ -429,6 +437,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const ownPins = harness?.terminalSessionPins;
       const settingInput = (sessionId: string) => {
         const model = runtime.sessionChoice(sessionId).model;
+        const meta = sessionMetadata.get(sessionId)?.meta;
         return {
           sessionId,
           harness,
@@ -436,7 +445,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
           native: pair.native !== undefined,
           settings: {
             ...manifestDefaults(harness, "session", model),
-            ...sessionMetadata.get(sessionId)?.meta.settings,
+            /* UNIT_BOUNDARY_DESCRIPTION: a channel or schedule session runs on the default tool approval; only a chat session picks its own. */
+            ...(UNATTENDED_TYPES.has(meta?.type ?? "")
+              ? withoutApproval(harness?.catalog, meta?.settings)
+              : meta?.settings),
           },
         };
       };

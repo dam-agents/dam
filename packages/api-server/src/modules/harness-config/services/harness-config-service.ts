@@ -20,6 +20,7 @@ import type {
   HarnessConfigSnapshotPatch,
   ProviderPresetType,
   SessionPair,
+  SessionChoiceReferences,
 } from "api-server-api";
 import { z } from "zod";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
@@ -27,6 +28,10 @@ import {
   qualifiedPairModel,
   sameModelName,
   resolveSessionPair,
+  platformSubagentOf,
+  splitPlatformSubagent,
+  withoutPairApproval,
+  withPlatformSubagent,
 } from "../domain/session-pair.js";
 import { harnessFits } from "../../templates/index.js";
 import { NoDefaultModelError } from "../domain/no-default-model.js";
@@ -36,6 +41,7 @@ import type { DbTx } from "db";
 import type { HarnessConfigEventQueue } from "../infrastructure/config-event-queue.js";
 import { getLogger } from "../../../core/logger.js";
 import type { PublishSessionDefaults } from "./session-defaults-publisher.js";
+import type { ProfileResolver } from "../../profiles/index.js";
 
 export function createHarnessConfigService(deps: {
   surface: string;
@@ -55,6 +61,7 @@ export function createHarnessConfigService(deps: {
     harness?: string,
   ) => Promise<unknown>;
   publishDefaults: PublishSessionDefaults;
+  resolveProfile: ProfileResolver;
 }): HarnessConfigService {
   async function requireOwned(agentId: string): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
@@ -165,6 +172,20 @@ export function createHarnessConfigService(deps: {
       return pair ?? null;
     },
 
+    async republishDefaults(agentId) {
+      await requireOwned(agentId);
+      const pair = await deps.pairRepo.read(agentId, "chat");
+      if (pair === null) return "the profile cannot run on this agent";
+      try {
+        await validDefaultPair(agentId, pair);
+      } catch (err) {
+        return (err as Error).message;
+      }
+      await deps.publishDefaults(agentId);
+      notifyDefaultChanged(agentId);
+      return null;
+    },
+
     async clearSessionDefault(agentId, kind) {
       await requireOwned(agentId);
       await deps.pairRepo.clear(agentId, kind);
@@ -172,66 +193,131 @@ export function createHarnessConfigService(deps: {
       notifyDefaultChanged(agentId);
     },
 
-    async rememberSessionPair(agentId, kind, pair) {
+    async rememberSessionPair(agentId, kind, pair, references) {
       await requireOwned(agentId);
-      const carried = harnessesOf(await deps.getCapabilities(agentId));
-      if (
-        !carried?.some((h) => h.name === pair.harness) ||
-        !deps.catalog.harnesses.some((h) => h.name === pair.harness)
-      )
+      if ((references?.profileId ?? null) !== null && kind !== "chat")
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: `this agent does not carry the ${pair.harness} harness`,
+          message: "only the chat default can name a profile",
         });
-      const granted = await deps.pairRepo.grantedProviders(agentId);
-      const routed = routesByModelName(await deps.getCapabilities(agentId));
-      if (routed && pair.model === null)
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "pick a model for the default; it cannot be left unset",
-        });
-      if (routed) pair = await routedPair(agentId, pair, granted);
-      const provider = granted.find((p) => p.id === pair.provider);
-      if (
-        pair.provider !== null &&
-        (!provider ||
-          !harnessFits(
-            deps.catalog,
-            pair.harness,
-            provider.type,
-            provider.templateId,
-          ))
-      )
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `the ${pair.harness} harness cannot run on that provider`,
-        });
-      const harness = carried.find((h) => h.name === pair.harness);
-      const unsupported = Object.keys(pair.settings ?? {}).find(
-        (id) =>
-          !(isPlatformSubagentSetting(id)
-            ? harness?.platformSubagentSettings
-            : harness?.sessionSettings?.includes(id)),
+      await deps.pairRepo.write(
+        agentId,
+        kind,
+        await validChoice(agentId, pair, references),
+        references,
       );
-      const invalid = unsupported
-        ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
-        : pair.settings &&
-          (sessionSettingsError(
-            harness?.harnessConfigCatalog,
-            pair.settings,
-            pair.model,
-          ) ??
-            platformSubagentSettingsError(
-              pair.settings,
-              (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
-            ));
-      if (invalid)
-        throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
-      await deps.pairRepo.write(agentId, kind, pair);
       await deps.publishDefaults(agentId);
       notifyDefaultChanged(agentId);
     },
+
+    async validateChoice(agentId, pair, references) {
+      await requireOwned(agentId);
+      await validChoice(agentId, pair, references);
+    },
   };
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the pair a pick in the chat default's shape runs on, checked as a saved default is: each profile it names the caller's and runnable, and the composed pair one the agent can start on. */
+  async function validChoice(
+    agentId: string,
+    pair: SessionPair | null,
+    references: SessionChoiceReferences | undefined,
+  ): Promise<SessionPair> {
+    const profileId = references?.profileId ?? null;
+    {
+      const owned = async (id: string) => {
+        const resolved = await deps.resolveProfile({
+          profileId: id,
+          agentId,
+          owner: deps.ownerSub,
+        });
+        if (!resolved)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "profile not found",
+          });
+        if (resolved.unavailable)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: resolved.unavailable,
+          });
+        return resolved.pair;
+      };
+      const [, ownSlot] = pair ? splitPlatformSubagent(pair) : [null, null];
+      const primary = profileId !== null ? await owned(profileId) : pair;
+      if (!primary)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "pick a profile or a model",
+        });
+      const slotId = references?.platformSubagentProfileId ?? null;
+      return validDefaultPair(
+        agentId,
+        withPlatformSubagent(
+          primary,
+          slotId === null ? ownSlot : platformSubagentOf(await owned(slotId)),
+        ),
+      );
+    }
+  }
+
+  async function validDefaultPair(
+    agentId: string,
+    pair: SessionPair,
+  ): Promise<SessionPair> {
+    const carried = harnessesOf(await deps.getCapabilities(agentId));
+    if (
+      !carried?.some((h) => h.name === pair.harness) ||
+      !deps.catalog.harnesses.some((h) => h.name === pair.harness)
+    )
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `this agent does not carry the ${pair.harness} harness`,
+      });
+    const granted = await deps.pairRepo.grantedProviders(agentId);
+    const routed = routesByModelName(await deps.getCapabilities(agentId));
+    if (routed && pair.model === null)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "pick a model for the default; it cannot be left unset",
+      });
+    if (routed) pair = await routedPair(agentId, pair, granted);
+    const provider = granted.find((p) => p.id === pair.provider);
+    if (
+      pair.provider !== null &&
+      (!provider ||
+        !harnessFits(
+          deps.catalog,
+          pair.harness,
+          provider.type,
+          provider.templateId,
+        ))
+    )
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `the ${pair.harness} harness cannot run on that provider`,
+      });
+    const harness = carried.find((h) => h.name === pair.harness);
+    const unsupported = Object.keys(pair.settings ?? {}).find(
+      (id) =>
+        !(isPlatformSubagentSetting(id)
+          ? harness?.platformSubagentSettings
+          : harness?.sessionSettings?.includes(id)),
+    );
+    const invalid = unsupported
+      ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
+      : pair.settings &&
+        (sessionSettingsError(
+          harness?.harnessConfigCatalog,
+          pair.settings,
+          pair.model,
+        ) ??
+          platformSubagentSettingsError(
+            pair.settings,
+            (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
+          ));
+    if (invalid) throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
+    return withoutPairApproval(pair, harness?.harnessConfigCatalog);
+  }
 
   function notifyDefaultChanged(agentId: string): void {
     emit({

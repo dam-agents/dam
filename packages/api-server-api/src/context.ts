@@ -40,6 +40,7 @@ import type { Links } from "./modules/links/types.js";
 import type { FilesService } from "./modules/files/router.js";
 import type { GettingStartedService } from "./modules/getting-started/types.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
+import type { ProfilesService } from "./modules/profiles/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SidebarOrderService } from "./modules/sidebar-order/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
@@ -100,6 +101,7 @@ export interface ApiContext {
   sidebarOrder: SidebarOrderService;
   files: FilesService;
   harnessConfig: HarnessConfigService;
+  profiles: ProfilesService;
   links: Links;
   liveEvents: LiveEventsService;
   metrics: MetricsService;

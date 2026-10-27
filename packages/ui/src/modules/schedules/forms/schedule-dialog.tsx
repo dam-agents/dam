@@ -9,12 +9,21 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { useProfiles } from "../../profiles/api/queries.js";
+import { defaultProfileId } from "../../profiles/lib/default-profile.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
+import { useSessionDefaults } from "../../sessions/api/session-pair.js";
 import { useDeleteSchedule } from "../api/mutations.js";
+import { useSchedules } from "../api/queries.js";
 import {
   ScheduleChoicesField,
   ScheduleSessionTitleField,
 } from "./schedule-fields.js";
+import {
+  customChoiceError,
+  scheduleInheritsChoices,
+} from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 type DialogValues = FieldValues & {
@@ -24,6 +33,8 @@ type DialogValues = FieldValues & {
   harness: string;
   model: string;
   settings: Record<string, string>;
+  profile: string;
+  platformSubagentProfile: string;
 };
 
 interface DeleteCopy {
@@ -76,6 +87,21 @@ export function ScheduleDialog<T extends DialogValues>({
   const { errors, isDirty } = formState;
   const deleteSchedule = useDeleteSchedule();
   const showConfirm = useStore((state) => state.showConfirm);
+  const routed = useHarnessConfigStatus(agentId).data?.modelRouter ?? false;
+
+  const presetFor = existing ? null : agentId;
+  const { data: schedules = [] } = useSchedules(presetFor);
+  const { data: profiles = [] } = useProfiles(presetFor);
+  const chatProfileId = useSessionDefaults(presetFor).data?.chatProfileId;
+  const preset = defaultProfileId(profiles, [
+    [...schedules].reverse().find((s) => s.profile)?.profile,
+    chatProfileId,
+  ]);
+  /* UNIT_BOUNDARY_DESCRIPTION: a new schedule starts on a profile (D92) once the lists are here; not a change the user made, so the form stays clean. */
+  useEffect(() => {
+    if (preset === null || fields.getValues().profile) return;
+    fields.setValue("profile", preset, { shouldDirty: false });
+  }, [preset, fields]);
 
   const unsaved = isDirty || !!draft?.name || !!draft?.task;
   const close = useGuardedClose(unsaved, onClose);
@@ -103,7 +129,12 @@ export function ScheduleDialog<T extends DialogValues>({
 
   return (
     <form
-      onSubmit={handleSubmit((values) => onValid(values as T))}
+      onSubmit={handleSubmit((values) => {
+        const missing =
+          showSessionFields && customChoiceError(values, existing, routed);
+        if (missing) return fields.setError("model", { message: missing });
+        onValid(values as T);
+      })}
       className="flex min-h-0 flex-col"
     >
       <DialogHeader title={title} onClose={() => void close()} />
@@ -136,6 +167,7 @@ export function ScheduleDialog<T extends DialogValues>({
               agentId={agentId}
               control={control}
               migrationNote={existing?.migrationNote ?? null}
+              inheritChoice={scheduleInheritsChoices(existing)}
             />
             {afterChoices}
             <ScheduleSessionTitleField

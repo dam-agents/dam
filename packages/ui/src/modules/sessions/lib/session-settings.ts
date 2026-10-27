@@ -7,12 +7,14 @@ import {
   startModeFor,
   SUBAGENT_MODEL_SETTING,
 } from "agent-runtime-api";
+import { parseQualifiedModel } from "api-server-api";
 
 import {
   findModel,
   type ModelGroup,
   sameSideGroups,
 } from "./catalog-groups.js";
+import { prettyModelLabel } from "./model-families.js";
 
 export function sessionSettingOptions(
   capability: HarnessCapability | undefined,
@@ -115,4 +117,51 @@ export function settingsForModel(
       return !only || only.includes(value);
     }),
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how a pick reads under the chat input, on the
+ * Custom selection row and in Settings › Profiles: the family's name (else the
+ * upstream id), the effort the harness offers for that model, and the
+ * provider. A part that does not exist is left out.
+ */
+export function pairSummary(
+  model: string | null,
+  {
+    settings = {},
+    defaults = {},
+    capability,
+    provider,
+  }: {
+    settings?: Readonly<Record<string, string>> | undefined;
+    defaults?: Readonly<Record<string, string>>;
+    capability?: HarnessCapability | undefined;
+    provider?: string | null | undefined;
+  },
+): string {
+  if (model === null) return "Choose a model";
+  const name =
+    prettyModelLabel(model) ??
+    parseQualifiedModel(model, { claudePrefix: true })?.upstreamId ??
+    model;
+  const option = sessionSettingOptions(capability).find(
+    (o) => o.category === "thought_level" && !o.subagents,
+  );
+  const value =
+    option && (settings[option.id] ?? defaults[option.id] ?? option.default);
+  const allowed =
+    option &&
+    modelConstraintsFor(capability?.harnessConfigCatalog, model)?.[option.id];
+  const effort =
+    value && (!allowed || allowed.includes(value))
+      ? (option?.choices.find((c) => c.value === value)?.name ?? value)
+      : null;
+  return [
+    effort
+      ? `${name} · ${effort.charAt(0).toUpperCase()}${effort.slice(1)}`
+      : name,
+    provider ? `(${provider})` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

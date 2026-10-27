@@ -10,6 +10,7 @@
     "./trpc": "./src/trpc.ts",
     "./harness-router": "./src/harness-router.ts",
     "./trpc-telemetry": "./src/trpc-telemetry.ts",
+    "./model-prices": "./src/modules/model-catalog/vendored-price-table.ts",
     "./chat-forms": "./src/modules/chat-forms/index.ts",
     "./avatar/*": "./src/modules/agents/avatar/*.ts"
   },

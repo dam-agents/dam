@@ -335,11 +335,10 @@ The screens:
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
-- **The agent's Providers section:** each granted Connection that takes a limit has one line for the agent's limit on it, in the Connection's unit: a meter, the share used, the spend against the limit, and the button.
-  Clicking the line opens the other limits that count those calls: the Connection limit for all agents and, on a dollar Connection, the agent limit, the total daily limit and the ceiling; a line that nothing else counts does not open.
+- **The agent's Providers section:** each provider is one line, and a granted Connection that takes a limit carries a pill with today's spend against the agent's limit on it, in the Connection's unit (`$1.23 / $4.56 today`); clicking the pill opens the limit dialog.
   The limit dialog says, while the user types, whether the new amount is already reached and which limit would stop the agent first.
-  A Connection that takes no limit says why.
-- **Settings, Providers tab:** under each connected Connection that takes a limit, one line for the Connection limit for all agents, the same as in the agent's Providers section; on a dollar Connection it opens to the total daily limit and the ceiling.
+  A Connection that takes no limit shows no pill.
+- **Settings, Providers tab:** each connected Connection that takes a limit carries the same pill for the Connection limit for all agents.
   The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
   Its "Also counted by" line holds the spend ceiling, when the operator has set one.

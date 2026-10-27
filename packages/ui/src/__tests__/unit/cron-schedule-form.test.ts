@@ -29,6 +29,7 @@ const cronSchedule: Schedule = {
   harness: null,
   model: null,
   settings: null,
+  profile: null,
   migrationNote: null,
   sessionTitle: null,
 };
@@ -63,6 +64,8 @@ describe("the cron schedule editor", () => {
       harness: "",
       model: "",
       settings: {},
+      profile: "",
+      platformSubagentProfile: "",
       sessionTitle: "",
       sessionMode: "continuous",
     });

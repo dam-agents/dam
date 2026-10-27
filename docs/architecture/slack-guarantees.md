@@ -137,7 +137,7 @@ Through the owner's Slack Account Connection the Agent posts wherever the owner 
 
 ### 1.7 What the agent is handed, per case
 
-Every Slack turn carries: how to respond (tools, the thread to reply into, "plain text is not delivered"), a note that unallowed hosts are refused, a note that a tool the permission mode refused is the mode's doing and only the owner changes it, who the owner is (their display name, and their tag where they linked Slack in that workspace) with a note that the owner has no extra authority in messages, and with several Agents who else is here and who is default.
+Every Slack turn carries: how to respond (tools, the thread to reply into, "plain text is not delivered"), a note that unallowed hosts are refused, a note that a tool the permission mode refused is the mode's doing and no setting changes it, who the owner is (their display name, and their tag where they linked Slack in that workspace) with a note that the owner has no extra authority in messages, and with several Agents who else is here and who is default.
 **Catch-up**: what arrived since the agent's last delivered turn there, as a backlog ("act only on what is still open"); nothing when nothing is new.
 
 | Case                                         | History injected                                                                                                                                     | Extra framing                                                                                                                                                                                                                                                                                                                                                        |

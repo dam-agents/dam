@@ -202,7 +202,7 @@ export interface McpSessionDeps {
 const MCP_RUNTIME_TIMEOUT_MS = 60_000;
 
 const SESSION_SETTINGS_INSTRUCTIONS =
-  "Your model, effort and other session settings, apart from the permission mode, are not set in your harness's own settings file: a session runs on what was picked in it, else on the default the owner set for its kind (chat, Slack or Telegram, or schedules) on the agent's Providers page. Editing the settings file does not change them. When someone asks you to change your model or effort, tell them to pick it in this session's model menu, or to change the default on the Providers page.";
+  "Your model, effort, tool approval and other session settings are not set in your harness's own settings file: a chat session runs on what was picked in it, else on what the last chat picked, and a Slack, Telegram or scheduled session on the profile its channel or schedule names. Editing the settings file does not change them. When someone asks you to change your model or effort, tell them to pick it in this session's model menu.";
 
 const KB_SHARE_INSTRUCTIONS =
   "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";

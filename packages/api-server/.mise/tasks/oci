@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Build the api-server image to dist/oci/api-server.tar"
-#MISE sources=["src/**", "scripts/fetch-browser-stream-web.sh", "{{config_root}}/../agents/base/selkies/requirements.txt", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../../skills/dam/SKILL.md", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
+#MISE sources=["src/**", "scripts/fetch-browser-stream-web.sh", "{{config_root}}/../agents/base/selkies/requirements.txt", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../agents/*/rootfs/app/runtime-manifest.yaml", "{{config_root}}/../agents/*/image.toml", "{{config_root}}/../../skills/dam/SKILL.md", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
 #MISE outputs=["dist/oci/api-server.tar"]
 set -euo pipefail
 base="$(mise config get -f "$MISE_CONFIG_ROOT/../../.mise/config.toml" vars.base_image_api_server)"
@@ -27,6 +27,14 @@ cp -R ../db/drizzle "$root/app/packages/db/"
 # The dam skill of this commit, which the server offers to an agent given its URL.
 mkdir -p "$root/app/skills/dam"
 cp ../../skills/dam/SKILL.md "$root/app/skills/dam/"
+# Each harness's runtime manifest, named as the harness the image runs, so the
+# api-server can answer a harness's settings and native tiers without an agent.
+mkdir -p "$root/app/runtime-manifests"
+for harness_dir in ../agents/*/; do
+  harness="$(sed -n 's/^PLATFORM_HARNESS = "\(.*\)"$/\1/p' "${harness_dir}image.toml" 2>/dev/null || true)"
+  manifest="${harness_dir}rootfs/app/runtime-manifest.yaml"
+  [ -n "$harness" ] && [ -f "$manifest" ] && cp "$manifest" "$root/app/runtime-manifests/$harness.yaml"
+done
 # The server runs on node alone. The base's bundled npm is the one scanners
 # flag and nothing runs, so it is removed.
 mkdir -p "$npm/usr/lib/node_modules_26" "$npm/usr/bin"

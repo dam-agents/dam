@@ -77,7 +77,7 @@ Exact field shapes live in the [Connections contract types](../../packages/api-s
 An Agent may hold several **provider Connections**, at most one per **provider alias**: the alias names the provider in every qualified model name, so a second Connection behind one alias is refused.
 A session picks its model per turn, and the provider follows from the name.
 Creation grants the one it names, else one provider Connection the owner holds that the harness runs on, the first in the harness's provider order ([agent-lifecycle](agent-lifecycle.md#create)).
-The agent's Providers section lists every provider Connection the owner holds with a grant toggle and picks the default pair for new sessions ([harness-config](harness-config.md)).
+The agent's Providers section lists every provider Connection the owner holds with a grant toggle; picking a profile grants the provider it runs on ([profiles](profiles.md)).
 A provider Connection, and its Template, carry their alias and the harnesses of the catalog that run on it in every listing, so a caller tells providers apart without knowing template ids; the listing also marks one **preferred**: the one a create that names no provider gives the install's default harness first.
 A provider Connection's env lands in a per-provider layer the Model Router reads; granting or revoking one recycles the [Harness Leases](sessions.md#session-inside-the-machine).
 
@@ -86,7 +86,7 @@ A stored one can be **updated in place** — the injected value, the client secr
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
 A model provider's key is proven where the provider offers a check.
 A provider that cannot say leaves the key unverified; the CurveBender deployment's key, which the user holds no copy of, leaves it unchecked.
-The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, which the Providers page also does each time it opens, and a key the provider refuses then reads as refused until it is replaced.
+The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, which Settings › Providers also does each time it opens, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
 A static key pair has no expiry and no horizon: it reads active until it is rotated or the Connection is removed.
 A credential can also be typed on a **secret-entry page** of the web app instead of into the client that asked for it.
@@ -292,6 +292,7 @@ It prefixes every gateway call with its own service path, and that prefix is not
 What the endpoint has to offer for this to work is the OpenAI-shaped chat-completion route, a model-information route reporting a non-empty model list (Bob treats an empty list as an error), and no region hint of its own — a gateway answering the profile route with one would redirect Bob's inference calls off the configured host.
 Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since a session's model is a qualified name the router routes.
 The [model catalog](harness-config.md#the-model-catalog) lists the endpoint's models under the Connection's alias, through the OpenAI model list since the key is refused the model-information route, and a session picks one per turn.
+The [owner model catalog](owner-model-catalog.md) lists the same models without an agent, reading the stored key in the api-server itself.
 Every harness reaches the endpoint through the [Model Router](harness-config.md#the-model-router), which sends the Connection's placeholder.
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
 GPT models cache on their own.

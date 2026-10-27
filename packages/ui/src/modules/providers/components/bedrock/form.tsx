@@ -88,6 +88,7 @@ export function BedrockForm({
       }}
       onSubmit={onSubmit}
       onCancel={onCancel}
+      closeDisabled={isSubmitting}
     >
       <ProviderSecretRow
         register={register("value")}

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An agent driving DAM sees and changes from the CLI what the agent's Providers page shows. `dam agent get` shows the granted model providers, the harnesses the runtime carries and the three Session Pair defaults, in its table and under `models` in its JSON. `dam agent update` grants and revokes provider Connections by name or id, saves a default through harnessConfig.rememberSessionPair with only the parts the flags name changed, and with --same-as-chat clears a channel or scheduled default. `dam agent models` lists the models a harness's providers offer, read from the agent-runtime's model catalog.
+// TEST_OVERVIEW: An agent driving DAM sees and changes from the CLI what the agent's Providers page shows. `dam agent get` shows the granted model providers, the harnesses the runtime carries and the three Session Pair defaults, in its table and under `models` in its JSON. `dam agent update` grants and revokes provider Connections by name or id, saves a default through harnessConfig.rememberSessionPair with only the parts the flags name changed, and with --same-as-chat clears a channel or scheduled default. `dam agent models` lists the models a harness's granted providers offer, read from the api-server's model catalog.
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -11,14 +11,11 @@ import {
   type ApiContext,
   type ConnectionView,
   type DefaultKind,
+  type OwnerModelCatalogView,
   type SessionDefaults,
   type SessionPair,
 } from "api-server-api";
-import { appRouter as runtimeRouter } from "agent-runtime-api/router";
-import type {
-  AgentRuntimeContext,
-  HarnessCatalogView,
-} from "agent-runtime-api";
+import type { HarnessCatalogView } from "agent-runtime-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDam } from "./run-dam.js";
 import { ownedAgents } from "./owned-agents.js";
@@ -35,6 +32,49 @@ const CONNECTIONS = [
   connection("conn-gh", "github", "github"),
 ];
 
+const model = (name: string, contextWindow: number, harnesses: string[]) => ({
+  name,
+  upstreamId: name.slice(name.indexOf("/") + 1),
+  contextWindow,
+  maxOutputTokens: null,
+  reasoning: true,
+  vision: true,
+  prices: null,
+  source: { limits: "table" as const, prices: "none" as const },
+  harnesses,
+});
+
+const CATALOG: OwnerModelCatalogView = {
+  defaultHarness: "claude-code",
+  modelRouter: true,
+  harnesses: [],
+  providers: [
+    {
+      connectionId: "conn-ibm",
+      alias: "ibm",
+      template: "ibm-litellm",
+      displayName: "IBM ETE LiteLLM Proxy",
+      status: "listed",
+      listedAt: new Date(0).toISOString(),
+      harnesses: ["claude-code", "codex"],
+      models: [
+        model("ibm/aws/claude-opus-4-8", 1000000, ["claude-code"]),
+        model("ibm/gpt-5.5", 400000, ["claude-code", "codex"]),
+      ],
+    },
+    {
+      connectionId: "conn-oai",
+      alias: "openai",
+      template: "openai",
+      displayName: "OpenAI",
+      status: "unavailable",
+      listedAt: null,
+      harnesses: ["claude-code", "codex"],
+      models: [],
+    },
+  ],
+};
+
 describe("dam agent get / update / models (integration)", () => {
   let home: string;
   let server: Server;
@@ -44,7 +84,7 @@ describe("dam agent get / update / models (integration)", () => {
   let remembered: { kind: DefaultKind; pair: SessionPair }[];
   let cleared: DefaultKind[];
   let grantCalls: { grant: string[]; revoke: string[] }[];
-  let catalogHarness: string | null;
+  let catalogAgent: string | undefined;
   let rememberRefusal: string | null;
   let connectionsRefusal: string | null;
 
@@ -68,7 +108,7 @@ describe("dam agent get / update / models (integration)", () => {
     remembered = [];
     cleared = [];
     grantCalls = [];
-    catalogHarness = null;
+    catalogAgent = undefined;
     rememberRefusal = null;
     connectionsRefusal = null;
 
@@ -107,6 +147,10 @@ describe("dam agent get / update / models (integration)", () => {
           }
           return CONNECTIONS;
         },
+        modelCatalog: async (agentId?: string) => {
+          catalogAgent = agentId;
+          return CATALOG;
+        },
         getAgentConnections: async (agentId: string) => ({
           agentId,
           connections: granted.map((connectionId) => ({
@@ -139,7 +183,7 @@ describe("dam agent get / update / models (integration)", () => {
             { name: "codex", harnessConfig: true, sessionModel: true },
           ],
         }),
-        sessionDefaults: async () => defaults,
+        sessionDefaults: async () => ({ ...defaults, chatProfileId: null }),
         rememberSessionPair: async (
           _agentId: string,
           kind: DefaultKind,
@@ -165,75 +209,6 @@ describe("dam agent get / update / models (integration)", () => {
       },
     } as unknown as ApiContext;
 
-    const runtimeContext = {
-      harnessConfig: {
-        catalog: async ({
-          harness,
-        }: {
-          harness: string;
-        }): Promise<HarnessCatalogView> => {
-          catalogHarness = harness;
-          return {
-            harness,
-            routed: true,
-            providers: [
-              {
-                connectionId: "conn-ibm",
-                alias: "ibm",
-                template: "ibm-litellm",
-                displayName: "IBM ETE LiteLLM Proxy",
-                status: "listed",
-                listedAt: new Date(0).toISOString(),
-                native: false,
-                models: [
-                  ...(harness === "claude-code"
-                    ? [
-                        {
-                          name: "claude/ibm/aws/claude-opus-4-8",
-                          upstreamId: "aws/claude-opus-4-8",
-                          contextWindow: 1000000,
-                          maxOutputTokens: null,
-                          reasoning: true,
-                          vision: true,
-                          prices: null,
-                          source: {
-                            limits: "table" as const,
-                            prices: "none" as const,
-                          },
-                        },
-                      ]
-                    : []),
-                  {
-                    name:
-                      harness === "claude-code"
-                        ? "claude/ibm/gpt-5.5"
-                        : "ibm/gpt-5.5",
-                    upstreamId: "gpt-5.5",
-                    contextWindow: 400000,
-                    maxOutputTokens: null,
-                    reasoning: true,
-                    vision: true,
-                    prices: null,
-                    source: { limits: "table", prices: "none" },
-                  },
-                ],
-              },
-              {
-                connectionId: "conn-oai",
-                alias: "openai",
-                template: "openai",
-                displayName: "OpenAI",
-                status: "unavailable",
-                listedAt: null,
-                native: false,
-                models: [],
-              },
-            ],
-          };
-        },
-      },
-    } as unknown as AgentRuntimeContext;
-
     server = createServer(async (req, res) => {
       if (req.url === "/api/version") {
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -250,19 +225,12 @@ describe("dam agent get / update / models (integration)", () => {
         headers: { "content-type": "application/json" },
         body: body.length > 0 ? body : undefined,
       });
-      const response = req.url?.startsWith(`/api/agents/${AGENT_ID}/trpc/`)
-        ? await fetchRequestHandler({
-            endpoint: `/api/agents/${AGENT_ID}/trpc`,
-            req: request,
-            router: runtimeRouter,
-            createContext: () => runtimeContext,
-          })
-        : await fetchRequestHandler({
-            endpoint: "/api/trpc",
-            req: request,
-            router: appRouter,
-            createContext: () => apiContext,
-          });
+      const response = await fetchRequestHandler({
+        endpoint: "/api/trpc",
+        req: request,
+        router: appRouter,
+        createContext: () => apiContext,
+      });
       res.writeHead(response.status, Object.fromEntries(response.headers));
       res.end(Buffer.from(await response.arrayBuffer()));
     });
@@ -508,14 +476,18 @@ describe("dam agent get / update / models (integration)", () => {
 
   /**
    * TEST_SCENARIO: the model names to pass to --model come from the agent's
-   * own catalog, for its default harness unless --harness names another,
-   * and a provider that has not listed yet is named, not silently missing.
+   * granted providers in the api-server's catalog, for its default harness
+   * unless --harness names another, and a provider that has not listed yet is
+   * named, not silently missing.
    */
   it("agent models lists the catalog's models as --model takes them", async () => {
     const r = await dam("agent", "models", AGENT_ID);
     expect(r.exitCode, r.stderr).toBe(0);
-    expect(catalogHarness).toBe("claude-code");
+    expect(catalogAgent).toBe(AGENT_ID);
     expect(r.stdout).toMatch(/^MODEL\s+PROVIDER\s+CONTEXT$/m);
+    expect(r.stdout).toMatch(
+      /^ibm\/aws\/claude-opus-4-8\s+IBM ETE LiteLLM Proxy\s+1000000$/m,
+    );
     expect(r.stdout).toMatch(
       /^ibm\/gpt-5\.5\s+IBM ETE LiteLLM Proxy\s+400000$/m,
     );
@@ -532,54 +504,10 @@ describe("dam agent get / update / models (integration)", () => {
       "--json",
     );
     expect(json.exitCode, json.stderr).toBe(0);
-    expect(catalogHarness).toBe("codex");
-    expect(JSON.parse(json.stdout)).toMatchObject({ harness: "codex" });
-  });
-
-  /**
-   * TEST_SCENARIO: Claude Code's catalog spells every model
-   * `claude/<alias>/<id>` for its gateway discovery, while a saved default
-   * and `--model` use `<alias>/<id>`. An agent copies a name from
-   * `dam agent models` into `--model` and compares it with the default, so
-   * the list shows the default's spelling, in the table and under `--json`.
-   */
-  it("agent models names every saved default the way the default does", async () => {
-    const r = await dam(
-      "agent",
-      "models",
-      AGENT_ID,
-      "--harness",
-      "claude-code",
+    const codex = JSON.parse(json.stdout) as HarnessCatalogView;
+    expect(codex.harness).toBe("codex");
+    expect(codex.providers.flatMap((p) => p.models.map((m) => m.name))).toEqual(
+      ["ibm/gpt-5.5"],
     );
-    expect(r.exitCode, r.stderr).toBe(0);
-    expect(r.stdout).not.toContain("claude/");
-    const json = await dam(
-      "agent",
-      "models",
-      AGENT_ID,
-      "--harness",
-      "claude-code",
-      "--json",
-    );
-    expect(json.exitCode, json.stderr).toBe(0);
-    const catalog = JSON.parse(json.stdout) as HarnessCatalogView;
-    const names = catalog.providers.flatMap((p) => p.models.map((m) => m.name));
-    expect(names).toEqual(["ibm/aws/claude-opus-4-8", "ibm/gpt-5.5"]);
-
-    for (const pair of Object.values(defaults)) {
-      if (pair === null || pair.model === null) continue;
-      const listed = await dam(
-        "agent",
-        "models",
-        AGENT_ID,
-        "--harness",
-        pair.harness,
-        "--json",
-      );
-      const offered = (
-        JSON.parse(listed.stdout) as HarnessCatalogView
-      ).providers.flatMap((p) => p.models.map((m) => m.name));
-      expect(offered).toContain(pair.model);
-    }
   });
 });

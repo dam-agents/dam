@@ -567,9 +567,6 @@ export function stopsFirstShort(name: string): string {
   return `${name} stops first`;
 }
 
-export const ALL_AGENTS_LIMIT_BUTTON_TIP =
-  "Daily limit for all your agents on this provider";
-
 export const AGENT_PROVIDER_LIMIT_BUTTON_TIP =
   "This agent's daily limit on this provider";
 

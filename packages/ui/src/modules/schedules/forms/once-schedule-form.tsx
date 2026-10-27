@@ -22,6 +22,7 @@ import {
   onceLocalMoment,
 } from "./once-form-schema.js";
 import { ScheduleDialog } from "./schedule-dialog.js";
+import { scheduleChoices } from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 interface Props {
@@ -67,16 +68,11 @@ export function OnceScheduleForm({
       });
       onClose();
     };
-    const settings = Object.fromEntries(
-      Object.entries(v.settings).filter(([, value]) => value !== ""),
-    );
     const fields = {
       name: v.name,
       task: v.task,
       timezone: v.timezone,
-      ...(v.harness ? { harness: v.harness } : {}),
-      ...(v.model ? { model: v.model } : {}),
-      ...(Object.keys(settings).length > 0 ? { settings } : {}),
+      ...scheduleChoices(v, false),
       ...(v.sessionTitle ? { sessionTitle: v.sessionTitle } : {}),
     };
     if (existing) {

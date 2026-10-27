@@ -15,6 +15,8 @@ import {
 } from "./schedule-fields.js";
 import {
   buildRRuleParts,
+  quietHoursChange,
+  scheduleChoices,
   scheduleFormDefaults,
   scheduleFormSchema,
   type ScheduleFormValues,
@@ -58,18 +60,11 @@ export function RecurringScheduleForm({
 
   const onValid = (v: ScheduleFormValues) => {
     const precheck = v.precheck.trim();
-    const harness = v.harness.trim();
-    const model = v.model.trim();
-    const settings = Object.fromEntries(
-      Object.entries(v.settings).filter(([, value]) => value !== ""),
-    );
-    const hasSettings = Object.keys(settings).length > 0;
     const sessionTitle = v.sessionTitle.trim();
     const common = {
       name: v.name,
       rrule: buildRRuleParts(v).body,
       timezone: v.timezone,
-      quietHours: v.quietHours,
       task: v.task,
       sessionMode: v.sessionMode,
     };
@@ -88,9 +83,9 @@ export function RecurringScheduleForm({
           advanced:
             precheck !== "" ||
             sessionTitle !== "" ||
-            harness !== "" ||
-            model !== "" ||
-            hasSettings ||
+            v.harness.trim() !== "" ||
+            v.model.trim() !== "" ||
+            Object.values(v.settings).some((value) => value !== "") ||
             v.quietHours.length > 0 ||
             v.sessionMode !== "fresh",
         });
@@ -101,10 +96,9 @@ export function RecurringScheduleForm({
         {
           id: existing.id,
           ...common,
+          ...quietHoursChange(v, existing),
           precheck: precheck || null,
-          harness: harness || null,
-          model: model || null,
-          settings: hasSettings ? settings : null,
+          ...scheduleChoices(v, true),
           sessionTitle: sessionTitle || null,
         },
         { onSuccess },
@@ -114,10 +108,9 @@ export function RecurringScheduleForm({
         {
           agentId,
           ...common,
+          quietHours: v.quietHours,
           ...(precheck ? { precheck } : {}),
-          ...(harness ? { harness } : {}),
-          ...(model ? { model } : {}),
-          ...(hasSettings ? { settings } : {}),
+          ...scheduleChoices(v, false),
           ...(sessionTitle ? { sessionTitle } : {}),
         },
         { onSuccess },

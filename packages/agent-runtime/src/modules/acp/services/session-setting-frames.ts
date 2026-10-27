@@ -26,21 +26,18 @@ export interface SessionSettingInput {
  * picked none, and only for a harness whose manifest opts in: one that starts
  * on no mode of its own. A harness that does not opt in keeps its own sources
  * of a start mode — a thinking level, a pinned persona — so the runtime names
- * none. Where it does opt in, the mode the agent's config file names still
- * wins, since the harness is on it at start; otherwise the catalog's default
- * for the model the session runs on applies: its own model, or the file's
- * where the session names none.
+ * none. Where it does opt in, the catalog's default for the model the session
+ * runs on applies, never a mode the agent's config file names: a permission
+ * mode is tool approval, which is only ever a session's own pick.
  */
 export function derivedMode(input: SessionSettingInput): string | null {
   const { settings, model, harness } = input;
   const mode = modeSettingOf(harness);
   if (mode === undefined || !mode.derive || settings[mode.id] !== undefined)
     return null;
-  const configured = harness?.configured();
-  if (configured?.mode) return null;
   return startModeFor(
     harness?.catalog,
-    model ?? configured?.model ?? null,
+    model ?? harness?.configured().model ?? null,
     mode.id,
   );
 }

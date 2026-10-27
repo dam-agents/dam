@@ -6,7 +6,24 @@ import {
   type DriverBinding,
 } from "agent-runtime-api";
 import { loadYamlDocument } from "../../core/yaml-document.js";
+import {
+  modelDialect,
+  modelDiscoverySources,
+  modelDiscoverySpec,
+  type ModelDialect,
+  type ModelDiscoverySources,
+  type ModelDiscoverySpec,
+} from "api-server-api";
 import { z } from "zod";
+
+export {
+  modelDialect,
+  modelDiscoverySources,
+  modelDiscoverySpec,
+  type ModelDialect,
+  type ModelDiscoverySources,
+  type ModelDiscoverySpec,
+};
 
 const driverEntry = z.union([
   z.object({ impl: z.string().min(1).optional() }).catchall(z.unknown()),
@@ -19,33 +36,6 @@ const extensionImpl = z.object({
   export: z.string().min(1),
 });
 export type ExtensionImpl = z.infer<typeof extensionImpl>;
-
-const modelListing = z.object({
-  path: z.string().startsWith("/").optional(),
-  shape: z
-    .enum(["openai-models", "litellm-model-info", "bedrock-inference-profiles"])
-    .optional(),
-});
-
-export const modelDiscoverySpec = modelListing.extend({
-  urlEnv: z.array(z.string().min(1)).nonempty(),
-  tokenEnv: z.array(z.string().min(1)).optional(),
-  credentialHeader: z.enum(["authorization", "x-api-key"]).optional(),
-  headers: z.record(z.string().min(1), z.string()).optional(),
-  redirectEnv: z.array(z.string().min(1)).optional(),
-  pinEnv: z.array(z.string().min(1)).optional(),
-  namePrefix: z.string().min(1).optional(),
-  lowercaseNames: z.boolean().optional(),
-  extendsCatalog: z.boolean().optional(),
-  fallback: modelListing.optional(),
-});
-export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
-
-export const modelDiscoverySources = z.union([
-  modelDiscoverySpec,
-  z.array(modelDiscoverySpec).nonempty(),
-]);
-export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: how a session setting reaches the harness. An
@@ -108,13 +98,6 @@ export const harnessConfigBinding = z.object({
     .optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
-
-export const modelDialect = z.enum([
-  "anthropic-messages",
-  "openai-chat",
-  "openai-responses",
-]);
-export type ModelDialect = z.infer<typeof modelDialect>;
 
 export const sessionModelBinding = z.object({
   configOption: z.string().min(1),

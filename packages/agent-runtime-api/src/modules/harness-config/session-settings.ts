@@ -56,6 +56,35 @@ export function startModeFor(
   return start ?? null;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: Copilot's Autopilot, its mode that keeps working without stopping, is its Auto mode; it runs every tool unasked in any mode. */
+export const COPILOT_AUTOPILOT =
+  "https://agentclientprotocol.com/protocol/session-modes#autopilot";
+
+/** UNIT_BOUNDARY_DESCRIPTION: the option that holds tool approval: Bob's approvals, or a mode that can bypass (Claude Code's) or run on Autopilot (Copilot's); a harness with neither runs every tool unasked. Approval is one session's own pick, so no default, profile, channel or schedule carries it. */
+export function approvalOption(catalog: HarnessConfigCatalog | undefined) {
+  const options = catalog?.options ?? [];
+  return (
+    options.find((o) => o.category === "approvals") ??
+    options.find(
+      (o) =>
+        o.category === "mode" &&
+        o.choices.some(
+          (c) =>
+            c.value === "bypassPermissions" || c.value === COPILOT_AUTOPILOT,
+        ),
+    )
+  );
+}
+
+export function withoutApproval(
+  catalog: HarnessConfigCatalog | undefined,
+  settings: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  const id = approvalOption(catalog)?.id;
+  if (settings === undefined || id === undefined) return settings;
+  return Object.fromEntries(Object.entries(settings).filter(([k]) => k !== id));
+}
+
 export function sessionSettingsError(
   catalog: HarnessConfigCatalog | undefined,
   settings: SessionSettings,

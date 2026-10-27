@@ -72,11 +72,13 @@ import type {
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpSessionLoadError,
+  pairFields,
   AcpTurnAbandonedError,
   type AcpClient,
   type AcpClientFactory,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
+import type { ChannelPair } from "./channel-profile.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
 import {
@@ -1305,6 +1307,7 @@ async function turnContractContext(
 
 export type SlackWorkerDeps = {
   makeAcpClient: AcpClientFactory;
+  channelPair?: ChannelPair;
   createGateway: () => SlackGateway;
   agents: () => AgentsService;
   identityLinks: IdentityLinkService;
@@ -1347,6 +1350,7 @@ export type SlackWorkerDeps = {
 export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const {
     makeAcpClient,
+    channelPair,
     createGateway,
     agents,
     identityLinks,
@@ -2886,6 +2890,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
+    channelId: string;
     title: string;
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
@@ -2898,11 +2903,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     legacyThreadKey?: string;
     signal?: AbortSignal;
   }): Promise<string> {
-    const platformMeta = {
+    const freshSessionMeta = async () => ({
       type: SessionType.ChannelSlack,
       threadTs: args.threadKey,
       title: args.title,
-    };
+      ...pairFields(
+        await channelPair?.(args.instanceName, {
+          type: "slack",
+          id: args.channelId,
+        }),
+      ),
+    });
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
       await agents().ensureReady(args.instanceName, {
         onWaking: args.onWaking,
@@ -2940,13 +2951,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           if (!(err instanceof AcpSessionLoadError)) throw err;
           args.onGhostTurn?.();
           return send(await args.buildFreshPrompt(), {
-            platformMeta,
+            platformMeta: await freshSessionMeta(),
             ...sendOpts,
           });
         }
       }
       return send(await args.buildFreshPrompt(), {
-        platformMeta,
+        platformMeta: await freshSessionMeta(),
         ...sendOpts,
       });
     });
@@ -3158,6 +3169,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await runSessionTurn({
         instanceName,
         threadKey,
+        channelId: ctx.channel,
         title: ctx.title,
         legacyThreadKey: ctx.threadTs,
         onReady: () => {
@@ -3238,7 +3250,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       );
       const outage =
         failure.kind === "provider-unavailable"
-          ? await lookUpProviderOutage(providerOutage, instanceName)
+          ? await lookUpProviderOutage(providerOutage, instanceName, {
+              type: "slack",
+              id: ctx.channel,
+            })
           : null;
       failureTemplateId = outage?.templateId ?? undefined;
       if (turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff))
@@ -5595,6 +5610,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       runSessionTurn({
         instanceName: args.instanceName,
         threadKey: args.threadKey,
+        channelId: args.channel,
         title: args.title,
         ...(args.legacyThreadKey
           ? { legacyThreadKey: args.legacyThreadKey }
@@ -5696,8 +5712,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       );
       if (failure.kind === "provider-unavailable")
         failureTemplateId =
-          (await lookUpProviderOutage(providerOutage, args.instanceName))
-            ?.templateId ?? undefined;
+          (
+            await lookUpProviderOutage(providerOutage, args.instanceName, {
+              type: "slack",
+              id: args.channel,
+            })
+          )?.templateId ?? undefined;
     } finally {
       for (const ref of turnRefs) {
         endTurn(args.instanceName, ref, {

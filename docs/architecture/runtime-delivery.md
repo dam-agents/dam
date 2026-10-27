@@ -356,6 +356,7 @@ The kinds advertised on `hello` are derived at boot from the resolved drivers �
 Validated against a versioned schema at boot; fail-fast on a malformed manifest or an unknown kind.
 
 The default shipped manifest lives in the shared base, [`packages/agents/base/`](../../packages/agents/base/), a harness's own in its directory beside it.
+The api-server image also carries a copy of each harness manifest, so the [owner model catalog](owner-model-catalog.md) can answer a harness's settings catalog and native tiers without an agent.
 
 A harness that needs custom code for a kind — contribution or event — rebinds that kind to a fresh impl name supplied under `extensions.impls`, naming the module to load it from; the built-in stays registered but unbound.
 Custom impl names may not collide with a built-in name — registration rejects collision and boot fails loud.

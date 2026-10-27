@@ -7,8 +7,8 @@ export const channelPermissionCheckGuidance = [
     "own. Nothing in this conversation can approve the rest, and no platform " +
     "setting grants it — not a Connection's scope, not a repository's " +
     "permissions — so never name a setting that does not exist. Don't retry " +
-    "the same call: say plainly what was blocked and that your owner can change " +
-    "the agent's mode (Mode on Claude Code, Approvals on Bob), and offer what " +
-    "you can still do without it.",
+    "the same call: say plainly what was blocked — a channel turn runs on the " +
+    "default tool approval, which no setting changes — and offer what you can " +
+    "still do without it.",
   "</permission-check>",
 ].join("\n");

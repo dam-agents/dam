@@ -8,12 +8,20 @@ import type {
   harnessConfigSnapshotResultSchema,
   harnessConfigSnapshotSchema,
   sessionDefaultsSchema,
+  sessionChoiceReferencesSchema,
+  sessionChoiceSlotsSchema,
+  sessionDefaultsViewSchema,
   sessionPairSchema,
 } from "./schemas.js";
 
 export type SessionPair = z.infer<typeof sessionPairSchema>;
 export type DefaultKind = z.infer<typeof defaultKindSchema>;
 export type SessionDefaults = z.infer<typeof sessionDefaultsSchema>;
+export type SessionDefaultsView = z.infer<typeof sessionDefaultsViewSchema>;
+export type SessionChoiceReferences = z.infer<
+  typeof sessionChoiceReferencesSchema
+>;
+export type SessionChoiceSlots = z.infer<typeof sessionChoiceSlotsSchema>;
 
 export interface HarnessConfigChange {
   harness?: string;
@@ -56,16 +64,25 @@ export interface HarnessConfigService {
     harness?: string,
   ): Promise<HarnessConfigSnapshotResult>;
   sessionPair(agentId: string, kind: DefaultKind): Promise<SessionPair | null>;
-  sessionDefaults(agentId: string): Promise<SessionDefaults>;
+  sessionDefaults(agentId: string): Promise<SessionDefaultsView>;
   rememberSessionPair(
     agentId: string,
     kind: DefaultKind,
     pair: SessionPair,
+    references?: SessionChoiceReferences,
+  ): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the checks a chat default's pick passes, for a channel's pick in the same shape: both profiles the caller's and runnable, and the pair they compose one the agent can start on. */
+  validateChoice(
+    agentId: string,
+    pair: SessionPair | null,
+    references?: SessionChoiceReferences,
   ): Promise<void>;
   clearSessionDefault(
     agentId: string,
     kind: Exclude<DefaultKind, "chat">,
   ): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: after a profile the agent points at changed, sends the agent its new pair, or answers why it keeps the one it holds. */
+  republishDefaults(agentId: string): Promise<string | null>;
   defaultFor(
     agentId: string,
     kind: DefaultKind,

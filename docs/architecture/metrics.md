@@ -74,7 +74,7 @@ Both folds ride the same trace-context propagation [observability](observability
 ## Provider budgets
 
 A second answer to *how much have I spent* comes from the model provider itself, not from telemetry: a provider that keeps a budget for a credential — Bob Shell per team, the LiteLLM proxies per key — reports how much of it is used, its limit and its next reset.
-The Providers page shows that beside the provider's key.
+Settings › Providers shows that beside the provider's key.
 It is read live through the Connections context, which asks the provider with the stored credential on each read, the same way it asks whose account a Connection acts as.
 Nothing is stored and nothing reaches the telemetry store.
 
