@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Cluster tooling resolves one target and one install, and a worktree's name never reaches an Environment"
-#MISE sources=[".mise/lib/cluster.sh", ".mise/tasks/cluster/*", ".mise/tasks/check/cluster-resolve"]
+#MISE sources=[".mise/lib/cluster.sh", ".mise/tasks/cluster/*", ".mise/tasks/e2e/*", ".mise/tasks/check/cluster-resolve"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 # Two axes, one resolver: --environment picks which cluster, --name/DAM_INSTALL
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 LIB="$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-unset IS_SANDBOX DAM_INSTALL CLUSTER_ENVIRONMENT E2E_LANE CLUSTER_ANNOUNCED usage_environment usage_name
+unset IS_SANDBOX DAM_INSTALL CLUSTER_ENVIRONMENT E2E_LANE E2E_ENVIRONMENT CLUSTER_ANNOUNCED usage_environment usage_name
 fail=0
 
 work="$(mktemp -d)"
@@ -83,12 +83,21 @@ usage_environment=pr-123 expect "environment, from mise" "environment|default|" 
 expect "environment, a pinned default name" "environment|default|" "$WT" --environment pr-123 --name default
 refuses "environment, a --name" "holds one install" "$WT" --environment pr-123 --name profiles
 DAM_INSTALL=profiles refuses "environment, a DAM_INSTALL" "holds one install" "$WT" --environment pr-123
-E2E_LANE=1 CLUSTER_ENVIRONMENT=pr-123 refuses "the e2e lane in an Environment" "never an Environment" "$WT"
-E2E_LANE=1 refuses "the e2e lane with the flag" "never an Environment" "$WT" --environment pr-123
+# The lane goes into an Environment only when an e2e task was given the flag:
+# a CLUSTER_ENVIRONMENT left in the shell would install the lane's values into
+# an Environment nobody named for it. The task's flag marks it, and the tasks
+# it runs inherit the mark.
+E2E_LANE=1 CLUSTER_ENVIRONMENT=pr-123 refuses "the e2e lane, an Environment left in the shell" "only when its task is given --environment" "$WT"
+E2E_LANE=1 expect "the e2e lane with the flag" "environment|default|" "$WT" --environment pr-123
+E2E_LANE=1 usage_environment=pr-123 expect "the e2e lane with the flag from mise" "environment|default|" "$WT"
+E2E_LANE=1 CLUSTER_ENVIRONMENT=pr-123 E2E_ENVIRONMENT=pr-123 expect "the e2e lane, inherited from its task" "environment|default|" "$WT"
+E2E_LANE=1 CLUSTER_ENVIRONMENT=pr-123 E2E_ENVIRONMENT=pr-7 refuses "the e2e lane, another Environment than its task's" "only when its task is given --environment" "$WT"
+E2E_LANE=1 DAM_INSTALL=default expect "the e2e lane pins the default install there" "environment|default|" "$WT" --environment pr-123
 
 # --- every task that declares flags declares both --------------------------
 # mise validates a declared task's flags before the script runs, so a task that
-# documents one of the two and not the other rejects the other outright.
+# documents one of the two and not the other rejects the other outright. The
+# e2e tasks pin the default install and take only --environment.
 for f in "$MISE_CONFIG_ROOT"/.mise/tasks/cluster/*; do
   grep -q '^#USAGE ' "$f" || continue
   for flag in environment name; do
@@ -97,6 +106,12 @@ for f in "$MISE_CONFIG_ROOT"/.mise/tasks/cluster/*; do
       fail=1
     }
   done
+done
+for task in install loop reset gate run; do
+  grep -q '^#USAGE flag "--environment' "$MISE_CONFIG_ROOT/.mise/tasks/e2e/$task" || {
+    echo "FAIL: .mise/tasks/e2e/$task: takes no --environment, so 'mise run e2e:loop -- --environment <name>' cannot hand it on" >&2
+    fail=1
+  }
 done
 
 exit "$fail"

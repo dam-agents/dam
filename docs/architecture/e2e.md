@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -66,6 +66,10 @@ The two summaries hold the same table, so a phase of one lane compares with the 
 
 `mise run e2e` is the CI path: a fresh cluster, the suite, teardown.
 `e2e:loop` iterates against a warm cluster, and the [cluster-ops skill](../../.agents/skills/cluster-ops/SKILL.md) covers both.
+
+An agent runs the suite for its checkout in an [Environment](environments.md) of its own with `e2e:loop -- --environment <name>`, so its parallel runs do not take turns on one test cluster.
+The install there takes only what the checkout changed, and the suite reaches the install's backchannel and its cluster's API over the Environment Link, on a port of that Environment's own, so several Environments and the local test cluster run side by side on one agent.
+An Environment runs no mesh, so a run there says nothing about the mesh's policies; the CI lanes still run them.
 
 A CI runner and its cluster are gone once the job ends, so a failure has to explain itself in the job's own record.
 A tRPC call a spec makes that fails names its procedure, its HTTP status and the answer it got, because the api-server redacts an internal error to "internal server error" and the spec's stack names no call.

@@ -57,13 +57,14 @@ it("marks a terminal Session with the labelled terminal icon", () => {
   expect(render()).not.toContain('aria-label="Terminal"');
 });
 
+// TEST_SCENARIO: the row lists the repositories the Session has pull requests in under it, each with its number.
+it("lists the repositories the Session has pull requests in", () => {
+  expect(render()).toContain("Repositories this session has pull requests in");
+  expect(render()).toContain("#7");
+});
+
 // TEST_SCENARIO: a Session lists every repository it committed in, and the tools it runs commit in caches and plugins too; the row badges only those with a pull request, so a Session with none draws no repository line.
 it("badges only the repositories with a pull request", () => {
-  const withPullRequest = render();
-  expect(withPullRequest).toContain(
-    "Repositories this session has pull requests in",
-  );
-  expect(withPullRequest).toContain("#7");
   const cache = { name: "cache", path: "/tmp/cache", branch: "main" };
   expect(
     render(SessionMode.Chat, [{ ...cache, pullRequest: null }]),
