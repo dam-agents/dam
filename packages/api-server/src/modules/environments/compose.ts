@@ -20,9 +20,9 @@ import {
   type EnvironmentSignIn,
 } from "./services/environment-signin.js";
 import {
-  createAccessListsRepository,
-  type AccessListsRepository,
-} from "./infrastructure/access-lists-repository.js";
+  createMembersRepository,
+  type MembersRepository,
+} from "./infrastructure/members-repository.js";
 import { agentServiceAddress } from "../agents/infrastructure/k8s.js";
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
@@ -55,6 +55,7 @@ export interface ComposeEnvironmentsDeps {
   runtimeMutator: RuntimeMutator;
   config: EnvironmentsConfig;
   listAgents: () => Promise<ListedAgent[]>;
+  editorsOf: (owningAgentId: string) => Promise<string[]>;
 }
 
 export interface EnvironmentsComposition {
@@ -110,20 +111,21 @@ export function composeEnvironments(
   return composeEnvironmentsOver(
     createEnvironmentsRepository(deps.db),
     deps,
-    createAccessListsRepository(deps.db),
+    createMembersRepository(deps.db),
   );
 }
 
 export function composeEnvironmentsOver(
   repo: EnvironmentsRepository,
   deps: Omit<ComposeEnvironmentsDeps, "db">,
-  accessLists: AccessListsRepository,
+  members: MembersRepository,
 ): EnvironmentsComposition {
   const environmentsFor = (owner: string) =>
     createEnvironmentsService({
       owner,
       repo,
-      accessLists,
+      members,
+      editorsOf: deps.editorsOf,
       agents: deps.agentsFor(owner),
       config: deps.config,
       startCommand: async (agentId, command) => {
@@ -153,7 +155,7 @@ export function composeEnvironmentsOver(
         for (const record of await repo.listByOwningAgent(agentId))
           await environmentsFor(record.owner).remove(record, record.owner);
         await repo.delete(agentId);
-        await accessLists.delete(agentId);
+        await members.deleteOfAgent(agentId);
       },
     },
 
@@ -242,8 +244,11 @@ export function composeEnvironmentGate(
     template.replace("{host}", () => address);
   const shareBase = deps.shareBaseUrl.replace(/\/+$/, "");
   const repo = createEnvironmentsRepository(deps.db);
-  const ownerList = (owningAgentId: string) =>
-    createAccessListsRepository(deps.db).get(owningAgentId);
+  const members = createMembersRepository(deps.db);
+  const agentMembers = (owningAgentId: string) =>
+    members.ofAgent(owningAgentId);
+  const environmentMembers = (environmentId: string) =>
+    members.ofEnvironment(environmentId);
   const signIn: EnvironmentSignIn = createEnvironmentSignIn({
     handoffs: createRedisTtlStore(deps.redis, "env:handoff", HANDOFF_TTL_MS),
     sessions: createRedisTtlStore(deps.redis, "env:session", SESSION_TTL_MS),
@@ -265,7 +270,8 @@ export function composeEnvironmentGate(
     signOutUrl: (address) =>
       deps.share.logoutUrl(`${FRONT_DOOR_PREFIX}${address}`),
     repo,
-    ownerList,
+    agentMembers,
+    environmentMembers,
     editorsOf: deps.editorsOf,
     signIn,
     platform: deps.platform,
@@ -283,7 +289,8 @@ export function composeEnvironmentGate(
     domain,
     addressUrl,
     repo,
-    ownerList,
+    agentMembers,
+    environmentMembers,
     editorsOf: deps.editorsOf,
     signIn,
     share: deps.share,

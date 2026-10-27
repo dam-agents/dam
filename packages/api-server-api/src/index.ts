@@ -1109,12 +1109,12 @@ export {
   separateRendererBlocks,
 } from "./modules/chat-forms/renderer-blocks.js";
 export type {
+  AgentEnvironmentView,
   EnvironmentEndpoint,
   EnvironmentView,
 } from "./modules/environments/types.js";
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
-  environmentAccessSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
 } from "./modules/environments/schemas.js";

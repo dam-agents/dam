@@ -137,24 +137,23 @@ export type AccessDecision =
   { allow: true } | { allow: false; reason: "not-signed-in" | "not-allowed" };
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The people who may open one Environment: those on
- * its owner's list for the owning agent, narrowed to the Environment's own
- * list when its agent set one. The agent can only narrow: an email on the
- * Environment's list but not on the owner's opens nothing. The owning agent's
- * Agent Editors are always in, like its owner, so no list narrows them out.
- * Emails compare trimmed and lowercased.
+ * UNIT_BOUNDARY_DESCRIPTION: The people who may open one Environment: its
+ * owning agent's Agent Environment Members, the Environment's own Environment
+ * Members, and the owning agent's Agent Editors. Each list only adds people,
+ * so no list narrows another, and the agent sets none of them. Emails compare
+ * trimmed and lowercased.
  */
 export function effectiveAccess(
-  ownerList: readonly string[],
-  environmentList: readonly string[] | null,
+  agentMembers: readonly string[],
+  environmentMembers: readonly string[],
   editors: readonly string[],
 ): string[] {
   const normalize = (e: string) => e.trim().toLowerCase();
-  const owners = ownerList.map(normalize);
-  const narrowed =
-    environmentList === null ? null : new Set(environmentList.map(normalize));
-  const listed = narrowed ? owners.filter((e) => narrowed.has(e)) : owners;
-  return [...new Set([...listed, ...editors.map(normalize)])];
+  return [
+    ...new Set(
+      [...agentMembers, ...environmentMembers, ...editors].map(normalize),
+    ),
+  ];
 }
 
 /**

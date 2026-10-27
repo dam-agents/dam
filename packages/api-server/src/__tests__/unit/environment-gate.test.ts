@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. An Environment with several endpoints is one sign-in: the browser passes through each other endpoint, which gets a session of its own, and returns to the page it asked for; a page of one endpoint can then call another, its CORS preflight is answered by the gate, and a refusal it gets carries CORS headers so the page can read it. A visitor who is not signed in is sent to sign in; the owner and people on the owner's list (narrowed per Environment by its agent) are admitted, by verified email; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and its own credentials in `Authorization` never reach the app, while the app's own bearer token does; the app cannot set the platform's cookies, and every response is uncacheable. Any other host passes on untouched.
+// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. An Environment with several endpoints is one sign-in: the browser passes through each other endpoint, which gets a session of its own, and returns to the page it asked for; a page of one endpoint can then call another, its CORS preflight is answered by the gate, and a refusal it gets carries CORS headers so the page can read it. A visitor who is not signed in is sent to sign in; the owner the owning agent's editors, its Agent Environment Members and an Environment's own Environment Members are admitted, by verified email, each list only adding people; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and its own credentials in `Authorization` never reach the app, while the app's own bearer token does; the app cannot set the platform's cookies, and every response is uncacheable. Any other host passes on untouched.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -49,7 +49,6 @@ function record(host: string, port: number, owner = OWNER): EnvironmentRecord {
     name: host,
     host,
     endpoints: [{ name: "app", port }],
-    access: null,
     expiresAt: new Date(Date.now() + 86_400_000),
     createdAt: new Date(),
   };
@@ -65,9 +64,9 @@ async function world(
   opts: {
     signedInAs?: string;
     email?: string | null;
-    ownerList?: string[];
+    agentMembers?: string[];
     editors?: string[];
-    environmentList?: string[] | null;
+    environmentMembers?: string[];
     endpoints?: { name: string; port: number }[];
   } = {},
 ) {
@@ -105,7 +104,6 @@ async function world(
   const runtimePort = await listen(runtime);
 
   const records = [record("pr-1-abcdef", 4444), record("pr-2-abcdef", 4444)];
-  records[0]!.access = opts.environmentList ?? null;
   if (opts.endpoints) records[0]!.endpoints = opts.endpoints;
   const woken: string[] = [];
   // UNIT_BOUNDARY_DESCRIPTION: the share host's sessions, faked: the ones still alive, by id.
@@ -125,8 +123,12 @@ async function world(
     getByHost: async (host: string) =>
       records.find((r) => r.host === host) ?? null,
   };
-  const owners = { list: opts.ownerList ?? [] };
-  const ownerList = async () => owners.list;
+  const owners = { list: opts.agentMembers ?? [] };
+  const agentMembers = async () => owners.list;
+  const environmentMembers = async (environmentId: string) =>
+    environmentId === records[0]!.agentId
+      ? (opts.environmentMembers ?? [])
+      : [];
   const editorsOf = async () => opts.editors ?? [];
   // UNIT_BOUNDARY_DESCRIPTION: the share host's sign-in, faked: a `share` cookie names a share session, alive or not, and its login path is where the share host would send a visitor without one through the identity provider.
   const shareLogins: string[] = [];
@@ -147,7 +149,8 @@ async function world(
       domain: DOMAIN,
       addressUrl: (a) => `http://${a}.${DOMAIN}`,
       repo,
-      ownerList,
+      agentMembers,
+      environmentMembers,
       editorsOf,
       signIn,
       share: {
@@ -174,7 +177,8 @@ async function world(
       `http://${SHARE}/e/${address}?next=${encodeURIComponent(next)}&b=${binding}${chain ? `&chain=${chain}` : ""}`,
     signOutUrl: (address) => shareSignIn.logoutUrl(`/e/${address}`),
     repo,
-    ownerList,
+    agentMembers,
+    environmentMembers,
     editorsOf,
     signIn,
     platform: PLATFORM,
@@ -477,7 +481,7 @@ describe("the Environment gate", () => {
     const w = await world({
       signedInAs: "reviewer-sub",
       email: "reviewer@example.com",
-      ownerList: ["reviewer@example.com"],
+      agentMembers: ["reviewer@example.com"],
     });
     const cookie = await w.signInTo("app-pr-1-abcdef");
     expect(
@@ -490,43 +494,43 @@ describe("the Environment gate", () => {
     expect(res.body).toContain("no longer on this Environment");
   });
 
-  // TEST_SCENARIO: a person on the owner's list opens every Environment of that agent; when the agent narrowed one Environment's list, only the people left on it open that one, and an email the agent added that is not on the owner's list opens nothing.
-  it("admits people on the owner's list, narrowed per Environment", async () => {
+  // TEST_SCENARIO: a person on the agent's Environment Members opens every Environment of that agent; a person the owner added to one Environment opens that one and is refused at the agent's other Environment. Emails compare trimmed and lowercased.
+  it("admits the agent's members to all its Environments, and an Environment's own to that one", async () => {
     const reviewer = await world({
       signedInAs: "reviewer-sub",
       email: "Reviewer@Example.com",
-      ownerList: ["reviewer@example.com", "qa@example.com"],
+      agentMembers: ["reviewer@example.com", "qa@example.com"],
     });
     const cookie = await reviewer.signInTo("app-pr-1-abcdef");
     expect(
       (await reviewer.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie }))
         .status,
     ).toBe(200);
+    expect((await reviewer.frontDoor("app-pr-2-abcdef")).status).toBe(302);
 
-    const narrowed = await world({
-      signedInAs: "reviewer-sub",
-      email: "reviewer@example.com",
-      ownerList: ["reviewer@example.com", "qa@example.com"],
-      environmentList: ["qa@example.com"],
+    const guest = await world({
+      signedInAs: "guest-sub",
+      email: "guest@example.com",
+      environmentMembers: ["guest@example.com"],
     });
-    expect((await narrowed.frontDoor("app-pr-1-abcdef")).status).toBe(403);
-
-    const widened = await world({
-      signedInAs: "outsider-sub",
-      email: "outsider@example.com",
-      ownerList: ["qa@example.com"],
-      environmentList: ["outsider@example.com"],
-    });
-    expect((await widened.frontDoor("app-pr-1-abcdef")).status).toBe(403);
+    const guestCookie = await guest.signInTo("app-pr-1-abcdef");
+    expect(
+      (
+        await guest.request(`app-pr-1-abcdef.${DOMAIN}`, "/", {
+          cookie: guestCookie,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await guest.frontDoor("app-pr-2-abcdef")).status).toBe(403);
   });
 
-  // TEST_SCENARIO: an Agent Editor of the owning agent opens its Environments like the owner does: they are on no list, and a list the agent narrowed does not shut them out.
-  it("admits the owning agent's editors, whatever the lists say", async () => {
+  // TEST_SCENARIO: an Agent Editor of the owning agent opens its Environments like the owner does, while on no list of members.
+  it("admits the owning agent's editors, on no list", async () => {
     const editor = await world({
       signedInAs: "editor-sub",
       email: "Editor@Example.com",
       editors: ["editor@example.com"],
-      environmentList: ["qa@example.com"],
+      environmentMembers: ["qa@example.com"],
     });
     const cookie = await editor.signInTo("app-pr-1-abcdef");
     expect(
@@ -540,7 +544,7 @@ describe("the Environment gate", () => {
     const w = await world({
       signedInAs: "unverified-sub",
       email: null,
-      ownerList: ["someone@example.com"],
+      agentMembers: ["someone@example.com"],
     });
     const res = await w.frontDoor("app-pr-1-abcdef");
     expect(res.status).toBe(403);
