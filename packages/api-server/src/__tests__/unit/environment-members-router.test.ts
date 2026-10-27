@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The owner's list of people who may open an agent's Environments is the owner's alone. A key bound to the Owning Agent — which the agent itself may hold — is refused both reading and setting the list before the environments service is reached; the owner's own session reads and sets it.
+// TEST_OVERVIEW: Who may open an Environment is for people alone. A key bound to the Owning Agent — which the agent itself may hold — is refused reading and setting the agent's Environment Members, setting one Environment's members and listing every Environment, before the environments service is reached; the owner's own session reads them.
 import { describe, expect, it, vi } from "vitest";
 import type { ApiContext } from "api-server-api";
 import { appRouter } from "api-server-api/router";
@@ -16,16 +16,18 @@ const principal = (agentIds: User["agentIds"]): User => ({
 
 function setup(user: User) {
   const environments = {
-    accessList: vi.fn(async () => ["reviewer@example.com"]),
-    setAccessList: vi.fn(async () => {}),
+    agentMembers: vi.fn(async () => ["reviewer@example.com"]),
+    setAgentMembers: vi.fn(async () => {}),
+    setMembers: vi.fn(async () => {}),
+    listAll: vi.fn(async () => []),
   };
   const ctx = callerContext({ environments, user });
   markTermsProven(ctx);
   return { caller: appRouter.createCaller(ctx), environments };
 }
 
-describe("the owner's access list", () => {
-  // TEST_SCENARIO: a key bound to the Owning Agent cannot read or set the owner's list, and the service is never reached.
+describe("who may open an Environment", () => {
+  // TEST_SCENARIO: a key bound to the Owning Agent cannot read or set either list, nor list the owner's Environments, and the service is never reached.
   it("refuses a key bound to the Owning Agent", async () => {
     const { caller, environments } = setup(principal(["agent-owning"]));
 
@@ -38,8 +40,19 @@ describe("the owner's access list", () => {
         emails: ["someone@example.com"],
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(environments.accessList).not.toHaveBeenCalled();
-    expect(environments.setAccessList).not.toHaveBeenCalled();
+    await expect(
+      caller.environments.setMembers({
+        id: "agent-env",
+        emails: ["someone@example.com"],
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.environments.listAll()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(environments.agentMembers).not.toHaveBeenCalled();
+    expect(environments.setAgentMembers).not.toHaveBeenCalled();
+    expect(environments.setMembers).not.toHaveBeenCalled();
+    expect(environments.listAll).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: the owner's own session reads the list.

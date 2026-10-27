@@ -12,6 +12,7 @@ import {
   environmentExtendInputSchema,
   environmentIdInputSchema,
   environmentListInputSchema,
+  environmentMembersInputSchema,
 } from "./schemas.js";
 import type { AgentTarget } from "../agents/permissions.js";
 
@@ -28,13 +29,17 @@ export const environmentsRouter = t.router({
       return ctx.environments.list(input.owningAgentId);
     }),
 
+  listAll: readAgentProcedure
+    .use(requireWildcardBinding)
+    .query(({ ctx }) => ctx.environments.listAll()),
+
   accessList: readAgentProcedure
     .use(requireWildcardBinding)
     .input(environmentListInputSchema)
     .use(agentPermission("view", (input) => agentTarget(input.owningAgentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.owningAgentId);
-      return ctx.environments.accessList(input.owningAgentId);
+      return ctx.environments.agentMembers(input.owningAgentId);
     }),
 
   setAccessList: manageAgentsProcedure
@@ -46,8 +51,20 @@ export const environmentsRouter = t.router({
     )
     .mutation(({ ctx, input }) => {
       checkAgentBinding(ctx, input.owningAgentId);
-      return ctx.environments.setAccessList(input.owningAgentId, input.emails);
+      return ctx.environments.setAgentMembers(
+        input.owningAgentId,
+        input.emails,
+      );
     }),
+
+  setMembers: manageAgentsProcedure
+    .input(environmentMembersInputSchema)
+    .use(
+      agentPermission("environments", (input) => environmentTarget(input.id)),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.environments.setMembers(input.id, input.emails),
+    ),
 
   extend: manageAgentsProcedure
     .input(environmentExtendInputSchema)

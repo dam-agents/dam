@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner extends and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints, access list and expiry. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
+// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner lists all of them, extends, shares and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints and expiry. Only people decide who may open one: the owner names Agent Environment Members for every Environment of an agent and Environment Members for one, while the agent reads only how many people may open each, and its tools refuse an `access` list. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
 import { describe, expect, it } from "vitest";
 import {
   listedAgents,
@@ -16,6 +16,7 @@ import {
 } from "../../modules/environments/domain/environment.js";
 import type { EnvironmentsRepository } from "../../modules/environments/infrastructure/environments-repository.js";
 import { parseExpiry } from "../../modules/environments/mcp-tools.js";
+import type { MembersRepository } from "../../modules/environments/infrastructure/members-repository.js";
 import { createEnvironmentsService } from "../../modules/environments/services/environments-service.js";
 
 const OWNER = "owner-1";
@@ -29,6 +30,7 @@ function memoryRepo(): EnvironmentsRepository & { rows: EnvironmentRecord[] } {
     get: async (id) => rows.find((r) => r.agentId === id) ?? null,
     getByHost: async (host) => rows.find((r) => r.host === host) ?? null,
     listByOwningAgent: async (id) => rows.filter((r) => r.owningAgentId === id),
+    listByOwner: async (owner) => rows.filter((r) => r.owner === owner),
     listExpired: async (now) => rows.filter((r) => r.expiresAt < now),
     listAgentIds: async () => rows.map((r) => r.agentId),
     listOwningAgentIds: async () => [
@@ -45,6 +47,22 @@ function memoryRepo(): EnvironmentsRepository & { rows: EnvironmentRecord[] } {
       if (i >= 0) rows.splice(i, 1);
     },
   };
+}
+
+function memoryMembers(seed: Record<string, string[]> = {}) {
+  const agentLists = new Map(Object.entries(seed));
+  const environmentLists = new Map<string, string[]>();
+  const repo: MembersRepository = {
+    ofAgent: async (id) => agentLists.get(id) ?? [],
+    setOfAgent: async (id, emails) => void agentLists.set(id, emails),
+    deleteOfAgent: async (id) => void agentLists.delete(id),
+    ofEnvironment: async (id) => environmentLists.get(id) ?? [],
+    ofEnvironments: async (ids) =>
+      new Map(ids.map((id) => [id, environmentLists.get(id) ?? []])),
+    setOfEnvironment: async (id, emails) =>
+      void environmentLists.set(id, emails),
+  };
+  return { repo, agentLists, environmentLists };
 }
 
 function fakeAgents(seed: Partial<Agent>[]) {
@@ -98,23 +116,19 @@ function setup(
   opts: {
     agents?: Partial<Agent>[];
     max?: number;
-    ownerList?: Record<string, string[]>;
+    agentMembers?: Record<string, string[]>;
+    editors?: string[];
   } = {},
 ) {
   const repo = memoryRepo();
   const agents = fakeAgents(opts.agents ?? [vmOwning]);
   const starts: [string, string][] = [];
-  const ownerLists = new Map<string, string[]>(
-    Object.entries(opts.ownerList ?? {}),
-  );
+  const members = memoryMembers(opts.agentMembers);
   const service = createEnvironmentsService({
     owner: OWNER,
     repo,
-    accessLists: {
-      get: async (id) => ownerLists.get(id) ?? [],
-      set: async (id, _owner, emails) => void ownerLists.set(id, emails),
-      delete: async (id) => void ownerLists.delete(id),
-    },
+    members: members.repo,
+    editorsOf: async () => opts.editors ?? [],
     agents: agents.service,
     config: {
       urlTemplate: "https://{host}.env.example.com",
@@ -124,7 +138,7 @@ function setup(
     startCommand: async (id, command) => void starts.push([id, command]),
     now: () => NOW,
   });
-  return { repo, agents, starts, woken: agents.woken, service, ownerLists };
+  return { repo, agents, starts, woken: agents.woken, service, members };
 }
 
 describe("creating an Environment", () => {
@@ -161,7 +175,7 @@ describe("creating an Environment", () => {
     expect(env.expiresAt).toBe(
       new Date(NOW.getTime() + 7 * DAY_MS).toISOString(),
     );
-    expect(env.access).toBeNull();
+    expect(env.peopleWhoMayOpen).toBe(0);
   });
 
   // TEST_SCENARIO: only a vm Agent can own Environments, since they run on its owner's VM runner beside it, and an Environment cannot own one in turn.
@@ -230,10 +244,8 @@ describe("creating an Environment", () => {
 
 describe("changing and deleting Environments", () => {
   // TEST_SCENARIO: the owning Agent changes and deletes its Environments by name, and its owner by id; an expiry past the install's maximum is cut to it, one in the past refused.
-  it("extends, narrows access and deletes", async () => {
-    const { service, agents, repo } = setup({
-      ownerList: { [vmOwning.id!]: ["reviewer@example.com"] },
-    });
+  it("extends and deletes", async () => {
+    const { service, agents, repo } = setup();
     const mine = service.forOwningAgent(vmOwning.id!);
     const env = await mine.create({
       name: "a",
@@ -242,12 +254,10 @@ describe("changing and deleting Environments", () => {
 
     const updated = await mine.update("a", {
       expiresAt: new Date(NOW.getTime() + 90 * DAY_MS),
-      access: ["reviewer@example.com"],
     });
     expect(updated.expiresAt).toBe(
       new Date(NOW.getTime() + 30 * DAY_MS).toISOString(),
     );
-    expect(updated.access).toEqual(["reviewer@example.com"]);
     await expect(
       service.extend(env.id, new Date(NOW.getTime() - 1)),
     ).rejects.toThrow(/future/);
@@ -257,30 +267,85 @@ describe("changing and deleting Environments", () => {
     expect(repo.rows).toHaveLength(0);
   });
 
-  // TEST_SCENARIO: the owning Agent narrows an Environment to people on its owner's list and can never add anyone: an email off the list is refused, at create and at update, with the email named but not the list. The owner sets the list per agent; it is unique and replaces the old one.
-  it("lets the agent narrow access only within its owner's list", async () => {
-    const { service, ownerLists } = setup({
-      ownerList: { [vmOwning.id!]: ["a@example.com", "b@example.com"] },
-    });
+  // TEST_SCENARIO: the owner names the agent's members once, for every Environment it has or creates later, and adds a person to one Environment only; the owner's view of each Environment lists its own members and counts the agent's, so the Share dialog can say who is in through the agent. The agent's own view says only how many people may open each, editors included, never who.
+  it("adds people for every Environment of an agent, or for one", async () => {
+    const { service, members } = setup({ editors: ["ed@example.com"] });
     const mine = service.forOwningAgent(vmOwning.id!);
     const endpoints = [{ name: "app", port: 80 }];
-
-    await expect(
-      mine.create({ name: "x", endpoints, access: ["c@example.com"] }),
-    ).rejects.toThrow(/c@example\.com/);
-    await mine.create({ name: "y", endpoints, access: ["a@example.com"] });
-    await expect(
-      mine.update("y", { access: ["a@example.com", "z@example.com"] }),
-    ).rejects.toThrow(/not on your owner's list of people: z@example\.com/);
+    const first = await mine.create({ name: "a", endpoints });
+    await mine.create({ name: "b", endpoints });
 
     expect(
-      await service.setAccessList(vmOwning.id!, [
-        "c@example.com",
-        "c@example.com",
+      await service.setAgentMembers(vmOwning.id!, [
+        "a@example.com",
+        "b@example.com",
+        "a@example.com",
       ]),
-    ).toEqual(["c@example.com"]);
-    expect(ownerLists.get(vmOwning.id!)).toEqual(["c@example.com"]);
-    expect(await service.accessList(vmOwning.id!)).toEqual(["c@example.com"]);
+    ).toEqual(["a@example.com", "b@example.com"]);
+    expect(await service.agentMembers(vmOwning.id!)).toEqual([
+      "a@example.com",
+      "b@example.com",
+    ]);
+    const shared = await service.setMembers(first.id, ["c@example.com"]);
+    expect(shared).toMatchObject({
+      members: ["c@example.com"],
+      agentMemberCount: 2,
+    });
+    expect(members.environmentLists.get(first.id)).toEqual(["c@example.com"]);
+
+    const owners = await service.list(vmOwning.id!);
+    expect(owners.map((e) => [e.name, e.members, e.agentMemberCount])).toEqual(
+      [
+        ["a", ["c@example.com"], 2],
+        ["b", [], 2],
+      ],
+    );
+    const agentView = await mine.list();
+    expect(agentView.map((e) => [e.name, e.peopleWhoMayOpen])).toEqual([
+      ["a", 4],
+      ["b", 3],
+    ]);
+    expect(agentView[0]).not.toHaveProperty("members");
+  });
+
+  // TEST_SCENARIO: the Artifacts page lists every Environment of the owner, across agents, and none of another owner's; one whose Agent is gone is left out.
+  it("lists all of the owner's Environments", async () => {
+    const other = {
+      id: "agent-owning0000000002",
+      name: "qa",
+      spec: { backend: { type: "vm" } },
+    } as unknown as Partial<Agent>;
+    const { service, repo } = setup({ agents: [vmOwning, other] });
+    const endpoints = [{ name: "app", port: 80 }];
+    await service.forOwningAgent(vmOwning.id!).create({ name: "a", endpoints });
+    await service.forOwningAgent(other.id!).create({ name: "b", endpoints });
+    repo.rows.push({
+      ...repo.rows[0]!,
+      agentId: "agent-foreign000000001",
+      owner: "someone-else",
+    });
+
+    expect((await service.listAll()).map((e) => e.name)).toEqual(["a", "b"]);
+  });
+
+  // TEST_SCENARIO: the owner shares only their own Environment; another owner's is not found.
+  it("does not share another owner's Environment", async () => {
+    const { service, repo, members } = setup();
+    repo.rows.push({
+      agentId: "agent-foreign000000001",
+      owningAgentId: vmOwning.id!,
+      owner: "someone-else",
+      name: "theirs",
+      host: "theirs-abcdef",
+      endpoints: [],
+      expiresAt: NOW,
+      createdAt: NOW,
+    });
+
+    await expect(
+      service.setMembers("agent-foreign000000001", ["x@example.com"]),
+    ).rejects.toThrow(/no such Environment/);
+    expect(members.environmentLists.size).toBe(0);
   });
 
   // TEST_SCENARIO: the owning Agent wakes a sleeping Environment by name before it opens the Environment Link, which reaches only a running machine; a name it does not own wakes nothing, and one its owner turned off is refused with that reason, never reported as waking.
@@ -310,7 +375,6 @@ describe("changing and deleting Environments", () => {
       name: "theirs",
       host: "theirs-abcdef",
       endpoints: [],
-      access: null,
       expiresAt: NOW,
       createdAt: NOW,
     });
