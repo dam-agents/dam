@@ -30,6 +30,7 @@ import { BrowserTabBar } from "./browser-tab-bar.js";
 import { StreamView } from "./stream-view.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
+const SLOW_START_MS = 20_000;
 
 interface Props {
   agentId: string;
@@ -48,6 +49,17 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const [noticeSeen, setNoticeSeen] = useState(() =>
     readPersistedFlag(SIGN_IN_NOTICE_KEY, false),
   );
+
+  const browserStarting =
+    stream.connection === "live" && stream.browser.state === "starting";
+  const starting = stream.connection === "connecting" || browserStarting;
+  const [slowStart, setSlowStart] = useState(false);
+  useEffect(() => {
+    setSlowStart(false);
+    if (!browserStarting) return;
+    const timer = setTimeout(() => setSlowStart(true), SLOW_START_MS);
+    return () => clearTimeout(timer);
+  }, [browserStarting]);
 
   const shownUrl = stream.page.url === "about:blank" ? "" : stream.page.url;
   useEffect(() => {
@@ -224,12 +236,22 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           agentName={agentName}
           reconnects={stream.connects}
         />
-        {(stream.connection === "connecting" ||
-          (stream.connection === "live" &&
-            stream.browser.state === "starting")) && (
-          <div className="absolute inset-0 flex items-center justify-center gap-3 bg-background/80 text-sm text-muted-foreground">
-            <Spinner size={18} />
-            Starting the agent's browser…
+        {starting && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 px-6 text-center text-sm text-muted-foreground">
+            <span className="flex items-center gap-3">
+              <Spinner size={18} />
+              Starting the agent's browser…
+            </span>
+            {browserStarting && slowStart && (
+              <>
+                <p>
+                  The agent's machine is busy, so its browser is slow to start.
+                </p>
+                <Button variant="outline" onClick={stream.restartBrowser}>
+                  Restart browser
+                </Button>
+              </>
+            )}
           </div>
         )}
         {stream.connection === "live" && stream.browser.state === "failed" && (
