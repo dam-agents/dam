@@ -355,7 +355,6 @@ export function useAcpConnection(
       } finally {
         if (collectorRef.current === collector) collectorRef.current = null;
       }
-      const routedModel = (await listed)?.model;
       const platformMeta = (
         result as {
           _meta?: {
@@ -446,13 +445,27 @@ export function useAcpConnection(
           sid,
           (result as LoadSessionResponse | null)?.configOptions,
         );
-        useStore
-          .getState()
-          .setSessionModel(
-            shown && routedModel
-              ? withRoutedCurrent(shown, routedModel)
-              : shown,
+        useStore.getState().setSessionModel(shown);
+        void listed?.then((match) => {
+          const store = useStore.getState();
+          if (
+            !match?.model ||
+            store.sessionId !== sid ||
+            store.sessionModel !== shown ||
+            generation !== generationRef.current
+          )
+            return;
+          store.setSessionModel(
+            shown
+              ? withRoutedCurrent(shown, match.model)
+              : {
+                  sessionId: sid,
+                  configId: "model",
+                  current: match.model,
+                  choices: [],
+                },
           );
+        });
         useStore
           .getState()
           .setRunStarts([

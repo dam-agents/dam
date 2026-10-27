@@ -3,7 +3,7 @@ import type {
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
 } from "@agentclientprotocol/sdk";
-import { isQualifiedModel } from "api-server-api";
+import { isQualifiedModel, parseQualifiedModel } from "api-server-api";
 
 export interface SessionModelChoice {
   value: string;
@@ -60,8 +60,10 @@ export function withRoutedCurrent(
   routed: string,
 ): SessionModel {
   const wanted = routedModelOf(routed).toLowerCase();
-  const choice = model.choices.find(
-    (c) => routedModelOf(c.value).toLowerCase() === wanted,
-  );
+  const native = parseQualifiedModel(wanted)?.upstreamId;
+  const choice = model.choices.find((c) => {
+    const id = routedModelOf(c.value).toLowerCase();
+    return id === wanted || (!isQualifiedModel(id) && id === native);
+  });
   return choice ? { ...model, current: choice.value } : model;
 }
