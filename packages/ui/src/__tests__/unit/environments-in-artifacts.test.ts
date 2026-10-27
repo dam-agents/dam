@@ -105,9 +105,7 @@ function mount(element: ReactElement): Document {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
-  act(() =>
-    root!.render(createElement(TooltipProvider, null, element)),
-  );
+  act(() => root!.render(createElement(TooltipProvider, null, element)));
   return document;
 }
 
@@ -134,7 +132,8 @@ describe("Environments in the Artifacts list", () => {
     ]);
     expect(
       rows.map(
-        (r) => r.querySelector('[data-testid="environment-state"]')?.textContent,
+        (r) =>
+          r.querySelector('[data-testid="environment-state"]')?.textContent,
       ),
     ).toEqual(["Running", "Sleeping"]);
     expect(rows[0]!.textContent).toContain("dev");

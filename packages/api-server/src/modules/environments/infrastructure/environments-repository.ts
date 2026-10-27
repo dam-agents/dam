@@ -16,9 +16,7 @@ export interface EnvironmentsRepository {
   ): Promise<EnvironmentRecord | null>;
   update(
     agentId: string,
-    patch: Partial<
-      Pick<EnvironmentRecord, "expiresAt" | "endpoints">
-    >,
+    patch: Partial<Pick<EnvironmentRecord, "expiresAt" | "endpoints">>,
   ): Promise<void>;
   delete(agentId: string): Promise<void>;
 }

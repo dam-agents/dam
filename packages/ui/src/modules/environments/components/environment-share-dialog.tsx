@@ -64,7 +64,10 @@ export function EnvironmentShareDialog({
       />
       <DialogBody>
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1" data-testid="environment-shared-through-agent">
+          <div
+            className="flex flex-col gap-1"
+            data-testid="environment-shared-through-agent"
+          >
             <p className="text-sm text-foreground">
               {sharedThroughAgent({
                 agentName,
@@ -73,8 +76,8 @@ export function EnvironmentShareDialog({
               })}
             </p>
             <p className="text-sm text-muted-foreground">
-              The people named on {agentName}&apos;s page open every
-              Environment it creates.{" "}
+              The people named on {agentName}&apos;s page open every Environment
+              it creates.{" "}
               <button
                 type="button"
                 className="text-accent hover:underline"
@@ -103,7 +106,8 @@ export function EnvironmentShareDialog({
               onDraftChange={setDraft}
               inputLabel="Member email address"
               {...(members.length === 0 && {
-                caption: "Nobody else yet. Add a person who should open this one.",
+                caption:
+                  "Nobody else yet. Add a person who should open this one.",
               })}
             />
           </div>

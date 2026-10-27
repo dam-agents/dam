@@ -28,7 +28,10 @@ export function AgentEnvironmentsSection({
     <>
       {header()}
       <AgentEnvironmentMembers key={agentId} agentId={agentId} />
-      <p className="text-sm text-muted-foreground" data-testid="environments-in-artifacts">
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="environments-in-artifacts"
+      >
         The agent&apos;s Environments are in{" "}
         <button
           type="button"
