@@ -317,11 +317,13 @@ export function ChatInput({
     }
   };
 
-  const placeholder = composerLocked
-    ? "Complete the setup form above to continue"
-    : isComputing
-      ? "Queue a message..."
-      : "Message...";
+  const placeholder = budgetLocked
+    ? "Your CurveBender budget has been used up — switch provider to continue"
+    : composerLocked
+      ? "Complete the setup form above to continue"
+      : isComputing
+        ? "Queue a message..."
+        : "Message...";
 
   return (
     <div
@@ -343,7 +345,14 @@ export function ChatInput({
         />
         <StarterKitStrip onScrollToMessage={onScrollToMessage} />
         <div
-          className={`flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
+          className={cn(
+            "flex flex-col rounded-xl border transition-colors",
+            budgetLocked
+              ? "border-border bg-muted"
+              : dragOver
+                ? "border-primary bg-accent-light/30"
+                : "border-border bg-background focus-within:border-primary",
+          )}
         >
           {attachments.length > 0 && (
             <div className="flex gap-2 flex-wrap px-3 pt-3">
@@ -386,7 +395,12 @@ export function ChatInput({
               )}
               <Textarea
                 ref={textareaRef}
-                className="relative z-[1] w-full bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground caret-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
+                className={cn(
+                  "relative z-[1] w-full bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground caret-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden focus-visible:ring-0 focus-visible:ring-offset-0",
+                  budgetLocked
+                    ? "cursor-not-allowed opacity-60 placeholder:text-muted-foreground"
+                    : "disabled:opacity-40",
+                )}
                 value={input}
                 onChange={(e) => key && setDraft(key, { text: e.target.value })}
                 onKeyDown={onKeyDown}

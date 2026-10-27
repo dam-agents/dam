@@ -1061,7 +1061,11 @@ function CurveBenderBudget({
       onClick={onConfigure}
       className={cn(
         "ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground",
-        isLow || budgetExhausted ? "text-warning" : "text-muted-foreground",
+        budgetExhausted
+          ? "text-destructive"
+          : isLow
+            ? "text-warning"
+            : "text-muted-foreground",
       )}
     >
       <img src="/curvebender-logo.svg" alt="" className="size-3.5" />
