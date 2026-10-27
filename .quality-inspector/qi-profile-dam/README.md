@@ -18,7 +18,10 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
   The install connects the workspace through `apiServer.slackAppToken` and the legacy `apiServer.slackBotToken` import (overlay `@sandbox:slack`), takes the OAuth App as its GitHub default (`apiServer.oauthAppDefaults.github`) and lets the nested gateways reach the VM's gateway (`controller.gatewayEgress.extraCidrs`, both overlay `@sandbox:github`).
   The GitHub sign-in's pages are the only `github.com` paths in `egress`, each with its method — the inspector's kit admits no other shape there; `suite/lib/sandbox.ts` → `githubSignIn` drives them, so a test never names GitHub.
   `controller.gatewayUpstreamExtraCAs` is the VM gateway's CA, so nested gateways and the api-server trust the TLS it intercepts.
-  `bin/sandbox check` proves the accounts; `suite/lib/sandbox.ts` is the test person; `egress` names only the sandbox repository's issue and pull-request writes, git's clone and push of it (quality-inspector 3.9.0 or later), the GitHub sign-in and Slack.
+  `bin/sandbox check` proves the accounts; `suite/lib/sandbox.ts` is the test person; `egress` names only the sandbox repository's issue and pull-request writes, git's clone and push of it (quality-inspector 3.9.0 or later), the GitHub sign-in, DAM's check of a GitHub token (`GET api.github.com/user`) and Slack.
+  `suite/lib/sandbox.ts` → `connectSlackChannel` picks the sandbox channel in the *Connect Slack channels* dialog.
+  That picker lists channels only for a DAM user who linked their Slack account, which a user does only with `/dam login` or `/dam bind` in Slack, and no Slack API sends a slash command.
+  So the Slack journeys stay blocked until the QA install can link the owner's account to the test person at install; `SKILL.md` states the limit.
 - `scenarios/` — the smoke regression suite: the journeys the inspector replays nightly, listed under [Smoke regression suite](#smoke-regression-suite).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, what the nested install cannot do, and what the per-PR e2e suite already keeps true (`## Tested elsewhere`; a PR that adds or removes such a flow there updates the list).
   User-facing only — never implementation detail.
