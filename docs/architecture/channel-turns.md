@@ -213,6 +213,9 @@ A fence that ends a line moves to the next line.
 Text after an opening fence moves below it, unless the text is one lowercase language word.
 The renderer works line by line, so a fence pair inside one line of prose stays as it is; tools request separate fence lines.
 
+An artifact's in-app link (`platform://artifacts/<id>`) opens only in the app's chat, so before a `reply` or `send_channel_message` posts, the endpoint puts the artifact's share URL in place of each such link, on Slack and Telegram alike.
+An artifact with no share URL, a private one, or an id the owner has no artifact for refuses the whole message, and the error tells the Agent to say the artifact must be shared first and to send the message without the link.
+
 What the agent sees:
 
 - **Cross-channel tools.** `describe_channel` reports the chats an Agent can reach; `send_channel_message` makes a **new top-level post** — for proactive or cross-channel messages, and on Slack never a turn reply, which `reply` owns.
