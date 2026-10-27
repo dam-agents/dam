@@ -1,10 +1,14 @@
 package store
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 // TEST_OVERVIEW: The rows become the object the controller reconciles. The
@@ -109,7 +113,6 @@ func TestHydrateCarriesEveryFieldTheControllerReads(t *testing.T) {
 	spec := mustMap(t, agent.Object, "spec")
 	if spec["image"] != "agent:1" ||
 		spec["hibernationTimeout"] != "1h30m0s" ||
-		spec["nestedVirtualization"] != true ||
 		spec["requireConnectionAddress"] != true ||
 		spec["storageSize"] != "30Gi" ||
 		spec["environmentOf"] != "parent" ||
@@ -136,6 +139,27 @@ func TestHydrateCarriesEveryFieldTheControllerReads(t *testing.T) {
 	gotCondition := status["conditions"].([]any)[0].(map[string]any)
 	if gotCondition["type"] != "Ready" || gotCondition["status"] != "True" {
 		t.Fatalf("condition = %v", gotCondition)
+	}
+}
+
+// TEST_SCENARIO: The reconciler reads a typed Agent, and the conversion drops a
+// TEST_SCENARIO: key the typed spec has no field for without an error. A nesting ask written
+// TEST_SCENARIO: outside spec.backend.vm reached no machine, so every spec key must survive it.
+func TestHydrateSpecSurvivesTheTypedAgent(t *testing.T) {
+	hydrated := hydrate("ns", testRow(t), agentChildren{hosts: []string{"a.test"}, grants: []string{"conn-1"}})
+	var agent apiv1.Agent
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(hydrated.Object, &agent); err != nil {
+		t.Fatal(err)
+	}
+	if agent.Spec.Backend == nil || agent.Spec.Backend.VM == nil || !agent.Spec.Backend.VM.NestedVirtualization {
+		t.Fatalf("the nesting ask was lost: backend = %+v", agent.Spec.Backend)
+	}
+	typed, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&agent.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec := mustMap(t, hydrated.Object, "spec"); !reflect.DeepEqual(typed, spec) {
+		t.Fatalf("the typed spec differs from the hydrated one:\n typed    %v\n hydrated %v", typed, spec)
 	}
 }
 
