@@ -48,7 +48,12 @@ function answer(id: string, surfaceId: string): Message {
       context: {},
     },
   });
-  return { id, role: "user", parts: [{ kind: "text", text }], streaming: false };
+  return {
+    id,
+    role: "user",
+    parts: [{ kind: "text", text }],
+    streaming: false,
+  };
 }
 
 function open(messages: Message[]): string[] {
@@ -98,10 +103,8 @@ describe("chat form surfaces that accept input", () => {
     ).toEqual(["second"]);
   });
 
-  // TEST_SCENARIO: while the user's message is the newest, or the agent's reply still streams, no form accepts input, as before.
+  // TEST_SCENARIO: while the user's message is the newest, the agent has not answered yet, so no form accepts input, as before.
   test("no form is open while the newest message is the user's", () => {
-    expect(open([reply("a1", form("ask")), answer("u1", "other")])).toEqual(
-      [],
-    );
+    expect(open([reply("a1", form("ask")), answer("u1", "other")])).toEqual([]);
   });
 });
