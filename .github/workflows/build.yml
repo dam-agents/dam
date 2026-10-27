@@ -25,6 +25,13 @@ on:
           and save nothing, except a merge group's cache tags (build-images).
         type: boolean
         required: true
+      queue:
+        description: >-
+          A merge queue run, a merge_group event or a Mergify batch PR: verify
+          like a merge group (EVENT=merge_group for image:resolve and the :mq
+          cache tags).
+        type: boolean
+        required: true
       fresh:
         description: >-
           Build and publish every image afresh, reusing none: a tag, the
@@ -282,7 +289,7 @@ jobs:
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - id: d
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ inputs.queue && 'merge_group' || github.event_name }}
           RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
         run: |
           set -euo pipefail
@@ -374,7 +381,7 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           VERIFY: ${{ inputs.verify }}
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ inputs.queue && 'merge_group' || github.event_name }}
           IMAGES: ${{ join(fromJSON(needs.changes.outputs.images), ' ') }}
         run: |
           read -r -a images <<< "$IMAGES"
