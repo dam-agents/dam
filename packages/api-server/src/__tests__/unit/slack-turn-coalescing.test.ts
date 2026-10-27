@@ -60,6 +60,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
       if (meta?.threadTs !== undefined) sessionKeys.push(meta.threadTs);
       sendOpts.onSession?.(
         meta?.threadTs ? `${SESSION}-${meta.threadTs}` : SESSION,
+        `prompt-${prompts.length}`,
       );
       if (holdTurns) {
         await new Promise<void>((resolve) => gates.push({ release: resolve }));

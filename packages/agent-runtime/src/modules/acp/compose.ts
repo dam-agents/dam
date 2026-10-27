@@ -24,6 +24,7 @@ import {
   type SessionCutProvider,
 } from "./infrastructure/session-cut-provider.js";
 import { createRunResultStore } from "./infrastructure/run-result-store.js";
+import { createServedSteers } from "./services/acp-runtime/served-steers.js";
 import {
   createPlatformMcpEntryStore,
   type PlatformMcpEntryStore,
@@ -370,7 +371,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
       }
     : undefined;
   const runResults = createRunResultStore(opts.stateBackend);
+  const servedSteers = createServedSteers();
   const runtime = createLeaseRouter({
+    servedSteers,
     sessionDefaults: createSessionDefaultsStore(opts.stateBackend),
     defaultHarness: opts.defaultHarness,
     harnessKnown: (harness) => Object.hasOwn(opts.harnesses, harness),
@@ -458,6 +461,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         continuedFrom,
         activeTurns,
         runResults,
+        servedSteers,
         ...(opts.beforeSpawn && { beforeSpawn: opts.beforeSpawn }),
         sessionMcpServers: (ref) => platformMcpEntry.sessionServers(ref),
         onReportableTurnEnded: (report) => reportTurn(report),

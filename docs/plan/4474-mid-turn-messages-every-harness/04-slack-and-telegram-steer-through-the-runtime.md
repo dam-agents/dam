@@ -59,13 +59,13 @@ Read [channel turns](../../architecture/channel-turns.md) "Inbound" and "The tur
 
 ## Acceptance criteria
 
-- [ ] In a Slack thread with an agent on Claude, a follow-up that mentions the agent, sent while the first command of the three-command task runs, is answered in the same turn, and the agent runs no later command it was told to skip.
+- [x] In a Slack thread with an agent on Claude, a follow-up that mentions the agent, sent while the first command of the three-command task runs, is answered in the same turn, and the agent runs no later command it was told to skip.
 - [ ] The same holds on Codex and Pi, and on Claude in a Telegram chat.
-- [ ] On an agent whose harness does not steer, a follow-up runs as the next turn, with its own reply.
-- [ ] A follow-up that is steered is never also run as a turn of its own, also when the steer is answered after its turn's relay ended.
+- [x] On an agent whose harness does not steer, a follow-up runs as the next turn, with its own reply.
+- [x] A follow-up that is steered is never also run as a turn of its own, also when the steer is answered after its turn's relay ended.
 - [ ] In a 1:1 DM, a thread reply to a message whose steer is held does not start a second session on the same message.
-- [ ] A message with attachments and a read-along message are still never steered.
-- [ ] `mise run check` and `mise run test` pass for `api-server`.
+- [x] A message with attachments and a read-along message are still never steered.
+- [x] `mise run check` and `mise run test` pass for `api-server`.
 
 ## Smoke test
 

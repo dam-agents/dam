@@ -116,7 +116,8 @@ A few observations the diagram glosses over:
   A capped read says so, and the Agent is told to act only on what is still open.
   Excluded: Telegram.
 - **A conversation answers a burst once, one turn at a time.** People write a thought over several messages, so messages for one conversation gather behind a short quiet period and one turn carries them all.
-  A message arriving while a turn runs is **steered** into it where the harness advertises support for that, so the Agent reads it before calling its reply tool; otherwise it becomes the next turn, never a second turn racing the first.
+  A message arriving while a turn runs is **steered** into it where the harness can take one, so the Agent reads it before calling its reply tool; otherwise it becomes the next turn, never a second turn racing the first.
+  The agent-runtime decides each steer at a steer point, into the conversation's own running turn ([sessions](sessions.md#prompt-delivery)); a message it took is never run again, and a steer whose answer was lost is asked again under its own id.
   Both the batch and the wait are capped.
   A message carrying attachments is never steered — they reach the Agent through their own turn — and it holds back what follows, so nothing is reordered.
   Both messengers share the queue, and so does read-along traffic — but a read-along batch is never steered, since it fans out to one turn per reading Agent and there is no single turn to steer into.
@@ -177,6 +178,7 @@ A relayed turn has **no time limit** — like a session driven from the UI, it r
 While the relay's connection is up it watches for *life*, not length: transport pings guard the socket, and once frames have been silent for the stall-probe window the relay asks agent-runtime whether the session still has a turn running — alive means keep waiting, however long the work takes.
 The probe window is floor-bounded by the egress-approval hold at config load (raising a lower setting with a startup warning), so a turn silently waiting on an approval is never probed early.
 The relay abandons a turn on exactly two verdicts — the connection is lost, or the runtime reports the turn gone — and abandoning the relay never touches the work: the harness keeps running detached, and its late reply still lands through the lingering turn record.
+A steer held for a running turn has no time limit either; the turn is judged only once its steers have their answers.
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
 A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.

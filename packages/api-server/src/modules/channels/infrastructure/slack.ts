@@ -1645,12 +1645,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channel: string,
     sessionKey: string,
     carries: () => readonly string[],
+    claim?: (ts: string) => void,
   ): SupersedableTurn & { end: () => void } {
     const cancelled = new AbortController();
     const turn = threadSupersede.hold(instanceName, {
       channel,
       sessionKey,
       carries,
+      ...(claim && { claim }),
       cancel: () => cancelled.abort(),
     });
     return { turn, signal: cancelled.signal, end: () => turn.end() };
@@ -2899,7 +2901,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     onReady?: () => void;
     onImagesDropped?: () => void;
     onUpdate?: (update: PromptUpdate) => void;
-    onSession?: (sessionId: string) => void;
+    onSession?: (sessionId: string, promptId?: string) => void;
     onGhostTurn?: () => void;
     legacyThreadKey?: string;
     signal?: AbortSignal;
@@ -2996,7 +2998,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     forwardedFrom?: string;
     whisper?: SlackTurnWhisper;
     siblingRefs?: () => TurnRef[];
-    onSession?: (sessionId: string) => void;
+    onSession?: (sessionId: string, promptId?: string) => void;
+    steersSettled?: () => Promise<void>;
     held?: SupersedableTurn;
   }) {
     if (!gateway) return;
@@ -3229,10 +3232,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           presenter.onUpdate(update);
           if (update.kind === "tool") ctx.held?.turn.noteTool(update.title);
         },
-        onSession: (sessionId) => {
+        onSession: (sessionId, promptId) => {
           seenSessionIds.add(sessionId);
           for (const ref of turnRefs) ref.sessionId = sessionId;
-          ctx.onSession?.(sessionId);
+          ctx.onSession?.(sessionId, promptId);
         },
         onGhostTurn: () => {
           ghostTurn = true;
@@ -3296,15 +3299,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ctx.held?.signal.addEventListener("abort", onSuperseded, { once: true });
     try {
       for (const ref of turnRefs) beginTurn(instanceName, ref);
-      await runWhileAgentStarts(runTurn, {
-        ...wakeWait,
-        onStillStarting: async () => {
-          await postNotice(
-            "The agent is still starting — this can take a few more " +
-              "minutes. It'll answer as soon as it's up.",
-          );
-        },
-      });
+      try {
+        await runWhileAgentStarts(runTurn, {
+          ...wakeWait,
+          onStillStarting: async () => {
+            await postNotice(
+              "The agent is still starting — this can take a few more " +
+                "minutes. It'll answer as soon as it's up.",
+            );
+          },
+        });
+      } finally {
+        await ctx.steersSettled?.();
+      }
       outcome = "success";
     } catch (err) {
       if (superseded)
@@ -5217,148 +5224,161 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     conversation: AddressedConversation,
   ): ConversationQueue<AddressedPending> {
     const steeredRefs: TurnRef[] = [];
-    return createConversationQueue<AddressedPending>({
-      settleMs,
-      canSteer: (msg) => !carriesAttachments(msg),
-      runTurn: async (queued, onSession) => {
-        const threadKey = slackThreadKey(
-          conversation.channelId,
-          conversation.threadTs,
-        );
-        const isCarriedByThread = (m: AddressedPending) =>
-          !conversation.oneThread &&
-          threadSupersede.isSuperseded(
-            conversation.instanceName,
+    const queue: ConversationQueue<AddressedPending> =
+      createConversationQueue<AddressedPending>({
+        settleMs,
+        canSteer: (msg) => !carriesAttachments(msg),
+        runTurn: async (queued, onSession, steersSettled) => {
+          const threadKey = slackThreadKey(
             conversation.channelId,
-            m.eventTs,
+            conversation.threadTs,
           );
-        noteCarriedByThread(
-          conversation.instanceName,
-          threadKey,
-          queued.filter(isCarriedByThread).map((m) => m.eventTs),
-        );
-        const batch = queued.filter((m) => !isCarriedByThread(m));
-        const latest = batch.at(-1);
-        if (!latest) return;
-        const { kept, dropped } = batchFiles(batch);
-        const held = conversation.oneThread
-          ? null
-          : holdSupersedable(
+          const isCarriedByThread = (m: AddressedPending) =>
+            !conversation.oneThread &&
+            threadSupersede.isSuperseded(
               conversation.instanceName,
               conversation.channelId,
-              threadKey,
-              () => [
-                ...batch.map((m) => m.eventTs),
-                ...steeredRefs.map((ref) => ref.eventTs),
-              ],
+              m.eventTs,
             );
-        await relaySharedTurn({
-          channel: conversation.channelId,
-          teamId: conversation.teamId,
-          threadTs: conversation.threadTs,
-          messages: batch.map(
-            ({ text, eventTs, slackUserId, speaker, sender, inThread }) => ({
-              text,
-              eventTs,
-              slackUserId,
-              speaker,
-              sender,
-              inThread,
-            }),
-          ),
-          slackUserId: latest.slackUserId,
-          instanceName: conversation.instanceName,
-          owner: latest.turn.owner,
-          ...(latest.turn.teamId ? { teamId: latest.turn.teamId } : {}),
-          images: batch.flatMap((m) => m.images),
-          files: kept,
-          droppedFiles: dropped.map((f) => f.name),
-          speakerLabel: conversation.speakerLabel,
-          ambient: latest.turn.ambient,
-          roster: latest.turn.roster,
-          ambiguousName: latest.turn.ambiguousName,
-          ...(conversation.whisper ? { whisper: conversation.whisper } : {}),
-          siblingRefs: () => steeredRefs,
-          onSession,
-          ...(held ? { held } : {}),
-        }).finally(() => held?.end());
-        if (conversation.whisper)
-          await noticeWhispersTurnedOff(conversation.instanceName, {
+          noteCarriedByThread(
+            conversation.instanceName,
+            threadKey,
+            queued.filter(isCarriedByThread).map((m) => m.eventTs),
+          );
+          const batch = queued.filter((m) => !isCarriedByThread(m));
+          const latest = batch.at(-1);
+          if (!latest) return;
+          const { kept, dropped } = batchFiles(batch);
+          const held = conversation.oneThread
+            ? null
+            : holdSupersedable(
+                conversation.instanceName,
+                conversation.channelId,
+                threadKey,
+                () => [
+                  ...batch.map((m) => m.eventTs),
+                  ...steeredRefs.map((ref) => ref.eventTs),
+                  ...queue.heldSteer().map((m) => m.eventTs),
+                ],
+                (ts) => {
+                  if (queue.heldSteer().some((m) => m.eventTs === ts))
+                    queue.abortSteer();
+                },
+              );
+          await relaySharedTurn({
             channel: conversation.channelId,
             teamId: conversation.teamId,
-            whisperer: conversation.whisper.whisperer,
-            origin: conversation.whisper.origin,
             threadTs: conversation.threadTs,
-          });
-      },
-      steer: (sessionId, batch) =>
-        steerChannelTurn(
-          makeAcpClient(conversation.instanceName),
-          sessionId,
-          steerFrame(conversation, batch),
-          {
-            surface: "slack",
-            fields: {
-              agentId: conversation.instanceName,
-              channelId: conversation.channelId,
-            },
-          },
-        ),
-      onSteered: (batch) => {
-        for (const msg of batch) {
-          const ref: TurnRef = {
-            channel: conversation.channelId,
-            teamId: conversation.teamId,
-            threadTs: msg.inThread ? conversation.threadTs : msg.eventTs,
-            eventTs: msg.eventTs,
-            text: msg.text,
-            slackUserId: msg.slackUserId,
-            hasThread: msg.inThread,
-            hadAttachments: false,
+            messages: batch.map(
+              ({ text, eventTs, slackUserId, speaker, sender, inThread }) => ({
+                text,
+                eventTs,
+                slackUserId,
+                speaker,
+                sender,
+                inThread,
+              }),
+            ),
+            slackUserId: latest.slackUserId,
+            instanceName: conversation.instanceName,
+            owner: latest.turn.owner,
+            ...(latest.turn.teamId ? { teamId: latest.turn.teamId } : {}),
+            images: batch.flatMap((m) => m.images),
+            files: kept,
+            droppedFiles: dropped.map((f) => f.name),
+            speakerLabel: conversation.speakerLabel,
+            ambient: latest.turn.ambient,
+            roster: latest.turn.roster,
+            ambiguousName: latest.turn.ambiguousName,
             ...(conversation.whisper ? { whisper: conversation.whisper } : {}),
-          };
-          beginTurn(conversation.instanceName, ref);
-          steeredRefs.push(ref);
-          securityLog("info", "channel.authz", {
-            category: "channel",
-            actor: null,
-            actorKind: "external",
-            surface: "slack",
-            agentId: conversation.instanceName,
-            decision: "allow",
-            detail: {
-              basis: "place",
-              trigger: "steer",
-              slackUserId: msg.slackUserId,
-              channelId: conversation.whisper?.origin ?? conversation.channelId,
-              ...(conversation.whisper
-                ? { whisperChannelId: conversation.channelId }
-                : {}),
+            siblingRefs: () => steeredRefs,
+            onSession,
+            steersSettled,
+            ...(held ? { held } : {}),
+          }).finally(() => held?.end());
+          if (conversation.whisper)
+            await noticeWhispersTurnedOff(conversation.instanceName, {
+              channel: conversation.channelId,
+              teamId: conversation.teamId,
+              whisperer: conversation.whisper.whisperer,
+              origin: conversation.whisper.origin,
+              threadTs: conversation.threadTs,
+            });
+        },
+        steer: (sessionId, batch, request) =>
+          steerChannelTurn(
+            makeAcpClient(conversation.instanceName),
+            sessionId,
+            steerFrame(conversation, batch),
+            request,
+            {
+              surface: "slack",
+              fields: {
+                agentId: conversation.instanceName,
+                channelId: conversation.channelId,
+              },
             },
-          });
-          msg.release();
-        }
-      },
-      onTurnSettled: (batch) => {
-        for (const ref of steeredRefs) {
-          endTurn(conversation.instanceName, ref);
-        }
-        steeredRefs.length = 0;
-        for (const msg of batch) msg.release();
-      },
-      onEmpty: () => {
-        addressedQueues.delete(key);
-      },
-      onError: (err) => {
-        getLogger().warn(
-          {
-            channelId: conversation.channelId,
-            error: formatError(err),
-          },
-          "slack.addressed_drain.failed",
-        );
-      },
-    });
+          ),
+        onSteered: (batch) => {
+          for (const msg of batch) {
+            const ref: TurnRef = {
+              channel: conversation.channelId,
+              teamId: conversation.teamId,
+              threadTs: msg.inThread ? conversation.threadTs : msg.eventTs,
+              eventTs: msg.eventTs,
+              text: msg.text,
+              slackUserId: msg.slackUserId,
+              hasThread: msg.inThread,
+              hadAttachments: false,
+              ...(conversation.whisper
+                ? { whisper: conversation.whisper }
+                : {}),
+            };
+            beginTurn(conversation.instanceName, ref);
+            steeredRefs.push(ref);
+            securityLog("info", "channel.authz", {
+              category: "channel",
+              actor: null,
+              actorKind: "external",
+              surface: "slack",
+              agentId: conversation.instanceName,
+              decision: "allow",
+              detail: {
+                basis: "place",
+                trigger: "steer",
+                slackUserId: msg.slackUserId,
+                ...senderDetail(msg.sender),
+                channelId:
+                  conversation.whisper?.origin ?? conversation.channelId,
+                ...(conversation.whisper
+                  ? { whisperChannelId: conversation.channelId }
+                  : {}),
+              },
+            });
+            msg.release();
+          }
+        },
+        onTurnSettled: (batch) => {
+          for (const ref of steeredRefs) {
+            endTurn(conversation.instanceName, ref);
+          }
+          steeredRefs.length = 0;
+          for (const msg of batch) msg.release();
+        },
+        onEmpty: () => {
+          addressedQueues.delete(key);
+        },
+        onError: (err) => {
+          getLogger().warn(
+            {
+              channelId: conversation.channelId,
+              error: formatError(err),
+            },
+            "slack.addressed_drain.failed",
+          );
+        },
+      });
+    return queue;
   }
 
   function enqueueAddressed(
@@ -5398,7 +5418,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     forwardedFrom?: string;
     whisper?: SlackTurnWhisper;
     siblingRefs?: () => TurnRef[];
-    onSession?: (sessionId: string) => void;
+    onSession?: (sessionId: string, promptId?: string) => void;
+    steersSettled?: () => Promise<void>;
     held?: SupersedableTurn;
   }) {
     if (!gateway) return;
@@ -5492,6 +5513,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ...(args.whisper ? { whisper: args.whisper } : {}),
       ...(args.siblingRefs ? { siblingRefs: args.siblingRefs } : {}),
       ...(args.onSession ? { onSession: args.onSession } : {}),
+      ...(args.steersSettled ? { steersSettled: args.steersSettled } : {}),
       ...(args.held ? { held: args.held } : {}),
     });
   }

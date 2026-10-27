@@ -119,7 +119,7 @@ import {
   type PromptSubmission,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
-import { createServedSteers } from "./served-steers.js";
+import { createServedSteers, type ServedSteers } from "./served-steers.js";
 import {
   createSessionBootstrap,
   type SessionCapabilities,
@@ -214,6 +214,7 @@ export interface AcpRuntimeDeps {
   sessionCut?: SessionCutProvider;
   harnessForks?: boolean;
   steering?: SessionSteering;
+  servedSteers?: ServedSteers;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
@@ -305,7 +306,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.steering ?? (harnessSteers ? "native" : null);
   const runtimeSteers = (): boolean =>
     sessionSteering() === "native" && harnessSteers;
-  const servedSteers = createServedSteers();
+  const servedSteers = deps.servedSteers ?? createServedSteers();
   const sessionCapabilities = (): SessionCapabilities => {
     const steering = sessionSteering();
     return {

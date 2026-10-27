@@ -690,7 +690,8 @@ export function createTelegramWorker(deps: {
     agentId: string,
     thread: ThreadLike,
     messages: TelegramPendingMessage[],
-    onSession?: (sessionId: string) => void,
+    onSession?: (sessionId: string, promptId?: string) => void,
+    steersSettled?: () => Promise<void>,
   ) {
     lastThread.set(agentId, thread as Thread);
 
@@ -741,8 +742,10 @@ export function createTelegramWorker(deps: {
       const existing = await findThreadSession(agentId, thread.id);
       if (existing) {
         try {
-          onSession?.(existing.sessionId);
-          await acp.sendPrompt(prompt, { resumeSessionId: existing.sessionId });
+          await acp.sendPrompt(prompt, {
+            resumeSessionId: existing.sessionId,
+            ...(onSession ? { onSession } : {}),
+          });
           outcome = "success";
           return;
         } catch (err) {
@@ -797,6 +800,7 @@ export function createTelegramWorker(deps: {
           )
           .catch(() => {});
     } finally {
+      await steersSettled?.();
       releaseAttendance();
       annotateSpan({
         "platform.channel.outcome": outcome,
@@ -835,7 +839,7 @@ export function createTelegramWorker(deps: {
     return createConversationQueue<TelegramPendingMessage>({
       settleMs: deps.settleMs ?? 0,
       canSteer: (message) => !message.ambient,
-      runTurn: async (batch, onSession) => {
+      runTurn: async (batch, onSession, steersSettled) => {
         ambientTurnRunning = batch.every((m) => m.ambient);
         try {
           await relayToInstance(
@@ -843,18 +847,41 @@ export function createTelegramWorker(deps: {
             batch.at(-1)!.thread,
             batch,
             onSession,
+            steersSettled,
           );
         } finally {
           ambientTurnRunning = false;
         }
       },
-      steer: async (sessionId, batch) => {
+      steer: async (sessionId, batch, request) => {
         if (ambientTurnRunning) return "refused";
         return steerChannelTurn(
           makeAcpClient(agentId),
           sessionId,
           steerFrame(batch),
+          request,
           { surface: "telegram", fields: { agentId, threadId } },
+        );
+      },
+      onSteered: (batch) => {
+        for (const message of batch)
+          securityLog("info", "channel.authz", {
+            category: "channel",
+            actor: null,
+            actorKind: "external",
+            surface: "telegram",
+            agentId,
+            decision: "allow",
+            detail: {
+              basis: "place",
+              trigger: "steer",
+              telegramUserId: message.author.userId,
+              conversationId: threadId,
+            },
+          });
+        getLogger().info(
+          { agentId, threadId, messages: batch.length },
+          "telegram.turn.steered",
         );
       },
       onEmpty: () => {

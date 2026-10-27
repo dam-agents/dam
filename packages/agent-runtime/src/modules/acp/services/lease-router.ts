@@ -17,6 +17,7 @@ import type {
   AcpRuntimeStatus,
 } from "./acp-runtime/acp-runtime.js";
 import type { AgentRequestObserver } from "./acp-runtime/pending-agent-requests.js";
+import type { ServedSteers } from "./acp-runtime/served-steers.js";
 import {
   CONFIGURE_SESSION_METHOD,
   isPlatformSubagentSetting,
@@ -62,6 +63,7 @@ export interface LeaseRouterStatus extends AcpRuntimeStatus {
 
 export interface LeaseRouterDeps {
   defaultHarness: string;
+  servedSteers?: ServedSteers;
   harnessKnown: (harness: string) => boolean;
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
@@ -645,6 +647,17 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       v.deliver(data);
       return;
     }
+    const steerId =
+      method === STEER_METHOD ? platformOf(frame)?.promptId : null;
+    if (
+      isRequest(frame) &&
+      typeof steerId === "string" &&
+      deps.servedSteers?.replyKnown(sessionId, steerId, {
+        channel: real,
+        id: frame.id,
+      })
+    )
+      return;
     if (
       method === STEER_METHOD &&
       isRequest(frame) &&

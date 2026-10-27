@@ -21,6 +21,7 @@ interface ServedSteer {
 }
 
 export interface ServedSteers {
+  replyKnown(sessionId: string, promptId: string, waiter: Waiter): boolean;
   join(sessionId: string, promptId: string, waiter: Waiter): boolean;
   settle(sessionId: string, promptId: string, answer: SteerOnlyAnswer): void;
   drop(sessionId: string, promptId: string): void;
@@ -68,7 +69,9 @@ function reply(waiter: Waiter, answer: SteerOnlyAnswer): void {
  * request as one more waiter; an answered one is answered again with its first
  * answer. Every waiter of a steer gets the same answer. Only the newest
  * answers of a session are kept, because a sender repeats a steer within
- * moments, never after many later ones.
+ * moments, never after many later ones. One instance serves the lease router
+ * and every lease, so a steer sent again after its turn ended gets its answer
+ * from the router, which answers it without a harness.
  */
 export function createServedSteers(): ServedSteers {
   const steers = new Map<string, Map<string, ServedSteer>>();
@@ -83,6 +86,13 @@ export function createServedSteers(): ServedSteers {
   }
 
   return {
+    replyKnown(sessionId, promptId, waiter) {
+      const answer = steers.get(sessionId)?.get(promptId)?.answer;
+      if (answer === undefined || answer === null) return false;
+      reply(waiter, answer);
+      return true;
+    },
+
     join(sessionId, promptId, waiter) {
       const served = steers.get(sessionId) ?? new Map<string, ServedSteer>();
       steers.set(sessionId, served);
