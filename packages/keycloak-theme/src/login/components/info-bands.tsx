@@ -457,8 +457,9 @@ export function BandIntegrations() {
             </div>
 
             {/* Right — stacked app windows */}
-            <div className="hidden flex-1 items-center justify-center lg:flex">
-              <div className="relative" style={{ width: 490, height: 580 }}>
+            <div className="flex flex-1 items-center justify-center -order-1 lg:order-none">
+              <div className="h-[390px] overflow-hidden lg:h-auto lg:overflow-visible">
+              <div className="relative scale-[0.65] origin-top lg:scale-100" style={{ width: 490, height: 580 }}>
                 <DottedCircle size={440} style={{ top: 70, left: 25 }} />
 
                 {/* Row 1 — Slack (wide) + Web chat (narrow) */}
@@ -525,6 +526,7 @@ export function BandIntegrations() {
                   <MiniIde className="h-[110px]" />
                 </div>
               </div>
+              </div>
             </div>
           </div>
         </div>
@@ -563,7 +565,7 @@ export function BandCapabilities({ brandName }: { brandName: string }) {
             </div>
 
             {/* Right — agent with floating scene cards */}
-            <div className="relative hidden min-h-[660px] lg:block">
+            <div className="relative min-h-[400px] lg:min-h-[660px] -order-1 lg:order-none">
               {/* Everything positioned from the center of this container */}
               <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%)" }}>
                 {/* Agent — center focal point */}
@@ -850,8 +852,16 @@ export function BandChannels() {
       {/* Left half — white bg */}
       <div className="absolute inset-y-0 left-0 hidden w-1/2 bg-background lg:block" />
 
-      <div className="relative z-20 flex min-h-[100dvh] items-center bg-background lg:bg-transparent">
-        <div className="mx-auto w-full max-w-[540px] px-6 py-20 lg:mx-0 lg:flex lg:w-1/2 lg:max-w-none lg:items-center lg:justify-center lg:py-28">
+      <div className="relative z-20 flex min-h-[100dvh] flex-col items-center bg-background lg:flex-row lg:bg-transparent">
+        {/* Mobile-only illustration — hidden at lg where the absolute split-screen takes over */}
+        <div className="flex w-full items-center justify-center px-6 pt-20 lg:hidden">
+          <div className="h-[345px] w-full max-w-[480px] overflow-hidden sm:h-auto sm:overflow-visible">
+            <div className="w-[480px] origin-top-left scale-[0.66] sm:w-auto sm:scale-100">
+              <SlackTeamIllustration />
+            </div>
+          </div>
+        </div>
+        <div className="mx-auto w-full max-w-[540px] px-6 pb-20 pt-8 lg:mx-0 lg:flex lg:w-1/2 lg:max-w-none lg:items-center lg:justify-center lg:py-28">
           <div className="w-full max-w-[460px]">
             <SectionLabel color="#3F6C45">For everyone on the team</SectionLabel>
             <SectionTitle>
@@ -1248,7 +1258,7 @@ export function BandAccess({
   return (
     <section className="flex min-h-[100dvh] snap-start items-center bg-muted/30 py-20 lg:py-28">
       <div className="mx-auto w-full max-w-[1120px] px-6">
-        <div className="flex items-start gap-12">
+        <div className="flex flex-col items-start gap-12 lg:flex-row">
           <div className="flex-1">
             <SectionLabel>Get started</SectionLabel>
             <SectionTitle>Hand off your first task.</SectionTitle>
