@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -127,12 +127,13 @@ A delete that no api-server replica sees leaves the agent with no name.
 
 **Session check.** The Session comes from the stamp in the machine, so it serves display only, and no total and no limit depends on it.
 A call's Session counts only when the calling agent reported that Session to the [Session directory](metrics.md#session-directory); a Session that the agent never reported, or a failed check, counts as no Session.
-Bob sends no `X-Task-Id` on the first call of a new task, which asks for the model `background`, so the Model Router stamps no Session on that call and it counts as no Session.
-The totals and the limits of that call stay correct, because they do not read the Session.
+The totals and the limits of such a call stay correct, because they do not read the Session.
 The agent's own machine writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
 The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
+A new Session's first prompt waits for that report, at most two seconds ([metrics](metrics.md#session-directory)).
+A call that still counted as no Session keeps its stamp, and a job every five minutes moves such calls of the last two days to their Session once the directory knows it.
 
-**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
+**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, its stamp when it counted as no Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
 The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
 It serves the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn, the cost of each call in the turn timeline, `get_metrics` and `dam metrics`, found by the router call id within the owner's rows, the reads in hours, and the first and last call time of a Session; no limit reads it.
 A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.

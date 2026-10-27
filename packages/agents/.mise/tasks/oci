@@ -325,6 +325,11 @@ install_tools() {
   ${sudo[@]+"${sudo[@]}"} cp -a "$stage/etc/." "$r/etc/"
   ${sudo[@]+"${sudo[@]}"} cp -a "$stage/build-mise/." "$r/"
   ${sudo[@]+"${sudo[@]}"} install -m 755 "$installer" "$r/usr/local/bin/install-harness-tools"
+  # A host behind a proxy that re-signs TLS names the bundle holding its CA in
+  # SSL_CERT_FILE; the root's bundle, the distribution's roots alone, gets it
+  # too, so the downloads trust what the host trusts. The root goes away after
+  # the install, and no image carries the host's CA.
+  [ ! -r "${SSL_CERT_FILE:-}" ] || ${sudo[@]+"${sudo[@]}"} sh -c 'cat "$1" >> "$2"' _ "$SSL_CERT_FILE" "$r/run/platform/ca-certificates.crt"
   mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" | grep -E '^[A-Z_][A-Z0-9_]*=')
   # The GitHub token stays out of every command line, where any user on the
   # host reads it: sudo keeps it in the environment, and it crosses env -i in a

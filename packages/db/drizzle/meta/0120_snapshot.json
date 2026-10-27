@@ -1,6 +1,6 @@
 {
-  "id": "d5fc8f7e-387d-4512-9aa8-bee94fe5cb52",
-  "prevId": "bdbeea2f-7cf1-47b1-a258-663a02c97ec9",
+  "id": "3bd6e9dd-0069-4334-8663-377c5afde7dd",
+  "prevId": "6f75bfd8-ca6f-4b4d-afb9-99eb8f4cbb84",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1750,24 +1750,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "session_pair": {
-          "name": "session_pair",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "platform_subagent_profile": {
-          "name": "platform_subagent_profile",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "platform_subagent_settings": {
-          "name": "platform_subagent_settings",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1862,34 +1844,12 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
-        },
-        "channels_platform_subagent_profile_profiles_id_fk": {
-          "name": "channels_platform_subagent_profile_profiles_id_fk",
-          "tableFrom": "channels",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "platform_subagent_profile"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "channels_session_pair_xor_profile": {
-          "name": "channels_session_pair_xor_profile",
-          "value": "\"channels\".\"profile_id\" is null or \"channels\".\"session_pair\" is null"
-        },
-        "channels_platform_subagent_xor_profile": {
-          "name": "channels_platform_subagent_xor_profile",
-          "value": "\"channels\".\"platform_subagent_profile\" is null or \"channels\".\"platform_subagent_settings\" is null"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.connection_grants": {
@@ -5220,6 +5180,13 @@
           "notNull": true,
           "default": "''"
         },
+        "stamped_session_id": {
+          "name": "stamped_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
         "started_at": {
           "name": "started_at",
           "type": "timestamp with time zone",
@@ -5383,6 +5350,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "spend_calls_unbooked_idx": {
+          "name": "spend_calls_unbooked_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"spend_calls\".\"session_id\" = '' AND \"spend_calls\".\"stamped_session_id\" <> ''",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5942,24 +5925,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "session_pair": {
-          "name": "session_pair",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "platform_subagent_profile": {
-          "name": "platform_subagent_profile",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "platform_subagent_settings": {
-          "name": "platform_subagent_settings",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5998,34 +5963,12 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
-        },
-        "telegram_conversations_platform_subagent_profile_profiles_id_fk": {
-          "name": "telegram_conversations_platform_subagent_profile_profiles_id_fk",
-          "tableFrom": "telegram_conversations",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "platform_subagent_profile"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "telegram_conversations_session_pair_xor_profile": {
-          "name": "telegram_conversations_session_pair_xor_profile",
-          "value": "\"telegram_conversations\".\"profile_id\" is null or \"telegram_conversations\".\"session_pair\" is null"
-        },
-        "telegram_conversations_platform_subagent_xor_profile": {
-          "name": "telegram_conversations_platform_subagent_xor_profile",
-          "value": "\"telegram_conversations\".\"platform_subagent_profile\" is null or \"telegram_conversations\".\"platform_subagent_settings\" is null"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.terms_acceptances": {

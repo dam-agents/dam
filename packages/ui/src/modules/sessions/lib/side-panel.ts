@@ -5,7 +5,6 @@ export type SidePanelTab =
   | "browser"
   | "processes"
   | "delegation"
-  | "getting-started"
   | "approvals";
 
 export type DockedItems = {
@@ -32,7 +31,6 @@ export type SidePanelAvailability = {
   canOpenBrowser: boolean;
   changes: boolean;
   processesEnabled: boolean;
-  gettingStarted: boolean;
 };
 
 export function hiddenSidePanelTabs(
@@ -45,7 +43,6 @@ export function hiddenSidePanelTabs(
     delegation: available.agent,
     browser: available.agent && available.canOpenBrowser,
     processes: available.agent && available.processesEnabled,
-    "getting-started": available.gettingStarted,
     approvals: true,
   };
   return new Set(

@@ -9,7 +9,6 @@ export {
   type FirePair,
 } from "./compose.js";
 export { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
-export { createUnattendedAgentsReader } from "./infrastructure/unattended-agents.js";
 export { createInitializationPairResolver } from "./services/initialization-pair.js";
 export {
   harnessConfigSupported,

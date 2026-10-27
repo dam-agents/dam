@@ -199,6 +199,7 @@ export type {
   FileChangeStatus,
   FileDiff,
   PullRequestLink,
+  PullRequestState,
   SessionRepository,
 } from "./modules/changes/types.js";
 export {
@@ -209,6 +210,7 @@ export {
   compareToSchema,
   fileDiffSchema,
   pullRequestLinkSchema,
+  pullRequestStateSchema,
   sessionRepositorySchema,
 } from "./modules/changes/schemas.js";
 

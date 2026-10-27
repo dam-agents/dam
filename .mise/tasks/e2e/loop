@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-#MISE description="Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite"
+#MISE description="Fast e2e rerun against the warm test cluster (no VM recreate), or an Environment: optionally rebuild components, wipe data, run the smoke suite"
 #MISE raw=true
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 #USAGE flag "--headed" help="Run Playwright headed"
 #USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/; the pipeline runs smoke only"
 #USAGE flag "--rebuild <components>" help="Comma-separated cluster:build components (controller, api-server, ui, keycloak, agents); asked for when omitted on a terminal"
 #USAGE flag "--test <filter>" help="Playwright file/title filter, e.g. prompt-delivery"
+#USAGE flag "--environment <name>" help="Run in this agent's Environment of that name: install what the checkout changed there, then run the suite over the link"
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
@@ -24,22 +25,33 @@ PLAYWRIGHT_ARGS=()
 REBUILD="${usage_rebuild:-}"
 
 # 1. Ensure a warm cluster exists. Bootstrap once if it's missing; never try to
-# heal a broken one — fail loud and let the operator decide.
+# heal a broken one — fail loud and let the operator decide. In an Environment
+# the install runs every time: it builds and streams in only the images this
+# checkout changed, and restarts only what runs them, so it is what brings the
+# Environment to the checkout, and a run that changed nothing changes nothing.
 NEEDS_BOOTSTRAP=false
-if [ -z "${IS_SANDBOX:-}" ] && ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
+if [ "$CLUSTER_TARGET" = environment ]; then
+  NEEDS_BOOTSTRAP=true
+elif [ "$CLUSTER_TARGET" = lima ] && ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
   NEEDS_BOOTSTRAP=true
 elif ! kubectl get deployment platform-apiserver >/dev/null 2>&1; then
   NEEDS_BOOTSTRAP=true
 fi
-if [ "$NEEDS_BOOTSTRAP" = true ]; then
+if [ "$CLUSTER_TARGET" = environment ]; then
+  echo "Installing what this checkout changed into Environment $CLUSTER_ENVIRONMENT..."
+  mise run e2e:install
+elif [ "$NEEDS_BOOTSTRAP" = true ]; then
   echo "No warm e2e cluster found — bootstrapping once (slow, ~minutes)..."
   mise run e2e:install
 fi
 
 # 2. Optional rebuild. Interactive prompt unless --rebuild was passed. Default
 # none: just reset data and rerun. The build tasks inherit LIMA_INSTANCE, so
-# they target the test VM rather than the dev cluster.
-if [ -z "${usage_rebuild+set}" ] && [ -t 0 ]; then
+# they target the test VM rather than the dev cluster. An Environment's
+# install above already took every change.
+if [ "$CLUSTER_TARGET" = environment ]; then
+  REBUILD=""
+elif [ -z "${usage_rebuild+set}" ] && [ -t 0 ]; then
   read -r -p "Rebuild which? [controller,api-server,ui,keycloak,agents] (default: none): " REBUILD || true
 fi
 IFS=', ' read -ra COMPONENTS <<< "$REBUILD"
@@ -54,7 +66,13 @@ mise run e2e:gate
 
 # 4. Run the specs against the warm cluster. No teardown — the cluster stays up
 # for the next loop. The arguments ride after `--` so mise appends them to the
-# playwright command instead of parsing them as its own flags.
-PLATFORM_BASE_URL="http://localhost:6555" \
-PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
+# playwright command instead of parsing them as its own flags. In an
+# Environment the suite reaches the backchannel and the API over a forward
+# that stays open until the suite ends.
+trap env_e2e_forward_close EXIT
+e2e_endpoint
+PLATFORM_BASE_URL="$E2E_BASE_URL" \
+PLATFORM_KEYCLOAK_URL="$E2E_KEYCLOAK_URL" \
+PLATFORM_E2E_LOGIN_LOCK_PORT="$E2E_LOGIN_LOCK_PORT" \
+KUBECONFIG="$E2E_KUBECONFIG" \
   mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"}

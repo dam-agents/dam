@@ -68,7 +68,7 @@ A name is fixed once the install exists, so a new branch in one worktree is a se
 
 **Guards**, so a wrong target fails loudly instead of acting on something else:
 
-- the `e2e:*` tasks refuse a set `CLUSTER_ENVIRONMENT`: the lane pins its own VM and the default install, and an Environment would outrank both;
+- the `e2e:*` tasks refuse a `CLUSTER_ENVIRONMENT` left in the shell: the lane pins its own VM and the default install, and an Environment would outrank both, so the lane goes into an Environment only when an `e2e:*` task is given `--environment <name>` ([The e2e suite in an Environment](#the-e2e-suite-in-an-environment));
 - `cluster:build` and `cluster:helm` refuse an install that is not on the cluster, and name `cluster:install`;
 - `cluster:uninstall`, `cluster:delete` and `cluster:host-runner` refuse the targets they cannot act on: an Environment's install goes with the Environment, and a host runner serves a lima VM;
 - `cluster:installs --all` lists every install on the target cluster, its namespace, address, status and — on a Mac — its host runner; `cluster:installs --environment <name>` shows that Environment's install in the same columns.
@@ -167,6 +167,34 @@ Iterate with `e2e:loop`; use `e2e` after helm/realm/infra changes.
 **Suite tiers.** **Smoke** (`src/tests/smoke/`) is what CI (both jobs, see [VM runner](#vm-runner-kvm)) and plain `e2e` / `e2e:loop` run.
 **Full** adds the slow scenario specs under `src/tests/full/`, on demand only: `mise run e2e:loop -- --full` (fresh cluster: `mise run e2e -- --full`).
 `src/tests/full/` specs: one `<area>-full` Playwright project per area, self-contained (own agents, own token via `getAccessToken` + `acceptTerms`, no smoke-chain fixtures), motivating ticket in the test title.
+
+### The e2e suite in an Environment
+
+`mise run e2e:loop -- --environment <name>` runs the smoke suite for the current checkout in one of this agent's Environments, the same way every time.
+It is the command the agent kit's `verify_environment` names: `mise run e2e:loop -- --environment {environment}`.
+The Environment is one made as in [In an Environment](#in-an-environment), on an install whose agents nest, since every agent the suite creates is a machine.
+
+1. **Install what changed.** `e2e:install -- --environment <name>` runs every time, through `cluster:install -- --environment <name> --backchannel`, with the lane's values (mock agents, the e2e control API, one vCPU and 1Gi a boot) and the default harness Template.
+   An image the registry has for this checkout's source is pulled by the node; one it lacks is built here and streamed in, unless the node already holds that build.
+   Only a deployment whose image changed is restarted, and only an agent image that changed is staged again, from the node's own copy, so a second run that changed nothing changes nothing.
+2. **Reset and gate**, as on the test cluster: `e2e:reset` and `e2e:gate` take `--environment` too.
+3. **Run the suite on the backchannel.** The lane's backchannel answers at `localhost:<port>` and `keycloak.localhost:<port>`, on a port of the Environment's own from 6560–6599, so the local lane's 6555 and several Environments run side by side on one agent.
+   The port is the one the install already answers on, else the first one no other of this agent's Environments holds; the agent's `~/.cache/platform-cluster/env-<name>/e2e-port` records it.
+   One SSH link forwards that port and the Environment's k3s API to this agent for as long as the suite runs, and the specs that act on the cluster (`kubectl`, `helm`) use that API through `KUBECONFIG`.
+   Each lane has its own Keycloak login lock port, so two suites never wait on each other's logins.
+
+Two Environments share nothing but this agent, which builds their changed images and runs their browsers: each has its own k3s, install, data and port.
+Two runs on one Environment at once are not supported: they would reset each other's data.
+Run two Environments from two checkouts (an agent's slots are): the suite keeps its login and its report in the checkout's `packages/e2e/playwright`.
+
+What differs from the local lane:
+
+- **No mesh**: the Environment's kernel cannot run ambient, so no AuthorizationPolicy is enforced there, and the run says nothing about isolation; CI's lanes still cover it.
+- **`mise run e2e` refuses `--environment`**: it deletes its cluster before and after the suite, and an Environment's install goes with the Environment.
+  For a fresh Environment, delete it and create it again.
+- **`--rebuild`** does nothing there: the install already took every change of the checkout.
+- **No spec is skipped there by design**: the specs that reach into the cluster or a runner (`19-agent-machine`, `22-harness-tools`, `27-vm-boot-matrix`, `28-runner-release`, `29-vm-storage-trim`) reach the Environment's own through its API.
+  `28-runner-release` derives its second runner release from the registry's runner image the Environment pulled, or from the one built here, and streams it in.
 
 ## No mesh (local only)
 

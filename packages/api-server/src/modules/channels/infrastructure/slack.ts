@@ -111,6 +111,11 @@ import {
   spendHoldUserCopy,
   type ChannelSpendHold,
 } from "./spend-hold-copy.js";
+import {
+  lookUpProviderOutage,
+  slackProviderOutageCopy,
+  type ChannelProviderOutage,
+} from "./provider-outage-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
@@ -1330,6 +1335,7 @@ export type SlackWorkerDeps = {
   brand: { name: string; short: string };
   isTermsAccepted: (sub: string) => Promise<boolean>;
   spendHold?: ChannelSpendHold;
+  providerOutage?: ChannelProviderOutage;
   uiBaseUrl: string;
   attendance: ChannelTurnAttendance;
   workspaceFiles: AgentWorkspaceFilesFactory;
@@ -1362,6 +1368,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     brand,
     isTermsAccepted,
     spendHold,
+    providerOutage = async () => null,
     uiBaseUrl,
     attendance,
     workspaceFiles,
@@ -3229,6 +3236,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     };
 
     let failurePosted = false;
+    let failureTemplateId: string | undefined;
     const postFailure = async (err: unknown) => {
       const failure = classifyTurnFailure(err);
       failureReason = failure.reason;
@@ -3240,11 +3248,25 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         },
         "slack.turn.failed",
       );
+      const outage =
+        failure.kind === "provider-unavailable"
+          ? await lookUpProviderOutage(providerOutage, instanceName, {
+              type: "slack",
+              id: ctx.channel,
+            })
+          : null;
+      failureTemplateId = outage?.templateId ?? undefined;
       if (turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff))
         return;
-      await postNotice(
-        `${failure.copy({ uiBaseUrl, agentId: instanceName })}${renderTurnFiles(ctx)}`,
-      );
+      const copy = match(failure)
+        .with({ kind: "plain" }, ({ copy }) =>
+          copy({ uiBaseUrl, agentId: instanceName }),
+        )
+        .with({ kind: "provider-unavailable" }, () =>
+          slackProviderOutageCopy(outage, brand.name),
+        )
+        .exhaustive();
+      await postNotice(`${copy}${renderTurnFiles(ctx)}`);
       failurePosted = true;
     };
 
@@ -3357,6 +3379,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             : stopped()
               ? { reason: "stopped" }
               : {}),
+        ...(failureTemplateId !== undefined
+          ? { templateId: failureTemplateId }
+          : {}),
       });
     }
   }
@@ -5535,6 +5560,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
+    let failureTemplateId: string | undefined;
     const [agentName, owner, turnContext] = await Promise.all([
       resolveAgentDisplayName(args.instanceName),
       resolveChannelOwner(args.instanceName, args.teamId),
@@ -5674,7 +5700,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         );
         return { posted: false, replyText: null, replies: [] };
       }
-      failureReason = classifyTurnFailure(err).reason;
+      const failure = classifyTurnFailure(err);
+      failureReason = failure.reason;
       getLogger().warn(
         {
           agentId: args.instanceName,
@@ -5683,6 +5710,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         },
         "slack.ambient_turn.failed",
       );
+      if (failure.kind === "provider-unavailable")
+        failureTemplateId =
+          (
+            await lookUpProviderOutage(providerOutage, args.instanceName, {
+              type: "slack",
+              id: args.channel,
+            })
+          )?.templateId ?? undefined;
     } finally {
       for (const ref of turnRefs) {
         endTurn(args.instanceName, ref, {
@@ -5714,6 +5749,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           : superseded()
             ? { reason: "superseded" }
             : {}),
+        ...(failureTemplateId !== undefined
+          ? { templateId: failureTemplateId }
+          : {}),
         ambient: true,
       });
     }

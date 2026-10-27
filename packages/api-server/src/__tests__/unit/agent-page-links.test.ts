@@ -40,9 +40,13 @@ describe("links to an agent's page", () => {
 
   /** TEST_SCENARIO: a channel whose profile cannot run sends its owner to the agent's Channels section, where the channel's row picks another profile. */
   it("sends a refused channel profile to the Channels section", () => {
-    const copy = classifyTurnFailure(
+    const failure = classifyTurnFailure(
       new ChannelProfileRefusedError("Fast review", "no provider"),
-    ).copy({ uiBaseUrl: "https://dam.example", agentId: "agent-1" });
-    expect(copy).toContain("https://dam.example/sandboxes/agent-1/channels");
+    );
+    expect(failure.kind).toBe("plain");
+    if (failure.kind !== "plain") return;
+    expect(
+      failure.copy({ uiBaseUrl: "https://dam.example", agentId: "agent-1" }),
+    ).toContain("https://dam.example/sandboxes/agent-1/channels");
   });
 });

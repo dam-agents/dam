@@ -29,7 +29,7 @@ export function AppSidePanelButtons({
   withArtifacts?: boolean;
   onDesktop?: boolean;
 }) {
-  const { gettingStarted, ...tabs } = useAppSidePanelTabs();
+  const tabs = useAppSidePanelTabs();
   const openSidePanel = useOpenSidePanel();
   const desktop = useIsDesktop();
   const view = useStore((s) => s.view);
@@ -43,7 +43,6 @@ export function AppSidePanelButtons({
           canOpenBrowser: false,
           changes: false,
           processesEnabled: false,
-          gettingStarted,
         }),
         withArtifacts,
       )}
@@ -57,11 +56,10 @@ export function AppSidePanelButtons({
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The side panel on every page outside an Agent's
- * chat: Get started and Approvals, and on an Agent's configuration page also
- * Artifacts, scoped to that Agent with a switch to the whole library. Other
- * pages leave Artifacts to the Artifacts page, whose opened artifact docks
- * here without the interactive bridge, because no chat is open to receive a
- * prompt.
+ * chat: on an Agent's configuration page it holds Artifacts, scoped to that
+ * Agent with a switch to the whole library. Other pages leave Artifacts to the
+ * Artifacts page, whose opened artifact docks here without the interactive
+ * bridge, because no chat is open to receive a prompt.
  */
 export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const openArtifactId = useStore((s) =>
@@ -72,8 +70,8 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const view = useStore((s) => s.view);
   const agentId = useStore((s) => s.agentId);
-  const { gettingStarted, ...tabs } = useAppSidePanelTabs();
-  // UNIT_BOUNDARY_DESCRIPTION: Get started and Approvals are drawers over the page, not side-panel tabs, so the shell's bar holds only the tabs it still opens; the drawers read the same store tab.
+  const tabs = useAppSidePanelTabs();
+  // UNIT_BOUNDARY_DESCRIPTION: Approvals is a drawer over the page, not a side-panel tab, so the shell's bar holds only the tabs it opens; the drawer reads the same store tab.
   const shellHidden = new Set<SidePanelTab>([
     ...hiddenSidePanelTabs({
       agent: false,
@@ -81,9 +79,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
       canOpenBrowser: false,
       changes: false,
       processesEnabled: false,
-      gettingStarted,
     }),
-    "getting-started",
     "approvals",
   ]);
   const activeTab =

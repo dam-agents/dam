@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-10-25
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -120,7 +120,7 @@ Where rows are returned the result says outright that they are only the most rec
 
 Every read also takes an optional **session**.
 The cost figures narrow to the session that the gateway recorded for each call, with the sub-agents spawned from it; the telemetry reads resolve it through the same trace-aware fold the Overview uses, the session named plus any harness run it spawned.
-The two differ only for a harness run that a session starts in its own shell, such as `claude -p`, which the gateway records with no session.
+A harness run that a session starts in its own shell, such as `claude -p`, counts in both ([harness-config](harness-config.md#the-model-router)).
 
 Spans carry no session id of their own, so a narrowed span read reaches the fold through the call records that do — the one place this read depends on the log shape it otherwise escapes, and a dependency that can fail, since a traces-only harness has no call records to resolve through.
 The read therefore **reports an unresolved narrowing as unresolved** rather than returning an empty list: a session it cannot identify is not a session that ran nothing, and a quiet answer would read as the latter.
@@ -146,6 +146,7 @@ Three properties of that report follow from what it is for:
 - **It is sent only when the answer changes.** Session metadata is touched on every turn (activity stamps), while a Session's kind is fixed at creation — so the agent compares what it would send against what it last sent and stays silent when they match.
   Without that, an ordinary conversation would put one write per turn on the api-server to re-assert a constant.
   Other changes wait a moment and go out together, but a new Session goes out at once, because the spend ledger checks a call's Session against the directory when the call's first record arrives.
+  The Session's first prompt waits for the report, at most two seconds.
 - **Reporting is best-effort.** A failed report is logged and left for the next change or the next boot; nothing about serving the agent depends on it.
   The read path degrades to the unattributed bucket described above, which is exactly what a not-yet-reported agent looks like.
 

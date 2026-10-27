@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #MISE description="Stage an image tar or OCI layout on the node for the VM runners, as a flattened tree plus its launch record"
-#USAGE arg "<image>" help="An image tar, as the :oci tasks write, or the OCI layout a layout-only build leaves"
+#USAGE arg "<image>" help="An image tar, as the :oci tasks write, or the OCI layout a layout-only build leaves; in an Environment, the reference the node holds the image under"
+#USAGE flag "--environment <name>" help="Stage on this agent's Environment of that name, from the image its node holds"
+#USAGE flag "--name <name>" help="Stage for this install (default: this worktree's)"
 # It lands under the read-only image directory the runners mount, by the name
 # the image carries.
 # The runner boots a staged tree as a shared read-only lower layer, so a
@@ -31,6 +33,65 @@ IMAGE_DIR="${VM_IMAGE_DIR:-$(helm template "$CLUSTER_RELEASE" "$MISE_CONFIG_ROOT
 work="$(TMPDIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}" mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
+# Runs as root on the node: fills a tree beside the live entry, moves the old
+# entry aside and the new one in, so a runner looking the entry up finds a
+# whole tree at every moment — never a half-written one, and never none. A
+# machine already booted from the old tree keeps its mounted files until it
+# restarts. The archive an earlier stage left under the same name goes last:
+# the runner boots the tree, and the archive only costs disk. The tree keeps
+# the modes and owners the image gave it — the runner reads it with
+# DAC_OVERRIDE, and a file the image keeps from others, such as /etc/shadow,
+# must stay that way in the guest.
+# The source is either a flattened rootfs tar or, when the node's containerd
+# already holds the image, its ref: cluster:install imports every agent image
+# before staging it, and the snapshot that import unpacked is mounted and
+# copied, which skips re-reading, re-compressing and flattening the layers.
+# xattrs are left out, as tar leaves them out of the tar path's tree. An
+# image ID, when given, is kept beside the tree as the image it was made from.
+place='set -e
+dest="$1"; src="$2"; launch="$3"; unpacked_as="${4:-}"; image_id="${5:-}"
+rm -rf "$dest.new" "$dest.old"
+mkdir -p "$dest.new/rootfs"
+case "$src" in
+  *.tar) tar -xf "$src" -C "$dest.new/rootfs" ;;
+  *)
+    mnt="$(mktemp -d)"
+    k3s ctr images mount "$src" "$mnt" >/dev/null
+    rc=0; cp -a --no-preserve=xattr "$mnt/." "$dest.new/rootfs/" || rc=$?
+    k3s ctr images unmount --rm "$mnt" >/dev/null; rmdir "$mnt"
+    [ "$rc" = 0 ] ;;
+esac
+[ -z "$unpacked_as" ] || printf "%s\n" "$unpacked_as" > "$dest.new/unpacked-as"
+[ -z "$image_id" ] || printf "%s\n" "$image_id" > "$dest.new/image-id"
+install -m 644 "$launch" "$dest.new/launch.json"
+chmod a+rx "$dest.new"
+[ ! -e "$dest" ] || mv "$dest" "$dest.old"
+mv "$dest.new" "$dest"
+rm -rf "$dest.old" "$dest.tar"'
+
+# An Environment's node already holds every image the install loaded, pulled
+# from the registry or streamed in, under the reference it runs: the tree is
+# that image's snapshot, and the record its config as the node reads it.
+# Nothing crosses the link but the record. The image's ID is kept beside the
+# tree, so a tree of the image the node holds is not copied again: a second
+# install stages only the images that changed.
+if [ "$CLUSTER_TARGET" = environment ]; then
+  ref="$usage_image"
+  name="$(printf '%s' "${ref#docker.io/library/}" | tr '/:@' '___')"
+  node_sh k3s crictl inspecti -o json "$ref" > "$work/image.json"
+  id="$(jq -r '.status.id' "$work/image.json")"
+  if [ "$(node_sh cat "$IMAGE_DIR/$name/image-id" 2>/dev/null || true)" = "$id" ]; then
+    echo "$ref is staged at $IMAGE_DIR/$name already"
+    exit 0
+  fi
+  jq '.info.imageSpec.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
+    "$work/image.json" | node_sh sh -c 'cat > "$1"' _ "/tmp/$name.launch.json"
+  node_sh sh -c "$place" _ "$IMAGE_DIR/$name" "$ref" "/tmp/$name.launch.json" "" "$id"
+  node_sh rm -f "/tmp/$name.launch.json"
+  echo "staged $ref at $IMAGE_DIR/$name, from the node's containerd"
+  exit 0
+fi
+
 # A layout is linked in, not unpacked: the e2e lane leaves a built agent image as
 # its layout, and its blobs are the image's. The link needs both on one
 # filesystem, the temp directory the lane and this work directory share.
@@ -51,40 +112,6 @@ config="$(jq -r '.[0].Config' "$layout/manifest.json")"
 jq \
   '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
   "$layout/$config" > "$work/launch.json"
-
-# Runs as root on the node: fills a tree beside the live entry, moves the old
-# entry aside and the new one in, so a runner looking the entry up finds a
-# whole tree at every moment — never a half-written one, and never none. A
-# machine already booted from the old tree keeps its mounted files until it
-# restarts. The archive an earlier stage left under the same name goes last:
-# the runner boots the tree, and the archive only costs disk. The tree keeps
-# the modes and owners the image gave it — the runner reads it with
-# DAC_OVERRIDE, and a file the image keeps from others, such as /etc/shadow,
-# must stay that way in the guest.
-# The source is either a flattened rootfs tar or, when the node's containerd
-# already holds the image, its ref: cluster:install imports every agent image
-# before staging it, and the snapshot that import unpacked is mounted and
-# copied, which skips re-reading, re-compressing and flattening the layers.
-# xattrs are left out, as tar leaves them out of the tar path's tree.
-place='set -e
-dest="$1"; src="$2"; launch="$3"; unpacked_as="${4:-}"
-rm -rf "$dest.new" "$dest.old"
-mkdir -p "$dest.new/rootfs"
-case "$src" in
-  *.tar) tar -xf "$src" -C "$dest.new/rootfs" ;;
-  *)
-    mnt="$(mktemp -d)"
-    k3s ctr images mount "$src" "$mnt" >/dev/null
-    rc=0; cp -a --no-preserve=xattr "$mnt/." "$dest.new/rootfs/" || rc=$?
-    k3s ctr images unmount --rm "$mnt" >/dev/null; rmdir "$mnt"
-    [ "$rc" = 0 ] ;;
-esac
-[ -z "$unpacked_as" ] || printf "%s\n" "$unpacked_as" > "$dest.new/unpacked-as"
-install -m 644 "$launch" "$dest.new/launch.json"
-chmod a+rx "$dest.new"
-[ ! -e "$dest" ] || mv "$dest" "$dest.old"
-mv "$dest.new" "$dest"
-rm -rf "$dest.old" "$dest.tar"'
 
 # containerd's name for the image: a bare name or one without a registry
 # host is normalized onto docker.io, as `ctr images import` stores it. The

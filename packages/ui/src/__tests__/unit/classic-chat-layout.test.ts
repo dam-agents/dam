@@ -13,10 +13,10 @@ import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
  * layout from before the side panel: Files, Artifacts and Processes are
  * sections in a column beside the conversation, and the docked item (a file,
  * an artifact, the browser, the changes, a process output or a delegation)
- * opens on the right. Get started opens in that same slot from the top bar and
- * the docked item waits behind it; Approvals opens as a drawer over the chat,
- * so it leaves the slot as it is. The side panel's own tabs, Files and the
- * rest, show nothing there: their lists are the sections.
+ * opens on the right. Approvals is the one tab of the top bar that rides the
+ * side panel, and it opens as a drawer over the chat, so it leaves the slot as
+ * it is; Get started opens as a dock under the top bar. The side panel's own
+ * tabs, Files and the rest, show nothing there: their lists are the sections.
  */
 
 const SHOWN = hiddenSidePanelTabs({
@@ -25,46 +25,17 @@ const SHOWN = hiddenSidePanelTabs({
   canOpenBrowser: true,
   changes: true,
   processesEnabled: true,
-  gettingStarted: true,
 });
 
 describe("what the right-hand slot shows", () => {
-  it("TEST_SCENARIO: a docked item shows while no app tab is open, whatever list tab the side panel last had", () => {
-    expect(classicPanel("files", SHOWN, true)).toBe("dock");
-    expect(classicPanel("artifacts", SHOWN, true)).toBe("dock");
-    expect(classicPanel(null, SHOWN, true)).toBe("dock");
+  it("TEST_SCENARIO: a docked item shows in the slot, whatever list tab the side panel last had, and nothing docked leaves it closed, because a list tab's list is a section beside the conversation", () => {
+    expect(classicPanel(true)).toBe("dock");
+    expect(classicPanel(false)).toBe(null);
   });
 
-  it("TEST_SCENARIO: a list tab with nothing docked leaves the slot closed, because its list is a section beside the conversation", () => {
-    expect(classicPanel("files", SHOWN, false)).toBe(null);
-    expect(classicPanel("processes", SHOWN, false)).toBe(null);
-  });
-
-  it("TEST_SCENARIO: Get started takes the slot over a docked item, which comes back when it closes", () => {
-    expect(classicPanel("getting-started", SHOWN, true)).toBe(
-      "getting-started",
-    );
-    expect(classicAppTab("getting-started", SHOWN)).toBe("getting-started");
-    expect(classicAppTab("files", SHOWN)).toBe(null);
-  });
-
-  it("TEST_SCENARIO: Approvals opens as a drawer over the chat, so it never takes the slot and the docked item stays in view", () => {
-    expect(classicPanel("approvals", SHOWN, true)).toBe("dock");
-    expect(classicPanel("approvals", SHOWN, false)).toBe(null);
+  it("TEST_SCENARIO: Approvals is the one app tab of the top bar, and it opens as a drawer over the chat, so it never takes the slot and the docked item stays in view", () => {
     expect(classicAppTab("approvals", SHOWN)).toBe("approvals");
-  });
-
-  it("TEST_SCENARIO: a finished or dismissed checklist hides Get started, so the slot falls back to the docked item", () => {
-    const hidden = hiddenSidePanelTabs({
-      agent: true,
-      artifacts: true,
-      canOpenBrowser: true,
-      changes: true,
-      processesEnabled: true,
-      gettingStarted: false,
-    });
-    expect(classicPanel("getting-started", hidden, true)).toBe("dock");
-    expect(classicPanel("getting-started", hidden, false)).toBe(null);
+    expect(classicAppTab("files", SHOWN)).toBe(null);
   });
 });
 
@@ -134,14 +105,6 @@ describe("the top bar's browser and changes toggles", () => {
     });
   });
 
-  it("TEST_SCENARIO: an item docked behind Get started is not pressed, and a click brings it back instead of closing it", () => {
-    for (const panel of ["getting-started"] as const)
-      expect(classicDockToggle({ ...base, panel })).toEqual({
-        pressed: false,
-        click: "reveal",
-      });
-  });
-
   it("TEST_SCENARIO: an item a phone user hid with Back to chat is not pressed, and a click brings it back", () => {
     expect(
       classicDockToggle({ ...base, panel: "dock", hiddenOnPhone: true }),
@@ -149,11 +112,16 @@ describe("the top bar's browser and changes toggles", () => {
   });
 
   it("TEST_SCENARIO: an item another docked item covers is not pressed, and a click opens it in front; so does a click on an item not docked", () => {
-    for (const panel of ["dock", "getting-started"] as const)
-      expect(classicDockToggle({ ...base, panel, front: false })).toEqual({
+    expect(classicDockToggle({ ...base, panel: "dock", front: false })).toEqual(
+      {
         pressed: false,
         click: "open",
-      });
+      },
+    );
+    expect(classicDockToggle({ ...base, panel: null, front: false })).toEqual({
+      pressed: false,
+      click: "open",
+    });
     expect(
       classicDockToggle({ ...base, docked: false, panel: "dock" }),
     ).toEqual({ pressed: false, click: "open" });

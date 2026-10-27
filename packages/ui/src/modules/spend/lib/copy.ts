@@ -393,7 +393,7 @@ export const SUB_AGENTS_HELP =
 export const NO_SESSION = "No session";
 
 export function noSessionHelp(): string {
-  return `Calls of your agents that ${getBrand().name} cannot link to a session, such as Bedrock calls. They are in the total.`;
+  return `Calls of your agents that ${getBrand().name} cannot link to a session, such as a script started outside any session. They are in the total.`;
 }
 
 export function thisAgent(name: string): string {

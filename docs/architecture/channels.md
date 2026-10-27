@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-25
+Last verified: 2026-10-27
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -102,7 +102,7 @@ A bot sender gets no private notices, since a notice needs a person, and a bot p
 A tag of an Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) starts no turn; whoever tagged it gets the reason instead — a person privately, a bot in one footer-less notice in the thread, which starts nothing.
 
 Ambient turns are deliberately unobtrusive on the platform's side: the platform posts no acknowledgment reaction and no wake notices, and failures are logged and evented but never posted — nobody summoned the agent, and a turn dropped after the wait is recovered by catch-up on the next one.
-Acknowledgement instead comes from the agent itself: when a message is worth engaging, the ambient frame has it open with a fitting emoji reaction — a quiet, notifies-no-one signal that it has picked the message up, chosen to suit the message rather than a rote mark.
+The agent answers as a person would, with a reaction or a reply, not both: the ambient frame has it react instead of replying when an emoji says enough by itself — agreement, "done", "this is a bug" — never just to show it picked the message up, and both together only when the reaction says something the reply does not.
 The agent declines explicitly, or by ending its turn without posting.
 The frame also announces how the agent appears in the channel — the install's bot name and Slack id, and the agent name its posts are signed with — so a message that calls it by any of them is answered like a mention; the persona behind that name comes from the agent's workspace setup, never from the relay.
 Each relayed message is still security-logged as a place-basis allow (marked as ambient-triggered), and the binding owner's Terms-of-Use acceptance gates ambient turns like any shared turn — silently.
@@ -255,6 +255,7 @@ The differences are transport, identity model, and where the bot token comes fro
 - **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert or an outage alert, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
   A link made before links recorded their workspace reaches the one active install, and nothing when several are active, until the user logs in again.
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.
+  A notice that reaches nobody in Slack goes to Telegram instead (below), so a person gets one copy.
   Only the channel leader sends; other replicas reach it over the channel RPC.
   `login`/`logout` stay working but are not listed in the bare-`/platform` usage help (which advertises the other eight); the flows that need a linked identity still point users at `/platform login` in context.
 - **In-chat binding.** Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of *their own* Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel, exactly like every binding.
@@ -357,7 +358,7 @@ The agent persona above is the one exception and fails closed: the cost of guess
   Ambient mode works as on Slack: off by default, it adds every other message of the chat as a read-along turn, which posts nothing on failure and is never steered into a running turn.
   Bare `/ambient` reports the mode to anyone, and `/ambient on|off` switches it for chat admins only, the same gate as `/bind`; Telegram has no private reply, so the chat sees the answer.
   Telegram hides ordinary group messages from a bot with **Group Privacy** on, its default, unless the bot is an admin there: such a bot gets only commands and replies to its messages, so the api-server warns at boot and `/ambient on` says so in the chat.
-- **The platform can message an owner in their own private chat.** A notice the platform raises itself, such as an outage alert, also goes from the bot to each private chat that the owner bound to one of their own Agents, with times in UTC, because a Telegram message carries no reader's time zone.
+- **The platform can message an owner in their own private chat.** A notice the platform raises itself, such as an outage alert, goes from the bot to each private chat that the owner bound to one of their own Agents when it reached nobody in Slack, with times in UTC, because a Telegram message carries no reader's time zone.
   It never goes to a group or a business chat: a business chat is one-to-one with a customer of the business, not with the owner.
   The binding flow makes the binder the Agent's owner, so the platform trusts that the person in such a chat is the owner, as the binding already does; there is still no per-person link.
   A reply there is a turn of the bound Agent.

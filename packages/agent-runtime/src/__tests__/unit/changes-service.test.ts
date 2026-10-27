@@ -76,7 +76,10 @@ async function repository(dir: string, files: Record<string, string>) {
 
 const settles = { timeout: 20_000 };
 
-const noPullRequests: PullRequestFinder = { find: async () => null };
+const noPullRequests: PullRequestFinder = {
+  find: async () => null,
+  states: async () => [],
+};
 
 let running: string[] = [];
 
@@ -442,6 +445,7 @@ describe("changes service", { timeout: 30_000 }, () => {
         asked.push([remote, branch]);
         return branch === "feat/x" ? link : null;
       },
+      states: async () => [],
     });
     await traced(
       { CLAUDE_CODE_SESSION_ID: "s1" },
@@ -520,6 +524,7 @@ describe("session pushes", { timeout: 30_000 }, () => {
   const link = { number: 9, url: "https://github.com/acme/app/pull/9" };
   const findsFeature: PullRequestFinder = {
     find: async (_remote, branch) => (branch === "feat/push" ? link : null),
+    states: async () => [],
   };
 
   async function repositoryWithRemote(): Promise<{
@@ -552,6 +557,7 @@ describe("session pushes", { timeout: 30_000 }, () => {
         asked.push([remoteUrl, branch]);
         return findsFeature.find(remoteUrl, branch);
       },
+      states: async () => [],
     });
     running = ["s1", "s2"];
 
@@ -574,6 +580,62 @@ describe("session pushes", { timeout: 30_000 }, () => {
     ]);
     expect(service.repositoriesOf("s2")).toEqual([]);
     expect(asked).toContainEqual([remote, "feat/push"]);
+  });
+
+  /**
+   * TEST_SCENARIO: A session pulls in a repository it does nothing else in,
+   * by a merge and by a rebase, as the tools an agent runs pull their caches.
+   * The pull and the merge or rebase it starts link no repository.
+   */
+  it("should not link a repository a session only pulled in", async () => {
+    const { repo, remote } = await repositoryWithRemote();
+    const clone = path.join(home, "work", "cache");
+    await git(tmp, "clone", "--quiet", "--branch", "main", remote, clone);
+    await git(repo, "push", "--quiet", "origin", "feat/push:main");
+    const env = { CLAUDE_CODE_SESSION_ID: "s1" };
+
+    await traced(env, clone, "pull", "--quiet", "--no-rebase");
+    await git(repo, "commit", "--quiet", "--allow-empty", "-m", "more");
+    await git(repo, "push", "--quiet", "origin", "feat/push:main");
+    await git(clone, "commit", "--quiet", "--allow-empty", "-m", "local");
+    await traced(env, clone, "pull", "--quiet", "--rebase");
+
+    expect(
+      (await git(clone, "log", "--format=%s", "-3")).trim().split("\n"),
+    ).toEqual(["local", "more", "change"]);
+    expect(service.repositoriesOf("s1")).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A session pushes a branch with an open pull request from
+   * a clone outside the scanned roots, as an agent working in /tmp does. The
+   * push links that clone and its pull request to the session.
+   */
+  it("should link the pull request a session pushed from outside the roots", async () => {
+    const { repo, remote } = await repositoryWithRemote();
+    const clone = path.join(elsewhere, "tmp.xyz");
+    await fs.mkdir(elsewhere, { recursive: true });
+    await git(repo, "push", "--quiet", "origin", "feat/push");
+    await git(tmp, "clone", "--quiet", "--branch", "feat/push", remote, clone);
+    await git(clone, "commit", "--quiet", "--allow-empty", "-m", "more");
+    service = serviceFor([path.join(home, "work"), home], findsFeature);
+
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      clone,
+      "push",
+      "--quiet",
+      "origin",
+      "feat/push",
+    );
+
+    expect(service.repositoriesOf("s1")).toEqual([
+      expect.objectContaining({
+        path: clone,
+        branch: "feat/push",
+        pullRequest: link,
+      }),
+    ]);
   });
 
   /**
@@ -617,5 +679,63 @@ describe("session pushes", { timeout: 30_000 }, () => {
         pullRequest: link,
       }),
     ]);
+  });
+});
+
+describe("pull request states", { timeout: 30_000 }, () => {
+  /**
+   * TEST_SCENARIO: A session's pull request waits for review, and a reviewer
+   * approves it. The sessions list reads the session's repositories; the
+   * next refresh reads the new state, stores it on the record and tells the
+   * list to read again, so the badge turns green without a new push.
+   */
+  it("should refresh the state of a pull request the list shows", async () => {
+    const repo = path.join(home, "work", "app");
+    await repository(repo, { "a.txt": "a\n" });
+    await git(
+      repo,
+      "remote",
+      "add",
+      "origin",
+      "https://github.com/acme/app.git",
+    );
+    await git(repo, "checkout", "--quiet", "-b", "feat/x");
+    const url = "https://github.com/acme/app/pull/7";
+    let state: "pending" | "approved" = "pending";
+    const asked: string[][] = [];
+    service = serviceFor([home], {
+      find: async (_remote, branch) =>
+        branch === "feat/x"
+          ? { number: 7, url, state: "pending", conflicts: false }
+          : null,
+      states: async (links) => {
+        asked.push(links.map((link) => link.url));
+        return links.map((link) => ({ ...link, state, conflicts: false }));
+      },
+    });
+    let notices = 0;
+    service.onPullRequestsChanged(() => notices++);
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      repo,
+      "commit",
+      "--quiet",
+      "--allow-empty",
+      "-m",
+      "x",
+    );
+    service.onToolCallSettled("s1");
+    await expect
+      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest?.state, settles)
+      .toBe("pending");
+
+    state = "approved";
+    service.refreshPullRequests();
+
+    await expect
+      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest?.state, settles)
+      .toBe("approved");
+    expect(notices).toBe(1);
+    expect(asked.at(-1)).toEqual([url]);
   });
 });

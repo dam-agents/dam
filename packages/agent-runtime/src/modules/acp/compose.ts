@@ -114,6 +114,7 @@ export interface ComposeAcpOptions {
   agentRequests: AgentRequestObserver;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
+  beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
   unroutedProviderEnv?: (harness: string) => Record<string, string>;
@@ -512,6 +513,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
         agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
+        ...(opts.beforeFirstPrompt && {
+          beforeFirstPrompt: opts.beforeFirstPrompt,
+        }),
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
         ...(ownHistory ? { historyProvider: ownHistory } : {}),

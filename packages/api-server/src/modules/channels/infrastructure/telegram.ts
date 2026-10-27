@@ -33,7 +33,13 @@ import {
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
 import type { ChannelPair } from "./channel-profile.js";
+import { match } from "ts-pattern";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
+import {
+  lookUpProviderOutage,
+  telegramProviderOutageCopy,
+  type ChannelProviderOutage,
+} from "./provider-outage-copy.js";
 import { getLogger } from "../../../core/logger.js";
 import { channelDeny } from "./channel-authz.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -600,6 +606,7 @@ export function createTelegramWorker(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   spendHold?: ChannelSpendHold;
+  providerOutage?: ChannelProviderOutage;
   uiBaseUrl: string;
   brandName: string;
   logLevel?: LogLevel;
@@ -612,6 +619,7 @@ export function createTelegramWorker(deps: {
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
   const { botToken, makeAcpClient, agents, attendance, brandName } = deps;
+  const providerOutage = deps.providerOutage ?? (async () => null);
 
   let bot: {
     chat: Chat;
@@ -724,6 +732,7 @@ export function createTelegramWorker(deps: {
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
+    let failureTemplateId: string | undefined;
     const releaseAttendance = attendance.openChannelTurn(agentId);
     try {
       await agents().ensureReady(agentId);
@@ -765,10 +774,27 @@ export function createTelegramWorker(deps: {
         { agentId, reason: failureReason, error: String(err), ambientTurn },
         "telegram.turn.failed",
       );
+      const outage =
+        failure.kind === "provider-unavailable"
+          ? await lookUpProviderOutage(providerOutage, agentId, {
+              type: "telegram",
+              id: telegramChatOf(thread.id),
+            })
+          : null;
+      failureTemplateId = outage?.templateId ?? undefined;
       const sleeping = isAgentStoppedError(err) && !err.disabled;
       if (!ambientTurn && !sleeping)
         await thread
-          .post(failure.copy({ uiBaseUrl: deps.uiBaseUrl, agentId }))
+          .post(
+            match(failure)
+              .with({ kind: "plain" }, ({ copy }) =>
+                copy({ uiBaseUrl: deps.uiBaseUrl, agentId }),
+              )
+              .with({ kind: "provider-unavailable" }, () => ({
+                markdown: telegramProviderOutageCopy(outage, brandName),
+              }))
+              .exhaustive(),
+          )
           .catch(() => {});
     } finally {
       releaseAttendance();
@@ -778,7 +804,10 @@ export function createTelegramWorker(deps: {
           "platform.channel.failure_reason": failureReason,
         }),
       });
-      emitTurn(agentId, outcome, author.userId, ambientTurn, failureReason);
+      emitTurn(agentId, outcome, author.userId, ambientTurn, {
+        reason: failureReason,
+        templateId: failureTemplateId,
+      });
     }
   }
 
@@ -858,7 +887,7 @@ export function createTelegramWorker(deps: {
     outcome: TurnOutcome,
     telegramUserId: string,
     ambient: boolean,
-    reason?: string,
+    failure: { reason: string | undefined; templateId: string | undefined },
   ) {
     emit({
       type: EventType.ChannelTurnRelayed,
@@ -868,7 +897,10 @@ export function createTelegramWorker(deps: {
       externalActorId: telegramUserId,
       outcome,
       ...(ambient ? { ambient: true as const } : {}),
-      ...(reason !== undefined ? { reason } : {}),
+      ...(failure.reason !== undefined ? { reason: failure.reason } : {}),
+      ...(failure.templateId !== undefined
+        ? { templateId: failure.templateId }
+        : {}),
     });
   }
 

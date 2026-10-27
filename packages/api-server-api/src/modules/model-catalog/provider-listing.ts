@@ -11,8 +11,9 @@ const ALL_DIALECTS: readonly ModelDialect[] = [
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a harness can run on a provider through the
  * Model Router only when the provider serves a dialect the harness's
- * manifest lists. Bedrock is empty: it stays on Claude Code's native path
- * until its endpoints are verified.
+ * manifest lists. Bedrock is empty: it has paths and a stream of its own, so
+ * a Claude Code process on it stays in Claude Code's Bedrock mode and the
+ * router passes its calls on unchanged.
  */
 export const PROVIDER_DIALECTS: Record<ProviderAlias, readonly ModelDialect[]> =
   {

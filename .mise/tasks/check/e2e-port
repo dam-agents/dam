@@ -22,3 +22,13 @@ for task in gate loop run; do
   others="$(grep -oE 'localhost:[0-9]+' ".mise/tasks/e2e/$task" | grep -v ":$port\$" || true)"
   [ -z "$others" ] || { echo ".mise/tasks/e2e/$task names $others, not e2e:install's port $port" >&2; exit 1; }
 done
+lib="$(sed -n 's/^E2E_PORT=\([0-9]*\)$/\1/p' .mise/lib/cluster.sh)"
+[ "$lib" = "$port" ] || { echo ".mise/lib/cluster.sh has E2E_PORT=$lib where e2e:install has $port" >&2; exit 1; }
+# An Environment's lane answers on a port of its own range, forwarded to this
+# agent's loopback, beside the local lane and the artifact server.
+range="$(sed -n 's/^E2E_ENV_PORT_MIN=\([0-9]*\) E2E_ENV_PORT_MAX=\([0-9]*\)$/\1 \2/p' .mise/lib/cluster-environment.sh)"
+[ -n "$range" ] || { echo ".mise/lib/cluster-environment.sh no longer sets E2E_ENV_PORT_MIN and E2E_ENV_PORT_MAX on one line; teach this check where they are" >&2; exit 1; }
+read -r min max <<< "$range"
+for p in "$port" "$artifact"; do
+  [ "$p" -lt "$min" ] || [ "$p" -gt "$max" ] || { echo "the Environments' e2e ports $min-$max hold $p, which the local lane or the artifact server listens on" >&2; exit 1; }
+done

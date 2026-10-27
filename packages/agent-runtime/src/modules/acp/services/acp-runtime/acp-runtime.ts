@@ -199,6 +199,7 @@ export interface AcpRuntimeDeps {
   spawnWorkTimeoutMs?: number;
   beforeSpawn?: () => Promise<void>;
   onPrompt?: () => void;
+  beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   logBytesCap?: number;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
@@ -522,7 +523,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     canStart: ({ sessionId, unattended }) =>
       (unattended === true || hasEngagedChannel(sessionId)) &&
-      !harnessColdSessions.has(sessionId),
+      !harnessColdSessions.has(sessionId) &&
+      !registeringSessions.has(sessionId),
     sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
       const recordedAt = new Date().toISOString();
@@ -671,6 +673,24 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const registeringSessions = new Set<string>();
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a new Session's first prompt waits in the
+   * Prompt Scheduler until beforeFirstPrompt settles, which the runtime uses
+   * to let the Session directory learn the Session before its first model
+   * call is metered. Settings still go out meanwhile, as they call no model.
+   */
+  function holdFirstPrompt(sessionId: string): void {
+    const wait = deps.beforeFirstPrompt?.(sessionId);
+    if (!wait) return;
+    registeringSessions.add(sessionId);
+    void wait
+      .catch(() => {})
+      .finally(() => {
+        registeringSessions.delete(sessionId);
+        promptScheduler.onSessionReady(sessionId);
+      });
+  }
   const appliedSettings = new Map<string, Map<string, string>>();
   const settingsChannel: ClientChannel = {
     send() {},
@@ -2095,6 +2115,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           ) {
             deps.sessionMetadata.set(sidFromResult, mapping.platformMeta ?? {});
             deps.sessionMetadata.markUnstored(sidFromResult);
+            holdFirstPrompt(sidFromResult);
             syncSettings(sidFromResult);
           }
         }

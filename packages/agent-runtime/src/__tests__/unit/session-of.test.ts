@@ -5,11 +5,14 @@
  * `x-claude-code-session-id` header, the subagent's `x-claude-code-agent-id`
  * and the request class the gateway hint headers carry. A parent stamp alone
  * marks no subagent, since a rewound Session's copy carries one too.
+ * Bob's opening call carries no marker and books to the running turn still
+ * waiting for its first call.
  */
 import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 import {
   isSideCall,
+  openingCallSessionOf,
   sessionOf,
   subagentSessionOf,
 } from "../../modules/model-router/index.js";
@@ -109,5 +112,48 @@ describe("isSideCall", () => {
       isSideCall(req({ "x-claude-code-request-class": "compaction" })),
     ).toBe(false);
     expect(isSideCall(req({}))).toBe(false);
+  });
+});
+
+describe("openingCallSessionOf for Bob", () => {
+  /** TEST_SCENARIO: Two Bob tasks start at once while an older Session runs a
+   * later turn whose first marked call has not arrived. Each opening call is
+   * a new task's: the first goes to the new Session whose prompt went out
+   * first, and once that turn holds its opening call the next one goes to
+   * the other new Session, even before either sends a marked call. */
+  it("gives each waiting new turn one opening call, oldest prompt first", () => {
+    const turns = [
+      { sessionId: "old", startedAt: 100, lastMarkedAt: 50, openedAt: null },
+      {
+        sessionId: "second",
+        startedAt: 300,
+        lastMarkedAt: null,
+        openedAt: null,
+      },
+      {
+        sessionId: "first",
+        startedAt: 200,
+        lastMarkedAt: null,
+        openedAt: null,
+      },
+    ];
+    expect(openingCallSessionOf(turns)).toBe("first");
+    expect(
+      openingCallSessionOf(
+        turns.map((t) =>
+          t.sessionId === "first" ? { ...t, openedAt: 210 } : t,
+        ),
+      ),
+    ).toBe("second");
+    expect(
+      openingCallSessionOf([
+        {
+          sessionId: "busy",
+          startedAt: 100,
+          lastMarkedAt: 150,
+          openedAt: null,
+        },
+      ]),
+    ).toBeNull();
   });
 });

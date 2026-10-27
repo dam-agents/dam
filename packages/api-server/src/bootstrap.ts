@@ -164,7 +164,10 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
-import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
+import {
+  type ChannelRef,
+  createChannelProfiles,
+} from "./modules/channels/infrastructure/channel-profile.js";
 import {
   createSlackTokenRotation,
   noSlackTokenRotation,
@@ -185,7 +188,6 @@ import {
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
   createInitializationPairResolver,
-  createUnattendedAgentsReader,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -1560,6 +1562,9 @@ export async function bootstrap() {
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
   );
+  await periodicJobs.register("spend-stamped-calls", 5 * 60_000, () =>
+    spend.ingest.bookStampedCalls(),
+  );
   await periodicJobs.register(
     "spend-call-rows-retention",
     24 * 60 * 60 * 1000,
@@ -1642,6 +1647,30 @@ export async function bootstrap() {
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
   const channelPair = createChannelProfiles(db, resolveProfile).pair;
+  const grantedTemplates = createGrantedConnectionTemplates(db);
+  /* UNIT_BOUNDARY_DESCRIPTION: the template a channel's turn runs on: its own pick, else the agent's channel default, which a channel bound before profiles keeps. */
+  const channelTemplateOf = async (agentId: string, channel: ChannelRef) => {
+    const noDefault = (err: unknown) => {
+      if (isNoDefaultModelError(err)) return null;
+      throw err;
+    };
+    const pair =
+      (await channelPair(agentId, channel).catch(() => null)) ??
+      (await channelFirePair(agentId, "channel").catch(noDefault));
+    return pair?.provider
+      ? grantedTemplates.templateOf(agentId, pair.provider)
+      : null;
+  };
+  const channelProviderOutage = async (
+    agentId: string,
+    channel: ChannelRef,
+  ) => {
+    const [templateId, status] = await Promise.all([
+      channelTemplateOf(agentId, channel),
+      providerStatus.service.view(),
+    ]);
+    return { templateId, status };
+  };
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
@@ -1748,6 +1777,7 @@ export async function bootstrap() {
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
         spendHold: channelSpendHold,
+        providerOutage: channelProviderOutage,
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
@@ -1802,6 +1832,7 @@ export async function bootstrap() {
           ownerOf: (agentId) => agentsRepo.getOwner(agentId),
           ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
           spendHold: channelSpendHold,
+          providerOutage: channelProviderOutage,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,
           logLevel: config.logLevel,
@@ -1980,9 +2011,9 @@ export async function bootstrap() {
       (await agentsRepo.get(agentId))?.disabled === true,
   });
 
-  const grantedTemplates = createGrantedConnectionTemplates(db);
   const outageAlerts = composeOutageAlerts({
     db,
+    redis: sharedRedis,
     notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
     describeAgent: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
@@ -1990,31 +2021,8 @@ export async function bootstrap() {
         ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
         : null;
     },
-    unattendedCandidates: createUnattendedAgentsReader(db),
-    enabledSchedules: async (agentIds) =>
-      (await schedulesBoot.repo.listEnabledByAgents(agentIds)).map((s) => ({
-        agentId: s.agentId,
-        continuesSession:
-          s.spec.type === "once" && s.spec.origin?.mode === "continue",
-        harness: s.spec.harness,
-        model: s.spec.model,
-      })),
-    fireTemplate: async (agentId, kind, choices) => {
-      const model =
-        kind === "scheduled" && choices.model
-          ? await scheduleModelFor(agentId, choices.model)
-          : undefined;
-      const pair = await firePair(agentId, kind, {
-        ...(choices.harness && { harness: choices.harness }),
-        ...(model && { model }),
-      }).catch((err: unknown) => {
-        if (isNoDefaultModelError(err)) return null;
-        throw err;
-      });
-      if (pair === null) return null;
-      if (pair === undefined || pair.provider === null) return undefined;
-      return grantedTemplates.templateOf(agentId, pair.provider);
-    },
+    sessionCategories: (agentIds, sessionIds) =>
+      sessionDirectory.categorize(agentIds, sessionIds),
     uiBaseUrl: config.uiBaseUrl,
     delayMs: config.outageAlertDelayMinutes * 60_000,
   });

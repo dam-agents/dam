@@ -91,9 +91,30 @@
   }
 }
 
+@keyframes dock-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes dock-exit {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .getting-started,
-  .getting-started * {
+  .getting-started-dock,
+  .getting-started-dock * {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
   }

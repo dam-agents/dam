@@ -21,8 +21,8 @@ import type { PlatformStore } from "../../store.js";
  * TEST_OVERVIEW: Every page has one side panel on the right, switched by an
  * icon bar. An Agent's chat offers Files, Browser and Processes, and Changes
  * when the Agent has a git repository;
- * every page offers Get started and Approvals, and the chat and an Agent's
- * configuration page also offer Artifacts.
+ * every page offers Approvals, and the chat and an Agent's configuration page
+ * also offer Artifacts.
  * A list tab shows its list, or the docked item it opened (a file, an
  * artifact, a process output). The Changes and Browser tabs show their docked
  * panel and nothing else. Clicking the active icon collapses the panel. A
@@ -44,7 +44,6 @@ const ALL_AVAILABLE = hiddenSidePanelTabs({
   canOpenBrowser: true,
   changes: true,
   processesEnabled: true,
-  gettingStarted: true,
 });
 
 function panelStore() {
@@ -85,7 +84,6 @@ describe("which tab the side panel shows", () => {
       canOpenBrowser: false,
       changes: true,
       processesEnabled: false,
-      gettingStarted: true,
     });
     expect(visibleSidePanelTab("browser", docked, unavailable)).toBe(null);
     expect(visibleSidePanelTab("processes", docked, unavailable)).toBe(null);
@@ -98,7 +96,6 @@ describe("which tab the side panel shows", () => {
       canOpenBrowser: true,
       changes: false,
       processesEnabled: true,
-      gettingStarted: true,
     });
     expect(ALL_AVAILABLE.has("changes")).toBe(false);
     expect(noRepository.has("changes")).toBe(true);
@@ -116,14 +113,13 @@ describe("which tab the side panel shows", () => {
 });
 
 describe("the panels outside an Agent's chat", () => {
-  it("TEST_SCENARIO: a page that is not an Agent's chat offers only Get started and Approvals, so an Agent's tab left open there shows nothing, and Artifacts stays on the Artifacts page instead of opening a second time", () => {
+  it("TEST_SCENARIO: a page that is not an Agent's chat offers only Approvals, so an Agent's tab left open there shows nothing, and Artifacts stays on the Artifacts page instead of opening a second time", () => {
     const hidden = hiddenSidePanelTabs({
       agent: false,
       artifacts: false,
       canOpenBrowser: true,
       changes: false,
       processesEnabled: true,
-      gettingStarted: true,
     });
     expect(visibleSidePanelTab("files", NOTHING_DOCKED, hidden)).toBe(null);
     expect(visibleSidePanelTab("processes", NOTHING_DOCKED, hidden)).toBe(null);
@@ -131,24 +127,6 @@ describe("the panels outside an Agent's chat", () => {
     expect(visibleSidePanelTab("approvals", NOTHING_DOCKED, hidden)).toBe(
       "approvals",
     );
-    expect(visibleSidePanelTab("getting-started", NOTHING_DOCKED, hidden)).toBe(
-      "getting-started",
-    );
-  });
-
-  it("TEST_SCENARIO: a dismissed or finished checklist hides Get started, so its panel closes", () => {
-    const hidden = hiddenSidePanelTabs({
-      agent: true,
-      artifacts: true,
-      canOpenBrowser: true,
-      changes: true,
-      processesEnabled: true,
-      gettingStarted: false,
-    });
-    expect(visibleSidePanelTab("getting-started", NOTHING_DOCKED, hidden)).toBe(
-      null,
-    );
-    expect(hidden.has("approvals")).toBe(false);
   });
 });
 

@@ -28,21 +28,18 @@ The Agent whose create is that first meeting does not count.
 
 ## In the browser
 
-The UI shows the checklist as the **Get started** panel, a panel like any other on the right edge: its icon, a progress ring, sits in the page's own top corner beside the approvals bell and opens the checklist as a drawer over the page.
-A side panel takes its room from the page, as every side panel does, so it never covers the page's buttons, and it shares their width, resize handle, close X and phone behavior.
-A drawer covers the page behind a dimmed backdrop and holds the keyboard until it closes, from its X, Escape or the backdrop.
-Every side panel's top bar ends with that X, behind a vertical border; it closes the panel.
-In an Agent's chat the X shows only where it closes something: on Get started and a docked delegation, while Approvals is a drawer with an X of its own.
-On a phone the ring sits in the page's top bar and a side panel fills the screen under a back button, with the X hidden; a drawer fills it under its own X.
-The phone's Back gesture closes that full-screen panel and returns to the page under it, or first closes a dialog open above the panel.
-The panel opens only when the user asks for it.
-An unlock the user has not seen puts a count on the ring instead of opening the panel.
-Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the Artifacts page, or in an Agent's chat the side panel's Artifacts tab, or with both experiments off the Artifacts section beside the conversation.
-Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); the panel plays a short celebration at its top for each unlock the user has not seen, one at a time, while it is open, then records it as seen.
+The UI shows the checklist as the **Get started** dock, docked in the lower right corner: a pill with a progress ring, its title and the done count.
+On a page it is fixed to the window's corner; in an Agent's chat it sits in the corner of the message area, so it never covers the composer below it.
+A click on the pill opens the checklist as a card in its place, and a page that scrolls passes under the pill and the open card.
+A click elsewhere on the page, Escape, the card's collapse chevron or its Dismiss closes it back to the pill, so a user cannot be left with it over a button they want.
+The pill's own X dismisses the checklist without opening it.
+Nothing opens it but that click: an unlock the user has not seen puts a count on the pill instead.
+Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the Artifacts page, or in an Agent's chat the Artifacts section beside the conversation.
+A click on a row closes the dock before it takes the user there.
+Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); the dock plays a short celebration at its top for each unlock the user has not seen, one at a time, while it is open, then records it as seen.
 
-In an Agent's chat with both experiments off, the chat has no icon bar: the ring sits in the chat's top bar beside the bell and opens the panel in the slot beside the conversation.
-The ring stays in its bar until the checklist is done; closing the panel only closes it.
-A checklist dismissed through the API stays hidden until the next unlock, which brings the ring back, or until the user asks for the checklist from the avatar picker, which opens the panel.
+The pill stays in its corner until the checklist is done; closing the dock only closes it.
+A checklist dismissed through the API stays hidden until the next unlock, which brings the pill back, or until the user asks for the checklist from the avatar picker, which opens the dock.
 Once every character is unlocked and seen, the checklist is gone until the user resets their onboarding progress from the Experimental features tab.
 That reset deletes every unlock and reopens the checklist; characters already on Agents stay on them.
 The replica that serves the reset forgets the tasks it recorded for that user, so redoing one unlocks again; another replica skips a task it already recorded until it restarts.

@@ -5,6 +5,7 @@ import { safeReport } from "./infrastructure/report.js";
 
 export interface SessionDirectoryReporter {
   report(): void;
+  registered(sessionId: string, timeoutMs: number): Promise<boolean>;
 }
 
 function fingerprint(entries: readonly SessionDirectoryEntry[]): string {
@@ -24,6 +25,9 @@ export function createSessionDirectoryReporter(deps: {
   let inFlight = false;
   let reported: string | undefined;
   let attempted = new Set<string>();
+  let resend = false;
+  const confirmed = new Set<string>();
+  const waiters = new Map<string, Set<(ok: boolean) => void>>();
 
   const schedule = (): void => {
     if (timer) return;
@@ -36,7 +40,7 @@ export function createSessionDirectoryReporter(deps: {
 
   const send = async (): Promise<void> => {
     if (inFlight) {
-      schedule();
+      resend = true;
       return;
     }
     const sessions = [...deps.readSessions()];
@@ -54,7 +58,18 @@ export function createSessionDirectoryReporter(deps: {
       "[runtime] session directory report",
     );
     inFlight = false;
-    if (sent) reported = current;
+    if (sent) {
+      reported = current;
+      for (const { sessionId } of sessions) {
+        confirmed.add(sessionId);
+        for (const resolve of waiters.get(sessionId) ?? []) resolve(true);
+        waiters.delete(sessionId);
+      }
+    }
+    if (resend) {
+      resend = false;
+      report();
+    }
   };
 
   /**
@@ -68,5 +83,29 @@ export function createSessionDirectoryReporter(deps: {
     else schedule();
   };
 
-  return { report };
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: whether the directory holds a Session, which a
+   * new Session's first prompt waits for, so its first model call finds it
+   * there. A report that fails or takes longer than the timeout lets the
+   * prompt go anyway: the spend ledger books such calls to the Session later.
+   */
+  const registered = (
+    sessionId: string,
+    timeoutMs: number,
+  ): Promise<boolean> => {
+    if (confirmed.has(sessionId)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const done = (ok: boolean): void => {
+        clearTimeout(timer);
+        waiters.get(sessionId)?.delete(done);
+        resolve(ok);
+      };
+      const timer = setTimeout(() => done(false), timeoutMs);
+      timer.unref?.();
+      waiters.set(sessionId, (waiters.get(sessionId) ?? new Set()).add(done));
+      report();
+    });
+  };
+
+  return { report, registered };
 }

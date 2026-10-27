@@ -35,16 +35,20 @@ export type StartedCall = CallMeta & { readonly callId: string };
 interface SettledAt {
   readonly startedAt: Date;
   readonly routerCallId?: string | null;
+  readonly sessionId?: string | null;
 }
 
 export interface SpendIngest {
   callStarted(call: StartedCall): Promise<void>;
   record(record: CallRecord): Promise<void>;
   settleUnrecordedCalls(): Promise<void>;
+  bookStampedCalls(): Promise<void>;
 }
 
 const UNRECORDED_AFTER_MS = 60 * 60 * 1000;
 const UNRECORDED_BATCH = 500;
+const STAMPED_BOOKING_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
+const STAMPED_BOOKING_BATCH = 200;
 const REFERENCE_DAYS = 7;
 const PROXY_COST_TOLERANCE = 0.05;
 
@@ -113,6 +117,8 @@ export function createSpendIngest(deps: {
         ownerSub: row.ownerSub,
         payer: row.payer,
         sessionId: row.sessionId,
+        stampedSessionId:
+          row.sessionId === NO_SESSION ? (call.sessionId ?? "") : "",
         connectionId: row.connectionId,
         providerTemplate: row.provider,
         model: row.model,
@@ -207,6 +213,7 @@ export function createSpendIngest(deps: {
           startedAt:
             state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
           routerCallId: state.meta?.routerCallId ?? null,
+          sessionId: state.meta?.sessionId ?? null,
         },
       );
       return;
@@ -239,7 +246,41 @@ export function createSpendIngest(deps: {
     await settle(callId, row, estimate, true, {
       startedAt: state.meta.startedAt,
       routerCallId: state.meta.routerCallId ?? null,
+      sessionId: state.meta.sessionId ?? null,
     });
+  };
+
+  const bookStamp = async (
+    {
+      callingAgentId,
+      sessionId,
+    }: { callingAgentId: string; sessionId: string },
+    since: Date,
+  ): Promise<void> => {
+    if (
+      (await checkedSession(deps.sessions, callingAgentId, sessionId)) ===
+      NO_SESSION
+    )
+      return;
+    try {
+      const moved = await deps.ledger.bookCalls({
+        callingAgentId,
+        sessionId,
+        since,
+      });
+      for (const callId of moved)
+        await deps.calls.rebook(callId, sessionId).catch(() => {});
+      if (moved.length > 0)
+        log().info(
+          { agentId: callingAgentId, sessionId, calls: moved.length },
+          "spend.calls_booked_late",
+        );
+    } catch (err) {
+      log().error(
+        { agentId: callingAgentId, sessionId, reason: formatError(err) },
+        "spend.late_booking_failed",
+      );
+    }
   };
 
   return {
@@ -263,6 +304,8 @@ export function createSpendIngest(deps: {
           status: record.status,
           refusedByGate: record.refusedByGate,
           endedAt: new Date(record.startedAt.getTime() + record.durationMs),
+          callingAgentId: record.agentId,
+          sessionId: record.sessionId,
         });
       const measure = measureCall(record, deps.priceBook);
       if (measure.kind === "skip") return;
@@ -348,6 +391,33 @@ export function createSpendIngest(deps: {
             "spend.unrecorded_call_failed",
           ),
         );
+      }
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: books to its Session a settled call that
+     * was metered before the agent's report of that Session reached the
+     * directory, as when the report failed or came after the new Session's
+     * wait for it ran out. The call row kept the stamp, so once the
+     * directory knows the Session the call and its share of the daily
+     * rollup move from no Session to it, and the call's state moves too in
+     * case a late record still arrives for it. A stamp the agent never
+     * reports stays with no Session and ages out of the window; each pass
+     * walks every stamp in the window in key order, so such stamps never
+     * crowd out the ones that the directory now knows.
+     */
+    async bookStampedCalls() {
+      const since = new Date(Date.now() - STAMPED_BOOKING_WINDOW_MS);
+      let after: { callingAgentId: string; sessionId: string } | null = null;
+      for (;;) {
+        const stamps = await deps.ledger.unbookedStamps({
+          since,
+          after,
+          limit: STAMPED_BOOKING_BATCH,
+        });
+        for (const stamp of stamps) await bookStamp(stamp, since);
+        if (stamps.length < STAMPED_BOOKING_BATCH) return;
+        after = stamps.at(-1) ?? null;
       }
     },
   };

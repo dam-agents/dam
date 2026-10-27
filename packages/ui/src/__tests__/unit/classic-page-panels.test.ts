@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The current layout's right edge: the approvals bell and the Get started ring sit in the page's own corner, and each opens its panel as a drawer over the page instead of a column beside it. The drawers follow the side panel's tab, so the same store tab opens them from the corner, from a phone's top bar and from the avatar picker, and closing one clears it.
+// TEST_OVERVIEW: The current layout's right edge: the approvals bell sits in the page's own corner and opens Approvals as a drawer over the page instead of a column beside it. The drawer follows the side panel's tab, so the same store tab opens it from the corner and from a phone's top bar, and closing it clears it. Get started floats as its own dock, so it takes no page tab.
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -25,19 +25,6 @@ vi.mock("../../modules/home/components/approvals-panel.js", async () => {
       }),
   };
 });
-vi.mock(
-  "../../modules/getting-started/components/getting-started-panel.js",
-  async () => {
-    const { createElement } = await import("react");
-    return {
-      GettingStartedDrawer: ({ onClose }: { onClose: () => void }) =>
-        createElement("button", {
-          "data-testid": "getting-started-drawer",
-          onClick: onClose,
-        }),
-    };
-  },
-);
 vi.mock("../../modules/sessions/components/app-side-panel.js", async () => {
   const { createElement } = await import("react");
   return {
@@ -61,8 +48,8 @@ beforeEach(() => {
   fake.tab = null;
 });
 
-// TEST_SCENARIO: the page's corner holds both entries in the page's own row, so a user without the experiments reaches Get started and Approvals from the page and the entries never cover its actions.
-it("puts the ring and the bell in the page's own row", () => {
+// TEST_SCENARIO: the page's corner holds the bell in the page's own row, so a user without the experiments reaches Approvals from the page and the bell never covers its actions.
+it("puts the bell in the page's own row", () => {
   const container = rendered(createElement(ClassicPageActions));
   const buttons = container.querySelector('[data-testid="panel-buttons"]');
   const row = container.firstElementChild;
@@ -79,15 +66,6 @@ it("opens the approvals drawer from its tab", () => {
   expect(drawer).not.toBeNull();
   act(() => (drawer as HTMLElement).click());
   expect(fake.tab).toBe(null);
-});
-
-// TEST_SCENARIO: the Get started tab opens the checklist drawer the same way.
-it("opens the Get started drawer from its tab", () => {
-  fake.tab = "getting-started";
-  const container = rendered(createElement(ClassicPagePanels));
-  expect(
-    container.querySelector('[data-testid="getting-started-drawer"]'),
-  ).not.toBeNull();
 });
 
 // TEST_SCENARIO: no tab of the drawers' kind means no overlay, as when a docked artifact is what the side panel holds.
