@@ -1044,9 +1044,22 @@ mod tests {
             std::env::temp_dir().join(format!("platform-init-exec-env-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
+        // UNIT_BOUNDARY_DESCRIPTION: the tool is created by a `cp` child, so this process never holds a descriptor on the inode that is executed: Linux fails an exec with ETXTBSY while any process holds the file open for writing, and a fork on another test thread copies such a descriptor into a child that keeps it until it execs.
+        let staged = dir.join(".image-tool");
         let tool = dir.join("image-tool");
-        fs::write(&tool, "#!/bin/sh\necho \"tool $IMAGE_SETTING $GIVEN $*\"\n").unwrap();
+        fs::write(
+            &staged,
+            "#!/bin/sh\necho \"tool $IMAGE_SETTING $GIVEN $*\"\n",
+        )
+        .unwrap();
+        let copied = std::process::Command::new("cp")
+            .arg(&staged)
+            .arg(&tool)
+            .status()
+            .unwrap();
+        assert!(copied.success(), "cp {staged:?} into {tool:?}: {copied}");
         fs::set_permissions(&tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        fs::remove_file(&staged).unwrap();
         let launch_env = [
             (
                 "PATH".to_string(),
