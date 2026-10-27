@@ -1,13 +1,16 @@
 import type { SessionRepository } from "agent-runtime-api";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+
+import { SessionRepositoryBadges } from "../../modules/changes/components/session-repository-badges.js";
 
 import {
   badgeRepositories,
   pullRequestLinks,
-  repositoryBadgeLabels,
 } from "../../modules/changes/lib/pull-request-links.js";
 
-// TEST_OVERVIEW: the pull request links the chat shows under the message box — one per pull request the session's repositories link, named by repository and number — and the labels of the repository badges in the sessions list.
+// TEST_OVERVIEW: the pull request links the chat shows under the message box — one per pull request the session's repositories link, named by repository and number — and the repository badges in the sessions list: one per pull request.
 
 function repository(
   path: string,
@@ -62,40 +65,6 @@ describe("session pull request links", () => {
   });
 });
 
-describe("session repository badge labels", () => {
-  // TEST_SCENARIO: repositories with different names show their short names alone.
-  it("names each repository by its short name", () => {
-    expect(
-      repositoryBadgeLabels([
-        repository("/a"),
-        repository("/b", { name: "dam-agents/other" }),
-      ]),
-    ).toEqual(["dam", "other"]);
-  });
-
-  // TEST_SCENARIO: two worktrees of one repository add their branch, so the user tells them apart without hovering.
-  it("adds the branch when two badges share a repository", () => {
-    expect(
-      repositoryBadgeLabels([
-        repository("/work/slots/1"),
-        repository("/work/slots/2", { branch: "fix/two" }),
-        repository("/work/other", { name: "dam-agents/other" }),
-      ]),
-    ).toEqual(["dam · fix/one", "dam · fix/two", "other"]);
-  });
-
-  // TEST_SCENARIO: worktrees of one repository on the same branch, or with no branch, add the worktree's directory instead.
-  it("adds the worktree directory when the branch does not tell them apart", () => {
-    expect(
-      repositoryBadgeLabels([
-        repository("/work/slots/1"),
-        repository("/work/slots/2"),
-        repository("/work/dam", { branch: null }),
-      ]),
-    ).toEqual(["dam · 1", "dam · 2", "dam · dam"]);
-  });
-});
-
 describe("session repository badges", () => {
   // TEST_SCENARIO: a Session badges the repositories it has a pull request in, in their order, and none it only committed in; a Session the list has no repositories for badges none.
   it("badges only the repositories with a pull request", () => {
@@ -112,7 +81,7 @@ describe("session repository badges", () => {
     expect(badgeRepositories(undefined)).toEqual([]);
   });
 
-  // TEST_SCENARIO: two clones of one repository on one branch link the same pull request; it badges once, as the clone edited last, and its label needs no clone suffix.
+  // TEST_SCENARIO: two clones of one repository on one branch link the same pull request; it badges once, as the clone edited last, and another pull request of the repository badges beside it.
   it("badges each pull request once", () => {
     const editedLast = repository("/work/slots/3", { pullRequest: pr(270) });
     const other = repository("/work/slots/2", {
@@ -120,20 +89,31 @@ describe("session repository badges", () => {
       pullRequest: pr(271),
     });
 
-    const badges = badgeRepositories([
-      editedLast,
-      repository("/work/slots/1", { pullRequest: pr(270) }),
-      other,
-    ]);
-
-    expect(badges).toEqual([editedLast, other]);
     expect(
-      repositoryBadgeLabels(
-        badgeRepositories([
-          editedLast,
-          repository("/work/slots/1", { pullRequest: pr(270) }),
+      badgeRepositories([
+        editedLast,
+        repository("/work/slots/1", { pullRequest: pr(270) }),
+        other,
+      ]),
+    ).toEqual([editedLast, other]);
+  });
+
+  // TEST_SCENARIO: a badge is named "<repository> #<number>" alone, never with the clone's slot, directory or branch, even when two pull requests of one repository come from two clones.
+  it("names a badge by repository and number alone", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionRepositoryBadges, {
+        repositories: badgeRepositories([
+          repository("/work/slots/1", { pullRequest: pr(1) }),
+          repository("/work/slots/2", { pullRequest: pr(2) }),
+          repository("/work/slots/3", { branch: null, pullRequest: pr(1) }),
         ]),
-      ),
-    ).toEqual(["dam"]);
+      }),
+    );
+    const labels = [
+      ...html.matchAll(/<span class="truncate">([^<]*)<\/span>/g),
+    ].map((match) => match[1]);
+
+    expect(labels).toEqual(["dam", "dam"]);
+    expect(html.match(/#\d+/g)).toEqual(["#1", "#2"]);
   });
 });
