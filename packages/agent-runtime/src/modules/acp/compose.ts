@@ -517,6 +517,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     modelRequired: (harness) =>
       opts.modelRequired(harness ?? opts.defaultHarness),
     modelMissing: (sessionId) => runtime.modelMissing(sessionId),
+    sessionMetadata,
   });
   reportTurn = createOnceReporter({
     driver: triggerDriver,

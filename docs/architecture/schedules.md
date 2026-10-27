@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -48,7 +48,11 @@ When a fire is due:
    Every event carries a TTL, so an Agent that stays down through several occurrences (error state, failed poke) doesn't replay a backlog of stale fires when it eventually wakes.
    Outbox mechanics — versioning, the sweep, expiry — are owned by [runtime delivery](runtime-delivery.md#event-lifecycle).
 4. agent-runtime's trigger handler opens an ACP session against the harness over an in-process channel and submits the task as a prompt.
-   The turn itself runs asynchronously in the harness, and the event settles once the prompt is submitted.
+   The turn itself runs asynchronously in the harness.
+   In a session the fire opened, the event settles once the harness has taken the prompt into a turn, or after a 30-second wait with the prompt still queued behind the session's own settings; in a resumed session it settles once the prompt is sent.
+   A fresh session's prompt that the runtime refuses, or never receives, within that wait means nothing ran: the empty session is retired and the fire opens another one, up to three more times, five seconds apart.
+   Past that the fire settles as a failed run with the refusal as its reason, over the same event report a failed turn uses.
+   A refusal that comes after the event settled reaches no waiting fire, so the runtime keeps the prompt as undelivered on the session and reports the turn's failure, which fails a one-time fire the same way.
    **A fire carrying a Precheck settles earlier — the moment the handler accepts it** — and decides afterwards: the handler runs inside the delivery call, and a check may run for minutes ([runtime delivery](runtime-delivery.md#event-lifecycle)).
 
 A fire on an Agent created from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending is **held** before step 1: no event is inserted, the next occurrence is computed and armed as usual, and the schedule's last result reads `held: onboarding not complete`, which the schedules page shows as held rather than failed.
@@ -65,7 +69,7 @@ The refusal comes back at every occurrence until the schedule's choices or the A
 
 An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice.
 That safety net ends where a fire is settled.
-For an ordinary fire it covers everything up to the prompt; for a prechecked one it stops at acceptance, so a check that never finishes reaches only the pod log; a session that then fails to open is reported as a failed run.
+For an ordinary fire it covers everything up to the prompt, and in a fresh session up to the turn's start within the wait above; for a prechecked one it stops at acceptance, so a check that never finishes reaches only the pod log; a session that then fails to open is reported as a failed run.
 Losing an occurrence that way is the price of not holding the channel open, and for a recurring check the next occurrence pays it back.
 
 ## One-time schedules
@@ -215,7 +219,8 @@ A one-time schedule is the exception: its stamp is the flag that says the task a
 The reason clears itself when the schedule works again — a fire that commits, or a Precheck that declines, replaces the failure.
 A held fire records its reason the same way and leaves the stamp too: nothing ran, and the hold lifts on its own.
 A refusal the api-server reaches before it commits the trigger — a saved choice that no longer holds, or no granted provider that can run the harness — delivers nothing and wakes nothing: the fire writes the reason and arms the next occurrence.
-A refusal the runtime reaches instead — a harness that refuses the session's model at fire time — settles as a failed *run*, a stage distinct from a broken Precheck, so it is not redelivered, and leaves the unprompted session behind, empty.
+A refusal the runtime reaches instead — a harness that refuses to pin a resumed session to the fire's model — settles as a failed *run*, a stage distinct from a broken Precheck, so it is not redelivered, and leaves the unprompted session behind, empty.
+A fresh session whose model the harness refuses is started again first, its empty session retired, and fails the same way only after three more refusals: the fire checked the model against the harness's last list, so such a refusal is most often a harness that has not listed it yet, as one spawned on a woken Agent before its model catalog's first listing.
 Follow-up turns keep the session's model as far as the harness restores it on reload.
 
 In a session with scheduled runs, each reply shows the model that answered it in a muted line, as the harness reports it: Claude Code only today, and the main conversation's model, never a subagent's.

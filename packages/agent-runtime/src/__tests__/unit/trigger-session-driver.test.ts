@@ -1,12 +1,38 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ClientChannel } from "../../modules/acp/infrastructure/client-channel.js";
 import type { AcpRuntime } from "../../modules/acp/services/acp-runtime/acp-runtime.js";
 import {
   createTriggerSessionDriver,
   NoSessionModelError,
+  PromptNotTakenError,
 } from "../../modules/acp/services/trigger-session-driver.js";
 
-function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
+function notifyPrompt(
+  channel: ClientChannel,
+  frame: any,
+  method: "platform/promptAccepted" | "platform/promptStarted",
+): void {
+  channel.send(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method,
+      params: {
+        sessionId: frame.params.sessionId,
+        promptId: frame.params._meta?.platform?.promptId,
+        ...(method === "platform/promptAccepted" && { queued: false }),
+      },
+    }),
+  );
+}
+
+function startPrompt(channel: ClientChannel, frame: any): void {
+  notifyPrompt(channel, frame, "platform/promptAccepted");
+  notifyPrompt(channel, frame, "platform/promptStarted");
+}
+
+function fakeRuntime(
+  onPrompt: (channel: ClientChannel, frame: any) => void = startPrompt,
+): { runtime: AcpRuntime; sent: any[] } {
   const sent: any[] = [];
   const runtime: AcpRuntime = {
     attach(channel: ClientChannel) {
@@ -33,6 +59,8 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
               result: { sessionId: "s1" },
             }),
           );
+        } else if (frame.method === "session/prompt") {
+          onPrompt(channel, frame);
         }
       });
     },
@@ -68,6 +96,7 @@ describe("createTriggerSessionDriver", () => {
       acpRuntime: runtime,
       modelRequired: () => false,
       modelMissing: () => false,
+      sessionMetadata: { tombstone: () => {} },
     });
 
     const res = await driver.start({
@@ -94,6 +123,7 @@ describe("createTriggerSessionDriver", () => {
       acpRuntime: runtime,
       modelRequired: () => false,
       modelMissing: () => false,
+      sessionMetadata: { tombstone: () => {} },
     });
 
     await driver.start({ task: "do it" });
@@ -111,6 +141,7 @@ describe("createTriggerSessionDriver", () => {
       acpRuntime: runtime,
       modelRequired: () => false,
       modelMissing: () => false,
+      sessionMetadata: { tombstone: () => {} },
     });
     await driver.start({ task: "do it", model: "opus" });
     const newFrame = sent.find((f) => f.method === "session/new");
@@ -128,6 +159,7 @@ describe("createTriggerSessionDriver", () => {
       acpRuntime: runtime,
       modelRequired: () => false,
       modelMissing: () => false,
+      sessionMetadata: { tombstone: () => {} },
     });
     await driver.start({ task: "do it", resumeSessionId: "s0", model: "opus" });
     const methods = sent.map((f) => f.method).filter(Boolean);
@@ -148,6 +180,7 @@ describe("createTriggerSessionDriver", () => {
       acpRuntime: runtime,
       modelRequired: () => true,
       modelMissing: () => true,
+      sessionMetadata: { tombstone: () => {} },
     });
     await expect(driver.start({ task: "do it" })).rejects.toBeInstanceOf(
       NoSessionModelError,
@@ -169,6 +202,7 @@ describe("createTriggerSessionDriver", () => {
       acpRuntime: runtime,
       modelRequired: () => false,
       modelMissing: () => missing,
+      sessionMetadata: { tombstone: () => {} },
     });
     const pins = () =>
       sent.filter((f) => f.method === "_platform/session/pin_model");
@@ -202,6 +236,7 @@ describe("createTriggerSessionDriver", () => {
       acpRuntime: runtime,
       modelRequired: () => true,
       modelMissing: () => true,
+      sessionMetadata: { tombstone: () => {} },
     });
     await driver.start({
       task: "set up",
@@ -215,6 +250,68 @@ describe("createTriggerSessionDriver", () => {
     expect(sent.map((f) => f.method)).not.toContain("session/resume");
   });
 
+  /** TEST_SCENARIO: the harness went down with the fire's first prompt still
+   * queued. The runtime has already written that prompt down as undelivered
+   * and reported the run, so the start returns as before: a fire delivered
+   * again on top would be a second run beside a prompt kept for resending. */
+  it("returns when the runtime hangs up after it queued the prompt", async () => {
+    const { runtime } = fakeRuntime((channel, frame) => {
+      notifyPrompt(channel, frame, "platform/promptAccepted");
+      channel.close();
+    });
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+      sessionMetadata: { tombstone: () => {} },
+    });
+    await expect(driver.start({ task: "do it" })).resolves.toMatchObject({
+      sessionId: "s1",
+    });
+  });
+
+  /** TEST_SCENARIO: the prompt went out on the connection but never reached
+   * the Prompt Scheduler, as when a new lease still holds it back for its
+   * spawn work and the connection closes. Nothing wrote it down, so the start
+   * fails and the empty session is retired. */
+  it("fails when the runtime hangs up before it queued the prompt", async () => {
+    const { runtime } = fakeRuntime((channel) => channel.close());
+    const tombstone = vi.fn();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+      sessionMetadata: { tombstone },
+    });
+    await expect(driver.start({ task: "do it" })).rejects.toBeInstanceOf(
+      PromptNotTakenError,
+    );
+    expect(tombstone).toHaveBeenCalledWith("s1");
+  });
+
+  /** TEST_SCENARIO: a harness that never answers the session's own settings
+   * holds the first prompt in the queue. The start does not wait for it
+   * forever, and leaves the queued prompt to the runtime. */
+  it("stops waiting for the first turn after its bound", async () => {
+    vi.useFakeTimers();
+    try {
+      const { runtime } = fakeRuntime(() => {});
+      const tombstone = vi.fn();
+      const driver = createTriggerSessionDriver({
+        acpRuntime: runtime,
+        modelRequired: () => false,
+        modelMissing: () => false,
+        sessionMetadata: { tombstone },
+      });
+      const start = driver.start({ task: "do it" });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(start).resolves.toMatchObject({ sessionId: "s1" });
+      expect(tombstone).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   /** TEST_SCENARIO: A message from another Session is sent on the message
    * surface, which the runtime may steer into a turn in flight; a scheduled
    * fire stays on the schedule surface, which only queues. */
@@ -224,6 +321,7 @@ describe("createTriggerSessionDriver", () => {
       acpRuntime: runtime,
       modelRequired: () => false,
       modelMissing: () => false,
+      sessionMetadata: { tombstone: () => {} },
     });
 
     await driver.start({

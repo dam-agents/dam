@@ -1,7 +1,8 @@
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
-import type { EventContext } from "agent-runtime-api";
+import type { EventContext, EventReportInput } from "agent-runtime-api";
 import type { TriggerSessionDriver } from "../../modules/acp/index.js";
+import { PromptNotTakenError } from "../../modules/acp/services/trigger-session-driver.js";
 import {
   createTriggerPlugin,
   type EventReporter,
@@ -35,6 +36,12 @@ const scheduleMeta = (scheduleId: string) => ({
 });
 
 const allows: PrecheckRunner = async () => ({ verdict: "allowed" });
+
+const noBinding = (): TriggerStateStore => ({
+  getSessionForSchedule: () => undefined,
+  setSessionForSchedule: vi.fn(),
+  clearSessionForSchedule: vi.fn(),
+});
 
 const handlerFor = (
   deps: {
@@ -155,6 +162,75 @@ describe("trigger plugin", () => {
       ...scheduleMeta("sch-cron"),
       fireEvent: undefined,
     });
+  });
+
+  /** TEST_SCENARIO: a one-time fire on a woken Agent opens its session before the harness has listed the session's model, so the runtime refuses the first prompt and no turn runs. The fire starts its session again a few seconds later and runs; nothing is reported as failed. */
+  it("starts a fire again when its first prompt was not taken", async () => {
+    vi.useFakeTimers();
+    try {
+      const reports: EventReportInput[] = [];
+      const starts: string[] = [];
+      const driver: TriggerSessionDriver = {
+        start: async () => {
+          starts.push("start");
+          if (starts.length === 1)
+            throw new PromptNotTakenError("s-1", "model refused");
+          return { sessionId: "s-2", openedOn: null };
+        },
+      };
+      const run = handlerFor(
+        {
+          driver,
+          stateStore: noBinding(),
+          reporter: { report: async (input) => void reports.push(input) },
+        },
+        "trigger",
+      )({ scheduleId: "sch-once", task: "do it", once: true }, ctx);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await run;
+      expect(starts).toHaveLength(2);
+      expect(reports).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** TEST_SCENARIO: the harness keeps refusing a fire's first prompt. After three more starts the fire settles as a failed run with the refusal, over the event report a failed turn uses, so the owner reads why instead of the fire being delivered again until its window ends. */
+  it("records a fire failed after its first prompt is refused three more times", async () => {
+    vi.useFakeTimers();
+    try {
+      const reports: EventReportInput[] = [];
+      let starts = 0;
+      const driver: TriggerSessionDriver = {
+        start: () => {
+          starts++;
+          return Promise.reject(
+            new PromptNotTakenError("s-1", "the harness refused the model"),
+          );
+        },
+      };
+      const run = handlerFor(
+        {
+          driver,
+          stateStore: noBinding(),
+          reporter: { report: async (input) => void reports.push(input) },
+        },
+        "trigger",
+      )({ scheduleId: "sch-once", task: "do it", once: true }, ctx);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await run;
+      expect(starts).toBe(4);
+      expect(reports).toEqual([
+        {
+          eventId: ctx.eventId,
+          outcome: "failed",
+          stage: "run",
+          detail: expect.stringContaining("the harness refused the model"),
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("stamps metadata and records the session when continuous mode first fires", async () => {

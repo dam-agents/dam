@@ -485,7 +485,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       (unattended === true || hasEngagedChannel(sessionId)) &&
       !harnessColdSessions.has(sessionId),
     sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
-    onQueueDropped(sessionId, dropped, cause) {
+    onQueueDropped(sessionId, dropped, cause, refusal) {
       const recordedAt = new Date().toISOString();
       if (dropped.some((entry) => carriesContinuedFrom(entry.frame)))
         deps.continuedFrom.markUnsent(sessionId);
@@ -504,14 +504,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       );
       if (
         harnessGone ||
+        refusal !== undefined ||
         (cause === "park-expired" &&
           !promptScheduler.hasTurnInFlight(sessionId))
       )
         deps.onTurnOutcome?.(sessionId, {
           stopReason: null,
-          error: harnessGone
-            ? `${harnessGone} before it took the prompt`
-            : "the prompt was never taken: the harness did not start the turn",
+          error:
+            refusal ??
+            (harnessGone
+              ? `${harnessGone} before it took the prompt`
+              : "the prompt was never taken: the harness did not start the turn"),
         });
       if (cause !== "park-expired") return;
       maybeCloseIdleSession(sessionId);

@@ -11,6 +11,7 @@ import type {
 import { SessionMode, SessionType } from "api-server-api";
 import {
   NoSessionModelError,
+  PromptNotTakenError,
   SessionModelError,
   type TriggerSessionDriver,
 } from "../../acp/index.js";
@@ -58,6 +59,15 @@ const CATALOG_WAIT_MS = 10_000;
 const START_ATTEMPTS = 3;
 const START_RETRY_MS = 5_000;
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: how often a fire starts its session again when
+ * the runtime refused the first prompt before any turn took it. Such a
+ * refusal is most often a harness on a woken Agent that has not listed the
+ * session's model yet, so a retry a few seconds later runs the task; past the
+ * cap the fire is recorded failed with the refusal, rather than delivered
+ * again for the rest of its window with nobody told.
+ */
+const PROMPT_REFUSED_RETRIES = 3;
+/**
  * UNIT_BOUNDARY_DESCRIPTION: how long a sub-agent's run may take to start
  * before it fails. The start runs detached from the event, so a harness that
  * stays silent at startup would otherwise leave the run unwatched until its
@@ -95,6 +105,7 @@ export function createTriggerPlugin(deps: {
     payload: TriggerEventPayload,
     task: string,
     eventId: string,
+    onOpened?: (sessionId: string) => void,
   ): Promise<string> => {
     if (deps.catalogListed)
       await Promise.race([
@@ -181,6 +192,7 @@ export function createTriggerPlugin(deps: {
       mcpServers: payload.mcpServers,
       platformMeta,
       model,
+      onOpened,
     });
     return res.sessionId;
   };
@@ -202,17 +214,30 @@ export function createTriggerPlugin(deps: {
     task: string,
     eventId: string,
   ): Promise<string | null> => {
-    try {
-      await startSession(payload, task, eventId);
-      return null;
-    } catch (err) {
-      if (
-        !(err instanceof SessionModelError) &&
-        !(err instanceof NoSessionModelError)
-      )
-        throw err;
-      deps.log(`[trigger] ${payload.scheduleId} not run: ${err.message}`);
-      return err.message.slice(0, DETAIL_MAX);
+    for (let retry = 1; ; retry++) {
+      try {
+        await startSession(payload, task, eventId);
+        return null;
+      } catch (err) {
+        if (
+          err instanceof PromptNotTakenError &&
+          retry <= PROMPT_REFUSED_RETRIES
+        ) {
+          deps.log(
+            `[trigger] ${payload.scheduleId} starting again (${retry}/${PROMPT_REFUSED_RETRIES}): ${err.message}`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, START_RETRY_MS));
+          continue;
+        }
+        if (
+          !(err instanceof SessionModelError) &&
+          !(err instanceof NoSessionModelError) &&
+          !(err instanceof PromptNotTakenError)
+        )
+          throw err;
+        deps.log(`[trigger] ${payload.scheduleId} not run: ${err.message}`);
+        return err.message.slice(0, DETAIL_MAX);
+      }
     }
   };
 
@@ -269,9 +294,10 @@ export function createTriggerPlugin(deps: {
   ): Promise<void> => {
     for (let attempt = 1; ; attempt++) {
       try {
-        deps.invocationWatch.watch(
-          await withinStartBound(startSession(payload, payload.task, eventId)),
-          eventId,
+        await withinStartBound(
+          startSession(payload, payload.task, eventId, (sessionId) =>
+            deps.invocationWatch.watch(sessionId, eventId),
+          ),
         );
         return;
       } catch (err) {

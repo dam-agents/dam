@@ -5,6 +5,7 @@ export type { TriggerSessionDriver } from "./services/trigger-session-driver.js"
 export type { SubAgentSessionStore } from "./infrastructure/sub-agent-session-store.js";
 export {
   NoSessionModelError,
+  PromptNotTakenError,
   SessionModelError,
 } from "./services/trigger-session-driver.js";
 export type { RunningHarness } from "./services/acp-runtime/acp-runtime.js";
