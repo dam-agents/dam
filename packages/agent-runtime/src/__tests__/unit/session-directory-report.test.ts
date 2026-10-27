@@ -48,4 +48,43 @@ describe("session directory reporter", () => {
 
     vi.useRealTimers();
   });
+
+  /** TEST_SCENARIO: A new Session's first prompt waits until the directory
+   * holds the Session. A report that succeeds confirms it at once; while the
+   * api-server cannot be reached, the wait ends at its timeout, unconfirmed,
+   * so the prompt still goes. */
+  it("confirms a reported Session and gives up at the timeout", async () => {
+    vi.useFakeTimers();
+    const { client } = fakeClient();
+    const reporter = createSessionDirectoryReporter({
+      client,
+      readSessions: () => [session("s1")],
+      debounceMs: 10,
+      log: () => {},
+    });
+    await expect(reporter.registered("s1", 2_000)).resolves.toBe(true);
+
+    const down = {
+      sessionDirectory: {
+        v1: {
+          report: {
+            mutate: async () => {
+              throw new Error("unreachable");
+            },
+          },
+        },
+      },
+    } as unknown as HarnessClient;
+    const failing = createSessionDirectoryReporter({
+      client: down,
+      readSessions: () => [session("s2")],
+      debounceMs: 10,
+      log: () => {},
+    });
+    const waited = failing.registered("s2", 2_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(waited).resolves.toBe(false);
+
+    vi.useRealTimers();
+  });
 });
