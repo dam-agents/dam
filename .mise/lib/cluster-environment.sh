@@ -44,21 +44,24 @@ env_master() {
 
 # env_tunnel: forwards a local port to the Environment's k3s API and writes
 # the kubeconfig for it. Returns 1, saying nothing, while k3s has written no
-# kubeconfig yet.
+# kubeconfig yet. The API's port is the one that kubeconfig names: 16443, or
+# 6443 on an Environment whose cluster was made before the image's k3s moved.
 env_tunnel() {
   local config port
   env_master || return 1
   config="$(env_ssh 'cat /etc/rancher/k3s/k3s.yaml 2>/dev/null')" || return 1
   [ -n "$config" ] || return 1
+  ENV_API_PORT="$(printf '%s\n' "$config" | sed -n 's#^ *server: https://127.0.0.1:\([0-9]*\)$#\1#p' | head -n 1)"
+  [ -n "$ENV_API_PORT" ] || return 1
   port="$(cat "$ENV_DIR/port" 2>/dev/null || true)"
   # A forward the master already holds is accepted again, so the port and the
   # kubeconfig stay the ones an earlier task wrote.
-  if [ -z "$port" ] || ! ssh -o ControlPath="$ENV_SOCK" -O forward -L "127.0.0.1:$port:127.0.0.1:6443" "$ENV_HOST" 2>/dev/null; then
+  if [ -z "$port" ] || ! ssh -o ControlPath="$ENV_SOCK" -O forward -L "127.0.0.1:$port:127.0.0.1:$ENV_API_PORT" "$ENV_HOST" 2>/dev/null; then
     port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-    ssh -o ControlPath="$ENV_SOCK" -O forward -L "127.0.0.1:$port:127.0.0.1:6443" "$ENV_HOST" || return 1
+    ssh -o ControlPath="$ENV_SOCK" -O forward -L "127.0.0.1:$port:127.0.0.1:$ENV_API_PORT" "$ENV_HOST" || return 1
     echo "$port" > "$ENV_DIR/port"
   fi
-  (umask 077 && printf '%s\n' "$config" | sed "s#https://127.0.0.1:6443#https://127.0.0.1:$port#" > "$KUBECONFIG")
+  (umask 077 && printf '%s\n' "$config" | sed "s#https://127.0.0.1:$ENV_API_PORT#https://127.0.0.1:$port#" > "$KUBECONFIG")
 }
 
 # env_k3s start|stop|status|restart: the Environment's k3s service. start also
@@ -287,19 +290,20 @@ env_e2e_port() {
 }
 
 # env_e2e_forward <port>: forwards the lane's backchannel port, and a port of
-# its own to the k3s API, to this agent's loopback, and writes the suite's
-# kubeconfig for that API port. An SSH link of its own, not the control
-# master's, which closes after ten idle minutes while a suite can wait longer
-# than that between two calls to the API. It runs until
+# its own to the k3s API env_tunnel found, to this agent's loopback, and writes
+# the suite's kubeconfig for that API port. An SSH link of its own, not the
+# control master's, which closes after ten idle minutes while a suite can wait
+# longer than that between two calls to the API. It runs until
 # env_e2e_forward_close stops it.
 ENV_E2E_KUBECONFIG="$ENV_DIR/e2e-kubeconfig.yaml"
 export ENV_E2E_KUBECONFIG
 env_e2e_forward() {
   local port="$1" api
+  [ -n "${ENV_API_PORT:-}" ] || { echo "FATAL: no tunnel to the k3s API of Environment $CLUSTER_ENVIRONMENT, so no port to forward it from" >&2; return 1; }
   api="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
   (umask 077 && sed "s#https://127.0.0.1:[0-9]*#https://127.0.0.1:$api#" "$KUBECONFIG" > "$ENV_E2E_KUBECONFIG")
   ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
-    -L "127.0.0.1:$port:127.0.0.1:$port" -L "127.0.0.1:$api:127.0.0.1:6443" "$ENV_HOST" </dev/null &
+    -L "127.0.0.1:$port:127.0.0.1:$port" -L "127.0.0.1:$api:127.0.0.1:$ENV_API_PORT" "$ENV_HOST" </dev/null &
   ENV_E2E_FORWARD_PID=$!
   for _ in $(seq 1 90); do
     (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && (exec 3<>"/dev/tcp/127.0.0.1/$api") 2>/dev/null && return 0

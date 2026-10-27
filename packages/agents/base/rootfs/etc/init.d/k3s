@@ -11,7 +11,13 @@ error_log=/var/log/k3s.log
 # A tighter umask makes image layers CoreDNS and traefik cannot traverse.
 umask=022
 # openrc may start it before the entrypoint, so it builds the CA bundle its
-# pulls trust itself.
+# pulls trust itself. It listens on config.yaml's port, unless its data dir
+# holds a cluster made on another one: k3s never rewrites the kubeconfigs it
+# keeps there, which name its API server on the port after its own, and exits
+# when they disagree. So an Environment made on 6443 keeps 6443.
 start_pre() {
 	platform-ca-bundle
+	data=$(sed -n 's/^data-dir: *//p' /etc/rancher/k3s/config.yaml 2>/dev/null)
+	api=$(sed -n 's#^ *server: https://127.0.0.1:\([0-9]*\)$#\1#p' "${data:-/var/lib/rancher/k3s}/server/cred/admin.kubeconfig" 2>/dev/null | head -n 1)
+	[ -z "$api" ] || command_args="server --https-listen-port $((api - 1))"
 }

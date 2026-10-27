@@ -149,6 +149,8 @@ What it installs beside the chart:
 `--backchannel-port <port>` moves them; `cluster:open` then needs the same `--port <port>`, as the command the install prints at its end has.
 The agent then opens `http://localhost:4444` in its browser and signs in as `dev`/`dev`.
 
+The Environment's k3s API listens on 16443, as every local k3s does, and the tunnel follows the port its kubeconfig names: an Environment whose cluster was made on 6443, before the image's k3s service moved, keeps 6443 until it is made again.
+
 An Environment created before its image passed the image's `PATH` on to an SSH shell finds no `k3s` or `kubectl` in `ssh env-<name>`, and `rc-service k3s start` there reports success and runs nothing.
 The cluster tasks load the tools' PATH from the image's mise themselves; in a shell of your own, run `eval "$(MISE_SYSTEM_DATA_DIR=/usr/share/mise mise env -s bash)"` first.
 
