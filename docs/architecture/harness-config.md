@@ -21,6 +21,7 @@ A web terminal starts from a menu of harnesses: the empty chat's Browser Termina
 The menu lists the harnesses the agent carries that a provider the owner holds accepts.
 Picking one stores its harness, with the first attached provider it accepts and no model, as the next terminal pair, and the terminal sends that pair when it connects.
 The terminal pair is its own: the menu neither reads nor changes the pair the session picker holds.
+The command palette's new terminal session clears the terminal pair, so it starts on the runtime's default harness with no model.
 A harness that only providers the owner holds but has not attached accept opens the attach dialog, then opens on the provider attached.
 The attach dialog, from the old runtime's picker or the terminal menu, lists only the owner's unattached providers the harness accepts and the agent can take, leaving out one of a kind the agent already holds, each as the agent's Providers section shows it, with the harnesses it runs.
 Its rows start switched off, except the provider the owner clicked in the picker; nothing is attached until at least one is on and the owner confirms.

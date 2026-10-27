@@ -53,6 +53,7 @@ export function usePaletteActions({
   const setChecklistExpanded = useStore((s) => s.setChecklistExpanded);
   const openChecklist = useOpenChecklist();
   const openAgentSession = useStore((s) => s.openAgentSession);
+  const setNextTerminalPair = useStore((s) => s.setNextTerminalPair);
   const setOpenBrowser = useStore((s) => s.setOpenBrowser);
   const deleteSession = useStore((s) => s.deleteSession);
   const openSidePanel = useOpenSidePanel();
@@ -93,13 +94,15 @@ export function usePaletteActions({
     setChecklistOpen: (open) =>
       open ? openChecklist() : setChecklistExpanded(false),
     newSession: startSession,
-    newTerminal: (agentId) =>
+    newTerminal: (agentId) => {
+      setNextTerminalPair(agentId, null);
       openAgentSession(
         agentId,
         crypto.randomUUID(),
         SessionMode.Terminal,
         true,
-      ),
+      );
+    },
     openSession: (s) => openSession(s.agentId, s.sessionId, s.mode),
     configure: navigateToSandboxHome,
     toggleBrowser: (agentId, open) =>
