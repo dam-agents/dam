@@ -1553,6 +1553,9 @@ export async function bootstrap() {
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
   );
+  await periodicJobs.register("spend-stamped-calls", 5 * 60_000, () =>
+    spend.ingest.bookStampedCalls(),
+  );
   await periodicJobs.register(
     "spend-call-rows-retention",
     24 * 60 * 60 * 1000,

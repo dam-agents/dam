@@ -49,6 +49,9 @@ import {
 import {
   composeModelRouter,
   routerEnvFor,
+  BEDROCK_TEMPLATE,
+  bedrockRouterEnv,
+  createCallerSessionLookup,
   createModelCallExporter,
 } from "./modules/model-router/index.js";
 import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
@@ -348,6 +351,14 @@ const modelRouter = composeModelRouter({
   isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
   terminalSessionOf,
   runningSessionsOf: (harness) => runningSessionsOf?.(harness) ?? [],
+  callerSessions: createCallerSessionLookup({
+    variables: sessionEnvVars,
+    log: modelRouterLog,
+  }),
+  turnStartedAt: (sessionId) => {
+    const at = sessionMetadata.get(sessionId)?.runStartedAt;
+    return at === undefined ? null : Date.parse(at);
+  },
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(
@@ -377,13 +388,29 @@ const aliasOfConnection = (connectionId: string): string | null => {
   return layer?.template ? aliasForTemplateId(layer.template) : null;
 };
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the env of a provider Connection the router does
- * not serve (Bedrock) reaches a harness process only when no granted provider
+ * UNIT_BOUNDARY_DESCRIPTION: the env a native provider Connection gives a
+ * harness process. A Bedrock Connection's calls go through the Model Router
+ * too, which passes them on unchanged, so the process gets the router as its
+ * Bedrock base URL and its calls are booked to their Session like any other.
+ */
+const layerEnvOf = (layer: {
+  id: string;
+  template?: string;
+  env: Record<string, string>;
+}): Record<string, string> =>
+  layer.template === BEDROCK_TEMPLATE
+    ? { ...layer.env, ...bedrockRouterEnv(modelRouter.baseUrl, layer.id) }
+    : layer.env;
+const FIRST_LISTING_WAIT_MS = 10_000;
+const DIRECTORY_WAIT_MS = 2_000;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the env of a provider Connection the router
+ * resolves no models for (Bedrock) reaches a harness process only when no
+ * granted provider
  * serves that harness through the router, since the harness's shim picks
  * Bedrock whenever it is set; beside a routed provider, a session names
  * Bedrock by its model and runs in a native process of its own.
  */
-const FIRST_LISTING_WAIT_MS = 10_000;
 const unroutedProviderEnv = (harness: string): Record<string, string> => {
   if (routerEnvOf(harness).PLATFORM_MODEL_ROUTER_SERVES) return {};
   return Object.assign(
@@ -391,7 +418,7 @@ const unroutedProviderEnv = (harness: string): Record<string, string> => {
     ...envStore.state().providers.flatMap((l) => {
       const alias = l.template ? aliasForTemplateId(l.template) : null;
       const routed = alias !== null && PROVIDER_DIALECTS[alias].length > 0;
-      return routed ? [] : [l.env];
+      return routed ? [] : [layerEnvOf(l)];
     }),
   ) as Record<string, string>;
 };
@@ -445,8 +472,10 @@ const modelRequired = (harness: string): boolean => {
     })
   );
 };
-const nativeEnv = (connectionId: string): Record<string, string> =>
-  envStore.state().providers.find((l) => l.id === connectionId)?.env ?? {};
+const nativeEnv = (connectionId: string): Record<string, string> => {
+  const layer = envStore.state().providers.find((l) => l.id === connectionId);
+  return layer ? layerEnvOf(layer) : {};
+};
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a terminal's harness starts with the same model
  * env as its chat process: a native Connection's env and the harness's own
@@ -584,6 +613,16 @@ const {
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: browser.start,
+  beforeFirstPrompt: async (sessionId) => {
+    const started = Date.now();
+    const registered = await runtimeChannel.sessionDirectory.registered(
+      sessionId,
+      DIRECTORY_WAIT_MS,
+    );
+    process.stderr.write(
+      `[runtime] session ${sessionId} ${registered ? "registered in" : "not confirmed by"} the session directory after ${Date.now() - started} ms\n`,
+    );
+  },
   beforeSpawn: async () => {
     await Promise.race([
       modelCatalog.listed(),

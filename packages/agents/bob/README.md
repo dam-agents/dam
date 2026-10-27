@@ -132,7 +132,7 @@ Settings come from three places, in this order of precedence: the agent's **Conf
 
 Bob cannot switch a live session's model and reads one settings file per process, so every model call goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router): the runtime sets `BOB_GATEWAY_URL` (the variable Bob's own client reads) to the router with a placeholder key, and the router routes each call by the model the runtime set for the session, keyed by the `X-Task-Id` Bob stamps on its calls (the root task id is the ACP session id).
 Bob stamps it on every call except the first call of a new task, which asks for the model `background`.
-That first call names no Session, so its [spend](../../../docs/architecture/spend-limits.md#ledger) counts as no Session.
+The router books that call's [spend](../../../docs/architecture/spend-limits.md#ledger) to the running Bob turn still waiting for its first call.
 The settings file's `session.model` is only the fallback for a call made before that choice is known: the agent's default model for Bob, `PLATFORM_BOB_DEFAULT_MODEL`, which the runtime sets unless that default is Bob's own gateway.
 Bob accepts a reply naming another model than it asked for, so one Bob process serves every session and provider.
 Bob's subagents ask for a tier alias of Bob's own gateway (`premium-ide`, `explorer`) with `X-Parent-Task-Id` on their calls; the router sends those to the session's subagent model, else to the session's model.
