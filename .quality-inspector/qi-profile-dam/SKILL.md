@@ -45,10 +45,13 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
   - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`, and a test GitHub user who owns it.
     An agent reaches it through a **GitHub** connection, made either way a user makes one:
-    **Connect with GitHub** (OAuth), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may read the repository, write its issues and pull requests, and push and delete branches.
+    **Authorize with GitHub** (OAuth, its button *Continue to GitHub*), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*, its button *Create token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may read the repository, write its issues and pull requests, and push and delete branches.
+    DAM checks a token when it is saved and shows the test user's login as the connection's account.
     With OAuth the install's GitHub OAuth App is the sandbox's, so the form needs no client ID; the browser leaves DAM for GitHub's sign-in.
     Right after the step that sends it there, call `githubSignIn({ screen, browser })` from `suite/lib/sandbox.ts`: it signs in as the test user (password and a fresh authenticator code), gives the App's consent when GitHub asks, and returns once the browser is back on DAM.
     Never drive GitHub's pages yourself, never type a GitHub value in a test, and never open another GitHub page: only the sign-in's own pages are reachable.
+    Back on DAM, the sign-in is not yet a connection an agent can hold: DAM asks what the connection reaches.
+    Choose **Full access**: an OAuth App's sign-in cannot be narrowed to repositories, and the test user reaches only the sandbox organization.
     The connection then shows the test user's login (`sandbox.githubLogin()`) as its account; `sandbox.githubUser()` says whether this instance has the test user.
     A **second test user** (`github2`), a member of the same organization who may write the same repository, signs in through the same App: `githubSignIn({ screen, browser, who: 'second' })`, its login `sandbox.githubLogin('second')`, its token `E2E_SANDBOX_GITHUB2_TOKEN`, `sandbox.githubUser('second')` whether this instance has it.
     GitHub stays signed in, so each test user signs in from a session of its own: the second from another DAM account's session (say `outsider`) than the first, never after the first in the same one.
@@ -57,13 +60,23 @@ Builds published before these accounts were added have only `qa-owner`; there an
     Never read the repository's files or any other GitHub page.
     The agent clones and pushes the sandbox repository over git, and opens the pull request through GitHub's REST API; GitHub's GraphQL endpoint stays closed, so `gh pr create` fails and the agent has to fall back to the REST call — a criterion failed only by that is a model mistake to triage, not a product failure.
   - **Slack** — one channel of a throwaway workspace; DAM's Slack app is installed there and connected at install, so the workspace needs no install flow.
-    An agent joins it under the agent's **Channels** → *Connect a Slack channel* with **Channel ID** `E2E_SANDBOX_SLACK_CHANNEL_ID`.
+    An agent joins it under the agent's **Channels** → *Add Slack channel*, which opens the dialog *Connect Slack channels*.
+    Its picker lists the channels that the signed-in user and DAM's bot are both in, by name, and only for a user who linked their Slack account to DAM.
+    With the dialog open, call `connectSlackChannel({ screen })` from `suite/lib/sandbox.ts`: it adds the sandbox channel and taps *Connect*.
     The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text, threadTs?)`, `botReplies(ts)`.
     A **second test person** (`slack2`) in the same channel writes with `personSays(text, threadTs?, 'second')`; `sandbox.slack('second')` says whether this instance has it, and `botReplies` never counts either person's post as the agent's.
     DAM drops the fourth bot or app post in a row in one conversation (a channel's top level, or one thread) until a person writes there, and the test person's posts count as app posts.
     So each request goes in a thread of its own: a root without a mention (`personSays(text)`), then the mention in that thread (`personSays(text, root)`), then `botReplies(root)`.
     A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would follow earlier runs' posts there and be dropped.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
+  - **Testability limit — Slack account linking.**
+    A user links their Slack account only inside Slack: `/dam login` (then a DAM sign-in page), or `/dam bind` typed in the channel itself.
+    The test person writes through Slack's API, which cannot send a slash command, and a test never drives Slack's own app.
+    So on this install no DAM account has a linked Slack account, and the picker shows only the text that asks the user to run `/dam login`.
+    `connectSlackChannel` then throws `SlackNotLinked`.
+    A criterion that needs an agent connected to the sandbox channel, and each later criterion that needs that connection, is `blocked — Slack account linking`, never failed.
+    A criterion that checks only what the dialog offers (the `/dam login` and `/dam bind` instructions) stays testable.
+    When a later build links the owner's account at install, the picker lists the channel and the same test passes with no change.
   - **Cleanup after a pass only**: after the last criterion, `closeSandboxPull(pull)` closes the run's pull request and deletes its branch, and the test deletes its agent; a failed run keeps both for its report.
   - Filing an issue or deciding anything needs a real model: with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template.
     Without it, such ACs are `blocked`, naming `lend_model`.
@@ -102,6 +115,7 @@ A flow that needs real Slack, real GitHub, a real model or real time passing is 
 - Sharing a knowledge base.
 - Satellites: registering a machine, granting it to an agent, draining and removing it, and seeing it among Connections.
 - Slack with a mocked workspace: a channel any member drives, binding and unbinding from the chat, replies to unmentioned messages.
+- Connecting a Slack channel picked by name for a user with a linked Slack account, and the refusal of a channel the user is not in.
 - An agent that hibernates and wakes, restarts or loses its machine, with its files intact, and a scheduled task's fire reaching it.
 - The browser panel showing the user and the agent the same tab.
 

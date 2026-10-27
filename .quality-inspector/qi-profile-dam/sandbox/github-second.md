@@ -1,7 +1,7 @@
 # GitHub sandbox — the second test user
 
 A second throwaway GitHub user in the GitHub sandbox's organization (`sandbox/github.md`).
-The tests sign it in through DAM's **Connect with GitHub** as a second person, for checks with two people: a second DAM account with a GitHub of its own, two people working on one repository.
+The tests sign it in through DAM's **Authorize with GitHub** as a second person, for checks with two people: a second DAM account with a GitHub of its own, two people working on one repository.
 It uses the first user's organization, repository and OAuth App; set those up first.
 It is optional: leave its lines empty, and a check that needs two GitHub users is `testable: no` while every other check runs.
 It holds nothing real; never use your own account.

@@ -65,6 +65,12 @@ In every Markdown file, put each sentence of prose on its own line; `mise run fi
 
 Proposed ideal flow for new features — see [`docs/guidelines/work-process.md`](docs/guidelines/work-process.md).
 
+## QA profile
+
+The Quality Inspector tests DAM through the UI only, from [`.quality-inspector/qi-profile-dam/`](.quality-inspector/qi-profile-dam/): its helpers (`suite/`), its journeys (`scenarios/`) and what a tester should know (`SKILL.md`).
+A change to a UI flow, a control label, a dialog or an API that a journey or a helper uses updates that profile in the same PR.
+The generic [`qi-test-sync`](https://github.com/dam-agents/quality-inspector/tree/main/skills/qi-test-sync) skill of the quality-inspector repository checks a PR against the profile and its journeys, and proposes the edits.
+
 ## Commit Conventions
 
 - **Conventional Commits**: `type(scope): short summary` — types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `revert`, `style`, `perf`, `ci`, `build`.
