@@ -60,25 +60,11 @@ function useAnimationStep(paused: boolean, reduceMotion: boolean) {
     if (paused || hasPlayed.current) return;
 
     hasPlayed.current = true;
-    let cancelled = false;
-    const timers: ReturnType<typeof setTimeout>[] = [];
 
     const offset = 400;
     for (let i = 0; i < BEATS.length; i++) {
-      timers.push(
-        setTimeout(
-          () => {
-            if (!cancelled) setStep(i);
-          },
-          BEATS[i] + offset,
-        ),
-      );
+      setTimeout(() => setStep(i), BEATS[i] + offset);
     }
-
-    return () => {
-      cancelled = true;
-      timers.forEach(clearTimeout);
-    };
   }, [paused, reduceMotion]);
 
   return step;
