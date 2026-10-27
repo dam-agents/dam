@@ -28,6 +28,7 @@ import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { AgentModelSettingsSection } from "../components/agent-config-sections.js";
 import { AgentManagementActions } from "../components/agent-management-actions.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
@@ -43,7 +44,6 @@ import {
   SandboxSectionNav,
   SECTIONS,
 } from "../components/sandbox-section-nav.js";
-import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
@@ -140,7 +140,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
               {holds(agent.access, "sessions") && (
                 <AgentUsageActions agent={agent} />
               )}
-              <SandboxSetupSection agent={agent} />
+              <AgentModelSettingsSection agentId={agent.id} />
               <AgentManagementActions agent={agent} display={display} />
             </>
           ) : section === "people" ? (

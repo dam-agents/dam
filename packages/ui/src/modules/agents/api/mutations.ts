@@ -42,7 +42,6 @@ export interface CreateAgentInput {
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
   registryCredential?: { server: string; username: string; password: string };
-  hibernationTimeoutMin?: number;
   requireConnectionAddress?: boolean;
   gitRepo?: { url: string; ref?: string };
   importEntries?: BundleEntry[];
