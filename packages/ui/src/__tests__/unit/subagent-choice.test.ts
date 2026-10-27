@@ -4,10 +4,14 @@ import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
+  heldSubagent,
   pickProfile,
   primaryProfileOf,
   settingChanges,
+  subagentOf,
   subagentPair,
+  subagentSummary,
+  withHeldSubagent,
   withSubagent,
   withSubagentPair,
 } from "../../modules/sessions/lib/subagent-choice.js";
@@ -171,5 +175,51 @@ describe("a subagent choice", () => {
       "platformSubagent.mode": "",
       "platformSubagent.effort": "high",
     });
+  });
+
+  /** TEST_SCENARIO: a next-session pair that fell back, its provider detached, takes the subagent slot the saved default holds, a custom pick or a profile, and a primary profile pick then keeps it, so reconnecting through a profile row does not drop it (QA N3); a pair the person picked keeps its own slot, even none. */
+  it("keeps the saved subagent slot through a fallback", () => {
+    const custom = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "bedrock/haiku",
+    };
+    const fallback: SessionPair = {
+      harness: "claude-code",
+      provider: null,
+      model: null,
+    };
+    const held = withHeldSubagent(
+      fallback,
+      heldSubagent({ platformSubagentSettings: custom }, []),
+      "claude-code",
+    );
+    expect(subagentOf(held)).toEqual({
+      harness: "claude-code",
+      model: "bedrock/haiku",
+    });
+    expect(
+      subagentOf(pickProfile(held, profile({ id: "p2" }), capability, [])),
+    ).toEqual({ harness: "claude-code", model: "bedrock/haiku" });
+    expect(
+      subagentOf(
+        withHeldSubagent(
+          null,
+          heldSubagent({ platformSubagentProfileId: "p1" }, [profile()]),
+          "pi",
+        ),
+      ),
+    ).toEqual({ harness: "claude-code", model: "anthropic/claude-sonnet-5-5" });
+    expect(withHeldSubagent(primary, custom, "pi")).toBe(primary);
+  });
+
+  /** TEST_SCENARIO: the subagent slot's custom pick reads as the one summary, its provider named by the model's alias (QA N4). */
+  it("summarises the subagent pick with its provider", () => {
+    expect(
+      subagentSummary(
+        withSubagent(primary, profile({ settings: {} }), capability, []),
+        [],
+        [{ id: "conn-a", name: "Anthropic", type: "anthropic" }],
+      ),
+    ).toBe("Claude Sonnet 5.5 (Anthropic)");
   });
 });

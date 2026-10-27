@@ -82,6 +82,14 @@ export const sessionDefaultsSchema = z.object({
  * reference instead of guessing it from the values. */
 export const sessionDefaultsViewSchema = sessionDefaultsSchema.extend({
   chatProfileId: z.string().nullable(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the chat default's subagent slot as stored, a
+   * profile or values, which `chat` drops while it or the primary cannot run,
+   * so a picker still shows what the slot holds. */
+  platformSubagentProfileId: z.string().nullable().optional(),
+  platformSubagentSettings: z
+    .record(z.string(), z.string())
+    .nullable()
+    .optional(),
 });
 
 export const harnessConfigSettledSchema = z.object({

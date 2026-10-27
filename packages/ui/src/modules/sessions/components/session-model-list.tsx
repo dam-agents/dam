@@ -352,13 +352,14 @@ function ProviderName({ group }: { group: ModelGroup }) {
   return (
     <>
       {group.displayName}
-      {!group.attached && (
-        <ErrorOutline
-          size={12}
-          aria-label="not connected"
-          className="shrink-0"
-        />
-      )}
+      {!group.attached && <NotConnectedMark />}
     </>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the outlined error icon that marks a pick on a provider the agent is not connected to, named for a screen reader. */
+export function NotConnectedMark() {
+  return (
+    <ErrorOutline size={12} aria-label="not connected" className="shrink-0" />
   );
 }

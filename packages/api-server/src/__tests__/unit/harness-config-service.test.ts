@@ -10,6 +10,7 @@ import {
   sessionModelChoices,
 } from "../../modules/harness-config/services/harness-config-service.js";
 import { harnessConfigSupported } from "../../modules/harness-config/index.js";
+import { createSessionPairRepo } from "../../modules/harness-config/infrastructure/session-pair-repo.js";
 import type { ResolvedProfile } from "../../modules/profiles/index.js";
 
 type QueueCall = { agentId: string; change: unknown; inLock: boolean };
@@ -647,5 +648,39 @@ describe("the chat default's slots", () => {
       },
       undefined,
     ]);
+  });
+
+  /** TEST_SCENARIO: while the chat profile cannot run, the saved chat default is none, yet the view still names the subagent slot as stored, so the picker shows the custom pick it holds rather than Let the agent pick (QA N3). */
+  it("names the stored subagent slot while the chat profile cannot run", async () => {
+    const slot = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "bedrock/haiku",
+    };
+    const row = {
+      chat: null,
+      channel: null,
+      scheduled: null,
+      sessionProfile: "profile-1",
+      platformSubagentProfile: null,
+      platformSubagentSettings: slot,
+      capabilities: null,
+    };
+    const db = {
+      select: () => ({ from: () => ({ where: async () => [row] }) }),
+    } as never;
+    const repo = createSessionPairRepo(
+      db,
+      async () =>
+        ({
+          pair: null,
+          unavailable: "AWS Bedrock isn't attached to this agent",
+        }) as never,
+    );
+    expect(await repo.readSaved("agent-1")).toMatchObject({
+      chat: null,
+      chatProfileId: "profile-1",
+      platformSubagentProfileId: null,
+      platformSubagentSettings: slot,
+    });
   });
 });

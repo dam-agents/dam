@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultProfileId } from "../../modules/profiles/lib/default-profile.js";
 import { ScheduleChoicesField } from "../../modules/schedules/forms/schedule-fields.js";
 import {
+  customChoiceError,
   quietHoursChange,
   scheduleChoices,
   scheduleInheritsChoices,
@@ -16,6 +17,14 @@ import type { Schedule } from "../../types.js";
 
 const state = vi.hoisted(() => ({
   profiles: [] as ProfileWithUsage[],
+  fallback: undefined as
+    | {
+        harness: string;
+        provider: null;
+        model: string;
+        settings: Record<string, string>;
+      }
+    | undefined,
   routed: true,
   operable: true,
 }));
@@ -63,7 +72,26 @@ vi.mock("../../modules/agents/api/harness-config.js", () => ({
   useHarnessConfigStatus: () => ({
     data: {
       modelRouter: state.routed,
-      harnesses: [{ name: "claude-code", sessionSettings: ["effort"] }],
+      harnesses: [
+        {
+          name: "claude-code",
+          sessionSettings: ["effort"],
+          harnessConfigCatalog: {
+            options: [
+              {
+                id: "effort",
+                name: "Effort",
+                category: "thought_level",
+                default: "medium",
+                choices: [
+                  { value: "low", name: "low" },
+                  { value: "medium", name: "medium" },
+                ],
+              },
+            ],
+          },
+        },
+      ],
       defaultHarness: "claude-code",
     },
   }),
@@ -78,7 +106,10 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalogModels: () => ({ data: undefined, granted: [] }),
   useHarnessConfigured: () => undefined,
   useGrantProvider: () => ({ grant: vi.fn(), pending: false }),
-  useProviderConnections: () => ({ granted: [], owned: [] }),
+  useProviderConnections: () => ({
+    granted: [],
+    owned: [{ id: "conn-b", name: "AWS Bedrock", type: "bedrock" }],
+  }),
   useSessionDefaults: () => ({
     data: { chat: null, channel: null, scheduled: null },
   }),
@@ -86,7 +117,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
 
 vi.mock("../../modules/schedules/api/session-model.js", () => ({
   useHasHarnessDefault: () => false,
-  useScheduleDefault: () => ({ data: undefined }),
+  useScheduleDefault: () => ({ data: state.fallback }),
   useSessionModelChoices: () => [],
 }));
 
@@ -236,15 +267,26 @@ describe("the schedule form's Profile field", () => {
 
   /** TEST_SCENARIO: a schedule written before profiles that follows the
    * agent's chat default says so, which is what its empty values mean now
-   * that nothing writes a scheduled default (D90/D92); a new one does not
-   * offer it (D123). */
+   * that nothing writes a scheduled default (D90/D92), names the default in
+   * the one summary and shows no harness or settings as selected while it
+   * follows; a new one does not offer it (D123). */
   it("names the empty choice the agent's chat default, only where it is the row's own", () => {
     state.profiles = [profile()];
+    state.fallback = {
+      harness: "claude-code",
+      provider: null,
+      model: "bedrock/fable",
+      settings: { effort: "low" },
+    };
     const follows = renderToStaticMarkup(
       createElement(Field, { profile: "", inheritChoice: true }),
     );
+    state.fallback = undefined;
+    expect(follows).toContain("fable · Low (AWS Bedrock)");
     expect(follows).toContain("follows the agent&#x27;s chat default");
     expect(follows).not.toContain("Scheduled default");
+    expect(follows).not.toContain('aria-pressed="true"');
+    expect(follows).not.toContain('aria-label="Session settings"');
     expect(
       renderToStaticMarkup(createElement(Field, { profile: "" })),
     ).not.toContain("chat default");
@@ -255,6 +297,26 @@ describe("the schedule form's Profile field", () => {
     const html = renderToStaticMarkup(createElement(Field, { profile: "" }));
     expect(html).toContain("Harness");
     expect(html).not.toContain("Custom selection");
+  });
+});
+
+describe("a Custom selection without a model", () => {
+  /** TEST_SCENARIO: a new schedule, or one with its own harness, cannot save a Custom selection that names no model, so it never silently follows the chat default (QA N1, D123); a profile, a model, a row written before profiles that still follows, and a runtime without the Model Router save as before. */
+  it("refuses to save unless the row already follows the chat default", () => {
+    const empty = { profile: "", harness: "claude-code", model: "" };
+    expect(customChoiceError(empty, undefined, true)).toMatch(/Pick a model/);
+    expect(
+      customChoiceError({ ...empty, profile: "p1" }, undefined, true),
+    ).toBe(null);
+    expect(
+      customChoiceError({ ...empty, model: "bedrock/opus" }, undefined, true),
+    ).toBe(null);
+    expect(customChoiceError(empty, undefined, false)).toBe(null);
+    const legacy = schedule(null);
+    expect(customChoiceError({ ...empty, harness: "" }, legacy, true)).toBe(
+      null,
+    );
+    expect(customChoiceError(empty, legacy, true)).toMatch(/Pick a model/);
   });
 });
 

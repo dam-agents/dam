@@ -1,7 +1,6 @@
-import { aliasForProviderType, parseQualifiedModel } from "api-server-api";
-
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useProviderConnections } from "../api/session-pair.js";
+import { providerOfModel } from "../lib/session-pair-options.js";
 import { pairSummary } from "../lib/session-settings.js";
 import { PairSummary } from "./session-pair-trigger.js";
 
@@ -19,15 +18,13 @@ export function StoredPairSummary({
 }) {
   const carried = useHarnessConfigStatus(agentId).data?.harnesses;
   const { owned } = useProviderConnections(agentId);
-  const alias = parseQualifiedModel(model, { claudePrefix: true })?.alias;
   return (
     <PairSummary
       harness={harness}
       label={pairSummary(model, {
         settings,
         capability: carried?.find((h) => h.name === harness),
-        provider: owned.find((p) => aliasForProviderType(p.type) === alias)
-          ?.name,
+        provider: providerOfModel(model, owned)?.name,
       })}
     />
   );

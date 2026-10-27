@@ -1,6 +1,8 @@
 import {
+  aliasForProviderType,
   harnessFits,
   type HarnessView,
+  parseQualifiedModel,
   type ProviderPresetType,
   providerTypeForTemplateId,
   type SessionPair,
@@ -52,6 +54,19 @@ export function pairLabel(
       harness,
     )
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the Connection a qualified model name's alias names among `providers`. */
+export function providerOfModel(
+  model: string | null | undefined,
+  providers: readonly ProviderConnectionRef[],
+): ProviderConnectionRef | undefined {
+  const alias = model
+    ? parseQualifiedModel(model, { claudePrefix: true })?.alias
+    : undefined;
+  return alias === undefined
+    ? undefined
+    : providers.find((p) => aliasForProviderType(p.type) === alias);
 }
 
 export function providerOptions(

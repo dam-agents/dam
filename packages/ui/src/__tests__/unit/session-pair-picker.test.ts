@@ -94,6 +94,12 @@ const state = vi.hoisted(() => ({
   chosenModel: vi.fn(),
   grant: vi.fn(async (_id: string) => true),
   remember: vi.fn(),
+  saved: undefined as
+    | {
+        platformSubagentProfileId?: string | null;
+        platformSubagentSettings?: Record<string, string> | null;
+      }
+    | undefined,
 }));
 
 vi.mock("../../store.js", () => ({
@@ -276,12 +282,17 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   }),
   rememberSessionPair: state.remember,
   useHarnessConfigured: () => state.configured,
+  useSessionDefaults: () => ({ data: state.saved }),
   useHarnessCatalogModels: (agentId: string | null) => ({
     granted:
       agentId === null
         ? null
         : ["ibm", "curve", ...state.granted.map((g) => g.id)],
     data: state.catalog,
+    modelCount: (name: string) =>
+      state.catalog?.harness === name
+        ? state.catalog.providers.reduce((n, p) => n + p.models.length, 0)
+        : 0,
     isLoading: state.loading,
     isError: false,
     operable: state.operable,
@@ -341,7 +352,8 @@ describe("the profile view a routed picker opens on", () => {
   /** TEST_SCENARIO: an owner with no profile still gets the profile view when
    * the model name is clicked, Custom selection its only row in the primary
    * slot, and the subagent slot marked on Let the agent pick, so one row of
-   * each slot is always the selected one (QA R9). */
+   * each slot is always the selected one (QA R9); its hint counts only the
+   * harnesses that list a model (QA P1). */
   it("opens on the profile view with no profile, Custom selection alone", () => {
     profilesState = [];
     const html = renderToStaticMarkup(
@@ -361,6 +373,20 @@ describe("the profile view a routed picker opens on", () => {
     );
     expect(html).not.toContain("No profiles yet");
     expect(html).not.toContain('aria-label="Harness"');
+    expect(html).toContain("1 harness");
+    state.catalog = { ...routedCatalog, providers: [] };
+    expect(
+      renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      ),
+    ).toContain("0 harnesses");
+    state.catalog = routedCatalog;
   });
 
   /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on them: a primary-model section, a subagent section led by Let the agent pick, each ending in Custom selection; an unavailable profile is disabled with its reason and the one action that would fix it. */
@@ -1441,6 +1467,86 @@ describe("the profile a new chat's pick came from", () => {
       act(() => root.unmount());
       profilesState = [];
       state.chosen = null;
+    }
+  });
+});
+
+describe("the profile a pick matches, after a reload", () => {
+  /** TEST_SCENARIO: a next chat whose values match a profile, with no pick made since the page loaded, still offers Update for that profile beside Save as a new profile once Custom selection opens (QA N2). */
+  it("offers Update for the matched profile", () => {
+    profilesState = [
+      {
+        id: "p1",
+        name: "Fast review",
+        harness: "pi",
+        providerTemplate: "curve-bender",
+        model: "cb/rits/zai-org/glm-5-3",
+        settings: {},
+        newAgentDefault: false,
+        usage: { agents: 1, channels: 0, schedules: 0 },
+        availability: { available: true, reason: null, attachable: false },
+      },
+    ];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalog = routedCatalog;
+    try {
+      const html = custom(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+      expect(html).toContain("Update “Fast review”");
+      expect(html).toContain("Save as a new profile");
+    } finally {
+      profilesState = [];
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the subagent slot while its provider is gone", () => {
+  /** TEST_SCENARIO: a next chat that fell back, its provider detached, still shows the custom subagent pick the saved default holds, in the one summary with its provider and marked not connected, rather than Let the agent pick (QA N3, N4). */
+  it("shows the held pick, marked not connected", () => {
+    profilesState = [];
+    state.chosen = { harness: "pi", provider: "curve", model: null };
+    state.owned = [{ id: "anth", name: "Anthropic", type: "anthropic" }];
+    state.saved = {
+      platformSubagentProfileId: null,
+      platformSubagentSettings: {
+        "platformSubagent.harness": "pi",
+        "platformSubagent.model": "anthropic/claude-haiku-4-5",
+      },
+    };
+    state.catalog = { ...routedCatalog, providers: [] };
+    try {
+      const html = renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+      expect(html).not.toMatch(
+        /aria-current="true"[^>]*><span[^>]*>Let the agent pick/,
+      );
+      expect(html).toMatch(
+        /\(Anthropic\)<\/span>[^]*aria-label="not connected"/,
+      );
+    } finally {
+      state.chosen = null;
+      state.owned = [];
+      state.saved = undefined;
+      state.catalog = routedCatalog;
     }
   });
 });

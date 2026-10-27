@@ -12,6 +12,7 @@ import { formatDateTime } from "@/lib/format-time";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import { useDeleteSchedule, useUpdateCronSchedule } from "../api/mutations.js";
 import {
@@ -33,6 +34,7 @@ import {
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
 import {
+  customChoiceError,
   scheduleChoices,
   scheduleInheritsChoices,
 } from "./schedule-form-schema.js";
@@ -73,6 +75,7 @@ export function CronScheduleForm({
     watch,
     trigger,
     getValues,
+    setError,
     formState,
   } = useForm<CronFormValues>({
     resolver: zodResolver(cronFormSchema),
@@ -125,7 +128,10 @@ export function CronScheduleForm({
     onClose();
   };
 
+  const routed = useHarnessConfigStatus(agentId).data?.modelRouter ?? false;
   const onSubmit = handleSubmit((v) => {
+    const missing = customChoiceError(v, existing, routed);
+    if (missing) return setError("model", { message: missing });
     const draft = draftOf(v);
     updateSchedule.mutate(
       {

@@ -33,7 +33,7 @@ import {
   useUpdateProfile,
 } from "../api/mutations.js";
 import { useProfiles } from "../api/queries.js";
-import { profileProviderName } from "../lib/profile-detail.js";
+import { profileProviderName, usedBy } from "../lib/profile-detail.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: the owner's profiles in Settings: what each runs, edited with the chat picker's Custom screen, how often it is used, rename, and a delete that names what still uses it. */
 export function ProfileSection() {
@@ -69,11 +69,11 @@ export function ProfileSection() {
         trpc.profiles.usage.queryOptions({ id: profile.id }),
       );
       const agentName = (id: string) => findAgent(agents, id)?.name ?? id;
-      const who = [
-        ...usage.agents.map((a) => `the agent ${agentName(a.id)}`),
-        ...usage.channels.map((c) => `the channel ${c.label}`),
-        ...usage.schedules.map((s) => `the schedule “${s.name}”`),
-      ].join(", ");
+      const who = usedBy({
+        agents: usage.agents.map((a) => agentName(a.id)),
+        channels: usage.channels.map((c) => c.label),
+        schedules: usage.schedules.map((s) => `“${s.name}”`),
+      });
       void showAlert(
         `It is used by ${who}. Move ${uses(profile) === 1 ? "it" : "them"} to another profile first.`,
         `“${profile.name}” cannot be deleted`,

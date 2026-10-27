@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { defaultProfileId } from "../../profiles/lib/default-profile.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
@@ -19,7 +20,10 @@ import {
   ScheduleChoicesField,
   ScheduleSessionTitleField,
 } from "./schedule-fields.js";
-import { scheduleInheritsChoices } from "./schedule-form-schema.js";
+import {
+  customChoiceError,
+  scheduleInheritsChoices,
+} from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 type DialogValues = FieldValues & {
@@ -82,6 +86,7 @@ export function ScheduleDialog<T extends DialogValues>({
   const { errors, isDirty } = formState;
   const deleteSchedule = useDeleteSchedule();
   const showConfirm = useStore((state) => state.showConfirm);
+  const routed = useHarnessConfigStatus(agentId).data?.modelRouter ?? false;
 
   const presetFor = existing ? null : agentId;
   const { data: schedules = [] } = useSchedules(presetFor);
@@ -123,7 +128,12 @@ export function ScheduleDialog<T extends DialogValues>({
 
   return (
     <form
-      onSubmit={handleSubmit((values) => onValid(values as T))}
+      onSubmit={handleSubmit((values) => {
+        const missing =
+          showSessionFields && customChoiceError(values, existing, routed);
+        if (missing) return fields.setError("model", { message: missing });
+        onValid(values as T);
+      })}
       className="flex min-h-0 flex-col"
     >
       <DialogHeader title={title} onClose={() => void close()} />

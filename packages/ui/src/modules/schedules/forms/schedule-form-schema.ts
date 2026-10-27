@@ -226,6 +226,23 @@ export function scheduleInheritsChoices(
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: why a routed schedule's Custom selection cannot
+ * save: it names no model. Only a row written before profiles that still
+ * follows the chat default, with no harness of its own either, saves without
+ * one (D123); null when the save may go ahead.
+ */
+export function customChoiceError(
+  v: ChoiceValues,
+  existing: Schedule | undefined,
+  routed: boolean,
+): string | null {
+  if (!routed || v.profile || v.model?.trim()) return null;
+  return scheduleInheritsChoices(existing) && !v.harness?.trim()
+    ? null
+    : "Pick a model for this schedule, or a profile.";
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: quiet hours travel on an edit only when they
  * differ from the stored list, as every other choice does: an untouched list
  * leaves the stored one alone, and one the user emptied clears it. Compared

@@ -89,7 +89,7 @@ export function CustomPairScreen({
             <HarnessList
               agentId={agentId}
               names={harnesses}
-              current={harness}
+              current={pair ? harness : ""}
               counted
               unsupported={unsupported}
               onPick={(name) =>

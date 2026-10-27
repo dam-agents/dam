@@ -8,6 +8,12 @@ import {
 } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 
+import {
+  type ProviderConnectionRef,
+  providerOfModel,
+} from "./session-pair-options.js";
+import { pairSummary } from "./session-settings.js";
+
 export const SUBAGENT_KEYS = [
   "platformSubagent.harness",
   "platformSubagent.model",
@@ -108,6 +114,59 @@ export function withSubagentPair(
     ...cleared,
     settings: { ...cleared.settings, "platformSubagent.harness": sub.harness },
   };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the subagent slot the saved chat default holds, as the settings a pair carries it in, whether or not it can run now: a profile's by its values, or its own. */
+export function heldSubagent(
+  saved:
+    | {
+        platformSubagentProfileId?: string | null;
+        platformSubagentSettings?: Readonly<Record<string, string>> | null;
+      }
+    | undefined,
+  profiles: readonly ProfileWithUsage[],
+): Record<string, string> | null {
+  const profile = profiles.find(
+    (p) => p.id === saved?.platformSubagentProfileId,
+  );
+  if (profile)
+    return (
+      withSubagent(
+        { harness: profile.harness, provider: null, model: null },
+        profile,
+        undefined,
+        [],
+      ).settings ?? null
+    );
+  return saved?.platformSubagentSettings
+    ? { ...saved.platformSubagentSettings }
+    : null;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a next-session pair that fell back, its provider gone, holds no model and no subagent slot; it takes the slot the saved default holds, so the picker shows it and a primary pick keeps it (QA N3). A pair that names a model is the person's own pick and is kept as it is. */
+export function withHeldSubagent(
+  pair: SessionPair | null,
+  held: Readonly<Record<string, string>> | null,
+  harness: string,
+): SessionPair | null {
+  if (!held || (pair && (pair.model !== null || subagentOf(pair)))) return pair;
+  const base = pair ?? { harness, provider: null, model: null };
+  return { ...base, settings: { ...base.settings, ...held } };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the subagent slot's custom pick as the one summary, its provider named by the model's alias. */
+export function subagentSummary(
+  pair: SessionPair | null,
+  carried: readonly HarnessCapability[],
+  providers: readonly ProviderConnectionRef[],
+): string | null {
+  const sub = subagentPair(pair);
+  if (!sub?.model) return null;
+  return pairSummary(sub.model, {
+    settings: sub.settings,
+    capability: carried.find((h) => h.name === sub.harness),
+    provider: providerOfModel(sub.model, providers)?.name,
+  });
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: the setting changes that turn one pair's settings into another's, a removed one as the empty value that unsets it. */

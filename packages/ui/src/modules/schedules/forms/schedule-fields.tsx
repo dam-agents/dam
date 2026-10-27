@@ -32,11 +32,8 @@ import {
   type Choice,
   OptionPicker,
 } from "../../sessions/components/model-settings-panel.js";
-import {
-  findModel,
-  modelGroups,
-  modelIndicatorLabel,
-} from "../../sessions/lib/catalog-groups.js";
+import { StoredPairSummary } from "../../sessions/components/stored-pair-summary.js";
+import { findModel, modelGroups } from "../../sessions/lib/catalog-groups.js";
 import {
   useHasHarnessDefault,
   useScheduleDefault,
@@ -573,8 +570,9 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
  * schedule that carries its own harness, model and settings instead of naming
  * a profile (D92). Empty values are not a scheduled default — nothing writes
  * one any more (D90) — they are the agent's chat default, which only a row
- * already following it keeps offering (D123), saying what it is now. On a
- * runtime without the Model Router the old single model field stands.
+ * already following it keeps offering (D123), saying what it is now in the
+ * hint rather than as a selection on the screen. On a runtime without the
+ * Model Router the old single model field stands.
  */
 function CustomChoicesField({
   agentId,
@@ -596,7 +594,7 @@ function CustomChoicesField({
     control: typed,
     name: "harness",
   });
-  const { field: modelField } = useController({
+  const { field: modelField, fieldState: modelState } = useController({
     control: typed,
     name: "model",
   });
@@ -642,9 +640,6 @@ function CustomChoicesField({
     ? (findModel(groups, modelField.value)?.model.name ?? modelField.value)
     : null;
   const follows = inheritChoice && !harnessField.value && !stored;
-  const today = fallback?.model
-    ? modelIndicatorLabel(groups, fallback.model)
-    : null;
   /* UNIT_BOUNDARY_DESCRIPTION: a group, not a FormField, whose label would
    * hand every click on the screen to its first harness. */
   return (
@@ -659,12 +654,16 @@ function CustomChoicesField({
           agentId={agentId || null}
           carried={carried}
           harnesses={carried.map((h) => h.name)}
-          pair={{
-            harness,
-            provider: null,
-            model: stored,
-            settings: settingsField.value ?? {},
-          }}
+          pair={
+            follows
+              ? null
+              : {
+                  harness,
+                  provider: null,
+                  model: stored,
+                  settings: settingsField.value ?? {},
+                }
+          }
           defaultHarness={harness}
           inline
           onChoose={(next) => {
@@ -696,11 +695,33 @@ function CustomChoicesField({
         )}
       </div>
       <span className="text-sm text-muted-foreground">
-        {follows
-          ? `This schedule follows the agent's chat default${today ? ` (now: ${today})` : ""}, which a chat's model picker sets. Pick a model to give it values of its own.`
-          : "A harness and model of this schedule's own; a profile is the usual way to name them once."}
+        {follows ? (
+          <>
+            This schedule follows the agent&apos;s chat default
+            {fallback?.model && (
+              <>
+                {" (now: "}
+                <span className="inline-flex items-center gap-1 align-bottom">
+                  <StoredPairSummary
+                    agentId={agentId}
+                    harness={fallback.harness}
+                    model={fallback.model}
+                    settings={fallback.settings ?? {}}
+                  />
+                </span>
+                {")"}
+              </>
+            )}
+            , which a chat&apos;s model picker sets. Pick a model to give it
+            values of its own.
+          </>
+        ) : (
+          "A harness and model of this schedule's own; a profile is the usual way to name them once."
+        )}
       </span>
-      <FormError message={migrationNote ?? undefined} />
+      <FormError
+        message={modelState.error?.message ?? migrationNote ?? undefined}
+      />
     </div>
   );
 }

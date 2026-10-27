@@ -170,6 +170,14 @@ export function useHarnessCatalogModels(
     ...query,
     data:
       query.data && harness ? harnessCatalogOf(query.data, harness) : undefined,
+    /** UNIT_BOUNDARY_DESCRIPTION: how many models the catalog lists for any harness, none until it has loaded. */
+    modelCount: (name: string) =>
+      query.data
+        ? harnessCatalogOf(query.data, name).providers.reduce(
+            (total, provider) => total + provider.models.length,
+            0,
+          )
+        : 0,
     granted: agentId === null ? null : grantedIds,
   };
 }

@@ -35,6 +35,7 @@ import {
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
+  useSessionDefaults,
 } from "../api/session-pair.js";
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useProviderUsage } from "../hooks/use-provider-usage.js";
@@ -51,6 +52,7 @@ import {
   modelProviderLabel,
   pairLabel,
   type ProviderConnectionRef,
+  providerOfModel,
   providerOptions,
 } from "../lib/session-pair-options.js";
 import {
@@ -59,17 +61,21 @@ import {
   settingDefaults,
 } from "../lib/session-settings.js";
 import {
+  heldSubagent,
   pickProfile,
   primaryProfileOf,
   subagentOf,
   subagentPair,
   subagentProfileOf,
+  subagentSummary,
+  withHeldSubagent,
   withSubagent,
   withSubagentPair,
 } from "../lib/subagent-choice.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { CustomPairScreen, HarnessList } from "./custom-pair-screen.js";
 import { DetachProviderMessage } from "./detach-provider-message.js";
+import { NotConnectedMark } from "./session-model-list.js";
 import { PairSummary, SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
@@ -221,8 +227,18 @@ export function SessionPairPicker(props: Props) {
     : [];
   const models = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
   const primary = primaryProfileOf(pair, profiles, capability);
-  const slot = subagentProfileOf(pair, profiles);
-  const customSlot = subagentOf(pair);
+  const saved = useSessionDefaults(edit ? null : agentId).data;
+  const held = withHeldSubagent(
+    pair,
+    heldSubagent(saved, profiles),
+    pair?.harness ?? defaultHarness,
+  );
+  const slot = subagentProfileOf(held, profiles);
+  const customSlot = subagentOf(held);
+  const slotProvider = providerOfModel(customSlot?.model, providers.owned);
+  const slotConnected = providers.granted.some(
+    (p) => p.id === slotProvider?.id,
+  );
   const chooseSubagent = (
     next: SessionPair,
     platformSubagentProfileId: string | null,
@@ -318,7 +334,9 @@ export function SessionPairPicker(props: Props) {
 
   /* UNIT_BOUNDARY_DESCRIPTION: a routed picker always opens on its profile view, with Custom selection its only row while the owner has no profile. */
   const showProfiles = routed && !edit && view === "profiles";
-  const runnable = harnesses.filter((h) => !unsupported(h.name)).length;
+  const runnable = harnesses.filter(
+    (h) => !unsupported(h.name) && catalogModels.modelCount(h.name) > 0,
+  ).length;
   const manageProviders = () =>
     agentId
       ? navigateToSandboxHome(agentId, "providers")
@@ -367,7 +385,7 @@ export function SessionPairPicker(props: Props) {
                     choose(
                       {
                         ...pickProfile(
-                          pair,
+                          held,
                           profile,
                           carried.find((h) => h.name === profile.harness),
                           profile.harness === pair?.harness ? models : [],
@@ -382,21 +400,32 @@ export function SessionPairPicker(props: Props) {
                       { profileId: profile.id },
                     );
                   },
-                  onCustom: () => setView("custom"),
+                  onCustom: () => {
+                    /* UNIT_BOUNDARY_DESCRIPTION: the profile the pick matches is where Update writes, also after a reload forgot the pick (QA N2). */
+                    if (primary) setFromProfile(primary);
+                    setView("custom");
+                  },
                 }}
                 subagent={{
                   selectedId: slot?.id ?? null,
                   custom:
                     slot || !customSlot ? null : (
-                      <PairSummary
-                        harness={customSlot.harness}
-                        label={pairSummary(customSlot.model, {})}
-                      />
+                      <>
+                        <PairSummary
+                          harness={customSlot.harness}
+                          label={
+                            subagentSummary(held, carried, providers.owned) ??
+                            ""
+                          }
+                        />
+                        {!slotConnected && <NotConnectedMark />}
+                      </>
                     ),
                   onPick: (profile) =>
                     pair &&
+                    held &&
                     chooseSubagent(
-                      withSubagent(pair, profile, capability, models),
+                      withSubagent(held, profile, capability, models),
                       profile.id,
                     ),
                   onCustom: () => setView("subagent"),
@@ -422,19 +451,19 @@ export function SessionPairPicker(props: Props) {
                   Use a profile
                 </button>
               )}
-              {view === "subagent" && pair ? (
+              {view === "subagent" && pair && held ? (
                 <CustomPairScreen
                   agentId={agentId}
                   carried={carried}
                   harnesses={carried
                     .filter((h) => h.harnessConfigCatalog)
                     .map((h) => h.name)}
-                  pair={subagentPair(pair)}
+                  pair={subagentPair(held)}
                   defaultHarness={pair.harness}
                   subagent
                   onChoose={(sub) =>
                     chooseSubagent(
-                      withSubagentPair(pair, sub, capability, models),
+                      withSubagentPair(held, sub, capability, models),
                       null,
                     )
                   }

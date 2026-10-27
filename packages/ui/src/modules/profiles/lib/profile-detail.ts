@@ -22,3 +22,25 @@ export function profileSummary(
     provider: profileProviderName(profile),
   });
 }
+
+const list = (names: readonly string[]): string =>
+  names.length < 2
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+/** UNIT_BOUNDARY_DESCRIPTION: what uses a profile, one phrase per kind: "the agents Reginald and Celestine, the schedule “Nightly”". */
+export function usedBy(usage: {
+  agents: readonly string[];
+  channels: readonly string[];
+  schedules: readonly string[];
+}): string {
+  const kind = (singular: string, plural: string, names: readonly string[]) =>
+    names.length === 0
+      ? []
+      : [`the ${names.length === 1 ? singular : plural} ${list(names)}`];
+  return [
+    ...kind("agent", "agents", usage.agents),
+    ...kind("channel", "channels", usage.channels),
+    ...kind("schedule", "schedules", usage.schedules),
+  ].join(", ");
+}

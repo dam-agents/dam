@@ -126,6 +126,10 @@ export function createSessionPairRepo(
       channel: plain(parsePair(row?.channel)),
       scheduled: plain(parsePair(row?.scheduled)),
       chatProfileId,
+      platformSubagentProfileId: row?.platformSubagentProfile ?? null,
+      platformSubagentSettings:
+        (row?.platformSubagentSettings as Record<string, string> | null) ??
+        null,
     };
   }
 

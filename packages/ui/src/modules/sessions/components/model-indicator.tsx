@@ -51,6 +51,7 @@ import {
   subagentOf,
   subagentPair,
   subagentProfileOf,
+  subagentSummary,
   withSubagent,
   withSubagentPair,
 } from "../lib/subagent-choice.js";
@@ -314,7 +315,10 @@ export function ModelIndicator({
                       .settings,
                   });
                 },
-                onCustom: () => setView("custom"),
+                onCustom: () => {
+                  if (primary) setFromProfile(primary);
+                  setView("custom");
+                },
               }}
               subagent={{
                 selectedId: slot?.id ?? null,
@@ -322,7 +326,7 @@ export function ModelIndicator({
                   slot || !customSlot ? null : (
                     <PairSummary
                       harness={customSlot.harness}
-                      label={pairSummary(customSlot.model, {})}
+                      label={subagentSummary(current, carried, owned) ?? ""}
                     />
                   ),
                 onPick: (profile) =>
