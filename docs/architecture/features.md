@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-10-22
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -19,6 +19,7 @@ Stored rows are kept, so returning a feature to `experimental` restores each use
 A per-user flag says what a user wants to see; it cannot say what the install can do.
 The module therefore also answers one install-wide question — whether this deployment supports microVMs — read from the chart's own `virtualization.enabled` rather than from any stored row ([vm-runner](vm-runner.md)).
 That answer is what the runtime of a new agent follows, and it is not a feature: the new sandbox runtime graduated, so no switch decides it and no settings row hides it.
+The same answer carries the chart's two idle timeouts, for container and for vm Agents, so a create form can show the one a new Agent gets when the user sets none.
 **An install that can run microVMs creates every new agent as one**, whichever path makes it: the api-server applies this in the one create every path ends in, rather than trusting each caller, so a kit that declares nothing, a [sub-agent](invocations.md) spawn, the CLI and the API land where the forms do.
 A kit that declares `backend: vm` ([starter-kits](starter-kits.md#kit-backend)) is the one declaration that can refuse instead: on an install without virtualization the kit is hidden and the create refuses it, since there is no machine to put the agent on.
 No kit can declare that it needs a container, so the install's answer never meets a kit it would have to refuse.

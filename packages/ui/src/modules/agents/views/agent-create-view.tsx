@@ -684,7 +684,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       )}
       {!kit && (
         <LifecycleSetupSection
-          value={form.hibernationTimeoutMin ?? vmRuntime.idleTimeoutMin ?? null}
+          value={form.hibernationTimeoutMin}
           onChange={(hibernationTimeoutMin) =>
             update({ hibernationTimeoutMin })
           }
