@@ -91,6 +91,7 @@ beforeEach(() => {
     checklist: null,
     pendingApprovals: [],
     brandShort: "dam",
+    docsUrl: "https://docs.example.com/",
   } satisfies PaletteInput;
   host = document.createElement("div");
   opener = document.createElement("button");
