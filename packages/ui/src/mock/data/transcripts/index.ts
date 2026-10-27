@@ -32,11 +32,7 @@ import { codeReviewerTranscript } from "./code-reviewer.js";
 import { evoxTranscript } from "./evox.js";
 import { gepaTranscript } from "./gepa.js";
 import { kSearchTranscript } from "./k-search.js";
-import {
-  artifactTranscript,
-  defaultTranscript,
-  longChatTranscript,
-} from "./legacy.js";
+import { defaultTranscript } from "./legacy.js";
 import { llmWikiTranscript } from "./llm-wiki.js";
 import { microManagerTranscript } from "./micro-manager.js";
 import { nousTranscript } from "./nous.js";
@@ -90,11 +86,8 @@ export function mockTranscriptMeta(
 }
 
 export function mockTranscript(agentId: string, sessionId: string): Message[] {
-  if (sessionId === MOCK_SESSION_IDS.artifact) {
-    return artifactTranscript();
-  }
-  if (sessionId === MOCK_SESSION_IDS.longChat) {
-    return longChatTranscript();
+  if (sessionId === MOCK_SESSION_IDS.firstLanding) {
+    return [];
   }
   const meta = mockTranscriptMeta(agentId, sessionId);
   if (meta) {

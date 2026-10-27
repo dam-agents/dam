@@ -9,13 +9,6 @@ import { CurveBenderForm } from "../../providers/components/curvebender/form.js"
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { CURVE_BENDER_DESCRIPTION } from "../../providers/lib/provider-rows.js";
 
-function formatUsd(value: number): string {
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
 function CurveBenderProviderCard() {
   const ctx = useInstantStart();
   const [showKeyForm, setShowKeyForm] = useState(false);
@@ -62,11 +55,7 @@ function CurveBenderProviderCard() {
           !showKeyForm ? (
             <div className="mt-3 flex items-center justify-between rounded-lg border border-border px-4 py-3">
               <div className="flex items-center gap-2">
-                <img
-                  src="/curvebender-logo.svg"
-                  alt=""
-                  className="size-3.5"
-                />
+                <img src="/curvebender-logo.svg" alt="" className="size-3.5" />
                 <span className="text-sm text-foreground">
                   ···· ···· ···· {ctx.ownCurveBenderKeyLast4 || "••••"}
                 </span>

@@ -116,9 +116,6 @@ export function useAcpSession(
         const { MOCK_SESSION_IDS, KIT_SESSION_TO_PACK } =
           await import("../../../mock/data/sessions.js");
         setMessages(mockTranscript(selectedAgent, sid));
-        if (sid === MOCK_SESSION_IDS.artifact) {
-          useStore.getState().setOpenArtifactId("art-1");
-        }
         const packId = KIT_SESSION_TO_PACK[sid];
         if (packId) {
           const meta = mockTranscriptMeta(selectedAgent, sid);

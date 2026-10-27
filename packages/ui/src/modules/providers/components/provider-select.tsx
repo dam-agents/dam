@@ -236,11 +236,7 @@ export function ProviderSelect({
         !showKeyForm && (
           <div className="mt-3 flex items-center justify-between rounded-lg border border-border px-4 py-3">
             <div className="flex items-center gap-2">
-              <img
-                src="/curvebender-logo.svg"
-                alt=""
-                className="size-3.5"
-              />
+              <img src="/curvebender-logo.svg" alt="" className="size-3.5" />
               <span className="text-sm text-foreground">
                 ···· ···· ···· {instantStart.ownCurveBenderKeyLast4 || "••••"}
               </span>

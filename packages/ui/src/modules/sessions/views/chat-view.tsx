@@ -47,7 +47,6 @@ import {
   type LeftPanelKind,
   WorkspaceChatHeader,
 } from "../../../mock/chat-workspace-variants.js";
-import { MOCK_SESSION_IDS } from "../../../mock/data/sessions.js";
 import { MockBrowserPanel } from "../../../mock/mock-browser-panel.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
@@ -76,10 +75,7 @@ import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
-import {
-  useBrowserAvailable,
-  useOpenBrowser,
-} from "../../browser/hooks/use-auto-open-browser.js";
+import { useBrowserAvailable } from "../../browser/hooks/use-auto-open-browser.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
@@ -196,7 +192,6 @@ export function ChatView() {
   const openBrowserAgentId = useStore((s) =>
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
-  const openBrowser = useOpenBrowser();
   const browserMaximized = useStore((s) => s.browserMaximized);
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const {
@@ -233,13 +228,6 @@ export function ChatView() {
   const instantStart = useInstantStart();
 
   const isMock = import.meta.env.VITE_MOCK === "true";
-
-  useEffect(() => {
-    if (!isMock || !selectedAgent) return;
-    if (sessionId === MOCK_SESSION_IDS.browser) {
-      void openBrowser(selectedAgent);
-    }
-  }, [isMock, sessionId, selectedAgent, openBrowser]);
 
   const onboardingStep = useStore((s) => s.onboardingStep);
   const setMessages = useStore((s) => s.setMessages);
@@ -820,37 +808,35 @@ export function ChatView() {
                   onScrollToMessage={handleScrollToMessage}
                 />
                 {!hasPendingPermission && (
-                  <div className="px-4 md:px-8">
-                    <ChatColumn>
-                      <div className="flex items-center gap-3">
-                        {harnessCurrent?.model && (
-                          <ModelIndicator
-                            model={harnessCurrent.model}
-                            subject={surfaceCopy.modelSubject}
-                            settings={
-                              surfaceCopy.modelSettings
-                                ? {
-                                    label: surfaceCopy.modelSettings,
-                                    onConfigure: handleConfigureSandbox,
-                                  }
-                                : undefined
-                            }
+                  <ChatColumn className="px-4 md:px-8">
+                    <div className="flex items-center gap-3">
+                      {harnessCurrent?.model && (
+                        <ModelIndicator
+                          model={harnessCurrent.model}
+                          subject={surfaceCopy.modelSubject}
+                          settings={
+                            surfaceCopy.modelSettings
+                              ? {
+                                  label: surfaceCopy.modelSettings,
+                                  onConfigure: handleConfigureSandbox,
+                                }
+                              : undefined
+                          }
+                        />
+                      )}
+                      {instantStart &&
+                        !instantStart.connectedProviderType &&
+                        instantStart.curveBenderPayment !== "own-key" && (
+                          <CurveBenderBudget
+                            instantStart={instantStart}
+                            onConfigure={() => {
+                              setConfigureSection("setup");
+                              setAutoOpenProvider(true);
+                            }}
                           />
                         )}
-                        {instantStart &&
-                          !instantStart.connectedProviderType &&
-                          instantStart.curveBenderPayment !== "own-key" && (
-                            <CurveBenderBudget
-                              instantStart={instantStart}
-                              onConfigure={() => {
-                                setConfigureSection("setup");
-                                setAutoOpenProvider(true);
-                              }}
-                            />
-                          )}
-                      </div>
-                    </ChatColumn>
-                  </div>
+                    </div>
+                  </ChatColumn>
                 )}
               </div>
             </>
