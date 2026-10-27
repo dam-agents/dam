@@ -344,17 +344,16 @@ export function createInvocationsService(deps: {
       for (const event of work.ahead(agent.id, at, expiresAt)) {
         await deps.runtimeMutator.bump(agent.id, [event]);
       }
+      if (input.setup.install)
+        await deps.runtimeMutator.bump(agent.id, [
+          workspaceCommandEvent(
+            "invocation-install",
+            agent.id,
+            input.setup.install.command,
+            at,
+          ),
+        ]);
       await deps.runtimeMutator.bump(agent.id, [
-        ...(input.setup.install
-          ? [
-              workspaceCommandEvent(
-                "invocation-install",
-                agent.id,
-                input.setup.install.command,
-                at,
-              ),
-            ]
-          : []),
         work.task(agent.id, at, expiresAt),
       ]);
     } catch (err) {
