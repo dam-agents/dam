@@ -256,12 +256,13 @@ export function useAcpConnection(
           const sid = startedSessionId;
           const shown = sessionModelFrom(sid, session.configOptions);
           useStore.getState().setSessionModel(shown);
-          showRoutedModel(
-            findAgentSession(agentId, sid).catch(() => null),
-            sid,
-            shown,
-            () => [null, sid].includes(useStore.getState().sessionId),
-          );
+          if (shown)
+            showRoutedModel(
+              findAgentSession(agentId, sid).catch(() => null),
+              sid,
+              shown,
+              () => [null, sid].includes(useStore.getState().sessionId),
+            );
         }
       } catch (err) {
         try {

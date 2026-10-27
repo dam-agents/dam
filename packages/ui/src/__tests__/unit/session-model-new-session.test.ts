@@ -10,6 +10,7 @@ const h = vi.hoisted(() => {
   };
   return {
     state,
+    configOptions: null as unknown,
     listed: Promise.resolve<{ model?: string } | null>(null),
   };
 });
@@ -35,7 +36,7 @@ vi.mock("../../modules/acp/acp.js", () => ({
       agent: {
         request: async () => ({
           sessionId: "s-new",
-          configOptions: codexOptions,
+          configOptions: h.configOptions,
         }),
       },
     },
@@ -78,6 +79,7 @@ function begin() {
 beforeEach(() => {
   h.state.sessionId = null;
   h.state.sessionModel = null;
+  h.configOptions = codexOptions;
   h.listed = Promise.resolve({ model: "ibm/aws/claude-opus-5-5" });
 });
 
@@ -103,4 +105,13 @@ it("does not override a pick made before the router's record arrived", async () 
   await h.listed;
   await Promise.resolve();
   expect(h.state.sessionModel).toBe(picked);
+});
+
+// TEST_SCENARIO: a harness that reports no model option leaves the chip empty, and a person may open another new chat before the router's record arrives. The late record names the session it was asked for, so it must not land in whatever chat is shown by then.
+it("sets nothing when the harness reported no model", async () => {
+  h.configOptions = null;
+  await begin();
+  await h.listed;
+  await Promise.resolve();
+  expect(h.state.sessionModel).toBeNull();
 });
