@@ -2172,6 +2172,15 @@ harnesses:
       # Router, which meters its spend; no export rail.
       providers: [ibm-litellm, curve-bender, openai]
       tags: ["Any provider"]
+    hermes:
+      enabled: true
+      displayName: "Hermes"
+      description: "Nous Research Hermes Agent with persistent memory and self-written skills"
+      releaseNotesUrl: "https://github.com/NousResearch/hermes-agent/releases"
+      # Hermes speaks Chat Completions through the Model Router, which meters
+      # its spend; no export rail.
+      providers: [ibm-litellm, curve-bender, openai]
+      tags: ["Any provider"]
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over

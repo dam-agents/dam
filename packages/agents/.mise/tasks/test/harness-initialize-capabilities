@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test (with the real adapters, when CLAUDE_AGENT_ACP, CODEX_ACP, PI_ACP, BOB_CLI or COPILOT_CLI name them) that each manifest's declared initialize capabilities match what the live harness answers"
+//MISE description="Test (with the real adapters, when CLAUDE_AGENT_ACP, CODEX_ACP, PI_ACP, BOB_CLI, COPILOT_CLI or HERMES_CLI name them) that each manifest's declared initialize capabilities match what the live harness answers"
 //MISE sources=["*/rootfs/app/runtime-manifest.yaml", "test-lib/acp-client.mjs", ".mise/tasks/test/harness-initialize-capabilities"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -21,6 +21,7 @@ const targets = [
   { name: "codex", bin: process.env.CODEX_ACP, args: (b) => ["node", [b]], env: { OPENAI_API_KEY: "x", CODEX_HOME: home } },
   { name: "pi-agent", bin: process.env.PI_ACP, args: (b) => ["node", [b]], env: { PI_OFFLINE: "1" } },
   { name: "copilot", bin: process.env.COPILOT_CLI, args: (b) => [b, ["--acp", "--stdio"]], env: { COPILOT_PROVIDER_BASE_URL: "http://127.0.0.1:1/v1", COPILOT_MODEL: "x", COPILOT_OFFLINE: "true", COPILOT_AUTO_UPDATE: "false" }, authMethods: () => [] },
+  { name: "hermes", bin: process.env.HERMES_CLI, args: (b) => [b, ["acp"]], env: { HERMES_DISABLE_LAZY_INSTALLS: "1" }, authMethods: () => [] },
   { name: "bob", bin: process.env.BOB_CLI, args: (b) => ["node", [b, "acp", "--trust", "--accept-license", "--auto-approve", "--disable-mcp"]], env: { BOB_GATEWAY_URL: "http://127.0.0.1:1", BOB_API_KEY: "x", BOB_LOG_LEVEL: "error" } },
 ];
 let checked = 0;

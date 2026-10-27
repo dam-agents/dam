@@ -166,6 +166,7 @@ describe("shipped agent manifests resolve", () => {
       base: undefined,
       bob: "$HOME/.bob/settings/settings.json",
       "claude-code": "$HOME/.claude/settings.json",
+      hermes: "$HOME/.hermes/platform-settings.json",
       "k-search": undefined,
       "pi-agent": "$HOME/.pi/agent/settings.json",
     };

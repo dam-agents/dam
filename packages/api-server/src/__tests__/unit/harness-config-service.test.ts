@@ -24,6 +24,7 @@ function makeService(opts?: {
   capabilities?: unknown;
   snapshot?: HarnessConfigSnapshot | null;
   granted?: GrantedProvider[];
+  hidden?: string[];
 }) {
   const calls = {
     queues: [] as QueueCall[],
@@ -107,6 +108,7 @@ function makeService(opts?: {
     specHarness: async () => undefined,
     getCapabilities: async () => opts?.capabilities,
     isSettled: async () => opts?.settled ?? true,
+    hiddenHarnesses: async () => new Set(opts?.hidden),
   });
   return { service, calls };
 }
@@ -121,6 +123,22 @@ const CARRIES_CODEX = {
 };
 
 describe("harness-config service: harnesses chosen per session", () => {
+  /** TEST_SCENARIO: A harness behind an experimental feature the owner has off is left out of the harnesses offered, yet a change naming it still applies. */
+  it("leaves a hidden harness out of status but still applies its change", async () => {
+    const { service, calls } = makeService({
+      capabilities: CARRIES_CODEX,
+      hidden: ["codex"],
+    });
+    expect((await service.status("a1")).harnesses).toEqual([
+      { name: "claude-code", harnessConfig: true, sessionModel: true },
+    ]);
+    await service.apply("a1", {
+      harness: "codex",
+      configOptions: { effort: "high" },
+    });
+    expect(calls.queues).toHaveLength(1);
+  });
+
   /** TEST_SCENARIO: An agent still on an image with one harness would apply
    * Codex's settings to its own harness's file, so a change naming a harness
    * it does not report carrying is refused. */

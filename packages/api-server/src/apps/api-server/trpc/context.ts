@@ -407,6 +407,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await agentsRepo.get(agentId))?.spec.harness,
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
+      hiddenHarnesses: async () =>
+        new Set((await features.flags()).hermes ? [] : ["hermes"]),
     });
     const listOwnedAgents = async (): Promise<
       { id: string; name: string | null }[]

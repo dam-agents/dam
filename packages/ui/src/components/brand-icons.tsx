@@ -116,6 +116,19 @@ export function PiIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function HermesIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path d="M7 4h3v6.5h4V4h3v16h-3v-6.5h-4V20H7V4Z M1 6.5 6 8v2.5L1 9V6.5Z M23 6.5 18 8v2.5L23 9V6.5Z" />
+    </svg>
+  );
+}
+
 export function CodexIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg

@@ -9,6 +9,7 @@ import {
   ClaudeIcon,
   CodexIcon,
   CopilotIcon,
+  HermesIcon,
   PiIcon,
 } from "./brand-icons.js";
 
@@ -47,6 +48,12 @@ export const HARNESS_ICONS: Record<
     Icon: CopilotIcon,
     bg: "bg-icon-teal",
     fg: "text-icon-teal",
+  },
+  hermes: {
+    label: "Hermes",
+    Icon: HermesIcon,
+    bg: "bg-icon-ochre",
+    fg: "text-icon-ochre",
   },
   pi: {
     label: "Pi",

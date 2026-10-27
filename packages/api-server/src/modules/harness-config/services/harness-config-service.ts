@@ -49,6 +49,7 @@ export function createHarnessConfigService(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
+  hiddenHarnesses: () => Promise<ReadonlySet<string>>;
   retireReset?: (
     agentId: string,
     tx: DbTx,
@@ -65,7 +66,10 @@ export function createHarnessConfigService(deps: {
   return {
     async status(agentId) {
       await requireOwned(agentId);
-      const capabilities = await deps.getCapabilities(agentId);
+      const [capabilities, hidden] = await Promise.all([
+        deps.getCapabilities(agentId),
+        deps.hiddenHarnesses(),
+      ]);
       return {
         supported: harnessConfigSupported(capabilities),
         catalog: harnessConfigCatalogOf(capabilities),
@@ -73,7 +77,8 @@ export function createHarnessConfigService(deps: {
         modelRouter: routesByModelName(capabilities),
         followsDefaults: followsDefaults(capabilities),
         defaultHarness: defaultHarnessOf(capabilities),
-        harnesses: harnessesOf(capabilities),
+        harnesses:
+          harnessesOf(capabilities)?.filter((h) => !hidden.has(h.name)) ?? null,
       };
     },
 
