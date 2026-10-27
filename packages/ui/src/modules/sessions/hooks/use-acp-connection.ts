@@ -39,10 +39,36 @@ import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
-import { sessionModelFrom, withRoutedCurrent } from "../lib/session-model.js";
+import {
+  type SessionModel,
+  sessionModelFrom,
+  withRoutedCurrent,
+} from "../lib/session-model.js";
 import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
 
 const REPLAY_IDLE_WINDOW_MS = 3000;
+
+function showRoutedModel(
+  listed: Promise<{ model?: string | null } | null>,
+  sid: string,
+  shown: SessionModel | null,
+  stillShown: () => boolean,
+): void {
+  void listed.then((match) => {
+    const store = useStore.getState();
+    if (!match?.model || store.sessionModel !== shown || !stillShown()) return;
+    store.setSessionModel(
+      shown
+        ? withRoutedCurrent(shown, match.model)
+        : {
+            sessionId: sid,
+            configId: "model",
+            current: match.model,
+            choices: [],
+          },
+    );
+  });
+}
 
 export interface LiveConnection {
   connection: ClientConnection;
@@ -227,11 +253,15 @@ export function useAcpConnection(
         startedSessionId = session.sessionId;
         const viewing = useStore.getState().sessionId;
         if (viewing === null || viewing === startedSessionId) {
-          useStore
-            .getState()
-            .setSessionModel(
-              sessionModelFrom(startedSessionId, session.configOptions),
-            );
+          const sid = startedSessionId;
+          const shown = sessionModelFrom(sid, session.configOptions);
+          useStore.getState().setSessionModel(shown);
+          showRoutedModel(
+            findAgentSession(agentId, sid).catch(() => null),
+            sid,
+            shown,
+            () => [null, sid].includes(useStore.getState().sessionId),
+          );
         }
       } catch (err) {
         try {
@@ -446,26 +476,15 @@ export function useAcpConnection(
           (result as LoadSessionResponse | null)?.configOptions,
         );
         useStore.getState().setSessionModel(shown);
-        void listed?.then((match) => {
-          const store = useStore.getState();
-          if (
-            !match?.model ||
-            store.sessionId !== sid ||
-            store.sessionModel !== shown ||
-            generation !== generationRef.current
-          )
-            return;
-          store.setSessionModel(
-            shown
-              ? withRoutedCurrent(shown, match.model)
-              : {
-                  sessionId: sid,
-                  configId: "model",
-                  current: match.model,
-                  choices: [],
-                },
+        if (listed)
+          showRoutedModel(
+            listed,
+            sid,
+            shown,
+            () =>
+              useStore.getState().sessionId === sid &&
+              generation === generationRef.current,
           );
-        });
         useStore
           .getState()
           .setRunStarts([
