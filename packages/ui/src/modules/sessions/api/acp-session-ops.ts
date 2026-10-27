@@ -143,6 +143,7 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     runStartedAt: s.runStartedAt,
     runTotalMs: s.runTotalMs,
     runCount: s.runCount,
+    model: s.model ?? null,
   };
 }
 
