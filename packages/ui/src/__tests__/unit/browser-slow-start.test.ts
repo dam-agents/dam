@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DockedBrowserPanel } from "../../modules/browser/components/docked-browser-panel.js";
 
 const state = vi.hoisted(() => ({
-  browser: { state: "starting", message: null } as BrowserSnapshot,
+  browser: { state: "starting", message: null, page: null } as BrowserSnapshot,
   restartBrowser: vi.fn(),
 }));
 
@@ -74,7 +74,7 @@ let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
-  state.browser = { state: "starting", message: null };
+  state.browser = { state: "starting", message: null, page: null };
   state.restartBrowser.mockClear();
   container = document.createElement("div");
   document.body.append(container);
@@ -119,11 +119,11 @@ describe("a slow browser start", () => {
   test("counts the 20 seconds from each start", () => {
     render();
     act(() => vi.advanceTimersByTime(15_000));
-    state.browser = { state: "ready", message: null };
+    state.browser = { state: "ready", message: null, page: null };
     render();
     expect(container.textContent).not.toContain("machine is busy");
 
-    state.browser = { state: "starting", message: null };
+    state.browser = { state: "starting", message: null, page: null };
     render();
     act(() => vi.advanceTimersByTime(15_000));
     expect(restartButton()).toBeUndefined();
