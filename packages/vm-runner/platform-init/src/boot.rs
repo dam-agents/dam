@@ -108,7 +108,7 @@ pub fn run() -> ! {
     announce(&format!("storage disk mounted at {}", disk.display()));
     claim_layout(&disk);
     fresh_root(&disk, &machine);
-    vm::serve();
+    vm::serve(machine.launch.env.clone());
     let root = PathBuf::from(guest::DISK_PATH);
     bind_ca();
     let expected = match expected_seed(Path::new(guest::SEED_EXPECTED_PATH)) {

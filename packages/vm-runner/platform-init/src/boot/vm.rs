@@ -397,8 +397,9 @@ pub(super) fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
     btrfs_ioctl(parent, 14, name)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the guest agent protocol of smolvm's host side, as much of it as the runner's machines use: a liveness ping that names what this init can do, the quiesced stop, and onlining RAM the VMM plugged in. Each request is a big-endian u32 length and a JSON body on vsock port 6000, answered the same way, and a connection may carry several. Once it listens, the init rings the host's readiness doorbell, which is what a start waits for; it starts only once the image's root is in place, since the host grows the machine's RAM the moment it is ready, and onlining reads /sys, which moves into that root. A request this init does not serve is answered with an error, never with silence, so the host does not wait out its timeout.
-pub fn serve() {
+// UNIT_BOUNDARY_DESCRIPTION: the guest agent protocol of smolvm's host side, as much of it as the runner's machines use: a liveness ping that names what this init can do, the quiesced stop, onlining RAM the VMM plugged in, and an operator's command, which runs in `env`, the launch record's. Each request is a big-endian u32 length and a JSON body on vsock port 6000, answered the same way, and a connection may carry several. Once it listens, the init rings the host's readiness doorbell, which is what a start waits for; it starts only once the image's root is in place, since the host grows the machine's RAM the moment it is ready, and onlining reads /sys, which moves into that root. A request this init does not serve is answered with an error, never with silence, so the host does not wait out its timeout.
+pub fn serve(env: Vec<(String, String)>) {
+    let env: std::sync::Arc<[(String, String)]> = env.into();
     let listener = match vsock_listener(smolvm_protocol::ports::AGENT_CONTROL) {
         Ok(listener) => listener,
         Err(e) => fatal!("listening for the host on vsock: {e}"),
@@ -418,7 +419,8 @@ pub fn serve() {
         }
         // SAFETY: accept4 returned a descriptor nothing else owns.
         let conn = unsafe { File::from_raw_fd(fd) };
-        std::thread::spawn(move || answer(conn));
+        let env = env.clone();
+        std::thread::spawn(move || answer(conn, &env));
     });
     ring_doorbell();
 }
@@ -490,10 +492,10 @@ fn send(conn: &mut File, response: &AgentResponse) -> io::Result<()> {
     conn.write_all(&frame)
 }
 
-fn answer(mut conn: File) {
+fn answer(mut conn: File, env: &[(String, String)]) {
     while let Some(body) = read_frame(&mut conn) {
         let response = match serde_json::from_slice::<Envelope<AgentRequest>>(&body) {
-            Ok(request) => respond(request.body, &mut conn),
+            Ok(request) => respond(request.body, &mut conn, env),
             Err(e) => AgentResponse::error(
                 format!("unreadable request: {e}"),
                 error_codes::INVALID_REQUEST,
@@ -505,7 +507,11 @@ fn answer(mut conn: File) {
     }
 }
 
-fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
+fn respond(
+    request: AgentRequest,
+    conn: &mut File,
+    launch_env: &[(String, String)],
+) -> AgentResponse {
     match request {
         AgentRequest::Ping => AgentResponse::Pong {
             version: smolvm_protocol::PROTOCOL_VERSION,
@@ -540,6 +546,7 @@ fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
             stdin_data,
         } => exec(
             &command,
+            launch_env,
             &env,
             workdir.as_deref(),
             timeout_ms.map_or(EXEC_TIMEOUT, Duration::from_millis),
@@ -584,9 +591,11 @@ pub fn claim_exit(pid: libc::pid_t, status: libc::c_int) -> bool {
 const EXEC_TIMEOUT: Duration = Duration::from_secs(300);
 const EXEC_OUTPUT_MAX: usize = 8 << 20;
 
-// UNIT_BOUNDARY_DESCRIPTION: runs one command for the host, as root in the image's root, with the env it names on top of a default PATH and nothing of the init's own, and answers with its exit code and output once it ends, or once `timeout` has passed and it was killed. Only a non-interactive command is run: operators reach a guest this way (`vm-runner exec`), and nothing in the platform needs a shell into it.
+// UNIT_BOUNDARY_DESCRIPTION: runs one command for the host, as root in the image's root, with the env it names on top of the launch record's and nothing of the init's own, and answers with its exit code and output once it ends, or once `timeout` has passed and it was killed. Only a non-interactive command is run: operators reach a guest this way (`vm-runner exec`), and nothing in the platform needs a shell into it.
+// UNIT_BOUNDARY_DESCRIPTION: the launch record's env is the one the image's entrypoint got, as a container's exec gets its container's: the image's PATH, which finds the tools it installs, and the variables that point them at the agent's own browser, display and trust store. A record without PATH gets the default one, as the entrypoint does.
 fn exec(
     command: &[String],
+    launch_env: &[(String, String)],
     env: &[(String, String)],
     workdir: Option<&str>,
     timeout: Duration,
@@ -598,10 +607,13 @@ fn exec(
     };
     let (lock, cvar) = &EXECS;
     let mut execs = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let spawned = super::unblocked(&mut std::process::Command::new(program))
-        .args(args)
-        .env_clear()
-        .env("PATH", DEFAULT_PATH)
+    let mut spawn = std::process::Command::new(program);
+    spawn.args(args).env_clear();
+    if !launch_env.iter().any(|(key, _)| key == "PATH") {
+        spawn.env("PATH", DEFAULT_PATH);
+    }
+    let spawned = super::unblocked(&mut spawn)
+        .envs(launch_env.iter().map(|(key, value)| (key, value)))
         .envs(env.iter().map(|(key, value)| (key, value)))
         .current_dir(workdir.unwrap_or("/"))
         .process_group(0)
@@ -981,11 +993,11 @@ mod tests {
     // TEST_SCENARIO: an operator's command runs to its end and answers with its exit code and both streams, with the env it was given and none of the init's; one that outlives its limit is killed and says so, rather than holding the protocol thread.
     #[test]
     fn an_exec_answers_with_what_the_command_did() {
-        let run = |script: &str, timeout_ms: u64| {
+        let run = |command: Vec<String>, launch_env: &[(String, String)], timeout_ms: u64| {
             let mut conn = File::open("/dev/null").unwrap();
             respond(
                 AgentRequest::VmExec {
-                    command: vec!["/bin/sh".into(), "-c".into(), script.into()],
+                    command,
                     env: vec![("GIVEN".into(), "yes".into())],
                     workdir: Some("/".into()),
                     timeout_ms: Some(timeout_ms),
@@ -995,14 +1007,17 @@ mod tests {
                     stdin_data: None,
                 },
                 &mut conn,
+                launch_env,
             )
         };
+        let sh = |script: &str| vec!["/bin/sh".into(), "-c".into(), script.into()];
         let AgentResponse::Completed {
             exit_code,
             stdout,
             stderr,
         } = run(
-            "echo \"$GIVEN ${CARGO:-clean} $(pwd)\"; echo err >&2; exit 3",
+            sh("echo \"$GIVEN ${CARGO:-clean} $(pwd) $PATH\"; echo err >&2; exit 3"),
+            &[],
             10_000,
         )
         else {
@@ -1010,19 +1025,84 @@ mod tests {
         };
         assert_eq!(
             (exit_code, stdout, stderr),
-            (3, b"yes clean /\n".to_vec(), b"err\n".to_vec())
+            (
+                3,
+                format!("yes clean / {DEFAULT_PATH}\n").into_bytes(),
+                b"err\n".to_vec()
+            )
         );
-        let AgentResponse::Completed { exit_code, .. } = run("sleep 10", 100) else {
+        let AgentResponse::Completed { exit_code, .. } = run(sh("sleep 10"), &[], 100) else {
             panic!("no completion");
         };
         assert_eq!(exit_code, 128 + libc::SIGKILL);
+    }
+
+    // TEST_SCENARIO: an operator's command runs in the env the image's entrypoint got, as a container's exec does: a tool the image installs off the default PATH is found by name, and its variables are set, with the request's own env over them. What failed without it was `vm-runner exec <machine> -- sh -c 'agent-browser ...'`, which found no agent-browser.
+    #[test]
+    fn an_exec_runs_in_the_launch_records_env() {
+        let dir =
+            std::env::temp_dir().join(format!("platform-init-exec-env-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let tool = dir.join("image-tool");
+        fs::write(&tool, "#!/bin/sh\necho \"tool $IMAGE_SETTING $GIVEN $*\"\n").unwrap();
+        fs::set_permissions(&tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let launch_env = [
+            (
+                "PATH".to_string(),
+                format!("{}:/usr/bin:/bin", dir.display()),
+            ),
+            ("IMAGE_SETTING".to_string(), "image".to_string()),
+            ("GIVEN".to_string(), "image".to_string()),
+        ];
+        for (command, said) in [
+            (
+                vec!["image-tool".to_string(), "direct".to_string()],
+                "direct",
+            ),
+            (
+                vec!["sh".into(), "-c".into(), "image-tool shell".into()],
+                "shell",
+            ),
+        ] {
+            let mut conn = File::open("/dev/null").unwrap();
+            let response = respond(
+                AgentRequest::VmExec {
+                    command: command.clone(),
+                    env: vec![("GIVEN".into(), "yes".into())],
+                    workdir: None,
+                    timeout_ms: Some(10_000),
+                    interactive: false,
+                    tty: false,
+                    background: false,
+                    stdin_data: None,
+                },
+                &mut conn,
+                &launch_env,
+            );
+            let AgentResponse::Completed {
+                exit_code,
+                stdout,
+                stderr,
+            } = response
+            else {
+                panic!("{command:?}: {response:?}");
+            };
+            assert_eq!(
+                (exit_code, String::from_utf8_lossy(&stdout).into_owned()),
+                (0, format!("tool image yes {said}\n")),
+                "{command:?}: {}",
+                String::from_utf8_lossy(&stderr)
+            );
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 
     // TEST_SCENARIO: the host checks a ping's capabilities before it asks for a quiesced stop or for RAM to be onlined; without them it refuses the stop and leaves the VMM running, or never grows the machine.
     #[test]
     fn a_ping_names_what_the_host_needs() {
         let mut conn = File::open("/dev/null").unwrap();
-        let response = respond(AgentRequest::Ping, &mut conn);
+        let response = respond(AgentRequest::Ping, &mut conn, &[]);
         let AgentResponse::Pong { capabilities, .. } = response else {
             panic!("{response:?}");
         };

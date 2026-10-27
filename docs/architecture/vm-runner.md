@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-24
+Last verified: 2026-10-27
 
 The pods every Agent runs on: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -101,6 +101,7 @@ A machine's egress allows one destination, the paired gateway, so the controller
 What a machine keeps across a stop is its storage disk on the runner's one claim: `HOME`, and the upper layer of its root for as long as its images share a root generation ([vm storage](vm-storage.md#the-disk) owns the rule).
 It is the machine's one disk.
 The guest's init is platform-init, not smolvm's guest agent: smolvm boots it from the agent root as PID 1, and it sets up the network, mounts the disk and the shares, boots the image on one overlay over the image tree and a per-boot layer that maps `agent` to uid 0 ([vm storage](vm-storage.md#the-disk)), and answers the runner's host side (ping, quiesced stop, memory onlining, an operator's `vm-runner exec`), so no container runtime and no second root stand between the VM and the image.
+An operator's command runs in the environment the image's entrypoint got, as a container's exec does, so it finds the image's tools on the image's `PATH` without a login shell.
 An image that ships `/sbin/openrc` opts in to its services: platform-init runs openrc's `sysinit`, `boot` and `default` runlevels before the entrypoint and openrc's `shutdown` on a stop, and starts the entrypoint in a cgroup of its own, so a restart of the entrypoint ends what it left and keeps the services.
 `sysinit`, `boot` and `default` run in the entrypoint's environment, of which openrc passes a service only what the image's openrc config names, and `shutdown` runs with `PATH` alone.
 The default image's `default` runlevel holds only `user.root`, openrc's stock service that starts the agent's own openrc services, its [Startup Items](agent-processes.md#startup-items), and `platform-env`, which serves the Environment Link only on an Environment, and its docker and k3s services are in none until the agent adds them ([agent images](agent-images.md#what-the-agent-gets)).
