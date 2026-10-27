@@ -393,6 +393,7 @@ const aliasOfConnection = (connectionId: string): string | null => {
  * Bedrock by its model and runs in a native process of its own.
  */
 const FIRST_LISTING_WAIT_MS = 10_000;
+const DIRECTORY_WAIT_MS = 2_000;
 const unroutedProviderEnv = (harness: string): Record<string, string> => {
   if (routerEnvOf(harness).PLATFORM_MODEL_ROUTER_SERVES) return {};
   return Object.assign(
@@ -593,6 +594,16 @@ const {
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: browser.start,
+  beforeFirstPrompt: async (sessionId) => {
+    const started = Date.now();
+    const registered = await runtimeChannel.sessionDirectory.registered(
+      sessionId,
+      DIRECTORY_WAIT_MS,
+    );
+    process.stderr.write(
+      `[runtime] session ${sessionId} ${registered ? "registered in" : "not confirmed by"} the session directory after ${Date.now() - started} ms\n`,
+    );
+  },
   beforeSpawn: async () => {
     await Promise.race([
       modelCatalog.listed(),
