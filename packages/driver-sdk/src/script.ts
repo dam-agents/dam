@@ -11,7 +11,7 @@ import type {
   SpawnScriptInvocationRequest,
 } from "api-server-api";
 
-import { log, req } from "./http.js";
+import { log, req, spawningSessionHeaders } from "./http.js";
 import {
   awaitInvocation,
   defaultTimeoutMs,
@@ -189,6 +189,7 @@ export async function spawnScript(
     "POST",
     "/invocations",
     body,
+    spawningSessionHeaders(),
   );
   const tag = label ?? harness ?? image ?? id;
   log(`spawned ${tag} -> ${id}`);
