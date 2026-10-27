@@ -13,6 +13,7 @@ import type { SizeMi } from "../../../budgets/lib/slots.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
+import { useVmRuntime } from "../../../features/hooks/use-vm-runtime.js";
 import type { ProviderRef } from "../../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../../providers/components/provider-select.js";
 import {
@@ -194,12 +195,13 @@ export function LifecycleSetupSection({
   onChange: (next: number) => void;
   sizeMi?: SizeMi;
 }) {
+  const { idleTimeoutMin } = useVmRuntime();
   return (
     <section className="mb-8">
       <SectionLabel spaced>Lifecycle</SectionLabel>
       <Inset>
         <LifecycleField
-          value={value ?? DEFAULT_HIBERNATE_MIN}
+          value={value ?? idleTimeoutMin ?? DEFAULT_HIBERNATE_MIN}
           onChange={onChange}
           sizeMi={sizeMi}
         />

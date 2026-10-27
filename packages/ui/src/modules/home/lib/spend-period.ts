@@ -12,9 +12,9 @@ const DAYS_BACK: Record<SpendPeriod, number> = {
 export function spendRange(
   period: SpendPeriod,
   now: Date,
-): { from: string; to: string } {
+): { at: { fromAt: string; toAt: string } } {
   const to = new Date(now);
   const from = new Date(now);
   from.setDate(from.getDate() - DAYS_BACK[period]);
-  return { from: from.toISOString(), to: to.toISOString() };
+  return { at: { fromAt: from.toISOString(), toAt: to.toISOString() } };
 }

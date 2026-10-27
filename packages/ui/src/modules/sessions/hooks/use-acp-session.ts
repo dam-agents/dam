@@ -32,6 +32,7 @@ import { findAgentSession } from "../api/acp-session-ops.js";
 import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
+import { routedModelOf } from "../lib/session-model.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
@@ -231,17 +232,15 @@ export function useAcpSession(
       try {
         const live = connectionRef.current ?? (await ensureLive());
         if (!live) throw new Error("the agent is not connected");
-        const pinned = (await live.connection.agent.request(PIN_MODEL_METHOD, {
+        await live.connection.agent.request(PIN_MODEL_METHOD, {
           sessionId: sid,
-          model: value,
+          model: routedModelOf(value),
           follows: null,
-        })) as { model: string | null };
+        });
         if (useStore.getState().sessionId !== sid) return;
         const shown = useStore.getState().sessionModel;
-        if (shown?.sessionId === sid && pinned.model !== null)
-          useStore
-            .getState()
-            .setSessionModel({ ...shown, current: pinned.model });
+        if (shown?.sessionId === sid)
+          useStore.getState().setSessionModel({ ...shown, current: value });
       } catch (err) {
         emitToast({
           kind: "error",

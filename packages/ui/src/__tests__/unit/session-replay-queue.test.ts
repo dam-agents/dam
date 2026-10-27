@@ -26,6 +26,7 @@ vi.mock("react", () => ({
 vi.mock("../../store.js", () => ({ useStore: { getState: () => h.state } }));
 vi.mock("../../modules/acp/utils.js", () => ({ RECONNECT_DELAYS: [0] }));
 vi.mock("../../modules/sessions/api/acp-session-ops.js", () => ({
+  findAgentSession: async () => null,
   handOverUndelivered: async () => {},
 }));
 vi.mock("../../modules/sessions/lib/undelivered-store.js", () => ({

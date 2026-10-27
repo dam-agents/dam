@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   type CrashMark,
   nextCrashNotices,
+  terminationNotice,
 } from "../../modules/agents/lib/crash-notices.js";
 
 type Watched = Parameters<typeof nextCrashNotices>[1][number];
@@ -183,9 +184,18 @@ describe("nextCrashNotices", () => {
     ).toEqual([
       [],
       [
-        "Your VM agents ran out of memory together, so Ada, Bo and Cy restarted. Disable agents you aren't using to free memory.",
+        "Your VM agents ran out of memory together, so Ada, Bo and Cy restarted. Stop agents you aren't using to free memory.",
       ],
     ]);
+  });
+
+  // TEST_SCENARIO: the restored UI offers Stop and Pause but no Disable, so the shared-memory notice for one agent names Stop.
+  it("points a shared-memory restart at Stop", () => {
+    expect(
+      terminationNotice("Scout", "RunnerOutOfMemory", "memory ran out", true),
+    ).toBe(
+      "Your VM agents ran out of memory together, so this agent restarted. Stop agents you aren't using to free memory.",
+    );
   });
 
   // TEST_SCENARIO: a VM agent refused for full storage did not crash. The notice must say it can't start and carry the storage next step, without the console tail.

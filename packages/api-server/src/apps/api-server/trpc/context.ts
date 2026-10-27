@@ -471,6 +471,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
       vmAgentSizing: vmAgentSizing(config),
+      agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
     };

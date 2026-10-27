@@ -22,8 +22,8 @@ import { totalCostUsd } from "../lib/totals.js";
 
 const PAGE_DESCRIPTION = (
   <span className="block max-w-[460px]">
-    LLM API spend across all supported agents (currently only Claude Code and
-    derivatives).
+    LLM API spend across all your agents. Calls that a subscription covers are
+    not included.
   </span>
 );
 

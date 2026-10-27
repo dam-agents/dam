@@ -30,13 +30,16 @@ import {
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
-import { handOverUndelivered } from "../api/acp-session-ops.js";
+import {
+  findAgentSession,
+  handOverUndelivered,
+} from "../api/acp-session-ops.js";
 import { draftKey } from "../lib/draft-key.js";
 import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
-import { sessionModelFrom } from "../lib/session-model.js";
+import { sessionModelFrom, withRoutedCurrent } from "../lib/session-model.js";
 import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
 
 const REPLAY_IDLE_WINDOW_MS = 3000;
@@ -332,6 +335,10 @@ export function useAcpConnection(
         updates: [] as CollectedUpdate[],
       };
       collectorRef.current = collector;
+      const listed =
+        replayBefore === undefined && selectedAgent
+          ? findAgentSession(selectedAgent, sid).catch(() => null)
+          : null;
       let result: unknown;
       try {
         result = await live.connection.agent.request("session/load", {
@@ -434,14 +441,31 @@ export function useAcpConnection(
         turn.success ? turn.data : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
-        useStore
-          .getState()
-          .setSessionModel(
-            sessionModelFrom(
-              sid,
-              (result as LoadSessionResponse | null)?.configOptions,
-            ),
+        const shown = sessionModelFrom(
+          sid,
+          (result as LoadSessionResponse | null)?.configOptions,
+        );
+        useStore.getState().setSessionModel(shown);
+        void listed?.then((match) => {
+          const store = useStore.getState();
+          if (
+            !match?.model ||
+            store.sessionId !== sid ||
+            store.sessionModel !== shown ||
+            generation !== generationRef.current
+          )
+            return;
+          store.setSessionModel(
+            shown
+              ? withRoutedCurrent(shown, match.model)
+              : {
+                  sessionId: sid,
+                  configId: "model",
+                  current: match.model,
+                  choices: [],
+                },
           );
+        });
         useStore
           .getState()
           .setRunStarts([
