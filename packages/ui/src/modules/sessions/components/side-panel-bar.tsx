@@ -4,7 +4,6 @@ import {
   Folder,
   Gears,
   Notification,
-  Task,
   Wikis,
 } from "@carbon/icons-react";
 import type { ReactNode } from "react";
@@ -27,14 +26,10 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
-  { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
 
-const APP_TABS: ReadonlySet<SidePanelTab> = new Set([
-  "getting-started",
-  "approvals",
-]);
+const APP_TABS: ReadonlySet<SidePanelTab> = new Set(["approvals"]);
 
 export interface SidePanelBadge {
   count: number;
