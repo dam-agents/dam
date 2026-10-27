@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-25
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -51,7 +51,7 @@ The Session's settings follow only its model: once the settings or the spawn nam
 A set harness binds: a spawn naming another is refused, and a spawn naming neither harness nor image gets it; a set model, mode or config option outranks the spawn's, and the result names what the settings set.
 With no set harness, a `spawn_subagent` call naming neither harness nor image runs on the agent's own harness, since models read the harness as optional and leave it out; a driver script's spawn still names one.
 The Session's harness supplies its model and each setting its harness binds, except model-valued ones, ones for the harness's own subagents, and a choice its catalog marks as waiting for a person's approval, since nobody is there to give one.
-A spawn on an image alone keeps its own choices, and a script spawn has no Session, so neither binds nor inherits.
+A spawn on an image alone keeps its own choices, and a script spawn reads no Session's settings, so neither binds nor inherits.
 A script spawn that names no model takes the Driver's saved chat default instead, when that default runs on the harness the spawn names: the owner chose that model, so the sub-agent runs on it rather than being refused.
 A spawn on another harness, or from a Driver with no default model, is still refused, telling the script to name a model.
 A Session whose settings cannot be read refuses the spawn rather than run it without them; a Session the runtime does not track has none.
@@ -155,7 +155,9 @@ Each harness's adapter shapes tool output its own way — in the standard conten
 Some adapters stream a shell command's output only in parts beside the tool call; the chat adds them up through the same reader, while the runtime, which needs only tool spawns, leaves them aside.
 While children run and no line names them yet, the chat shows the Driver's running Invocations from the record, scoped to the Session it shows.
 A tool spawn records the Driver's Session that called it: the harness names it on each platform MCP call by an opaque reference the Driver's runtime hands it per Session, and the api-server asks the runtime which Session that is when it records the spawn.
-A chat shows the children its own Session spawned, and every child with no recorded Session — a script spawn, a harness that names no Session, a lookup that failed, a record from before Sessions were kept — so nothing that showed before goes missing.
+A script spawn records the Session the script runs in the same way: the SDK names it from the script's environment — the Session reference where the harness puts one there, and the Session id a harness or a terminal sets on its shell commands — and the api-server takes a reference the runtime resolves, or an id the runtime tracks.
+A script run outside any Session names none.
+A chat shows the children its own Session spawned, and every child with no recorded Session — a script run outside a Session, a harness that names no Session, a lookup that failed, a record from before Sessions were kept — so nothing that showed before goes missing.
 The recorded Session also places the child's [Metered Spend](spend-limits.md#ledger) under that Session of the Driver, with the spend of the children it spawns in turn; a child with no recorded Session adds its spend to no Session.
 Only the Driver's own children are scoped; a grandchild shows under its child.
 
@@ -211,5 +213,6 @@ The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, and write result schemas in shorthand.
 A failure raises with the platform's reason; a failed script's error still reads its streams.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.
+A spawn names the Driver's Session the script runs in, when its environment has one, so the chat scopes the child to that Session ([the delegation record](#the-delegation-record)).
 The HTTP routes are the contract; the clients stay thin.
 Sources: [`packages/driver-sdk/`](../../packages/driver-sdk/), [`packages/driver-sdk-py/`](../../packages/driver-sdk-py/).

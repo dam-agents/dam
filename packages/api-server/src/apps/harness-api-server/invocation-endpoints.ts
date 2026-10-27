@@ -14,9 +14,19 @@ import {
   type SpawnOutcome,
 } from "./driver-ops.js";
 import { resolveAgent } from "./agent-auth.js";
+import { SESSION_REF_HEADER } from "agent-runtime-api";
+import {
+  SESSION_ID_HEADER,
+  sessionNamedBy,
+  type SessionNamed,
+} from "./spawning-session.js";
 
 export interface InvocationEndpointsDeps extends DriverOpsDeps {
   readAgent: (id: string) => Promise<KubeObject | null>;
+  spawningSession: (
+    driverId: string,
+    named: SessionNamed,
+  ) => Promise<string | null>;
 }
 
 const REFUSAL_STATUS = {
@@ -39,10 +49,11 @@ export function mountInvocationRoutes(
   };
 
   app.post("/api/agents/:id/invocations", async (c) => {
-    const ops = await driverOps(c.req.param("id")!);
+    const driverId = c.req.param("id")!;
+    const ops = await driverOps(driverId);
     if (!ops) return c.json({ error: "not found" }, 404);
 
-    let spawn: () => Promise<SpawnOutcome>;
+    let spawn: (from: SpawnFrom) => Promise<SpawnOutcome>;
     try {
       const raw: unknown = await c.req.json();
       if (hasOversizedArray(raw)) {
@@ -53,7 +64,14 @@ export function mountInvocationRoutes(
       return c.json({ error: (err as Error).message }, 400);
     }
 
-    const outcome = await spawn();
+    const named = sessionNamedBy(
+      c.req.header(SESSION_REF_HEADER),
+      c.req.header(SESSION_ID_HEADER),
+    );
+    const driverSessionId = named
+      ? await deps.spawningSession(driverId, named)
+      : null;
+    const outcome = await spawn({ origin: "script", driverSessionId });
     if (!outcome.ok) {
       return c.json(
         { error: outcome.message, kind: outcome.kind },
@@ -123,12 +141,17 @@ export function mountInvocationRoutes(
   });
 }
 
-function spawnFor(ops: DriverOps, raw: unknown): () => Promise<SpawnOutcome> {
+type SpawnFrom = Parameters<DriverOps["spawn"]>[1];
+
+function spawnFor(
+  ops: DriverOps,
+  raw: unknown,
+): (from: SpawnFrom) => Promise<SpawnOutcome> {
   const fields =
     typeof raw === "object" && raw !== null ? Object.keys(raw) : [];
   if (!fields.includes("script")) {
     const body = spawnInvocationRequestSchema.parse(raw);
-    return () => ops.spawn(body);
+    return (from) => ops.spawn(body, from);
   }
   const conflicting = ["prompt", "schema", "harnessConfig"].filter((f) =>
     fields.includes(f),
@@ -138,5 +161,5 @@ function spawnFor(ops: DriverOps, raw: unknown): () => Promise<SpawnOutcome> {
       `a script spawn takes no ${conflicting.join(", ")}: pass a script or a prompt`,
     );
   const body = spawnScriptInvocationRequestSchema.parse(raw);
-  return () => ops.spawnScript(body);
+  return (from) => ops.spawnScript(body, from);
 }

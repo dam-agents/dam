@@ -3,7 +3,7 @@ import type {
   SpawnInvocationResponse,
   InvocationView,
 } from "api-server-api";
-import { req, log, sleep } from "./http.js";
+import { req, log, sleep, spawningSessionHeaders } from "./http.js";
 import { s, type SchemaSpec } from "./schema.js";
 
 export interface ImageInfo {
@@ -121,6 +121,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     "POST",
     "/invocations",
     body,
+    spawningSessionHeaders(),
   );
   const tag = label ?? harness ?? image ?? id;
   log(`spawned ${tag} -> ${id}`);

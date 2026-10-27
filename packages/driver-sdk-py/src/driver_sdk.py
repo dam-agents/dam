@@ -82,7 +82,41 @@ _RETRY_ATTEMPTS = 4
 _RETRY_BASE_DELAY_S = 1.0
 
 
-def _request(method: str, path: str, body: Any | None = None) -> Any:
+_SESSION_REF_VAR = "PLATFORM_SESSION_REF"
+_SESSION_ID_VARS = (
+    "HARNESS_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ID",
+    "CODEX_THREAD_ID",
+    "PI_SESSION_ID",
+)
+
+
+def _spawning_session_headers() -> dict[str, str]:
+    """The driver's session this script runs in, as the harness put it in the
+    script's environment, so a spawn records it and its sub-agent shows only
+    in that session's chat. Pi hands its chat sessions a session ref; every
+    harness, and a terminal, sets a session id on its shell commands, the
+    platform's own variable first. A blank value names nothing: Pi sets a
+    blank ref outside a chat session."""
+    headers: dict[str, str] = {}
+    ref = os.environ.get(_SESSION_REF_VAR, "").strip()
+    if ref:
+        headers["x-platform-session-ref"] = ref
+    session_id = next(
+        (v for v in (os.environ.get(n, "").strip() for n in _SESSION_ID_VARS) if v),
+        None,
+    )
+    if session_id:
+        headers["x-platform-session-id"] = session_id
+    return headers
+
+
+def _request(
+    method: str,
+    path: str,
+    body: Any | None = None,
+    headers: dict[str, str] | None = None,
+) -> Any:
     """One platform call. GETs retry transient failures with backoff, since a
     long run polls thousands of times. A POST is sent once: a duplicated
     POST /invocations is a second sub-agent, not a duplicate."""
@@ -97,7 +131,10 @@ def _request(method: str, path: str, body: Any | None = None) -> Any:
             f"{root}{path}",
             data=data,
             method=method,
-            headers={"content-type": "application/json"} if data else {},
+            headers={
+                **({"content-type": "application/json"} if data else {}),
+                **(headers or {}),
+            },
         )
         try:
             with urllib.request.urlopen(req) as res:
@@ -328,7 +365,9 @@ def spawn(
     if harness_config:
         body["harnessConfig"] = harness_config
 
-    invocation_id = _request("POST", "/invocations", body)["id"]
+    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
+        "id"
+    ]
     _log(f"spawned {name} ({invocation_id})")
 
     view = _await(
@@ -478,7 +517,9 @@ def spawn_script(
     body["script"] = script
     name = label or harness or image or "invocation"
 
-    invocation_id = _request("POST", "/invocations", body)["id"]
+    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
+        "id"
+    ]
     _log(f"spawned {name} ({invocation_id})")
     view = _await(
         invocation_id,

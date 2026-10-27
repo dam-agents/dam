@@ -486,6 +486,7 @@ function makeApp(templates: Array<{ id: string; spec: object }>) {
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
     scriptOutputs: {} as never,
+    spawningSession: async () => null,
     readAgent: async (id: string) =>
       id === "driver-1"
         ? {
