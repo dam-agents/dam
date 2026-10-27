@@ -214,7 +214,7 @@ Without `pr-open`, run the repository's checks, then open the pull request with 
 ## 7. Take it to merge
 
 Hand the pull request from step 6 to the `babysit` skill: it watches CI and the code reviews, fixes the pull request after each round, and asks for the next review, until the reviews approve and CI is green.
-Tell it the pull request is already open and its size settled in step 2b: `babysit` would otherwise open one with `pr-open` without the decisions, or offer to split it again.
+It finds the pull request already open, so it does not open another; tell it the size is settled in step 2b, so it does not offer to split the change again.
 Keep the decision log at hand while it runs: a review that questions a recorded decision gets answered from the log, not changed in the code.
 Then ask the user for the go-ahead to merge, and let `babysit` follow the merge until the pull request is merged.
 Without `babysit`, run the same loop yourself: wait for CI and the reviews, fix every failure and blocking finding in one push per round, and repeat.
