@@ -2,6 +2,7 @@ import { authConfigSchema } from "api-server-api";
 import { type User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 
 import { rememberReturnPath, takeReturnPath } from "./lib/return-path.js";
+import { clearPaletteStorage } from "./modules/command-palette/lib/palette-storage.js";
 import { readStoredTheme } from "./modules/platform/store/theme.js";
 import { draftWriter } from "./modules/sessions/lib/draft-snapshot.js";
 import { removeAllUndelivered } from "./modules/sessions/lib/undelivered-store.js";
@@ -102,6 +103,7 @@ export function getUser(): User | null {
 export async function logout(): Promise<void> {
   draftWriter.clearAll();
   removeAllUndelivered();
+  clearPaletteStorage();
   await userManager.signoutRedirect();
 }
 
