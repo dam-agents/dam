@@ -2,6 +2,7 @@ import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 import type { EventContext } from "agent-runtime-api";
 import type { TriggerSessionDriver } from "../../modules/acp/index.js";
+import { PromptNotTakenError } from "../../modules/acp/services/trigger-session-driver.js";
 import {
   createTriggerPlugin,
   type EventReporter,
@@ -155,6 +156,33 @@ describe("trigger plugin", () => {
       ...scheduleMeta("sch-cron"),
       fireEvent: undefined,
     });
+  });
+
+  /** TEST_SCENARIO: a one-time fire's first prompt was refused before any turn took it, so nothing ran. The fire fails instead of settling, so its event is delivered again, and it reports no failure, since the run is still to come. */
+  it("fails a fire whose first prompt was not taken, and reports nothing", async () => {
+    const reports: unknown[] = [];
+    const driver: TriggerSessionDriver = {
+      start: () =>
+        Promise.reject(new PromptNotTakenError("s-1", "model refused")),
+    };
+    const stateStore: TriggerStateStore = {
+      getSessionForSchedule: () => undefined,
+      setSessionForSchedule: vi.fn(),
+      clearSessionForSchedule: vi.fn(),
+    };
+    const handler = handlerFor(
+      {
+        driver,
+        stateStore,
+        reporter: { report: async (input) => void reports.push(input) },
+      },
+      "trigger",
+    );
+
+    await expect(
+      handler({ scheduleId: "sch-once", task: "do it", once: true }, ctx),
+    ).rejects.toBeInstanceOf(PromptNotTakenError);
+    expect(reports).toEqual([]);
   });
 
   it("stamps metadata and records the session when continuous mode first fires", async () => {

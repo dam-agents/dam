@@ -54,6 +54,7 @@ async function boot(resumes: boolean): Promise<World> {
       acpRuntime: world.runtime,
       modelRequired: () => false,
       modelMissing: () => false,
+      sessionMetadata,
     }),
     log: () => {},
   });
@@ -139,6 +140,7 @@ describe("acp-runtime: interrupted-turn recovery with nobody watching", () => {
         acpRuntime: world.runtime,
         modelRequired: () => false,
         modelMissing: () => false,
+        sessionMetadata,
       }),
       log: () => {},
     });

@@ -1,6 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { PIN_MODEL_METHOD, type SessionDefaultKind } from "agent-runtime-api";
-import { createInProcessCaller } from "../infrastructure/in-process-request.js";
-import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
+import {
+  ConnectionClosedError,
+  createInProcessCaller,
+  type InProcessCaller,
+} from "../infrastructure/in-process-request.js";
+import type {
+  PlatformSessionMeta,
+  SessionMetadataStore,
+} from "../infrastructure/session-metadata-store.js";
 import {
   MESSAGE_SURFACE,
   SCHEDULE_SURFACE,
@@ -59,10 +67,75 @@ export class NoSessionModelError extends Error {
   }
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a fresh Session's first prompt was refused, or
+ * never reached the runtime, so no turn ran and the Session holds nothing.
+ * The run that opened it can be started again.
+ */
+export class PromptNotTakenError extends Error {
+  constructor(
+    readonly sessionId: string,
+    cause: string,
+  ) {
+    super(`the session's first prompt was not taken: ${cause}`);
+    this.name = "PromptNotTakenError";
+  }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how long a fresh Session's start waits for its
+ * first turn. The prompt waits behind nothing but the Session's own settings,
+ * so a refusal comes within seconds. A prompt still queued after this is left
+ * to the runtime, as before: failing the start then could run the task twice.
+ */
+const FIRST_TURN_WAIT_MS = 30_000;
+
+function firstTurn(
+  caller: InProcessCaller,
+  params: { sessionId: string; prompt: unknown[]; surface: string | null },
+): Promise<void> {
+  const promptId = randomUUID();
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, FIRST_TURN_WAIT_MS);
+    timer.unref?.();
+    const settle = (err?: unknown): void => {
+      clearTimeout(timer);
+      if (err === undefined) resolve();
+      else reject(err as Error);
+    };
+    caller.onNotification((method, notified) => {
+      if (
+        method === "platform/promptStarted" &&
+        (notified as { promptId?: unknown } | undefined)?.promptId === promptId
+      )
+        settle();
+    });
+    caller
+      .request("session/prompt", {
+        sessionId: params.sessionId,
+        prompt: params.prompt,
+        _meta: {
+          platform: {
+            promptId,
+            ...(params.surface && { surface: params.surface }),
+          },
+        },
+      })
+      .then(
+        () => settle(),
+        (err: unknown) =>
+          settle(
+            err instanceof ConnectionClosedError && err.sent ? undefined : err,
+          ),
+      );
+  });
+}
+
 export function createTriggerSessionDriver(deps: {
   acpRuntime: AcpRuntime;
   modelRequired: (harness: string | undefined) => boolean;
   modelMissing: (sessionId: string) => boolean;
+  sessionMetadata: Pick<SessionMetadataStore, "tombstone">;
 }): TriggerSessionDriver {
   return {
     async start({
@@ -149,12 +222,21 @@ export function createTriggerSessionDriver(deps: {
           : unattended
             ? SCHEDULE_SURFACE
             : null;
-        caller.notify("session/prompt", {
-          sessionId,
-          prompt: [{ type: "text", text: task }],
-          ...(surface && { _meta: { platform: { surface } } }),
-        });
-
+        const prompt = [{ type: "text", text: task }];
+        if (resumeSessionId) {
+          caller.notify("session/prompt", {
+            sessionId,
+            prompt,
+            ...(surface && { _meta: { platform: { surface } } }),
+          });
+          return { sessionId, openedOn };
+        }
+        await firstTurn(caller, { sessionId, prompt, surface }).catch(
+          (err: unknown) => {
+            deps.sessionMetadata.tombstone(sessionId);
+            throw new PromptNotTakenError(sessionId, (err as Error).message);
+          },
+        );
         return { sessionId, openedOn };
       } finally {
         caller.close();

@@ -24,9 +24,24 @@ function describeError(
     : message;
 }
 
+export class ConnectionClosedError extends Error {
+  constructor(
+    method: string,
+    readonly sent: boolean,
+  ) {
+    super(
+      sent
+        ? `${method} failed: the runtime closed the connection before answering`
+        : `${method} not sent: the runtime had closed the connection`,
+    );
+    this.name = "ConnectionClosedError";
+  }
+}
+
 export interface InProcessCaller {
   request<T>(method: string, params: unknown): Promise<T>;
   notify(method: string, params: unknown): void;
+  onNotification(handler: (method: string, params: unknown) => void): void;
   close(): void;
 }
 
@@ -34,7 +49,11 @@ export function createInProcessCaller(
   attach: (channel: InMemoryChannel) => void,
 ): InProcessCaller {
   const channel = createInMemoryChannel();
-  const pending = new Map<number, (frame: JsonRpcResponseFrame) => void>();
+  const pending = new Map<
+    number,
+    (frame: JsonRpcResponseFrame | null) => void
+  >();
+  let notificationHandler: (method: string, params: unknown) => void = () => {};
   let nextId = 1;
 
   channel.onServerMessage((line) => {
@@ -42,6 +61,16 @@ export function createInProcessCaller(
     try {
       frame = JSON.parse(line);
     } catch {
+      return;
+    }
+    if (
+      frame &&
+      typeof frame === "object" &&
+      !("id" in frame) &&
+      typeof (frame as { method?: unknown }).method === "string"
+    ) {
+      const { method, params } = frame as { method: string; params?: unknown };
+      notificationHandler(method, params);
       return;
     }
     if (
@@ -63,12 +92,7 @@ export function createInProcessCaller(
   channel.onEnd(() => {
     for (const [id, handler] of [...pending]) {
       pending.delete(id);
-      handler({
-        id,
-        error: {
-          message: "the runtime closed the connection before answering",
-        },
-      });
+      handler(null);
     }
   });
 
@@ -76,9 +100,15 @@ export function createInProcessCaller(
 
   return {
     request<T>(method: string, params: unknown): Promise<T> {
+      if (!channel.isOpen())
+        return Promise.reject(new ConnectionClosedError(method, false));
       return new Promise<T>((resolve, reject) => {
         const id = nextId++;
         pending.set(id, (frame) => {
+          if (frame === null) {
+            reject(new ConnectionClosedError(method, true));
+            return;
+          }
           if (frame.error) {
             reject(
               new Error(`${method} failed: ${describeError(frame.error)}`),
@@ -97,6 +127,9 @@ export function createInProcessCaller(
       channel.sendToServer(
         JSON.stringify({ jsonrpc: "2.0", id, method, params }),
       );
+    },
+    onNotification(handler) {
+      notificationHandler = handler;
     },
     close() {
       channel.close();

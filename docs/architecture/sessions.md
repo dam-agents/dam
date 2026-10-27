@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Session inside the pod
 
@@ -157,6 +157,7 @@ The resumed turn is unattended: nobody reads it live, so it waits for the harnes
 A turn the platform stopped — a Sleep, an eviction, a restart, all of which reach the runtime as SIGTERM — is marked stopped as the runtime shuts down, so the notice and the chat name the stop instead of blaming memory.
 The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#prompt-delivery) of a prompt it never got.
 A harness stores a new session only while its first turn runs, so the runtime flags a session from `session/new` as unstored until the harness answers a prompt of it, and the marker of an unstored session's turn keeps that turn's prompt.
+A run the runtime starts in a fresh session itself — a fire, recovery's re-run, an outcome turn — counts as started only once the harness has taken its first prompt into a turn: a refusal before that, which nobody would hear once the run's own connection closed, fails the start and retires the empty session, so the caller can start the run again.
 A scheduled session the harness never stored cannot be resumed at all — the harness holds no such conversation — so recovery runs the marker's prompt again in a fresh session of the same schedule, unattended, which is how a fire that landed on a hibernated Agent still does its work when the machine goes down on its first turn.
 When the harness exits during such a turn, the runtime moves the kept prompt to the undelivered document; at a shutdown of the agent-runtime process the marker keeps it, for boot recovery or a failed load to settle.
 When the harness cannot load an unstored session, the runtime moves the kept prompt to the undelivered document, retires a session left with no undelivered prompt, and puts `data.platform.unstored` with the undelivered prompts on the load error.
