@@ -1,4 +1,10 @@
-import { Calendar, Launch, Locked, TrashCan, UserMultiple } from "@carbon/icons-react";
+import {
+  Calendar,
+  Launch,
+  Locked,
+  TrashCan,
+  UserMultiple,
+} from "@carbon/icons-react";
 import type { EnvironmentView } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";

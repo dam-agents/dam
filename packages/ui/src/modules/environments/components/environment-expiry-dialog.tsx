@@ -1,4 +1,7 @@
-import { ENVIRONMENT_EXPIRY_MAX_DAYS, type EnvironmentView } from "api-server-api";
+import {
+  ENVIRONMENT_EXPIRY_MAX_DAYS,
+  type EnvironmentView,
+} from "api-server-api";
 import { useState } from "react";
 
 import { FormField } from "@/components/form-field";

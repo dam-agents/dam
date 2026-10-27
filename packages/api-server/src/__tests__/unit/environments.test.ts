@@ -294,12 +294,10 @@ describe("changing and deleting Environments", () => {
     expect(members.environmentLists.get(first.id)).toEqual(["c@example.com"]);
 
     const owners = await service.list(vmOwning.id!);
-    expect(owners.map((e) => [e.name, e.members, e.agentMemberCount])).toEqual(
-      [
-        ["a", ["c@example.com"], 2],
-        ["b", [], 2],
-      ],
-    );
+    expect(owners.map((e) => [e.name, e.members, e.agentMemberCount])).toEqual([
+      ["a", ["c@example.com"], 2],
+      ["b", [], 2],
+    ]);
     const agentView = await mine.list();
     expect(agentView.map((e) => [e.name, e.peopleWhoMayOpen])).toEqual([
       ["a", 4],
