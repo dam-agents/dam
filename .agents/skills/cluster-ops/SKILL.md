@@ -157,7 +157,7 @@ The cluster tasks load the tools' PATH from the image's mise themselves; in a sh
 - `mise run e2e` — full from-scratch run: nuke the test VM, install a fresh cluster, run specs, tear down (the CI path)
 - `mise run e2e:loop` — fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs.
   Options: `--headed --full --rebuild=controller,api-server,ui,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking)
-- `mise run e2e:reset` — data wipe only: drop+recreate the platform DB, delete agents (CMs/sts/pods/PVCs), clear stored Playwright auth.
+- `mise run e2e:reset` — data wipe only: drop+recreate the platform DB, delete agents (CMs/sts/pods/PVCs) and VM runners, clear stored Playwright auth.
   Leaves the cluster running
 
 `e2e:loop` keeps a persistent `platform-k3s-test` VM, so reruns skip VM/Istio/cert-manager/Keycloak provisioning; `mise run e2e` nukes it (shared name) and the next `e2e:loop` bootstraps a fresh one.
