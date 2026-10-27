@@ -353,6 +353,10 @@ const modelRouter = composeModelRouter({
     variables: sessionEnvVars,
     log: modelRouterLog,
   }),
+  turnStartedAt: (sessionId) => {
+    const at = sessionMetadata.get(sessionId)?.runStartedAt;
+    return at === undefined ? null : Date.parse(at);
+  },
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(

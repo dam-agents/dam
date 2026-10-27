@@ -10,6 +10,7 @@ import {
   floorOutputBudget,
 } from "./domain/replay.js";
 import {
+  openingCallSessionOf,
   sessionOf,
   sessionOfRunningTurn,
   sessionStampOf,
@@ -35,6 +36,7 @@ export interface ComposeModelRouterOpts {
   terminalSessionOf?: (harnessSessionId: string) => string | undefined;
   runningSessionsOf?: (harness: string) => string[];
   callerSessions?: CallerSessionLookup;
+  turnStartedAt?: (sessionId: string) => number | null;
   onCall?: (record: ModelCallRecord) => void;
   onCallStarted?: (session: string | null) => void;
   onCallEnded?: (session: string | null, answered: boolean) => void;
@@ -59,15 +61,39 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
     !opts.isSession || opts.isSession(id)
       ? id
       : (opts.terminalSessionOf?.(id) ?? null);
+  const lastMarkedAt = new Map<string, number>();
+  const openedAt = new Map<string, number>();
   const guessed = new WeakSet<IncomingMessage>();
+  const openingCallOf = (harness: string): string | null => {
+    if (!opts.harnesses[harness]?.unmarkedOpeningCall) return null;
+    const opened = openingCallSessionOf(
+      (opts.runningSessionsOf?.(harness) ?? []).flatMap((sessionId) => {
+        const startedAt = opts.turnStartedAt?.(sessionId) ?? null;
+        return startedAt === null
+          ? []
+          : [
+              {
+                sessionId,
+                startedAt,
+                lastMarkedAt: lastMarkedAt.get(sessionId) ?? null,
+                openedAt: openedAt.get(sessionId) ?? null,
+              },
+            ];
+      }),
+    );
+    if (opened !== null) openedAt.set(opened, Date.now());
+    return opened;
+  };
   /**
    * UNIT_BOUNDARY_DESCRIPTION: the Session a call's spend is booked to, which
    * only stamps the call and its record and never picks its model. A call
    * whose own marker names a Session books there. A call with no marker, one
    * routed by the running-turn guess, or one carrying the id of a run that is
    * no Session, such as `claude -p` or an SDK script started from a
-   * Session's shell, books to the Session its process inherited. Anything
-   * else stays as it was routed.
+   * Session's shell, books to the Session its process inherited. An unmarked
+   * call of a harness whose opening call carries no marker books to the
+   * running turn still waiting for its first call. Anything else stays as it
+   * was routed.
    */
   const bookedSessionOf = async (call: {
     req: IncomingMessage;
@@ -79,12 +105,18 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
       routed !== null &&
       knownSessionOf(routed) === routed &&
       !guessed.has(call.req)
-    )
+    ) {
+      lastMarkedAt.set(routed, Date.now());
       return routed;
+    }
     const inherited = opts.callerSessions
       ? await opts.callerSessions.sessionOf(call.req.socket, knownSessionOf)
       : null;
-    return inherited ?? routed;
+    return (
+      inherited ??
+      (call.routed === null ? openingCallOf(call.harness) : null) ??
+      call.routed
+    );
   };
   return createModelRouter({
     catalog: opts.catalog,

@@ -2,6 +2,7 @@ export { composeModelRouter } from "./compose.js";
 export {
   isAuxiliaryCall,
   isSideCall,
+  openingCallSessionOf,
   SESSION_HEADER,
   sessionOf,
   sessionOfRunningTurn,

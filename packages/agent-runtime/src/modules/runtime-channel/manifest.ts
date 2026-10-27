@@ -155,6 +155,7 @@ export const modelRouterBinding = z.object({
   credentialEnv: z.array(z.string().min(1)).optional(),
   defaultModelEnv: z.array(z.string().min(1)).optional(),
   sessionFromRunningTurn: z.boolean().optional(),
+  unmarkedOpeningCall: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
   classifierModelEnv: z.string().min(1).optional(),
   nonClaudeModelEnv: z
