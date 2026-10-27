@@ -5,39 +5,25 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
 import { PageHeader } from "@/components/ui/page-header";
-import { type TabDef, Tabs } from "@/components/ui/tabs";
+import { Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
-import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
-import { useOperatorAvailability } from "../../operator/api/queries.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
-import { routeToPath, type SettingsTab } from "../../platform/lib/routes.js";
+import { routeToPath } from "../../platform/lib/routes.js";
 import { ProfileSection } from "../../profiles/components/profile-section.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
-import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
-import { useUsageInspectAvailability } from "../../usage/api/queries.js";
 import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
 import { AboutTab } from "../components/about-tab.js";
 import { ToolActivitySetting } from "../components/tool-activity-setting.js";
-
-const baseTabs: readonly TabDef<SettingsTab>[] = [
-  { value: "account", label: "Account" },
-  { value: "appearance", label: "Appearance" },
-  { value: "providers", label: "Providers" },
-  { value: "connections", label: "Connections" },
-  { value: "api-keys", label: "API keys" },
-  { value: "usage", label: "Usage" },
-  { value: "schedules", label: "Schedules" },
-];
+import { useSettingsTabs } from "../hooks/use-settings-tabs.js";
 
 const themeOptions = [
   {
@@ -61,47 +47,11 @@ const themeOptions = [
 ];
 
 export function SettingsView() {
-  const { data: flags, isSuccess: flagsLoaded } = useFeatures();
-  const featuresMenuRevealed = useStore((s) => s.featuresMenuRevealed);
-  const showFeatures =
-    featuresMenuRevealed || Object.values(flags ?? {}).some(Boolean);
-  const slackInstall = useSlackInstallAvailability();
-  const showSlackWorkspaces = slackInstall.data === true;
-  const usageInspect = useUsageInspectAvailability();
-  const showAnalytics = usageInspect.data === true;
-  const operatorAccess = useOperatorAvailability();
-  const showOperator = operatorAccess.data?.isOperator === true;
-  const tabs = [
-    ...baseTabs,
-    ...(showSlackWorkspaces
-      ? [{ value: "slack-workspaces" as const, label: "Slack workspaces" }]
-      : []),
-    ...(showAnalytics
-      ? [{ value: "analytics" as const, label: "Analytics" }]
-      : []),
-    ...(showOperator
-      ? [{ value: "operator" as const, label: "Operator" }]
-      : []),
-    ...(showFeatures
-      ? [{ value: "features" as const, label: "Experimental features" }]
-      : []),
-    { value: "about" as const, label: `About ${getBrand().name}` },
-  ];
+  const { tabs, hidden, settledHidden } = useSettingsTabs();
   const rawTab = useStore((s) => s.settingsTab);
-  const hiddenTab =
-    (rawTab === "features" && !showFeatures) ||
-    (rawTab === "slack-workspaces" && !showSlackWorkspaces) ||
-    (rawTab === "analytics" && !showAnalytics) ||
-    (rawTab === "operator" && !showOperator);
-  const activeTab = hiddenTab ? "account" : rawTab;
+  const activeTab = hidden(rawTab) ? "account" : rawTab;
   const tabStrip = useRef<HTMLDivElement>(null);
-  const hiddenTabSettled =
-    (rawTab === "features" && !showFeatures && flagsLoaded) ||
-    (rawTab === "slack-workspaces" &&
-      slackInstall.isSuccess &&
-      !showSlackWorkspaces) ||
-    (rawTab === "analytics" && usageInspect.isSuccess && !showAnalytics) ||
-    (rawTab === "operator" && operatorAccess.isSuccess && !showOperator);
+  const hiddenTabSettled = settledHidden(rawTab);
   useEffect(() => {
     if (!hiddenTabSettled) return;
     history.replaceState(

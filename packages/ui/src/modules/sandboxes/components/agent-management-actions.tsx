@@ -1,15 +1,8 @@
 import { Cloud, Power, Restart, TrashCan } from "@carbon/icons-react";
 import { useEffect } from "react";
 
-import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import {
-  useDeleteAgent,
-  useSetAgentDisabled,
-} from "../../agents/api/mutations.js";
-import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
-import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
 import { AGENT_ENABLE_ANCHOR } from "../../agents/lib/overlay-copy.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
@@ -17,6 +10,7 @@ import {
   useEnvironments,
   useEnvironmentsEnabled,
 } from "../../environments/api/queries.js";
+import { useAgentManagement } from "../hooks/use-agent-management.js";
 import { type Action, ActionList } from "./action-list.js";
 
 export function AgentManagementActions({
@@ -26,13 +20,8 @@ export function AgentManagementActions({
   agent: AgentView;
   display: AgentDisplay;
 }) {
-  const setView = useStore((s) => s.setView);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const showConfirm = useStore((s) => s.showConfirm);
-  const confirmDelete = useConfirmDeleteAgent();
-  const deleteAgent = useDeleteAgent();
-  const setDisabled = useSetAgentDisabled();
-  const { restart } = useRestartAgent();
+  const management = useAgentManagement();
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(environmentsEnabled ? agent.id : null, {
     poll: false,
@@ -46,45 +35,6 @@ export function AgentManagementActions({
         ?.scrollIntoView({ block: "center" });
   }, []);
 
-  const onToggleDisabled = async () => {
-    if (
-      !agent.disabled &&
-      !(await showConfirm(
-        "The agent stops now, and Slack, Telegram, schedules and SSH won't wake it until you enable it again.",
-        "Disable agent?",
-        { confirmLabel: "Disable" },
-      ))
-    )
-      return;
-    setDisabled.mutate({ id: agent.id, disabled: !agent.disabled });
-  };
-
-  const onRestart = async () => {
-    if (
-      await showConfirm(
-        "In-flight work is interrupted and the agent starts fresh.",
-        "Restart agent?",
-        { confirmLabel: "Restart" },
-      )
-    )
-      restart(agent.id);
-  };
-
-  const onDelete = async () => {
-    if (!(await confirmDelete(agent))) return;
-    deleteAgent.mutate(
-      { id: agent.id },
-      {
-        onSuccess: () =>
-          emitToast({
-            kind: "success",
-            message: `Agent “${agent.name}” deleted`,
-          }),
-      },
-    );
-    setView("home");
-  };
-
   const lifecycle: Action[] = [
     {
       id: AGENT_ENABLE_ANCHOR,
@@ -96,8 +46,8 @@ export function AgentManagementActions({
         : "Stop the agent and keep it asleep.",
       button: {
         label: agent.disabled ? "Enable" : "Disable",
-        disabled: setDisabled.isPending,
-        onClick: () => void onToggleDisabled(),
+        disabled: management.disabling,
+        onClick: () => void management.toggleDisabled(agent),
         testId: "agent-toggle-disabled",
       },
     },
@@ -116,7 +66,7 @@ export function AgentManagementActions({
       button: {
         label: "Restart",
         disabled: display.powerAction !== "restart",
-        onClick: () => void onRestart(),
+        onClick: () => void management.restart(agent),
       },
     },
   ];
@@ -141,8 +91,8 @@ export function AgentManagementActions({
         "Delete the agent with its workspace and sessions. There is no going back.",
       button: {
         label: "Delete",
-        disabled: deleteAgent.isPending,
-        onClick: () => void onDelete(),
+        disabled: management.deleting,
+        onClick: () => void management.remove(agent),
         danger: true,
       },
     },
