@@ -178,6 +178,9 @@ export function createSessionMetadataStore(
             createdAt: from?.createdAt ?? now(),
             seenAt: now(),
             lastActivityAt: now(),
+            ...(from?.continuedScheduleIds !== undefined && {
+              continuedScheduleIds: from.continuedScheduleIds,
+            }),
           },
         },
       });

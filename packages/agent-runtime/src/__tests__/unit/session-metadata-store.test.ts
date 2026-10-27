@@ -141,6 +141,17 @@ describe("createSessionMetadataStore", () => {
     expect(reopened.get("gone")).toBeUndefined();
   });
 
+  // TEST_SCENARIO: A rewind adopts the original session under a new id and takes its place, so the schedules that continued the original stay on the session that replaced it.
+  it("keeps the schedules that continued a session across a rewind", () => {
+    const store = createSessionMetadataStore(backend);
+    store.set("old", { mode: "chat" });
+    store.recordContinuation("old", "sch-a");
+
+    store.adopt("new", "old", { mode: "chat" });
+
+    expect(store.get("new")?.continuedScheduleIds).toEqual(["sch-a"]);
+  });
+
   it("drops a run stamp that outlived the process that set it", () => {
     writeFileSync(
       path,
