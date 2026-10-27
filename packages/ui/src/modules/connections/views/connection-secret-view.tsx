@@ -9,7 +9,7 @@ import { type FormEvent, type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { PAGE_TITLE } from "@/components/ui/page-header";
+import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
@@ -106,7 +106,7 @@ function SavedPage({ check }: { check?: CredentialCheck }) {
       }
     >
       {details.length > 0 && (
-        <span className="mb-3 block" data-testid="secret-request-check">
+        <span className="mb-3 block">
           {details.map((d) => (
             <span key={d} className="block font-mono text-foreground">
               {d}
@@ -373,11 +373,13 @@ function Page({
 }) {
   return (
     <div className="flex min-h-full flex-col px-6 py-12">
-      <div className="mx-auto w-full max-w-132">
-        <h1 className={cn("flex items-center gap-3", PAGE_TITLE)}>
-          <ConnectionIcon iconSlug={iconSlug ?? "key"} alt="" size={32} />
-          {title}
-        </h1>
+      <div className="mx-auto w-full max-w-[33rem]">
+        <PageHeader
+          title={title}
+          leading={
+            <ConnectionIcon iconSlug={iconSlug ?? "key"} alt="" size={32} />
+          }
+        />
         {children}
       </div>
     </div>
@@ -395,12 +397,9 @@ function Terminal({
 }) {
   return (
     <div className="flex min-h-full flex-col px-6 py-12">
-      <div className="mx-auto w-full max-w-132">
-        <h1 className={cn("flex items-center gap-3", PAGE_TITLE)}>
-          {icon}
-          {title}
-        </h1>
-        <p className="mt-6 text-sm text-muted-foreground">{children}</p>
+      <div className="mx-auto w-full max-w-[33rem]">
+        <PageHeader title={title} leading={icon} />
+        <div className="text-sm text-muted-foreground">{children}</div>
       </div>
     </div>
   );

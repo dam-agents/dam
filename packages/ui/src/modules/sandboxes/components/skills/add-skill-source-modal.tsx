@@ -1,27 +1,35 @@
+import { LogoGithub, Upload } from "@carbon/icons-react";
 import type { SkillSource } from "api-server-api";
-import { useMemo } from "react";
+import { useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
+import { type TabDef, Tabs } from "@/components/ui/tabs";
 
 import { useGithubSourceForm } from "../../hooks/use-github-source-form.js";
 import { useUploadStaging } from "../../hooks/use-upload-staging.js";
 import { GithubSourceTab } from "./github-source-tab.js";
-import { HiddenSourcesList } from "./hidden-sources-list.js";
 import { UploadSkillsTab } from "./upload-skills-tab.js";
+
+type Tab = "github" | "upload";
+
+const TABS: readonly TabDef<Tab>[] = [
+  {
+    value: "github",
+    label: "GitHub repository",
+    icon: <LogoGithub size={15} />,
+  },
+  { value: "upload", label: "Upload .md files", icon: <Upload size={15} /> },
+];
 
 export function AddSkillSourceModal({
   sources,
-  hiddenSources,
-  onShowSource,
   onClose,
   onCreate,
   onCreateSkills,
-  mode,
+  initialTab = "github",
   initialFiles,
 }: {
   sources: readonly SkillSource[];
-  hiddenSources: readonly SkillSource[];
-  onShowSource: (id: string) => Promise<boolean>;
   onClose: () => void;
   onCreate: (input: {
     name: string;
@@ -33,18 +41,11 @@ export function AddSkillSourceModal({
   ) => Promise<
     { ok: true } | { ok: false; conflictNames: string[]; message: string }
   >;
-  mode: "github" | "upload";
+  initialTab?: Tab;
   initialFiles?: File[];
 }) {
-  const allSources = useMemo(
-    () => [...sources, ...hiddenSources],
-    [sources, hiddenSources],
-  );
-  const githubForm = useGithubSourceForm({
-    sources: allSources,
-    onCreate,
-    onClose,
-  });
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const githubForm = useGithubSourceForm({ sources, onCreate, onClose });
   const uploadStaging = useUploadStaging({
     initialFiles,
     onCreateSkills,
@@ -52,20 +53,23 @@ export function AddSkillSourceModal({
   });
 
   return (
-    <Modal onClose={onClose}>
+    <Modal>
       <DialogHeader
-        title={mode === "github" ? "Add a GitHub source" : "Upload skills"}
+        title="Add skill source"
         onClose={onClose}
+        divided={false}
       />
 
-      {mode === "github" ? (
-        <GithubSourceTab
-          github={githubForm}
-          onClose={onClose}
-          footer={
-            <HiddenSourcesList sources={hiddenSources} onShow={onShowSource} />
-          }
-        />
+      <Tabs
+        ariaLabel="Skill source"
+        tabs={TABS}
+        value={tab}
+        onValueChange={setTab}
+        className="px-5 md:px-6"
+      />
+
+      {tab === "github" ? (
+        <GithubSourceTab github={githubForm} onClose={onClose} />
       ) : (
         <UploadSkillsTab staging={uploadStaging} onClose={onClose} />
       )}

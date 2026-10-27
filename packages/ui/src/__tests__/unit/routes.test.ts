@@ -8,17 +8,13 @@ const canonicalPaths = [
   "/chat/agent-1/sess-1",
   "/settings",
   "/settings/connections",
-  "/settings/schedules",
   "/terms",
   "/telegram/bind",
   "/slack/bind",
-  "/connections/secret",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
-  "/starter-kits/platform/code-reviewer",
-  "/starter-kits/link/acme/shared-kit",
-  "/analytics",
-  "/nonexistent",
+  "/agents/new",
+  "/artifacts",
 ];
 
 describe("route round-trip", () => {
@@ -33,50 +29,41 @@ describe("route round-trip", () => {
     "/inbox",
     "/experiments",
     "/experiments/new",
-    "/agents/new",
-    "/starter-kits/software",
   ])("sends the retired %s to Home", (path) => {
     expect(parseRoute(path).view).toBe("home");
   });
 
-  // TEST_SCENARIO: the sidebar's Artifacts and Starter kits each open their own page, and a link to either page lands there.
-  it("opens the Artifacts and Starter kits pages", () => {
-    expect(parseRoute("/artifacts")).toEqual({ view: "artifacts" });
-    expect(parseRoute("/starter-kits")).toEqual({ view: "starter-kits" });
-    expect(routeToPath({ view: "artifacts" })).toBe("/artifacts");
-    expect(routeToPath({ view: "starter-kits" })).toBe("/starter-kits");
-  });
-
-  // TEST_SCENARIO: a kit from a link is addressed by its repository, so a teammate can share the platform page itself: /starter-kits/link/<owner>/<repo> opens the kit modal for that repository, keeping the slash between owner and repository.
-  it("opens the kit modal for a kit from a link", () => {
-    expect(parseRoute("/starter-kits/link/acme/shared-kit")).toEqual({
-      view: "starter-kit",
-      catalog: "link",
-      kit: "acme/shared-kit",
-    });
-    expect(
-      routeToPath({ view: "starter-kit", catalog: "link", kit: "acme/kit.v2" }),
-    ).toBe("/starter-kits/link/acme/kit.v2");
-  });
-
-  it("opens the kit modal for a retired kit setup link", () => {
-    expect(parseRoute("/starter-kits/platform/code-reviewer/new")).toEqual({
-      view: "starter-kit",
-      catalog: "platform",
-      kit: "code-reviewer",
-    });
-  });
-
-  // TEST_SCENARIO: an unknown path is Not found and keeps its URL, rather than rendering Home or a default tab under the bad address.
+  // TEST_SCENARIO: the per-kind destinations are gone, and so are their paths. An unknown path is Home like any other, rather than something the router still carries a case for.
   it.each([
-    "/nonexistent",
-    "/settings/bogus",
-    "/settings/api-keys/extra",
     "/coding-agents",
+    "/coding-agents/new",
+    "/knowledge-bases",
+    "/knowledge-bases/kb-1",
     "/knowledge-bases/kb-1/settings",
-    "/sandboxes/sb-1/bogus",
-  ])("does not know %s", (path) => {
-    expect(parseRoute(path)).toEqual({ view: "not-found", path });
+  ])("no longer knows %s", (path) => {
+    expect(parseRoute(path).view).toBe("home");
+  });
+});
+
+// TEST_SCENARIO: the release links a session with no default model to the agent's Providers page, and the 0.2.23 model control lives on its setup page, so that section name lands on setup rather than Home.
+describe("a section the release names", () => {
+  it("lands on the old page that holds the same control", () => {
+    expect(parseRoute("/sandboxes/sb-1/providers")).toEqual({
+      view: "sandbox-home",
+      agentId: "sb-1",
+      sandboxSection: "setup",
+    });
+  });
+});
+
+// TEST_SCENARIO: a linked kit and the analytics page belong to the 0.2.24 shell. A link to either lands on Home, and a linked kit must never be read as a kit in a catalog named "linked".
+describe("a link the restored UI cannot open", () => {
+  it.each([
+    "/analytics",
+    "/starter-kits/linked",
+    "/starter-kits/linked/owner/repo",
+  ])("sends %s to Home", (path) => {
+    expect(parseRoute(path)).toEqual({ view: "home" });
   });
 });
 

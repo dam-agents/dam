@@ -1,16 +1,13 @@
-import { useState } from "react";
+import { Checkmark, Copy } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import { CopyButton } from "@/components/ui/copy-button";
-import type { CopyState } from "@/hooks/use-copy";
-import { externalLinkProps } from "@/lib/external-link";
+import { useCopy } from "@/hooks/use-copy";
 
 import {
   DialogBody,
   DialogFooter,
   DialogHeader,
 } from "../../../../components/modal.js";
-import { CLI_REFERENCE_URL } from "../../../../constants.js";
 
 interface Props {
   plaintext: string;
@@ -18,7 +15,7 @@ interface Props {
 }
 
 export function RevealToken({ plaintext, onClose }: Props) {
-  const [copyState, setCopyState] = useState<CopyState>("idle");
+  const { copy, state: copyState } = useCopy();
 
   return (
     <>
@@ -30,12 +27,24 @@ export function RevealToken({ plaintext, onClose }: Props) {
         </p>
         <div className="flex items-center gap-2 p-3 rounded-lg bg-muted border border-border font-mono text-xs">
           <code className="flex-1 break-all">{plaintext}</code>
-          <CopyButton
-            value={plaintext}
-            label="Copy token"
+          <Button
+            type="button"
+            variant="ghost"
             size="icon-sm"
-            onResult={setCopyState}
-          />
+            onClick={() => void copy(plaintext)}
+            aria-label={
+              copyState === "copied"
+                ? "Copied to clipboard"
+                : "Copy to clipboard"
+            }
+            className="shrink-0 text-muted-foreground"
+          >
+            {copyState === "copied" ? (
+              <Checkmark size={16} aria-hidden />
+            ) : (
+              <Copy size={16} aria-hidden />
+            )}
+          </Button>
         </div>
         {copyState === "failed" && (
           <p className="text-xs text-danger mt-2">
@@ -44,16 +53,8 @@ export function RevealToken({ plaintext, onClose }: Props) {
           </p>
         )}
         <p className="text-xs text-muted-foreground mt-3">
-          The{" "}
-          <a
-            href={CLI_REFERENCE_URL}
-            {...externalLinkProps}
-            className="text-primary underline-offset-2 hover:underline"
-          >
-            CLI reference
-          </a>{" "}
-          shows how to sign in with it. Scripts can also send it as a bearer
-          token to the API.
+          Use as the bearer credential when calling the API. See the CLI
+          documentation for the exact environment variable name.
         </p>
       </DialogBody>
       <DialogFooter>

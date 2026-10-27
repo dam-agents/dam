@@ -1,18 +1,24 @@
-// TEST_OVERVIEW: the starter-kit setup submits only when the name and every required
+// TEST_OVERVIEW: the starter-kit setup form submits only when the name, a harness
+// TEST_OVERVIEW: (unless the kit brings its own image), a provider and every required
 // TEST_OVERVIEW: connection requirement are covered; requirements accept a template by its
 // TEST_OVERVIEW: id or by the family its template declares, and the provider counts as granted.
 import type { StarterKitView } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
+import { narrowPolicyToTemplate } from "../../modules/sandboxes/lib/setup-policy.js";
 import {
+  allowedHarnesses,
   buildStarterKitApplyInput,
   connectionRequirements,
   describeAccepts,
+  harnessesLine,
   isProviderRequirement,
   isStarterKitSetupComplete,
+  kitResourcesLine,
   kitScheduleCadence,
   ownedMatches,
   preselectedGrants,
+  providerPolicyForKit,
   requirementStatuses,
   shortKitVersion,
   type StarterKitSetupDraft,
@@ -35,18 +41,10 @@ const templates: TemplateIndex = new Map([
 
 const kit: Pick<
   StarterKitView,
-  | "id"
-  | "catalog"
-  | "image"
-  | "connections"
-  | "seed"
-  | "install"
-  | "link"
-  | "version"
+  "id" | "catalog" | "image" | "connections" | "seed" | "install"
 > = {
   id: "code-reviewer",
   catalog: "platform",
-  version: "abc123",
   image: undefined,
   seed: undefined,
   install: undefined,
@@ -64,6 +62,8 @@ const owned = [
 
 const complete: StarterKitSetupDraft = {
   name: " reviewer ",
+  templateId: "claude-code",
+  providerRef: { id: "c-llm" } as StarterKitSetupDraft["providerRef"],
   connectionIds: ["c-gh"],
   slackChannelId: " C123 ",
   skippedSchedules: [],
@@ -101,7 +101,7 @@ describe("requirementStatuses", () => {
     expect(
       requirementStatuses(
         providerKit,
-        { ...complete, connectionIds: ["c-llm"] },
+        { ...complete, connectionIds: [] },
         owned,
         templates,
       )[0].satisfied,
@@ -110,11 +110,16 @@ describe("requirementStatuses", () => {
 });
 
 describe("isStarterKitSetupComplete", () => {
-  test("requires name and every required connection, but no provider", () => {
+  test("requires name, harness, provider and every required connection", () => {
     expect(isStarterKitSetupComplete(kit, complete, owned, templates)).toBe(
       true,
     );
-    for (const patch of [{ name: "  " }, { connectionIds: [] }]) {
+    for (const patch of [
+      { name: "  " },
+      { templateId: null },
+      { providerRef: null },
+      { connectionIds: [] },
+    ]) {
       expect(
         isStarterKitSetupComplete(
           kit,
@@ -125,18 +130,25 @@ describe("isStarterKitSetupComplete", () => {
       ).toBe(false);
     }
   });
+
+  test("does not need a harness when the kit brings its own image", () => {
+    expect(
+      isStarterKitSetupComplete(
+        { ...kit, image: { ref: "quay.io/acme/nous:1" } },
+        { ...complete, templateId: null },
+        owned,
+        templates,
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("buildStarterKitApplyInput", () => {
-  test("trims the name, dedupes the grants, passes Slack and skipped schedules", () => {
+  test("trims the name, merges the provider into the grants, passes Slack and skipped schedules", () => {
     expect(
       buildStarterKitApplyInput(
         kit,
-        {
-          ...complete,
-          connectionIds: ["c-gh", "c-llm", "c-gh"],
-          skippedSchedules: ["benchmark"],
-        },
+        { ...complete, skippedSchedules: ["benchmark"] },
         owned,
         templates,
       ),
@@ -144,6 +156,8 @@ describe("buildStarterKitApplyInput", () => {
       catalog: "platform",
       kitId: "code-reviewer",
       name: "reviewer",
+      templateId: "claude-code",
+      harness: "claude-code",
       connectionIds: ["c-gh", "c-llm"],
       slackChannelId: "C123",
       skipSchedules: ["benchmark"],
@@ -151,41 +165,22 @@ describe("buildStarterKitApplyInput", () => {
     });
   });
 
-  test("omits the Slack channel when blank", () => {
+  test("omits the harness for a kit with its own image and the Slack channel when blank", () => {
     const input = buildStarterKitApplyInput(
-      kit,
-      { ...complete, slackChannelId: "" },
+      { ...kit, image: { ref: "quay.io/acme/nous:1" } },
+      { ...complete, templateId: null, slackChannelId: "" },
       owned,
       templates,
     );
+    expect(input).not.toHaveProperty("templateId");
     expect(input).not.toHaveProperty("slackChannelId");
-  });
-
-  // TEST_SCENARIO: a kit from a link is created from the commit its page showed, so the apply names the link and that commit; a catalog kit names no link at all.
-  test("names the link and the reviewed commit for a kit from a link", () => {
-    const commit = "c".repeat(40);
-    const linked = {
-      ...kit,
-      catalog: "link",
-      version: commit,
-      link: { url: "https://github.com/acme/shared-kit" },
-    };
-    expect(
-      buildStarterKitApplyInput(linked, complete, owned, templates),
-    ).toMatchObject({
-      catalog: "link",
-      link: { url: "https://github.com/acme/shared-kit", commit },
-    });
-    expect(
-      buildStarterKitApplyInput(kit, complete, owned, templates),
-    ).not.toHaveProperty("link");
   });
 
   test("refuses an incomplete draft", () => {
     expect(() =>
       buildStarterKitApplyInput(
         kit,
-        { ...complete, name: "" },
+        { ...complete, providerRef: null },
         owned,
         templates,
       ),
@@ -203,7 +198,40 @@ describe("shortKitVersion", () => {
   });
 });
 
-describe("connectionRequirements", () => {
+describe("providerPolicyForKit", () => {
+  const base = { recommended: "ibm-litellm" as const };
+  test("narrows the provider picker to the kit's provider requirement", () => {
+    expect(
+      providerPolicyForKit(
+        { connections: [{ accepts: ["anthropic", "openai"], required: true }] },
+        base,
+      ),
+    ).toEqual({ allow: ["anthropic", "openai"], recommended: "anthropic" });
+  });
+  test("keeps the base recommendation when the kit allows it", () => {
+    expect(
+      providerPolicyForKit(
+        {
+          connections: [
+            { accepts: ["ibm-litellm", "anthropic"], required: true },
+          ],
+        },
+        base,
+      ).recommended,
+    ).toBe("ibm-litellm");
+  });
+  test("prefers the kit's own provider list over anything under connections", () => {
+    expect(
+      providerPolicyForKit(
+        {
+          providers: ["openai"],
+          connections: [{ accepts: ["anthropic"], required: true }],
+        },
+        base,
+      ),
+    ).toEqual({ allow: ["openai"], recommended: "openai" });
+  });
+
   test("a provider requirement never reaches the connections section", () => {
     expect(
       connectionRequirements({
@@ -215,7 +243,8 @@ describe("connectionRequirements", () => {
     ).toEqual([["github"]]);
   });
 
-  test("recognises a provider requirement by its accepted template", () => {
+  test("falls back to the base policy when no requirement names a provider", () => {
+    expect(providerPolicyForKit(kit, base)).toBe(base);
     expect(isProviderRequirement(kit.connections[0])).toBe(false);
     expect(isProviderRequirement({ accepts: ["bob"], required: false })).toBe(
       true,
@@ -223,10 +252,39 @@ describe("connectionRequirements", () => {
   });
 });
 
+describe("narrowPolicyToTemplate", () => {
+  const claudeCode = { providers: ["ibm-litellm", "anthropic"] as const };
+  test("keeps only providers the template declares it can run on", () => {
+    expect(
+      narrowPolicyToTemplate({ recommended: "ibm-litellm" }, claudeCode),
+    ).toEqual({
+      allow: ["ibm-litellm", "anthropic"],
+      recommended: "ibm-litellm",
+    });
+    expect(
+      narrowPolicyToTemplate(
+        { allow: ["openai", "anthropic"], recommended: "openai" },
+        claudeCode,
+      ),
+    ).toEqual({ allow: ["anthropic"], recommended: "anthropic" });
+    expect(
+      narrowPolicyToTemplate(
+        { allow: ["openai"], recommended: "openai" },
+        claudeCode,
+      ).allow,
+    ).toEqual([]);
+  });
+  test("leaves the policy alone when the template declares no providers", () => {
+    const base = { allow: ["bob" as const] };
+    expect(narrowPolicyToTemplate(base, { providers: undefined })).toBe(base);
+    expect(narrowPolicyToTemplate(base, null)).toBe(base);
+  });
+});
+
 describe("families on the template view", () => {
-  test("describeAccepts names a family, then a template, then falls back to the capitalised id", () => {
+  test("describeAccepts names a family, then a template, then falls back to the id", () => {
     expect(describeAccepts(["github", "github-app", "nope"], templates)).toBe(
-      "GitHub or GitHub App or Nope",
+      "GitHub or GitHub App or nope",
     );
   });
 
@@ -297,5 +355,46 @@ describe("schedules", () => {
         timezone: "Europe/Prague",
       }),
     ).toMatch(/\(Europe\/Prague\)$/);
+  });
+});
+
+describe("harness matching", () => {
+  const catalogue = [
+    { id: "claude-code", harness: "claude-code" as const },
+    { id: "codex", harness: "codex" as const },
+    { id: "custom" },
+  ];
+  test("offers every harness when the kit names none, and only the named families otherwise", () => {
+    expect(allowedHarnesses({ harnesses: undefined }, catalogue)).toHaveLength(
+      3,
+    );
+    expect(
+      allowedHarnesses({ harnesses: ["codex"] }, catalogue).map((t) => t.id),
+    ).toEqual(["codex"]);
+  });
+  test("describes what the kit runs on", () => {
+    expect(
+      harnessesLine({ image: undefined, harnesses: ["claude-code", "bob"] }),
+    ).toBe("An agent on Claude Code or Bob");
+    expect(harnessesLine({ image: undefined, harnesses: undefined })).toBe(
+      "An agent on the harness you pick",
+    );
+    expect(harnessesLine({ image: { ref: "x" }, harnesses: undefined })).toBe(
+      "Its own agent",
+    );
+  });
+  test("summarizes the size a kit declares, and nothing when it declares none", () => {
+    expect(
+      kitResourcesLine({
+        resources: { cpu: "2", memory: "4Gi", storage: "10Gi" },
+      }),
+    ).toBe("2 CPU · 4Gi memory · 10Gi disk");
+    expect(kitResourcesLine({ resources: { storage: "5Gi" } })).toBe(
+      "5Gi disk",
+    );
+    expect(kitResourcesLine({ resources: undefined })).toBeUndefined();
+    expect(
+      kitResourcesLine({ resources: { note: "explains nothing else" } }),
+    ).toBeUndefined();
   });
 });

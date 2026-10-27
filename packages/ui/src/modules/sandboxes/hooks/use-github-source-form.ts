@@ -5,19 +5,15 @@ import { type BaseSyntheticEvent, useMemo } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 
-import { sameSourcePath } from "../lib/skill-identity.js";
-
 function duplicateOf(
   sources: readonly SkillSource[],
   gitUrl: string,
-  path: string | undefined,
 ): SkillSource | undefined {
   return sources.find(
     (s) =>
       !s.system &&
       !s.fromTemplate &&
-      normalizeGitUrl(s.gitUrl)?.gitUrl === gitUrl &&
-      sameSourcePath(s.path, path),
+      normalizeGitUrl(s.gitUrl)?.gitUrl === gitUrl,
   );
 }
 
@@ -53,18 +49,12 @@ function buildSchema(sources: readonly SkillSource[]) {
         });
         return;
       }
-      const existing = duplicateOf(
-        sources,
-        normalized.gitUrl,
-        data.path.trim() || normalized.path,
-      );
+      const existing = duplicateOf(sources, normalized.gitUrl);
       if (existing) {
         ctx.addIssue({
           code: "custom",
           path: ["gitUrl"],
-          message: existing.hidden
-            ? `Already added as "${existing.name}" and hidden for this agent`
-            : `Already added as "${existing.name}"`,
+          message: `Already added as "${existing.name}"`,
         });
       }
     });

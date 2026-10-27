@@ -11,11 +11,9 @@ interface Props {
 
 export function DockedFilePanel({ onOpenFile }: Props) {
   const selectedAgent = useStore((s) => s.selectedAgent);
-  const openFilePath = useStore((s) =>
-    s.dock?.kind === "file" ? s.dock.path : null,
-  );
+  const openFilePath = useStore((s) => s.openFilePath);
   const openFileDirty = useStore((s) => s.openFileDirty);
-  const setDock = useStore((s) => s.setDock);
+  const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const { data: openFile, error } = useFileContentQuery(
@@ -26,21 +24,17 @@ export function DockedFilePanel({ onOpenFile }: Props) {
   useEffect(() => {
     const gone =
       error instanceof TRPCClientError && error.data?.code === "NOT_FOUND";
-    if (gone && !openFileDirty) setDock(null);
-  }, [error, openFileDirty, setDock]);
+    if (gone && !openFileDirty) setOpenFilePath(null);
+  }, [error, openFileDirty, setOpenFilePath]);
 
   const close = useCallback(async () => {
     if (
       openFileDirty &&
-      !(await showConfirm("Your edits are lost.", "Discard unsaved changes?", {
-        kind: "destructive",
-        confirmLabel: "Discard",
-        cancelLabel: "Keep editing",
-      }))
+      !(await showConfirm("Discard unsaved changes?", "Unsaved changes"))
     )
       return;
-    setDock(null);
-  }, [openFileDirty, showConfirm, setDock]);
+    setOpenFilePath(null);
+  }, [openFileDirty, showConfirm, setOpenFilePath]);
 
   if (!openFile) return null;
   return (

@@ -1,5 +1,4 @@
 import { PROVIDERS } from "../../../../types.js";
-import type { ProviderKeyPage } from "../provider-form-shell.js";
 
 export const MODE_KEYS = ["oauth", "api-key"] as const;
 export type Mode = (typeof MODE_KEYS)[number];
@@ -24,17 +23,12 @@ export const MODES = {
     placeholder: "sk-ant-oat-…",
     prefix: prefixFor("oauth"),
     templateId: modeFor("oauth").templateId,
-    keyPage: undefined,
   },
   "api-key": {
     label: modeFor("api-key").label,
     placeholder: "sk-ant-api-…",
     prefix: prefixFor("api-key"),
     templateId: modeFor("api-key").templateId,
-    keyPage: {
-      href: "https://platform.claude.com/settings/keys",
-      hint: "Create an API key in the Claude Console",
-    },
   },
 } as const satisfies Record<
   Mode,
@@ -43,6 +37,5 @@ export const MODES = {
     placeholder: string;
     prefix: string;
     templateId: string;
-    keyPage: ProviderKeyPage | undefined;
   }
 >;

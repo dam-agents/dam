@@ -48,7 +48,7 @@ const suite: NamedProject[] = [
   },
   {
     name: "chain",
-    testMatch: /\/(0[4-9]|1[0-2]|21)-.*\.spec\.ts$/,
+    testMatch: /\/(0[4-9]|1[0-2]|21|30)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
@@ -57,16 +57,10 @@ const suite: NamedProject[] = [
     name: "own-agents",
     testMatch:
       laneBackend === "vm"
-        ? /\/(17|18|20|22|23|25|27|29)-.*\.spec\.ts$/
-        : /\/(17|18|19|25)-.*\.spec\.ts$/,
+        ? /\/(17|18|20|22|27|29)-.*\.spec\.ts$/
+        : /\/(17|18|19)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "new-layout",
-    testMatch: /26-.*\.spec\.ts$/,
-    dependencies: ["chain", "own-agents"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   ...(full
@@ -114,13 +108,11 @@ const suite: NamedProject[] = [
 const prSkip =
   process.env.E2E_SCOPE === "pr"
     ? new RegExp(
-        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|25|26|27" : "12|18|21"})-`,
+        `\\/(${laneBackend === "vm" ? "12|18|19|21|27" : "12|18|21"})-`,
       )
     : undefined;
 
-const prEmpty = new Set(
-  laneBackend === "vm" ? ["new-layout", "agent-backend"] : [],
-);
+const prEmpty = new Set(laneBackend === "vm" ? ["agent-backend"] : []);
 
 const agentBackend: NamedProject = {
   name: "agent-backend",

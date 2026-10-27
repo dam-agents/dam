@@ -17,7 +17,6 @@ export function MonthSwitcher({ month, isCurrentMonth, onChange }: Props) {
         variant="outline"
         size="icon-sm"
         aria-label="Previous month"
-        tooltip="Previous month"
         onClick={() => onChange(monthStart(month, -1))}
       >
         <ChevronLeft size={16} className="text-muted-foreground" />
@@ -29,7 +28,6 @@ export function MonthSwitcher({ month, isCurrentMonth, onChange }: Props) {
         variant="outline"
         size="icon-sm"
         aria-label="Next month"
-        tooltip="Next month"
         disabled={isCurrentMonth}
         onClick={() => onChange(monthStart(month, 1))}
       >

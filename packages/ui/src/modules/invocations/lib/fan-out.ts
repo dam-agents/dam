@@ -23,8 +23,7 @@ export function parseFanOut(chip: ToolChip): FanOutSpawn[] | null {
 function scanSpawns(chip: ToolChip): FanOutSpawn[] | null {
   const spawns = new Map<string, FanOutSpawn>();
   for (const block of chip.content ?? []) {
-    if (block.type === "diff") continue;
-    for (const line of block.text.split("\n")) {
+    for (const line of (block.text ?? "").split("\n")) {
       const trimmed = line.trim();
       const match = SPAWN_LINES.map((re) => re.exec(trimmed)).find(Boolean);
       const id = match?.groups?.id;

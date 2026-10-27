@@ -1,4 +1,5 @@
 import "./App.css";
+import "./modules/usage/devtools.js";
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
@@ -16,8 +17,6 @@ import {
   parseRoute,
   routeToPath,
 } from "./modules/platform/lib/routes.js";
-import { applyTheme, readStoredTheme } from "./modules/platform/store/theme.js";
-import { StartupErrorView } from "./modules/platform/views/startup-error-view.js";
 import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
 
@@ -67,12 +66,4 @@ async function main() {
   );
 }
 
-main().catch((err: unknown) => {
-  console.error("[startup] failed", err);
-  applyTheme(readStoredTheme());
-  createRoot(document.getElementById("root")!).render(
-    <StrictMode>
-      <StartupErrorView />
-    </StrictMode>,
-  );
-});
+main();

@@ -1,5 +1,5 @@
 export type { AppRouter } from "./router.js";
-export type { ApiContext, UserIdentity } from "./context.js";
+export type { ApiContext, UserIdentity, VmAgentSizing } from "./context.js";
 
 export { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
 

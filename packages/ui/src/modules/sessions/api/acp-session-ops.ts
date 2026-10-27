@@ -7,7 +7,6 @@ import {
 } from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
-  type PromptBlock,
   SessionMode,
   SessionType,
   type SessionView,
@@ -29,12 +28,6 @@ interface PlatformMeta {
   runStartedAt?: string;
   runTotalMs?: number;
   runCount?: number;
-  harness?: string;
-  provider?: string;
-  model?: string;
-  settings?: Record<string, string>;
-  customTitle?: string | null;
-  autoTitle?: string | null;
 }
 
 interface ListedSession {
@@ -66,18 +59,12 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     initialization: p?.initialization ?? null,
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
-    ...(p?.customTitle !== undefined && { customTitle: p.customTitle }),
-    ...(p?.autoTitle !== undefined && { autoTitle: p.autoTitle }),
     updatedAt: s.updatedAt ?? null,
     running: p?.running ?? false,
     seenAt: p?.seenAt ?? null,
     runStartedAt: p?.runStartedAt ?? null,
     runTotalMs: p?.runTotalMs ?? null,
     runCount: p?.runCount ?? null,
-    harness: p?.harness ?? null,
-    provider: p?.provider ?? null,
-    model: p?.model ?? null,
-    ...(p?.settings && { settings: p.settings }),
   };
 }
 
@@ -130,8 +117,8 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   channel_telegram: SessionType.ChannelTelegram,
   schedule_cron: SessionType.ScheduleCron,
   schedule_once: SessionType.ScheduleOnce,
-  cli_run: SessionType.CliRun,
   invocation: SessionType.Invocation,
+  cli_run: SessionType.CliRun,
 };
 
 const POD_MODE: Record<PodSession["mode"], SessionMode> = {
@@ -150,20 +137,12 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     initialization: s.initialization ?? null,
     threadTs: s.threadTs,
     title: s.title,
-    ...(s.customTitle !== undefined && { customTitle: s.customTitle }),
-    ...(s.autoTitle !== undefined && { autoTitle: s.autoTitle }),
     updatedAt: s.updatedAt,
     running: s.running,
     seenAt: s.seenAt,
     runStartedAt: s.runStartedAt,
     runTotalMs: s.runTotalMs,
     runCount: s.runCount,
-    harness: s.harness ?? null,
-    provider: s.provider ?? null,
-    model: s.model ?? null,
-    ...(s.settings && { settings: s.settings }),
-    ...(s.follows !== undefined && { follows: s.follows }),
-    ...(s.repositories?.length ? { repositories: s.repositories } : {}),
   };
 }
 
@@ -217,49 +196,6 @@ export async function deleteAgentSession(
   );
 }
 
-export async function updateQueuedPrompt(
-  agentId: string,
-  sessionId: string,
-  promptId: string,
-  prompt: PromptBlock[],
-): Promise<void> {
-  await withConnection(agentId, (conn) =>
-    conn.agent.request("platform/updateQueued", {
-      sessionId,
-      promptId,
-      prompt,
-    }),
-  );
-}
-
-export async function steerQueuedPrompt(
-  agentId: string,
-  sessionId: string,
-  promptId: string,
-): Promise<void> {
-  await withConnection(agentId, (conn) =>
-    conn.agent.request("platform/steerQueued", { sessionId, promptId }),
-  );
-}
-
-export async function removeQueuedPrompt(
-  agentId: string,
-  sessionId: string,
-  promptId: string,
-): Promise<void> {
-  await withConnection(agentId, (conn) =>
-    conn.agent.request("platform/removeQueued", { sessionId, promptId }),
-  );
-}
-
-export async function setAgentSessionTitle(
-  agentId: string,
-  sessionId: string,
-  title: string | null,
-): Promise<void> {
-  await agentTrpc(agentId).sessions.setTitle.mutate({ sessionId, title });
-}
-
 export async function forgetUndeliveredPrompt(
   agentId: string,
   sessionId: string,
@@ -294,14 +230,4 @@ export async function setSessionMode(
       _meta: { platform: { mode } },
     }),
   );
-}
-
-export async function readSessionHistory(
-  agentId: string,
-  sessionId: string,
-  tail: number,
-): Promise<readonly string[]> {
-  if (agentLacksLiveUpdates(agentId)) return [];
-  return (await agentTrpc(agentId).sessions.history.query({ sessionId, tail }))
-    .frames;
 }

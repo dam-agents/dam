@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a user's wake for an Agent a runtime migration holds down is refused before anything is written, because waking would only clear the stop request the migration is meant to restore, and nothing can start the Agent until the move ends. A sleep in that time is refused too, since no wake could undo it until the move ends, and so is a disable or an enable, which would fight the migration over the same stop request. A migration that holds nothing, or none at all, leaves the wake and the sleep to go through.
+// TEST_OVERVIEW: a user's wake for an Agent a runtime migration holds down is refused before anything is written, because waking would only clear the stop request the migration is meant to restore, and nothing can start the Agent until the move ends. A sleep or a stop in that time is refused too, since no wake could undo it until the move ends, and so is a disable or an enable, which would fight the migration over the same stop request. A stop is the owner's alone, and with no hold it reaches the repository, which stamps the stop request the channels and relays respect. A migration that holds nothing, or none at all, leaves the wake and the sleep to go through.
 import { describe, expect, it, vi } from "vitest";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import {
@@ -17,7 +17,7 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
   }) as T;
 }
 
-function setup(hold: InfraAgent["runtimeMigrationHold"]) {
+function setup(hold: InfraAgent["runtimeMigrationHold"], owned = true) {
   const agent: InfraAgent = {
     ...parseInfraAgent({
       metadata: {
@@ -33,19 +33,21 @@ function setup(hold: InfraAgent["runtimeMigrationHold"]) {
     error: { type: "AgentNotFound" as const },
   }));
   const requestSleep = vi.fn(async () => null);
+  const requestStop = vi.fn(async () => null);
   const setDisabled = vi.fn(async () => null);
   const agents = createAgentsService({
     owner: "owner-1",
     agentIdleTimeoutMinutes: { container: 30, vm: 5 },
     repo: unused<AgentsDeps["repo"]>({
-      isOwnedBy: async () => true,
+      isOwnedBy: async () => owned,
       get: async () => agent,
       wake,
       requestSleep,
+      requestStop,
       setDisabled,
     }),
   } as Partial<AgentsDeps> as AgentsDeps);
-  return { agents, wake, requestSleep, setDisabled };
+  return { agents, wake, requestSleep, requestStop, setDisabled };
 }
 
 describe("waking an agent during a runtime migration", () => {
@@ -95,6 +97,34 @@ describe("putting an agent to sleep during a runtime migration", () => {
       expect(requestSleep).toHaveBeenCalledOnce();
     },
   );
+});
+
+describe("stopping an agent", () => {
+  // TEST_SCENARIO: 0.2.23's Stop is back for the release: with no migration holding the Agent it reaches the repository, whose stop request keeps channels and relays from waking it until its owner starts it or a schedule fires.
+  it("stamps the stop request with no migration", async () => {
+    const { agents, requestStop } = setup("none");
+    await agents.stop("agent-1");
+    expect(requestStop).toHaveBeenCalledWith("agent-1");
+  });
+
+  // TEST_SCENARIO: a migration holds the Agent down, so the stop is refused before anything is written; nothing could undo it until the move ends.
+  it.each(["migrating", "failed"] as const)(
+    "is refused while the migration is %s",
+    async (hold) => {
+      const { agents, requestStop } = setup(hold);
+      await expect(agents.stop("agent-1")).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect(requestStop).not.toHaveBeenCalled();
+    },
+  );
+
+  // TEST_SCENARIO: another user's Agent answers as not found, and nothing is written.
+  it("is the owner's alone", async () => {
+    const { agents, requestStop } = setup("none", false);
+    expect(await agents.stop("agent-1")).toBeNull();
+    expect(requestStop).not.toHaveBeenCalled();
+  });
 });
 
 describe("disabling an agent during a runtime migration", () => {

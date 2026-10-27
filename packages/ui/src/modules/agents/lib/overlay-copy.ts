@@ -15,7 +15,6 @@ const OVERLAY_DESCRIPTION: Record<AgentDisplayState, string> = {
   preparing_workspace: "Setting up the workspace. This finishes shortly.",
   hibernating: "The agent is falling asleep.",
   hibernated: "The agent is sleeping. Wake it to pick up where you left off.",
-  disabled: "",
   error: "The agent hit an error and isn't running.",
   over_budget:
     "Starting this agent would exceed your compute budget. Disable agents " +

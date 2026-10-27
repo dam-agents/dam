@@ -20,6 +20,11 @@ export { type Backend, laneBackend };
 
 const tokenMaxAgeMs = 120_000;
 
+// UNIT_BOUNDARY_DESCRIPTION: a vm Agent's wait for a boot, which on the vm lane queues behind a machine's image and its first start, is a multiple of the container one it replaces. A spec asks for the pod's wait and gets the machine's on the vm lane.
+export function bootTimeoutMs(containerMs: number): number {
+  return laneBackend === "vm" ? containerMs * 3 : containerMs;
+}
+
 export function refreshingToken(): () => Promise<string> {
   let token: Promise<string> | undefined;
   let mintedAt = 0;

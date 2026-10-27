@@ -6,6 +6,8 @@ import { FloatingPanelTail } from "@/components/ui/floating-panel";
 import { cn } from "@/lib/utils";
 
 const TooltipProvider = TooltipPrimitive.Provider;
+const TooltipRoot = TooltipPrimitive.Root;
+const TooltipTrigger = TooltipPrimitive.Trigger;
 
 function TooltipContent({
   className,
@@ -107,4 +109,11 @@ function HintTooltip({
   );
 }
 
-export { HintTooltip, Tooltip, TooltipContent, TooltipProvider };
+export {
+  HintTooltip,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipRoot,
+  TooltipTrigger,
+};

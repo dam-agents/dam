@@ -1,5 +1,11 @@
-import { LINKED_KIT_CATALOG } from "api-server-api";
 import { z } from "zod";
+
+const starterKitCategorySchema = z.enum([
+  "knowledge",
+  "software",
+  "productivity",
+  "research",
+]);
 
 const settingsTabSchema = z.enum([
   "account",
@@ -8,44 +14,38 @@ const settingsTabSchema = z.enum([
   "connections",
   "api-keys",
   "usage",
-  "schedules",
   "slack-workspaces",
-  "analytics",
-  "operator",
   "features",
-  "about",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
 const sandboxSectionSchema = z.enum([
   "setup",
-  "providers",
   "connections",
-  "network",
-  "environment",
   "channels",
-  "chat-forms",
   "skills",
   "schedules",
-  "environments",
+  "artifacts",
   "usage",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
+export type StarterKitCategory = z.infer<typeof starterKitCategorySchema>;
+
 export type Route =
   | { view: "home" }
-  | { view: "artifacts" }
-  | { view: "starter-kits" }
   | { view: "chat"; agent: string; session?: string }
-  | { view: "settings"; settingsTab: SettingsTab; period?: string }
+  | { view: "settings"; settingsTab: SettingsTab }
   | { view: "terms" }
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
-  | { view: "connection-secret" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
+  | { view: "agent-new" }
+  | { view: "starter-kits"; category?: StarterKitCategory }
   | { view: "starter-kit"; catalog: string; kit: string }
-  | { view: "analytics" }
-  | { view: "not-found"; path: string };
+  | { view: "starter-kit-new"; catalog: string; kit: string }
+  | { view: "artifacts" }
+  | { view: "connection-secret" };
 
 export type View = Route["view"];
 
@@ -68,6 +68,16 @@ export function publicAgentPath(agentId: string): string {
   return `/a/${encodeURIComponent(agentId)}`;
 }
 
+export const UNSUPPORTED_PATHS = new Set(["/analytics", "/analytics/"]);
+
+export function isUnsupportedLink(path: string): boolean {
+  return (
+    UNSUPPORTED_PATHS.has(path) ||
+    path === "/starter-kits/linked" ||
+    path.startsWith("/starter-kits/linked/")
+  );
+}
+
 export const RETIRED_PATHS = new Set([
   "/sandboxes",
   "/sandboxes/",
@@ -76,23 +86,21 @@ export const RETIRED_PATHS = new Set([
   "/experiments",
   "/experiments/",
   "/experiments/new",
-  "/agents/new",
 ]);
 
-const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
+const SANDBOX_SECTION_ALIASES: Readonly<Record<string, SandboxSection>> = {
+  providers: "setup",
+};
+
+const sandboxSectionPattern = [
+  ...sandboxSectionSchema.options,
+  ...Object.keys(SANDBOX_SECTION_ALIASES),
+].join("|");
 const sandboxHomeRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
 );
 
-const PERIOD_PARAM = "period";
-
-function usagePeriodOf(search: string): { period?: string } {
-  const period = new URLSearchParams(search).get(PERIOD_PARAM);
-  return period ? { period } : {};
-}
-
-export function parseRoute(path: string, search = ""): Route {
-  if (path === "/") return { view: "home" };
+export function parseRoute(path: string): Route {
   const chatMatch = path.match(/^\/chat\/([^/]+)(?:\/([^/]+))?\/?$/);
   if (chatMatch) {
     return {
@@ -102,101 +110,103 @@ export function parseRoute(path: string, search = ""): Route {
     };
   }
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
-  if (path === "/artifacts") return { view: "artifacts" };
-  if (path === "/starter-kits") return { view: "starter-kits" };
   const settingsMatch = path.match(/^\/settings\/([^/]+)$/);
   if (settingsMatch) {
     const tab = settingsTabSchema.safeParse(settingsMatch[1]);
-    if (tab.success) {
-      return {
-        view: "settings",
-        settingsTab: tab.data,
-        ...(tab.data === "usage" ? usagePeriodOf(search) : {}),
-      };
-    }
+    return {
+      view: "settings",
+      settingsTab: tab.success ? tab.data : "account",
+    };
   }
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
-  if (path === "/connections/secret") return { view: "connection-secret" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
-  if (path === "/analytics") return { view: "analytics" };
+  if (isUnsupportedLink(path)) return { view: "home" };
+  if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/connections/secret") return { view: "connection-secret" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
-    const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
+    const segment = sandboxHomeMatch[2];
+    const section = sandboxSectionSchema.safeParse(segment);
     return {
       view: "sandbox-home",
       agentId: decodeSegment(sandboxHomeMatch[1]!),
-      sandboxSection: section.success ? section.data : "setup",
+      sandboxSection: section.success
+        ? section.data
+        : ((segment ? SANDBOX_SECTION_ALIASES[segment] : undefined) ?? "setup"),
     };
   }
-  if (/^\/starter-kits\/[^/]+$/.test(path)) return { view: "home" };
-  const linkedKitMatch = path.match(
-    new RegExp(`^/starter-kits/${LINKED_KIT_CATALOG}/([^/]+)/([^/]+)$`),
+  if (path === "/agents/new") return { view: "agent-new" };
+  if (path === "/starter-kits") return { view: "starter-kits" };
+  const starterKitsCategoryMatch = path.match(/^\/starter-kits\/([^/]+)$/);
+  if (starterKitsCategoryMatch) {
+    const category = starterKitCategorySchema.safeParse(
+      decodeSegment(starterKitsCategoryMatch[1]!),
+    );
+    return category.success
+      ? { view: "starter-kits", category: category.data }
+      : { view: "starter-kits" };
+  }
+  const starterKitNewMatch = path.match(
+    /^\/starter-kits\/([^/]+)\/([^/]+)\/new$/,
   );
-  if (linkedKitMatch)
+  if (starterKitNewMatch)
     return {
-      view: "starter-kit",
-      catalog: LINKED_KIT_CATALOG,
-      kit: `${decodeSegment(linkedKitMatch[1]!)}/${decodeSegment(linkedKitMatch[2]!)}`,
+      view: "starter-kit-new",
+      catalog: decodeSegment(starterKitNewMatch[1]!),
+      kit: decodeSegment(starterKitNewMatch[2]!),
     };
-  const starterKitMatch = path.match(
-    /^\/starter-kits\/([^/]+)\/([^/]+)(?:\/new)?$/,
-  );
+  const starterKitMatch = path.match(/^\/starter-kits\/([^/]+)\/([^/]+)$/);
   if (starterKitMatch)
     return {
       view: "starter-kit",
       catalog: decodeSegment(starterKitMatch[1]!),
       kit: decodeSegment(starterKitMatch[2]!),
     };
-  return { view: "not-found", path };
+  return { view: "home" };
 }
 
 export function routeToPath(route: Route): string {
   switch (route.view) {
     case "home":
       return "/";
-    case "artifacts":
-      return "/artifacts";
-    case "starter-kits":
-      return "/starter-kits";
     case "chat": {
       const base = `/chat/${encodeURIComponent(route.agent)}`;
       return route.session
         ? `${base}/${encodeURIComponent(route.session)}`
         : base;
     }
-    case "settings": {
-      if (route.settingsTab === "account") return "/settings";
-      const base = `/settings/${route.settingsTab}`;
-      return route.settingsTab === "usage" && route.period
-        ? `${base}?${new URLSearchParams({ [PERIOD_PARAM]: route.period })}`
-        : base;
-    }
+    case "settings":
+      return route.settingsTab === "account"
+        ? "/settings"
+        : `/settings/${route.settingsTab}`;
     case "terms":
       return "/terms";
     case "telegram-bind":
       return "/telegram/bind";
     case "slack-bind":
       return "/slack/bind";
-    case "connection-secret":
-      return "/connections/secret";
     case "sandbox-home": {
       const base = `/sandboxes/${encodeURIComponent(route.agentId)}`;
       return route.sandboxSection === "setup"
         ? base
         : `${base}/${route.sandboxSection}`;
     }
+    case "agent-new":
+      return "/agents/new";
+    case "starter-kits":
+      return route.category
+        ? `/starter-kits/${route.category}`
+        : "/starter-kits";
     case "starter-kit":
-      return `/starter-kits/${encodeURIComponent(route.catalog)}/${
-        route.catalog === LINKED_KIT_CATALOG
-          ? route.kit.split("/").map(encodeURIComponent).join("/")
-          : encodeURIComponent(route.kit)
-      }`;
-    case "analytics":
-      return "/analytics";
-    case "not-found":
-      return route.path;
+      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
+    case "starter-kit-new":
+      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}/new`;
+    case "artifacts":
+      return "/artifacts";
+    case "connection-secret":
+      return "/connections/secret";
     default: {
       const unhandled: never = route;
       return unhandled;
@@ -208,18 +218,25 @@ export function routeToNavigationState(route: Route): {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
-  usagePeriod: string | null;
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
+  starterKitCategory: StarterKitCategory | null;
 } {
   return {
     view: route.view,
+    starterKitCategory:
+      route.view === "starter-kits" ? (route.category ?? null) : null,
     agentId: route.view === "sandbox-home" ? route.agentId : null,
-    starterKitCatalog: route.view === "starter-kit" ? route.catalog : null,
-    starterKitId: route.view === "starter-kit" ? route.kit : null,
+    starterKitCatalog:
+      route.view === "starter-kit-new" || route.view === "starter-kit"
+        ? route.catalog
+        : null,
+    starterKitId:
+      route.view === "starter-kit-new" || route.view === "starter-kit"
+        ? route.kit
+        : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
-    usagePeriod: route.view === "settings" ? (route.period ?? null) : null,
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",
   };

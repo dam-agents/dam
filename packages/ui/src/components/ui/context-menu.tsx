@@ -21,11 +21,7 @@ function ContextMenuContent({
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Content
         collisionPadding={8}
-        className={cn(
-          menuContentClassName,
-          "max-h-[var(--radix-context-menu-content-available-height)] overflow-y-auto overflow-x-hidden",
-          className,
-        )}
+        className={cn(menuContentClassName, className)}
         {...props}
       />
     </ContextMenuPrimitive.Portal>

@@ -31,7 +31,7 @@ export function OverridableSection({
     >
       <div className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {fromFamily
               ? "Reused from another connection you've already set up. Leave off to share the same app, or turn on to use your own."
               : "These values are pre-configured by your administrator. Leave off to use the defaults, or turn on to supply your own."}
@@ -82,7 +82,7 @@ function PresetSummary({ input }: { input: ConnectionTemplateInput }) {
     );
   if (input.secret)
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {labelFor(input.name)}: preset value hidden.
       </p>
     );

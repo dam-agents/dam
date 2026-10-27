@@ -260,6 +260,7 @@ export const starterKitApplyInputSchema = z
     name: agentNameSchema,
     avatar: avatarSchema.optional(),
     templateId: z.string().min(1).optional(),
+    harness: harnessFamilySchema.optional(),
     connectionIds: z.array(z.string().min(1)).default([]),
     slackChannelId: z.string().min(1).optional(),
     skipSchedules: z.array(z.string().min(1)).default([]),

@@ -5,10 +5,38 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  knowledgeBadge,
   onboardingBadge,
   parseStarterKitRef,
   starterKitBadge,
 } from "../../modules/agents/utils/agent-kind.js";
+import type { AgentView } from "../../types.js";
+
+function agent(extra: Partial<AgentView>): AgentView {
+  return { id: "a", name: "a", ...extra } as AgentView;
+}
+
+describe("knowledgeBadge", () => {
+  // TEST_SCENARIO: the kit badge names the procedure an agent was built from, which does not say what the agent offers. Someone scanning the agents list needs to see which ones hold knowledge others can query.
+  test("badges an agent that publishes a knowledge base", () => {
+    expect(agent({ kbShareRoots: ["wiki"] })).toBeDefined();
+    expect(knowledgeBadge(agent({ kbShareRoots: ["wiki"] }))?.label).toBe(
+      "Knowledge",
+    );
+  });
+
+  // TEST_SCENARIO: an agent stamped before kits says so with its kind rather than with roots, and must badge the same way — the badge is about the capability, not about how the agent was made.
+  test("badges a knowledge base made before kits", () => {
+    expect(knowledgeBadge(agent({ kind: "knowledge-base" }))?.label).toBe(
+      "Knowledge",
+    );
+  });
+
+  test("leaves an ordinary agent unbadged", () => {
+    expect(knowledgeBadge(agent({}))).toBeNull();
+    expect(knowledgeBadge(agent({ starterKit: "platform/x@1" }))).toBeNull();
+  });
+});
 
 describe("starterKitBadge", () => {
   test("names the kit without its catalog or version, keeping the full ref on hover", () => {

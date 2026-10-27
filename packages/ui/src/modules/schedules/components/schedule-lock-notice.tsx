@@ -34,13 +34,38 @@ export function scheduleLockNotice(
       ),
     };
   }
+  if (lock === "one-off") {
+    return {
+      title: "This schedule runs once",
+      body: (
+        <div className="flex flex-col gap-3">
+          <p>
+            It runs a single time and then stops. The editor works with
+            recurring schedules only, so it can&apos;t show this one without
+            turning it into a repeat.
+          </p>
+          <p>
+            To change when it runs, delete this schedule and create a new one.
+            You can pause it here anytime.
+          </p>
+        </div>
+      ),
+    };
+  }
   return {
-    title: "This one-time task has already run",
+    title: "This schedule uses the older cron format",
     body: (
-      <p>
-        A one-time task can be edited only before it runs. To run it again,
-        create a new one-time task.
-      </p>
+      <div className="flex flex-col gap-3">
+        <p>
+          It runs on a cron expression in UTC. The editor works with the newer
+          format only, so it can&apos;t show this schedule&apos;s timing without
+          rewriting it.
+        </p>
+        <p>
+          To change when it runs, delete this schedule and create a new one. You
+          can pause it here anytime.
+        </p>
+      </div>
     ),
   };
 }

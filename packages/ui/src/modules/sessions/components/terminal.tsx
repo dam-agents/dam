@@ -10,7 +10,6 @@ import {
   OP_EXIT,
   OP_INPUT,
   OP_OUTPUT,
-  OP_SESSION,
 } from "api-server-api";
 import { useEffect, useRef, useState } from "react";
 
@@ -18,8 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { getAccessToken } from "../../../auth.js";
-import { readNextSessionPair } from "../api/session-pair.js";
-import { pairMeta } from "../lib/session-pair-options.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 
@@ -31,7 +28,6 @@ export function Terminal({
   onFirstOutput,
   onFirstSubmit,
   onSubmit,
-  onSessionMoved,
   autoConnect = true,
 }: {
   agentId: string;
@@ -41,7 +37,6 @@ export function Terminal({
   onFirstOutput?: () => void;
   onFirstSubmit?: () => void;
   onSubmit?: () => void;
-  onSessionMoved?: (sessionId: string) => void;
   autoConnect?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -50,14 +45,10 @@ export function Terminal({
     autoConnect ? "connecting" : "disconnected",
   );
   const [exitCode, setExitCode] = useState<number | null>(null);
-  const [refusal, setRefusal] = useState<string | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
   const connectEnabled = useRef(autoConnect);
-  const userConnect = useRef(false);
   const handleReconnect = () => {
     connectEnabled.current = true;
-    userConnect.current = true;
-    setRefusal(null);
     setState("connecting");
     setReconnectKey((k) => k + 1);
   };
@@ -98,7 +89,6 @@ export function Terminal({
           selectionBackground: "#44403c",
         },
         scrollback: 1000,
-        macOptionClickForcesSelection: true,
       });
       term.open(container);
       termRef.current = term;
@@ -115,11 +105,8 @@ export function Terminal({
       const token = await getAccessToken();
       if (cancelled) return;
 
-      const lease = fresh ? readNextSessionPair(agentId) : null;
-      const wakes = userConnect.current;
-      userConnect.current = false;
       ws = new WebSocket(
-        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/agents/${agentId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}${wakes ? "" : "&wake=0"}${lease ? `&${new URLSearchParams(pairMeta(lease.pair)).toString()}` : ""}`,
+        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/agents/${agentId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`,
       );
       ws.binaryType = "arraybuffer";
 
@@ -147,20 +134,11 @@ export function Terminal({
         } else if (frame.op === OP_EXIT) {
           setExitCode(frame.code);
           setState("exited");
-        } else if (frame.op === OP_SESSION) {
-          onSessionMoved?.(frame.sessionId);
         }
       };
 
-      ws.onclose = (e) => {
-        if (cancelled) return;
-        if (e.code === 1008)
-          setRefusal(
-            e.reason === "provider-removed"
-              ? "This session's model provider was removed from the agent"
-              : e.reason,
-          );
-        setState((s) => (s === "exited" ? s : "disconnected"));
+      ws.onclose = () => {
+        if (!cancelled) setState((s) => (s === "exited" ? s : "disconnected"));
       };
       ws.onerror = () => {
         if (!cancelled) setState("disconnected");
@@ -206,7 +184,7 @@ export function Terminal({
         <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Spinner size={18} />
-            Connecting terminal…
+            Connecting terminal...
           </div>
         </div>
       )}
@@ -215,7 +193,7 @@ export function Terminal({
           <div className="flex flex-col items-center gap-3 text-center">
             <ErrorFilled size={24} className="text-danger" />
             <p className="text-sm text-muted-foreground">
-              {refusal ?? "Session disconnected"}
+              Session disconnected
             </p>
             <Button variant="outline" onClick={handleReconnect}>
               Reconnect

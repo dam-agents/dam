@@ -53,6 +53,7 @@ export const agentRetryWorkspaceInputSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(["workspace-seed", "workspace-command"]),
 });
+export const agentStopInputSchema = idSchema;
 export const agentSleepInputSchema = idSchema;
 export const agentSetDisabledInputSchema = idSchema.extend({
   disabled: z.boolean(),

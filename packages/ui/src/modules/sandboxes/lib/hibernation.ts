@@ -7,16 +7,16 @@ export function confirmHibernationChange(
 ): Promise<boolean> {
   if (next === 0 && prev !== 0) {
     return showConfirm(
-      "It keeps running, and keeps its compute reserved, until you set a timeout again.",
-      "Never let this agent sleep?",
-      { confirmLabel: "Never sleep" },
+      "This agent will never hibernate — it keeps running, and consuming resources, until you set a timeout again.",
+      "Never hibernate",
+      { confirmLabel: "Never hibernate" },
     );
   }
   if (prev === 0 && next !== 0) {
     return showConfirm(
-      `It sleeps after ${next} minutes idle. Long-running background work with no open session may be interrupted.`,
-      "Let this agent sleep?",
-      { confirmLabel: "Allow sleep" },
+      `This agent will hibernate after ${next} min idle. Long-running background work with no open session may be interrupted.`,
+      "Allow hibernation",
+      { confirmLabel: "Apply" },
     );
   }
   return Promise.resolve(true);

@@ -20,8 +20,6 @@ const offsetBackgroundPrompt = "Run the nightly cleanup task";
 const offsetReplyTail = "Found 3 changed files.";
 
 test("exchange messages with the agent", async ({ page }) => {
-  test.setTimeout(300_000);
-
   const token = await getAccessToken();
   const api = createApiClient(token);
 
@@ -30,18 +28,6 @@ test("exchange messages with the agent", async ({ page }) => {
 
   await test.step("open the agent chat from the agent list", async () => {
     await openAgentChat(page, agentName, agentId);
-  });
-
-  await test.step("with JanUI off, the chat view keeps its top bar, which holds the bell, and has no icon bar", async () => {
-    const bell = page.getByTestId("side-panel-tab-approvals");
-    await expect(bell).toBeVisible();
-    await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
-  });
-
-  await test.step("the new session page names the agent", async () => {
-    await expect(
-      page.getByRole("heading", { level: 2, name: agentName, exact: true }),
-    ).toBeVisible();
   });
 
   await test.step("send a message and receive the scripted reply", async () => {
@@ -55,41 +41,11 @@ test("exchange messages with the agent", async ({ page }) => {
     expect(prompts.length).toBeGreaterThan(0);
     expect(JSON.stringify(prompts)).toContain(userPrompt);
   });
-
-  await test.step("the agent's name above its reply opens its configuration", async () => {
-    await page
-      .getByTestId("chat-message")
-      .filter({ hasText: scriptedReply })
-      .getByRole("button", { name: `Configure ${agentName}` })
-      .click();
-    await expect(page).toHaveURL(new RegExp(`/sandboxes/${agentId}$`));
-  });
-
-  await test.step("the avatar picker opens on hover and closes when the pointer leaves", async () => {
-    const picker = page.getByTestId("avatar-picker");
-    const grid = page.getByRole("group", { name: "Avatar" });
-    await picker.hover();
-    await expect(grid).toBeVisible();
-    await page.mouse.move(0, 0);
-    await expect(grid).toBeHidden();
-  });
-
-  await test.step("Enter moves focus into the avatar picker and Escape returns it", async () => {
-    const picker = page.getByTestId("avatar-picker");
-    const grid = page.getByRole("group", { name: "Avatar" });
-    await picker.press("Enter");
-    await expect(grid.getByRole("button", { pressed: true })).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(grid).toBeHidden();
-    await expect(picker).toBeFocused();
-  });
 });
 
 test("background prompt mid-turn keeps the reply paired with the user message (#703)", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
-
   const token = await getAccessToken();
   const api = createApiClient(token);
 

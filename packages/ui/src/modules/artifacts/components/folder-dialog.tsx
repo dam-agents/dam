@@ -1,7 +1,6 @@
 import type { ArtifactFolder } from "api-server-api";
 import { useState } from "react";
 
-import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -34,24 +33,25 @@ export function FolderDialog({ folder, onClose }: Props) {
   };
 
   return (
-    <Modal onClose={pending ? undefined : onClose}>
+    <Modal>
       <DialogHeader
-        closeDisabled={pending}
         onClose={onClose}
-        title={folder ? "Rename folder" : "New folder"}
+        title={folder ? "Edit folder" : "New folder"}
       />
       <DialogBody>
         <div className="flex flex-col gap-4">
-          <FormField label="Name">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Name</span>
             <Input
+              size="sm"
               value={name}
               autoFocus
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) save();
+                if (e.key === "Enter") save();
               }}
             />
-          </FormField>
+          </div>
         </div>
       </DialogBody>
       <DialogActions

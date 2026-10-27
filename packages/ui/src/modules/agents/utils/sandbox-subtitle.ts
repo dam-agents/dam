@@ -1,4 +1,4 @@
-import type { BudgetVmUsage } from "api-server-api";
+import { PROVIDERS, providerTypeForTemplateId } from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
 import {
@@ -7,35 +7,53 @@ import {
   type SlotUnit,
 } from "../../budgets/lib/slots.js";
 
-export interface AgentUsage {
-  memoryBytes: number | null;
-  storageBytes: number | null;
+export interface SandboxSubtitleLookup {
+  templateNameById: ReadonlyMap<string, string>;
+  connectionTemplateIdById: ReadonlyMap<string, string>;
+  slotUnit: SlotUnit | null;
+}
+
+export function sandboxSubtitleParts(
+  agent: AgentView,
+  lookup: SandboxSubtitleLookup,
+): { harness: string; provider: string | null } {
+  const harness =
+    (agent.templateId
+      ? lookup.templateNameById.get(agent.templateId)
+      : undefined) ?? agent.image;
+  return { harness, provider: providerLabel(agent, lookup) };
+}
+
+function joinSubtitleSegments(
+  segments: ReadonlyArray<string | null | undefined>,
+): string {
+  return segments.filter(Boolean).join(" · ");
 }
 
 export function sandboxSubtitle(
   agent: AgentView,
-  slotUnit: SlotUnit | null,
-): string | null {
-  if (agent.vm || !slotUnit || !agent.size.cpu || !agent.size.memory)
-    return null;
-  return formatSizeLabel(sizeInMi(agent.size), slotUnit);
+  lookup: SandboxSubtitleLookup,
+): string {
+  const { harness, provider } = sandboxSubtitleParts(agent, lookup);
+  return joinSubtitleSegments([harness, provider, sizeLabel(agent, lookup)]);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent's own measured share of its owner's pools. A figure the runner has not measured, and the memory of a sleeping agent, is null, so the row shows nothing rather than a zero.
-export function agentUsage(
+function sizeLabel(
   agent: AgentView,
-  vmUsage?: BudgetVmUsage | null,
-): AgentUsage | null {
-  if (!agent.vm) return null;
-  const share = vmUsage?.agents.find((a) => a.id === agent.id);
-  if (!share) return null;
-  const memoryBytes =
-    share.memoryUsedBytes > 0 && agent.state !== "hibernated"
-      ? share.memoryUsedBytes
-      : null;
-  const storageBytes =
-    share.storageUsedBytes > 0 ? share.storageUsedBytes : null;
-  return memoryBytes === null && storageBytes === null
-    ? null
-    : { memoryBytes, storageBytes };
+  lookup: SandboxSubtitleLookup,
+): string | null {
+  if (!lookup.slotUnit || !agent.size.cpu || !agent.size.memory) return null;
+  return formatSizeLabel(sizeInMi(agent.size), lookup.slotUnit);
+}
+
+function providerLabel(
+  agent: AgentView,
+  lookup: SandboxSubtitleLookup,
+): string | null {
+  for (const connectionId of agent.grantedConnectionIds) {
+    const templateId = lookup.connectionTemplateIdById.get(connectionId);
+    const preset = templateId ? providerTypeForTemplateId(templateId) : null;
+    if (preset) return PROVIDERS[preset].displayName;
+  }
+  return null;
 }

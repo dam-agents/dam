@@ -7,20 +7,17 @@ import {
 import type { PlatformStore } from "../../store.js";
 
 const FILES_SECTION_OPEN_STORAGE_KEY = "platform-files-open";
-const SHOW_HIDDEN_FILES_STORAGE_KEY = "platform-files-show-hidden";
-
-export const DEFAULT_EXPANDED_DIRS: ReadonlySet<string> = new Set(["work"]);
 
 export interface FilesSlice {
+  openFilePath: string | null;
   filesSectionOpen: boolean;
-  showHiddenFiles: boolean;
   openFileDirty: boolean;
   openFileEdit: boolean;
   expandedDirs: Record<string, Set<string>>;
   importingAgents: Record<string, number>;
+  setOpenFilePath: (path: string | null, opts?: { edit?: boolean }) => void;
   setOpenFileEdit: (edit: boolean) => void;
   setFilesSectionOpen: (open: boolean) => void;
-  setShowHiddenFiles: (show: boolean) => void;
   setOpenFileDirty: (dirty: boolean) => void;
   toggleExpandedDir: (agentId: string, path: string) => void;
   pruneExpandedDir: (agentId: string, path: string) => void;
@@ -29,7 +26,7 @@ export interface FilesSlice {
   endImport: (agentId: string) => void;
 }
 
-function withoutPath(set: ReadonlySet<string>, prefix: string): Set<string> {
+function withoutPath(set: Set<string>, prefix: string): Set<string> {
   const next = new Set<string>();
   for (const p of set) {
     if (p !== prefix && !p.startsWith(prefix + "/")) next.add(p);
@@ -38,7 +35,7 @@ function withoutPath(set: ReadonlySet<string>, prefix: string): Set<string> {
 }
 
 function rewritePrefix(
-  set: ReadonlySet<string>,
+  set: Set<string>,
   from: string,
   to: string,
 ): Set<string> {
@@ -57,25 +54,34 @@ export const createFilesSlice: StateCreator<
   [],
   FilesSlice
 > = (set) => ({
-  filesSectionOpen: readPersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, false),
-  showHiddenFiles: readPersistedFlag(SHOW_HIDDEN_FILES_STORAGE_KEY, false),
+  openFilePath: null,
+  filesSectionOpen: readPersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, true),
   openFileDirty: false,
   openFileEdit: false,
   expandedDirs: {},
   importingAgents: {},
+  setOpenFilePath: (path, opts) =>
+    set({
+      openFilePath: path,
+      openFileDirty: false,
+      openFileEdit: opts?.edit ?? false,
+      ...(path !== null
+        ? {
+            openArtifactId: null,
+            openArtifactDirty: false,
+            openDelegation: null,
+          }
+        : {}),
+    }),
   setOpenFileEdit: (edit) => set({ openFileEdit: edit }),
   setFilesSectionOpen: (open) => {
     writePersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, open);
     set({ filesSectionOpen: open });
   },
-  setShowHiddenFiles: (show) => {
-    writePersistedFlag(SHOW_HIDDEN_FILES_STORAGE_KEY, show);
-    set({ showHiddenFiles: show });
-  },
   setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
   toggleExpandedDir: (agentId, path) => {
     set((state) => {
-      const current = state.expandedDirs[agentId] ?? DEFAULT_EXPANDED_DIRS;
+      const current = state.expandedDirs[agentId] ?? new Set<string>();
       const next = current.has(path)
         ? withoutPath(current, path)
         : new Set(current).add(path);
@@ -84,8 +90,8 @@ export const createFilesSlice: StateCreator<
   },
   pruneExpandedDir: (agentId, path) => {
     set((state) => {
-      const current = state.expandedDirs[agentId] ?? DEFAULT_EXPANDED_DIRS;
-      if (!current.has(path)) return state;
+      const current = state.expandedDirs[agentId];
+      if (!current || !current.has(path)) return state;
       return {
         expandedDirs: {
           ...state.expandedDirs,
@@ -96,7 +102,8 @@ export const createFilesSlice: StateCreator<
   },
   renameExpandedDir: (agentId, from, to) => {
     set((state) => {
-      const current = state.expandedDirs[agentId] ?? DEFAULT_EXPANDED_DIRS;
+      const current = state.expandedDirs[agentId];
+      if (!current) return state;
       return {
         expandedDirs: {
           ...state.expandedDirs,

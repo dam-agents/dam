@@ -2,9 +2,10 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
+import { bootTimeoutMs } from "./backend.js";
 import { harnessName } from "./fixtures.js";
 
-const AGENT_RUNNING_TIMEOUT_MS = 240_000;
+const AGENT_RUNNING_TIMEOUT_MS = bootTimeoutMs(180_000);
 
 export async function waitForAgentRunning(
   api: ApiClient,
@@ -119,26 +120,6 @@ export function chatInput(page: Page): Locator {
   return page.getByPlaceholder(/^(queue a )?message(…|\.\.\.)/i);
 }
 
-export async function ensureSidebarExpanded(page: Page): Promise<void> {
-  const expand = page
-    .getByTestId("app-sidebar")
-    .getByRole("button", { name: "Expand navigation" });
-  if (await expand.isVisible()) await expand.click();
-  await expect(page.getByTestId("sidebar-agents")).toBeVisible();
-}
-
-export function sidebarAgentRow(page: Page, agentName: string): Locator {
-  return page
-    .getByTestId("sidebar-agents")
-    .locator("li")
-    .filter({
-      has: page.getByTestId("sidebar-agent-row").filter({
-        hasText: new RegExp(`^${agentName}\\s*(\\(unread\\))?$`),
-      }),
-    })
-    .first();
-}
-
 export async function gotoAgentChat(
   page: Page,
   agentName: string,
@@ -148,7 +129,6 @@ export async function gotoAgentChat(
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );
-  await ensureSidebarExpanded(page);
 }
 
 export async function openAgentChat(

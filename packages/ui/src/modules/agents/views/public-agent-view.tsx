@@ -1,8 +1,6 @@
 import type { Brand, PublicAgentView as PublicAgent } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
-import { PAGE_TITLE } from "@/components/ui/page-header";
-import { cn } from "@/lib/utils";
 
 import { ownerInitials } from "../lib/owner-initials.js";
 
@@ -13,7 +11,6 @@ interface PublicAgentViewProps {
   state: PublicAgentPageState;
   brand: Brand;
   openPath: string;
-  fromApp?: boolean;
 }
 
 function Masthead({ brand }: { brand: Brand }) {
@@ -30,7 +27,7 @@ function OwnerByline({ name }: { name: string }) {
     <div className="mt-2.5 flex items-center gap-2.5 text-sm text-muted-foreground">
       <span
         aria-hidden="true"
-        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-semibold text-muted-foreground"
+        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground"
       >
         {ownerInitials(name)}
       </span>
@@ -126,20 +123,10 @@ function pitch(brand: Brand, subject: "this-agent" | "platform"): string {
 function CallsToAction({
   brand,
   openPath,
-  fromApp,
 }: {
   brand: Brand;
   openPath: string;
-  fromApp: boolean;
 }) {
-  if (fromApp)
-    return (
-      <div className="mt-6 flex flex-wrap items-center gap-2">
-        <Button asChild>
-          <a href="/">Back to {brand.name}</a>
-        </Button>
-      </div>
-    );
   return (
     <div className="mt-6 flex flex-wrap items-center gap-2">
       <Button asChild>
@@ -159,18 +146,16 @@ function NamedAgent({
   agent,
   brand,
   openPath,
-  fromApp,
 }: {
   agent: PublicAgent;
   brand: Brand;
   openPath: string;
-  fromApp: boolean;
 }) {
   return (
     <>
       <div className="flex-1 px-6 pt-24">
         <div className="mx-auto w-full max-w-[640px]">
-          <h1 className={cn(PAGE_TITLE, "text-balance break-words")}>
+          <h1 className="text-2xl leading-tight font-semibold text-balance break-words">
             {agent.name}
           </h1>
           {agent.ownerName === null ? null : (
@@ -187,36 +172,24 @@ function NamedAgent({
           <p className="mt-3 text-sm text-muted-foreground">
             {pitch(brand, "this-agent")}
           </p>
-          <CallsToAction brand={brand} openPath={openPath} fromApp={fromApp} />
+          <CallsToAction brand={brand} openPath={openPath} />
         </div>
       </div>
     </>
   );
 }
 
-function GenericPitch({
-  brand,
-  openPath,
-  fromApp,
-}: {
-  brand: Brand;
-  openPath: string;
-  fromApp: boolean;
-}) {
+function GenericPitch({ brand, openPath }: { brand: Brand; openPath: string }) {
   return (
     <div className="flex-1 px-6 pt-24">
       <div className="mx-auto w-full max-w-[640px]">
-        <h1 className={cn(PAGE_TITLE, "text-balance")}>
-          {fromApp
-            ? "This agent isn't available, or isn't shared with you."
-            : `Create your own agents with ${brand.name}.`}
+        <h1 className="text-2xl leading-tight font-semibold text-balance">
+          Create your own agents with {brand.name}.
         </h1>
         <p className="mt-5 text-sm text-muted-foreground">
-          {fromApp
-            ? "It may have been deleted, or it belongs to someone else."
-            : pitch(brand, "platform")}
+          {pitch(brand, "platform")}
         </p>
-        <CallsToAction brand={brand} openPath={openPath} fromApp={fromApp} />
+        <CallsToAction brand={brand} openPath={openPath} />
       </div>
     </div>
   );
@@ -228,27 +201,20 @@ function GenericPitch({
  * paint before the public read resolves: the reader arrives from a Slack link
  * on an empty document, and waiting for the fetch would show them a white page.
  * The loading state carries no pitch, so a named agent never flashes the
- * generic copy first. A visitor the app itself redirected here is signed in,
- * so it is not asked whether it has an account.
+ * generic copy first.
  */
 export function PublicAgentView({
   state,
   brand,
   openPath,
-  fromApp = false,
 }: PublicAgentViewProps) {
   return (
     <main className="flex min-h-dvh flex-col bg-background text-foreground">
       <Masthead brand={brand} />
       {state.status === "loading" ? null : state.agent ? (
-        <NamedAgent
-          agent={state.agent}
-          brand={brand}
-          openPath={openPath}
-          fromApp={fromApp}
-        />
+        <NamedAgent agent={state.agent} brand={brand} openPath={openPath} />
       ) : (
-        <GenericPitch brand={brand} openPath={openPath} fromApp={fromApp} />
+        <GenericPitch brand={brand} openPath={openPath} />
       )}
     </main>
   );

@@ -234,6 +234,7 @@ const configSchema = z.object({
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   virtualizationEnabled: z.stringbool().default(false),
+  virtualizationHostRunner: z.stringbool().default(false),
   // UNIT_BOUNDARY_DESCRIPTION: the pool each owner's VM runner is created at, as the chart sizes it, read before any runner exists to ask. The storage is the claim every machine disk shares; a memory the install does not set leaves the runner sized by the owner's UserBudget alone, whose own absence refuses nothing.
   vmPoolStorage: z.string().default("100Gi"),
   vmPoolMemory: z.string().default(""),
@@ -387,6 +388,20 @@ const validatedConfigSchema = configSchema
     },
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a vm agent's memory comes from its own spec or from a share of its owner's runner pool. The controller reads the runner pool only where it creates runner pods with a positive limit; a host runner and a pool with no memory limit both size a machine from its spec, so the old size control works there.
+export function vmAgentSizing(
+  config: Pick<
+    Config,
+    "virtualizationEnabled" | "virtualizationHostRunner" | "vmPoolMemory"
+  >,
+): "spec" | "pool" {
+  return config.virtualizationEnabled &&
+    !config.virtualizationHostRunner &&
+    config.vmPoolMemory !== ""
+    ? "pool"
+    : "spec";
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the install facts every agents module needs, read from the config in one place. Each composition root passes this whole, and the module requires it, so no root can build an agents module that plans a migration without the install's default mounts, disk default or retention window.
 export function agentsInstallSettings(config: Config) {
   return {
@@ -439,6 +454,7 @@ export function loadConfig(): Config {
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
+    virtualizationHostRunner: process.env.VIRTUALIZATION_HOST_RUNNER,
     vmPoolStorage: process.env.VM_POOL_STORAGE,
     vmPoolMemory: process.env.VM_POOL_MEMORY,
     featureModes: {

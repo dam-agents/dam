@@ -11,17 +11,15 @@ import { useStore } from "../../../store.js";
  * held keeps that draft, because nothing is discarded.
  */
 export function useOpenArtifact() {
-  const openArtifactId = useStore((s) =>
-    s.dock?.kind === "artifact" ? s.dock.id : null,
-  );
-  const setDock = useStore((s) => s.setDock);
+  const openArtifactId = useStore((s) => s.openArtifactId);
+  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const confirmDiscard = useDockDraftGuard();
 
   return useCallback(
     async (id: string | null, opts?: { edit?: boolean }) => {
       if (id !== openArtifactId && !(await confirmDiscard())) return;
-      setDock(id === null ? null : { kind: "artifact", id }, opts);
+      setOpenArtifactId(id, opts);
     },
-    [openArtifactId, confirmDiscard, setDock],
+    [openArtifactId, confirmDiscard, setOpenArtifactId],
   );
 }

@@ -5,7 +5,7 @@ import type { AgentState } from "../../../types.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useInvocationTurns } from "../api/queries.js";
-import { flattenIds } from "../lib/delegation-state.js";
+import { flattenIds, hasRunning } from "../lib/delegation-state.js";
 import { DelegationCard } from "./delegation-card.js";
 
 interface Props {
@@ -21,7 +21,7 @@ export function DelegationCards({ nodes, driverAgentId }: Props) {
     driverAgentId,
     allIds,
     telemetryEnabled,
-    nodes,
+    hasRunning(nodes),
   );
   const turns = telemetry?.available ? telemetry.turns : undefined;
   const agentStates = useMemo(

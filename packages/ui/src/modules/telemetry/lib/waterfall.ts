@@ -165,6 +165,18 @@ export function buildWaterfall(turn: TurnDetail): Waterfall {
   };
 }
 
+const COST_KEYS = ["cost_usd_micros"] as const;
+
+export function logCostUsd(log: TelemetryLog): number | null {
+  for (const key of COST_KEYS) {
+    const raw = log.attributes[key];
+    if (raw === undefined) continue;
+    const micros = Number(raw);
+    if (!Number.isNaN(micros)) return micros / 1e6;
+  }
+  return null;
+}
+
 export function rowKeyOf(row: TimelineRow): string {
   return row.key;
 }

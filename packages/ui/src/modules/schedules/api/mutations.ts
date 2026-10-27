@@ -1,13 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
-import { getErrorMessage } from "../../../lib/errors.js";
-import { emitToast } from "../../../lib/toast.js";
 import { trpc } from "../../../trpc.js";
-import { runNowErrorText } from "../lib/schedule-format.js";
 
 const invalidatesScheduleList = {
-  invalidates: [trpc.schedules.pathKey(), trpc.attention.pathKey()],
+  invalidates: [trpc.schedules.pathKey()],
 };
 
 interface CreateScheduleInput {
@@ -19,10 +16,6 @@ interface CreateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck?: string;
-  harness?: string;
-  model?: string;
-  settings?: Record<string, string>;
-  sessionTitle?: string;
 }
 
 export function useCreateSchedule() {
@@ -36,35 +29,7 @@ export function useCreateSchedule() {
       }),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Couldn't create schedule",
-    },
-  });
-}
-
-export interface UpdateCronScheduleInput {
-  id: string;
-  name: string;
-  cron: string;
-  task: string;
-  sessionMode: "fresh" | "continuous";
-  precheck: string | null;
-  harness: string | null;
-  model: string | null;
-  settings: Record<string, string> | null;
-  sessionTitle: string | null;
-}
-
-export function useUpdateCronSchedule() {
-  return useMutation({
-    mutationFn: (input: UpdateCronScheduleInput) =>
-      api.schedules.updateCron.mutate({
-        ...input,
-        sessionMode:
-          input.sessionMode === "fresh" ? undefined : input.sessionMode,
-      }),
-    meta: {
-      ...invalidatesScheduleList,
-      errorToast: "Couldn't update schedule",
+      errorToast: "Failed to create schedule",
     },
   });
 }
@@ -78,10 +43,6 @@ interface UpdateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
-  harness: string | null;
-  model: string | null;
-  settings: Record<string, string> | null;
-  sessionTitle: string | null;
 }
 
 export function useUpdateSchedule() {
@@ -94,53 +55,7 @@ export function useUpdateSchedule() {
       }),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Couldn't update schedule",
-    },
-  });
-}
-
-export interface CreateOnceScheduleInput {
-  agentId: string;
-  name: string;
-  task: string;
-  timezone: string;
-  at?: string;
-  harness?: string;
-  model?: string;
-  settings?: Record<string, string>;
-  sessionTitle?: string;
-}
-
-export function useCreateOnceSchedule() {
-  return useMutation({
-    mutationFn: (input: CreateOnceScheduleInput) =>
-      api.schedules.createOnce.mutate(input),
-    meta: {
-      ...invalidatesScheduleList,
-      errorToast: "Couldn't create one-time task",
-    },
-  });
-}
-
-export interface UpdateOnceScheduleInput {
-  id: string;
-  name: string;
-  task: string;
-  timezone: string;
-  at: string;
-  harness?: string;
-  model?: string;
-  settings?: Record<string, string>;
-  sessionTitle?: string;
-}
-
-export function useUpdateOnceSchedule() {
-  return useMutation({
-    mutationFn: (input: UpdateOnceScheduleInput) =>
-      api.schedules.updateOnce.mutate(input),
-    meta: {
-      ...invalidatesScheduleList,
-      errorToast: "Couldn't update one-time task",
+      errorToast: "Failed to update schedule",
     },
   });
 }
@@ -150,17 +65,7 @@ export function useToggleSchedule() {
     ...trpc.schedules.toggle.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Couldn't toggle schedule",
-    },
-  });
-}
-
-export function useClearScheduleChoices() {
-  return useMutation({
-    ...trpc.schedules.clearSessionChoices.mutationOptions(),
-    meta: {
-      ...invalidatesScheduleList,
-      errorToast: "Couldn't move the schedules to the scheduled default",
+      errorToast: "Failed to toggle schedule",
     },
   });
 }
@@ -170,7 +75,7 @@ export function useDeleteSchedule() {
     ...trpc.schedules.delete.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Couldn't delete schedule",
+      errorToast: "Failed to delete schedule",
     },
   });
 }
@@ -180,7 +85,7 @@ export function useResetScheduleSession() {
     ...trpc.schedules.resetSession.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Couldn't reset schedule session",
+      errorToast: "Failed to reset schedule session",
     },
   });
 }
@@ -190,12 +95,7 @@ export function useRunScheduleNow() {
     ...trpc.schedules.runNow.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      suppressErrorToast: true,
+      errorToast: "Failed to run schedule",
     },
-    onError: (error) =>
-      emitToast({
-        kind: "error",
-        message: runNowErrorText(getErrorMessage(error, "")),
-      }),
   });
 }

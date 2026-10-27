@@ -160,16 +160,7 @@ export function Tabs<T extends string>({
             )}
           >
             {tab.icon}
-            {variant === "pill" && typeof tab.label === "string" ? (
-              <span
-                data-label={tab.label}
-                className="inline-flex flex-col after:invisible after:h-0 after:overflow-hidden after:font-semibold after:content-[attr(data-label)]"
-              >
-                {tab.label}
-              </span>
-            ) : (
-              tab.label
-            )}
+            {tab.label}
             {tab.trailing}
           </button>
         );

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
@@ -15,11 +16,11 @@ import {
   matchesSearch,
   sortKits,
 } from "../lib/catalog-cards.js";
-import { KitCategoryTag } from "./kit-category-tag.js";
+import { kitIcon } from "../lib/kit-icon.js";
 
-type Filter = StarterKitView["category"] | "all";
+export type Filter = StarterKitView["category"] | "all";
 
-function KitBadges({
+export function KitBadges({
   kit,
   templates,
   templateById,
@@ -44,6 +45,29 @@ function KitBadges({
   );
 }
 
+export function KitIllustration({
+  kit,
+  size = 32,
+  className,
+}: {
+  kit: StarterKitView;
+  size?: number;
+  className?: string;
+}) {
+  const Icon = kitIcon(kit);
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center bg-gradient-to-br from-kit-tint to-kit-surface text-kit",
+        className,
+      )}
+      aria-hidden
+    >
+      <Icon size={size} />
+    </div>
+  );
+}
+
 export function KitCard({
   kit,
   templates,
@@ -60,15 +84,14 @@ export function KitCard({
       type="button"
       onClick={onOpen}
       data-testid={`starter-kit-card-${kit.id}`}
-      className="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-colors hover:border-foreground/20"
+      className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20"
     >
+      <KitIllustration
+        kit={kit}
+        className="h-[160px] border-b border-kit-line"
+      />
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-base font-semibold text-foreground">
-            {kit.name}
-          </h3>
-          <KitCategoryTag category={kit.category} />
-        </div>
+        <h3 className="text-base font-semibold text-foreground">{kit.name}</h3>
         <p className="flex-1 text-sm text-muted-foreground">
           {kit.tagline ?? kit.description}
         </p>
@@ -82,9 +105,15 @@ export function KitCard({
   );
 }
 
-export function useKitFilter(kits: readonly StarterKitView[]) {
+export function useKitFilter(
+  kits: readonly StarterKitView[],
+  initial: Filter = "all",
+  onFilterChange?: (filter: Filter) => void,
+) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [localFilter, setLocalFilter] = useState<Filter>(initial);
+  const filter = onFilterChange ? initial : localFilter;
+  const setFilter = onFilterChange ?? setLocalFilter;
 
   const shown = useMemo(
     () =>
@@ -147,7 +176,6 @@ export function KitFilterBar({
             variant="ghost"
             size="icon-xs"
             aria-label="Clear search"
-            tooltip="Clear search"
             onClick={() => {
               onQueryChange("");
               inputRef.current?.focus();
@@ -166,7 +194,7 @@ export function KitFilterBar({
           variant="pill"
           size="sm"
           ariaLabel="Filter kits by category"
-          className="mb-5 flex-wrap"
+          className="mb-5"
         />
       )}
     </>

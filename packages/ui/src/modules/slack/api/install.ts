@@ -15,7 +15,9 @@ export async function fetchSlackInstallAvailability(): Promise<boolean> {
   const routeIsNotMounted = res.status === 404;
   if (routeIsNotMounted) return false;
   if (!res.ok) {
-    throw new Error(`Couldn't check the Slack install surface (${res.status})`);
+    throw new Error(
+      `Could not check the Slack install surface (${res.status})`,
+    );
   }
   return installStatusSchema.parse(await res.json()).canInstall;
 }
@@ -23,7 +25,7 @@ export async function fetchSlackInstallAvailability(): Promise<boolean> {
 export async function fetchSlackInstallLink(): Promise<string> {
   const res = await authFetch("/api/slack/install/start");
   if (!res.ok) {
-    throw new Error(`Couldn't start the install (${res.status})`);
+    throw new Error(`Could not start the install (${res.status})`);
   }
   return installLinkSchema.parse(await res.json()).url;
 }

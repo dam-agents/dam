@@ -1,7 +1,6 @@
 import type { LibraryArtifact } from "api-server-api";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -28,6 +27,14 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
   const update = useUpdateArtifact();
   const pending = update.isPending;
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !pending) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [pending, onClose]);
+
   const currentFolderId = artifact.folderId ?? NO_FOLDER;
   const selected = chosen ?? currentFolderId;
 
@@ -44,27 +51,18 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
   };
 
   return (
-    <Modal onClose={pending ? undefined : onClose}>
+    <Modal>
       <DialogHeader
         onClose={onClose}
         closeDisabled={pending}
         title="Move artifact"
       />
       <DialogBody>
-        <FormField
-          label="Folder"
-          error={
-            foldersFailed
-              ? "Couldn't load your folders. Close this dialog and try again."
-              : undefined
-          }
-          hint={
-            folders !== undefined &&
-            folders.length === 0 &&
-            "No folders yet — create one from the Artifacts page first."
-          }
-        >
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-foreground">Folder</span>
           <Select
+            size="sm"
+            aria-label="Folder"
             value={selected}
             autoFocus
             disabled={folders === undefined}
@@ -77,7 +75,17 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
               </option>
             ))}
           </Select>
-        </FormField>
+          {foldersFailed && (
+            <p className="text-xs text-danger">
+              Couldn’t load your folders. Close this dialog and try again.
+            </p>
+          )}
+          {folders !== undefined && folders.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No folders yet — create one from the Artifacts page first.
+            </p>
+          )}
+        </div>
       </DialogBody>
       <DialogActions
         onCancel={onClose}

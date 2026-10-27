@@ -3,7 +3,6 @@ export const fileKeys = {
   tree: (agentId: string) => [...fileKeys.root(agentId), "tree"] as const,
   treeForPaths: (agentId: string, paths: readonly string[]) =>
     [...fileKeys.tree(agentId), paths] as const,
-  volume: (agentId: string) => [...fileKeys.root(agentId), "volume"] as const,
   content: (agentId: string, path: string) =>
     [...fileKeys.root(agentId), "content", path] as const,
 };

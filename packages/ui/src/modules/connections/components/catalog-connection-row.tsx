@@ -1,4 +1,4 @@
-import { TrashCan } from "@carbon/icons-react";
+import { Close } from "@carbon/icons-react";
 import type { ConnectionStatus, ConnectionView } from "api-server-api";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -69,7 +69,7 @@ export function CatalogConnectionRow({
               className="shrink-0 text-foreground/80"
             />
           )}
-          <p className="max-w-[50%] shrink-0 truncate text-md font-medium text-foreground">
+          <p className="max-w-[50%] shrink-0 truncate text-[15px] text-foreground">
             {connection.name}
           </p>
           <Badge variant="muted" className="min-w-0 font-normal" title={tag}>
@@ -80,16 +80,6 @@ export function CatalogConnectionRow({
               {STATUS_PRESENTATION[connection.status].label}
             </Badge>
           )}
-          {connection.status === "active" &&
-            connection.check?.status === "failed" && (
-              <Badge
-                variant="danger"
-                title={connection.check.reason}
-                data-testid={`catalog-connection-check-${connection.id}`}
-              >
-                Check failed
-              </Badge>
-            )}
         </div>
         <ConnectionRowActions
           connection={connection}
@@ -104,11 +94,11 @@ export function CatalogConnectionRow({
             variant="ghost"
             size="icon-sm"
             aria-label={`Remove ${connection.name} from this agent`}
-            tooltip="Remove from this agent"
+            title="Remove from this agent"
             onClick={onRemove}
             data-testid={`catalog-remove-${connection.id}`}
           >
-            <TrashCan size={16} />
+            <Close size={16} />
           </Button>
         )}
       </div>

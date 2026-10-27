@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import * as auth from "../../auth.js";
-
 /**
  * TEST_OVERVIEW: Every connection the UI opens takes its bearer from
  * getAccessToken. The tRPC WebSocket is nudged to reconnect 30 s before its
@@ -10,9 +8,10 @@ import * as auth from "../../auth.js";
  * that is close to expiry rather than reuse it. The silent-renew timer
  * normally does this first, but a background tab throttles that timer. A
  * failed renewal must not send the user to the login page while the old
- * token still works. Sign-in setup on page load retries a failed fetch, so a
- * network blip does not leave a blank page.
+ * token still works.
  */
+
+vi.setConfig({ testTimeout: 30_000 });
 
 const oidc = vi.hoisted(() => ({
   user: null as { access_token: string; expires_in?: number } | null,
@@ -45,6 +44,8 @@ vi.mock("../../modules/sessions/lib/undelivered-store.js", () => ({
 
 async function signedIn(user: { access_token: string; expires_in?: number }) {
   oidc.user = user;
+  vi.resetModules();
+  const auth = await import("../../auth.js");
   await auth.initAuth();
   return auth;
 }
@@ -115,22 +116,5 @@ describe("getAccessToken", () => {
     oidc.signinSilent.mockRejectedValue(new Error("login_required"));
     await expect(auth.getAccessToken()).rejects.toThrow("Session expired");
     expect(oidc.signinRedirect).toHaveBeenCalled();
-  });
-});
-
-describe("initAuth", () => {
-  // TEST_SCENARIO: The first fetch fails with a network error, as Chromium does on ERR_NETWORK_CHANGED. Sign-in setup retries and goes on to the login redirect.
-  it("retries a fetch that fails once", async () => {
-    vi.useFakeTimers();
-    const fetch = vi.fn(globalThis.fetch);
-    fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-    vi.stubGlobal("fetch", fetch);
-    oidc.user = null;
-    const init = auth.initAuth();
-    await vi.runAllTimersAsync();
-    expect(await init).toBeNull();
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(oidc.signinRedirect).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
   });
 });

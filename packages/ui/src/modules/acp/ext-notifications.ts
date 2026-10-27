@@ -4,7 +4,6 @@ import {
   platformPromptStartedParamsSchema,
   platformQueueChangedParamsSchema,
   platformRunStartedParamsSchema,
-  platformSessionResetParamsSchema,
   platformTurnEndedParamsSchema,
 } from "api-server-api";
 import type { z } from "zod";
@@ -15,8 +14,10 @@ export function frameMetaOf(meta: unknown): FrameMeta {
   if (typeof meta !== "object" || meta === null) return {};
   const platform = (meta as Record<string, unknown>).platform;
   if (typeof platform !== "object" || platform === null) return {};
-  const { replayFor, at, telemetryPromptId, model, turnId, stopReason, block } =
-    platform as Record<string, unknown>;
+  const { replayFor, at, telemetryPromptId, turnId } = platform as Record<
+    string,
+    unknown
+  >;
   const parsedAt = platformFrameMetaSchema.shape.at.safeParse(at);
   return {
     ...(typeof replayFor === "string" ? { replayFor } : {}),
@@ -26,14 +27,7 @@ export function frameMetaOf(meta: unknown): FrameMeta {
     ...(typeof telemetryPromptId === "string" && telemetryPromptId !== ""
       ? { telemetryPromptId }
       : {}),
-    ...(typeof model === "string" && model !== "" ? { model } : {}),
     ...(typeof turnId === "string" && turnId !== "" ? { turnId } : {}),
-    ...(typeof stopReason === "string" && stopReason !== ""
-      ? { stopReason }
-      : {}),
-    ...(Number.isSafeInteger(block) && (block as number) > 0
-      ? { block: block as number }
-      : {}),
   };
 }
 
@@ -56,7 +50,6 @@ export const PLATFORM_NOTIFICATION_METHODS = [
   "platform/promptStarted",
   "platform/runStarted",
   "platform/queueChanged",
-  "platform/sessionReset",
 ] as const;
 
 interface RoutedExtUpdate {
@@ -106,15 +99,6 @@ export function routeExtNotification(
         frame,
       };
     }
-    case "platform/runStarted": {
-      const p = parseExtParams(method, platformRunStartedParamsSchema, params);
-      if (!p) return null;
-      return {
-        update: { sessionUpdate: "platform_run_started", ...p },
-        sessionId: p.sessionId,
-        frame,
-      };
-    }
     case "platform/queueChanged": {
       const p = parseExtParams(
         method,
@@ -128,15 +112,11 @@ export function routeExtNotification(
         frame,
       };
     }
-    case "platform/sessionReset": {
-      const p = parseExtParams(
-        method,
-        platformSessionResetParamsSchema,
-        params,
-      );
+    case "platform/runStarted": {
+      const p = parseExtParams(method, platformRunStartedParamsSchema, params);
       if (!p) return null;
       return {
-        update: { sessionUpdate: "platform_session_reset", ...p },
+        update: { sessionUpdate: "platform_run_started", ...p },
         sessionId: p.sessionId,
         frame,
       };

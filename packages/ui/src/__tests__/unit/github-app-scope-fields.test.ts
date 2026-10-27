@@ -49,6 +49,10 @@ describe("permission field round-trip", () => {
       "contents:write metadata:read",
     );
   });
+
+  it("writes an empty string when nothing is selected", () => {
+    expect(writePermissions({})).toBe("");
+  });
 });
 
 describe("repository id field round-trip", () => {
@@ -63,6 +67,10 @@ describe("repository id field round-trip", () => {
 
   it("writes ids in a stable order", () => {
     expect(writeRepositoryIds([34, 12])).toBe("12 34");
+  });
+
+  it("writes an empty string when nothing is selected", () => {
+    expect(writeRepositoryIds([])).toBe("");
   });
 });
 

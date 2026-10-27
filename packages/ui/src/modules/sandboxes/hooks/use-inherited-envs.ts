@@ -1,19 +1,8 @@
-import {
-  type ConnectionView,
-  isProtectedAgentEnvName,
-  providerTypeForTemplateId,
-} from "api-server-api";
+import { type ConnectionView, isProtectedAgentEnvName } from "api-server-api";
 import { useMemo } from "react";
 
 import type { EnvVar } from "../../../types.js";
-import { providerName } from "../../providers/lib/provider-rows.js";
-
-export interface InheritedEnv {
-  name: string;
-  value: string;
-  source: "system" | { label: string; kind: "provider" | "connection" };
-  shadowed: boolean;
-}
+import type { InheritedEnv } from "../../agents/components/configure-agent/env-tab.js";
 
 interface Args {
   agentEnv: readonly EnvVar[];
@@ -22,45 +11,34 @@ interface Args {
   envVars: readonly EnvVar[];
 }
 
-export function inheritedEnvs({
+export function useInheritedEnvs({
   agentEnv,
   apps,
   appIdsSet,
   envVars,
 }: Args): InheritedEnv[] {
-  const items: InheritedEnv[] = agentEnv
-    .filter((e) => isProtectedAgentEnvName(e.name))
-    .map((e) => ({
-      name: e.name,
-      value: e.value,
-      source: "system" as const,
-      shadowed: false,
-    }));
-  const userEnvNames = new Set(envVars.map((e) => e.name));
-  for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
-    const provider = providerTypeForTemplateId(a.templateId);
-    const source = provider
-      ? {
-          label: providerName(provider, a.templateId),
-          kind: "provider" as const,
-        }
-      : { label: a.name, kind: "connection" as const };
-    for (const c of a.contributions)
-      if (c.kind === "env")
+  return useMemo(() => {
+    const items: InheritedEnv[] = agentEnv
+      .filter((e) => isProtectedAgentEnvName(e.name))
+      .map((e) => ({
+        name: e.name,
+        value: e.value,
+        source: "system" as const,
+      }));
+    const userEnvNames = new Set(envVars.map((e) => e.name));
+    for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
+      const envContribs = a.contributions.filter(
+        (c): c is Extract<typeof c, { kind: "env" }> => c.kind === "env",
+      );
+      for (const c of envContribs) {
+        if (userEnvNames.has(c.name)) continue;
         items.push({
           name: c.name,
           value: c.placeholder,
-          source,
-          shadowed: userEnvNames.has(c.name),
+          source: { appLabel: a.name },
         });
-  }
-  return items;
-}
-
-export function useInheritedEnvs(args: Args): InheritedEnv[] {
-  const { agentEnv, apps, appIdsSet, envVars } = args;
-  return useMemo(
-    () => inheritedEnvs({ agentEnv, apps, appIdsSet, envVars }),
-    [agentEnv, apps, appIdsSet, envVars],
-  );
+      }
+    }
+    return items;
+  }, [agentEnv, apps, appIdsSet, envVars]);
 }

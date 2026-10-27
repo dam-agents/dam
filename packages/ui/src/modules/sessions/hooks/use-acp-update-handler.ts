@@ -1,15 +1,11 @@
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
-import {
-  applyUpdate,
-  withoutQueuedSends,
-} from "../../acp/session-projection.js";
+import { applyUpdate } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
+import { sessionModelFrom } from "../lib/session-model.js";
 
-export function useAcpUpdateHandler(
-  onSessionReset: (sessionId: string) => void,
-): () => UpdateHandler {
+export function useAcpUpdateHandler(): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
 
   const dismissStalePermission = useCallback(
@@ -27,8 +23,6 @@ export function useAcpUpdateHandler(
     return (update: AcpUpdate, sessionId: string, frame?: FrameMeta) => {
       const viewing = useStore.getState().sessionId;
       if (viewing !== null && viewing !== sessionId) return;
-      const pending = useStore.getState().rewritePending;
-      const inFlight = pending?.sessionId === sessionId ? pending : null;
 
       const { sessionUpdate: kind } = update;
 
@@ -44,21 +38,22 @@ export function useAcpUpdateHandler(
         useStore.getState().addRunStart(update.at);
       }
 
-      if (kind === "platform_session_reset") {
-        if (!inFlight) onSessionReset(sessionId);
+      if (kind === "config_option_update" && viewing === sessionId) {
+        useStore
+          .getState()
+          .setSessionModel(sessionModelFrom(sessionId, update.configOptions));
         return;
       }
 
-      if (kind === "platform_queue_changed") {
-        useStore.getState().setQueuedPrompts(update.items);
-        setMessages((prev) => withoutQueuedSends(prev, update.items));
-        return;
-      }
-
-      if (kind === "config_option_update") return;
-      if (inFlight?.takeBack) return;
-
-      setMessages((prev) => applyUpdate(prev, update, frame));
+      setMessages((prev) =>
+        applyUpdate(
+          prev,
+          update,
+          frame?.at,
+          frame?.telemetryPromptId,
+          frame?.turnId,
+        ),
+      );
     };
-  }, [dismissStalePermission, setMessages, onSessionReset]);
+  }, [dismissStalePermission, setMessages]);
 }

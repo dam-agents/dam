@@ -5,7 +5,6 @@ import { DelegationShell } from "./delegation-shell.js";
 
 interface Props {
   driverAgentId: string;
-  sessionId: string | null;
   busy: boolean;
   claimed: ReadonlyMap<string, unknown>;
 }
@@ -19,13 +18,8 @@ interface Props {
  * can never describe the same child: the handover happens in the render the
  * chip lands, not on this block's next poll.
  */
-export function LiveDelegationBlock({
-  driverAgentId,
-  sessionId,
-  busy,
-  claimed,
-}: Props) {
-  const { data } = useRunningDelegations(driverAgentId, sessionId, {
+export function LiveDelegationBlock({ driverAgentId, busy, claimed }: Props) {
+  const { data } = useRunningDelegations(driverAgentId, {
     busy,
     watch: claimed.size > 0,
   });

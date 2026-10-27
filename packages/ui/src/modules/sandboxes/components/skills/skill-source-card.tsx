@@ -1,24 +1,39 @@
-import { ChevronDown, ChevronUp, Renew, Time } from "@carbon/icons-react";
-import type { Skill, SkillSource } from "api-server-api";
+import {
+  ChevronDown,
+  ChevronUp,
+  Launch,
+  OverflowMenuHorizontal,
+  Renew,
+  Time,
+  TrashCan,
+} from "@carbon/icons-react";
+import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
 import { skillKey } from "api-server-api";
 import { useRef, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
-import { gitCompareUrl } from "@/lib/git-source";
+import { gitCompareUrl, repoSlug } from "@/lib/git-source";
+import { cn } from "@/lib/utils";
 
-import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
-import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
-import { sameSourcePath, selectionKey } from "../../lib/skill-identity.js";
 import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
 import { SourceError } from "./skill-source-error.js";
-import {
-  SkillSourceActions,
-  SkillSourceHeader,
-} from "./skill-source-header.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
+
+function repoLabel(source: SkillSource): string {
+  const base = repoSlug(source.gitUrl);
+  return source.path ? `${base} · ${source.path}` : base;
+}
 
 function ScanFreshness({
   scannedAt,
@@ -32,7 +47,7 @@ function ScanFreshness({
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
       {rescanning ? (
-        <Spinner size={14} label="Re-scanning this source" />
+        <Spinner size={13} label="Re-scanning this source" />
       ) : (
         <Time size={13} />
       )}
@@ -56,54 +71,59 @@ function ScanFreshness({
 
 export function SkillSourceCard({
   source,
-  surface,
-  derived,
+  skills,
+  loading,
+  revalidating,
+  error,
+  scannedAt,
+  visibility,
+  installedRef,
+  busyKey,
+  disabled,
+  stateLoaded,
+  readOnly,
+  onToggle,
+  onRescan,
   onRemove,
-  onHide,
+  onUpdate,
   onOpenSkill,
-  onToggleAll,
   onManageConnections,
+  suppressedNames,
+  filteredNames,
+  onToggleAll,
+  bulkBusy,
 }: {
   source: SkillSource;
-  surface: SkillsSurface;
-  derived: SkillsDerivations;
+  skills: Skill[] | undefined;
+  loading: boolean;
+  revalidating: boolean;
+  error: ScanFailure | null;
+  scannedAt?: string;
+  visibility?: "public" | "private";
+  installedRef: (source: string, name: string) => SkillRef | undefined;
+  busyKey: string | null;
+  disabled: boolean;
+  stateLoaded: boolean;
+  readOnly: boolean;
+  onToggle: (skill: Skill) => void;
+  onRescan: () => void;
   onRemove: () => void;
-  onHide: () => void;
+  onUpdate: (skill: Skill) => void;
   onOpenSkill: (skill: Skill) => void;
-  onToggleAll: (on: boolean, scope?: Skill[]) => void;
+  suppressedNames?: ReadonlySet<string>;
   onManageConnections?: () => void;
+  filteredNames?: ReadonlySet<string> | null;
+  onToggleAll?: (on: boolean, scope?: Skill[]) => void;
+  bulkBusy?: boolean;
 }) {
-  const {
-    skillsBySource,
-    loadingBySource,
-    revalidatingBySource,
-    errorBySource,
-    scannedAtBySource,
-    visibilityBySource,
-    installed,
-    installedRef,
-    mutationsDisabled,
-    busyKey,
-    busySourceId,
-    stateLoaded,
-  } = surface;
-  const skills = skillsBySource[source.id];
-  const loading = !!loadingBySource[source.id];
-  const revalidating = !!revalidatingBySource[source.id];
-  const error = errorBySource[source.id] ?? null;
-  const scannedAt = scannedAtBySource[source.id];
-  const visibility = visibilityBySource[source.id];
-  const suppressedNames = derived.suppressedBySource.get(source.id);
-  const filteredNames = derived.filteredBySource?.get(source.id) ?? null;
-  const hasInstalled = installed.some(
-    (r) => r.source === source.gitUrl && sameSourcePath(r.path, source.path),
-  );
-  const bulkBusy = busySourceId === source.id;
-
   const loaded = skills !== undefined;
   const list = (skills ?? []).filter((s) => !suppressedNames?.has(s.name));
-  const enabled = list.filter((s) => installedRef(s) !== undefined);
-  const available = list.filter((s) => installedRef(s) === undefined);
+  const enabled = list.filter(
+    (s) => installedRef(s.source, s.name) !== undefined,
+  );
+  const available = list.filter(
+    (s) => installedRef(s.source, s.name) === undefined,
+  );
   const sorted = [...enabled, ...available];
   const collapsible = enabled.length > 0 && available.length > 0;
 
@@ -127,49 +147,62 @@ export function SkillSourceCard({
 
   const bulkList = filtering ? visible : list;
   const bulkAllOn =
-    bulkList.length > 0 && bulkList.every((s) => installedRef(s) !== undefined);
+    bulkList.length > 0 &&
+    bulkList.every((s) => installedRef(s.source, s.name) !== undefined);
 
-  const hideBlocker = !stateLoaded
-    ? "Still reading this agent's skills…"
-    : hasInstalled
-      ? "Turn its skills off first"
-      : null;
+  const canRemove = !source.system && !source.fromTemplate;
 
   return (
-    <div>
-      <SkillSourceHeader
-        source={source}
-        visibility={visibility}
-        badgeTitle="Only readable through this agent's GitHub connection"
-        note={
-          loaded && (
-            <span className="shrink-0 text-sm text-muted-foreground">
-              {enabled.length} of {list.length} on
-            </span>
-          )
-        }
-      >
+    <Card className={cn(readOnly && "bg-muted")}>
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-[15px] font-semibold text-foreground">
+              {source.name}
+            </p>
+            {loaded && (
+              <span className="shrink-0 text-sm text-muted-foreground">
+                {enabled.length} of {list.length} on
+              </span>
+            )}
+            {}
+            {visibility === "private" && (
+              <Badge
+                variant="template"
+                className="shrink-0"
+                title="Only readable through this agent's GitHub connection"
+              >
+                Private
+              </Badge>
+            )}
+          </div>
+          <p className="truncate font-mono text-xs text-muted-foreground">
+            {repoLabel(source)}
+          </p>
+        </div>
         <div className="flex shrink-0 items-center gap-2">
+          {}
           {scannedAt && (
             <ScanFreshness
               scannedAt={scannedAt}
               rescanning={revalidating}
-              onRescan={() => void surface.refreshSource(source.id)}
+              onRescan={onRescan}
             />
           )}
           {!scannedAt && loading && (
-            <Spinner size={14} label="Scanning this source" />
+            <Spinner size={15} label="Scanning this source" />
           )}
-          {loaded && (
+          {}
+          {onToggleAll && !readOnly && loaded && (
             <Button
               variant="outline"
               size="sm"
-              disabled={mutationsDisabled || bulkBusy || bulkList.length === 0}
+              disabled={disabled || bulkBusy || bulkList.length === 0}
               onClick={() =>
                 onToggleAll(!bulkAllOn, filtering ? visible : undefined)
               }
             >
-              {bulkBusy && <Spinner size={14} />}
+              {bulkBusy && <Spinner size={13} />}
               {filtering
                 ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
                 : bulkAllOn
@@ -177,17 +210,43 @@ export function SkillSourceCard({
                   : "Enable all"}
             </Button>
           )}
-          <SkillSourceActions
-            source={source}
-            busy={loading || revalidating}
-            onRescan={() => void surface.refreshSource(source.id)}
-            onRemove={onRemove}
-            onHide={onHide}
-            hideBlocker={hideBlocker}
-            hideDisabled={mutationsDisabled}
-          />
+          {}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Source actions"
+                className="shrink-0 text-muted-foreground"
+              >
+                <OverflowMenuHorizontal size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem
+                disabled={loading || revalidating}
+                onSelect={onRescan}
+              >
+                Re-scan
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+                }
+              >
+                <span className="flex-1">View repo</span>
+                <Launch size={14} />
+              </DropdownMenuItem>
+              {canRemove && (
+                <DropdownMenuItem tone="danger" onSelect={onRemove}>
+                  <TrashCan size={14} />
+                  <span className="flex-1">Remove source</span>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-      </SkillSourceHeader>
+      </div>
 
       {!loaded && !error && <SkillRowsSkeleton />}
       {error && (
@@ -203,23 +262,23 @@ export function SkillSourceCard({
       )}
       {loaded &&
         visible.map((skill) => {
-          const ref = installedRef(skill);
+          const ref = installedRef(skill.source, skill.name);
           const hasDrift = isDrifted(ref, skill);
           return (
             <SkillRow
               key={skillKey(skill)}
               skill={skill}
               installed={ref !== undefined}
-              busy={busyKey === selectionKey(skill)}
-              disabled={mutationsDisabled}
+              busy={busyKey === skillKey(skill)}
+              disabled={disabled}
               hasDrift={hasDrift}
               compareUrl={
                 hasDrift && ref
                   ? gitCompareUrl(source.gitUrl, ref.version, skill.version)
                   : null
               }
-              onToggle={() => void surface.toggle(skill)}
-              onUpdate={() => void surface.update(skill)}
+              onToggle={() => onToggle(skill)}
+              onUpdate={() => onUpdate(skill)}
               onOpen={() => onOpenSkill(skill)}
             />
           );
@@ -237,6 +296,6 @@ export function SkillSourceCard({
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       )}
-    </div>
+    </Card>
   );
 }

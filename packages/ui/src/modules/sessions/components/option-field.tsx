@@ -38,7 +38,7 @@ export function ReadOnlyOptionFace({
       <span className="flex min-w-0 flex-col items-start gap-px">
         <span className="max-w-full truncate">{label}</span>
         {hint && (
-          <span className="max-w-full truncate text-2xs leading-snug">
+          <span className="max-w-full truncate text-[11px] leading-snug">
             {hint}
           </span>
         )}

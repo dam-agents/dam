@@ -2,7 +2,7 @@ import { kcSanitize } from "keycloakify/lib/kcSanitize";
 
 import { BASE_URL } from "../../kc.gen";
 
-const IBM_SSO_ALIASES = ["w3id", "ibmid"];
+const IBM_SSO_ALIAS = "w3id";
 
 interface SocialProvider {
   alias: string;
@@ -15,16 +15,10 @@ interface Props {
   provider: SocialProvider;
 }
 
-function isIbmProvider({ alias, iconClasses }: SocialProvider) {
-  return IBM_SSO_ALIASES.some(
-    (ibmAlias) =>
-      alias.toLowerCase() === ibmAlias ||
-      iconClasses?.toLowerCase().includes(ibmAlias),
-  );
-}
-
 export function SocialProviderButton({ provider }: Props) {
-  const isIbm = isIbmProvider(provider);
+  const isIbm =
+    provider.alias === IBM_SSO_ALIAS ||
+    provider.iconClasses?.includes(IBM_SSO_ALIAS);
 
   return (
     <a

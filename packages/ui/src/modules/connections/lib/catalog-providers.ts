@@ -11,7 +11,7 @@ export const CATALOG_TAB_ORDER: readonly CatalogTab[] = [
 export const CATALOG_TAB_LABEL: Record<CatalogTab, string> = {
   apps: "Apps",
   mcp: "MCP servers",
-  "custom-headers": "Custom headers",
+  "custom-headers": "Custom Headers",
 };
 
 interface CatalogProvider {
