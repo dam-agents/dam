@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-25
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -65,7 +65,8 @@ The delegation view shows its user the same: each target's card names the model 
 The delegation card and the root Driver's spend rows show the label, else the first line of the prompt.
 The minted name keeps the target's prefix and its entropy either way, because that shape is how a target is still recognised as one after it is deleted and only spend rows remain ([observability](observability.md)).
 
-**The order is the workspace-event order.** The seed is queued with the create; the install is queued ahead of the task in the same delivery, so the harness opens its session on a workspace that is already seeded and bootstrapped ([runtime-delivery](runtime-delivery.md)).
+**The order is the workspace-event order.** The seed is queued with the create; the install is queued in a bump of its own ahead of the task's, so the harness opens its session on a workspace that is already seeded and bootstrapped.
+One bump would not do: its events share a version and reach the runtime in no set order ([runtime-delivery](runtime-delivery.md#applystate--state-and-events-delivery-server--agent)).
 External skills are applied the way kit apply applies them, after the target is woken.
 
 **Provider Inheritance.** A target runs on one of its Driver's model providers; a spawn never names one.
