@@ -161,19 +161,69 @@ function markRoom(id: string, dir: string): string {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the test user's running vm machines other than the case's own, as one comparable key. A share is the claim's room divided among every running machine, so one of these starting or stopping moves the probe's share as much as the case's own sibling does. Specs of other projects run beside this one and own them — the idle sweep hibernates one after 5 minutes, and a spec can wake or start one at any time — so the case reads them and does not touch them (#5624).
+// UNIT_BOUNDARY_DESCRIPTION: the test user's vm machines other than the case's own, each with its state, as one comparable key. A share is the claim's room divided among every machine the runner counts as up, so one of these starting or stopping moves the probe's share as much as the case's own sibling does. The runner counts a machine from its start until its stop has finished, so the key holds every state and not only the running machines: a hibernation that began before a round and ended inside it moves the share, and a key of the running machines alone reads the same before and after it. Specs of other projects run beside this one and own them — the idle sweep hibernates one after 5 minutes, and a spec can wake or start one at any time — so the case reads them and does not touch them (#5624).
 async function otherMachines(): Promise<string> {
   return (await api.agents.list.query())
     .filter(
-      (agent) =>
-        agent.vm &&
-        agent.id !== probeId &&
-        agent.id !== siblingId &&
-        agent.state === "running",
+      (agent) => agent.vm && agent.id !== probeId && agent.id !== siblingId,
     )
-    .map((agent) => agent.id)
+    .map((agent) => `${agent.id}:${agent.state}`)
     .sort()
     .join(" ");
+}
+
+type Room = ReturnType<typeof readRoom>;
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a grant must stand before the probe's room under it counts as the room the guard leaves it, whatever that room reads: the guard looks every 2 s (POOL_GUARD_INTERVAL) and moves at most once per 30 s (POOL_GUARD_BACKOFF), so a grant that stood this long has had its move, and the 5 s between samples and the move's own sync fit in the rest.
+const GUARD_SETTLE_MS = 45_000;
+
+// UNIT_BOUNDARY_DESCRIPTION: one sample of the share-move case, logged as one line: the grant the runner published and the guest's room around it (readRoom), the share the claim's room gives each of the owner's running machines, and the seconds since the phase began. A round that times out then shows which side stood still: a grant that never moved is the runner's count of running machines, and a grant that moved under a room that did not is the guard.
+async function shareSample(phase: string, since: number): Promise<Room> {
+  const room = readRoom();
+  const running = (await api.agents.list.query()).filter(
+    (agent) => agent.vm && agent.state === "running",
+  ).length;
+  const claim = claimKb();
+  const shareMiB = Math.round(
+    (0.95 * claim.capacity - claim.used) / 1024 / Math.max(1, running),
+  );
+  console.log(
+    `[share-move] ${phase} +${Math.round((Date.now() - since) / 1000)}s: grant ${room.id || "-"} ${room.grantMiB} MiB, ${running} running at ${shareMiB} MiB each, guest free ${room.availMiB} MiB${room.stable ? "" : " (grant renewed mid-read)"}`,
+  );
+  return room;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: waits for a sample the guard has settled on that also meets `fits`, and returns it. The share-move case compares settled samples only: the guard moves at most once per 30 s, so a room read inside that window can still hold an earlier share, and a round that took such a room as its base, or as the room it then waits to fall from, waits for a move the guard has already made or never needs. CI run 40436092549 failed that way: a machine woke beside the probe's boot, the share it moved came back before the guard's backoff ended, and the base held the share from before the wake, so the stop the round waited on left the guest where it already was. Settled is a guest that holds no more than its grant, the floor every guest keeps and the slack, and no less than its grant less the slack and the guard's step. The lower bound alone has an exception, a room that stood with the grant for GUARD_SETTLE_MS: the claim under an e2e runner is a directory of the node's disk, so a share can pass the disk the controller sized at the pool, and the guest then holds what its disk does. The guard can always take room back, so the upper bound has none.
+async function settledShare(
+  phase: string,
+  fits: (room: Room) => boolean,
+  what: string,
+): Promise<Room> {
+  const since = Date.now();
+  const deadline = since + WAIT_MS;
+  let steady = { at: since, grantMiB: Number.NaN, availMiB: Number.NaN };
+  for (;;) {
+    const room = await shareSample(phase, since);
+    if (
+      !(Math.abs(room.grantMiB - steady.grantMiB) < MOVE_MIB) ||
+      !(Math.abs(room.availMiB - steady.availMiB) < MOVE_MIB)
+    )
+      steady = {
+        at: Date.now(),
+        grantMiB: room.grantMiB,
+        availMiB: room.availMiB,
+      };
+    const kept = room.availMiB <= room.grantMiB + GUARD_FLOOR_MIB + SLACK_MIB;
+    const given =
+      room.availMiB >= room.grantMiB - SLACK_MIB - GUARD_STEP_MIB ||
+      Date.now() - steady.at >= GUARD_SETTLE_MS;
+    if (room.stable && kept && given && fits(room)) return room;
+    expect(
+      Date.now(),
+      `${what}: the guest reads ${room.availMiB} MiB under the ${room.grantMiB} MiB grant the runner published`,
+    ).toBeLessThan(deadline);
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
 }
 
 async function waitFor(
@@ -288,7 +338,7 @@ test("room a home of small files frees goes back too", async () => {
   );
 });
 
-// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The user's other running machines belong to specs that run beside this one, and one of them that stops or starts during a round cancels the move the round waits for, so a round that fails while they changed is run again, up to three times; a round that fails while they held still fails the case. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
+// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. Every room a round compares is one the guard has settled on under the grant it was read with (settledShare): the base, the room after the stop, and the room after the start, since the guard moves at most once per 30 s and a room read inside that window can still hold an earlier share. The user's other machines belong to specs that run beside this one, and one of them that stops or starts during a round cancels the move the round waits for, so a round that fails while they changed is run again, up to three times; a round that fails while they held still fails the case. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
 test("the guard gives a machine the room its share gains, and takes it back", async () => {
   test.setTimeout(1_800_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
@@ -310,13 +360,18 @@ test("the guard gives a machine the room its share gains, and takes it back", as
           await waitAgentState(api, siblingId, "running");
         }
         await keepAwake(probeId);
-        const base = guestAvailMiB();
+        const phase = `round ${round} attempt ${attempt}`;
+        const base = await settledShare(
+          `${phase} base`,
+          () => true,
+          `round ${round}: the guest's room never settled on its grant before a machine stopped`,
+        );
         await api.agents.delete.mutate({ id: siblingId });
         siblingId = "";
         await keepAwake(probeId);
-        const stopped = await waitFor(
-          guestAvailMiB,
-          (mib) => mib >= base + MOVE_MIB,
+        const stopped = await settledShare(
+          `${phase} stop`,
+          (room) => room.availMiB >= base.availMiB + MOVE_MIB,
           `round ${round}: the guest's free space did not grow when a machine stopped`,
         );
         siblingId = await createAgentOn(
@@ -327,13 +382,24 @@ test("the guard gives a machine the room its share gains, and takes it back", as
         );
         await waitAgentState(api, siblingId, "running");
         await keepAwake(probeId);
-        await waitFor(
-          guestAvailMiB,
-          (mib) => mib <= stopped - MOVE_MIB,
+        await settledShare(
+          `${phase} start`,
+          (room) => room.availMiB <= stopped.availMiB - MOVE_MIB,
           `round ${round}: the guest's free space did not fall when another machine started`,
         );
         break;
       } catch (error) {
+        const warned = await Promise.resolve()
+          .then(() =>
+            onRunnerHost(
+              probeId,
+              `grep -a 'platform-init: WARNING' "$HOME/.cache/smolvm/vms/${probeDisk}/agent-startup-error.log" | tail -20`,
+            ),
+          )
+          .catch((e: Error) => e.message);
+        console.log(
+          `[share-move] round ${round} attempt ${attempt} failed; the probe's console warned:\n${warned}`,
+        );
         if (attempt >= 3 || (await otherMachines()) === others) throw error;
       }
     }

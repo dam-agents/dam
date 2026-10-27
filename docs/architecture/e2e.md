@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-23
+Last verified: 2026-10-27
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so it runs twice for every change, once per lane.
@@ -32,6 +32,9 @@ Its cases that need room a CI node cannot spare, a disk with no block left and a
 The storage trim spec's always-on share-recovery case needs no configurable host-fill budget and runs on every in-cluster vm lane run: it first writes and deletes 256 MiB of real bytes through a renewal and compares the guest's free space with the grant the runner published, then fills the guest's remaining room without writing bytes, so the guest is held at its share without the claim paying for it, and waits a renewal window: the runner grants a new look's room at every look, so a fill the claim never paid for is room the guest is given again, and the case measures the guest against that renewed grant.
 Each comparison reads the grant and the guest's free space in one guest command, with the grant line on both sides of the room so a sample that straddles a renewal is retried.
 The renewed comparison needs a grant the runner published after the case's own write, and both of its bounds are waited for on one sample, so a room the guard has not yet moved is neither accepted nor rejected.
+The share-move case, which stops and starts a sibling machine and waits for the probe's room to follow its share, compares only rooms the guard has settled on: the guard moves at most once per backoff, so a room read inside one can still hold an earlier share, and a round that took such a room as its base waits for a move the guard has already made.
+A settled room is within the grant it was read with, or below it and unmoved for a whole backoff, because the e2e claim is the node's own disk and a share there can pass the disk the pool sized.
+A round runs again when any other machine of the user changed state during it, since the runner counts a machine until its stop has finished.
 The case also checks the machines' grants against the claim, for every run and with no host byte: no guest may be granted more than the room left below 95% of the claim's capacity, and each running guest is granted a part of it.
 That is a policy check and not the ceiling regression: a sum of observed grants cannot prove the whole claim's ceiling, so the near-ceiling refusal still needs the claim filled.
 The next case is the direct refusal the share-recovery case cannot make: a guest held at its share is refused its next write, and refused for want of space.
