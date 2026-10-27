@@ -71,9 +71,9 @@ export function RichSelect<T extends string>({
                   {selected.triggerBadge}
                 </div>
                 {selected.description && (
-                  <p className="truncate text-sm text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     {selected.description}
-                  </p>
+                  </div>
                 )}
               </div>
             </>
@@ -118,9 +118,9 @@ export function RichSelect<T extends string>({
                 {option.badge}
               </div>
               {option.description && (
-                <p className="truncate text-sm text-muted-foreground">
+                <div className="text-sm text-muted-foreground">
                   {option.description}
-                </p>
+                </div>
               )}
             </div>
             {option.value === value ? (
