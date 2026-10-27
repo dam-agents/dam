@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { getAccessToken } from "../../../auth.js";
-import { readNextSessionPair } from "../api/session-pair.js";
+import { useStore } from "../../../store.js";
 import { useTerminalReconnect } from "../hooks/use-terminal-reconnect.js";
 import { pairMeta } from "../lib/session-pair-options.js";
 import {
@@ -142,7 +142,9 @@ export function Terminal({
       const token = await getAccessToken();
       if (!current()) return;
 
-      const lease = fresh ? readNextSessionPair(agentId) : null;
+      const lease = fresh
+        ? (useStore.getState().nextTerminalPair[agentId] ?? null)
+        : null;
       const wakes = userConnect.current;
       userConnect.current = false;
       const reset = pty.reset(Boolean(fresh));
@@ -154,7 +156,7 @@ export function Terminal({
           token,
           reset,
           wakes,
-          lease: lease ? pairMeta(lease.pair) : null,
+          lease: lease ? pairMeta(lease) : null,
         }),
       );
       ws.binaryType = "arraybuffer";

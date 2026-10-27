@@ -1,5 +1,5 @@
 import { Code, Terminal } from "@carbon/icons-react";
-import { type ReactNode, useState } from "react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 
 import { getBrand } from "@/brand";
 import { SlackColorIcon, TelegramColorIcon } from "@/components/brand-icons";
@@ -12,6 +12,7 @@ import { holds } from "../../agents/lib/agent-permissions.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { cliAgentRef } from "../../sandboxes/lib/cli-agent-ref.js";
+import { TerminalHarnessMenu } from "./terminal-harness-menu.js";
 
 type LocalTarget = "terminal" | "ide";
 
@@ -41,12 +42,13 @@ export function NewSessionOptions({
       >
         {terminal && (
           <>
-            <LauncherTile
-              icon={<Terminal size={18} />}
-              title="Browser Terminal"
-              description="Interactive session in this tab"
-              onClick={onNewTerminal}
-            />
+            <TerminalHarnessMenu agentId={agent.id} onOpen={onNewTerminal}>
+              <LauncherTile
+                icon={<Terminal size={18} />}
+                title="Browser Terminal"
+                description="Interactive session in this tab"
+              />
+            </TerminalHarnessMenu>
             <LauncherTile
               icon={<Terminal size={18} />}
               title="Local Terminal"
@@ -172,17 +174,16 @@ function LauncherTile({
   icon,
   title,
   description,
-  onClick,
+  ...props
 }: {
   icon: ReactNode;
   title: string;
   description: string;
-  onClick: () => void;
-}) {
+} & ComponentProps<"button">) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      {...props}
       className="flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="flex size-9 items-center justify-center rounded-md border border-border text-foreground">
