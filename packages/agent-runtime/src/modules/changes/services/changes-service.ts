@@ -96,23 +96,18 @@ export function createChangesService(deps: {
     const checkedAt = pullRequestsCheckedAt.get(sessionId) ?? 0;
     if (Date.now() - checkedAt < SESSION_PULL_REQUEST_CHECK_MS) return;
     pullRequestsCheckedAt.set(sessionId, Date.now());
-    const pushes = deps.touched.pushesOf(sessionId);
-    for (const push of pushes) {
+    for (const push of deps.touched.pushesOf(sessionId)) {
       const pullRequest = await deps.pullRequests.find(
         push.remote,
         push.branch,
       );
       if (pullRequest)
-        deps.touched.linkPullRequest(push.path, push.branch, pullRequest);
-    }
-    for (const touched of deps.touched.repositoriesOf(sessionId)) {
-      if (touched.branch === null) continue;
-      if (pushes.some((push) => push.path === touched.path)) continue;
-      const { branch, remote } = await describe(touched.path);
-      if (branch !== touched.branch) continue;
-      const pullRequest = await deps.pullRequests.find(remote, branch);
-      if (pullRequest)
-        deps.touched.linkPullRequest(touched.path, branch, pullRequest);
+        deps.touched.linkPullRequest(
+          sessionId,
+          push.path,
+          push.branch,
+          pullRequest,
+        );
     }
   }
 
@@ -190,8 +185,7 @@ export function createChangesService(deps: {
             state.branch && state.branch !== defaultBranch
               ? await deps.pullRequests.find(remote, state.branch)
               : null;
-          if (pullRequest)
-            deps.touched.linkPullRequest(state.path, state.branch, pullRequest);
+          if (pullRequest) deps.touched.updatePullRequest(pullRequest);
           return {
             state,
             changeSet: {
@@ -306,8 +300,11 @@ export function createChangesService(deps: {
     if (location === null) return;
     const path = location.toplevel;
     const { name, branch, remote } = await describe(path);
+    // Only a push that names its Session links a pull request: one given to
+    // the only Session running may have been run by someone else.
+    const push = command.push && command.sessionId !== null;
     const upstream =
-      command.push && branch
+      push && branch
         ? await deps.git(path, ["config", "--get", `branch.${branch}.remote`])
         : null;
     const pushRemote =
@@ -326,12 +323,13 @@ export function createChangesService(deps: {
       name,
       branch,
       editedAt: now().toISOString(),
-      ...(command.push && { remote: remoteUrl }),
+      ...(push && { remote: remoteUrl }),
     });
     workedThisBoot.add(path);
-    if (command.push && branch) {
+    if (push && branch) {
       const pullRequest = await deps.pullRequests.find(remoteUrl, branch);
-      if (pullRequest) deps.touched.linkPullRequest(path, branch, pullRequest);
+      if (pullRequest)
+        deps.touched.linkPullRequest(sessionId, path, branch, pullRequest);
     }
     changed();
   }
