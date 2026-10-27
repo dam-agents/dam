@@ -39,6 +39,7 @@ function fakeBrowser() {
     alive: false,
     url: "about:blank",
     launchFailures: 0,
+    launchUnanswered: 0,
     hangPing: false,
     failPing: false,
     pings: 0,
@@ -53,6 +54,12 @@ function fakeBrowser() {
       if (!browser.alive && browser.launchFailures > 0) {
         browser.launchFailures--;
         throw new Error("Chrome exited early");
+      }
+      if (!browser.alive && browser.launchUnanswered > 0) {
+        browser.launchUnanswered--;
+        throw new Error(
+          "agent-browser get exited 1: ✗ Failed to read: Resource temporarily unavailable (os error 11) (the command reached the daemon but no response came back; it may or may not have run, so it was not retried)",
+        );
       }
       browser.alive = true;
       return browser.url;
@@ -501,6 +508,42 @@ describe("recovery", () => {
     expect(
       panel.snapshots.find((s) => s.state === "failed")?.message,
     ).toContain("Chrome exited early");
+  });
+
+  // TEST_SCENARIO: on a busy machine a cold Chromium takes longer to start than agent-browser's CLI waits for an answer, so the launch gives up with "no response came back" while the daemon still starts it. That is a browser still starting, not a failed one: it is retried against the same Chromium, never stopped, and the panel never hears that it failed — stopping it every second attempt killed the Chromium that was nearly up, so it never came up at all.
+  it("waits for a launch that got no answer instead of stopping it", async () => {
+    const fake = fakeBrowser();
+    fake.browser.launchUnanswered = 4;
+    let stops = 0;
+    const browser = preview(fake, {
+      stopBrowser: async () => {
+        stops++;
+      },
+    });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().at(-1) === "ready");
+    expect(fake.calls.filter(isLaunch)).toHaveLength(5);
+    expect(stops).toBe(0);
+    expect(panel.states()).not.toContain("failed");
+  });
+
+  // TEST_SCENARIO: a launch that gets no answer for longer than the silence limit is a stuck browser, not a slow one: it is stopped and launched again.
+  it("restarts a launch that got no answer past the silence limit", async () => {
+    const fake = fakeBrowser();
+    fake.browser.launchUnanswered = 1_000;
+    let stops = 0;
+    const browser = preview(fake, {
+      unresponsiveRestartMs: 50,
+      stopBrowser: async () => {
+        stops++;
+        fake.browser.launchUnanswered = 0;
+      },
+    });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => stops === 1);
+    await until(() => panel.states().at(-1) === "ready");
   });
 
   // TEST_SCENARIO: the browser can die under an open panel — the agent closed it, Chrome crashed. Its CDP connection drops at once; the panel is told the browser is starting, and the supervisor launches it again.

@@ -111,6 +111,12 @@ export const CDP_URL = ["get", "cdp-url"];
 
 export const timedOut = (err: Error) => /timed out/i.test(err.message);
 
+// agent-browser's CLI stops reading after 30 s and gives up with EAGAIN while
+// its daemon still launches Chromium, so a launch that got no answer is busy.
+export const unanswered = (err: Error) =>
+  timedOut(err) ||
+  /no response came back|Resource temporarily unavailable/i.test(err.message);
+
 export function commandTimeoutMs(args: string[]): number {
   if (args[0] === LAUNCH[0] && args[1] === LAUNCH[1]) return 60_000;
   if (args[0] === "close") return 30_000;
@@ -224,9 +230,11 @@ export function createCommandQueue(run: BrowserCommand): {
  * agent brings to the front reaches the panel through the watcher, which
  * closes with the last panel, as it asks every tab for its visibility. Its display socket (attachDisplay)
  * is relayed to the display's stream server, held with what its client sent
- * until that server answers. A check or launch that times out finds the
- * browser busy — a heavy page, or the agent's own commands ahead in
- * agent-browser's queue — not gone, and is left alone: only an outright
+ * until that server answers. A check or launch that times out, or a launch
+ * agent-browser gave up waiting on, finds the browser busy — a heavy page, the
+ * agent's own commands ahead in agent-browser's queue, or a cold Chromium on a
+ * loaded machine — not gone, and is left alone: a busy launch is retried
+ * against the same Chromium, not counted as a failure. Only an outright
  * failure, or a minute without an answer, stops it (its daemon, its Chromium
  * and the profile's singleton locks) and launches it again, since killing a
  * busy browser loses the user's page. Everything is refused, before anything
@@ -276,6 +284,7 @@ export function createBrowserPreview(deps: {
   let activeTab: string | null = null;
   let browserUp = false;
   let failedLaunches = 0;
+  let launchBusySince: number | null = null;
   let failedChecks = 0;
   let page: PageWatch | null = null;
   let pendingNavigation: string | null = null;
@@ -368,8 +377,9 @@ export function createBrowserPreview(deps: {
   function scheduleRetry() {
     if (retryTimer || closed) return;
     const delay =
-      retryDelays[Math.min(failedLaunches - 1, retryDelays.length - 1)] ??
-      1_000;
+      retryDelays[
+        Math.max(0, Math.min(failedLaunches - 1, retryDelays.length - 1))
+      ] ?? 1_000;
     retryTimer = setTimeout(() => {
       retryTimer = null;
       schedule();
@@ -394,17 +404,33 @@ export function createBrowserPreview(deps: {
       browserUp = true;
       showPage(opened.state());
       failedLaunches = 0;
+      launchBusySince = null;
+      lastAnswerAt = Date.now();
       return true;
     } catch (err) {
       if (gen !== generation) {
         dirty = true;
         return false;
       }
-      failedLaunches++;
       const message = (err as Error).message.split("\n")[0] ?? "";
-      deps.log(`launch failed (${failedLaunches}): ${message}`);
-      if (failedLaunches % 2 === 0 && !timedOut(err as Error))
+      if (unanswered(err as Error)) {
+        launchBusySince ??= Date.now();
+        const busyFor = Date.now() - launchBusySince;
+        if (busyFor < unresponsiveRestartMs) {
+          deps.log(`launch busy for ${busyFor}ms: ${message}`);
+          scheduleRetry();
+          return false;
+        }
+        deps.log(`browser unresponsive for ${busyFor}ms, restarting it`);
+        launchBusySince = null;
+        failedLaunches++;
         await stopBrowser();
+      } else {
+        launchBusySince = null;
+        failedLaunches++;
+        deps.log(`launch failed (${failedLaunches}): ${message}`);
+        if (failedLaunches % 2 === 0) await stopBrowser();
+      }
       if (failedLaunches >= 3)
         setState("failed", `The browser did not start: ${message}`);
       scheduleRetry();
@@ -481,6 +507,7 @@ export function createBrowserPreview(deps: {
         (err: Error) => deps.log(`clear data: ${err.message}`),
       );
     failedLaunches = 0;
+    launchBusySince = null;
     lastAnswerAt = Date.now();
     schedule();
   }
