@@ -106,6 +106,10 @@ export function notifyingSessionMetadataStore(
       store.finishRun(sessionId);
       changes.notify();
     },
+    recordContinuation(sessionId, scheduleId) {
+      store.recordContinuation(sessionId, scheduleId);
+      changes.notify();
+    },
     adopt(sessionId, fromSessionId, meta) {
       store.adopt(sessionId, fromSessionId, meta);
       changes.notify();

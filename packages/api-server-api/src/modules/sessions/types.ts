@@ -54,6 +54,7 @@ export interface SessionView {
   mode: SessionMode;
   createdAt: string;
   scheduleId?: string | null;
+  continuedScheduleIds?: readonly string[];
   initialization?: boolean | null;
   title?: string | null;
   customTitle?: string | null;

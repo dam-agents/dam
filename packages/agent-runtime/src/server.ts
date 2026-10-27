@@ -734,6 +734,8 @@ const runtimeChannel = await composeRuntimeChannel({
   triggerDriver,
   invocationWatch,
   findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
+  recordContinuation: (sessionId, scheduleId) =>
+    sessionMetadata.recordContinuation(sessionId, scheduleId),
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
       sessionMetadata.isTombstoned(sessionId),

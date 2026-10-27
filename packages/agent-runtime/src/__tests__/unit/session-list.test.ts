@@ -265,4 +265,22 @@ describe("pageSessions", () => {
     expect(page.sessions.map((s) => s.sessionId)).toEqual(["run"]);
     expect(page.nextCursor).toBeNull();
   });
+
+  // TEST_SCENARIO: A one-time task that continued a chat ran its turn in a session it did not open, so the schedule's filter also matches a session that names the schedule among the ones that continued it.
+  it("lists a session a schedule continued under that schedule", () => {
+    const all = [
+      session("chat", "2026-08-27T15:00:00.000Z", {
+        continuedScheduleIds: ["once-1"],
+      }),
+      session("unrelated", "2026-08-27T14:00:00.000Z", {
+        continuedScheduleIds: ["once-2"],
+      }),
+      session("opened", "2026-08-27T13:00:00.000Z", {
+        type: "schedule_once",
+        scheduleId: "once-1",
+      }),
+    ];
+    const page = pageSessions(all, { scheduleId: "once-1" });
+    expect(page.sessions.map((s) => s.sessionId)).toEqual(["chat", "opened"]);
+  });
 });
