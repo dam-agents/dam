@@ -88,7 +88,6 @@ import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-gr
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { ConfigureProviderModal } from "../../instant-start/components/configure-provider-modal.js";
 import { useInstantStart } from "../../instant-start/context.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
@@ -231,9 +230,6 @@ export function ChatView() {
   const [configureSection, setConfigureSection] =
     useState<SandboxSection | null>(null);
   const [autoOpenProvider, setAutoOpenProvider] = useState(false);
-  const [showProviderModal, setShowProviderModal] = useState(false);
-  const [providerModalShowKeyForm, setProviderModalShowKeyForm] =
-    useState(false);
   const instantStart = useInstantStart();
 
   const isMock = import.meta.env.VITE_MOCK === "true";
@@ -846,7 +842,10 @@ export function ChatView() {
                           instantStart.curveBenderPayment !== "own-key" && (
                             <CurveBenderBudget
                               instantStart={instantStart}
-                              onConfigure={() => setShowProviderModal(true)}
+                              onConfigure={() => {
+                                setConfigureSection("setup");
+                                setAutoOpenProvider(true);
+                              }}
                             />
                           )}
                       </div>
@@ -968,15 +967,6 @@ export function ChatView() {
             }}
           />
         </Suspense>
-      )}
-      {showProviderModal && (
-        <ConfigureProviderModal
-          onClose={() => {
-            setShowProviderModal(false);
-            setProviderModalShowKeyForm(false);
-          }}
-          initialShowKeyForm={providerModalShowKeyForm}
-        />
       )}
     </div>
   );
