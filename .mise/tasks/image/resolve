@@ -60,7 +60,7 @@ MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci .mise/tasks/image/pack .mise/t
 # agent images; CI's `agents` build/merge matrix. The default image carries
 # every harness, whose directories are its sources and no image of their own.
 AGENTS="default"
-HARNESSES="claude-code codex pi-agent bob copilot"
+HARNESSES="claude-code codex pi-agent bob copilot hermes"
 # workloads, each packed onto the default image; single registration point,
 # also emitted as CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"

@@ -89,6 +89,7 @@ export interface SessionsSlice {
   rewriting: Rewriting | null;
   rewritePending: PendingRewrite | null;
   nextSessionPair: Record<string, SessionPair>;
+  nextTerminalPair: Record<string, SessionPair | null>;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
   drafts: Record<string, SessionDraft>;
@@ -128,6 +129,7 @@ export interface SessionsSlice {
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   clearNextSessionPair: (agentId: string) => void;
+  setNextTerminalPair: (agentId: string, pair: SessionPair | null) => void;
   setSessionError: (e: SessionError | null) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
@@ -219,6 +221,7 @@ export const createSessionsSlice: StateCreator<
     rewriting: null,
     rewritePending: null,
     nextSessionPair: {},
+    nextTerminalPair: {},
     sessionMode: null,
     messages: [],
     sessionError: null,
@@ -298,6 +301,10 @@ export const createSessionsSlice: StateCreator<
             ([id]) => id !== agentId,
           ),
         ),
+      })),
+    setNextTerminalPair: (agentId, pair) =>
+      set((state) => ({
+        nextTerminalPair: { ...state.nextTerminalPair, [agentId]: pair },
       })),
     addRunStart: (at) =>
       set((s) =>

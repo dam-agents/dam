@@ -26,6 +26,7 @@ export function useSetFeature() {
       invalidates: [
         trpc.features.flags.queryKey(),
         trpc.connections.list.queryKey(),
+        trpc.harnessConfig.status.pathKey(),
       ],
       errorToast: "Couldn't update the feature flag",
     },

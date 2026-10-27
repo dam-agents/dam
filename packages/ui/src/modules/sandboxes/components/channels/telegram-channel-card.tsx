@@ -18,6 +18,7 @@ import {
   useTelegramBot,
   useTelegramChats,
 } from "../../../telegram/api/queries.js";
+import { ChannelProfileLine } from "./channel-profile-line.js";
 import { ChannelRow } from "./channel-row.js";
 
 export function TelegramChannelCard({
@@ -71,28 +72,38 @@ export function TelegramChannelCard({
         }
       >
         {list.map((chat) => (
-          <ChannelRow
-            key={chat.conversationId}
-            title={chat.title}
-            actionsLabel={`Telegram chat ${chat.title} actions`}
-            menuTestId="telegram-chat-menu"
-            actions={
-              !readOnly && (
-                <DropdownMenuItem
-                  tone="danger"
-                  disabled={unbind.isPending}
-                  onSelect={() =>
-                    unbind.mutate({
-                      agentId,
-                      conversationId: chat.conversationId,
-                    })
-                  }
-                >
-                  Disconnect
-                </DropdownMenuItem>
-              )
-            }
-          />
+          <div key={chat.conversationId}>
+            <ChannelRow
+              title={chat.title}
+              actionsLabel={`Telegram chat ${chat.title} actions`}
+              menuTestId="telegram-chat-menu"
+              actions={
+                !readOnly && (
+                  <DropdownMenuItem
+                    tone="danger"
+                    disabled={unbind.isPending}
+                    onSelect={() =>
+                      unbind.mutate({
+                        agentId,
+                        conversationId: chat.conversationId,
+                      })
+                    }
+                  >
+                    Disconnect
+                  </DropdownMenuItem>
+                )
+              }
+            />
+            <ChannelProfileLine
+              agentId={agentId}
+              channel={{
+                type: "telegram",
+                conversationId: chat.conversationId,
+              }}
+              slots={chat}
+              readOnly={readOnly}
+            />
+          </div>
         ))}
       </ListSection>
       {instructionsOpen && (

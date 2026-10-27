@@ -239,7 +239,20 @@ build_default() (
   export MISE_SYSTEM_DATA_DIR="$tools/usr/share/mise" MISE_DATA_DIR="$work/default-data"
   rm -rf "$MISE_DATA_DIR"
   mise -E "$envs" install
-  [ -z "$(ls -A "$MISE_DATA_DIR/installs" 2>/dev/null)" ] || { echo "tools outside the tools layer: $(ls "$MISE_DATA_DIR/installs")" >&2; exit 1; }
+  # A pipx tool's install dir names a hash of its Python's path, which is
+  # /usr/share/mise in the tools layer and the image, but not here: the same
+  # version there under another hash is the one the image runs, and the
+  # image's PATH names that one.
+  outside="" uvmap=()
+  if [ -d "$MISE_DATA_DIR/installs" ]; then
+    while read -r v; do
+      tool="${v%/*}" ver="${v#*/}"
+      twin=""
+      case "$ver" in *"~uv~"*) twin="$(compgen -G "$MISE_SYSTEM_DATA_DIR/installs/$tool/${ver%%~uv~*}~uv~*" | head -1)" ;; esac
+      if [ -n "$twin" ]; then uvmap+=(-e "s|^$MISE_DATA_DIR/installs/$tool/$ver/|$twin/|"); else outside+=" $v"; fi
+    done < <(cd "$MISE_DATA_DIR/installs" && find . -mindepth 2 -maxdepth 2 -type d | sed 's|^\./||')
+  fi
+  [ -z "$outside" ] || { echo "tools outside the tools layer:$outside" >&2; exit 1; }
   # Claude Code's ACP adapter, bundled from the locked install with its SDK: its
   # 200 ES modules are a few reads each over the tools a machine mounts, which
   # cost its start about 0.3 s. Its own layer, as it changes only with its pin.
@@ -274,7 +287,7 @@ build_default() (
   done
 
   # Each tool's bin directory where the image holds it, ahead of base's PATH.
-  path="$(mise -E "$envs" bin-paths | sed "s|^$MISE_SYSTEM_DATA_DIR/|$tools_root/|" | paste -sd: -)"
+  path="$(mise -E "$envs" bin-paths | sed ${uvmap[@]+"${uvmap[@]}"} -e "s|^$MISE_SYSTEM_DATA_DIR/|$tools_root/|" | paste -sd: -)"
   # Selkies, mise, the tools and Claude Code's adapter, which change only with
   # their pins, are layers of their own under the rest, which every
   # agent-runtime change rewrites: a deploy pulls that top layer alone.
@@ -325,6 +338,11 @@ install_tools() {
   ${sudo[@]+"${sudo[@]}"} cp -a "$stage/etc/." "$r/etc/"
   ${sudo[@]+"${sudo[@]}"} cp -a "$stage/build-mise/." "$r/"
   ${sudo[@]+"${sudo[@]}"} install -m 755 "$installer" "$r/usr/local/bin/install-harness-tools"
+  # A host behind a proxy that re-signs TLS names the bundle holding its CA in
+  # SSL_CERT_FILE; the root's bundle, the distribution's roots alone, gets it
+  # too, so the downloads trust what the host trusts. The root goes away after
+  # the install, and no image carries the host's CA.
+  [ ! -r "${SSL_CERT_FILE:-}" ] || ${sudo[@]+"${sudo[@]}"} sh -c 'cat "$1" >> "$2"' _ "$SSL_CERT_FILE" "$r/run/platform/ca-certificates.crt"
   mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" | grep -E '^[A-Z_][A-Z0-9_]*=')
   # The GitHub token stays out of every command line, where any user on the
   # host reads it: sudo keeps it in the environment, and it crosses env -i in a

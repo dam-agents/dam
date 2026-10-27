@@ -187,3 +187,34 @@ export function sessionOfRunningTurn(
     ? { sessionId: running[0]! }
     : null;
 }
+
+export interface RunningTurn {
+  sessionId: string;
+  startedAt: number;
+  lastMarkedAt: number | null;
+  openedAt: number | null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Session an unmarked opening call belongs to,
+ * on a harness whose first call of a new task carries no Session marker
+ * (Bob). Only a turn that has sent no marked call and been given no opening
+ * call since it started can be waiting for its first call, and turns that
+ * never sent a marked call (a new Session) come first. Among those the turn whose prompt went out first
+ * wins, since a harness answers its prompts in the order they arrive.
+ */
+export function openingCallSessionOf(
+  turns: readonly RunningTurn[],
+): string | null {
+  const waiting = turns.filter(
+    (t) =>
+      (t.lastMarkedAt === null || t.lastMarkedAt < t.startedAt) &&
+      (t.openedAt === null || t.openedAt < t.startedAt),
+  );
+  waiting.sort(
+    (a, b) =>
+      Number(a.lastMarkedAt !== null) - Number(b.lastMarkedAt !== null) ||
+      a.startedAt - b.startedAt,
+  );
+  return waiting[0]?.sessionId ?? null;
+}

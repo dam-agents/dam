@@ -11,8 +11,10 @@ import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { CommandPalette } from "./modules/command-palette/components/command-palette.js";
 import { SignInFollowUp } from "./modules/connections/components/sign-in-follow-up.js";
 import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
+import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -120,7 +122,12 @@ export default function App() {
     );
   if (view === "connection-secret") return <ConnectionSecretView />;
   if (view === "analytics") return <UsageReportView />;
-  return <MainApp />;
+  return (
+    <>
+      <MainApp />
+      <CommandPalette />
+    </>
+  );
 }
 
 function SkipLink() {
@@ -248,6 +255,7 @@ function MainApp() {
       <SignInFollowUp />
       <DialogOverlay />
       <ConnectionBanner />
+      <GettingStartedDock placement="page" />
     </div>
   );
 }

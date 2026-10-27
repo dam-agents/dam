@@ -1,8 +1,19 @@
 import {
   aliasForTemplateId,
   displayNameForTemplate,
-  providerTypeForTemplateId,
+  forHarness,
+  layerMetadata,
+  listingForTemplate,
   parseQualifiedModel,
+  PROVIDER_DIALECTS,
+  providerTypeForTemplateId,
+  renderName,
+  servesHarness,
+  type CatalogEntry,
+  type CatalogProvider,
+  type DiscoveredModel,
+  type ModelDiscovery,
+  type PriceTable,
 } from "api-server-api";
 import type {
   CatalogModelView,
@@ -11,18 +22,6 @@ import type {
 } from "agent-runtime-api";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 import type { RuntimeEnvState } from "../../runtime-channel/infrastructure/env-state-store.js";
-import type {
-  DiscoveredModel,
-  ModelDiscovery,
-} from "../../runtime-channel/infrastructure/model-discovery.js";
-import type { CatalogEntry, CatalogProvider } from "../domain/catalog-entry.js";
-import { layerMetadata } from "../domain/metadata.js";
-import type { PriceTable } from "../domain/price-table.js";
-import {
-  listingForTemplate,
-  PROVIDER_DIALECTS,
-} from "../domain/provider-listing.js";
-import { forHarness, renderName, servesHarness } from "../domain/render.js";
 
 const REFRESH_MS = 30 * 60_000;
 const RETRY_INITIAL_MS = 2_000;

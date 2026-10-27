@@ -2,6 +2,7 @@ export { composeModelRouter } from "./compose.js";
 export {
   isAuxiliaryCall,
   isSideCall,
+  openingCallSessionOf,
   SESSION_HEADER,
   sessionOf,
   sessionOfRunningTurn,
@@ -56,3 +57,13 @@ export {
   type OtlpTarget,
 } from "./infrastructure/call-exporter.js";
 export { createSseModelRewrite, rewriteBody } from "./domain/model-rewrite.js";
+export {
+  createCallerSessionLookup,
+  type CallerSessionLookup,
+} from "./infrastructure/caller-session.js";
+export {
+  BEDROCK_TEMPLATE,
+  bedrockRouterEnv,
+  createBedrockUsageScanner,
+  type BedrockUsageScanner,
+} from "./domain/bedrock.js";

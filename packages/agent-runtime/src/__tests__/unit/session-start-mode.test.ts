@@ -4,8 +4,9 @@
  * auto like the terminal, and one on a model that cannot use auto starts on
  * the mode that model allows. Only a harness whose manifest opts in gets that
  * mode: one with start modes of its own, such as Pi's thinking levels or Bob's
- * pinned persona, is left on them. A mode the session or the agent's file names
- * always wins, and a derived mode follows a model switch, since the new model
+ * pinned persona, is left on them. A mode the session names always wins, and
+ * one the agent's file names never does (tool approval is a session's own
+ * pick), and a derived mode follows a model switch, since the new model
  * may not allow it. The mode is sent after the model's own answer, on every
  * path that sends it and after a model the harness refused is asked for again.
  * A mode the harness reports is the runtime's own while a mode-bearing setting
@@ -146,13 +147,14 @@ describe("session start mode", () => {
     });
   });
 
-  /** TEST_SCENARIO: The agent's config file names a mode, which its harness
-   * reads at start: the runtime sends nothing, so a saved mode such as
-   * "acceptEdits" is not replaced by the catalog's default. */
-  it("leaves a mode the agent's file names to the harness", () => {
+  /** TEST_SCENARIO: The agent's config file names a mode from before tool approval left it; the session still starts on the catalog's default, since only the session picks its approval. */
+  it("starts on the catalog's mode whatever the agent's file names", () => {
     expect(
       modeFrame(frames({}, "ibm/claude-opus-4-5", harness("acceptEdits"))),
-    ).toBeUndefined();
+    ).toEqual({
+      method: "session/set_mode",
+      params: { sessionId: "s", modeId: "auto" },
+    });
   });
 
   /** TEST_SCENARIO: The session's model changes mid-session: the derived mode

@@ -1,5 +1,6 @@
 import type { Db } from "db";
 import { telegramConversations, eq } from "db";
+import type { SessionChoiceSlots, SessionPair } from "api-server-api";
 
 export interface TelegramConversationBinding {
   agentId: string;
@@ -57,12 +58,29 @@ export function unbindConversation(db: Db) {
 }
 
 export function listConversationsByAgent(db: Db) {
-  return async (agentId: string): Promise<string[]> => {
+  return async (
+    agentId: string,
+  ): Promise<({ conversationId: string } & SessionChoiceSlots)[]> => {
     const rows = await db
-      .select({ conversationId: telegramConversations.conversationId })
+      .select({
+        conversationId: telegramConversations.conversationId,
+        profileId: telegramConversations.profileId,
+        pair: telegramConversations.sessionPair,
+        platformSubagentProfileId:
+          telegramConversations.platformSubagentProfile,
+        platformSubagentSettings:
+          telegramConversations.platformSubagentSettings,
+      })
       .from(telegramConversations)
       .where(eq(telegramConversations.agentId, agentId));
-    return rows.map((r) => r.conversationId);
+    return rows.map((r) => ({
+      conversationId: r.conversationId,
+      profileId: r.profileId ?? null,
+      pair: (r.pair as SessionPair | null) ?? null,
+      platformSubagentProfileId: r.platformSubagentProfileId ?? null,
+      platformSubagentSettings:
+        (r.platformSubagentSettings as Record<string, string> | null) ?? null,
+    }));
   };
 }
 

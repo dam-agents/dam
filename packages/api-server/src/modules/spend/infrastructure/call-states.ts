@@ -45,6 +45,7 @@ export interface CallStates {
   release(callId: string): Promise<boolean>;
   reclaim(callId: string): Promise<void>;
   forget(callId: string): Promise<void>;
+  rebook(callId: string, sessionId: string): Promise<void>;
 }
 
 const CALL_TTL_SECONDS = 2 * 60 * 60;
@@ -85,6 +86,13 @@ end
 if final == '1' then redis.call('HSET', key, 'final', '1') end
 redis.call('EXPIRE', key, ARGV[2])
 return out
+`;
+
+const REBOOK_SCRIPT = `
+if redis.call('HGET', KEYS[1], 'r_sessionId') == '' then
+  redis.call('HSET', KEYS[1], 'r_sessionId', ARGV[1])
+end
+return 0
 `;
 
 const callKey = (callId: string) => `spend:call:${callId}`;
@@ -197,6 +205,10 @@ export function createRedisCallStates(redis: Redis): CallStates {
         .zrem(IN_FLIGHT_KEY, callId)
         .del(callKey(callId))
         .exec();
+    },
+
+    async rebook(callId, sessionId) {
+      await redis.eval(REBOOK_SCRIPT, 1, callKey(callId), sessionId);
     },
   };
 }

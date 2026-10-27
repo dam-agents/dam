@@ -72,11 +72,13 @@ import type {
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpSessionLoadError,
+  pairFields,
   AcpTurnAbandonedError,
   type AcpClient,
   type AcpClientFactory,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
+import type { ChannelPair } from "./channel-profile.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
 import {
@@ -109,6 +111,11 @@ import {
   spendHoldUserCopy,
   type ChannelSpendHold,
 } from "./spend-hold-copy.js";
+import {
+  lookUpProviderOutage,
+  slackProviderOutageCopy,
+  type ChannelProviderOutage,
+} from "./provider-outage-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
@@ -1300,6 +1307,7 @@ async function turnContractContext(
 
 export type SlackWorkerDeps = {
   makeAcpClient: AcpClientFactory;
+  channelPair?: ChannelPair;
   createGateway: () => SlackGateway;
   agents: () => AgentsService;
   identityLinks: IdentityLinkService;
@@ -1327,6 +1335,7 @@ export type SlackWorkerDeps = {
   brand: { name: string; short: string };
   isTermsAccepted: (sub: string) => Promise<boolean>;
   spendHold?: ChannelSpendHold;
+  providerOutage?: ChannelProviderOutage;
   uiBaseUrl: string;
   attendance: ChannelTurnAttendance;
   workspaceFiles: AgentWorkspaceFilesFactory;
@@ -1341,6 +1350,7 @@ export type SlackWorkerDeps = {
 export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const {
     makeAcpClient,
+    channelPair,
     createGateway,
     agents,
     identityLinks,
@@ -1358,6 +1368,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     brand,
     isTermsAccepted,
     spendHold,
+    providerOutage = async () => null,
     uiBaseUrl,
     attendance,
     workspaceFiles,
@@ -2879,6 +2890,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
+    channelId: string;
     title: string;
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
@@ -2891,11 +2903,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     legacyThreadKey?: string;
     signal?: AbortSignal;
   }): Promise<string> {
-    const platformMeta = {
+    const freshSessionMeta = async () => ({
       type: SessionType.ChannelSlack,
       threadTs: args.threadKey,
       title: args.title,
-    };
+      ...pairFields(
+        await channelPair?.(args.instanceName, {
+          type: "slack",
+          id: args.channelId,
+        }),
+      ),
+    });
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
       await agents().ensureReady(args.instanceName, {
         onWaking: args.onWaking,
@@ -2933,13 +2951,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           if (!(err instanceof AcpSessionLoadError)) throw err;
           args.onGhostTurn?.();
           return send(await args.buildFreshPrompt(), {
-            platformMeta,
+            platformMeta: await freshSessionMeta(),
             ...sendOpts,
           });
         }
       }
       return send(await args.buildFreshPrompt(), {
-        platformMeta,
+        platformMeta: await freshSessionMeta(),
         ...sendOpts,
       });
     });
@@ -3151,6 +3169,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await runSessionTurn({
         instanceName,
         threadKey,
+        channelId: ctx.channel,
         title: ctx.title,
         legacyThreadKey: ctx.threadTs,
         onReady: () => {
@@ -3217,6 +3236,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     };
 
     let failurePosted = false;
+    let failureTemplateId: string | undefined;
     const postFailure = async (err: unknown) => {
       const failure = classifyTurnFailure(err);
       failureReason = failure.reason;
@@ -3228,11 +3248,25 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         },
         "slack.turn.failed",
       );
+      const outage =
+        failure.kind === "provider-unavailable"
+          ? await lookUpProviderOutage(providerOutage, instanceName, {
+              type: "slack",
+              id: ctx.channel,
+            })
+          : null;
+      failureTemplateId = outage?.templateId ?? undefined;
       if (turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff))
         return;
-      await postNotice(
-        `${failure.copy({ uiBaseUrl, agentId: instanceName })}${renderTurnFiles(ctx)}`,
-      );
+      const copy = match(failure)
+        .with({ kind: "plain" }, ({ copy }) =>
+          copy({ uiBaseUrl, agentId: instanceName }),
+        )
+        .with({ kind: "provider-unavailable" }, () =>
+          slackProviderOutageCopy(outage, brand.name),
+        )
+        .exhaustive();
+      await postNotice(`${copy}${renderTurnFiles(ctx)}`);
       failurePosted = true;
     };
 
@@ -3345,6 +3379,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             : stopped()
               ? { reason: "stopped" }
               : {}),
+        ...(failureTemplateId !== undefined
+          ? { templateId: failureTemplateId }
+          : {}),
       });
     }
   }
@@ -5523,6 +5560,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
+    let failureTemplateId: string | undefined;
     const [agentName, owner, turnContext] = await Promise.all([
       resolveAgentDisplayName(args.instanceName),
       resolveChannelOwner(args.instanceName, args.teamId),
@@ -5572,6 +5610,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       runSessionTurn({
         instanceName: args.instanceName,
         threadKey: args.threadKey,
+        channelId: args.channel,
         title: args.title,
         ...(args.legacyThreadKey
           ? { legacyThreadKey: args.legacyThreadKey }
@@ -5661,7 +5700,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         );
         return { posted: false, replyText: null, replies: [] };
       }
-      failureReason = classifyTurnFailure(err).reason;
+      const failure = classifyTurnFailure(err);
+      failureReason = failure.reason;
       getLogger().warn(
         {
           agentId: args.instanceName,
@@ -5670,6 +5710,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         },
         "slack.ambient_turn.failed",
       );
+      if (failure.kind === "provider-unavailable")
+        failureTemplateId =
+          (
+            await lookUpProviderOutage(providerOutage, args.instanceName, {
+              type: "slack",
+              id: args.channel,
+            })
+          )?.templateId ?? undefined;
     } finally {
       for (const ref of turnRefs) {
         endTurn(args.instanceName, ref, {
@@ -5701,6 +5749,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           : superseded()
             ? { reason: "superseded" }
             : {}),
+        ...(failureTemplateId !== undefined
+          ? { templateId: failureTemplateId }
+          : {}),
         ambient: true,
       });
     }

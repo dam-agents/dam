@@ -320,6 +320,12 @@ spec:
                   {{- end }}
             {{- end }}
             {{- end }}
+            {{- with dig "defaultProfile" dict .Values.apiServer }}
+            - name: DEFAULT_PROFILE_HARNESS
+              value: {{ .harness | default "" | quote }}
+            - name: DEFAULT_PROFILE_MODEL
+              value: {{ .model | default "" | quote }}
+            {{- end }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
             - name: VM_POOL_STORAGE

@@ -120,6 +120,7 @@ export function BobForm({
       }}
       onSubmit={onSubmit}
       onCancel={onCancel}
+      closeDisabled={isSubmitting}
     >
       <ProviderSecretRow
         register={register("value")}

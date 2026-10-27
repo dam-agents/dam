@@ -14,7 +14,7 @@ import {
   harnessConfigSnapshotResultSchema,
   rememberSessionPairInputSchema,
   clearSessionDefaultInputSchema,
-  sessionDefaultsSchema,
+  sessionDefaultsViewSchema,
   sessionPairInputSchema,
   sessionPairSchema,
   harnessConfigStatusInputSchema,
@@ -61,7 +61,7 @@ export const harnessConfigRouter = t.router({
   sessionDefaults: readAgentProcedure
     .input(harnessConfigStatusInputSchema)
     .use(agentPermission("view", (input) => agentTarget(input.agentId)))
-    .output(sessionDefaultsSchema)
+    .output(sessionDefaultsViewSchema)
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.harnessConfig.sessionDefaults(input.agentId);
@@ -84,8 +84,14 @@ export const harnessConfigRouter = t.router({
     .input(rememberSessionPairInputSchema)
     .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) => {
-      const { agentId, kind, ...pair } = input;
-      return ctx.harnessConfig.rememberSessionPair(agentId, kind, pair);
+      const { agentId, kind, profileId, platformSubagentProfileId, ...pair } =
+        input;
+      return ctx.harnessConfig.rememberSessionPair(agentId, kind, pair, {
+        ...(profileId !== undefined && { profileId }),
+        ...(platformSubagentProfileId !== undefined && {
+          platformSubagentProfileId,
+        }),
+      });
     }),
 
   clearSessionDefault: manageAgentsProcedure

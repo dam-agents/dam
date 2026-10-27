@@ -2,8 +2,8 @@
 
 ## AC-1 — the agent is connected to GitHub and to the Slack channel
 
-Given the owner signed in, with a new agent made from a Claude Code template, a model connection, and a GitHub connection made with the sandbox token
-When they connect the agent to the sandbox Slack channel
+Given the owner signed in, with a new agent made from a Claude Code template, a model connection, and a GitHub connection made with the sandbox token, and the owner's Slack account linked to the test person
+When they pick the sandbox Slack channel by name and connect the agent to it
 Then the agent's page shows the GitHub connection and the Slack channel as connected
 
 ## AC-2 — the agent answers in the thread with the new pull request

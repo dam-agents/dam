@@ -1,0 +1,4 @@
+#!/bin/sh
+# hermes_platform.py writes the router, MCP and approval keys into
+# ~/.hermes/config.yaml, then runs `hermes acp` with the session model fix.
+exec hermes-platform acp

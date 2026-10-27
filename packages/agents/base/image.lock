@@ -276,6 +276,15 @@ version = "v0.5.0"
 backend = "pipx:AI-native-Systems-Research/agentic-strategy-evolution"
 specifiers = ["v0.5.0"]
 
+[[tools."pipx:hermes-agent"]]
+version = "0.19.0"
+backend = "pipx:hermes-agent"
+specifiers = ["0.19.0"]
+uv = { path = ".mise/locks/pipx-hermes-agent/0.19.0~857ab2fa", digest = "sha256:e4c9eec9e50b3f092192ebcc31eefbf323ac21fb38a85fec5ace50de0fb20613" }
+
+[tools."pipx:hermes-agent".options]
+extras = "acp,mcp"
+
 [[tools."pipx:openevolve"]]
 version = "0.4.0"
 backend = "pipx:openevolve"

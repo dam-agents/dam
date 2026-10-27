@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the schedule form's Model field on a sleeping agent. The model list is read from the running agent, so while the agent sleeps the field offers to start it instead of a picker with nothing in it, says the agent is starting once it is woken, and lists the models once it is up.
+// TEST_OVERVIEW: the schedule form's Model field on a sleeping agent. On a routed runtime the model list comes from the api-server's catalog, so a sleeping agent's models are listed; an agent that never reported its harnesses, and the old runtime, whose list is read from the running agent, offer to start it instead of a picker with nothing in it, and list the models once it is up.
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useForm } from "react-hook-form";
@@ -22,6 +22,27 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/components/ui/tooltip", () => ({
   HintTooltip: ({ children }: { children: ReactNode }) => children,
+}));
+
+vi.mock("../../modules/sessions/components/session-pair-picker.js", () => ({
+  SessionPairPicker: (props: { target?: { label: string } }) =>
+    createElement("output", { "data-picker": props.target?.label }),
+}));
+
+vi.mock("../../store.js", () => ({
+  useStore: (select: (store: unknown) => unknown) =>
+    select({ showConfirm: vi.fn(), navigateToSandboxHome: vi.fn() }),
+}));
+
+vi.mock("../../modules/profiles/api/queries.js", () => ({
+  useProfiles: () => ({ data: [] }),
+}));
+
+vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
+  useProfileAttach: () => ({
+    attach: async () => "conn-attached",
+    manage: () => {},
+  }),
 }));
 
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
@@ -60,7 +81,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
     },
   }),
   useHarnessCatalogModels: () => ({
-    data: state.operable
+    data: state.routed
       ? {
           harness: "codex",
           routed: true,
@@ -91,6 +112,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
     operable: state.operable,
   }),
   useHarnessConfigured: () => undefined,
+  useGrantProvider: () => ({ grant: vi.fn(), pending: false }),
   useProviderConnections: () => ({
     granted: [{ id: "oai", name: "OpenAI", type: "openai" }],
     owned: [],
@@ -109,11 +131,19 @@ interface Choices {
   harness: string;
   model: string;
   settings: Record<string, string>;
+  profile: string;
+  platformSubagentProfile: string;
 }
 
 function Field() {
   const { control } = useForm<Choices>({
-    defaultValues: { harness: "", model: "", settings: {} },
+    defaultValues: {
+      harness: "",
+      model: "",
+      settings: {},
+      profile: "",
+      platformSubagentProfile: "",
+    },
   });
   return createElement(ScheduleChoicesField<Choices>, {
     agentId: "agent",
@@ -131,16 +161,11 @@ describe("the schedule form's model on a sleeping agent", () => {
     state.comingUp = false;
   });
 
-  // TEST_SCENARIO: Asleep, the Model field holds the start button, not an empty picker, and the harness stays pickable; woken, it says the agent is starting.
-  it("offers to start the agent, then says it is starting", () => {
+  // TEST_SCENARIO: On a routed runtime the catalog needs no running agent, so a sleeping agent's schedule offers the chat's picker, with no start button.
+  it("lists the models of a sleeping agent on a routed runtime", () => {
     const asleep = render();
-    expect(asleep).toContain("Start agent to edit");
-    expect(asleep).toContain('aria-label="Harness"');
-    expect(asleep).not.toContain('aria-label="Model"');
-    state.comingUp = true;
-    const starting = render();
-    expect(starting).toContain("Agent is starting…");
-    expect(starting).not.toContain("Start agent to edit");
+    expect(asleep).toContain('data-picker="Schedule harness and model"');
+    expect(asleep).not.toContain("Start agent to edit");
   });
 
   // TEST_SCENARIO: A new agent that never ran has reported no harnesses; the field still offers the start rather than a picker with nothing to pick.
@@ -174,7 +199,7 @@ describe("the schedule form's model on a sleeping agent", () => {
   it("shows the model picker once the agent is up", () => {
     state.operable = true;
     const html = render();
-    expect(html).toContain('aria-label="Model"');
+    expect(html).toContain('data-picker="Schedule harness and model"');
     expect(html).not.toContain("Start agent to edit");
   });
 });

@@ -3,23 +3,26 @@ export {
   type ModelCatalog,
   type ModelCatalogDeps,
 } from "./services/model-catalog.js";
-export type {
-  CatalogEntry,
-  CatalogProvider,
-  ModelDialect,
-  ModelMetadata,
-  ModelPrices,
-} from "./domain/catalog-entry.js";
+export { VENDORED_PRICE_TABLE } from "api-server-api/model-prices";
 export {
   ANTHROPIC_OAUTH_BETA,
   ANTHROPIC_OAUTH_TEMPLATE,
-  PROVIDER_DIALECTS,
-} from "./domain/provider-listing.js";
-export { lookupPrice, normalizeModelKey } from "./domain/price-table.js";
-export {
-  renderName,
   forHarness,
+  layerMetadata,
+  listingForTemplate,
+  lookupPrice,
+  normalizeModelKey,
+  PROVIDER_DIALECTS,
+  renderName,
   servesHarness,
+  type CatalogEntry,
+  type CatalogProvider,
+  type HarnessBinding,
   type HarnessOffer,
-} from "./domain/render.js";
-export { VENDORED_PRICE_TABLE } from "./infrastructure/price-table.js";
+  type ModelDialect,
+  type ModelMetadata,
+  type ModelPrices,
+  type ProviderListingSpec,
+  type PriceTable,
+  type PriceTableEntry,
+} from "api-server-api";

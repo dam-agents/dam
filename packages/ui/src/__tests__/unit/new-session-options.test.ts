@@ -1,6 +1,6 @@
 // TEST_OVERVIEW: An empty chat offers ways to start a session elsewhere, as launcher cards. Each way shows only to a person who holds the Agent Permission it needs, so an Agent Editor of a Shared Agent is offered no terminal, local editor or messenger.
 import { AGENT_PERMISSIONS, type AgentPermission } from "api-server-api";
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
@@ -21,12 +21,9 @@ vi.mock(
   "../../modules/links/api/queries.js",
   () => import("./support/fake-links.js"),
 );
-vi.mock(
-  "../../modules/sessions/components/terminal-harness-buttons.js",
-  () => ({
-    TerminalHarnessButtons: () => null,
-  }),
-);
+vi.mock("../../modules/sessions/components/terminal-harness-menu.js", () => ({
+  TerminalHarnessMenu: ({ children }: { children: ReactElement }) => children,
+}));
 
 const OWNER = { role: "owner", editors: [], permissions: AGENT_PERMISSIONS };
 const EDITOR_PERMISSIONS: AgentPermission[] = AGENT_PERMISSIONS.filter(

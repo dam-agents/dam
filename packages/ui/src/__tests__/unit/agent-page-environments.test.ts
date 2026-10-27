@@ -61,6 +61,7 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
 vi.mock("../../modules/agents/api/mutations.js", () => ({
   useDeleteAgent: () => ({ mutate: vi.fn(), isPending: false }),
   useSetAgentDisabled: () => ({ mutate: vi.fn(), isPending: false }),
+  useLeaveAgent: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("../../modules/agents/hooks/use-confirm-delete-agent.js", () => ({
   useConfirmDeleteAgent: () => vi.fn(),
@@ -99,8 +100,8 @@ vi.mock("../../modules/sandboxes/components/sandbox-home-header.js", () => ({
   SandboxHomeHeader: () => null,
   SandboxIdentity: () => null,
 }));
-vi.mock("../../modules/sandboxes/components/sandbox-setup-section.js", () => ({
-  SandboxSetupSection: () => null,
+vi.mock("../../modules/sandboxes/components/agent-config-sections.js", () => ({
+  AgentModelSettingsSection: () => null,
 }));
 vi.mock("../../modules/metrics/components/sandbox-usage-section.js", () => ({
   SandboxUsageSection: () => null,

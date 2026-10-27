@@ -40,6 +40,7 @@ const ibm: ModelGroup = {
   status: "listed",
   listedAt: null,
   native: false,
+  attached: true,
   models: [
     model("ibm/aws/claude-opus-5-5", 200_000),
     model("ibm/aws/claude-opus-5-1", 200_000),
@@ -54,6 +55,7 @@ const anthropic: ModelGroup = {
   status: "listed",
   listedAt: null,
   native: false,
+  attached: true,
   models: [model("anthropic/claude-opus-5-5", 1_000_000)],
 };
 
@@ -75,7 +77,6 @@ function render(
   act(() =>
     root.render(
       createElement(SessionModelList, {
-        agentId: "agent",
         groups,
         current,
         loading: false,

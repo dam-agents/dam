@@ -52,6 +52,7 @@ function world(initial: Partial<World> = {}) {
             null,
             null,
             null,
+            null,
             { modelRouter: true },
           ],
         ],
@@ -86,7 +87,8 @@ function world(initial: Partial<World> = {}) {
 }
 
 const noticeStateOf = async (db: Db, agentIds: readonly string[] = [AGENT]) =>
-  (await createDefaultModelNoticeReader(db)(agentIds))[0]?.state ?? null;
+  (await createDefaultModelNoticeReader(db, async () => null)(agentIds))[0]
+    ?.state ?? null;
 
 const CHAT = `telegram:${AGENT}:chat-42`;
 

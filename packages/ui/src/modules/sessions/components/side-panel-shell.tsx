@@ -19,7 +19,6 @@ import {
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
-import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
 import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
 import { holdBackEntry } from "../../platform/lib/back-entry.js";
 import { CLASSIC_RIGHT_RAIL_W } from "../../platform/lib/sidebar-layout.js";
@@ -277,9 +276,6 @@ export function SidePanelShell({
               </span>
             </div>
             {panel}
-            {activeTab === "getting-started" && (
-              <GettingStartedPanel className="flex-1" />
-            )}
             {activeTab === "approvals" && <ApprovalsPanel className="flex-1" />}
             {dockedKept && (
               <div

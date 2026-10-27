@@ -83,6 +83,7 @@
     { "host": "get.helm.sh", "method": "GET", "why": "the helm binary" },
     { "host": "mirror.gcr.io", "method": "GET", "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror; layers come from the same host)" },
     { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
+    { "host": "api.github.com", "method": "GET", "path": "/user", "why": "sandbox: DAM checks a saved GitHub token, or a GitHub sign-in, and shows the test user's login as the connection's account" },
     { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/issues", "why": "sandbox: an agent files the issue a test asks for" },
     { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/issues/*", "why": "sandbox: the agent or the test closes it" },
     { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/pulls", "why": "sandbox: an agent opens the pull request a test asks for" },

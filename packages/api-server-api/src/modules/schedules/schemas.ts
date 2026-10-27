@@ -44,6 +44,8 @@ export const scheduleCreateCronInputSchema = z.object({
   harness: scheduleHarnessSchema.optional(),
   model: scheduleModelSchema.optional(),
   settings: scheduleSettingsSchema.optional(),
+  profile: z.string().min(1).nullable().optional(),
+  platformSubagentProfile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.optional(),
 });
 
@@ -57,6 +59,8 @@ export const scheduleUpdateCronInputSchema = z.object({
   harness: scheduleHarnessSchema.nullable().optional(),
   model: scheduleModelSchema.nullable().optional(),
   settings: scheduleSettingsSchema.nullable().optional(),
+  profile: z.string().min(1).nullable().optional(),
+  platformSubagentProfile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
@@ -72,6 +76,8 @@ export const scheduleCreateRRuleInputSchema = z.object({
   harness: scheduleHarnessSchema.optional(),
   model: scheduleModelSchema.optional(),
   settings: scheduleSettingsSchema.optional(),
+  profile: z.string().min(1).nullable().optional(),
+  platformSubagentProfile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.optional(),
 });
 
@@ -80,13 +86,18 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   name: z.string().min(1),
   rrule: z.string().min(1),
   timezone: z.string().min(1),
-  quietHours: z.array(quietWindowSchema),
+  /* UNIT_BOUNDARY_DESCRIPTION: absent leaves the stored quiet hours alone, and
+   * either null or an empty list clears them, as every other choice of a
+   * schedule says it: omitted keeps, null clears. */
+  quietHours: z.array(quietWindowSchema).nullable().optional(),
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.nullable().optional(),
   harness: scheduleHarnessSchema.nullable().optional(),
   model: scheduleModelSchema.nullable().optional(),
   settings: scheduleSettingsSchema.nullable().optional(),
+  profile: z.string().min(1).nullable().optional(),
+  platformSubagentProfile: z.string().min(1).nullable().optional(),
   sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
@@ -107,6 +118,8 @@ export const scheduleCreateOnceInputSchema = z
     harness: scheduleHarnessSchema.optional(),
     model: z.string().min(1).optional(),
     settings: scheduleSettingsSchema.optional(),
+    profile: z.string().min(1).nullable().optional(),
+    platformSubagentProfile: z.string().min(1).nullable().optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();
@@ -121,6 +134,8 @@ export const scheduleUpdateOnceInputSchema = z
     harness: scheduleHarnessSchema.optional(),
     model: z.string().min(1).optional(),
     settings: scheduleSettingsSchema.optional(),
+    profile: z.string().min(1).nullable().optional(),
+    platformSubagentProfile: z.string().min(1).nullable().optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();

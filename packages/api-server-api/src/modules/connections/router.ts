@@ -9,6 +9,7 @@ import {
   manageCredentialsProcedure,
   readAgentProcedure,
   readCredentialsProcedure,
+  requireWildcardBinding,
 } from "../../auth-procedures.js";
 import {
   connectionCreateInputSchema,
@@ -20,6 +21,7 @@ import {
   connectionCreateFromParentInputSchema,
   connectionProbeGitHubUserTokenInputSchema,
   connectionUpdateGitHubUserTokenScopeInputSchema,
+  connectionAgentCatalogInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
@@ -53,6 +55,23 @@ export const connectionsRouter = t.router({
   list: readCredentialsProcedure.query(({ ctx }) =>
     ctx.connections.listAndReconcileConnections(),
   ),
+
+  catalog: readCredentialsProcedure
+    .use(requireWildcardBinding)
+    .query(({ ctx }) => ctx.connections.modelCatalog()),
+
+  /* UNIT_BOUNDARY_DESCRIPTION: an agent's model catalog: its granted providers, and with `unattached` every provider its owner holds, which a pick then connects. Only an unrestricted principal sees the unattached ones; an Agent Editor's and a bound key's context is bound to the agent, so they see its grants alone. */
+  agentCatalog: readAgentProcedure
+    .input(connectionAgentCatalogInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.connections.modelCatalog(
+        input.unattached && ctx.user.agentIds === "*"
+          ? undefined
+          : input.agentId,
+      );
+    }),
 
   get: readCredentialsProcedure
     .input(connectionIdInputSchema)

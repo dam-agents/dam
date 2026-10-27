@@ -1,0 +1,58 @@
+# Hermes Agent runtime manifest. Hermes is the ACP agent itself (`hermes acp`).
+# Other drivers keep the defaults of the base manifest.
+manifestVersion: 1
+
+# Hermes reaches the router as one custom OpenAI-compatible provider over Chat
+# Completions. Its calls carry no session marker, so the router books an
+# unmarked call to the one Hermes session running a turn, if only one is.
+# The model reaches Hermes as `custom:platform:<qualified name>`;
+# hermes_platform.py turns the config option into session/set_model.
+modelRouter:
+  dialects: [openai-chat]
+  sessionModel: { configOption: model, valuePrefix: "custom:platform:" }
+  defaultModelEnv: [PLATFORM_MODEL]
+  sessionFromRunningTurn: true
+
+# Declared so the runtime answers initialize before any harness process runs.
+# Re-captured from the image pin by test:harness-initialize-capabilities. The
+# setup method opens Hermes's provider wizard, which the router makes moot.
+# Hermes names no title, so no agentInfo is declared.
+initializeCapabilities:
+  agentCapabilities: {"loadSession": true, "promptCapabilities": {"image": true}, "sessionCapabilities": {"fork": {}, "list": {}, "resume": {}}}
+  authMethods: []
+
+drivers:
+  # Hermes reads MCP servers from YAML; hermes_platform.py copies this file's
+  # entries into ~/.hermes/config.yaml at every start.
+  mcp-entry:
+    path: "$HOME/.hermes/platform-mcp.json"
+    keyPath: mcpServers
+
+  harness-config:
+    file: "$HOME/.hermes/platform-settings.json"
+    sessionSettings:
+      mode: { mode: true }
+    keys:
+      mode: "mode"
+    catalog:
+      options:
+        - id: model
+          name: Model
+          description: AI model to use
+          category: model
+          choices: []
+        - id: mode
+          name: Edits
+          description: Which file edits Hermes makes without asking
+          category: mode
+          default: "dont_ask"
+          choices:
+            - value: "default"
+              name: "Ask"
+              description: "Asks before every edit"
+            - value: "accept_edits"
+              name: "Accept edits"
+              description: "Edits the workspace and /tmp without asking"
+            - value: "dont_ask"
+              name: "Don't ask"
+              description: "Edits anything but sensitive paths without asking"

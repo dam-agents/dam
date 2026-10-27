@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-25
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -65,13 +65,14 @@ The delegation view shows its user the same: each target's card names the model 
 The delegation card and the root Driver's spend rows show the label, else the first line of the prompt.
 The minted name keeps the target's prefix and its entropy either way, because that shape is how a target is still recognised as one after it is deleted and only spend rows remain ([observability](observability.md)).
 
-**The order is the workspace-event order.** The seed is queued with the create; the install is queued ahead of the task in the same delivery, so the harness opens its session on a workspace that is already seeded and bootstrapped ([runtime-delivery](runtime-delivery.md)).
+**The order is the workspace-event order.** The seed is queued with the create; the install is queued in a bump of its own ahead of the task's, so the harness opens its session on a workspace that is already seeded and bootstrapped.
+One bump would not do: its events share a version and reach the runtime in no set order ([runtime-delivery](runtime-delivery.md#applystate--state-and-events-delivery-server--agent)).
 External skills are applied the way kit apply applies them, after the target is woken.
 
 **Provider Inheritance.** A target runs on one of its Driver's model providers; a spawn never names one.
 The platform takes the provider connections granted to the Driver and gives the target the one its model names, else the first in its harness's home order that its harness can run on.
 A harness whose providers none of the Driver's match is refused before anything is created, since the target could not make its first model call and the Driver would get a failed run instead of a refused spawn.
-The refusal names the providers that would do, by their Settings names, and the fix: attach one the owner already holds on the agent's Providers page, else connect one in Settings first.
+The refusal names the providers that would do, by their Settings names, and the fix: pick a profile that runs on one the owner already holds, which grants it on the agent's Providers section, else connect one in Settings first.
 `list_harnesses` tells the same ahead of a spawn, by the same rule: each harness with the provider a spawn naming no model runs on there, or the refusal a spawn there would get.
 An image target declares nothing, so nothing is narrowed.
 

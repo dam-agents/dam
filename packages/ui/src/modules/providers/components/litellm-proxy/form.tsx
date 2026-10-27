@@ -103,6 +103,7 @@ export function LiteLlmProxyForm({
       }
       onSubmit={onSubmit}
       onCancel={onCancel}
+      closeDisabled={isSubmitting}
     >
       <ProviderSecretRow
         register={register("value")}

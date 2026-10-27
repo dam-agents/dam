@@ -16,7 +16,12 @@ import {
   type Thread,
   type StateAdapter,
 } from "chat";
-import { ChannelType, SessionType, type AgentsService } from "api-server-api";
+import {
+  ChannelType,
+  SessionType,
+  type AgentsService,
+  type SessionChoiceSlots,
+} from "api-server-api";
 import { TelegramConversationAdapter } from "./telegram-conversation-adapter.js";
 import type {
   ChannelWorker,
@@ -24,9 +29,17 @@ import type {
 } from "../services/worker-contract.js";
 import {
   AcpSessionLoadError,
+  pairFields,
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
+import type { ChannelPair } from "./channel-profile.js";
+import { match } from "ts-pattern";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
+import {
+  lookUpProviderOutage,
+  telegramProviderOutageCopy,
+  type ChannelProviderOutage,
+} from "./provider-outage-copy.js";
 import { getLogger } from "../../../core/logger.js";
 import { channelDeny } from "./channel-authz.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -81,7 +94,9 @@ export interface TelegramConversationsPort {
     agentId: string,
     authorizedBy: string,
   ): Promise<"bound" | "conflict">;
-  listByAgent(agentId: string): Promise<string[]>;
+  listByAgent(
+    agentId: string,
+  ): Promise<({ conversationId: string } & SessionChoiceSlots)[]>;
   unbind(conversationId: string): Promise<void>;
   setAmbient(conversationId: string, ambient: boolean): Promise<void>;
 }
@@ -92,7 +107,7 @@ export interface TelegramOwnerChatsPort {
   ): Promise<{ conversationId: string; agentId: string }[]>;
 }
 
-export interface ChannelConversation {
+export interface ChannelConversation extends Partial<SessionChoiceSlots> {
   id: string;
   title: string;
 }
@@ -583,6 +598,7 @@ export function createTelegramWorker(deps: {
   botToken: string;
   configuredBotUsername?: string | null;
   makeAcpClient: AcpClientFactory;
+  channelPair?: ChannelPair;
   state: StateAdapter;
   agents: () => AgentsService;
   conversations: TelegramConversationsPort & TelegramOwnerChatsPort;
@@ -590,6 +606,7 @@ export function createTelegramWorker(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   spendHold?: ChannelSpendHold;
+  providerOutage?: ChannelProviderOutage;
   uiBaseUrl: string;
   brandName: string;
   logLevel?: LogLevel;
@@ -602,6 +619,7 @@ export function createTelegramWorker(deps: {
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
   const { botToken, makeAcpClient, agents, attendance, brandName } = deps;
+  const providerOutage = deps.providerOutage ?? (async () => null);
 
   let bot: {
     chat: Chat;
@@ -714,6 +732,7 @@ export function createTelegramWorker(deps: {
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
+    let failureTemplateId: string | undefined;
     const releaseAttendance = attendance.openChannelTurn(agentId);
     try {
       await agents().ensureReady(agentId);
@@ -737,6 +756,12 @@ export function createTelegramWorker(deps: {
         platformMeta: {
           type: SessionType.ChannelTelegram,
           threadTs: thread.id,
+          ...pairFields(
+            await deps.channelPair?.(agentId, {
+              type: "telegram",
+              id: telegramChatOf(thread.id),
+            }),
+          ),
           title: messages[0]!.text,
         },
         ...(onSession ? { onSession } : {}),
@@ -749,10 +774,27 @@ export function createTelegramWorker(deps: {
         { agentId, reason: failureReason, error: String(err), ambientTurn },
         "telegram.turn.failed",
       );
+      const outage =
+        failure.kind === "provider-unavailable"
+          ? await lookUpProviderOutage(providerOutage, agentId, {
+              type: "telegram",
+              id: telegramChatOf(thread.id),
+            })
+          : null;
+      failureTemplateId = outage?.templateId ?? undefined;
       const sleeping = isAgentStoppedError(err) && !err.disabled;
       if (!ambientTurn && !sleeping)
         await thread
-          .post(failure.copy({ uiBaseUrl: deps.uiBaseUrl, agentId }))
+          .post(
+            match(failure)
+              .with({ kind: "plain" }, ({ copy }) =>
+                copy({ uiBaseUrl: deps.uiBaseUrl, agentId }),
+              )
+              .with({ kind: "provider-unavailable" }, () => ({
+                markdown: telegramProviderOutageCopy(outage, brandName),
+              }))
+              .exhaustive(),
+          )
           .catch(() => {});
     } finally {
       releaseAttendance();
@@ -762,7 +804,10 @@ export function createTelegramWorker(deps: {
           "platform.channel.failure_reason": failureReason,
         }),
       });
-      emitTurn(agentId, outcome, author.userId, ambientTurn, failureReason);
+      emitTurn(agentId, outcome, author.userId, ambientTurn, {
+        reason: failureReason,
+        templateId: failureTemplateId,
+      });
     }
   }
 
@@ -842,7 +887,7 @@ export function createTelegramWorker(deps: {
     outcome: TurnOutcome,
     telegramUserId: string,
     ambient: boolean,
-    reason?: string,
+    failure: { reason: string | undefined; templateId: string | undefined },
   ) {
     emit({
       type: EventType.ChannelTurnRelayed,
@@ -852,7 +897,10 @@ export function createTelegramWorker(deps: {
       externalActorId: telegramUserId,
       outcome,
       ...(ambient ? { ambient: true as const } : {}),
-      ...(reason !== undefined ? { reason } : {}),
+      ...(failure.reason !== undefined ? { reason: failure.reason } : {}),
+      ...(failure.templateId !== undefined
+        ? { templateId: failure.templateId }
+        : {}),
     });
   }
 
@@ -963,12 +1011,12 @@ export function createTelegramWorker(deps: {
     async listConversations(agentId: string) {
       if (!bot) return [];
       const adapter = bot.adapter;
-      const conversationIds = await deps.conversations.listByAgent(agentId);
+      const bound = await deps.conversations.listByAgent(agentId);
       return Promise.all(
-        conversationIds.map(async (conversationId) => {
+        bound.map(async ({ conversationId, ...slots }) => {
           const { chatId } = adapter.decodeThreadId(conversationId);
           const title = await fetchTelegramChatTitle(botToken, chatId);
-          return { id: conversationId, title };
+          return { id: conversationId, title, ...slots };
         }),
       );
     },

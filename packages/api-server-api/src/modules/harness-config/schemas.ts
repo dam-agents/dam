@@ -56,9 +56,33 @@ export const sessionPairSchema = z.object({
   settings: sessionSettingsSchema.optional(),
 });
 
-export const rememberSessionPairInputSchema = sessionPairSchema.extend({
-  agentId: z.string().min(1),
-  kind: defaultKindSchema.default("chat"),
+/* UNIT_BOUNDARY_DESCRIPTION: a pick in the chat default's shape, which a
+ * channel and a schedule take too: a pair whose settings may carry the
+ * subagent's own values, and the profile either slot names in their place. A
+ * reference names the profile instead of the values, and the runtime is sent
+ * the pair it resolves to, so the two never travel as one record; an omitted
+ * subagent reference leaves that slot as it is. */
+export const sessionChoiceReferencesSchema = z.object({
+  profileId: z.string().min(1).nullable().optional(),
+  platformSubagentProfileId: z.string().min(1).nullable().optional(),
+});
+
+export const rememberSessionPairInputSchema = sessionPairSchema
+  .extend({
+    agentId: z.string().min(1),
+    kind: defaultKindSchema.default("chat"),
+  })
+  .merge(sessionChoiceReferencesSchema);
+
+/* UNIT_BOUNDARY_DESCRIPTION: the chat default's two slots as stored, which a
+ * channel binding keeps the same way: the primary a profile or values of its
+ * own, the subagent a profile, values of its own, or neither, which lets the
+ * agent pick. */
+export const sessionChoiceSlotsSchema = z.object({
+  profileId: z.string().nullable(),
+  pair: sessionPairSchema.nullable(),
+  platformSubagentProfileId: z.string().nullable(),
+  platformSubagentSettings: z.record(z.string(), z.string()).nullable(),
 });
 
 export const clearSessionDefaultInputSchema = z.object({
@@ -70,6 +94,21 @@ export const sessionDefaultsSchema = z.object({
   chat: sessionPairSchema.nullable(),
   channel: sessionPairSchema.nullable(),
   scheduled: sessionPairSchema.nullable(),
+});
+
+/* UNIT_BOUNDARY_DESCRIPTION: the saved defaults, plus the profile the chat
+ * default names, so a form that prefills from "the chat profile" reads the
+ * reference instead of guessing it from the values. */
+export const sessionDefaultsViewSchema = sessionDefaultsSchema.extend({
+  chatProfileId: z.string().nullable(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the chat default's subagent slot as stored, a
+   * profile or values, which `chat` drops while it or the primary cannot run,
+   * so a picker still shows what the slot holds. */
+  platformSubagentProfileId: z.string().nullable().optional(),
+  platformSubagentSettings: z
+    .record(z.string(), z.string())
+    .nullable()
+    .optional(),
 });
 
 export const harnessConfigSettledSchema = z.object({

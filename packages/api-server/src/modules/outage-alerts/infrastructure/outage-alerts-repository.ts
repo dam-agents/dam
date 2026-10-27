@@ -1,7 +1,10 @@
 import { and, eq, gte, or, outageAlerts, type Db } from "db";
 import { z } from "zod";
 
-import type { OutageAlert } from "../domain/alert-rules.js";
+import type {
+  OutageAlert,
+  OutageAlertAffectedBy,
+} from "../domain/alert-rules.js";
 
 export interface StoredAlert {
   alert: OutageAlert;
@@ -15,13 +18,20 @@ export interface OutageAlertsRepository {
   claim(seen: number | null, next: OutageAlert): Promise<boolean>;
 }
 
+const affectedBySchema = z.enum(["schedule", "slack", "telegram"]);
+
 const agentsSchema = z.array(
   z.object({
     agentId: z.string(),
     name: z.string(),
-    affectedBy: z.array(
-      z.enum(["failed-calls", "schedule", "slack", "telegram"]),
-    ),
+    affectedBy: z
+      .array(z.string())
+      .transform((reasons) =>
+        reasons.filter(
+          (reason): reason is OutageAlertAffectedBy =>
+            affectedBySchema.safeParse(reason).success,
+        ),
+      ),
   }),
 );
 

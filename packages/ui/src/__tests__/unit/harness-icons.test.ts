@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { type HarnessFamily, PROVIDER_PRESET_TYPES } from "api-server-api";
+import { Window } from "happy-dom";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -24,7 +25,14 @@ vi.mock("../../modules/providers/api/queries.js", () => ({
   }),
 }));
 
-const ALL: HarnessFamily[] = ["bob", "claude-code", "codex", "copilot", "pi"];
+const ALL: HarnessFamily[] = [
+  "bob",
+  "claude-code",
+  "codex",
+  "copilot",
+  "hermes",
+  "pi",
+];
 
 function renderToStaticMarkup(element: ReactElement) {
   return renderMarkup(createElement(TooltipProvider, null, element));
@@ -60,8 +68,8 @@ describe("harness icons on provider and preset cards", () => {
     const html = renderToStaticMarkup(
       createElement(HarnessIcons, { size: "sm" }),
     );
-    expect(html.match(/<svg /g)).toHaveLength(5);
-    expect(html.match(/fill="currentColor"/g)).toHaveLength(5);
+    expect(html.match(/<svg /g)).toHaveLength(6);
+    expect(html.match(/fill="currentColor"/g)).toHaveLength(6);
     expect(html).not.toMatch(
       /<img|<mask|gradient|bg-|text-white|fill="#|stroke="#/,
     );
@@ -121,10 +129,10 @@ describe("harness icons on provider and preset cards", () => {
     const html = renderToStaticMarkup(createElement(HarnessIcons));
     expect(html).toContain("size-5 scale-110");
     expect(html).toContain("size-5 scale-90");
-    expect(html.match(/text-white/g)).toHaveLength(5);
-    expect(html.match(/bg-icon-[a-z]+/g)).toHaveLength(5);
+    expect(html.match(/text-white/g)).toHaveLength(6);
+    expect(html.match(/bg-icon-[a-z]+/g)).toHaveLength(6);
     expect(html).not.toMatch(/bg-icon-[a-z]+\//);
-    expect(html.match(/fill="currentColor"/g)).toHaveLength(5);
+    expect(html.match(/fill="currentColor"/g)).toHaveLength(6);
   });
 
   it.each(PROVIDER_PRESET_TYPES)(
@@ -148,7 +156,7 @@ describe("harness icons on provider and preset cards", () => {
   );
 
   it.each([true, false])(
-    "labels each compatible harness when connected=%s",
+    "reads one line per provider when connected=%s, its state as an icon",
     (connected) => {
       const html = renderToStaticMarkup(
         createElement(ProviderRow, {
@@ -161,31 +169,68 @@ describe("harness icons on provider and preset cards", () => {
           onOpen() {},
         }),
       );
-      expect(html).toContain("Supports:");
-      expect(html).toContain("size-5");
-      expect(html).not.toContain("Chat and Responses APIs");
+      expect(html).not.toContain("Supports:");
       if (connected) {
         expect(html).toContain("$12.00 of $100.00 used");
-        expect(html).toContain(">Configured · Connected<");
+        expect(html).toContain(
+          'role="img" aria-label="Configured · Connected"',
+        );
       } else {
         expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
-        expect(html).toContain(">Not configured<");
+        expect(html).toContain('role="img" aria-label="Not configured"');
       }
-      for (const name of ["Bob", "Claude", "Codex", "Pi"])
-        expect(html).toContain(`role="img" aria-label="${name}"`);
-      expect(html).not.toContain("tabindex");
+      expect(html).not.toMatch(/>(Not configured|Configured · Connected)</);
     },
   );
 
-  it("keeps the harness icons focusable on a row that is not a button", () => {
+  /** TEST_SCENARIO: the row-wide button that opens a provider covers the row; what has a title or an action of its own (the harness icons, the balance, the spend pill and the status icon with the key check's reason) sits in the raised layer above it, so its title shows and its own action works. */
+  it("keeps whatever has a title or an action above the row's button", () => {
     const html = renderToStaticMarkup(
       createElement(ProviderRow, {
-        type: "anthropic",
+        type: "ibm-litellm",
         connected: true,
-        harnesses: ["claude-code"],
+        harnesses: ALL,
+        keyCheck: {
+          result: "unverified",
+          detail: "HTTP 503",
+          checkedAt: "2026-10-20T09:15:00.000Z",
+        },
+        balance: createElement(ProviderBalance, { connectionId: "proxy" }),
+        spend: createElement("button", { type: "button" }, "$0.00 today"),
+        onOpen() {},
       }),
     );
-    expect(html).toContain('role="img" aria-label="Claude" tabindex="0"');
+    const doc = new Window().document;
+    doc.body.innerHTML = html;
+    const raised = (
+      el: { closest: (s: string) => unknown } | null | undefined,
+    ) => !!el?.closest('[data-layer="raised"]');
+    const withText = (selector: string, text: string) =>
+      [...doc.querySelectorAll(selector)].find((el) =>
+        el.textContent.includes(text),
+      );
+    expect(
+      raised(doc.querySelector('[aria-label="Configured · Unverified"]')),
+    ).toBe(true);
+    expect(raised(withText("p", "$12.00 of $100.00 used"))).toBe(true);
+    expect(raised(withText("button", "$0.00 today"))).toBe(true);
+    expect(raised(doc.querySelector('[aria-label="Claude"]'))).toBe(true);
+    expect(
+      html.match(/<button[^>]*aria-label="Edit [^"]*"[^>]*><\/button>/),
+    ).not.toBeNull();
+  });
+
+  it("names each compatible harness inline after the provider's name", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProviderRow, {
+        type: "ibm-litellm",
+        connected: true,
+        harnesses: ALL,
+      }),
+    );
+    for (const name of ["Bob", "Claude", "Codex", "Pi"])
+      expect(html).toContain(`role="img" aria-label="${name}"`);
+    expect(html).not.toContain("tabindex");
   });
 
   it.each([{ harnesses: undefined }, { harnesses: [] }])(
@@ -199,7 +244,6 @@ describe("harness icons on provider and preset cards", () => {
           onOpen() {},
         }),
       );
-      expect(html).toContain(harnesses ? "None" : "Compatibility unavailable");
       expect(html).not.toContain('aria-label="Claude"');
       expect(html).not.toContain('aria-label="Pi"');
     },

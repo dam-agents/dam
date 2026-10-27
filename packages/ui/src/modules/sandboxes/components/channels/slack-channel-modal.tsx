@@ -5,6 +5,7 @@ import {
 import { Controller } from "react-hook-form";
 
 import { FormError } from "@/components/form-error";
+import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -22,6 +23,7 @@ import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
 import { SlackChannelPicker } from "../../../slack/components/slack-channel-picker.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
+import { ChannelChoicePicker, NO_CHOICE } from "./channel-profile-line.js";
 import { ChannelSwitchCard } from "./channel-switch-card.js";
 
 export function SlackChannelModal({
@@ -71,6 +73,28 @@ export function SlackChannelModal({
               />
               <FormError message={errors.channelIds?.message} />
             </div>
+          )}
+
+          {!channel && (
+            <FormField
+              label="Runs on"
+              hint="What these channels' turns run on, picked as a chat's model is. A profile is resolved on every turn, so editing it changes what they run on. Starts on the profile your newest channel uses, else the one your chats use."
+            >
+              <Controller
+                control={control}
+                name="choice"
+                render={({ field }) => (
+                  <ChannelChoicePicker
+                    agentId={agent.id}
+                    slots={field.value?.slots ?? NO_CHOICE}
+                    onChoose={(slots, request) =>
+                      field.onChange({ slots, request })
+                    }
+                  />
+                )}
+              />
+              <FormError message={errors.choice?.message} />
+            </FormField>
           )}
 
           <Controller

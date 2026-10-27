@@ -18,7 +18,6 @@ export interface DegradedTemplate {
   readonly templateId: string;
   readonly reason: ProviderOutageReason;
   readonly since: string;
-  readonly failedPayers: readonly string[];
 }
 
 export interface StatusSnapshot {
@@ -67,13 +66,6 @@ export function nextSnapshot(
     previous?.degraded.find((d) => d.templateId === templateId);
   const sinceOf = (templateId: string) =>
     previousOf(templateId)?.since ?? firstSince.get(templateId) ?? at;
-  const failedPayersOf = (templateId: string) =>
-    [
-      ...new Set([
-        ...(previousOf(templateId)?.failedPayers ?? []),
-        ...failedAgentsOf(signals.calls.get(templateId) ?? []),
-      ]),
-    ].sort();
   const failing = new Set(
     [...signals.calls]
       .filter(([, buckets]) => isDegraded(buckets))
@@ -97,7 +89,6 @@ export function nextSnapshot(
         templateId,
         reason,
         since: sinceOf(templateId),
-        failedPayers: failedPayersOf(templateId),
       })),
     damSide: damSide ? { since: previous?.damSide?.since ?? at } : null,
     streaks,
@@ -127,7 +118,6 @@ export interface EvaluatedOutage {
   readonly reason: ProviderOutageReason;
   readonly since: Date;
   readonly statusPageUrl: string | null;
-  readonly failedPayers: readonly string[];
 }
 
 export interface Evaluation {
@@ -140,7 +130,7 @@ export interface Evaluation {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the state that one evaluation hands to the
  * outage alerts. Unlike the status query, it lists every degraded template,
- * also while the fault is on the platform's side, with its failed payers.
+ * also while the fault is on the platform's side.
  * `answering` and `cleared` are the evidence that a template works again.
  */
 export function evaluationOf(
@@ -153,7 +143,6 @@ export function evaluationOf(
       reason: d.reason,
       since: new Date(d.since),
       statusPageUrl: STATUS_PAGES[d.templateId] ?? null,
-      failedPayers: d.failedPayers,
     })),
     damSide: snapshot.damSide && { since: new Date(snapshot.damSide.since) },
     answering: answeringTemplates(signals.calls),

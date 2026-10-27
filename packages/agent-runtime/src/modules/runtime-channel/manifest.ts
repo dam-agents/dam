@@ -6,7 +6,24 @@ import {
   type DriverBinding,
 } from "agent-runtime-api";
 import { loadYamlDocument } from "../../core/yaml-document.js";
+import {
+  modelDialect,
+  modelDiscoverySources,
+  modelDiscoverySpec,
+  type ModelDialect,
+  type ModelDiscoverySources,
+  type ModelDiscoverySpec,
+} from "api-server-api";
 import { z } from "zod";
+
+export {
+  modelDialect,
+  modelDiscoverySources,
+  modelDiscoverySpec,
+  type ModelDialect,
+  type ModelDiscoverySources,
+  type ModelDiscoverySpec,
+};
 
 const driverEntry = z.union([
   z.object({ impl: z.string().min(1).optional() }).catchall(z.unknown()),
@@ -19,33 +36,6 @@ const extensionImpl = z.object({
   export: z.string().min(1),
 });
 export type ExtensionImpl = z.infer<typeof extensionImpl>;
-
-const modelListing = z.object({
-  path: z.string().startsWith("/").optional(),
-  shape: z
-    .enum(["openai-models", "litellm-model-info", "bedrock-inference-profiles"])
-    .optional(),
-});
-
-export const modelDiscoverySpec = modelListing.extend({
-  urlEnv: z.array(z.string().min(1)).nonempty(),
-  tokenEnv: z.array(z.string().min(1)).optional(),
-  credentialHeader: z.enum(["authorization", "x-api-key"]).optional(),
-  headers: z.record(z.string().min(1), z.string()).optional(),
-  redirectEnv: z.array(z.string().min(1)).optional(),
-  pinEnv: z.array(z.string().min(1)).optional(),
-  namePrefix: z.string().min(1).optional(),
-  lowercaseNames: z.boolean().optional(),
-  extendsCatalog: z.boolean().optional(),
-  fallback: modelListing.optional(),
-});
-export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
-
-export const modelDiscoverySources = z.union([
-  modelDiscoverySpec,
-  z.array(modelDiscoverySpec).nonempty(),
-]);
-export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: how a session setting reaches the harness. An
@@ -109,13 +99,6 @@ export const harnessConfigBinding = z.object({
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 
-export const modelDialect = z.enum([
-  "anthropic-messages",
-  "openai-chat",
-  "openai-responses",
-]);
-export type ModelDialect = z.infer<typeof modelDialect>;
-
 export const sessionModelBinding = z.object({
   configOption: z.string().min(1),
   valuePrefix: z.string().optional(),
@@ -132,9 +115,11 @@ export const initializeCapabilities = z.object({
 export type InitializeCapabilities = z.infer<typeof initializeCapabilities>;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: providers a harness runs on outside the Model
- * Router (Claude Code on Bedrock, whose SigV4 signing no header swap can do):
- * a session on one runs in a process of its own with the Connection's env.
+ * UNIT_BOUNDARY_DESCRIPTION: providers a harness runs on in its own mode
+ * rather than through the Model Router's catalog (Claude Code on Bedrock,
+ * whose paths and stream are Bedrock's own): a session on one runs in a
+ * process of its own with the Connection's env, and the router passes its
+ * calls on unchanged.
  */
 export const nativeProvidersBinding = z.object({
   templates: z.array(z.string().min(1)).nonempty(),
@@ -155,6 +140,7 @@ export const modelRouterBinding = z.object({
   credentialEnv: z.array(z.string().min(1)).optional(),
   defaultModelEnv: z.array(z.string().min(1)).optional(),
   sessionFromRunningTurn: z.boolean().optional(),
+  unmarkedOpeningCall: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
   classifierModelEnv: z.string().min(1).optional(),
   nonClaudeModelEnv: z

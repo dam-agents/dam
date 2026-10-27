@@ -148,6 +148,12 @@ const spendPriceOverridesSchema = z
 const curveBenderDeploymentSchema = z
   .object({ apiKey: z.string().default("") })
   .transform(({ apiKey }) => (apiKey === "" ? null : { apiKey }));
+// UNIT_BOUNDARY_DESCRIPTION: the "Default" profile an owner with no profile is given, on the deployment's shared CurveBender: a harness and an upstream model the deployment serves. Either one empty means no seed.
+const defaultProfileSeedSchema = z
+  .object({ harness: z.string().default(""), model: z.string().default("") })
+  .transform(({ harness, model }) =>
+    harness === "" || model === "" ? null : { harness, model },
+  );
 // UNIT_BOUNDARY_DESCRIPTION: the install's second address set, reached through the Environment Link by the agent that installed it: its app, Keycloak, share and content URLs, all four or none. None is an install with its public addresses alone.
 const backchannelSchema = z
   .object({
@@ -229,6 +235,7 @@ const configSchema = z.object({
   vmPoolMemory: z.string().default(""),
   featureModes: featureModesSchema,
   curveBenderDeployment: curveBenderDeploymentSchema,
+  defaultProfileSeed: defaultProfileSeedSchema,
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -439,6 +446,10 @@ export function loadConfig(): Config {
     },
     curveBenderDeployment: {
       apiKey: process.env.CURVE_BENDER_DEPLOYMENT_API_KEY,
+    },
+    defaultProfileSeed: {
+      harness: process.env.DEFAULT_PROFILE_HARNESS,
+      model: process.env.DEFAULT_PROFILE_MODEL,
     },
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,

@@ -5,6 +5,7 @@ interface QueriedSession {
   mode: string;
   type: string;
   scheduleId?: string | null;
+  continuedScheduleIds?: readonly string[];
 }
 
 export function sessionCategoryOf(session: {
@@ -29,6 +30,8 @@ export function sessionMatchesQuery(
     (query.categories === undefined ||
       query.categories.includes(sessionCategoryOf(session))) &&
     (query.sessionId === undefined || session.sessionId === query.sessionId) &&
-    (query.scheduleId === undefined || session.scheduleId === query.scheduleId)
+    (query.scheduleId === undefined ||
+      session.scheduleId === query.scheduleId ||
+      (session.continuedScheduleIds?.includes(query.scheduleId) ?? false))
   );
 }

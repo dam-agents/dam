@@ -19,7 +19,6 @@ import {
 import { useStore } from "../../../store.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
-import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
 import { ApprovalsDrawer } from "../../home/components/approvals-panel.js";
 import { MobileMenuButton } from "../../platform/components/sidebar/mobile-menu-button.js";
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
@@ -30,7 +29,6 @@ import {
 import {
   clampLeftWidth,
   classicColumns,
-  type ClassicPanel,
   LEFT_MIN_W,
   PANEL_MIN_W,
 } from "../lib/classic-chat-layout.js";
@@ -56,10 +54,9 @@ function PanelDivider({
  * UNIT_BOUNDARY_DESCRIPTION: The chat view's layout: a top bar with the
  * Agent's identity and status, a resizable column of Files,
  * Artifacts and Processes sections on the left, the conversation in the
- * middle, and the docked item on the right, beside the conversation. Get
- * started opens in that right-hand slot from the top bar and hides the docked
- * item without closing it; Approvals opens as a drawer over the chat, so the
- * slot keeps whatever it shows.
+ * middle, and the docked item on the right, beside the conversation.
+ * Approvals opens as a drawer over the chat and Get started as a dock under the
+ * top bar, so the slot keeps whatever it shows.
  */
 export function ClassicChatLayout({
   identity,
@@ -85,7 +82,7 @@ export function ClassicChatLayout({
   alwaysOn: boolean;
   processesEnabled: boolean;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
-  panel: ClassicPanel | null;
+  panel: "dock" | null;
   dockHiddenOnPhone: boolean;
   dock: ReactNode;
   maximizable: string | null;
@@ -293,9 +290,6 @@ export function ClassicChatLayout({
                 {agentName}
               </span>
             </div>
-            {panel === "getting-started" && (
-              <GettingStartedPanel className="flex-1" />
-            )}
             <div
               className={cn(
                 "flex flex-1 min-h-0 flex-col",

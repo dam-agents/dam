@@ -248,8 +248,7 @@ if [ "$CLUSTER_TARGET" = environment ] && ! env_ssh 'test -e /dev/kvm' 2>/dev/nu
   echo "FATAL: Environment '$CLUSTER_ENVIRONMENT' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
   echo "Nothing in create_environment asks for nesting: an Environment gives one only when the install that owns it sets controller.agent.harnessTemplateDefaults.nestedVirtualization: true and lets its runners nest (virtualization.runner.nestedVirtualization), on a node whose KVM allows it." >&2
   exit 1
-fi
-if [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
+elif [ "$CLUSTER_TARGET" != environment ] && [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
   echo "FATAL: this host cannot open /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
   exit 1
 fi
@@ -459,7 +458,9 @@ fi
 # does; the udev rule keeps the mode across a reboot of the lima VM.
 if [ -z "$HOST_RUNNER" ]; then
   KVM_RULE='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
-  if [ -n "${IS_SANDBOX:-}" ]; then
+  if [ "$CLUSTER_TARGET" = environment ]; then
+    node_sh chmod 0666 /dev/kvm
+  elif [ -n "${IS_SANDBOX:-}" ]; then
     as_root chmod 0666 /dev/kvm
   else
     limactl shell "$LIMA_INSTANCE" sudo sh -c "echo '$KVM_RULE' > /etc/udev/rules.d/99-kvm-all.rules && chmod 0666 /dev/kvm"
@@ -524,6 +525,12 @@ stage_vm_images() {
   for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
     echo "Staging $image for the VM runners..."
     comp="${image##*/}"; comp="${comp%%:*}"
+    # An Environment stages from the image its node holds, not from a file
+    # here: most of them were never on this agent.
+    if [ "$CLUSTER_TARGET" = environment ]; then
+      mise run image:stage-vm -- "docker.io/library/$comp:latest" || return 1
+      continue
+    fi
     mise run image:stage-vm -- "$(.mise/tasks/image/resolve import-path "${comp#platform-}")" || return 1
   done
   e2e_mark "vm images staging done"
@@ -589,7 +596,8 @@ else
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
   [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ "$CLUSTER_TARGET" != environment ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
   # Like the agents', off Linux its build runs in the VM, so it waits for one.
-  if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+  # An Environment builds it only when the registry lacks it, below.
+  if [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ "$CLUSTER_TARGET" != environment ]; then
     mise run //packages/vm-runner:oci
     RUNNER_IMAGE_BUILT=1
   fi
@@ -598,27 +606,40 @@ else
   # An Environment pulls each image the registry has for this checkout's
   # source itself, under the local tag the chart runs, rather than this agent
   # pulling it and streaming it over the link; only an image the registry
-  # lacks is built here and streamed in. So a run on main builds nothing.
+  # lacks is built here and streamed in, and only when the node does not hold
+  # that build already. So a run on main builds nothing, and a second run
+  # sends only what changed. Each component whose image the node then runs
+  # under the local tag, and did not before, is named in ENV_CHANGED, so the
+  # install restarts and restages only those.
+  ENV_CHANGED="$(mktemp)"
   load_env_images() {
-    local c ref task
+    local c ref task local_ref before after
     for c in "$@"; do
+      local_ref="docker.io/library/platform-$c:latest"
+      before="$(env_image_id "$local_ref")"
       ref="$(env_reuse_ref "$c")"
       if [ -n "$ref" ]; then
         echo "$c unchanged: the node pulls $ref"
         env_pull_as "$ref" "$c" || return 1
-        continue
+      else
+        echo "$c changed: building it here"
+        if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+          case "$c" in
+            controller|api-server|ui|vm-runner) task="//packages/$c:oci" ;;
+            keycloak) task="//packages/keycloak-theme:oci" ;;
+            *) task="//packages/agents:oci" ;;
+          esac
+          if [ "$task" = //packages/agents:oci ]; then mise run "$task" -- "$c" || return 1; else mise run "$task" || return 1; fi
+        fi
+        if [ -n "$before" ] && [ "$(env_build_id "$(.mise/tasks/image/resolve import-path "$c")")" = "$before" ]; then
+          echo "$c: the node already holds this build"
+        else
+          mise run cluster:import -- "$(.mise/tasks/image/resolve import-path "$c")" || return 1
+          install_image_tags "$c" || return 1
+        fi
       fi
-      echo "$c changed: building it here"
-      if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
-        case "$c" in
-          controller|api-server|ui) task="//packages/$c:oci" ;;
-          keycloak) task="//packages/keycloak-theme:oci" ;;
-          *) task="//packages/agents:oci" ;;
-        esac
-        if [ "$task" = //packages/agents:oci ]; then mise run "$task" -- "$c" || return 1; else mise run "$task" || return 1; fi
-      fi
-      mise run cluster:import -- "$(.mise/tasks/image/resolve import-path "$c")" || return 1
-      install_image_tags "$c" || return 1
+      after="$(env_image_id "$local_ref")"
+      [ -z "$before" ] || [ "$before" = "$after" ] || echo "$c" >> "$ENV_CHANGED"
     done
   }
   # CI brings the cluster up while this run's images are still building, and
@@ -1230,6 +1251,28 @@ fi
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
+elif [ "$CLUSTER_TARGET" = environment ]; then
+  # Only what runs an image the node did not run before, so a second install
+  # with one changed component restarts that one. A changed agent image needs
+  # no restart: a machine boots its staged tree at its next start.
+  # shellcheck disable=SC2013
+  for c in $(sort -u "$ENV_CHANGED"); do
+    case "$c" in
+      controller|ui|keycloak) deploy="$CLUSTER_RELEASE-$c" ;;
+      api-server) deploy="$CLUSTER_RELEASE-apiserver" ;;
+      vm-runner)
+        # The runners, the node image cache and the release stager all run
+        # it, under the local tag.
+        echo "Restarting what runs the runner image in $CLUSTER_AGENT_NAMESPACE..."
+        kubectl delete pods -n "$CLUSTER_AGENT_NAMESPACE" --all --ignore-not-found
+        continue
+        ;;
+      *) continue ;;
+    esac
+    kubectl -n "$CLUSTER_NAMESPACE" get deployment "$deploy" >/dev/null 2>&1 || continue
+    echo "Restarting $deploy onto its new image..."
+    kubectl -n "$CLUSTER_NAMESPACE" rollout restart deployment "$deploy"
+  done
 else
   echo "Restarting pods..."
   kubectl -n "$CLUSTER_NAMESPACE" rollout restart deployment -l "app.kubernetes.io/instance=$CLUSTER_RELEASE"

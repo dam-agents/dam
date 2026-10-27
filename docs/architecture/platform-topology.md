@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-25
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -202,6 +202,9 @@ Where a draft lives as long as its session, such an undelivered send is only in 
 A copy also goes, and is never handed over, once the runtime shows it received the message after all: a late acceptance of the send, or the message's echo in a session load's replay.
 A slow network can deliver a message after the browser gave up waiting, and handing that copy over would mark a message the agent answered as undelivered for good.
 The ownership rule covers these copies too: signing out, or in as someone else, sweeps them with the drafts.
+
+The command palette, which the hotkey alone opens, keeps client state of the same kind: how often and how lately each command ran, and copies of the session and artifact lists it searches, shown until the server answers and then replaced whole.
+It follows the same ownership rule: signing out empties it, and a copy written for someone else is dropped unread.
 
 Continuing such a conversation here makes a session outlive the surface it started on, and the agent has to be told which one it is answering.
 A messenger frames every turn it relays with a contract naming the thread and the tools that reach it, and that text stays in the session — so a turn typed here, unframed, is answered under the messenger's instructions: the reply goes to the thread and the person typing gets a tool call instead of an answer.

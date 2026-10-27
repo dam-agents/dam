@@ -6,11 +6,25 @@ import type {
   RunNowResult,
   SchedulerRunner,
 } from "../../modules/schedules/services/scheduler-runner.js";
+import type {
+  ProfileResolver,
+  ResolvedProfile,
+} from "../../modules/profiles/index.js";
 
 const OWNER = "owner-1";
 const SCHEDULE_ID = "sched-1";
 const RRULE = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0";
 const TIMEZONE = "Europe/Prague";
+const runs: ProfileResolver = async () =>
+  ({
+    unavailable: null,
+    pair: {
+      harness: "claude-code",
+      provider: null,
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      settings: { effort: "high" },
+    },
+  }) as unknown as ResolvedProfile;
 
 function makeCurrent(
   sessionMode?: "continuous" | "fresh",
@@ -64,6 +78,7 @@ function makeDeps(
     runner,
     owner: OWNER,
     agentBinding: "*",
+    resolveProfile: runs,
     ...(validateSessionChoices ? { validateSessionChoices } : {}),
   });
   return { service, getSavedSpec: () => savedSpec, getCleared: () => cleared };
@@ -128,7 +143,6 @@ describe("updateRRule on a cron schedule", () => {
       type: "rrule",
       rrule: RRULE,
       timezone: "UTC",
-      quietHours: [],
       task: "do the thing",
       precheck: "check.sh",
       enabled: false,
@@ -660,5 +674,230 @@ describe("toggle", () => {
       false,
       true,
     ]);
+  });
+});
+
+describe("a schedule's profile", () => {
+  const profiled = (): Schedule => ({
+    ...makeCurrent(),
+    spec: {
+      ...makeCurrent().spec,
+      profile: "profile-1",
+      harness: "claude-code",
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    },
+  });
+
+  /** TEST_SCENARIO: a new schedule names a profile (D92 B), so the values a create also sent are not stored beside it. */
+  it("records the profile a create names, and no values", async () => {
+    let created: ScheduleSpec | undefined;
+    const service = createSchedulesService({
+      repo: {
+        async create(input: { spec: ScheduleSpec }) {
+          created = input.spec;
+          return { ...makeCurrent(), spec: input.spec };
+        },
+        async get() {
+          return null;
+        },
+      } as unknown as SchedulesRepository,
+      runner: { async sync() {} } as unknown as SchedulerRunner,
+      owner: OWNER,
+      agentBinding: "*",
+      resolveProfile: runs,
+    });
+    await service.createRRule({
+      name: "daily",
+      agentId: "agent-1",
+      rrule: RRULE,
+      timezone: TIMEZONE,
+      task: "do the thing",
+      profile: "profile-1",
+      harness: "claude-code",
+    });
+    expect(created?.profile).toBe("profile-1");
+    expect(created?.harness).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: a schedule keeps its subagent slot as a chat default does: a profile primary beside the subagent values its pick's settings carry, kept apart from the primary's settings; a named subagent profile replaces them, and a null one with no values lets the agent pick. */
+  it("stores the subagent slot beside the primary", async () => {
+    const own = {
+      "platformSubagent.harness": "pi",
+      "platformSubagent.model": "cb/haiku",
+    };
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({
+      ...baseUpdate,
+      profile: "profile-1",
+      settings: own,
+    });
+    expect(getSavedSpec()).toMatchObject({
+      profile: "profile-1",
+      platformSubagentSettings: own,
+    });
+    expect(getSavedSpec()?.settings).toBeUndefined();
+    await service.updateRRule({
+      ...baseUpdate,
+      profile: "profile-1",
+      platformSubagentProfile: "profile-2",
+    });
+    expect(getSavedSpec()?.platformSubagentProfile).toBe("profile-2");
+    expect(getSavedSpec()?.platformSubagentSettings).toBeUndefined();
+    await service.updateRRule({
+      ...baseUpdate,
+      harness: "codex",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high", ...own },
+      platformSubagentProfile: null,
+    });
+    expect(getSavedSpec()).toMatchObject({
+      settings: { effort: "high" },
+      platformSubagentSettings: own,
+    });
+  });
+
+  /** TEST_SCENARIO: a row written before the split keeps its subagent values inline in its settings; an unrelated edit moves them to the slot rather than dropping them. */
+  it("keeps a legacy inline subagent through an unrelated edit", async () => {
+    const own = {
+      "platformSubagent.harness": "pi",
+      "platformSubagent.model": "cb/haiku",
+    };
+    const legacy: Schedule = {
+      ...makeCurrent(),
+      spec: {
+        ...makeCurrent().spec,
+        harness: "codex",
+        model: "openai/gpt-5.5",
+        settings: { effort: "high", ...own },
+      },
+    };
+    const { service, getSavedSpec } = makeDeps(legacy);
+    await service.updateRRule({ ...baseUpdate, task: "another thing" });
+    expect(getSavedSpec()).toMatchObject({
+      settings: { effort: "high" },
+      platformSubagentSettings: own,
+    });
+  });
+
+  /** TEST_SCENARIO: the subagent's own values are checked at save on the pair the fire composes, beside a profile primary too and on an update that changes only them, so a value the sub-agent harness does not offer is refused rather than failing every fire. */
+  it("checks the subagent's own values at save", async () => {
+    const seen: Record<string, string>[] = [];
+    const refuseMode = async (
+      _agentId: string,
+      choices: { settings?: Record<string, string> },
+    ) => {
+      seen.push(choices.settings ?? {});
+      return choices.settings?.["platformSubagent.mode"]
+        ? "platformSubagent.mode is not offered"
+        : undefined;
+    };
+    const { service } = makeDeps(profiled(), refuseMode);
+    await expect(
+      service.updateRRule({
+        ...baseUpdate,
+        profile: "profile-1",
+        settings: {
+          "platformSubagent.harness": "pi",
+          "platformSubagent.mode": "plan",
+        },
+      }),
+    ).rejects.toThrow(/not offered/);
+    expect(seen).toEqual([
+      {
+        effort: "high",
+        "platformSubagent.harness": "pi",
+        "platformSubagent.mode": "plan",
+      },
+    ]);
+    await service.updateRRule({ ...baseUpdate, task: "another thing" });
+    expect(seen).toHaveLength(1);
+  });
+
+  /** TEST_SCENARIO: a save that names no choice is a task edit, and keeps the profile. */
+  it("keeps the profile when an update names no choice", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, task: "another thing" });
+    expect(getSavedSpec()?.profile).toBe("profile-1");
+  });
+
+  /** TEST_SCENARIO: a value given detaches the schedule onto the values it ran on, with the change applied (the CLI's --model). */
+  it("detaches to the values it ran on when a value is given", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, model: "cb/other-model" });
+    expect(getSavedSpec()).toMatchObject({
+      harness: "claude-code",
+      model: "cb/other-model",
+    });
+    expect(getSavedSpec()?.profile).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: a save refuses a profile that is not the owner's, or one that cannot run on the agent, rather than storing it to fail every fire (QA D4). */
+  it("refuses a profile it cannot run", async () => {
+    const scoped = (resolveProfile: ProfileResolver) =>
+      createSchedulesService({
+        repo: {
+          async get() {
+            return profiled();
+          },
+        } as unknown as SchedulesRepository,
+        runner: { async sync() {} } as unknown as SchedulerRunner,
+        owner: OWNER,
+        agentBinding: "*",
+        resolveProfile,
+      });
+    await expect(
+      scoped(async () => null).updateRRule({ ...baseUpdate, profile: "p2" }),
+    ).rejects.toMatchObject({ message: "unknown profile" });
+    await expect(
+      scoped(
+        async () =>
+          ({ unavailable: "AWS Bedrock is not connected" }) as ResolvedProfile,
+      ).updateRRule({ ...baseUpdate, profile: "p2" }),
+    ).rejects.toMatchObject({
+      message: "that profile cannot run: AWS Bedrock is not connected",
+    });
+  });
+});
+
+describe("a schedule's quiet hours at save", () => {
+  const stored: Schedule = {
+    id: SCHEDULE_ID,
+    agentId: "agent-1",
+    name: "daily",
+    spec: {
+      version: "1",
+      type: "rrule",
+      rrule: RRULE,
+      timezone: TIMEZONE,
+      quietHours: [{ startTime: "22:00", endTime: "06:00", enabled: true }],
+      task: "do the thing",
+      enabled: true,
+      createdBy: "user",
+    },
+  };
+
+  function save(input: {
+    quietHours?: { startTime: string; endTime: string; enabled: boolean }[];
+  }) {
+    const { service, getSavedSpec } = makeDeps(stored);
+    return service
+      .updateRRule({
+        ...baseUpdate,
+        quietHours: undefined,
+        timezone: "UTC",
+        ...input,
+      })
+      .then(() => {
+        const saved = getSavedSpec();
+        return saved?.type === "rrule" ? saved.quietHours : undefined;
+      });
+  }
+
+  /** TEST_SCENARIO: a form that changed nothing sends no quiet hours, and the stored ones stand; an explicit empty list clears them. */
+  it("keeps quiet hours a save omits, and clears them on an empty list", async () => {
+    expect(await save({})).toEqual([
+      { startTime: "22:00", endTime: "06:00", enabled: true },
+    ]);
+    expect(await save({ quietHours: [] })).toBeUndefined();
   });
 });

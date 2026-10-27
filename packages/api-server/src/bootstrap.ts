@@ -164,6 +164,8 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
+import { createChannelProviderOutage } from "./modules/channels/infrastructure/provider-outage-copy.js";
 import {
   createSlackTokenRotation,
   noSlackTokenRotation,
@@ -184,7 +186,6 @@ import {
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
   createInitializationPairResolver,
-  createUnattendedAgentsReader,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -382,6 +383,7 @@ import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js
 import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
+import { composeProfileResolver } from "./modules/profiles/index.js";
 import {
   composeSatellitesModule,
   createOutcomeDelivery,
@@ -929,9 +931,13 @@ export async function bootstrap() {
     if (!(await runtimeDelivery.contributionsProgress(agentId)).settled)
       await runtimeDelivery.queue.enqueue(agentId);
   };
+  const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
+  const resolveProfile = composeProfileResolver(db, subPseudonymizer);
+
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
+    resolveProfile,
     getCapabilities: async (agentId) =>
       (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
         ?.runtimeCapabilities ?? null,
@@ -1047,8 +1053,6 @@ export async function bootstrap() {
     progress: runtimeDelivery.contributionsProgress,
     retryWorkspaceMutation: runtimeDelivery.retryWorkspaceMutation,
   };
-  const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
-
   const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
@@ -1129,6 +1133,7 @@ export async function bootstrap() {
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
+      providerModelCatalog: connectionsBoot.providerModelCatalog,
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>
@@ -1314,6 +1319,7 @@ export async function bootstrap() {
       db,
       namespace: config.namespace,
       catalog: harnessCatalog,
+      resolveProfile,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
@@ -1554,6 +1560,9 @@ export async function bootstrap() {
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
   );
+  await periodicJobs.register("spend-stamped-calls", 5 * 60_000, () =>
+    spend.ingest.bookStampedCalls(),
+  );
   await periodicJobs.register(
     "spend-call-rows-retention",
     24 * 60 * 60 * 1000,
@@ -1635,6 +1644,18 @@ export async function bootstrap() {
       : undefined;
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
+  const channelPair = createChannelProfiles(db, resolveProfile).pair;
+  const grantedTemplates = createGrantedConnectionTemplates(db);
+  const channelProviderOutage = createChannelProviderOutage({
+    channelPair,
+    defaultPair: (agentId) =>
+      channelFirePair(agentId, "channel").catch((err: unknown) => {
+        if (isNoDefaultModelError(err)) return null;
+        throw err;
+      }),
+    templateOf: grantedTemplates.templateOf,
+    status: () => providerStatus.service.view(),
+  });
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
@@ -1717,6 +1738,7 @@ export async function bootstrap() {
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
+        channelPair,
         createGateway: slackGatewayFactory,
         agents: () => systemAgents,
         identityLinks: identityLinkService,
@@ -1740,6 +1762,7 @@ export async function bootstrap() {
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
         spendHold: channelSpendHold,
+        providerOutage: channelProviderOutage,
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
@@ -1769,6 +1792,7 @@ export async function bootstrap() {
     config.telegramBotToken && chatSdkState
       ? createTelegramWorker({
           botToken: config.telegramBotToken,
+          channelPair,
           configuredBotUsername: config.telegramBotUsername,
           makeAcpClient,
           state: chatSdkState,
@@ -1793,6 +1817,7 @@ export async function bootstrap() {
           ownerOf: (agentId) => agentsRepo.getOwner(agentId),
           ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
           spendHold: channelSpendHold,
+          providerOutage: channelProviderOutage,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,
           logLevel: config.logLevel,
@@ -1927,6 +1952,7 @@ export async function bootstrap() {
   });
   const schedulesBoot = composeSchedulesAtBoot({
     db,
+    resolveProfile,
     firePair,
     agentOnceLimits: {
       maxOpen: config.onceScheduleAgentMaxOpen,
@@ -1935,6 +1961,7 @@ export async function bootstrap() {
     validateSessionChoices: composeSessionChoicesValidator({
       db,
       catalog: harnessCatalog,
+      resolveProfile,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
@@ -1969,9 +1996,9 @@ export async function bootstrap() {
       (await agentsRepo.get(agentId))?.disabled === true,
   });
 
-  const grantedTemplates = createGrantedConnectionTemplates(db);
   const outageAlerts = composeOutageAlerts({
     db,
+    redis: sharedRedis,
     notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
     describeAgent: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
@@ -1979,31 +2006,8 @@ export async function bootstrap() {
         ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
         : null;
     },
-    unattendedCandidates: createUnattendedAgentsReader(db),
-    enabledSchedules: async (agentIds) =>
-      (await schedulesBoot.repo.listEnabledByAgents(agentIds)).map((s) => ({
-        agentId: s.agentId,
-        continuesSession:
-          s.spec.type === "once" && s.spec.origin?.mode === "continue",
-        harness: s.spec.harness,
-        model: s.spec.model,
-      })),
-    fireTemplate: async (agentId, kind, choices) => {
-      const model =
-        kind === "scheduled" && choices.model
-          ? await scheduleModelFor(agentId, choices.model)
-          : undefined;
-      const pair = await firePair(agentId, kind, {
-        ...(choices.harness && { harness: choices.harness }),
-        ...(model && { model }),
-      }).catch((err: unknown) => {
-        if (isNoDefaultModelError(err)) return null;
-        throw err;
-      });
-      if (pair === null) return null;
-      if (pair === undefined || pair.provider === null) return undefined;
-      return grantedTemplates.templateOf(agentId, pair.provider);
-    },
+    sessionCategories: (agentIds, sessionIds) =>
+      sessionDirectory.categorize(agentIds, sessionIds),
     uiBaseUrl: config.uiBaseUrl,
     delayMs: config.outageAlertDelayMinutes * 60_000,
   });
@@ -2501,6 +2505,7 @@ export async function bootstrap() {
     mountUsageRoutes: usage.mount,
     mountCaseStudiesRoutes: caseStudies.mount,
     listRegisteredAgentIds,
+    subPseudonymizer,
     metricsReader,
     telemetryReader,
     sessionDirectory,

@@ -1,0 +1,9 @@
+[tools."pipx:hermes-agent"]
+version = "0.19.0"
+extras = "acp,mcp"
+
+[oci.env]
+PLATFORM_HARNESS = "hermes"
+# Optional backends install themselves with pip on first use; the pod has no
+# writable venv and every install would wait for an egress approval.
+HERMES_DISABLE_LAZY_INSTALLS = "1"

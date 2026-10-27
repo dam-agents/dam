@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: what a new web terminal offers. While the agent's harnesses, the harness catalog or the provider grants load, nothing shows, so no harness reads unavailable by mistake. A failed load or an agent naming no harness falls back to one plain terminal. Otherwise every carried harness is listed with the first granted provider that fits it, else the providers the owner holds that the agent could take, leaving out one of a kind it already holds, else a reason that names the harness.
+// TEST_OVERVIEW: what a new web terminal offers. While the agent's harnesses, the harness catalog or the provider grants load, nothing is offered, so no harness is left out by mistake. A failed load or an agent naming no harness falls back to one plain terminal. Otherwise exactly the carried harnesses that can start are offered: each with the first granted provider that fits it, else the providers the owner holds that the agent could take, leaving out one of a kind it already holds. A harness no provider fits is not offered.
 import type { HarnessView } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -53,8 +53,8 @@ describe("terminalHarnessChoice", () => {
     });
   });
 
-  // TEST_SCENARIO: a harness with a fitting granted provider opens on it; one with no fitting provider at all says why, by name.
-  it("lists each harness with its provider or the reason it cannot start", () => {
+  // TEST_SCENARIO: a harness with a fitting granted provider is offered on it; a carried harness no provider the owner holds fits cannot start, so it is not offered.
+  it("offers only the harnesses that can start", () => {
     expect(terminalHarnessChoice(base)).toEqual({
       kind: "harnesses",
       harnesses: [
@@ -63,30 +63,22 @@ describe("terminalHarnessChoice", () => {
           displayName: "Claude",
           provider: "a",
           attachable: [],
-          unavailable: null,
-        },
-        {
-          name: "codex",
-          displayName: "Codex",
-          provider: null,
-          attachable: [],
-          unavailable:
-            "Codex does not support any of the LLM providers you have configured.",
         },
       ],
     });
   });
 
-  // TEST_SCENARIO: providers the owner holds but this agent was not granted can be attached on the way, so the harness is offered with them to pick from instead of reading unavailable.
+  // TEST_SCENARIO: providers the owner holds but this agent was not granted can be attached on the way, so the harness is offered with them to pick from instead of being left out.
   it("offers to attach a fitting provider the owner holds", () => {
     const choice = terminalHarnessChoice({
       ...base,
       owned: [anthropic, openai],
     });
-    expect(choice.kind === "harnesses" && choice.harnesses[1]).toMatchObject({
+    expect(choice.kind === "harnesses" && choice.harnesses[1]).toEqual({
+      name: "codex",
+      displayName: "Codex",
       provider: null,
       attachable: [openai],
-      unavailable: null,
     });
   });
 

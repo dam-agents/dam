@@ -140,7 +140,7 @@ func hydrate(namespace string, row agentRow, children agentChildren) *unstructur
 		spec["hibernationTimeout"] = time.Duration(*row.HibernationTimeoutNs).String()
 	}
 	if row.NestedVirtualization {
-		spec["nestedVirtualization"] = true
+		spec["backend"] = map[string]any{"type": "vm", "vm": map[string]any{"nestedVirtualization": true}}
 	}
 	if row.RequireConnectionAddr {
 		spec["requireConnectionAddress"] = true

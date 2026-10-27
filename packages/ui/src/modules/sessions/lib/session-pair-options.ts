@@ -1,6 +1,8 @@
 import {
+  aliasForProviderType,
   harnessFits,
   type HarnessView,
+  parseQualifiedModel,
   type ProviderPresetType,
   providerTypeForTemplateId,
   type SessionPair,
@@ -52,6 +54,19 @@ export function pairLabel(
       harness,
     )
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the Connection a qualified model name's alias names among `providers`. */
+export function providerOfModel(
+  model: string | null | undefined,
+  providers: readonly ProviderConnectionRef[],
+): ProviderConnectionRef | undefined {
+  const alias = model
+    ? parseQualifiedModel(model, { claudePrefix: true })?.alias
+    : undefined;
+  return alias === undefined
+    ? undefined
+    : providers.find((p) => aliasForProviderType(p.type) === alias);
 }
 
 export function providerOptions(
@@ -133,7 +148,6 @@ export interface TerminalHarness {
   displayName: string;
   provider: string | null;
   attachable: ProviderConnectionRef[];
-  unavailable: string | null;
 }
 
 export type TerminalHarnessChoice =
@@ -141,7 +155,7 @@ export type TerminalHarnessChoice =
   | { kind: "fallback" }
   | { kind: "harnesses"; harnesses: TerminalHarness[] };
 
-// UNIT_BOUNDARY_DESCRIPTION: what a new web terminal can start with. Nothing shows while the agent's harnesses, the catalog or the provider grants still load. A failed load, or an agent that names no harnesses, falls back to one plain terminal on the default pair. Otherwise each harness carries the first granted provider that fits it, else the providers its owner holds that the agent could be granted, else the reason it cannot start.
+// UNIT_BOUNDARY_DESCRIPTION: what a new web terminal can start with. Nothing is offered while the agent's harnesses, the catalog or the provider grants still load. A failed load, or an agent that names no harnesses, falls back to one plain terminal on the runtime's default harness. Otherwise only the carried harnesses that can start are offered: each with the first granted provider that fits it, else with the providers its owner holds that the agent could be granted.
 export function terminalHarnessChoice(input: {
   loading: boolean;
   failed: boolean;
@@ -155,22 +169,14 @@ export function terminalHarnessChoice(input: {
   if (failed || !catalog || carried.length === 0) return { kind: "fallback" };
   return {
     kind: "harnesses",
-    harnesses: carried.map((name) => {
+    harnesses: carried.flatMap((name) => {
       const fit = providerOptions(name, catalog, granted, owned);
-      const displayName = harnessDisplayName(name, catalog) ?? name;
       const provider = fit.granted[0]?.id ?? null;
       const attachable =
         provider === null ? attachableProviders(granted, fit.addable) : [];
-      return {
-        name,
-        displayName,
-        provider,
-        attachable,
-        unavailable:
-          provider === null && attachable.length === 0
-            ? `${displayName} does not support any of the LLM providers you have configured.`
-            : null,
-      };
+      if (provider === null && attachable.length === 0) return [];
+      const displayName = harnessDisplayName(name, catalog) ?? name;
+      return [{ name, displayName, provider, attachable }];
     }),
   };
 }

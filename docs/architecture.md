@@ -83,6 +83,8 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes; [GitHub](architecture/github-connections.md) sign-ins and App installations and the Connections made from them.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
 - [harness configuration](architecture/harness-config.md) — harness defaults and the session model list: how one choice reaches the harness's own file, where the model list is discovered, and what renders while the agent is stopped.
+- [profiles](architecture/profiles.md) — an owner's named harness, provider and model settings: what follows one, and the default a new agent starts on.
+- [owner model catalog](architecture/owner-model-catalog.md) — every model an owner's providers offer, listed by the api-server with no agent, for every routed picker.
 - [invocations](architecture/invocations.md) — one agent spawning another, set up like a kit, for one result.
 - [environments](architecture/environments.md) — sandboxes an agent owns to run software for others to open, at an address per endpoint.
 - [knowledge-bases](architecture/knowledge-bases.md) — agents marked as knowledge bases that bootstrap their own knowledge tooling from a one-shot install instruction and are worked with through chat.

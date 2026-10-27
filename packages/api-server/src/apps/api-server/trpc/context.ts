@@ -19,6 +19,7 @@ import {
 } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
+import { createChannelProfiles } from "../../../modules/channels/infrastructure/channel-profile.js";
 import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
 import { createSlackLoopGuardDropsRepository } from "../../../modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import { listSlackInstalls } from "../../../modules/channels/infrastructure/slack-installs-repository.js";
@@ -42,6 +43,7 @@ import {
 import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
+import { composeProfilesForOwner } from "../../../modules/profiles/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
 import {
   composeChatFormPreferencesForOwner,
@@ -101,6 +103,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
+    subPseudonymizer,
     metricsReader,
     telemetryReader,
     sessionDirectory,
@@ -165,6 +168,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
+      providerModelCatalog: connectionsBoot.providerModelCatalog,
     });
     const secretRequests = composeSecretRequestsForOwner({
       ownerId: user.sub,
@@ -186,6 +190,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
     });
+    const { profiles, resolveProfile, defaultProfile } =
+      composeProfilesForOwner({
+        db,
+        subPseudonymizer,
+        owner: user.sub,
+        agentBinding: user.agentIds,
+        catalog: harnesses,
+        seed: config.curveBenderDeployment && config.defaultProfileSeed,
+        ownerCatalog: () => connections.modelCatalog(),
+        republish: (agentId) => harnessConfig.republishDefaults(agentId),
+      });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       resolveSlackWorkspace: boot.resolveSlackWorkspace,
@@ -241,6 +256,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       contributionsProgress,
       onboardingChecklists,
       grantProvisioner: connectionGrantProvisioner(connections, harnesses),
+      defaultProfile,
     });
     const agentExists = async (agentId: string) =>
       (await agents.get(agentId)) !== null;
@@ -378,9 +394,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           ?.ownerSub === user.sub,
       ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
       defaultModelNotices: async () =>
-        createDefaultModelNoticeReader(db)(
-          (await agentsRepo.list(user.sub)).map((agent) => agent.id),
-        ),
+        createDefaultModelNoticeReader(
+          db,
+          resolveProfile,
+        )((await agentsRepo.list(user.sub)).map((agent) => agent.id)),
       outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),
     });
     const files = composeFilesModule(
@@ -396,6 +413,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const satellites = satellitesBoot.serviceFor(user.sub, user.agentIds);
     const { service: harnessConfig } = composeHarnessConfigModule({
       catalog: harnesses,
+      resolveProfile,
       db,
       outboxRepo,
       ownerSub: user.sub,
@@ -407,6 +425,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await agentsRepo.get(agentId))?.spec.harness,
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
+      hiddenHarnesses: async () =>
+        new Set((await features.flags()).hermes ? [] : ["hermes"]),
     });
     const listOwnedAgents = async (): Promise<
       { id: string; name: string | null }[]
@@ -463,6 +483,22 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       channels: {
         available: channelManager.availableChannels(),
         telegramBotUsername: () => channelManager.telegramBotUsername(),
+        setChoice: async ({
+          agentId,
+          type,
+          slackChannelId,
+          conversationId,
+          pair,
+          ...references
+        }) => {
+          await harnessConfig.validateChoice(agentId, pair, references);
+          await createChannelProfiles(db, resolveProfile).set({
+            agentId,
+            channel: { type, id: slackChannelId ?? conversationId ?? "" },
+            pair,
+            references,
+          });
+        },
         slackChannelChoices: async () => {
           const [choices, installs] = await Promise.all([
             channelManager.slackChannelChoices(user.actingEditor ?? user.sub),
@@ -487,6 +523,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kbShares,
       artifactLibrary,
       caseStudies,
+      profiles,
       features,
       chatFormPreferences,
       gettingStarted: gettingStarted.forOwner(user.sub),

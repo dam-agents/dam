@@ -7,18 +7,15 @@ import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { getUser } from "../../../auth.js";
-import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import {
-  useLeaveAgent,
-  useSetAgentEditors,
-} from "../../agents/api/mutations.js";
+import { useSetAgentEditors } from "../../agents/api/mutations.js";
 import { ConnectionNamesTooltip } from "../../agents/components/connection-names-tooltip.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { useActingConnectionNames } from "../../agents/hooks/use-acting-connection-names.js";
 import { editorsWarning } from "../../agents/lib/agent-editors.js";
 import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.js";
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
+import { useAgentManagement } from "../hooks/use-agent-management.js";
 
 type EditorAccess = Extract<AgentAccess, { role: "editor" }>;
 
@@ -142,16 +139,7 @@ function EditorPeople({
   access: EditorAccess;
 }) {
   const ownEmail = signedInEmail();
-  const leave = useLeaveAgent();
-  const showConfirm = useStore((s) => s.showConfirm);
-  const confirmLeave = async () => {
-    const confirmed = await showConfirm(
-      "You will no longer see this agent. Only its owner can add you back.",
-      `Leave “${agent.name}”?`,
-      { kind: "destructive", confirmLabel: "Leave" },
-    );
-    if (confirmed) leave.mutate({ id: agent.id });
-  };
+  const management = useAgentManagement();
 
   return (
     <section className="mb-8 flex flex-col gap-4" data-testid="agent-people">
@@ -183,8 +171,8 @@ function EditorPeople({
                   size="sm"
                   variant="ghost"
                   tone="danger"
-                  disabled={leave.isPending}
-                  onClick={() => void confirmLeave()}
+                  disabled={management.leaving}
+                  onClick={() => void management.leave(agent)}
                 >
                   Leave
                 </Button>

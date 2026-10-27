@@ -393,7 +393,7 @@ export const SUB_AGENTS_HELP =
 export const NO_SESSION = "No session";
 
 export function noSessionHelp(): string {
-  return `Calls of your agents that ${getBrand().name} cannot link to a session, such as Bedrock calls. They are in the total.`;
+  return `Calls of your agents that ${getBrand().name} cannot link to a session, such as a script started outside any session. They are in the total.`;
 }
 
 export function thisAgent(name: string): string {
@@ -566,9 +566,6 @@ export const THIS_AGENT = "this agent";
 export function stopsFirstShort(name: string): string {
   return `${name} stops first`;
 }
-
-export const ALL_AGENTS_LIMIT_BUTTON_TIP =
-  "Daily limit for all your agents on this provider";
 
 export const AGENT_PROVIDER_LIMIT_BUTTON_TIP =
   "This agent's daily limit on this provider";

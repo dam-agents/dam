@@ -3,6 +3,7 @@
 #MISE hide=true
 #MISE raw=true
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
+#USAGE flag "--environment <name>" help="Install the lane into this agent's Environment of that name instead of the test cluster"
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
@@ -17,6 +18,21 @@ INSTALL_ARGS=(
   --set=controller.agent.harnessTemplateDefaults.storageSize=1Gi
   --no-restart
 )
+# In an Environment the suite runs on the backchannel, which this agent
+# reaches over the link, on a port of the Environment's own; the public
+# addresses are the Environment's endpoints, which only a signed-in browser
+# opens. The install restarts only what changed there, so a rerun that
+# changed nothing restarts nothing.
+if [ "$CLUSTER_TARGET" = environment ]; then
+  E2E_PORT="$(env_e2e_port)" || exit 1
+  INSTALL_ARGS=(
+    --environment "$CLUSTER_ENVIRONMENT"
+    --backchannel
+    "--backchannel-port=$E2E_PORT"
+    --helm-values=helm/values-e2e.yaml
+    --set=controller.agent.harnessTemplateDefaults.storageSize=1Gi
+  )
+fi
 # domain=localhost (NOT localtest.me): Chromium treats *.localhost as a
 # secure context per the URL spec, so window.crypto.subtle is available
 # and oidc-client-ts can generate PKCE state in signinRedirect(). On

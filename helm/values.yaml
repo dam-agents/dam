@@ -1266,6 +1266,14 @@ apiServer:
       name: ""
       key: api-key
     apiKey: ""
+  # -- The "Default" profile an owner with no profile is given, and which new
+  # agents start on until the owner picks another default: a harness and an
+  # upstream model id of the shared CurveBender above. Used only where
+  # curveBenderDeployment holds a key; otherwise, or with harness or model
+  # empty, "Default" comes from the owner's first provider.
+  defaultProfile:
+    harness: pi
+    model: rits/deepseek-ai/DeepSeek-V4.1-Flash-1017
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
@@ -1406,8 +1414,8 @@ apiServer:
   # timeouts are an external ceiling.
   approvalHoldSeconds: 1800
 
-  # -- How long a provider outage lasts before the owners of the affected
-  # agents get a message (a Go duration). Detection already takes up to about
+  # -- How long a provider outage lasts before owners whose unattended work
+  # failed get a message (a Go duration). Detection already takes up to about
   # two minutes, and most overload bursts end within ten.
   outageAlertDelay: "15m"
 
@@ -2176,6 +2184,15 @@ harnesses:
       releaseNotesUrl: "https://github.com/github/copilot-cli/releases"
       # Copilot's BYOK provider speaks Chat Completions through the Model
       # Router, which meters its spend; no export rail.
+      providers: [ibm-litellm, curve-bender, openai]
+      tags: ["Any provider"]
+    hermes:
+      enabled: true
+      displayName: "Hermes"
+      description: "Nous Research Hermes Agent with persistent memory and self-written skills"
+      releaseNotesUrl: "https://github.com/NousResearch/hermes-agent/releases"
+      # Hermes speaks Chat Completions through the Model Router, which meters
+      # its spend; no export rail.
       providers: [ibm-litellm, curve-bender, openai]
       tags: ["Any provider"]
 

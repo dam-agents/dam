@@ -32,6 +32,14 @@ import { annotateSpan } from "../../../core/background-span.js";
 
 const TRIGGER_TTL_SECONDS = 3600;
 
+/** UNIT_BOUNDARY_DESCRIPTION: a schedule whose profile cannot run on its agent fails the same way every fire, so the attempt is final rather than retried like a transient refusal. */
+class ProfileRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProfileRefusedError";
+  }
+}
+
 export type ActivityStamp = AgentActivityStamp;
 
 export type RunNowResult =
@@ -212,6 +220,10 @@ export function createSchedulerRunner(
     if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
+    if (sched.profileIssue !== undefined)
+      throw new ProfileRefusedError(
+        `this schedule's profile cannot run: ${sched.profileIssue}`,
+      );
     if (!continues && opts.wakeFirst) {
       const stamp = await deps.ensureDefault(sched.agentId);
       if (stamp) earlyWake.set(sched, stamp);
@@ -220,10 +232,15 @@ export function createSchedulerRunner(
       ? await deps.scheduleModelFor(sched.agentId, sched.spec.model)
       : sched.spec.model;
     if (model) payload.model = model;
+    /* UNIT_BOUNDARY_DESCRIPTION: both slots reach the run, as a chat start sends them: the primary's settings with the subagent slot's values. */
+    const settings =
+      sched.spec.settings || sched.subagentSettings
+        ? { ...sched.spec.settings, ...sched.subagentSettings }
+        : undefined;
     const choices = {
       ...(sched.spec.harness && { harness: sched.spec.harness }),
       ...(model && { model }),
-      ...(sched.spec.settings && { settings: sched.spec.settings }),
+      ...(settings && { settings }),
     };
     if (!continues && Object.keys(choices).length > 0) {
       const refusal = await deps.validateSessionChoices?.(
@@ -253,7 +270,7 @@ export function createSchedulerRunner(
       else delete payload.model;
       if (pair.settings) payload.settings = pair.settings;
     }
-    if (sched.spec.settings) payload.settings = sched.spec.settings;
+    if (settings) payload.settings = settings;
     if (pair && Object.keys(choices).length === 0) payload.onDefault = true;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
@@ -414,7 +431,10 @@ export function createSchedulerRunner(
         const reason = (err as Error).message ?? String(err);
         log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
         noteFire("failure", { stage: "commit" });
-        const final = lastAttempt || isNoDefaultModelError(err);
+        const final =
+          lastAttempt ||
+          isNoDefaultModelError(err) ||
+          err instanceof ProfileRefusedError;
         if (final) {
           await deps.repo
             .writeStatus(sched.id, {
@@ -509,7 +529,10 @@ export function createSchedulerRunner(
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       noteFire("failure", { stage });
-      const final = lastAttempt || isNoDefaultModelError(err);
+      const final =
+        lastAttempt ||
+        isNoDefaultModelError(err) ||
+        err instanceof ProfileRefusedError;
       const after = final ? nextFireAt(spec, now()) : fireAt;
       if (stage === "commit")
         await deps.repo
@@ -607,7 +630,7 @@ export function createSchedulerRunner(
           `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
         );
         await emitFired(sched, "failure");
-        if (isNoDefaultModelError(err)) {
+        if (isNoDefaultModelError(err) || err instanceof ProfileRefusedError) {
           await deps.repo
             .writeStatus(scheduleId, {
               lastFiredAt: now(),

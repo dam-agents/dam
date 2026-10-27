@@ -31,6 +31,9 @@ export {
   sessionSettingsSchema,
   modelConstraintsFor,
   startModeFor,
+  approvalOption,
+  COPILOT_AUTOPILOT,
+  withoutApproval,
   sessionSettingsError,
   SUBAGENT_MODEL_SETTING,
   PLATFORM_SUBAGENT_PREFIX,
@@ -196,6 +199,7 @@ export type {
   FileChangeStatus,
   FileDiff,
   PullRequestLink,
+  PullRequestState,
   SessionRepository,
 } from "./modules/changes/types.js";
 export {
@@ -206,6 +210,7 @@ export {
   compareToSchema,
   fileDiffSchema,
   pullRequestLinkSchema,
+  pullRequestStateSchema,
   sessionRepositorySchema,
 } from "./modules/changes/schemas.js";
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Wipe the e2e cluster's data without reinstalling it"
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
+#USAGE flag "--environment <name>" help="Wipe the lane's data in this agent's Environment of that name"
 # Drops and recreates the platform DB, deletes the anchors (and what they own:
 # StatefulSets, pods, PVCs) and the store marker, and clears stored Playwright
 # auth; the cluster keeps running.
@@ -27,9 +28,13 @@ kubectl -n platform-agents delete pvc --all --ignore-not-found --wait=true --tim
 # FORCE to evict any stragglers, recreate empty, then scale back. The new pod
 # reruns the Drizzle migrations from zero on boot. Postgres stays up the whole
 # time, so the fresh-cluster apiserver-vs-init race never applies here.
+# The controller goes down and comes back with it: it records its startup
+# anchor pass once, in the database it started on, and the new api-server
+# serves nothing until the new database holds that record. Started again, it
+# waits until the api-server has absorbed the new store, as on a fresh install.
 echo "Dropping + recreating the platform database..."
-kubectl scale deployment platform-apiserver --replicas=0
-kubectl wait --for=delete pod -l app.kubernetes.io/component=apiserver --timeout=60s 2>/dev/null || true
+kubectl scale deployment platform-apiserver platform-controller --replicas=0
+kubectl wait --for=delete pod -l 'app.kubernetes.io/component in (apiserver,controller)' --timeout=60s 2>/dev/null || true
 # Recreate owned by the api-server's NOSUPERUSER role so it can run its
 # migrations ($POSTGRES_USER is the admin superuser; $POSTGRES_APISERVER_USER
 # is the platform DB's owning role — both are set on the postgres pod).
@@ -37,7 +42,7 @@ kubectl exec platform-postgres-0 -- bash -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
      -c "DROP DATABASE IF EXISTS platform WITH (FORCE);" \
      -c "CREATE DATABASE platform OWNER $POSTGRES_APISERVER_USER;"'
-kubectl scale deployment platform-apiserver --replicas=1
+kubectl scale deployment platform-apiserver platform-controller --replicas=1
 # Readiness now gates on the first Keycloak JWKS fetch (warm-up gives up at
 # ~240s); allow headroom past that bound for a fresh pod to become Available.
 kubectl wait --for=condition=Available deployment/platform-apiserver --timeout=300s

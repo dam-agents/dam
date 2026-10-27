@@ -1,15 +1,139 @@
 import {
+  isPlatformSubagentSetting,
+  withoutApproval,
+  type HarnessConfigCatalog,
+} from "agent-runtime-api";
+import {
   aliasForProviderType,
   parseQualifiedModel,
   resolveDefaultProvider,
   type ProviderPresetType,
+  type SessionChoiceReferences,
+  type SessionChoiceSlots,
   type SessionPair,
 } from "api-server-api";
+import type { ProfileResolver } from "../../profiles/index.js";
 
 export interface GrantedProvider {
   id: string;
   type: ProviderPresetType;
   templateId?: string;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot is stored apart from the primary model (D124): a profile reference, which lends only its harness and model (D93), or values of its own. */
+export function platformSubagentOf(slot: SessionPair): Record<string, string> {
+  return {
+    "platformSubagent.harness": slot.harness,
+    ...(slot.model !== null && { "platformSubagent.model": slot.model }),
+  };
+}
+
+export function withPlatformSubagent(
+  pair: SessionPair,
+  slot: Record<string, string> | null,
+): SessionPair {
+  return slot ? { ...pair, settings: { ...pair.settings, ...slot } } : pair;
+}
+
+export function splitPlatformSubagent(
+  pair: SessionPair,
+): [SessionPair, Record<string, string> | null] {
+  const { settings = {}, ...rest } = pair;
+  const own = Object.entries(settings).filter(
+    ([id]) => !isPlatformSubagentSetting(id),
+  );
+  const slot = Object.entries(settings).filter(([id]) =>
+    isPlatformSubagentSetting(id),
+  );
+  return [
+    own.length > 0 ? { ...rest, settings: Object.fromEntries(own) } : rest,
+    slot.length > 0 ? Object.fromEntries(slot) : null,
+  ];
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a pick in the chat default's shape written onto the stored slots, the same for the chat default, a channel and a schedule: a named profile stands in for the values, and an omitted subagent reference leaves that slot as it is (D124). */
+export function choiceSlots(
+  pair: SessionPair | null,
+  references: SessionChoiceReferences | undefined,
+): Pick<SessionChoiceSlots, "profileId" | "pair"> &
+  Partial<SessionChoiceSlots> {
+  const [primary, own] = pair ? splitPlatformSubagent(pair) : [null, null];
+  const slotId = references?.platformSubagentProfileId;
+  return {
+    profileId: references?.profileId ?? null,
+    pair: references?.profileId ? null : primary,
+    ...(slotId !== undefined && {
+      platformSubagentProfileId: slotId,
+      platformSubagentSettings: slotId ? null : own,
+    }),
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the subagent slot as a run takes it: a profile lends its harness and model (D93), values are taken as they are, and a profile that cannot run leaves the subagent to the agent. */
+export async function resolvedSubagent(
+  slots: Pick<
+    SessionChoiceSlots,
+    "platformSubagentProfileId" | "platformSubagentSettings"
+  >,
+  resolveProfile: ProfileResolver,
+  agentId: string,
+): Promise<Record<string, string> | null> {
+  if (!slots.platformSubagentProfileId) return slots.platformSubagentSettings;
+  const slot = await resolveProfile({
+    profileId: slots.platformSubagentProfileId,
+    agentId,
+  });
+  return slot?.unavailable === null ? platformSubagentOf(slot.pair) : null;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the pair a run on stored slots starts on, the same for a chat, a channel and a schedule: the primary profile resolved, else the values, with the subagent slot merged; a primary profile that cannot run refuses with its reason rather than running on another model. */
+export async function resolvedChoice(
+  slots: SessionChoiceSlots,
+  resolveProfile: ProfileResolver,
+  agentId: string,
+): Promise<
+  | { pair: SessionPair | null; refused?: undefined }
+  | { refused: { profile: string; detail: string } }
+> {
+  let primary = slots.pair;
+  if (slots.profileId) {
+    const resolved = await resolveProfile({
+      profileId: slots.profileId,
+      agentId,
+    });
+    if (!resolved)
+      return {
+        refused: { profile: slots.profileId, detail: "it no longer exists" },
+      };
+    if (resolved.unavailable)
+      return {
+        refused: {
+          profile: resolved.profile.name,
+          detail: resolved.unavailable,
+        },
+      };
+    primary = resolved.pair;
+  }
+  return {
+    pair:
+      primary &&
+      withPlatformSubagent(
+        primary,
+        await resolvedSubagent(slots, resolveProfile, agentId),
+      ),
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: tool approval is one session's own pick, so a saved default never holds one and a stored one is never read. */
+export function withoutPairApproval(
+  pair: SessionPair,
+  catalog: HarnessConfigCatalog | undefined,
+): SessionPair {
+  const { settings, ...rest } = pair;
+  const kept = withoutApproval(catalog, settings);
+  return kept && Object.keys(kept).length > 0
+    ? { ...rest, settings: kept }
+    : rest;
 }
 
 export interface SessionPairInputs {

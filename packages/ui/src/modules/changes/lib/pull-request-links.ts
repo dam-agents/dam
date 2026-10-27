@@ -14,6 +14,13 @@ function lastSegment(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the repositories a Session's row shows as badges: those it has a pull request in. A Session links every repository it commits or pushes in, and the tools it runs commit in caches and plugins too, so a repository without a pull request says nothing about the Session's work; the Changes Panel still opens on the one it committed in last.
+export function badgeRepositories(
+  repositories: readonly SessionRepository[] | undefined,
+): SessionRepository[] {
+  return (repositories ?? []).filter(({ pullRequest }) => pullRequest !== null);
+}
+
 export function repositoryBadgeLabels(
   repositories: readonly SessionRepository[],
 ): string[] {

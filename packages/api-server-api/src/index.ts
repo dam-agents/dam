@@ -67,11 +67,59 @@ export type {
   DelegationNode,
 } from "./modules/invocations/types.js";
 
+export {
+  ANTHROPIC_OAUTH_BETA,
+  ANTHROPIC_OAUTH_TEMPLATE,
+  createModelDiscovery,
+  forHarness,
+  harnessCatalogOf,
+  layerMetadata,
+  listingForTemplate,
+  lookupPrice,
+  MIN_CONTEXT_WINDOW,
+  modelDialect,
+  modelDiscoverySources,
+  modelDiscoverySpec,
+  normalizeModelKey,
+  PROVIDER_DIALECTS,
+  renderName,
+  selectDiscoverySource,
+  servesHarness,
+} from "./modules/model-catalog/index.js";
+export type {
+  CatalogEntry,
+  CatalogProvider,
+  DiscoveredModel,
+  DiscoveredModelInfo,
+  DiscoverySource,
+  HarnessBinding,
+  HarnessOffer,
+  MetadataSource,
+  ModelDialect,
+  ModelDiscovery,
+  ModelDiscoveryOutcome,
+  ModelDiscoverySources,
+  ModelDiscoverySpec,
+  ModelMetadata,
+  ModelPrices,
+  OwnerModelCatalogView,
+  PriceTable,
+  PriceTableEntry,
+  ProviderCatalogModel,
+  ProviderCatalogView,
+  ProviderListingSpec,
+  ProviderListingStatus,
+  ProviderModelInfo,
+} from "./modules/model-catalog/index.js";
+
 export type {
   HarnessConfigChange,
   HarnessConfigStatus,
   DefaultKind,
   SessionDefaults,
+  SessionDefaultsView,
+  SessionChoiceReferences,
+  SessionChoiceSlots,
   SessionPair,
   HarnessConfigService,
   HarnessConfigSnapshot,
@@ -157,6 +205,11 @@ export {
 } from "./modules/agents/view.js";
 export { editorEmailOf } from "./modules/agents/editor-email.js";
 export {
+  agentPageUrl,
+  SANDBOX_SECTIONS,
+  type SandboxSection,
+} from "./modules/agents/agent-page.js";
+export {
   AGENT_PERMISSIONS,
   type AgentPermission,
   type AgentTarget,
@@ -176,6 +229,7 @@ export type {
   ProviderStatusService,
   ProviderStatusView,
 } from "./modules/provider-status/types.js";
+export { saysProviderUnavailable } from "./modules/provider-status/provider-error.js";
 export type {
   BudgetReserved,
   BudgetStorageFull,
@@ -542,6 +596,15 @@ export {
   preferenceGroupOf,
 } from "./modules/connections/preference-group.js";
 export type { DefaultAccountKindId } from "./modules/connections/preference-group.js";
+
+export type {
+  ProfilesService,
+  ProfileWithUsage,
+  ProfileUsage,
+  ProfileCreateInput,
+  ProfileUpdateInput,
+} from "./modules/profiles/types.js";
+export { DEFAULT_PROFILE_UNDELETABLE } from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,
