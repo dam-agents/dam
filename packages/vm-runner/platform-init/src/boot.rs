@@ -202,31 +202,44 @@ fn finish_openrc(runlevel: &str, child: Option<std::process::Child>, stopping: &
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest keeps the files it read in its page cache until something needs the memory, and the host counts that cache as memory the machine holds, so an agent that once read a large tree holds it long after. Every RECLAIM_INTERVAL the cache on the kernel's inactive list — what nothing has touched lately — is handed to the root cgroup's proactive reclaim, and the pages it frees go back to the host through free-page reporting within seconds. With compressed swap (`swapping`) the inactive anonymous memory is handed over too, so what the agent's processes hold but have not touched lately is compressed into zram and the rest of its pages go back to the host; without it reclaim drops only file pages. A guest kernel without cgroup v2 reclaim gives nothing to read or write, and the loop does nothing.
+// UNIT_BOUNDARY_DESCRIPTION: a guest keeps the files it read in its page cache until something needs the memory, and the host counts that cache as memory the machine holds, so an agent that once read a large tree holds it long after. Every RECLAIM_INTERVAL some of the cache on the kernel's inactive list — what nothing has touched lately — is handed to the root cgroup's proactive reclaim, as much as reclaim_step asks for, and the pages it frees go back to the host through free-page reporting within seconds. With compressed swap (`swapping`) the inactive anonymous memory is handed over too, so what the agent's processes hold but have not touched lately is compressed into zram and the rest of its pages go back to the host; without it reclaim drops only file pages. A guest kernel without cgroup v2 reclaim gives nothing to read or write, and the loop does nothing.
 const RECLAIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const RECLAIM_FLOOR: u64 = 64 << 20;
 
 fn reclaim_cold_cache(swapping: bool) {
+    // SAFETY: sysconf has no preconditions.
+    let page = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).unwrap_or(4096);
     let order = fs::read_to_string("/sys/module/page_reporting/parameters/page_reporting_order")
         .ok()
         .and_then(|text| text.trim().parse().ok())
         .unwrap_or(DEFAULT_REPORTING_ORDER);
     let mut settled = scattered_free(order).unwrap_or(0);
+    let mut asked = 0;
+    let mut seen = None;
     loop {
         std::thread::sleep(RECLAIM_INTERVAL);
-        if let Some(cold) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
+        if let Some((cold, refaults)) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
             .ok()
             .and_then(|stat| {
                 let anon = if swapping {
-                    stat_bytes(&stat, "inactive_anon")?
+                    stat_value(&stat, "inactive_anon")?
                 } else {
                     0
                 };
-                Some(stat_bytes(&stat, "inactive_file")? + anon)
+                Some((
+                    stat_value(&stat, "inactive_file")? + anon,
+                    stat_value(&stat, "workingset_refault_anon")?
+                        + stat_value(&stat, "workingset_refault_file")?,
+                ))
             })
         {
-            if cold >= RECLAIM_FLOOR {
-                let _ = fs::write("/sys/fs/cgroup/memory.reclaim", cold.to_string());
+            let refaulted = refaults
+                .saturating_sub(seen.unwrap_or(refaults))
+                .saturating_mul(page);
+            seen = Some(refaults);
+            asked = reclaim_step(cold, refaulted, asked);
+            if asked > 0 {
+                let _ = fs::write("/sys/fs/cgroup/memory.reclaim", asked.to_string());
             }
         }
         let Some(scattered) = scattered_free(order) else {
@@ -243,6 +256,16 @@ fn reclaim_cold_cache(swapping: bool) {
             settled = settled.min(scattered);
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes one pass asks proactive reclaim for, 0 for none, given what the last pass asked for (`asked`, 0 for none), the bytes read back from zram or disk since then (`refaulted`) and the `cold` bytes on the inactive lists now. memory.reclaim keeps scanning, and ages the active lists to do it, until it has freed what it was asked for or has retried many times. So a pass that asked for the whole inactive list also evicted pages touched seconds before: on dev, a guest with 15 to 24 GB free put about 2.5 GB into zram per pass and read about 1 GB a minute back. A pass asks for twice what the last one asked, from RECLAIM_FLOOR up to the cold memory there is, so an idle agent's cache and heap still go within minutes. When more than an eighth (REFAULT_SHARE) of the last request, or of the floor if it was less, came back, the agent is using what was taken: the pass asks for nothing, and the next one starts again at the floor. The request is a probe, so a busy agent still loses some memory it uses each time the request grows into it; MGLRU (CONFIG_LRU_GEN), which the guest kernel is built without, would reclaim by age instead. The scattered-memory reclaim below is not held to this request.
+const REFAULT_SHARE: u64 = 8;
+
+fn reclaim_step(cold: u64, refaulted: u64, asked: u64) -> u64 {
+    if cold < RECLAIM_FLOOR || refaulted > asked.max(RECLAIM_FLOOR) / REFAULT_SHARE {
+        return 0;
+    }
+    asked.saturating_mul(2).clamp(RECLAIM_FLOOR, cold)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: free-page reporting hands the host only free blocks of at least the reporting order, 2 MiB on the guests' kernel, so memory a program frees between pages the guest still uses stays counted on the host: on dev about 600 MiB after a burst of processes ended, for as long as the pages pinning it lived. When the free memory in smaller blocks has risen by SCATTERED_RISE since the last look, that much cold cache and slab is reclaimed and the guest's memory compacted, which merges the free pages into blocks the host takes back, in about a quarter of a second of guest time. A guest whose memory stays scattered is not compacted again until more is freed.
@@ -270,7 +293,7 @@ fn free_below_order(buddyinfo: &str, order: usize) -> u64 {
         .sum()
 }
 
-fn stat_bytes(stat: &str, key: &str) -> Option<u64> {
+fn stat_value(stat: &str, key: &str) -> Option<u64> {
     stat.lines()
         .find_map(|line| line.strip_prefix(key)?.strip_prefix(' '))?
         .trim()
@@ -6537,9 +6560,46 @@ mod tests {
     #[test]
     fn the_cold_memory_is_the_inactive_counts() {
         let stat = "anon 4096\nfile 1289818112\ninactive_anon 0\nactive_anon 4096\ninactive_file 1283219456\nactive_file 2838528\n";
-        assert_eq!(stat_bytes(stat, "inactive_file"), Some(1283219456));
-        assert_eq!(stat_bytes("file 1\nactive_file 1\n", "inactive_file"), None);
-        assert_eq!(stat_bytes(stat, "inactive_anon"), Some(0));
+        assert_eq!(stat_value(stat, "inactive_file"), Some(1283219456));
+        assert_eq!(stat_value("file 1\nactive_file 1\n", "inactive_file"), None);
+        assert_eq!(stat_value(stat, "inactive_anon"), Some(0));
+    }
+
+    // TEST_SCENARIO: an idle agent's cold memory must still go back to the host within minutes. With nothing coming back, each pass asks for twice what the last asked, from the floor up to the cold memory there is, and asks for nothing while less than the floor is cold.
+    #[test]
+    fn an_idle_agent_is_asked_for_twice_as_much_each_pass_up_to_its_cold_memory() {
+        const MIB: u64 = 1 << 20;
+        let mut asked = 0;
+        let asks: Vec<u64> = (0..7)
+            .map(|_| {
+                asked = reclaim_step(3000 * MIB, 0, asked);
+                asked / MIB
+            })
+            .collect();
+        assert_eq!(asks, [64, 128, 256, 512, 1024, 2048, 3000]);
+        assert_eq!(reclaim_step(100 * MIB, 0, 512 * MIB), 100 * MIB);
+        assert_eq!(reclaim_step(RECLAIM_FLOOR - 1, 0, 512 * MIB), 0);
+        assert_eq!(reclaim_step(u64::MAX, 0, u64::MAX), u64::MAX);
+    }
+
+    // TEST_SCENARIO: a busy agent's inactive lists hold memory it still uses, and what a pass took of it comes back as refaults before the next pass. Up to an eighth of the last request may come back; one byte more and the pass asks for nothing, and the pass after it starts again at the floor, held to an eighth of the floor, so a request that keeps coming back never grows.
+    #[test]
+    fn more_than_an_eighth_back_skips_the_pass_and_restarts_at_the_floor() {
+        const MIB: u64 = 1 << 20;
+        let lots = 3000 * MIB;
+        assert_eq!(reclaim_step(lots, 32 * MIB, 256 * MIB), 512 * MIB);
+        assert_eq!(reclaim_step(lots, 32 * MIB + 1, 256 * MIB), 0);
+        assert_eq!(reclaim_step(lots, 8 * MIB, 0), RECLAIM_FLOOR);
+        assert_eq!(reclaim_step(lots, 8 * MIB + 1, 0), 0);
+        let mut asked = 0;
+        let asks: Vec<u64> = [0, 0, 200, 2, 0, 200]
+            .iter()
+            .map(|&back| {
+                asked = reclaim_step(lots, back * MIB, asked);
+                asked / MIB
+            })
+            .collect();
+        assert_eq!(asks, [64, 128, 0, 64, 128, 0]);
     }
 
     // TEST_SCENARIO: the kernel refuses swapon on a zram device whose first page is not a version 1 swap header with the right last page, and the guest then runs without swap. So the header carries the magic in the page's last ten bytes and names the last page of the device.
