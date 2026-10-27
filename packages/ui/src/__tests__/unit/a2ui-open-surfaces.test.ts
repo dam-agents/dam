@@ -57,7 +57,7 @@ function answer(id: string, surfaceId: string): Message {
 }
 
 function open(messages: Message[]): string[] {
-  const last = messages.at(-1);
+  const last = messages[messages.length - 1];
   const live = last?.role === "assistant" ? last.id : null;
   const conversation = buildConversation(collectBlocks(messages));
   return [...openSurfaceIds(conversation, messages, live)];
