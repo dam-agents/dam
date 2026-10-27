@@ -128,7 +128,7 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
-// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again. The item records PLATFORM_GH_TOKEN_AVAILABLE, which the runtime sets and openrc's env filter drops, so only the runtime's ~/.config/rc/profile.env can give it to the item, at a start from the shell and at the boot.
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services, and platform-env, which serves the Environment Link only on an Environment. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again. The item records PLATFORM_GH_TOKEN_AVAILABLE, which the runtime sets and openrc's env filter drops, so only the runtime's ~/.config/rc/profile.env can give it to the item, at a start from the shell and at the boot.
 test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
   const guest = inGuest(
     agentId,
@@ -138,9 +138,12 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
   const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
   expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
   expect(
-    inGuest(agentId, "find /etc/runlevels -mindepth 2 -printf '%P\\n'").trim(),
-    "a fresh machine starts only the agent's own services",
-  ).toBe("default/user.root");
+    inGuest(
+      agentId,
+      "find /etc/runlevels -mindepth 2 -printf '%P\\n' | sort",
+    ).trim(),
+    "a fresh machine starts only the agent's own services and the Environment Link",
+  ).toBe("default/platform-env\ndefault/user.root");
   inGuest(
     agentId,
     [
