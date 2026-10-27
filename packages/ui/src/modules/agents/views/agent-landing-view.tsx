@@ -26,9 +26,9 @@ import { useStore } from "../../../store.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useAcpSessions } from "../../sessions/api/queries.js";
 import { useAgentsList } from "../api/queries.js";
+import { AgentAvatar } from "../components/char-avatar.js";
 import type { AgentDisplayState } from "../utils/agent-resolver.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
-import { AgentAvatar } from "../components/char-avatar.js";
 
 type LandingSession = SessionView & { slackChannel?: string };
 
@@ -299,157 +299,162 @@ export function AgentLandingView() {
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-4 py-6 pb-20 md:px-[5%]">
       <div className="w-full max-w-[640px]">
-      <button
-        type="button"
-        onClick={goBack}
-        className="mb-6 flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft size={16} />
-        Back
-      </button>
+        <button
+          type="button"
+          onClick={goBack}
+          className="mb-6 flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft size={16} />
+          Back
+        </button>
 
-      <div className="flex flex-col items-center text-center">
-        <AgentAvatar
-          agentId={agent.id}
-          state={display.state}
-          className="size-16 shrink-0"
-        />
+        <div className="flex flex-col items-center text-center">
+          <AgentAvatar
+            agentId={agent.id}
+            state={display.state}
+            className="size-16 shrink-0"
+          />
 
-        <div className="mt-3 flex items-center justify-center gap-3">
-          <h1 className="text-2xl font-bold text-foreground">
-            {agent.name}
-          </h1>
-          <AgentStateBadge state={display.state} />
-        </div>
-
-        {agent.description && (
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {agent.description}
-          </p>
-        )}
-
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-          {computeLabel && (
-            <Badge variant="outline" className="gap-1">
-              {computeLabel}
-            </Badge>
-          )}
-          {slackChannels.length > 0 && (
-            <Badge variant="muted" className="gap-1.5">
-              <ConnectionIcon iconSlug="slack" alt="" size={16} />
-              {slackChannels
-                .slice(0, 3)
-                .map((ch) => ch.slackChannelId)
-                .join(", ")}
-              {slackChannels.length > 3 && `, +${slackChannels.length - 3}`}
-            </Badge>
-          )}
-          {scheduleCount > 0 && (
-            <Badge variant="muted" className="gap-1.5">
-              <Time size={16} />
-              {scheduleCount} active schedule
-              {scheduleCount === 1 ? "" : "s"}
-            </Badge>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-7" aria-label="Agent actions">
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onSelect={() => agentId && navigateToSandboxHome(agentId)}
-              >
-                <Settings size={16} />
-                Configure agent
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem tone="danger">Delete agent</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      <div className="mt-8">
-        <div className="flex flex-col rounded-xl border border-border bg-background transition-colors focus-within:border-primary">
-          <div className="flex items-end gap-1 px-2 min-h-[56px]">
-            <div className="relative flex-1">
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleNewSession();
-                  }
-                }}
-                placeholder="Message..."
-                className="w-full bg-transparent border-0 pl-2 pr-2 py-[17px] text-sm leading-[22px] text-foreground caret-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground/50 focus:outline-none focus:ring-0"
-              />
-            </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={cn(
-                "shrink-0 mb-[9px] h-10 w-10",
-                inputValue.trim() ? "text-foreground" : "text-muted-foreground",
-              )}
-              onClick={handleNewSession}
-              disabled={!inputValue.trim()}
-              aria-label="Send"
-            >
-              <SendAltFilled size={16} />
-            </Button>
+          <div className="mt-3 flex items-center justify-center gap-3">
+            <h1 className="text-2xl font-bold text-foreground">{agent.name}</h1>
+            <AgentStateBadge state={display.state} />
           </div>
-        </div>
-      </div>
 
-      <div className="mt-8">
-        <div className="flex items-center justify-between">
-          <SectionLabel>Activity</SectionLabel>
-          <div className="flex gap-1">
-            {(Object.keys(FILTER_LABELS) as SessionFilter[]).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilter(f)}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-sm transition-colors",
-                  filter === f
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {FILTER_LABELS[f]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-4">
-          {filteredSessions.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              {filter === "all"
-                ? "No sessions yet"
-                : `No ${FILTER_LABELS[filter].toLowerCase()} sessions`}
+          {agent.description && (
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {agent.description}
             </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {filteredSessions.map((s) => (
-                <SessionRow
-                  key={s.sessionId}
-                  agentId={agent.id}
-                  agentName={agent.name}
-                  session={s}
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            {computeLabel && (
+              <Badge variant="outline" className="gap-1">
+                {computeLabel}
+              </Badge>
+            )}
+            {slackChannels.length > 0 && (
+              <Badge variant="muted" className="gap-1.5">
+                <ConnectionIcon iconSlug="slack" alt="" size={16} />
+                {slackChannels
+                  .slice(0, 3)
+                  .map((ch) => ch.slackChannelId)
+                  .join(", ")}
+                {slackChannels.length > 3 && `, +${slackChannels.length - 3}`}
+              </Badge>
+            )}
+            {scheduleCount > 0 && (
+              <Badge variant="muted" className="gap-1.5">
+                <Time size={16} />
+                {scheduleCount} active schedule
+                {scheduleCount === 1 ? "" : "s"}
+              </Badge>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label="Agent actions"
+                >
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => agentId && navigateToSandboxHome(agentId)}
+                >
+                  <Settings size={16} />
+                  Configure agent
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem tone="danger">Delete agent</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <div className="flex flex-col rounded-xl border border-border bg-background transition-colors focus-within:border-primary">
+            <div className="flex items-end gap-1 px-2 min-h-[56px]">
+              <div className="relative flex-1">
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleNewSession();
+                    }
+                  }}
+                  placeholder="Message..."
+                  className="w-full bg-transparent border-0 pl-2 pr-2 py-[17px] text-sm leading-[22px] text-foreground caret-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground/50 focus:outline-none focus:ring-0"
                 />
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "shrink-0 mb-[9px] h-10 w-10",
+                  inputValue.trim()
+                    ? "text-foreground"
+                    : "text-muted-foreground",
+                )}
+                onClick={handleNewSession}
+                disabled={!inputValue.trim()}
+                aria-label="Send"
+              >
+                <SendAltFilled size={16} />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <div className="flex items-center justify-between">
+            <SectionLabel>Activity</SectionLabel>
+            <div className="flex gap-1">
+              {(Object.keys(FILTER_LABELS) as SessionFilter[]).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFilter(f)}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-sm transition-colors",
+                    filter === f
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {FILTER_LABELS[f]}
+                </button>
               ))}
             </div>
-          )}
+          </div>
+
+          <div className="mt-4">
+            {filteredSessions.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {filter === "all"
+                  ? "No sessions yet"
+                  : `No ${FILTER_LABELS[filter].toLowerCase()} sessions`}
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {filteredSessions.map((s) => (
+                  <SessionRow
+                    key={s.sessionId}
+                    agentId={agent.id}
+                    agentName={agent.name}
+                    session={s}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       </div>
     </div>
   );

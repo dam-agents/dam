@@ -64,6 +64,9 @@ export const createFilesSlice: StateCreator<
             openArtifactId: null,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesData: null,
+            openWorkProcess: null,
+            openEnvironment: null,
           }
         : {}),
     }),

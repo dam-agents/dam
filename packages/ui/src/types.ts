@@ -69,6 +69,63 @@ export interface FormPart {
   answered?: boolean;
 }
 
+export interface ChangesFileEntry {
+  path: string;
+  insertions: number;
+  deletions: number;
+}
+
+export interface WorkChanges {
+  kind: "work";
+  tool: "changes";
+  status?: "loading" | "done" | "error" | "pr-open";
+  files: ChangesFileEntry[];
+  summary: string;
+  pullRequestUrl?: string;
+}
+
+export interface WorkProcess {
+  kind: "work";
+  tool: "process";
+  status?: "running" | "finished" | "failed" | "restart-waiting";
+  command: string;
+  exitCode: number;
+  logLines: string[];
+}
+
+export interface WorkBrowser {
+  kind: "work";
+  tool: "browser";
+  status?: "loading" | "ready" | "error" | "agent-asleep";
+  url: string;
+  title: string;
+  errorMessage?: string;
+}
+
+export interface WorkEnvironmentItem {
+  label: string;
+  value: string;
+}
+
+export type EnvironmentStatus = "starting" | "running" | "expired" | "deleted";
+
+export interface WorkEnvironment {
+  kind: "work";
+  tool: "environment";
+  status?: EnvironmentStatus;
+  name?: string;
+  url?: string;
+  expiresAt?: string;
+  accessLabel?: string;
+  items: WorkEnvironmentItem[];
+}
+
+export type WorkPart =
+  | WorkChanges
+  | WorkProcess
+  | WorkBrowser
+  | WorkEnvironment;
+
 export type MessagePart =
   | TextPart
   | ThoughtPart
@@ -76,7 +133,8 @@ export type MessagePart =
   | FilePart
   | ToolChip
   | VerdictPart
-  | FormPart;
+  | FormPart
+  | WorkPart;
 
 export interface Message {
   id: string;

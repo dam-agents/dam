@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { fireApprovalToast } from "../modules/notifications/hooks/use-approval-toasts.js";
 import { useStore } from "../store.js";
+import { DevToolsToggle } from "./dev-tools-toggle.js";
 
 const TOAST_AGENTS = [
   "CI Pipeline Agent",
@@ -158,6 +159,7 @@ function MockStateBarPanel() {
       </button>
 
       <StepControls />
+      <DevToolsToggle />
 
       <button
         type="button"

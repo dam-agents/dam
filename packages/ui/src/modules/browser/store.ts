@@ -39,6 +39,9 @@ export const createBrowserSlice: StateCreator<
             openArtifactDirty: false,
             openDelegation: null,
             openProcessOutputKey: null,
+            openChangesData: null,
+            openWorkProcess: null,
+            openEnvironment: null,
           }
         : { openBrowserAgentId: null, browserMaximized: false },
     ),

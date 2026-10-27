@@ -100,6 +100,7 @@ import {
 } from "../../packs/lib/demo-exit-actions.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
+import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
 import {
   getDefaultExamples,
   useRotatingPlaceholder,
@@ -111,13 +112,16 @@ import {
   setSessionRunning,
 } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
+import { ChangesPanel } from "../components/changes-panel.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
+import { EnvironmentPanel } from "../components/environment-panel.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { Terminal } from "../components/terminal.js";
+import { WorkProcessPanel } from "../components/work-process-panel.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -189,6 +193,9 @@ export function ChatView() {
   const openBrowserAgentId = useStore((s) =>
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
+  const openChangesData = useStore((s) => s.openChangesData);
+  const openWorkProcess = useStore((s) => s.openWorkProcess);
+  const openEnvironment = useStore((s) => s.openEnvironment);
   const openBrowser = useOpenBrowser();
   const browserMaximized = useStore((s) => s.browserMaximized);
   const pendingLaunch = useStore((s) => s.pendingLaunch);
@@ -554,6 +561,10 @@ export function ChatView() {
     </DropdownMenu>
   ) : null;
 
+  const lastMsg = messages[messages.length - 1];
+  const streamingWork =
+    !!lastMsg?.streaming && lastMsg.parts.some((p) => p.kind === "work");
+
   const headerStatus =
     isDemo && demoActions ? (
       <DemoHeaderActions actions={demoActions} />
@@ -564,6 +575,7 @@ export function ChatView() {
         busy={busy}
         connectionState={connectionState}
         sessionId={sessionId}
+        streamingWork={streamingWork}
       />
     );
 
@@ -584,7 +596,10 @@ export function ChatView() {
       openFilePath ||
       openArtifactId ||
       dockedExperiment ||
-      openProcessOutputKey
+      openProcessOutputKey ||
+      openChangesData ||
+      openWorkProcess ||
+      openEnvironment
     ) || !!(openBrowserAgentId && canOpenBrowser);
 
   const browserFullscreen =
@@ -904,8 +919,14 @@ export function ChatView() {
                   agentId={selectedAgent}
                   outputKey={openProcessOutputKey}
                 />
+              ) : openWorkProcess ? (
+                <WorkProcessPanel />
               ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
+              ) : openChangesData ? (
+                <ChangesPanel />
+              ) : openEnvironment ? (
+                <EnvironmentPanel />
               ) : dashboardExperiment ? (
                 <ExperimentDockPanel
                   experiment={dashboardExperiment}
@@ -955,12 +976,14 @@ function ChatHeaderStatus({
   busy,
   connectionState,
   sessionId,
+  streamingWork,
 }: {
   selectedAgent: string | null;
   agents: AgentView[];
   busy: boolean;
   connectionState: ConnectionState;
   sessionId: string | null;
+  streamingWork: boolean;
 }) {
   const agent = agents.find((a) => a.id === selectedAgent);
   const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
@@ -968,6 +991,13 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
+      {streamingWork && (
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="h-2 w-2 rounded-full bg-[#24a148] animate-pulse" />
+          Running
+        </span>
+      )}
+      <ProcessesIndicator agentId={selectedAgent} />
       <BackgroundWorkIndicator items={backgroundWork} />
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />

@@ -49,6 +49,14 @@ import {
   onForeignDraftChange,
 } from "./modules/sessions/lib/draft-snapshot.js";
 import {
+  type ChangesPanelSlice,
+  createChangesPanelSlice,
+} from "./modules/sessions/store/changes-panel.js";
+import {
+  createEnvironmentPanelSlice,
+  type EnvironmentPanelSlice,
+} from "./modules/sessions/store/environment-panel.js";
+import {
   createPermissionsSlice,
   type PermissionsSlice,
 } from "./modules/sessions/store/permissions.js";
@@ -56,6 +64,10 @@ import {
   createSessionsSlice,
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
+import {
+  createWorkProcessPanelSlice,
+  type WorkProcessPanelSlice,
+} from "./modules/sessions/store/work-process-panel.js";
 
 export type { DialogState } from "./modules/platform/store/dialog.js";
 export type {
@@ -79,7 +91,10 @@ export type PlatformStore = DialogSlice &
   PermissionsSlice &
   ProcessesSlice &
   PacksSlice &
-  DismissalsSlice & {
+  DismissalsSlice &
+  ChangesPanelSlice &
+  WorkProcessPanelSlice &
+  EnvironmentPanelSlice & {
     openDelegation: unknown | null;
   };
 
@@ -99,6 +114,9 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createProcessesSlice(...a),
   ...createPacksSlice(...a),
   ...createDismissalsSlice(...a),
+  ...createChangesPanelSlice(...a),
+  ...createWorkProcessPanelSlice(...a),
+  ...createEnvironmentPanelSlice(...a),
   openDelegation: null,
 }));
 

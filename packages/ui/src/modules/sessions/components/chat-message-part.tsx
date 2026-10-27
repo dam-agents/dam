@@ -8,6 +8,7 @@ import type { MessagePart, Role } from "../../../types.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
+import { WorkCard } from "./work-cards/index.js";
 
 interface Props {
   part: MessagePart;
@@ -62,6 +63,8 @@ export function ChatMessagePart({
           )}
         </div>
       );
+    case "work":
+      return <WorkCard part={part} />;
     default:
       return <ToolChip chip={part} />;
   }

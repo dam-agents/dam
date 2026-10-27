@@ -97,15 +97,19 @@ export function devFlowTranscript(): Message[] {
       },
       {
         kind: "text",
-        text: "I made a preview environment from this branch. Anyone with the link can open it for the next 3 days.",
+        text: "I made a preview environment from this branch. Your team can open it for the next 3 days.",
       },
       {
         kind: "work",
         tool: "environment",
+        status: "running",
+        name: "csv-export-preview",
+        url: "https://csv-export-preview.envs.example.com",
+        expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        accessLabel: "Your team",
         items: [
-          { label: "csv-export-preview", value: "" },
-          { label: "Status", value: "Running" },
-          { label: "Expires", value: "in 3 days" },
+          { label: "Branch", value: "feat/csv-export" },
+          { label: "Region", value: "us-east-1" },
         ],
       },
     ]),

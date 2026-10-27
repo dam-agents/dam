@@ -50,6 +50,9 @@ export const createProcessesSlice: StateCreator<
             openArtifactDirty: false,
             openDelegation: null,
             openBrowserAgentId: null,
+            openChangesData: null,
+            openWorkProcess: null,
+            openEnvironment: null,
           }
         : { openProcessOutputKey: null },
     ),

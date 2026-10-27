@@ -1,10 +1,10 @@
 import { Notification } from "@carbon/icons-react";
 import { useEffect } from "react";
 
-import { Badge } from "./components/ui/badge.js";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { IconRail } from "./components/icon-rail.js";
+import { Badge } from "./components/ui/badge.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
@@ -119,7 +119,6 @@ function MainApp() {
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <IconRail hideMobileBar />
             <div className="relative z-content flex-1 min-w-0">
-              <NotificationBell />
               <ChatView />
             </div>
           </div>
@@ -220,4 +219,3 @@ function NotificationBell() {
     </div>
   );
 }
-

@@ -8,11 +8,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Close,
+  CloudApp,
   Filter,
   Folders,
   Gift,
   Help,
   Home,
+  Launch,
   NewTab,
   Notification,
   OverflowMenuVertical,
@@ -49,8 +51,11 @@ import { cn } from "@/lib/utils";
 import { getBrand } from "../brand.js";
 import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
+import { timeUntil } from "../lib/format-time.js";
 import { timeAgo } from "../lib/format-time.js";
+import { emitToast } from "../lib/toast.js";
 import { useAgentClickVariant } from "../mock/agent-click-variants.js";
+import { environmentsByAgent } from "../mock/data/environments.js";
 import { useAgentsList } from "../modules/agents/api/queries.js";
 import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
 import { resolveAgentDisplay } from "../modules/agents/utils/agent-resolver.js";
@@ -892,6 +897,9 @@ export function IconRail({
                                 )}
                               </div>
                             )}
+                          {isExpanded && clickVariant === 0 && (
+                            <AgentEnvironments agentId={agent.id} now={now} />
+                          )}
                         </div>
                       </div>
                     );
@@ -1589,6 +1597,144 @@ export function IconRail({
         </nav>
       )}
     </>
+  );
+}
+
+const ENV_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  starting: {
+    label: "Starting",
+    className: "bg-amber-500/10 text-amber-600",
+  },
+  running: {
+    label: "Running",
+    className: "bg-[#24a148]/10 text-[#24a148]",
+  },
+  expired: {
+    label: "Expired",
+    className: "bg-muted text-muted-foreground",
+  },
+  deleted: {
+    label: "Deleted",
+    className: "bg-[#dc2626]/10 text-[#dc2626]",
+  },
+};
+
+function AgentEnvironments({ agentId, now }: { agentId: string; now: Date }) {
+  if (!import.meta.env.VITE_MOCK) return null;
+  const envs = environmentsByAgent[agentId];
+  if (!envs?.length) return null;
+
+  const showConfirm = useStore.getState().showConfirm;
+
+  return (
+    <div className="mt-1 mb-1 flex flex-col gap-0.5">
+      <span className="pl-12 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        Environments
+      </span>
+      {envs.map((env) => {
+        const badge = ENV_STATUS_BADGE[env.status] ?? ENV_STATUS_BADGE.running;
+        return (
+          <div
+            key={env.id}
+            className="group/env relative flex w-full flex-col gap-0.5 rounded-lg py-2 pl-12 pr-8 text-left transition-colors hover:bg-muted"
+          >
+            <span className="flex items-center gap-1.5">
+              <CloudApp size={14} className="shrink-0 text-muted-foreground" />
+              <span className="min-w-0 truncate text-sm text-foreground">
+                {env.name}
+              </span>
+              <span
+                className={`ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${badge.className}`}
+              >
+                {badge.label}
+              </span>
+            </span>
+            <span className="flex items-center gap-1 pl-[22px] text-xs text-muted-foreground">
+              {env.expiresAt && (
+                <span className="min-w-0 truncate">
+                  Expires {timeUntil(env.expiresAt, now)}
+                </span>
+              )}
+              {env.url && (
+                <a
+                  href={env.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Launch size={12} />
+                </a>
+              )}
+            </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="absolute right-3 top-1.5 opacity-0 transition-opacity group-hover/env:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="Environment actions"
+                >
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() =>
+                    emitToast({
+                      kind: "success",
+                      message: `Extended ${env.name} by 1 day`,
+                    })
+                  }
+                >
+                  Extend 1 day
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() =>
+                    emitToast({
+                      kind: "success",
+                      message: `Extended ${env.name} by 7 days`,
+                    })
+                  }
+                >
+                  Extend 7 days
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() =>
+                    emitToast({
+                      kind: "success",
+                      message: `Extended ${env.name} by 30 days`,
+                    })
+                  }
+                >
+                  Extend 30 days
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  tone="danger"
+                  onSelect={async () => {
+                    const ok = await showConfirm(
+                      "This will permanently delete the environment.",
+                      "Delete environment",
+                      { kind: "destructive" },
+                    );
+                    if (ok) {
+                      emitToast({
+                        kind: "success",
+                        message: `Deleted ${env.name}`,
+                      });
+                    }
+                  }}
+                >
+                  <TrashCan size={13} /> Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

@@ -27,6 +27,9 @@ export const createArtifactsSlice: StateCreator<
             openFilePath: null,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesData: null,
+            openWorkProcess: null,
+            openEnvironment: null,
           }
         : { openArtifactId: id },
     ),
