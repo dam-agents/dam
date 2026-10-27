@@ -1134,6 +1134,7 @@ export type {
 } from "./modules/environments/types.js";
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
+  ENVIRONMENT_EXPIRY_MAX_DAYS,
   environmentEndpointsSchema,
   environmentNameSchema,
 } from "./modules/environments/schemas.js";
