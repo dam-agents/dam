@@ -8,19 +8,23 @@ export const monthStart = (base: Date, offset: number) =>
 export const monthLabel = (month: Date) =>
   formatDate(month, { month: "long", year: "numeric" });
 
+const pad = (n: number) => String(n).padStart(2, "0");
+
 export function monthRange(month: Date): {
   from: string;
   to: string;
   isCurrentMonth: boolean;
 } {
+  const year = month.getFullYear();
+  const m = month.getMonth();
+  const prefix = `${year}-${pad(m + 1)}`;
   return {
-    from: month.toISOString(),
-    to: monthStart(month, 1).toISOString(),
+    from: `${prefix}-01`,
+    to: `${prefix}-${pad(new Date(year, m + 1, 0).getDate())}`,
     isCurrentMonth: month >= monthStart(new Date(), 0),
   };
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
 export function fillMonthDays(
   month: Date,
   isCurrentMonth: boolean,

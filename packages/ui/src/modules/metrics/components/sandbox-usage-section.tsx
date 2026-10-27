@@ -28,9 +28,8 @@ function totals(rows: TokenSpendByModel[]) {
           row.cacheReadTokens +
           row.cacheCreationTokens,
         tokensOut: acc.tokensOut + row.outputTokens,
-        durationMs: acc.durationMs + row.durationMs,
       }),
-      { calls: 0, tokensIn: 0, tokensOut: 0, durationMs: 0 },
+      { calls: 0, tokensIn: 0, tokensOut: 0 },
     ),
   };
 }
@@ -46,7 +45,10 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
     state,
     freshness,
   } = useMonthlySpend(agentId);
-  const sums = totals(data?.byModel ?? []);
+  const sums = {
+    ...totals(data?.byModel ?? []),
+    durationMs: data?.modelTimeMs ?? 0,
+  };
 
   return (
     <section className="mb-8">

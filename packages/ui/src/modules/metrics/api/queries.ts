@@ -3,24 +3,23 @@ import { TRPCClientError } from "@trpc/client";
 import { useEffect, useState } from "react";
 
 import { trpc } from "../../../trpc.js";
+import { legacySpendBreakdown } from "../lib/measured-spend.js";
 import { monthRange, monthStart } from "../lib/month-range.js";
 import { keyAgentId } from "../lib/spend-key.js";
 import { totalCostUsd } from "../lib/totals.js";
 
 export function useSpendBreakdown(
-  from: string,
-  to: string,
-  timeZone: string,
+  range:
+    { from: string; to: string } | { at: { fromAt: string; toAt: string } },
   agentId?: string,
 ) {
   const [metricsDisabled, setMetricsDisabled] = useState(false);
   const query = useQuery({
-    ...trpc.metrics.spendBreakdown.queryOptions({
-      from,
-      to,
-      timeZone,
+    ...trpc.spend.breakdown.queryOptions({
+      ...range,
       ...(agentId ? { agentId } : {}),
     }),
+    select: legacySpendBreakdown,
     enabled: !metricsDisabled,
     staleTime: 60_000,
     retry: false,
@@ -45,14 +44,13 @@ export function useSpendBreakdown(
 
 export function useAgentMonthSpend(agentId: string | null) {
   const { from, to } = monthRange(monthStart(new Date(), 0));
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return useQuery({
-    ...trpc.metrics.spendBreakdown.queryOptions(
-      agentId ? { from, to, timeZone, agentId } : skipToken,
+    ...trpc.spend.breakdown.queryOptions(
+      agentId ? { from, to, agentId } : skipToken,
     ),
     staleTime: 60_000,
     retry: false,
-    select: (data) => totalCostUsd(data.byModel),
+    select: (data) => totalCostUsd(legacySpendBreakdown(data).byModel),
   });
 }
 

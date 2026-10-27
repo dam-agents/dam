@@ -17,16 +17,8 @@ const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
 
 export function SpendWidget() {
   const [period, setPeriod] = useState<SpendPeriod>("1m");
-  const timeZone = useMemo(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-    [],
-  );
-  const { from, to } = useMemo(() => spendRange(period, new Date()), [period]);
-  const { data, isUnavailable, isPending } = useSpendBreakdown(
-    from,
-    to,
-    timeZone,
-  );
+  const range = useMemo(() => spendRange(period, new Date()), [period]);
+  const { data, isUnavailable, isPending } = useSpendBreakdown(range);
 
   if (isUnavailable) return null;
   if (isPending) return <WidgetSkeleton rows={3} />;

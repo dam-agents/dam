@@ -10,11 +10,8 @@ export type UsageFreshness = "fresh" | "updating" | "failed";
 export function useMonthlySpend(agentId?: string) {
   const [month, setMonth] = useState(() => monthStart(new Date(), 0));
   const { from, to, isCurrentMonth } = monthRange(month);
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const { data, isError, isPlaceholderData, isUnavailable } = useSpendBreakdown(
-    from,
-    to,
-    timeZone,
+    { from, to },
     agentId,
   );
   const settledMonth = useRef(month);
