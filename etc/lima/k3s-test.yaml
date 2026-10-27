@@ -11,13 +11,12 @@ cpus: 4
 # every pod is fighting for memory. Bumping here doesn't resize an existing
 # VM — `mise run e2e` always nukes the prior VM first, so this takes effect
 # on the next run.
-# 20 GiB: the guest's /tmp is a tmpfs of half the RAM, and cluster:import copies
-# every tar of a batch there at once — the vm lane's batch is the mock agent's
-# 4.3 GiB beside the default image's 4.1 GiB, and 16 GiB left the batch 7.9 GiB,
-# so the import failed with "No space left on device" on every Mac. The durable
-# fix is main's: cluster:import stages the tar in /var/tmp, on the disk. 40 GiB
-# of disk holds the unpacked images the larger import lands.
-memory: 20GiB
+memory: 8GiB
+# 40 GiB, not 20: the lane imports the platform images, the vm runner, the
+# default agent image and the mock, stages the agent image trees the machines
+# boot from, and keeps each tar under /var/tmp while it imports. At 20 GiB the
+# agent image import died with "No space left on device" before the suite
+# started. Bumping doesn't resize an existing VM — `mise run e2e` nukes it first.
 disk: 40GiB
 
 # Skip lima's default rootless containerd + buildkit + stargz setup —
