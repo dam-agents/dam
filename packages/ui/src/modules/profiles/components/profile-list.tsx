@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { PairSummary } from "../../sessions/components/session-pair-trigger.js";
 import { useProfileAttach } from "../hooks/use-profile-attach.js";
-import { profileSummary } from "../lib/profile-detail.js";
+import { profileSummary, sortProfiles } from "../lib/profile-detail.js";
 
 export interface ProfileSlot {
   selectedId: string | null;
@@ -165,7 +165,7 @@ export function ProfileChoices({
     );
   return (
     <ul className="flex flex-col">
-      {profiles.map((profile) => {
+      {sortProfiles(profiles).map((profile) => {
         const { available, attachable, reason } = profile.availability ?? {
           available: true,
           attachable: false,

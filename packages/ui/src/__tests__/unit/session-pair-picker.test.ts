@@ -196,10 +196,14 @@ vi.mock("../../modules/profiles/api/queries.js", () => ({
   useProfiles: () => ({ data: profilesState }),
 }));
 
-vi.mock("../../modules/profiles/lib/profile-detail.js", () => ({
-  profileSummary: () => "",
-  profileProviderName: () => "",
-}));
+vi.mock(
+  "../../modules/profiles/lib/profile-detail.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    profileSummary: () => "",
+    profileProviderName: () => "",
+  }),
+);
 
 vi.mock("../../modules/profiles/hooks/use-profile-attach.js", () => ({
   useProfileAttach: () => ({
@@ -1601,6 +1605,51 @@ describe("the subagent slot's checkbox", () => {
       );
     } finally {
       act(() => root.unmount());
+      state.chosen = null;
+    }
+  });
+});
+
+describe("the profile order and the pick it matches", () => {
+  /** TEST_SCENARIO: the rows show the default for new agents first, yet a pick whose values two profiles share stays matched to the one first in the server's order, so sorting the list never moves a saved reference to its twin. */
+  it("sorts the rows without changing the matched profile", () => {
+    const twin = {
+      harness: "pi",
+      providerTemplate: "curve-bender",
+      model: "cb/rits/zai-org/glm-5-3",
+      settings: {},
+      usage: { agents: 0, channels: 0, schedules: 0 },
+      availability: { available: true, reason: null, attachable: false },
+    };
+    profilesState = [
+      { ...twin, id: "p-old", name: "Twin old", newAgentDefault: false },
+      { ...twin, id: "p-new", name: "Twin default", newAgentDefault: true },
+    ];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    state.catalog = routedCatalog;
+    try {
+      const html = renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+      expect(html.indexOf("Twin default")).toBeLessThan(
+        html.indexOf("Twin old"),
+      );
+      expect(html).toMatch(/aria-current="true"[^>]*><span[^>]*>Twin old/);
+      expect(html).not.toMatch(
+        /aria-current="true"[^>]*><span[^>]*>Twin default/,
+      );
+    } finally {
+      profilesState = [];
       state.chosen = null;
     }
   });

@@ -44,3 +44,19 @@ export function usedBy(usage: {
     ...kind("schedule", "schedules", usage.schedules),
   ].join(", ");
 }
+
+/** UNIT_BOUNDARY_DESCRIPTION: how many places name a profile: agents whose chat default or subagent slot does, channels and schedules, as the list reports them. */
+export const profileUses = (profile: ProfileWithUsage): number =>
+  profile.usage.agents + profile.usage.channels + profile.usage.schedules;
+
+/** UNIT_BOUNDARY_DESCRIPTION: the one order every list of profiles shows: the default for new agents, then the most used, then by name. Display only: the pickers match a pick to a profile in the server's order, so a reorder never moves a saved reference to a twin with the same values. */
+export function sortProfiles(
+  profiles: readonly ProfileWithUsage[],
+): ProfileWithUsage[] {
+  return [...profiles].sort(
+    (a, b) =>
+      Number(b.newAgentDefault) - Number(a.newAgentDefault) ||
+      profileUses(b) - profileUses(a) ||
+      a.name.localeCompare(b.name),
+  );
+}

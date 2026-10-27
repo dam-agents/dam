@@ -7,6 +7,7 @@ Last verified: 2026-10-26
 A **profile** is one owner's named harness, provider template, model and settings, usable on all their agents.
 It names the kind of provider, not one Connection, so it runs on whatever Connection of that template the agent holds; a rival Connection of the same alias never stands in for it.
 Profiles are saved from a chat's model picker (Save as a profile, or on a pick that came from or matches one Update beside Save as a new profile) or made with New profile in Settings › Providers › Profiles, and edited in a chat or in that list, whose rows open the same picker on its Custom selection, listing models from the [owner catalog](owner-model-catalog.md).
+Every list of profiles, in Settings and in each picker, shows the default for new agents first, then the most used (the agents, channels and schedules that name one), then by name.
 Custom selection is one screen wherever a pick is made: a new or running chat's primary model and subagent slot, a profile in Settings and a schedule's own values; none of them holds tool approval.
 
 ## What follows a profile

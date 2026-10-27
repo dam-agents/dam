@@ -10,6 +10,7 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -33,7 +34,12 @@ import {
   useUpdateProfile,
 } from "../api/mutations.js";
 import { useProfiles } from "../api/queries.js";
-import { profileProviderName, usedBy } from "../lib/profile-detail.js";
+import {
+  profileProviderName,
+  profileUses,
+  sortProfiles,
+  usedBy,
+} from "../lib/profile-detail.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: the owner's profiles in Settings: what each runs, edited with the chat picker's Custom screen, how often it is used, rename, and a delete that names what still uses it. */
 export function ProfileSection() {
@@ -64,7 +70,7 @@ export function ProfileSection() {
     );
   };
   const confirmDelete = async (profile: ProfileWithUsage) => {
-    if (uses(profile) > 0) {
+    if (profileUses(profile) > 0) {
       const usage = await queryClient.fetchQuery(
         trpc.profiles.usage.queryOptions({ id: profile.id }),
       );
@@ -75,7 +81,7 @@ export function ProfileSection() {
         schedules: usage.schedules.map((s) => `“${s.name}”`),
       });
       void showAlert(
-        `It is used by ${who}. Move ${uses(profile) === 1 ? "it" : "them"} to another profile first.`,
+        `It is used by ${who}. Move ${profileUses(profile) === 1 ? "it" : "them"} to another profile first.`,
         `“${profile.name}” cannot be deleted`,
         { confirmLabel: "Close" },
       );
@@ -110,7 +116,7 @@ export function ProfileSection() {
         <p className="text-sm text-muted-foreground">Loading profiles…</p>
       ) : (
         <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-          {profiles.map((profile) => (
+          {sortProfiles(profiles).map((profile) => (
             <li
               key={profile.id}
               className="flex items-center gap-3 px-3 py-2 text-sm"
@@ -132,16 +138,24 @@ export function ProfileSection() {
                   <p className="truncate font-medium text-foreground">
                     {profile.name}
                     {profile.newAgentDefault && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        Default for new agents
-                      </span>
+                      <Badge
+                        variant="muted"
+                        size="sm"
+                        title="Default for new agents"
+                        className="ml-2 align-middle"
+                      >
+                        Default
+                        <span className="sr-only"> for new agents</span>
+                      </Badge>
                     )}
                   </p>
                 )}
                 <ProfileValues profile={profile} />
               </div>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {uses(profile) === 0 ? "unused" : `used ${uses(profile)}×`}
+                {profileUses(profile) === 0
+                  ? "unused"
+                  : `used ${profileUses(profile)}×`}
               </span>
               <RowActionsMenu
                 label={`Actions for ${profile.name}`}
@@ -157,7 +171,7 @@ export function ProfileSection() {
                     disabled={setDefault.isPending}
                     onSelect={() => setDefault.mutate({ id: profile.id })}
                   >
-                    Set as default for new agents
+                    Set as default
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -181,9 +195,6 @@ export function ProfileSection() {
     </section>
   );
 }
-
-const uses = (profile: ProfileWithUsage): number =>
-  profile.usage.agents + profile.usage.channels + profile.usage.schedules;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a profile's values on the chat picker's Custom
