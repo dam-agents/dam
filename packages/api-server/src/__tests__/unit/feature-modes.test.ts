@@ -27,6 +27,7 @@ describe("feature modes", () => {
         "chat-forms": "experimental",
         "custom-avatars": "experimental",
         environments: "experimental",
+        hermes: "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({

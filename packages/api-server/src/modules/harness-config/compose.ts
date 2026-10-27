@@ -81,6 +81,7 @@ export function composeHarnessConfigModule(deps: {
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
   resolveProfile: ProfileResolver;
+  hiddenHarnesses: () => Promise<ReadonlySet<string>>;
 }): { service: HarnessConfigService } {
   const { db, outboxRepo, ...serviceDeps } = deps;
   const resetRepo = createHarnessConfigResetRepo({ db, ...ETE_BYPASS_RESET });

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs the platform launcher on the Python of Hermes's own venv, the one the
+# `hermes` entry point names.
+venv="$(dirname "$(readlink -f "$(command -v hermes)")")"
+exec "$venv/python" /usr/local/share/hermes-platform/hermes_platform.py "$@"

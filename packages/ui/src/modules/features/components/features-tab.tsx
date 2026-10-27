@@ -64,6 +64,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Let your agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
   },
+  {
+    id: "hermes",
+    label: "Hermes harness",
+    description:
+      "Offer Nous Research's Hermes Agent beside the other harnesses when you start a session, open a terminal or pick an agent's defaults, on agents whose image carries it.",
+  },
 ];
 
 function FeatureRowCard({
