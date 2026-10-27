@@ -54,6 +54,7 @@ export interface PaletteInput {
   theme: Theme;
   showSleeping: boolean;
   approvalsOpen: boolean;
+  checklist: "open" | "closed" | null;
   pendingApprovals: readonly ApprovalView[];
   brandShort: string;
 }
@@ -71,6 +72,7 @@ export interface PaletteActions {
   logOut: () => void;
   setApprovalsOpen: (open: boolean) => void;
   denyAll: (approvals: readonly ApprovalView[]) => void;
+  setChecklistOpen: (open: boolean) => void;
   newSession: (agentId: string) => void;
   newTerminal: (agentId: string) => void;
   openSession: (session: IndexedSession) => void;

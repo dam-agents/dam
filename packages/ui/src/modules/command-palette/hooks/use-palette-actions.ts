@@ -15,6 +15,7 @@ import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import { useOpenArtifact } from "../../artifacts/hooks/use-open-artifact.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
+import { useOpenChecklist } from "../../getting-started/hooks/use-open-checklist.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { useAgentManagement } from "../../sandboxes/hooks/use-agent-management.js";
 import { useConfirmDeleteSession } from "../../sessions/hooks/use-confirm-delete-session.js";
@@ -49,6 +50,8 @@ export function usePaletteActions({
   const setShowSleeping = useStore((s) => s.setSidebarShowHibernating);
   const setTheme = useStore((s) => s.setTheme);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setChecklistExpanded = useStore((s) => s.setChecklistExpanded);
+  const openChecklist = useOpenChecklist();
   const openAgentSession = useStore((s) => s.openAgentSession);
   const setOpenBrowser = useStore((s) => s.setOpenBrowser);
   const deleteSession = useStore((s) => s.deleteSession);
@@ -87,6 +90,8 @@ export function usePaletteActions({
     setApprovalsOpen: (open) =>
       open ? openSidePanel("approvals") : setSidePanelTab(null),
     denyAll: (approvals) => void denyAll(approvals),
+    setChecklistOpen: (open) =>
+      open ? openChecklist() : setChecklistExpanded(false),
     newSession: startSession,
     newTerminal: (agentId) =>
       openAgentSession(

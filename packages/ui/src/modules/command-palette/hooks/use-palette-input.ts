@@ -10,6 +10,8 @@ import { useArtifacts } from "../../artifacts/api/queries.js";
 import { useChangeSets } from "../../changes/api/queries.js";
 import { hasGitRepositories } from "../../changes/lib/availability.js";
 import { useEnvironmentsEnabled } from "../../environments/api/queries.js";
+import { useGettingStarted } from "../../getting-started/api/queries.js";
+import { deriveChecklist } from "../../getting-started/lib/derive-checklist.js";
 import { useAttention, useFeed } from "../../home/api/queries.js";
 import { useDismissals } from "../../home/hooks/use-dismissals.js";
 import { SECTIONS } from "../../sandboxes/components/sandbox-section-nav.js";
@@ -52,6 +54,7 @@ export function usePaletteInput(): PaletteInput {
   const approvalsOpen = useStore((s) => s.sidePanelTab === "approvals");
   const dock = useStore((s) => s.dock);
   const restarting = useStore((s) => s.restartingAgents);
+  const checklistExpanded = useStore((s) => s.checklistExpanded);
 
   const agentsData = useAgents().data;
   const attention = useAttention().data;
@@ -64,6 +67,8 @@ export function usePaletteInput(): PaletteInput {
   const changeSets = useChangeSets(chatAgentId, sessionId);
   const { items: feed } = useFeed();
   const { isDismissed } = useDismissals();
+  const progress = useGettingStarted().data;
+  const checklist = progress ? deriveChecklist(progress) : null;
 
   const freshSessions = useMemo(
     () =>
@@ -135,6 +140,12 @@ export function usePaletteInput(): PaletteInput {
     theme,
     showSleeping,
     approvalsOpen,
+    checklist:
+      checklist === null || checklist.complete
+        ? null
+        : checklistExpanded && !checklist.dismissed
+          ? "open"
+          : "closed",
     pendingApprovals:
       deniableApprovalIds(pendingApprovals).length > 0
         ? pendingApprovals

@@ -28,6 +28,7 @@ export const RANKING = {
     openArtifact: 0.5,
     settings: 0.5,
     approvalsPanel: 0.5,
+    checklist: 0.4,
     browseKits: 0.5,
     wake: 0.5,
     openKit: 0.4,

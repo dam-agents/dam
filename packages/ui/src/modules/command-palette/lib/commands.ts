@@ -12,6 +12,7 @@ import {
   Notification,
   Screen,
   Settings,
+  Task,
   View as ViewIcon,
   ViewOff,
 } from "@carbon/icons-react";
@@ -199,6 +200,20 @@ function approvalCommands(
       prior: PRIOR.approvalsPanel,
       run: () => act.setApprovalsOpen(!input.approvalsOpen),
     }),
+    ...(input.checklist
+      ? [
+          command({
+            id: "get-started:checklist",
+            prefix: "get started: ",
+            label:
+              input.checklist === "open" ? "close checklist" : "open checklist",
+            keywords: ["onboarding", "avatars"],
+            icon: Task,
+            prior: PRIOR.checklist,
+            run: () => act.setChecklistOpen(input.checklist !== "open"),
+          }),
+        ]
+      : []),
     ...(input.pendingApprovals.length > 0
       ? [
           command({

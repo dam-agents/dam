@@ -87,6 +87,7 @@ function input(over: Partial<PaletteInput> = {}): PaletteInput {
     theme: "system",
     showSleeping: false,
     approvalsOpen: false,
+    checklist: null,
     pendingApprovals: [],
     brandShort: "dam",
     ...over,
@@ -250,6 +251,24 @@ describe("global commands", () => {
     );
     expect(names).toContain("approvals: deny all");
     expect(names).toContain("approvals: close panel");
+  });
+
+  // TEST_SCENARIO: while the Get started checklist has tasks left, the palette opens it from its pill, or closes it when open; once every task is done it offers nothing.
+  it("opens and closes the Get started checklist", () => {
+    const act = actions();
+    const find = (checklist: PaletteInput["checklist"]) =>
+      buildCommands(input({ checklist }), act).find(
+        (c) => c.id === "get-started:checklist",
+      );
+    expect(find(null)).toBeUndefined();
+    const open = find("closed")!;
+    expect(`${open.prefix}${open.label}`).toBe("get started: open checklist");
+    if (open.perform.kind === "run") open.perform.run();
+    expect(act.setChecklistOpen).toHaveBeenLastCalledWith(true);
+    const close = find("open")!;
+    expect(close.label).toBe("close checklist");
+    if (close.perform.kind === "run") close.perform.run();
+    expect(act.setChecklistOpen).toHaveBeenLastCalledWith(false);
   });
 
   // TEST_SCENARIO: an artifact carries its agent, so the artifacts of the open agent rank closer.

@@ -88,6 +88,7 @@ beforeEach(() => {
     theme: "system",
     showSleeping: false,
     approvalsOpen: false,
+    checklist: null,
     pendingApprovals: [],
     brandShort: "dam",
   } satisfies PaletteInput;
