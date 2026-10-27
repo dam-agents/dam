@@ -2,6 +2,7 @@ import {
   platformFrameMetaSchema,
   platformPromptAcceptedParamsSchema,
   platformPromptStartedParamsSchema,
+  platformQueueChangedParamsSchema,
   platformRunStartedParamsSchema,
   platformTurnEndedParamsSchema,
 } from "api-server-api";
@@ -48,6 +49,7 @@ export const PLATFORM_NOTIFICATION_METHODS = [
   "platform/promptAccepted",
   "platform/promptStarted",
   "platform/runStarted",
+  "platform/queueChanged",
 ] as const;
 
 interface RoutedExtUpdate {
@@ -93,6 +95,19 @@ export function routeExtNotification(
       if (!p) return null;
       return {
         update: { sessionUpdate: "platform_prompt_started", ...p },
+        sessionId: p.sessionId,
+        frame,
+      };
+    }
+    case "platform/queueChanged": {
+      const p = parseExtParams(
+        method,
+        platformQueueChangedParamsSchema,
+        params,
+      );
+      if (!p) return null;
+      return {
+        update: { sessionUpdate: "platform_queue_changed", ...p },
         sessionId: p.sessionId,
         frame,
       };

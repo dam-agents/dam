@@ -4,6 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
+  platformQueueMetaSchema,
   platformReplayTurnMetaSchema,
   platformRunStartsMetaSchema,
   platformSupersededMetaSchema,
@@ -19,6 +20,7 @@ import { openInitializedConnection } from "../../acp/acp.js";
 import { unstoredSessionPrompts } from "../../acp/errors.js";
 import {
   appendInterruptedNotice,
+  appendQueuedSends,
   appendUndelivered,
   applyUpdate,
   dropSuperseded,
@@ -355,6 +357,7 @@ export function useAcpConnection(
               undelivered?: unknown;
               superseded?: unknown;
               runStarts?: unknown;
+              queue?: unknown;
             };
           };
         } | null
@@ -373,6 +376,9 @@ export function useAcpConnection(
               platformRunStartsMetaSchema.element.safeParse(at).success,
           )
         : [];
+      const queue = platformQueueMetaSchema.safeParse(
+        platformMeta?.queue ?? [],
+      );
       const clipped =
         clippedRaw === undefined
           ? null
@@ -418,10 +424,13 @@ export function useAcpConnection(
           .catch(() => {});
       }
       const replayed = appendInterruptedNotice(
-        appendUndelivered(settled, [
-          ...(undelivered.success ? undelivered.data : []),
-          ...held,
-        ]),
+        appendQueuedSends(
+          appendUndelivered(settled, [
+            ...(undelivered.success ? undelivered.data : []),
+            ...held,
+          ]),
+          queue.success ? queue.data : [],
+        ),
         turn.success ? turn.data : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {

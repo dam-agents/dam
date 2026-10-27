@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   appendInterruptedNotice,
+  appendQueuedSends,
   applyUpdate,
   failQueuedOnDisconnect,
   finalizeAllStreaming,
@@ -827,5 +828,58 @@ describe("applyUpdate — turn correlation", () => {
       { sessionUpdate: "platform_turn_ended", sessionId: "test-sid" },
     );
     expect(out[1].streaming).toBe(false);
+  });
+});
+
+describe("queued and steered prompts", () => {
+  // TEST_SCENARIO: A prompt sent mid-turn is steered into the running turn rather than queued. Its bubble stays, its waiting placeholder goes, and the turn opens a reply below it, where the agent's next output lands.
+  test("a steered prompt keeps its message and continues the turn below it", () => {
+    const start: Message[] = [
+      userMsg("turn-a", "first"),
+      { ...assistantMsg("a1", "working", true), promptId: "turn-a" },
+      userMsg("turn-b", "mid-turn"),
+      { ...assistantMsg("a2", "", true, true), promptId: "turn-b" },
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "platform_prompt_accepted",
+      sessionId: "s",
+      promptId: "turn-b",
+      queued: true,
+      steered: true,
+    });
+    expect(out.map((m) => [m.role, m.id, m.streaming, m.queued])).toEqual([
+      ["user", "turn-a", false, undefined],
+      ["assistant", "a1", false, undefined],
+      ["user", "turn-b", false, false],
+      ["assistant", out[3]!.id, true, undefined],
+    ]);
+    expect(out[3]!.turnId).toBe("turn-a");
+  });
+
+  // TEST_SCENARIO: A reload brings back the runtime's queue, so a prompt still waiting behind a turn shows as waiting again rather than vanishing.
+  test("the runtime's queue comes back as waiting sends", () => {
+    const out = appendQueuedSends(
+      [],
+      [
+        {
+          promptId: "queued-1",
+          blocks: [{ type: "text", text: "waiting" }],
+          queuedAt: "2026-10-27T00:00:00Z",
+          editable: true,
+        },
+      ],
+    );
+    expect(out.map((m) => [m.role, m.id, m.queued, m.promptId])).toEqual([
+      ["user", "queued-1", undefined, undefined],
+      ["assistant", out[1]!.id, true, "queued-1"],
+    ]);
+    expect(firstTextPart(out[0]!)).toBe("waiting");
+    const started = applyUpdate(out, {
+      sessionUpdate: "platform_prompt_started",
+      sessionId: "s",
+      promptId: "queued-1",
+    });
+    expect(started[1]!.queued).toBe(false);
+    expect(started).toHaveLength(2);
   });
 });

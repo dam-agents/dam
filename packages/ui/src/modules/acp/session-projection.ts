@@ -7,6 +7,8 @@ import type {
 import type {
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
+  PromptBlock,
+  QueuedPrompt,
 } from "api-server-api";
 
 import type {
@@ -155,12 +157,18 @@ function applyUpdateOf(
       );
 
     case "platform_prompt_accepted":
-      return update.queued && waitsBehindAnotherReply(messages, update.promptId)
+      if (update.steered) return withSteeredSend(messages, update.promptId);
+      if (!update.queued)
+        return setQueuedByPromptId(messages, update.promptId, false);
+      return waitsBehindAnotherReply(messages, update.promptId)
         ? setQueuedByPromptId(messages, update.promptId, true)
         : messages;
 
     case "platform_prompt_started":
-      return setQueuedByPromptId(messages, update.promptId, false);
+      return withReplyPlaceholder(
+        setQueuedByPromptId(messages, update.promptId, false),
+        update.promptId,
+      );
 
     case "platform_clipped_replay":
       return appendClippedMarker(messages, update.older);
@@ -185,6 +193,62 @@ function applyUpdateOf(
   }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a prompt the runtime steered into the running turn was already read by the agent: its own bubbles give way, and the turn carries on below it, where the working indicator and the next output land.
+function withSteeredSend(messages: Message[], promptId: string): Message[] {
+  const marked = messages.flatMap((m): Message[] => {
+    if (m.role === "user" && m.id === promptId)
+      return [{ ...m, queued: false }];
+    return isPlaceholder(m) && m.promptId === promptId ? [] : [m];
+  });
+  return continueTurnBelow(marked, promptId) ?? marked;
+}
+
+function continueTurnBelow(
+  messages: Message[],
+  messageId: string,
+): Message[] | null {
+  const at = messages.findIndex((m) => m.role === "user" && m.id === messageId);
+  const running = lastIndexOf(
+    messages.slice(0, Math.max(at, 0)),
+    (m) =>
+      m.role === "assistant" &&
+      m.streaming &&
+      !m.queued &&
+      (m.turnId ?? m.promptId) !== undefined,
+  );
+  if (at === -1 || running === -1) return null;
+  const reply = messages[running]!;
+  const continued: Message = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [],
+    streaming: true,
+    turnId: reply.turnId ?? reply.promptId,
+  };
+  return messages.flatMap((m, i): Message[] => {
+    if (i === running)
+      return hasAgentContent(m) ? [{ ...m, streaming: false }] : [];
+    return i === at ? [m, continued] : [m];
+  });
+}
+
+function withReplyPlaceholder(
+  messages: Message[],
+  promptId: string,
+): Message[] {
+  if (messages.some((m) => m.promptId === promptId)) return messages;
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: [],
+      streaming: true,
+      promptId,
+    },
+  ];
+}
+
 function waitsBehindAnotherReply(
   messages: Message[],
   promptId: string,
@@ -199,9 +263,12 @@ function setQueuedByPromptId(
   promptId: string,
   queued: boolean,
 ): Message[] {
-  return messages.map((m) =>
-    m.promptId === promptId && m.streaming && m.parts.length === 0
-      ? { ...m, queued }
+  return messages.map((m, i) =>
+    m.streaming &&
+    m.parts.length === 0 &&
+    (m.promptId === promptId ||
+      (m.promptId === undefined && messages[i - 1]?.id === promptId))
+      ? { ...m, promptId, queued }
       : m,
   );
 }
@@ -251,9 +318,9 @@ function textOf(record: PlatformUndeliveredPrompt): string {
     .join("\n\n");
 }
 
-function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
+function partsOfBlocks(blocks: readonly PromptBlock[]): MessagePart[] {
   const parts: MessagePart[] = [];
-  for (const block of record.blocks) {
+  for (const block of blocks) {
     if (block.type === "image")
       parts.push({
         kind: "image",
@@ -267,9 +334,34 @@ function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
         mimeType: block.mimeType ?? "",
       });
   }
-  const text = textOf(record);
+  const text = blocks
+    .flatMap((b) => (b.type === "text" ? [b.text] : []))
+    .join("\n\n");
   if (text) parts.push({ kind: "text", text });
   return parts.length > 0 ? parts : [{ kind: "text", text: "" }];
+}
+
+function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
+  return partsOfBlocks(record.blocks);
+}
+
+export function appendQueuedSends(
+  messages: Message[],
+  items: readonly QueuedPrompt[],
+): Message[] {
+  let out = messages;
+  for (const item of items) {
+    if (item.promptId === null) continue;
+    if (out.some((m) => m.role === "user" && m.id === item.promptId)) continue;
+    out = appendQueuedUser(
+      out,
+      item.promptId,
+      partsOfBlocks(item.blocks),
+      item.queuedAt,
+      item.promptId,
+    );
+  }
+  return out;
 }
 
 function undeliveredError(record: PlatformUndeliveredPrompt): Message["error"] {
@@ -846,6 +938,7 @@ function appendQueuedUser(
   mid: string | null,
   parts: MessagePart[],
   at?: string,
+  promptId?: string,
 ): Message[] {
   const n = messages.length;
   const tailAssistant = messages[n - 1];
@@ -874,6 +967,7 @@ function appendQueuedUser(
     parts: [],
     streaming: true,
     queued: true,
+    ...(promptId !== undefined && { promptId }),
   };
   const parked =
     messages.length > 0 && !hasStreamingAssistant(messages)
