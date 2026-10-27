@@ -40,6 +40,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
+import { useInstantStart } from "../../instant-start/context.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { formatRunTime } from "../../processes/lib/format-process.js";
 import { summarizeProcesses } from "../../processes/lib/process-summary.js";
@@ -172,6 +173,12 @@ export function ChatInput({
   );
   const input = draft.text;
   const attachments = draft.attachments;
+
+  const instantStart = useInstantStart();
+  const budgetLocked =
+    instantStart?.budgetExhausted &&
+    instantStart.activeProvider === "curvebender" &&
+    instantStart.curveBenderPayment === "free";
 
   const composerLocked = useMemo(() => {
     if (!kitMode) return false;
@@ -386,7 +393,9 @@ export function ChatInput({
                 onPaste={onPaste}
                 placeholder={showRotating ? "" : placeholder}
                 rows={1}
-                disabled={loadingSession || !key || composerLocked}
+                disabled={
+                  loadingSession || !key || composerLocked || budgetLocked
+                }
                 autoFocus
               />
             </div>
@@ -409,7 +418,9 @@ export function ChatInput({
                 size="icon-sm"
                 className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={sendDisabled || loadingSession || !key}
+                disabled={
+                  sendDisabled || loadingSession || !key || budgetLocked
+                }
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >
