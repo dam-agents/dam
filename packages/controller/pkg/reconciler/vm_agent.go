@@ -932,7 +932,7 @@ func setConditionTime(s *apiv1.AgentStatus, condType string, at time.Time) {
 // UNIT_BOUNDARY_DESCRIPTION: how long after an OOM kill of an owner's runner the kill is still what its agents' machines read as down: a boot after one takes seconds, but a restarted runner refuses room to some machines and a reclaim puts others to sleep, and those consequences of the kill land minutes later, on a remade runner pod that still carries the kill in its last termination. Past it the kill explains nothing the agent reads now, so the agent falls back to its own reason, which a boot that keeps failing needs in order to be seen as the failure it is.
 const runnerOOMEpisode = 10 * time.Minute
 
-// UNIT_BOUNDARY_DESCRIPTION: the nesting ask is the one thing the Agent's Backend still says. The schema keeps that field until the Agents move to Postgres, so the machine reads the ask from where an existing Agent carries it; nothing else in the controller reads the field.
+// UNIT_BOUNDARY_DESCRIPTION: the nesting ask is the one thing the Agent's Backend still says. A custom resource carries it there, and so does the Agent the store builds from a row's nested_virtualization column, so the machine reads the ask from one place on either authority; nothing else in the controller reads the field.
 func wantsNesting(agent *apiv1.Agent, defaults config.HarnessTemplateDefaults) bool {
 	return defaults.NestedVirtualization || (agent.Spec.Backend != nil && agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization)
 }
