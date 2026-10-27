@@ -634,12 +634,6 @@ function SchedulesScene() {
           <ToggleRow label="Weekly sync" on={false} />
         </div>
       </div>
-      <SceneTile x={238} y={16} color={ACCENT.cyan}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M8 5v3l2.5 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-      </SceneTile>
     </SceneCanvas>
   );
 }
@@ -687,12 +681,6 @@ function FilesScene() {
         <span className="text-[14px] font-medium text-foreground">Persistent</span>
       </div>
 
-      <SceneTile x={238} y={16} color={ACCENT.indigo}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M4 2h5l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M9 2v4h4" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      </SceneTile>
     </SceneCanvas>
   );
 }
@@ -746,12 +734,6 @@ function SkillsScene() {
           <ToggleRow label="Write tests" on={false} />
         </div>
       </div>
-      <SceneTile x={238} y={16} color={ACCENT.pink}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M4 2h5l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M9 2v4h4" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      </SceneTile>
     </SceneCanvas>
   );
 }
@@ -783,11 +765,6 @@ function ConnectionsScene() {
           } />
         </div>
       </div>
-      <SceneTile x={238} y={16} color={ACCENT.green}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M6.5 9.5l3-3M5 11a2.83 2.83 0 01-2-4.83L5.17 4A2.83 2.83 0 0110 6M11 5a2.83 2.83 0 012 4.83L10.83 12A2.83 2.83 0 016 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-      </SceneTile>
     </SceneCanvas>
   );
 }
@@ -817,11 +794,6 @@ function KnowledgeScene() {
         </div>
         <p className="mt-1 text-[14px] text-muted-foreground">12 sources</p>
       </div>
-      <SceneTile x={238} y={90} color={ACCENT.orange}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M2 4a1 1 0 011-1h3.5l1.5 1.5H13a1 1 0 011 1V12a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      </SceneTile>
     </SceneCanvas>
   );
 }
@@ -847,12 +819,6 @@ function ArtifactsScene() {
         </svg>
         <span className="text-[13px] font-medium text-foreground whitespace-nowrap">Shared via link</span>
       </div>
-      <SceneTile x={238} y={16} color={ACCENT.purple}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <rect x="3" y="2" width="10" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M6 6h4M6 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-      </SceneTile>
     </SceneCanvas>
   );
 }
@@ -1185,7 +1151,7 @@ function useTestimonialCarousel() {
         setIdx((prev) => (prev + 1) % 3);
         setFade(true);
       }, 400);
-    }, 12000);
+    }, 20000);
     return () => clearInterval(id);
   }, []);
 

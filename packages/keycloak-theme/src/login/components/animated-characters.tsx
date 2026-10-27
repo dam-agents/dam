@@ -1623,7 +1623,11 @@ function SpringCharacter({ name }: { name: CharacterName }) {
 export function InteractiveCharacterWidget() {
   return (
     <div className="relative hidden flex-1 lg:flex lg:items-center lg:justify-center">
-      <InteractiveCompass />
+      <div className="grid grid-cols-4 gap-x-4 gap-y-6" style={{ maxWidth: 480 }}>
+            {CHARACTER_NAMES.map((name) => (
+              <SpringCharacter key={name} name={name} />
+            ))}
+          </div>
     </div>
   );
 }
