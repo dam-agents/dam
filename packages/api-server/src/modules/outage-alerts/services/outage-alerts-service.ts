@@ -1,4 +1,5 @@
-import type { OutageAlertNotice } from "api-server-api";
+import type { OutageAlertNotice, SessionCategory } from "api-server-api";
+import { match } from "ts-pattern";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -7,6 +8,7 @@ import {
   type ProviderStatusEvaluated,
 } from "../../../events.js";
 import {
+  grownAgents,
   RECOVERED_SHOWN_DAYS,
   recovers,
   tellable,
@@ -14,6 +16,7 @@ import {
   type OutageAlert,
   type OutageAlertAffectedBy,
 } from "../domain/alert-rules.js";
+import type { FailedWork } from "../domain/failed-work.js";
 import {
   outageMessage,
   providerNameOf,
@@ -25,7 +28,7 @@ import type {
   OutageAlertsRepository,
   StoredAlert,
 } from "../infrastructure/outage-alerts-repository.js";
-import type { UnattendedAgentOn } from "./unattended-agents.js";
+import type { FailedWorkStore } from "../infrastructure/redis-failed-work.js";
 
 export interface AgentFacts {
   ownerSub: string;
@@ -44,13 +47,17 @@ export function createOutageAlertsService(deps: {
   repo: OutageAlertsRepository;
   notify: (ownerSub: string, notice: AlertNotice) => Promise<{ sent: number }>;
   describeAgent: (agentId: string) => Promise<AgentFacts | null>;
-  unattendedAgentsOn: (templateId: string) => Promise<UnattendedAgentOn[]>;
+  failedWork: Pick<FailedWorkStore, "since">;
+  sessionCategories: (
+    agentIds: readonly string[],
+    sessionIds: readonly string[],
+  ) => Promise<ReadonlyMap<string, SessionCategory>>;
   homeUrl: string;
   delayMs: number;
 }): OutageAlertsService {
   const log = () => getLogger();
 
-  const send = async (alert: OutageAlert, notice: AlertNotice) => {
+  const attentionChanged = (alert: OutageAlert) => {
     const [first] = alert.agents;
     if (first)
       emit({
@@ -58,6 +65,10 @@ export function createOutageAlertsService(deps: {
         ownerSub: alert.ownerSub,
         agentId: first.agentId,
       });
+  };
+
+  const send = async (alert: OutageAlert, notice: AlertNotice) => {
+    attentionChanged(alert);
     const { sent } = await deps.notify(alert.ownerSub, notice);
     if (sent === 0)
       log().info(
@@ -86,7 +97,13 @@ export function createOutageAlertsService(deps: {
     at: Date,
   ) => {
     const stored = await deps.repo.read(ownerSub, outage.templateId);
-    if (stored?.alert.state === "told") return;
+    if (stored?.alert.state === "told") {
+      const agentsNow = grownAgents(stored.alert.agents, agents);
+      if (!agentsNow) return;
+      const grown: OutageAlert = { ...stored.alert, agents: agentsNow };
+      if (await deps.repo.claim(stored.version, grown)) attentionChanged(grown);
+      return;
+    }
     const next: OutageAlert = {
       ownerSub,
       templateId: outage.templateId,
@@ -118,25 +135,47 @@ export function createOutageAlertsService(deps: {
     }
   };
 
-  const unattendedOn = async (templateId: string) => {
+  const failedWorkIn = async (outage: EvaluatedOutage) => {
     try {
-      return await deps.unattendedAgentsOn(templateId);
+      return await deps.failedWork.since(outage.templateId, outage.since);
     } catch (err) {
       log().warn(
-        { templateId, reason: formatError(err) },
-        "outage_alerts.unattended_unread",
+        { templateId: outage.templateId, reason: formatError(err) },
+        "outage_alerts.failed_work_unread",
       );
       return [];
     }
   };
 
+  const categoriesOf = async (work: readonly FailedWork[]) => {
+    const sessions = work.flatMap((w) => (w.kind === "session" ? [w] : []));
+    if (sessions.length === 0) return new Map<string, SessionCategory>();
+    try {
+      return await deps.sessionCategories(
+        [...new Set(sessions.map((w) => w.agentId))],
+        [...new Set(sessions.map((w) => w.sessionId))],
+      );
+    } catch (err) {
+      log().warn({ reason: formatError(err) }, "outage_alerts.sessions_unread");
+      return new Map<string, SessionCategory>();
+    }
+  };
+
   const affectedOwners = async (outage: EvaluatedOutage) => {
+    const work = await failedWorkIn(outage);
+    const categories = await categoriesOf(work);
     const reasons = new Map<string, OutageAlertAffectedBy[]>();
-    const add = (agentId: string, affectedBy: OutageAlertAffectedBy[]) =>
-      reasons.set(agentId, [...(reasons.get(agentId) ?? []), ...affectedBy]);
-    for (const agentId of outage.failedPayers) add(agentId, ["failed-calls"]);
-    for (const agent of await unattendedOn(outage.templateId))
-      add(agent.agentId, agent.affectedBy);
+    for (const failed of work) {
+      const reason = match(failed)
+        .with({ kind: "session" }, ({ sessionId }) =>
+          categories.get(sessionId) === "scheduled" ? "schedule" : null,
+        )
+        .with({ kind: "ambient" }, ({ channel }) => channel)
+        .exhaustive();
+      const known = reasons.get(failed.agentId) ?? [];
+      if (reason && !known.includes(reason))
+        reasons.set(failed.agentId, [...known, reason]);
+    }
     const owners = new Map<string, AffectedAgent[]>();
     for (const [agentId, affectedBy] of reasons) {
       const facts = await describe(agentId);

@@ -58,6 +58,35 @@ export function tellable(
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: the agent list of a told alert once more of the
+ * owner's work failed, or null when nothing new failed. The owner was told
+ * once, so the list grows without a message, and the card and the recovery
+ * message then name every agent to check.
+ */
+export function grownAgents(
+  told: readonly AffectedAgent[],
+  found: readonly AffectedAgent[],
+): readonly AffectedAgent[] | null {
+  const agents = new Map(told.map((agent) => [agent.agentId, agent]));
+  let grew = false;
+  for (const agent of found) {
+    const known = agents.get(agent.agentId);
+    const added = agent.affectedBy.filter(
+      (reason) => !known?.affectedBy.includes(reason),
+    );
+    if (known && added.length === 0) continue;
+    grew = true;
+    agents.set(
+      agent.agentId,
+      known ? { ...known, affectedBy: [...known.affectedBy, ...added] } : agent,
+    );
+  }
+  return grew
+    ? [...agents.values()].sort((a, b) => a.name.localeCompare(b.name))
+    : null;
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: a told alert recovers only on evidence that its
  * template answers again. Provider Status also drops a template that nobody
  * calls, so leaving the outages alone is not enough. A public source that

@@ -124,7 +124,8 @@ An Agent's providers refresh the list in the tab that changed them.
 
 ## Outage alerts
 
-The bell also lists the owner's [outage alerts](provider-status.md#outage-alerts): a provider outage that hits their Agents, with each Agent, why it is affected, and a way to switch its provider.
+The bell also lists the owner's [outage alerts](provider-status.md#outage-alerts): a provider outage that failed their unattended work, with each Agent, what failed, and a way to switch its provider.
+An owner sees it only after their unattended work failed, so an outage that touched none of their work shows no card.
 It counts in the panel's badge like an approval, so it reaches an owner who never linked Slack.
 An alert shows while the owner is told about it, and for seven days after the provider works again.
 A dismissal is per owner and on the server, and names the provider's template, the outage's start time and whether it recovered: it holds on every device, and a new outage or the recovery shows the card again.

@@ -29,8 +29,7 @@ export interface DefaultModelNotice {
   changedFrom: string | null;
 }
 
-export type OutageAlertAffectedBy =
-  "failed-calls" | "schedule" | "slack" | "telegram";
+export type OutageAlertAffectedBy = "schedule" | "slack" | "telegram";
 
 export interface OutageAlertAgent {
   agentId: string;

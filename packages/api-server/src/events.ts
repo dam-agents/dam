@@ -146,6 +146,8 @@ export type TelegramChatUnbound = {
   ownerSub: string;
 };
 
+export const PROVIDER_UNAVAILABLE_TURN_REASON = "provider-unavailable";
+
 export type ChannelTurnRelayed = {
   type: EventType.ChannelTurnRelayed;
   channel: "slack" | "telegram";
@@ -154,6 +156,7 @@ export type ChannelTurnRelayed = {
   externalActorId?: string;
   outcome: TurnOutcome;
   reason?: string;
+  templateId?: string;
   ambient?: true;
 };
 
@@ -269,6 +272,8 @@ export type GatewayCallEnded = {
   status: number | null;
   refusedByGate: boolean;
   endedAt: Date;
+  callingAgentId: string;
+  sessionId: string | null;
 };
 
 export type ProviderStatusEvaluated = {
@@ -279,7 +284,6 @@ export type ProviderStatusEvaluated = {
     reason: ProviderOutageReason;
     since: Date;
     statusPageUrl: string | null;
-    failedPayers: readonly string[];
   }[];
   damSide: { since: Date } | null;
   answering: readonly string[];

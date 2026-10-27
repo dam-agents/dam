@@ -263,6 +263,8 @@ export function createSpendIngest(deps: {
           status: record.status,
           refusedByGate: record.refusedByGate,
           endedAt: new Date(record.startedAt.getTime() + record.durationMs),
+          callingAgentId: record.agentId,
+          sessionId: record.sessionId,
         });
       const measure = measureCall(record, deps.priceBook);
       if (measure.kind === "skip") return;

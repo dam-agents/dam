@@ -71,6 +71,7 @@ A few observations the diagram glosses over:
   A hard failure (a machine that restarts, a bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string.
   The one message passed through verbatim is a refusal to start: the controller's text names what is full and what to stop, which no copy written here could reproduce; a cause the platform is itself repairing still invites a retry.
   Telegram replies with the same copy on wake failures (no early notice, no extended wait), on addressed turns only: an ambient turn fails silently, as on Slack.
+  An ambient turn that fails because the model provider is down still reaches the Agent's owner, through [outage alerts](provider-status.md#outage-alerts).
 - **The agent posts by calling a tool — plain assistant text is never delivered.** A Slack turn's reply reaches the channel only when the agent calls one of its outbound tools (see [Outbound](#outbound--agent-to-channel)), mirroring how Telegram already works.
   The relay hands the message to the machine and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted, and an addressed turn that ends having posted nothing is nudged to deliver it (see [the turn watch](#the-turn-watch--liveness-not-duration)).
   The prompt carries a per-turn contract stating this and naming the thread and triggering message the tools target by default, so the agent replies into the right thread without tracking ids.
@@ -161,7 +162,8 @@ A few observations the diagram glosses over:
   On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure because the provider is down also names the Connection template that the turn ran on.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.
   The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)).
@@ -174,6 +176,7 @@ The probe window is floor-bounded by the egress-approval hold at config load (ra
 The relay abandons a turn on exactly two verdicts — the connection is lost, or the runtime reports the turn gone — and abandoning the relay never touches the work: the harness keeps running detached, and its late reply still lands through the lingering turn record.
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
+A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.
 The failure reason still rides the turn event either way.
 
 An abandoned turn is handed to the **recovery watch**, which polls the session's run status for as long as the runtime reports it alive.
