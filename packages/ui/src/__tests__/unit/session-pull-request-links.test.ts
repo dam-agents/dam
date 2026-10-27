@@ -111,4 +111,29 @@ describe("session repository badges", () => {
     ).toEqual([withPullRequest, outsideHome]);
     expect(badgeRepositories(undefined)).toEqual([]);
   });
+
+  // TEST_SCENARIO: two clones of one repository on one branch link the same pull request; it badges once, as the clone edited last, and its label needs no clone suffix.
+  it("badges each pull request once", () => {
+    const editedLast = repository("/work/slots/3", { pullRequest: pr(270) });
+    const other = repository("/work/slots/2", {
+      branch: "fix/two",
+      pullRequest: pr(271),
+    });
+
+    const badges = badgeRepositories([
+      editedLast,
+      repository("/work/slots/1", { pullRequest: pr(270) }),
+      other,
+    ]);
+
+    expect(badges).toEqual([editedLast, other]);
+    expect(
+      repositoryBadgeLabels(
+        badgeRepositories([
+          editedLast,
+          repository("/work/slots/1", { pullRequest: pr(270) }),
+        ]),
+      ),
+    ).toEqual(["dam"]);
+  });
 });
