@@ -48,14 +48,14 @@ interface ShapeConfig {
 }
 
 const SHAPES: ShapeConfig[] = [
-  { piece: "singleWing", color: GREEN, right: 0, y: 0, size: 550, flip: true },
+  { piece: "singleWing", color: GREEN, right: -160, y: 0, size: 550, flip: true },
   { piece: "eye", color: PINK, right: 200, y: 30, size: 180 },
   { piece: "bar", color: BLUE, right: 0, y: 560, size: 460 },
   { piece: "halfDisc", color: GOLD, right: 0, y: 710, size: 460 },
   { piece: "crescent", color: RUST, right: 400, y: 0, size: 440 },
   { piece: "shortBar", color: GOLD, right: 400, y: 400, size: 360 },
   { piece: "bar", color: BLUE, right: 620, y: 255, size: 340 },
-  { piece: "singleWing", color: GREEN, right: 700, y: 370, size: 400, flip: true },
+  { piece: "singleWing", color: GREEN, right: 640, y: 370, size: 400, flip: true },
 ];
 
 function Shape({
