@@ -1,6 +1,6 @@
 import {
-  Box,
   Checkmark,
+  Dashboard,
   Link,
   OverflowMenuVertical,
   Share,
@@ -176,7 +176,7 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
         }}
         className="inline-flex max-w-40 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
       >
-        <Box size={12} className="shrink-0" />
+        <Dashboard size={12} className="shrink-0" />
         <span className="truncate">{agentName}</span>
       </button>
     </Tooltip>

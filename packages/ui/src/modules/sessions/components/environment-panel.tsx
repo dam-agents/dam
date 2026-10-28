@@ -1,5 +1,6 @@
 import { Close, Copy, Launch, TrashCan } from "@carbon/icons-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,23 +13,14 @@ import { timeUntil } from "../../../lib/format-time.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 
-const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  starting: {
-    label: "Starting",
-    className: "bg-amber-500/10 text-amber-600",
-  },
-  running: {
-    label: "Running",
-    className: "bg-[#24a148]/10 text-[#24a148]",
-  },
-  expired: {
-    label: "Expired",
-    className: "bg-muted text-muted-foreground",
-  },
-  deleted: {
-    label: "Deleted",
-    className: "bg-[#dc2626]/10 text-[#dc2626]",
-  },
+const STATUS_BADGE: Record<
+  string,
+  { label: string; variant: "success" | "warning" | "muted" | "danger" }
+> = {
+  starting: { label: "Starting", variant: "warning" },
+  running: { label: "Running", variant: "success" },
+  expired: { label: "Expired", variant: "muted" },
+  deleted: { label: "Deleted", variant: "danger" },
 };
 
 export function EnvironmentPanel() {
@@ -72,11 +64,9 @@ export function EnvironmentPanel() {
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {data.name}
         </span>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${badge.className}`}
-        >
+        <Badge variant={badge.variant} size="sm">
           {badge.label}
-        </span>
+        </Badge>
         <Button
           variant="ghost"
           size="icon-sm"

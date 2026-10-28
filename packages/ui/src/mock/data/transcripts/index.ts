@@ -1,6 +1,7 @@
 export { adaevolveTranscript } from "./adaevolve.js";
 export { codeReviewerTranscript } from "./code-reviewer.js";
 export { devFlowTranscript } from "./dev-flow.js";
+export { environmentMockupTranscript } from "./environment-mockup.js";
 export { evoxTranscript } from "./evox.js";
 export { gepaTranscript } from "./gepa.js";
 export { form, msg } from "./helpers.js";
@@ -31,6 +32,7 @@ import { MOCK_SESSION_IDS, mockSessions } from "../sessions.js";
 import { adaevolveTranscript } from "./adaevolve.js";
 import { codeReviewerTranscript } from "./code-reviewer.js";
 import { devFlowTranscript } from "./dev-flow.js";
+import { environmentMockupTranscript } from "./environment-mockup.js";
 import { evoxTranscript } from "./evox.js";
 import { gepaTranscript } from "./gepa.js";
 import { kSearchTranscript } from "./k-search.js";
@@ -88,6 +90,9 @@ export function mockTranscript(agentId: string, sessionId: string): Message[] {
   }
   if (sessionId === MOCK_SESSION_IDS.devFlow) {
     return devFlowTranscript();
+  }
+  if (sessionId === MOCK_SESSION_IDS.envMockup) {
+    return environmentMockupTranscript();
   }
   if (sessionId === MOCK_SESSION_IDS.longChat) {
     return longChatTranscript();

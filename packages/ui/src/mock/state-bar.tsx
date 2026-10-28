@@ -1,6 +1,8 @@
 import {
+  Add,
   ChevronLeft,
   ChevronRight,
+  ColorPalette,
   Document,
   ListBoxes,
   Renew,
@@ -160,6 +162,42 @@ function MockStateBarPanel() {
 
       <StepControls />
       <DevToolsToggle />
+
+      <button
+        type="button"
+        onClick={() => {
+          if (view === "work-card-designs") {
+            useStore.setState({ view: "chat" });
+          } else {
+            setView("work-card-designs");
+          }
+        }}
+        className={cn(
+          "fixed bottom-4 right-[60px] z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
+          view === "work-card-designs" && "bg-muted",
+        )}
+        aria-label="Work card designs"
+      >
+        <ColorPalette size={16} className="text-foreground" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          if (view === "add-action-designs") {
+            useStore.setState({ view: "chat" });
+          } else {
+            setView("add-action-designs");
+          }
+        }}
+        className={cn(
+          "fixed bottom-4 right-[116px] z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
+          view === "add-action-designs" && "bg-muted",
+        )}
+        aria-label="Add action designs"
+      >
+        <Add size={16} className="text-foreground" />
+      </button>
 
       <button
         type="button"

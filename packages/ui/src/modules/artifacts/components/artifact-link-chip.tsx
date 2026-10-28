@@ -1,4 +1,4 @@
-import { Box } from "@carbon/icons-react";
+import { Dashboard } from "@carbon/icons-react";
 import { ARTIFACT_INTERNAL_LINK_PREFIX } from "api-server-api";
 import type { ReactNode } from "react";
 
@@ -47,7 +47,7 @@ export function ArtifactLinkChip({
         {artifact ? (
           <ArtifactKindBadge kind={artifact.kind} />
         ) : (
-          <Box size={13} className="shrink-0 text-muted-foreground" />
+          <Dashboard size={13} className="shrink-0 text-muted-foreground" />
         )}
         <span className="truncate">{label}</span>
       </button>

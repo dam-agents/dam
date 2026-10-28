@@ -22,7 +22,7 @@ function artifactTranscript(): Message[] {
       },
       {
         kind: "text",
-        text: "I've reviewed the brief. The core message is strong but the hierarchy could be tighter. I've created an artifact with a revised version — take a look at the panel on the right.",
+        text: "I've reviewed the brief. The core message is strong but the hierarchy could be tighter. I've created an artifact with a revised version:\n\n[Spring 2025 Campaign Brief](platform://artifacts/art-1)\n\nTake a look at the panel on the right.",
       },
     ]),
     msg("art-m3", "user", [
@@ -34,7 +34,7 @@ function artifactTranscript(): Message[] {
     msg("art-m4", "assistant", [
       {
         kind: "text",
-        text: "Done — I've added a **Tone & Voice** section to the artifact with guidelines for the campaign. The key points:\n\n- Lead with confidence, not urgency\n- Use active voice throughout\n- Keep sentences under 20 words for headers\n- Match the optimistic-but-grounded tone from the Q4 launch\n\nThe updated artifact is in the panel.",
+        text: "Done — I've added a **Tone & Voice** section to the artifact with guidelines for the campaign. The key points:\n\n- Lead with confidence, not urgency\n- Use active voice throughout\n- Keep sentences under 20 words for headers\n- Match the optimistic-but-grounded tone from the Q4 launch\n\n[Spring 2025 Campaign Brief](platform://artifacts/art-1)",
       },
     ]),
     msg("art-m5", "user", [

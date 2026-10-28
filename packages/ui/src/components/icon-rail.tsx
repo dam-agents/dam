@@ -9,8 +9,8 @@ import {
   ChevronRight,
   Close,
   CloudApp,
+  Dashboard,
   Filter,
-  Folders,
   Gift,
   Help,
   Home,
@@ -130,7 +130,7 @@ export function IconRail({
 
   const artifacts: Destination = {
     label: "Artifacts",
-    icon: Folders,
+    icon: Dashboard,
     active: view === "artifacts",
     badge: 0,
     navigate: () => setView("artifacts"),

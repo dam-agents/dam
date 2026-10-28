@@ -26,7 +26,9 @@ type ParameterlessView =
   | "sidebar-specs"
   | "nav-flows"
   | "placeholder-texts"
-  | "handoff-sheet";
+  | "handoff-sheet"
+  | "work-card-designs"
+  | "add-action-designs";
 
 export interface NavigationSlice {
   view: View;

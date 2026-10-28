@@ -6,8 +6,10 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { IconRail } from "./components/icon-rail.js";
 import { Badge } from "./components/ui/badge.js";
 import { emitToast } from "./lib/toast.js";
+import { AddActionDesigns } from "./mock/data/add-action-designs.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
+import { WorkCardDesigns } from "./mock/data/work-card-designs.js";
 import { HandoffSheet } from "./mock/handoff-sheet.js";
 import { FlowScreen, NavFlows } from "./mock/nav-flows.js";
 import { PlaceholderTexts } from "./mock/placeholder-texts.js";
@@ -180,6 +182,10 @@ function MainApp() {
                 <AgentCardGallery />
               ) : view === "component-showcase" ? (
                 <ComponentShowcase />
+              ) : view === "work-card-designs" ? (
+                <WorkCardDesigns />
+              ) : view === "add-action-designs" ? (
+                <AddActionDesigns />
               ) : (
                 <HomeView />
               )}

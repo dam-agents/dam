@@ -59,6 +59,7 @@ export const MOCK_SESSION_IDS = {
   browser: "sess-browser-example",
   longChat: "sess-long-chat-example",
   devFlow: "sess-dev-flow",
+  envMockup: "sess-env-mockup",
 };
 
 export const KIT_SESSION_TO_PACK: Record<string, string> = {};
@@ -67,15 +68,9 @@ const ciPipelineSessions = [
   makeSession(
     MOCK_SESSION_IDS.artifact,
     AGENT_IDS.codexResearch,
-    "Fix flaky integration tests in auth module",
+    "Artifact session",
     15 * min,
     { unread: true },
-  ),
-  makeSession(
-    "sess-ci-002",
-    AGENT_IDS.codexResearch,
-    "Docker image build for staging deploy",
-    2 * hr,
   ),
   makeSession(
     MOCK_SESSION_IDS.browser,
@@ -96,10 +91,10 @@ const ciPipelineSessions = [
     8 * hr,
   ),
   makeSession(
-    MOCK_SESSION_IDS.devFlow,
+    MOCK_SESSION_IDS.envMockup,
     AGENT_IDS.codexResearch,
-    "Add CSV export to reports page",
-    1 * hr,
+    "Environment session",
+    30 * min,
   ),
   makeSession(
     "sess-ci-006",
@@ -110,108 +105,12 @@ const ciPipelineSessions = [
   makeSession(
     "sess-ci-007",
     AGENT_IDS.codexResearch,
-    "Debug OOM in build container",
+    "Slack Session",
     18 * hr,
     { type: "channel_slack", slackChannel: "deployments" },
-  ),
-  makeSession(
-    "sess-ci-008",
-    AGENT_IDS.codexResearch,
-    "Configure artifact caching",
-    24 * hr,
-  ),
-];
-
-const securityScannerSessions = [
-  makeSession(
-    "sess-sec-001",
-    AGENT_IDS.geminiPipeline,
-    "Scan repositories for CVE-2026-3891",
-    25 * min,
-    { unread: true },
-  ),
-  makeSession(
-    "sess-sec-002",
-    AGENT_IDS.geminiPipeline,
-    "Audit npm dependencies for known exploits",
-    3 * hr,
-  ),
-  makeSession(
-    "sess-sec-003",
-    AGENT_IDS.geminiPipeline,
-    "Secret leak detection in feature branches",
-    7 * hr,
-    { type: "channel_slack", slackChannel: "security" },
-  ),
-  makeSession(
-    "sess-sec-004",
-    AGENT_IDS.geminiPipeline,
-    "SAST scan for SQL injection patterns",
-    14 * hr,
-  ),
-  makeSession(
-    "sess-sec-005",
-    AGENT_IDS.geminiPipeline,
-    "Review container image vulnerabilities",
-    20 * hr,
-  ),
-  makeSession(
-    "sess-sec-006",
-    AGENT_IDS.geminiPipeline,
-    "License compliance check for new packages",
-    28 * hr,
-    { type: "schedule_cron" },
-  ),
-];
-
-const docsBuilderSessions = [
-  makeSession(
-    "sess-doc-001",
-    AGENT_IDS.knowledgeBase,
-    "Generate API docs for payments module",
-    4 * hr,
-  ),
-  makeSession(
-    "sess-doc-002",
-    AGENT_IDS.knowledgeBase,
-    "Update REST endpoint reference",
-    9 * hr,
-  ),
-  makeSession(
-    "sess-doc-003",
-    AGENT_IDS.knowledgeBase,
-    "Create onboarding guide for new contributors",
-    16 * hr,
-  ),
-  makeSession(
-    "sess-doc-004",
-    AGENT_IDS.knowledgeBase,
-    "Extract inline JSDoc into markdown pages",
-    22 * hr,
-    { type: "schedule_cron" },
-  ),
-  makeSession(
-    "sess-doc-005",
-    AGENT_IDS.knowledgeBase,
-    "Build changelog from merged PRs",
-    30 * hr,
-  ),
-  makeSession(
-    "sess-doc-006",
-    AGENT_IDS.knowledgeBase,
-    "Sync API schema with OpenAPI spec",
-    36 * hr,
-  ),
-  makeSession(
-    "sess-doc-007",
-    AGENT_IDS.knowledgeBase,
-    "Review and fix broken doc links",
-    42 * hr,
   ),
 ];
 
 export const mockSessions: Record<string, unknown[]> = {
   [AGENT_IDS.codexResearch]: ciPipelineSessions,
-  [AGENT_IDS.geminiPipeline]: securityScannerSessions,
-  [AGENT_IDS.knowledgeBase]: docsBuilderSessions,
 };
