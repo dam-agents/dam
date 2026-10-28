@@ -106,9 +106,7 @@ function readRoom(id: string = probeId): {
 
 // UNIT_BOUNDARY_DESCRIPTION: what the probe's own disk can still give its guest, in MiB: the disk's size less what the guest holds on it, which is the blocks it wrote — what its disk file took on the claim — and the room a case marked, which takes nothing on the claim. A guard can hold a guest back and never give it more than its disk, and the disk is sized at the owner's pool while the runner grants from the claim's own filesystem, which on an install whose claim is a directory of the node's disk holds far more than the pool. So a renewed grant can pass the disk once the guest has marked a grant's worth of it — on the CI lane a 40 GiB disk, a 22 GiB grant and a fill of 22 GiB left the guest 17.8 GiB, every block its disk had (#6043) — and the room a guard owes the guest is the grant or this, whichever is less. A disk file that still holds blocks the guest freed and its trim has not yet returned reads the guest as holding more, which only lowers the bound.
 function diskLeftMiB(markedMiB: number): number {
-  return (
-    readRoom().diskMiB - (machineDisks().get(probeDisk) ?? 0) - markedMiB
-  );
+  return readRoom().diskMiB - (machineDisks().get(probeDisk) ?? 0) - markedMiB;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the bounds a settled room meets, as one pair: no less than the grant, or the room its disk has left when that is less (diskLeftMiB), and no more than the grant plus the one floor every guest keeps. The slack is what the case's own measurements and the guard's step can account for.
