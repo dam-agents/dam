@@ -6,10 +6,6 @@ const storageState = "./.auth/user.json";
 
 const full = process.env.E2E_FULL === "1";
 
-// A run that shares a few CPUs with the cluster it tests — e2e:loop on a
-// sandbox host or a laptop — spends seconds per action where CI spends tenths,
-// so the default test and expect timeouts scale by E2E_TIMEOUT_SCALE. A spec
-// that sets its own timeout keeps it.
 const timeoutScale = timeoutScaleFromEnv();
 
 function timeoutScaleFromEnv(): number {
@@ -150,7 +146,9 @@ const projects = [...suite, agentMachine, runnerRelease].filter(
  * takes, and in what order. E2E_SCOPE=pr narrows a pull request's run to the specs
  * that fail for real there, and the merge queue, the nightly run and a tag take every
  * one (docs/architecture/e2e.md). No spec a PR run keeps reads state an excluded spec
- * creates.
+ * creates. E2E_TIMEOUT_SCALE multiplies the default test and expect timeouts: e2e:loop
+ * sets it, as a warm cluster shares the machine's CPUs with the browser and an action
+ * takes seconds there, where it takes tenths in CI. A spec's own timeout stays as it is.
  */
 export default defineConfig({
   testDir: "./src/tests",
