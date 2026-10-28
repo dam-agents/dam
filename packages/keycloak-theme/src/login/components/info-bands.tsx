@@ -565,7 +565,7 @@ export function BandCapabilities({ brandName }: { brandName: string }) {
             </div>
 
             {/* Right — agent with floating scene cards */}
-            <div className="relative min-h-[400px] lg:min-h-[660px] -order-1 lg:order-none">
+            <div className="relative min-h-[400px] overflow-hidden lg:min-h-[660px] lg:overflow-visible -order-1 lg:order-none">
               {/* Everything positioned from the center of this container */}
               <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%)" }}>
                 {/* Agent — center focal point */}
@@ -854,9 +854,9 @@ export function BandChannels() {
 
       <div className="relative z-20 flex min-h-[100dvh] flex-col items-center bg-background lg:flex-row lg:bg-transparent">
         {/* Mobile-only illustration — hidden at lg where the absolute split-screen takes over */}
-        <div className="flex w-full items-center justify-center px-6 pt-20 lg:hidden">
-          <div className="h-[345px] w-full max-w-[480px] overflow-hidden sm:h-auto sm:overflow-visible">
-            <div className="w-[480px] origin-top-left scale-[0.66] sm:w-auto sm:scale-100">
+        <div className="flex w-full items-center justify-center px-2 pt-20 lg:hidden">
+          <div className="h-[375px] w-full max-w-[480px] overflow-hidden sm:h-auto sm:overflow-visible">
+            <div className="w-[480px] origin-top-left scale-[0.75] sm:w-auto sm:scale-100">
               <SlackTeamIllustration />
             </div>
           </div>
@@ -1258,13 +1258,13 @@ export function BandAccess({
   return (
     <section className="flex min-h-[100dvh] snap-start items-center bg-muted/30 py-20 lg:py-28">
       <div className="mx-auto w-full max-w-[1120px] px-6">
-        <div className="flex flex-col items-start gap-12 lg:flex-row">
-          <div className="flex-1">
+        <div className="flex flex-col items-center gap-12 lg:flex-row lg:items-start">
+          <div className="flex-1 text-center lg:text-left">
             <SectionLabel>Get started</SectionLabel>
             <SectionTitle>Hand off your first task.</SectionTitle>
 
             {formEl && (
-              <div className="mt-8 max-w-[var(--width-login-col)]">
+              <div className="mx-auto mt-8 max-w-[var(--width-login-col)] lg:mx-0">
                 {formEl}
               </div>
             )}
