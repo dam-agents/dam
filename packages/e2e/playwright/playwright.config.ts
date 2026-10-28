@@ -6,6 +6,24 @@ const storageState = "./.auth/user.json";
 
 const full = process.env.E2E_FULL === "1";
 
+// A run that shares a few CPUs with the cluster it tests — e2e:loop on a
+// sandbox host or a laptop — spends seconds per action where CI spends tenths,
+// so the default test and expect timeouts scale by E2E_TIMEOUT_SCALE. A spec
+// that sets its own timeout keeps it.
+const timeoutScale = timeoutScaleFromEnv();
+
+function timeoutScaleFromEnv(): number {
+  const raw = process.env.E2E_TIMEOUT_SCALE;
+  if (raw === undefined || raw.trim() === "") return 1;
+  const scale = Number(raw);
+  if (!Number.isFinite(scale) || scale < 1) {
+    throw new Error(
+      `E2E_TIMEOUT_SCALE must be a number of at least 1, got "${raw}"`,
+    );
+  }
+  return scale;
+}
+
 type NamedProject = Project & { name: string };
 
 const suite: NamedProject[] = [
@@ -139,6 +157,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 2,
   retries: 0,
+  timeout: 30_000 * timeoutScale,
   reporter: [
     ["list"],
     ["html", { open: "never" }],
@@ -146,7 +165,7 @@ export default defineConfig({
       ? [["json", { outputFile: process.env.E2E_REPORT_JSON }] as const]
       : []),
   ],
-  expect: { timeout: 15_000 },
+  expect: { timeout: 15_000 * timeoutScale },
   use: {
     baseURL,
     trace: "on",

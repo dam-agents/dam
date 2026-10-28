@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-27
+Last verified: 2026-10-28
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -70,6 +70,7 @@ It tests a batch of queued pull requests as a draft pull request from a `mergify
 
 `mise run e2e` is the CI path: a fresh cluster, the suite, teardown.
 `e2e:loop` iterates against a warm cluster, and the [cluster-ops skill](../../.agents/skills/cluster-ops/SKILL.md) covers both.
+A warm cluster shares its machine's CPUs with the browser, so `e2e:loop` sets `E2E_TIMEOUT_SCALE` to 3 and the config multiplies its default test and expect timeouts by it; a spec that sets its own timeout keeps it, and CI keeps the defaults.
 
 An agent runs the suite for its checkout in an [Environment](environments.md) of its own with `e2e:loop -- --environment <name>`, so its parallel runs do not take turns on one test cluster.
 The install there takes only what the checkout changed, and the suite reaches the install's backchannel and its cluster's API over the Environment Link, on a port of that Environment's own, so several Environments and the local test cluster run side by side on one agent.
