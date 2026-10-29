@@ -317,8 +317,77 @@ env_e2e_forward() {
   return 1
 }
 env_e2e_forward_close() {
+  env_e2e_browser_close
   [ -n "${ENV_E2E_FORWARD_PID:-}" ] || return 0
   kill "$ENV_E2E_FORWARD_PID" 2>/dev/null || true
   wait "$ENV_E2E_FORWARD_PID" 2>/dev/null || true
   ENV_E2E_FORWARD_PID=""
+}
+
+# env_e2e_browser: the browser the suite drives, run in the Environment beside
+# the install rather than here, where it shares this agent's CPUs with every
+# other slot's builds and tests: on a busy agent a login roundtrip outlasted
+# the specs' timeouts while the Environment sat idle (#6072). It is
+# Playwright's own browser server, from this checkout's playwright-core, on a
+# port of the Environment's loopback that only this link reaches, forwarded to
+# a free port here; the specs stay here and connect to it through
+# PW_TEST_CONNECT_WS_ENDPOINT, and their traces and videos come back over the
+# connection. --unsafe lets the config's launch arguments through, which map
+# the lane's host names to the Environment's own loopback, where the
+# backchannel answers. The browser is the one the image ships when it is this
+# Playwright's revision, else one installed into the Environment's home once.
+# It runs until env_e2e_forward_close stops it.
+env_e2e_browser() {
+  local core version revision dir remote local_port
+  core="$(cd "$MISE_CONFIG_ROOT/packages/e2e/playwright" && node -e '
+    const { createRequire } = require("node:module");
+    const test = createRequire(require.resolve("@playwright/test/package.json"));
+    const pw = createRequire(test.resolve("playwright/package.json"));
+    console.log(require("node:path").dirname(pw.resolve("playwright-core/package.json")));
+  ')" || { echo "FATAL: no playwright-core in this checkout; run pnpm install" >&2; return 1; }
+  version="$(jq -r .version "$core/package.json")"
+  revision="$(jq -r '.browsers[] | select(.name == "chromium-headless-shell") | .revision' "$core/browsers.json")"
+  dir=".cache/e2e-browser/$version"
+  if ! env_ssh "test -f $dir/playwright-core/cli.js"; then
+    echo "Copying playwright-core $version into Environment $CLUSTER_ENVIRONMENT..."
+    tar -C "${core%/*}" -cz playwright-core | env_ssh "rm -rf $dir.new && mkdir -p $dir.new && tar -xzf - -C $dir.new && rm -rf $dir && mv $dir.new $dir" || return 1
+  fi
+  remote=$((E2E_PORT + 1000))
+  local_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+  # The pid file ends a server an earlier run left behind on the port.
+  ssh -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L "127.0.0.1:$local_port:127.0.0.1:$remote" "$ENV_HOST" "
+    cd $dir || exit 1
+    [ ! -s server.pid ] || kill \$(cat server.pid) 2>/dev/null
+    browsers=/opt/ms-playwright
+    if [ ! -d \$browsers/chromium_headless_shell-$revision ]; then
+      browsers=\$HOME/.cache/ms-playwright
+      PLAYWRIGHT_BROWSERS_PATH=\$browsers node playwright-core/cli.js install chromium-headless-shell >&2 || exit 1
+    fi
+    echo \$\$ > server.pid
+    PLAYWRIGHT_BROWSERS_PATH=\$browsers exec node playwright-core/cli.js run-server --host 127.0.0.1 --port $remote --unsafe
+  " </dev/null >/dev/null &
+  ENV_E2E_BROWSER_PID=$!
+  ENV_E2E_BROWSER_DIR="$dir"
+  # The local end listens as soon as SSH is up, so readiness is the server's
+  # own answer on the Environment.
+  for _ in $(seq 1 300); do
+    env_ssh "curl -s -o /dev/null --max-time 2 http://127.0.0.1:$remote/" && {
+      export PW_TEST_CONNECT_WS_ENDPOINT="ws://127.0.0.1:$local_port/"
+      return 0
+    }
+    kill -0 "$ENV_E2E_BROWSER_PID" 2>/dev/null || {
+      echo "FATAL: the browser server did not start in Environment $CLUSTER_ENVIRONMENT, or port $remote is taken there" >&2
+      return 1
+    }
+    sleep 1
+  done
+  echo "FATAL: the browser server in Environment $CLUSTER_ENVIRONMENT did not answer in 300s" >&2
+  return 1
+}
+env_e2e_browser_close() {
+  [ -n "${ENV_E2E_BROWSER_PID:-}" ] || return 0
+  kill "$ENV_E2E_BROWSER_PID" 2>/dev/null || true
+  wait "$ENV_E2E_BROWSER_PID" 2>/dev/null || true
+  env_ssh "cd $ENV_E2E_BROWSER_DIR && [ -s server.pid ] && kill \$(cat server.pid) 2>/dev/null; rm -f server.pid" 2>/dev/null || true
+  ENV_E2E_BROWSER_PID=""
 }
