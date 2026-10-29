@@ -233,7 +233,7 @@ What the agent sees:
 - **Cross-channel tools.** `describe_channel` reports the chats an Agent can reach; `send_channel_message` makes a **new top-level post** — for proactive or cross-channel messages, and on Slack never a turn reply, which `reply` owns.
   A post into a channel still counts as answering the newest turn in flight there, whichever thread that turn is in, so that turn is not nudged.
   Telegram has no thread to reply into, so there it is also how a turn is answered.
-  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started.
+  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; a post Slack makes by sharing its file, or a file sent alone, names no `ts`.
   Where a target is ambiguous the worker refuses and names the candidates rather than picking one.
 - **The agent meets people as ids, and resolves them itself.** A messenger names a person only by their user id — in speaker labels, injected history, and mentions inside message text — so `describe_channel_users` turns ids into people, as far as the workspace discloses.
   An id means something only inside one workspace, so the lookup asks the workspace of the conversation it is named or called from, and an Agent in several workspaces that settles neither is refused rather than answered from a guess.
