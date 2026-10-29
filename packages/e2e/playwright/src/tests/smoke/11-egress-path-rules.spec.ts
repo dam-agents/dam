@@ -11,13 +11,18 @@ const uncoveredUrl = `https://${host}/get`;
 const stillGatedUrl = `https://${host}/headers`;
 const chatAnsweredPath = "/ip";
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a request held for an approval that the test answers in the chat waits for its answer. The hold spans opening the conversation and the click, which take tens of seconds on a loaded cluster; the mock's own 15 s bound would end the request first and read as no answer.
+const HELD_FETCH_MS = 40_000;
+
 async function fetchStatus(
   api: ApiClient,
   agentId: string,
   url: string,
+  timeoutMs?: number,
 ): Promise<number> {
   try {
-    return (await api.e2e.performFetch.mutate({ agentId, url })).status;
+    return (await api.e2e.performFetch.mutate({ agentId, url, timeoutMs }))
+      .status;
   } catch {
     return 0;
   }
@@ -159,14 +164,14 @@ test("a waiting network approval shows in the open conversation, retries include
       await api.approvals.dismiss.mutate({ id: earlier.id });
   }
 
-  const first = fetchStatus(api, agentId, url);
+  const first = fetchStatus(api, agentId, url, HELD_FETCH_MS);
   await expect
     .poll(async () => (await waitingFor(chatAnsweredPath)).length, {
       timeout: 60_000,
       message: "the request was not held for approval",
     })
     .toBe(1);
-  const retry = fetchStatus(api, agentId, url);
+  const retry = fetchStatus(api, agentId, url, HELD_FETCH_MS);
 
   await test.step("a conversation opened after the hold shows the prompt", async () => {
     await openAgentChat(page, agentName, agentId);

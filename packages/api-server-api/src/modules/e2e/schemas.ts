@@ -72,6 +72,7 @@ export const e2ePerformFetchInputSchema = z
     agentId: z.string().min(1),
     url: z.string().url(),
     headers: z.record(z.string(), z.string()).optional(),
+    timeoutMs: z.number().int().positive().max(40_000).optional(),
   })
   .strict();
 
