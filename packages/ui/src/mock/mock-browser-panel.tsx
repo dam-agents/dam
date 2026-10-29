@@ -2,10 +2,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Close,
+  Globe,
   Maximize,
   Minimize,
   Renew,
-  Wikis,
 } from "@carbon/icons-react";
 import { type FormEvent, useState } from "react";
 
@@ -53,7 +53,7 @@ export function MockBrowserPanel({ agentId: _agentId, agentName }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
-        <Wikis
+        <Globe
           size={16}
           aria-hidden
           className="shrink-0 text-muted-foreground"
@@ -114,7 +114,7 @@ export function MockBrowserPanel({ agentId: _agentId, agentName }: Props) {
 
       <div className="relative min-h-0 flex-1 overflow-hidden overscroll-none bg-muted/30">
         <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-          <Wikis size={32} className="opacity-30" />
+          <Globe size={32} className="opacity-30" />
           <p className="text-sm">Browser preview (mock mode)</p>
           {currentUrl && (
             <p className="max-w-[80%] truncate font-mono text-xs opacity-60">

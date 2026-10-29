@@ -1,5 +1,3 @@
-import { Globe } from "@carbon/icons-react";
-
 import { Spinner } from "@/components/ui/spinner";
 
 import { useDevToolsState } from "../../../../mock/dev-tools-state.js";
@@ -20,7 +18,6 @@ export function BrowserCard({ part }: { part: WorkBrowser }) {
   if (status === "loading") {
     return (
       <WorkCardShell
-        icon={<Globe size={16} />}
         title="Loading browser…"
         accessory={<Spinner size={14} />}
       />
@@ -30,7 +27,6 @@ export function BrowserCard({ part }: { part: WorkBrowser }) {
   if (status === "error") {
     return (
       <WorkCardShell
-        icon={<Globe size={16} />}
         title="Browser"
         detail={part.errorMessage ?? "The agent’s browser did not start."}
         accessory={
@@ -45,7 +41,6 @@ export function BrowserCard({ part }: { part: WorkBrowser }) {
   if (status === "agent-asleep") {
     return (
       <WorkCardShell
-        icon={<Globe size={16} />}
         title={part.title}
         detail="Agent is asleep"
         accessory={
@@ -59,7 +54,6 @@ export function BrowserCard({ part }: { part: WorkBrowser }) {
 
   return (
     <WorkCardShell
-      icon={<Globe size={16} />}
       title={part.title}
       detail={browserLinkLabel(part.url)}
       onClick={() => agentId && setOpenBrowser(agentId, part.url)}

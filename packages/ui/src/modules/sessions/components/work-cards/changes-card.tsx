@@ -1,4 +1,4 @@
-import { DataVis_2, LogoGithub } from "@carbon/icons-react";
+import { LogoGithub } from "@carbon/icons-react";
 
 import { Spinner } from "@/components/ui/spinner";
 
@@ -16,7 +16,6 @@ export function ChangesCard({ part }: { part: WorkChanges }) {
   if (status === "loading") {
     return (
       <WorkCardShell
-        icon={<DataVis_2 size={16} />}
         title="Analyzing changes…"
         accessory={<Spinner size={14} />}
       />
@@ -26,7 +25,6 @@ export function ChangesCard({ part }: { part: WorkChanges }) {
   if (status === "error") {
     return (
       <WorkCardShell
-        icon={<DataVis_2 size={16} />}
         title="Changes"
         detail={part.summary || "Failed to load changes."}
         accessory={
@@ -43,7 +41,6 @@ export function ChangesCard({ part }: { part: WorkChanges }) {
 
   return (
     <WorkCardShell
-      icon={<DataVis_2 size={16} />}
       title={`${part.files.length} file${part.files.length !== 1 ? "s" : ""} changed`}
       detail={part.summary}
       accessory={

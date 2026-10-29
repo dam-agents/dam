@@ -1,5 +1,3 @@
-import { Terminal } from "@carbon/icons-react";
-
 import { useDevToolsState } from "../../../../mock/dev-tools-state.js";
 import { useStore } from "../../../../store.js";
 import type { WorkProcess } from "../../../../types.js";
@@ -50,7 +48,6 @@ export function ProcessCard({ part }: { part: WorkProcess }) {
 
   return (
     <WorkCardShell
-      icon={<Terminal size={16} />}
       title={
         <code className="font-mono text-xs font-medium">{part.command}</code>
       }

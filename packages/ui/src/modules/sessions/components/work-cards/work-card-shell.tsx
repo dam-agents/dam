@@ -1,14 +1,13 @@
-import { ChevronRight } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
 interface WorkCardShellProps {
-  icon: ReactNode;
+  icon?: ReactNode;
   title: ReactNode;
   detail?: ReactNode;
   accessory?: ReactNode;
-  trailingIcon?: ReactNode;
+  trailing?: ReactNode;
   selected?: boolean;
   disabled?: boolean;
   onClick?: () => void;
@@ -19,13 +18,12 @@ export function WorkCardShell({
   title,
   detail,
   accessory,
-  trailingIcon,
+  trailing,
   selected,
   disabled,
   onClick,
 }: WorkCardShellProps) {
   const interactive = !!onClick && !disabled;
-  const trailing = trailingIcon ?? <ChevronRight size={16} />;
   return (
     <div
       role={interactive ? "button" : undefined}
@@ -51,25 +49,17 @@ export function WorkCardShell({
             : "cursor-default bg-card",
       )}
     >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        {icon}
-      </span>
+      {icon && (
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          {icon}
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="min-w-0 truncate font-medium text-foreground">
             {title}
           </span>
           {accessory && <span className="ml-auto shrink-0">{accessory}</span>}
-          {interactive && (
-            <span
-              className={cn(
-                "shrink-0 text-foreground transition-colors",
-                !accessory && "ml-auto",
-              )}
-            >
-              {trailing}
-            </span>
-          )}
         </span>
         {detail && (
           <span className="block truncate text-xs text-muted-foreground">
@@ -77,6 +67,9 @@ export function WorkCardShell({
           </span>
         )}
       </span>
+      {trailing && (
+        <span className="ml-auto shrink-0 text-foreground">{trailing}</span>
+      )}
     </div>
   );
 }

@@ -1,12 +1,16 @@
 import {
-  CloudApp,
+  Calendar,
+  ChatBot,
+  Edit,
   Locked,
+  Move,
   OverflowMenuVertical,
   Share,
   TrashCan,
 } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,72 +85,51 @@ function CardDetail({
 function EnvironmentTrailingIcon({
   name,
   accessLabel,
+  expiresAt,
 }: {
   name: string;
   accessLabel?: string;
+  expiresAt?: string;
 }) {
   const showConfirm = useStore.getState().showConfirm;
   const [shareOpen, setShareOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+    <span
+      onClick={(e) => e.stopPropagation()}
+      className={`inline-flex transition-opacity ${menuOpen ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
+    >
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="shrink-0"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             aria-label="Environment actions"
           >
-            <OverflowMenuVertical
-              size={16}
-              className={`transition-opacity ${menuOpen ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
-            />
-          </button>
+            <OverflowMenuVertical size={16} />
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => {}}>
+            <ChatBot size={13} /> Ask agent to edit
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {}}>
+            <Edit size={13} /> Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {}}>
+            <Move size={13} /> Move
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => setTimeout(() => setShareOpen(true), 0)}
           >
             <Share size={13} /> Share
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => setTimeout(() => setShareOpen(true), 0)}
-          >
-            Manage access…
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={() =>
-              emitToast({
-                kind: "success",
-                message: `Extended ${name} by 1 day`,
-              })
-            }
-          >
-            Extend 1 day
+          <DropdownMenuItem onSelect={() => {}}>
+            <Calendar size={13} /> Set expiration
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() =>
-              emitToast({
-                kind: "success",
-                message: `Extended ${name} by 7 days`,
-              })
-            }
-          >
-            Extend 7 days
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() =>
-              emitToast({
-                kind: "success",
-                message: `Extended ${name} by 30 days`,
-              })
-            }
-          >
-            Extend 30 days
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem
             tone="danger"
             onSelect={async () => {
@@ -171,6 +154,7 @@ function EnvironmentTrailingIcon({
         <ShareEnvironmentDialog
           name={name}
           accessLabel={accessLabel}
+          expiresAt={expiresAt}
           onClose={() => setShareOpen(false)}
         />
       )}
@@ -193,7 +177,6 @@ export function EnvironmentCard({ part }: { part: WorkEnvironment }) {
 
   return (
     <WorkCardShell
-      icon={<CloudApp size={16} />}
       title={
         <>
           {name}
@@ -209,9 +192,13 @@ export function EnvironmentCard({ part }: { part: WorkEnvironment }) {
           expiry={expiry}
         />
       }
-      trailingIcon={
+      trailing={
         expired ? undefined : (
-          <EnvironmentTrailingIcon name={name} accessLabel={part.accessLabel} />
+          <EnvironmentTrailingIcon
+            name={name}
+            accessLabel={part.accessLabel}
+            expiresAt={part.expiresAt}
+          />
         )
       }
       disabled={expired}

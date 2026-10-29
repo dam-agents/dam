@@ -1,6 +1,10 @@
 import {
+  Calendar,
+  ChatBot,
   CloudApp,
+  Edit,
   Locked,
+  Move,
   OverflowMenuVertical,
   Search,
   Share,
@@ -167,43 +171,25 @@ function EnvironmentRow({ env }: { env: MockEnvironment }) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => {}}>
+                  <ChatBot size={13} /> Ask agent to edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => {}}>
+                  <Edit size={13} /> Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => {}}>
+                  <Move size={13} /> Move
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={() => setTimeout(() => setShareOpen(true), 0)}
                 >
                   <Share size={13} /> Share
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() =>
-                    emitToast({
-                      kind: "success",
-                      message: `Extended ${env.name} by 1 day`,
-                    })
-                  }
-                >
-                  Extend 1 day
+                <DropdownMenuItem onSelect={() => {}}>
+                  <Calendar size={13} /> Set expiration
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    emitToast({
-                      kind: "success",
-                      message: `Extended ${env.name} by 7 days`,
-                    })
-                  }
-                >
-                  Extend 7 days
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    emitToast({
-                      kind: "success",
-                      message: `Extended ${env.name} by 30 days`,
-                    })
-                  }
-                >
-                  Extend 30 days
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   tone="danger"
                   onSelect={async () => {
