@@ -1,4 +1,5 @@
 export { adaevolveTranscript } from "./adaevolve.js";
+export { browserSessionTranscript } from "./browser-session.js";
 export { codeReviewerTranscript } from "./code-reviewer.js";
 export { devFlowTranscript } from "./dev-flow.js";
 export { environmentMockupTranscript } from "./environment-mockup.js";
@@ -31,6 +32,7 @@ import type { Message } from "../../../types.js";
 import { MOCK_SESSION_IDS, mockSessions } from "../sessions.js";
 import { adaevolveTranscript } from "./adaevolve.js";
 import { codeReviewerTranscript } from "./code-reviewer.js";
+import { browserSessionTranscript } from "./browser-session.js";
 import { devFlowTranscript } from "./dev-flow.js";
 import { environmentMockupTranscript } from "./environment-mockup.js";
 import { evoxTranscript } from "./evox.js";
@@ -87,6 +89,9 @@ export function mockTranscriptMeta(
 export function mockTranscript(agentId: string, sessionId: string): Message[] {
   if (sessionId === MOCK_SESSION_IDS.artifact) {
     return artifactTranscript();
+  }
+  if (sessionId === MOCK_SESSION_IDS.browser) {
+    return browserSessionTranscript();
   }
   if (sessionId === MOCK_SESSION_IDS.devFlow) {
     return devFlowTranscript();

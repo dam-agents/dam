@@ -1,4 +1,5 @@
 import type { WorkPart } from "../../../../types.js";
+import { ArtifactCard } from "./artifact-card.js";
 import { BrowserCard } from "./browser-card.js";
 import { ChangesCard } from "./changes-card.js";
 import { EnvironmentCard } from "./environment-card.js";
@@ -14,5 +15,7 @@ export function WorkCard({ part }: { part: WorkPart }) {
       return <BrowserCard part={part} />;
     case "environment":
       return <EnvironmentCard part={part} />;
+    case "artifact":
+      return <ArtifactCard part={part} />;
   }
 }

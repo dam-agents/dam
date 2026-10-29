@@ -22,7 +22,14 @@ function artifactTranscript(): Message[] {
       },
       {
         kind: "text",
-        text: "I've reviewed the brief. The core message is strong but the hierarchy could be tighter. I've created an artifact with a revised version:\n\n[Spring 2025 Campaign Brief](platform://artifacts/art-1)\n\nTake a look at the panel on the right.",
+        text: "I've reviewed the brief. The core message is strong but the hierarchy could be tighter. I've created an artifact with a revised version:",
+      },
+      {
+        kind: "work",
+        tool: "artifact",
+        title: "Spring 2025 Campaign Brief",
+        artifactKind: "Markdown",
+        accessLabel: "Only you",
       },
     ]),
     msg("art-m3", "user", [

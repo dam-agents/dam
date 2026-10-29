@@ -40,6 +40,16 @@ export function devFlowTranscript(): Message[] {
       },
       {
         kind: "work",
+        tool: "artifact",
+        title: "Landing page",
+        artifactKind: "HTML",
+        accessLabel: "Your team",
+        expiresAt: new Date(
+          Date.now() + 14 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+      },
+      {
+        kind: "work",
         tool: "changes",
         files: [
           { path: "src/pages/reports.tsx", insertions: 18, deletions: 4 },
@@ -78,8 +88,9 @@ export function devFlowTranscript(): Message[] {
       {
         kind: "work",
         tool: "browser",
+        status: "ready",
         url: "http://localhost:5173/reports",
-        title: "Open localhost:5173/reports",
+        title: "Reports — CSV Export Preview",
       },
     ]),
     msg("df-3", "user", [

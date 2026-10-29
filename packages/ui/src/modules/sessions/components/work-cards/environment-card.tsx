@@ -2,8 +2,8 @@ import {
   Calendar,
   ChatBot,
   Edit,
+  FolderMoveTo,
   Locked,
-  Move,
   OverflowMenuVertical,
   Share,
   TrashCan,
@@ -118,7 +118,7 @@ function EnvironmentTrailingIcon({
             <Edit size={13} /> Rename
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => {}}>
-            <Move size={13} /> Move
+            <FolderMoveTo size={13} /> Move
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

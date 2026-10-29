@@ -12,7 +12,17 @@ const PROCESS_STATES = [
   "failed",
   "restart-waiting",
 ] as const;
-const BROWSER_STATES = ["loading", "ready", "error", "agent-asleep"] as const;
+const BROWSER_STATES = [
+  "starting",
+  "loading",
+  "ready",
+  "error",
+  "failed",
+  "unavailable",
+  "disconnected",
+  "agent-asleep",
+  "multi-tab",
+] as const;
 const ENV_STATES = ["starting", "running", "expired", "deleted"] as const;
 
 function Chip({

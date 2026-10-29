@@ -4,7 +4,16 @@ import type { EnvironmentStatus } from "../types.js";
 
 type ChangesStatus = "loading" | "done" | "error" | "pr-open";
 type ProcessStatus = "running" | "finished" | "failed" | "restart-waiting";
-type BrowserStatus = "loading" | "ready" | "error" | "agent-asleep";
+type BrowserStatus =
+  | "starting"
+  | "loading"
+  | "ready"
+  | "error"
+  | "failed"
+  | "unavailable"
+  | "disconnected"
+  | "agent-asleep"
+  | "multi-tab";
 
 export interface DevToolsState {
   changesStatus: ChangesStatus | null;

@@ -3,8 +3,8 @@ import {
   ChatBot,
   CloudApp,
   Edit,
+  FolderMoveTo,
   Locked,
-  Move,
   OverflowMenuVertical,
   Search,
   Share,
@@ -178,7 +178,7 @@ function EnvironmentRow({ env }: { env: MockEnvironment }) {
                   <Edit size={13} /> Rename
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => {}}>
-                  <Move size={13} /> Move
+                  <FolderMoveTo size={13} /> Move
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

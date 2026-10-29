@@ -96,10 +96,20 @@ export interface WorkProcess {
 export interface WorkBrowser {
   kind: "work";
   tool: "browser";
-  status?: "loading" | "ready" | "error" | "agent-asleep";
+  status?:
+    | "starting"
+    | "loading"
+    | "ready"
+    | "error"
+    | "failed"
+    | "unavailable"
+    | "disconnected"
+    | "agent-asleep"
+    | "multi-tab";
   url: string;
   title: string;
   errorMessage?: string;
+  tabCount?: number;
 }
 
 export interface WorkEnvironmentItem {
@@ -120,11 +130,22 @@ export interface WorkEnvironment {
   items: WorkEnvironmentItem[];
 }
 
+export interface WorkArtifact {
+  kind: "work";
+  tool: "artifact";
+  title: string;
+  artifactKind: string;
+  url?: string;
+  accessLabel?: string;
+  expiresAt?: string;
+}
+
 export type WorkPart =
   | WorkChanges
   | WorkProcess
   | WorkBrowser
-  | WorkEnvironment;
+  | WorkEnvironment
+  | WorkArtifact;
 
 export type MessagePart =
   | TextPart

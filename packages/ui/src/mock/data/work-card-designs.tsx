@@ -4,8 +4,8 @@ import {
   Code,
   Download,
   Edit,
+  FolderMoveTo,
   Locked,
-  Move,
   OverflowMenuVertical,
   Share,
   TrashCan,
@@ -110,7 +110,7 @@ function EnvironmentTrailingIcon() {
             <Edit size={13} /> Rename
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => {}}>
-            <Move size={13} /> Move
+            <FolderMoveTo size={13} /> Move
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => {}}>
@@ -151,7 +151,7 @@ function ArtifactTrailingIcon() {
             <Edit size={13} /> Rename
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => {}}>
-            <Move size={13} /> Move
+            <FolderMoveTo size={13} /> Move
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => {}}>
@@ -256,7 +256,7 @@ function EnvironmentOverflowMenuPanel() {
         <Edit size={13} /> Rename
       </button>
       <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
-        <Move size={13} /> Move
+        <FolderMoveTo size={13} /> Move
       </button>
       <div className="my-1 h-px bg-border" />
       <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
@@ -283,7 +283,7 @@ function ArtifactOverflowMenuPanel() {
         <Edit size={13} /> Rename
       </button>
       <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
-        <Move size={13} /> Move
+        <FolderMoveTo size={13} /> Move
       </button>
       <div className="my-1 h-px bg-border" />
       <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
@@ -365,6 +365,25 @@ export function WorkCardDesigns() {
               onClick={() => {}}
             />
           ))}
+        </div>
+      </section>
+
+      <section>
+        <SectionHeading>Browser Card</SectionHeading>
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">Default</p>
+          <WorkCardShell
+            title="localhost:3000/dashboard"
+            detail="Browser"
+            onClick={() => {}}
+          />
+
+          <p className="mt-2 text-xs text-muted-foreground">Unavailable</p>
+          <WorkCardShell
+            title="Browser"
+            detail="No browser display in this agent's image."
+            disabled
+          />
         </div>
       </section>
 

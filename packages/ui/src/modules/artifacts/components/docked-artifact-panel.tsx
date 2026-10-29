@@ -1,15 +1,29 @@
 import {
+  Calendar,
+  ChatBot,
   Close,
   Code,
   Download,
-  Maximize,
-  Share,
+  Edit,
+  FolderMoveTo,
+  Launch,
+  Locked,
+  OverflowMenuVertical,
+  TrashCan,
   View,
 } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
@@ -29,6 +43,7 @@ import { VersionSwitcher } from "./version-switcher.js";
 export function DockedArtifactPanel() {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const showConfirm = useStore((s) => s.showConfirm);
   const {
     data: artifact,
     isPending: artifactPending,
@@ -79,10 +94,25 @@ export function DockedArtifactPanel() {
   const frameShowing = showFrame && frame !== null;
   const expanded = fullscreen && showFrame;
 
+  async function handleDelete() {
+    const confirmed = await showConfirm(
+      "This will permanently delete the artifact.",
+      "Delete artifact",
+      { kind: "destructive" },
+    );
+    if (!confirmed) return;
+    setOpenArtifactId(null);
+    emitToast({
+      kind: "success",
+      message: `Deleted "${artifact?.title ?? "artifact"}".`,
+    });
+  }
+
   if (!openArtifactId) return null;
 
   return (
     <div className="flex h-full flex-col">
+      {/* Header */}
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         <span
           className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
@@ -97,52 +127,104 @@ export function DockedArtifactPanel() {
             onChange={(v) => setPinnedVersion(v === latest ? null : v)}
           />
         )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 gap-1 text-xs text-muted-foreground"
+          onClick={() => setShareOpen(true)}
+        >
+          <Locked size={12} />
+          Private
+        </Button>
         {artifact && (
           <Button
-            variant="outline"
-            size="xs"
-            onClick={() => setShareOpen(true)}
-          >
-            <Share size={14} />
-            Share
-          </Button>
-        )}
-        {renderable && (
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => setShowSource((s) => !s)}
-          >
-            {showSource ? <View size={14} /> : <Code size={14} />}
-            {showSource ? "Preview" : "Source"}
-          </Button>
-        )}
-        {artifact && (
-          <Button
-            variant="outline"
-            size="icon-xs"
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
             aria-label="Download"
             tooltip="Download"
             onClick={() => void downloadArtifact(artifact.id)}
           >
-            <Download size={14} />
+            <Download size={16} />
           </Button>
         )}
         {frameShowing && (
           <Button
             variant="ghost"
             size="icon-sm"
+            className="shrink-0"
             aria-label="Open fullscreen"
             tooltip="Open fullscreen"
             onClick={() => setFullscreen(true)}
           >
-            <Maximize size={16} />
+            <Launch size={16} />
           </Button>
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0"
+              aria-label="More actions"
+            >
+              <OverflowMenuVertical size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={() =>
+                emitToast({
+                  kind: "info",
+                  message: "Ask agent to edit (placeholder)",
+                })
+              }
+            >
+              <ChatBot size={13} /> Ask agent to edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                emitToast({ kind: "info", message: "Rename (placeholder)" })
+              }
+            >
+              <Edit size={13} /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                emitToast({ kind: "info", message: "Move (placeholder)" })
+              }
+            >
+              <FolderMoveTo size={13} /> Move
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {renderable && (
+              <DropdownMenuItem onSelect={() => setShowSource((s) => !s)}>
+                {showSource ? <View size={13} /> : <Code size={13} />}
+                {showSource ? "Preview" : "View source"}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() =>
+                emitToast({
+                  kind: "info",
+                  message: "Set expiration (placeholder)",
+                })
+              }
+            >
+              <Calendar size={13} /> Set expiration
+            </DropdownMenuItem>
+            <DropdownMenuItem tone="danger" onSelect={handleDelete}>
+              <TrashCan size={13} /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           variant="ghost"
           size="icon-sm"
+          className="shrink-0"
           aria-label="Close"
+          tooltip="Close"
           onClick={() => setOpenArtifactId(null)}
         >
           <Close size={16} />
