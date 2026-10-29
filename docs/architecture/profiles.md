@@ -1,6 +1,6 @@
 # Profiles
 
-Last verified: 2026-10-26
+Last verified: 2026-10-29
 
 ## Overview
 
@@ -27,5 +27,5 @@ An owner with no profile is given "Default" on the deployment's shared CurveBend
 An install without the shared CurveBender, or with either value empty, gives "Default" from the owner's first provider once it has listed its models: the install's default harness where that provider runs it, else the first harness it runs, and the model the platform prefers for work, else the first it lists.
 An owner who already has profiles gets no "Default"; their oldest becomes the default.
 A new agent on the default template takes the default's harness unless its create names one, and then, on that harness, is granted the default's provider alone in place of the harness's provider order, and its chat default is the profile.
-The default exists before the agent's first `hello`, so a starter kit's onboarding turn has a model to run on; a kit that names its own model, an Environment and an agent on another harness keep the provider order and the first-hello conversion.
+The default exists before the agent's first `hello`, so a starter kit's onboarding turn has a model to run on; a kit that names its own model or its providers, an Environment and an agent on another harness keep the provider order and the first-hello conversion.
 A create that cannot start the agent on the default logs why, and the agent falls back to that conversion.
