@@ -10,6 +10,7 @@ import {
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
+  AcpModelRefusedError,
   AcpTurnAbandonedError,
   type AcpClient,
   type PromptUpdate,
@@ -222,6 +223,32 @@ describe("slack turn presentation — owner turns", () => {
     });
     expect(h.turnEvents()[0]!.outcome).toBe("failure");
     expect(h.turnEvents()[0]!.reason).toBe("acp-error");
+  });
+
+  // TEST_SCENARIO: the model refuses the message, so the turn ends before the agent can post; the thread must say so and what to do, not stay silent or get a nudge that hits the same refusal.
+  it("tells the thread the model refused the message, and what to do", async () => {
+    const h = harness({
+      sendPrompt: async () => {
+        throw new AcpModelRefusedError("s-1");
+      },
+    });
+    await h.mention();
+    await tick();
+
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({
+      text: expect.stringContaining("The model refused this message"),
+    });
+    expect(msgs[0]).toMatchObject({
+      text: expect.stringContaining("new thread"),
+    });
+    expect(msgs[0]).toMatchObject({
+      text: expect.stringContaining("http://ui/"),
+    });
+    expect(h.turnEvents()[0]!.outcome).toBe("failure");
+    expect(h.turnEvents()[0]!.reason).toBe("model-refused");
+    expect(h.nudgeEvents()).toHaveLength(0);
   });
 });
 

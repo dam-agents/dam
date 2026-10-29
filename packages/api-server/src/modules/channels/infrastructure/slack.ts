@@ -71,6 +71,7 @@ import type {
 } from "../services/worker-contract.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
+  AcpModelRefusedError,
   AcpSessionLoadError,
   pairFields,
   AcpTurnAbandonedError,
@@ -2936,9 +2937,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         opts: Parameters<typeof acp.sendPrompt>[1],
       ) => {
         args.signal?.throwIfAborted();
-        const answer = await acp.sendPrompt(built.prompt, opts);
-        built.commit();
-        return answer;
+        try {
+          const answer = await acp.sendPrompt(built.prompt, opts);
+          built.commit();
+          return answer;
+        } catch (err) {
+          if (err instanceof AcpModelRefusedError) built.commit();
+          throw err;
+        }
       };
       if (existing) {
         const resume = await args.buildResumePrompt();
@@ -3260,7 +3266,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return;
       const copy = match(failure)
         .with({ kind: "plain" }, ({ copy }) =>
-          copy({ uiBaseUrl, agentId: instanceName }),
+          copy({ uiBaseUrl, agentId: instanceName, threads: true }),
         )
         .with({ kind: "provider-unavailable" }, () =>
           slackProviderOutageCopy(outage, brand.name),

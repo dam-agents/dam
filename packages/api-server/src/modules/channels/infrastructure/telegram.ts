@@ -788,7 +788,7 @@ export function createTelegramWorker(deps: {
           .post(
             match(failure)
               .with({ kind: "plain" }, ({ copy }) =>
-                copy({ uiBaseUrl: deps.uiBaseUrl, agentId }),
+                copy({ uiBaseUrl: deps.uiBaseUrl, agentId, threads: false }),
               )
               .with({ kind: "provider-unavailable" }, () => ({
                 markdown: telegramProviderOutageCopy(outage, brandName),
