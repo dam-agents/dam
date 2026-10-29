@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-27
+Last verified: 2026-10-29
 
 ## Overview
 
@@ -213,6 +213,7 @@ The catalog is one view shown in two places: the **Starter kits** page at `/star
 Its first card, **The Generalist**, is no kit: it creates a plain agent at once.
 A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channels — then applies without a further page.
 Every kit shows at one size.
+The CLI reaches the same kits through the same procedures ([CLI](cli.md#command-surface)): it lists the catalog, shows a kit's setup and what it needs, and applies it with the connections the modal would preselect — for each required need, the one connection the user owns that it accepts — then names each step left, since it has no modal to walk the user through them.
 Neither sits behind a flag: kits are how an agent is set up here, so the catalog is part of the product rather than something to opt into.
 The widget renders nothing when the install has no catalog.
 
@@ -291,4 +292,5 @@ An abandoned update stays pending; the button then reopens its session or starts
 - Contract: [`packages/api-server-api/src/modules/starter-kits/`](../../packages/api-server-api/src/modules/starter-kits/)
 - Implementation: [`packages/api-server/src/modules/starter-kits/`](../../packages/api-server/src/modules/starter-kits/)
 - UI: [`packages/ui/src/modules/starter-kits/`](../../packages/ui/src/modules/starter-kits/)
+- CLI: [`packages/cli/src/modules/kit/`](../../packages/cli/src/modules/kit/)
 - Built-in catalog: [`helm/starter-kits/`](../../helm/starter-kits/)
