@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
 import { runOnce } from "../../core/run-once.js";
@@ -743,6 +743,47 @@ describe("session pushes", { timeout: 30_000 }, () => {
       ]),
     );
     expect(service.repositoriesOf("s1")).toHaveLength(2);
+  });
+
+  /**
+   * TEST_SCENARIO: A session pushes its branch, a tool call settles before
+   * the pull request exists, and the session opens it in the next tool call,
+   * inside the lookup's 30 s window. The skipped lookup runs once the window
+   * ends, links the pull request and tells the list to read again.
+   */
+  it("should link a pull request opened inside the lookup window", async () => {
+    const { repo } = await repositoryWithRemote();
+    let opened = false;
+    service = serviceFor([home], {
+      find: async (remote, branch) =>
+        opened ? findsFeature.find(remote, branch) : null,
+      states: async () => [],
+    });
+    const env = { CLAUDE_CODE_SESSION_ID: "s1" };
+    await traced(env, repo, "push", "--quiet", "-u", "origin", "feat/push");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      let announced = false;
+      service.onPullRequestsChanged(() => (announced = true));
+      service.onToolCallSettled("s1");
+      await vi.advanceTimersByTimeAsync(5_000);
+      opened = true;
+      service.onToolCallSettled("s1");
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(service.repositoriesOf("s1")).toEqual([
+        expect.objectContaining({ path: repo, pullRequest: null }),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(announced).toBe(true);
+      expect(service.repositoriesOf("s1")).toEqual([
+        expect.objectContaining({ path: repo, pullRequest: link }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /**

@@ -41,7 +41,7 @@ export interface TouchedRepositoryStore {
     path: string,
     branch: string,
     pullRequest: PullRequestLink,
-  ): void;
+  ): boolean;
   updatePullRequest(pullRequest: PullRequestLink): boolean;
   editedAtOf(sessionId: string): Map<string, string>;
   paths(): string[];
@@ -124,13 +124,14 @@ export function createTouchedRepositoryStore(
         entry.branch !== branch ||
         sameLink(entry.pullRequest, pullRequest)
       )
-        return;
+        return false;
       store.write({
         sessions: {
           ...sessions,
           [sessionId]: { ...entries, [path]: { ...entry, pullRequest } },
         },
       });
+      return true;
     },
 
     updatePullRequest(pullRequest) {
