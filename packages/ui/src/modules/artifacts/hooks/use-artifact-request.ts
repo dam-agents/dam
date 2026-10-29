@@ -1,3 +1,4 @@
+import { artifactApiCallerEmail } from "agent-runtime-api";
 import {
   ARTIFACT_REQUEST_MAX_IN_FLIGHT,
   ARTIFACT_RESPONSE_TYPE,
@@ -15,7 +16,7 @@ import { readArtifactRequest } from "../lib/artifact-request.js";
 function signedInEmail(): string | null {
   const profile = getUser()?.profile;
   if (profile?.email_verified !== true || !profile.email) return null;
-  return profile.email.trim().toLowerCase();
+  return artifactApiCallerEmail(profile.email.trim().toLowerCase());
 }
 
 export function useArtifactRequest(
