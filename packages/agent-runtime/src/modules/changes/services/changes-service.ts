@@ -90,28 +90,52 @@ export function createChangesService(deps: {
     };
   }
 
+  const pullRequestListeners = new Set<() => void>();
   const pullRequestsCheckedAt = new Map<string, number>();
+  const pullRequestsTrailing = new Set<string>();
+
+  function linkSessionPullRequestsLater(sessionId: string): void {
+    void linkSessionPullRequests(sessionId).catch((error: unknown) =>
+      deps.log(
+        `linking the session's pull requests failed: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  }
 
   async function linkSessionPullRequests(sessionId: string): Promise<void> {
     const checkedAt = pullRequestsCheckedAt.get(sessionId) ?? 0;
-    if (Date.now() - checkedAt < SESSION_PULL_REQUEST_CHECK_MS) return;
+    const wait = checkedAt + SESSION_PULL_REQUEST_CHECK_MS - Date.now();
+    if (wait > 0) {
+      if (pullRequestsTrailing.has(sessionId)) return;
+      const timer = setTimeout(() => {
+        pullRequestsTrailing.delete(sessionId);
+        linkSessionPullRequestsLater(sessionId);
+      }, wait);
+      timer.unref?.();
+      pullRequestsTrailing.add(sessionId);
+      return;
+    }
     pullRequestsCheckedAt.set(sessionId, Date.now());
+    let linked = false;
     for (const push of deps.touched.pushesOf(sessionId)) {
       const pullRequest = await deps.pullRequests.find(
         push.remote,
         push.branch,
       );
-      if (pullRequest)
+      if (
+        pullRequest &&
         deps.touched.linkPullRequest(
           sessionId,
           push.path,
           push.branch,
           pullRequest,
-        );
+        )
+      )
+        linked = true;
     }
+    if (linked) for (const listener of pullRequestListeners) listener();
   }
 
-  const pullRequestListeners = new Set<() => void>();
   const shownPullRequests = new Map<string, PullRequestLink>();
   let refreshingStates = false;
 
@@ -390,11 +414,7 @@ export function createChangesService(deps: {
 
     onToolCallSettled(sessionId) {
       changed();
-      void linkSessionPullRequests(sessionId).catch((error: unknown) =>
-        deps.log(
-          `linking the session's pull requests failed: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      );
+      linkSessionPullRequestsLater(sessionId);
     },
 
     repositoriesOf(sessionId) {
