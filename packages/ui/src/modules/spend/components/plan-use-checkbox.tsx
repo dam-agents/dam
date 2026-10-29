@@ -21,6 +21,8 @@ export function PlanUseCheckbox() {
       >
         <Checkbox
           id={id}
+          className="max-sm:size-6"
+          aria-label={SHOW_PLAN_USE}
           checked={showPlanUse}
           onCheckedChange={(checked) => setShowPlanUse(checked === true)}
         />
