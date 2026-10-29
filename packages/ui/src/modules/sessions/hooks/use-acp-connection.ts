@@ -11,6 +11,7 @@ import {
   platformUndeliveredMetaSchema,
   platformVerdictsMetaSchema,
   SessionMode,
+  type SessionSteering,
   SessionType,
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -88,6 +89,11 @@ export interface LiveSession {
   connection: ClientConnection;
   sessionId: string;
   isOpen: () => boolean;
+}
+
+interface StartedCapabilities {
+  forks: boolean;
+  steering: SessionSteering | null;
 }
 
 export interface StartedSession {
@@ -197,6 +203,7 @@ export function useAcpConnection(
       agentId: string,
       startedSessionId: string,
       continuedFrom: PlatformContinuedFrom | null,
+      capabilities: StartedCapabilities,
     ) => {
       connectionRef.current?.ws.close();
       attachCloseHandler(ws);
@@ -212,6 +219,8 @@ export function useAcpConnection(
         draftKey(agentId, startedSessionId),
       );
       store.setContinuedFrom(continuedFrom);
+      store.setHarnessForks(capabilities.forks);
+      store.setSessionSteering(capabilities.steering);
       store.setSessionId(startedSessionId);
     },
     [attachCloseHandler, bindEngagement],
@@ -249,6 +258,7 @@ export function useAcpConnection(
       ws.addEventListener("close", () => releaseStartSlot(holders));
 
       let startedSessionId: string;
+      let capabilities: StartedCapabilities;
       try {
         const next = await settledNextSessionPair(agentId);
         const session = await connection.agent.request("session/new", {
@@ -267,10 +277,10 @@ export function useAcpConnection(
         });
         startedSessionId = session.sessionId;
         agentForksRef.current = forksSessions;
-        useStore
-          .getState()
-          .setHarnessForks(sessionForksIn(session, forksSessions));
-        useStore.getState().setSessionSteering(sessionSteeringIn(session));
+        capabilities = {
+          forks: sessionForksIn(session, forksSessions),
+          steering: sessionSteeringIn(session),
+        };
         seedStartedSession(agentId, startedSessionId, next?.pair ?? null);
       } catch (err) {
         try {
@@ -295,7 +305,14 @@ export function useAcpConnection(
             listening = false;
             return false;
           }
-          keepAsLive(connection, ws, agentId, startedSessionId, continuedFrom);
+          keepAsLive(
+            connection,
+            ws,
+            agentId,
+            startedSessionId,
+            continuedFrom,
+            capabilities,
+          );
           return true;
         },
         finish: () => {

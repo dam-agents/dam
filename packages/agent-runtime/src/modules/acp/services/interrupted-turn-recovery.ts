@@ -32,16 +32,21 @@ const CUT_COMMAND =
   "partly run, and a process it started may still be running. Check its " +
   "effects before you run it again.";
 
+function escapeQuoted(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function cutReplyLines(cutReply: string): string[] {
   if (cutReply === "") return [];
-  const quoted = cutReply
-    .replaceAll("</cut-reply>", "")
-    .replaceAll("</turn-continued>", "");
   return [
     "The cancel cut the reply you were writing. The person already sees it " +
-      "up to the cut, which ends like this:",
+      "up to the cut, which ends like this, with &, < and > written as " +
+      "&amp;, &lt; and &gt;:",
     "<cut-reply>",
-    quoted,
+    escapeQuoted(cutReply),
     "</cut-reply>",
     "Do not write that part again: go on from where it stopped.",
   ];
