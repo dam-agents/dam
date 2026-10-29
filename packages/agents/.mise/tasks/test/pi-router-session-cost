@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-//MISE description="Test that Pi on the Model Router shows the platform's measured cost of each call as its session cost, added once when the ledger prices the call, even after the Pi that made the call has exited"
+//MISE description="Test that Pi on the Model Router shows the platform's measured cost of each call as its session cost, added once when the ledger prices the call, even after the Pi that made the call has exited, and into the session the call was made in when one Pi process opens several"
 //MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/**", "test-lib/acp-client.mjs", ".mise/tasks/test/pi-router-session-cost", "../../pnpm-lock.yaml"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -127,7 +127,22 @@ try {
   await startPi("--continue");
   await new Promise((resolve) => setTimeout(resolve, 500));
   assert.equal(await cost(), 0.0076);
-  console.log("pi-router-session-cost: Pi's session cost is the platform's measured cost, added once when the ledger prices the call, even in a chat reopened after it");
+
+  // TEST_SCENARIO: one Pi process opens a new session and then the first one again, and Pi loads the extension again each time; every call's cost is booked once, into the session the call was made in.
+  const first = (await rpc({ type: "get_state" })).data.sessionFile;
+  ledger.set("call-2", { unit: "usd", costMicros: 5_000, estimated: false });
+  ledger.set("call-3", { unit: "usd", costMicros: 3_000, estimated: false });
+  await rpc({ type: "new_session" });
+  await turn("Say ok.");
+  await until("the second session never got the cost of call-2", async () => (await cost()) > 0);
+  await rpc({ type: "switch_session", sessionPath: first });
+  await turn("Say ok.");
+  await until("the first session never got the cost of call-3", async () => Math.round((await cost()) * 1e6) > 7_600);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.equal(Math.round((await cost()) * 1e6), 10_600);
+  const booked = readdirSync(sessions).map((file) => readFileSync(join(sessions, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((e) => e.type === "usage" && e.kind === "platform_cost").map((e) => e.note).sort());
+  assert.deepEqual(booked.sort((a, b) => a.length - b.length), [["call-2"], ["call-1", "call-3"]]);
+  console.log("pi-router-session-cost: Pi's session cost is the platform's measured cost, added once when the ledger prices the call, even in a chat reopened after it, and into the session the call was made in");
 } finally {
   if (child && child.exitCode === null) { child.kill(); await once(child, "exit"); }
   router.close();

@@ -156,18 +156,27 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
 
 // UNIT_BOUNDARY_DESCRIPTION: on the Model Router Pi prices no call itself, so its Session cost is the platform's measured spend, the figure the Usage page shows. The router returns each call's id in x-platform-call, read from every HTTP reply of the process, because Pi sends a Messages or Responses call through its own API code and not through the provider's streamSimple, which serves only the provider's declared API. The id is written into the Session as a pending note, and once the ledger has priced the call its cost joins the Session as a usage entry with no tokens and the call id as its note, which /session and the status line add up. A call is never held for its cost, and the process that made it need not live to see it: loading the Session asks again for every note with no usage entry, so a Session closed before the ledger priced its last call has that cost when it is next opened. A call priced in no dollars (a free or unpriced provider), or one the ledger still has no price for PI_CALL_COST_WAIT_MS after it, gets a usage entry of no cost, so it is not asked about again.
 function bookCallCosts(pi: ExtensionAPI, router: string): void {
+  const book = callBook(router);
+  pi.on("session_start", (_event, ctx) => {
+    book.open(ctx.sessionManager as SessionManager);
+  });
+}
+
+type CallBook = { open(session: SessionLedger): void };
+
+const CALL_BOOK = Symbol.for("pi-platform.call-book");
+
+// UNIT_BOUNDARY_DESCRIPTION: one book of call costs per process, whatever the number of times Pi loads the extension. Pi loads it again on /new, /resume, /fork and /reload, and a second fetch hook would note a call twice or into a Session that is no longer open; so the hook is installed once, and each load only tells the book which Session is open now.
+function callBook(router: string): CallBook {
+  const scope = globalThis as { [CALL_BOOK]?: CallBook };
+  const existing = scope[CALL_BOOK];
+  if (existing) return existing;
+
   const pollMs = intEnv("PI_CALL_COST_POLL_MS", 2_000);
   const waitMs = intEnv("PI_CALL_COST_WAIT_MS", 120_000);
   const pending = new Map<string, CostedCall>();
   let session: SessionLedger | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-
-  pi.on("session_start", (_event, ctx) => {
-    session = ctx.sessionManager as SessionManager;
-    pending.clear();
-    for (const [id, call] of unsettledCalls(session)) pending.set(id, call);
-    schedule();
-  });
 
   const settle = (
     ledger: SessionLedger,
@@ -238,6 +247,17 @@ function bookCallCosts(pi: ExtensionAPI, router: string): void {
     }
     return res;
   };
+
+  const book: CallBook = {
+    open(next) {
+      session = next;
+      pending.clear();
+      for (const [id, call] of unsettledCalls(next)) pending.set(id, call);
+      schedule();
+    },
+  };
+  scope[CALL_BOOK] = book;
+  return book;
 }
 
 function unsettledCalls(session: SessionLedger): Map<string, CostedCall> {
