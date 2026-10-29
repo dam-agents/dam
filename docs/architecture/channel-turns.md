@@ -265,7 +265,7 @@ What the agent sees:
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
   A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can.
-  Like `send_channel_message`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one.
+  Like `send_channel_message`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one, and neither does a private reply to a whisper, which only its sender sees.
   A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
   Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
   Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
