@@ -23,9 +23,7 @@ export function AgentManagementActions({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const management = useAgentManagement();
   const environmentsEnabled = useEnvironmentsEnabled();
-  const environments = useEnvironments(environmentsEnabled ? agent.id : null, {
-    poll: false,
-  });
+  const environments = useEnvironments(environmentsEnabled ? agent.id : null);
   const accessListReach = environments.data?.length === 0;
 
   useEffect(() => {

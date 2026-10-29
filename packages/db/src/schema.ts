@@ -587,6 +587,35 @@ export const environments = pgTable(
   ],
 );
 
+// UNIT_BOUNDARY_DESCRIPTION: the Agent Environment Members of each Agent: one row per email its owner or an Agent Editor names, who may open every Environment of that Agent.
+export const agentEnvironmentMembers = pgTable(
+  "agent_environment_members",
+  {
+    owningAgentId: text("owning_agent_id").notNull(),
+    email: text("email").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.owningAgentId, table.email] })],
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: the Environment Members of each Environment: one row per email its owner adds to that one Environment, on top of its Agent's members.
+export const environmentMembers = pgTable(
+  "environment_members",
+  {
+    environmentId: text("environment_id")
+      .notNull()
+      .references(() => environments.agentId, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.environmentId, table.email] })],
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: no longer read or written; agent_environment_members holds the list. Kept for one release, with environments.access, so a rollback still finds them.
 export const environmentAccessLists = pgTable("environment_access_lists", {
   owningAgentId: text("owning_agent_id").primaryKey(),
   owner: text("owner").notNull(),

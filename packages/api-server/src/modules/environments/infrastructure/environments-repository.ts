@@ -6,6 +6,7 @@ export interface EnvironmentsRepository {
   get(agentId: string): Promise<EnvironmentRecord | null>;
   getByHost(host: string): Promise<EnvironmentRecord | null>;
   listByOwningAgent(owningAgentId: string): Promise<EnvironmentRecord[]>;
+  listByOwner(owner: string): Promise<EnvironmentRecord[]>;
   listExpired(now: Date): Promise<EnvironmentRecord[]>;
   listAgentIds(): Promise<string[]>;
   listOwningAgentIds(): Promise<string[]>;
@@ -15,9 +16,7 @@ export interface EnvironmentsRepository {
   ): Promise<EnvironmentRecord | null>;
   update(
     agentId: string,
-    patch: Partial<
-      Pick<EnvironmentRecord, "expiresAt" | "access" | "endpoints">
-    >,
+    patch: Partial<Pick<EnvironmentRecord, "expiresAt" | "endpoints">>,
   ): Promise<void>;
   delete(agentId: string): Promise<void>;
 }
@@ -32,7 +31,6 @@ function fromRow(row: Row): EnvironmentRecord {
     name: row.name,
     host: row.host,
     endpoints: row.endpoints,
-    access: row.access ?? null,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
   };
@@ -62,6 +60,11 @@ export function createEnvironmentsRepository(db: Db): EnvironmentsRepository {
         .select()
         .from(table)
         .where(eq(table.owningAgentId, owningAgentId));
+      return rows.map(fromRow);
+    },
+
+    async listByOwner(owner) {
+      const rows = await db.select().from(table).where(eq(table.owner, owner));
       return rows.map(fromRow);
     },
 

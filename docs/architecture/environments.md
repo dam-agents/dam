@@ -1,12 +1,12 @@
 # Environments
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
 An **Environment** is a sandbox an Agent creates and controls to run software for other people and agents to open — typically one per pull request, running its build.
 The Agent that creates it is its **Owning Agent**.
-Users see an Environment as its own kind of thing under its agent, never as an agent: it is left out of every agent list, picker and count, and shows only with its Owning Agent, as an Environment.
+Users see an Environment as its own kind of thing, never as an agent: it is left out of every agent list, picker and count, and its owner finds it in the Artifacts list, beside what the agent publishes.
 The api-server's agent list leaves it out, so the app, the CLI and an API key's agent picker never show it; it is still found by id.
 
 The feature is behind the per-user `environments` [feature](features.md).
@@ -23,7 +23,8 @@ It is created with nothing that would let it act as its Owning Agent:
 - **No connections** and no default model provider, and no egress preset: it holds no credential, and a grant on it is refused.
 - **The platform's default image**, with Docker, k3s and openrc; the software it runs goes inside, as containers or processes.
 
-A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints, the access list, and its expiry.
+A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints and its expiry.
+Who may open it is two lists of rows, one per person, at most 50 each: `agent_environment_members` per Owning Agent and `environment_members` per Environment, which go with it.
 
 ## Lifecycle
 
@@ -77,17 +78,21 @@ The local cluster serves `*.env.localhost` over plain HTTP.
 **The gate.** The api-server reads the Environment and endpoint from the host name, before any other route, and relays HTTP and WebSocket to the Environment's runtime, which forwards to that endpoint's port on the Environment's own loopback and nowhere else.
 The api-server names the declared ports on every request, so a port the Environment did not declare is refused, and so are the runtime's own ports.
 
-- **Who may open it.** The owner keeps a list of people per agent, by email, which every Environment of that agent inherits; the owner and the agent's [Agent Editors](agent-editors.md) are always in, and an empty list means only them.
-  The Owning Agent can narrow the list for one Environment (`access`), never widen it: an email off the owner's list is refused, and the agent cannot read the owner's list.
+- **Who may open it.** Its owner, the Owning Agent's [Agent Editors](agent-editors.md), the agent's **Agent Environment Members** and the Environment's own **Environment Members**.
+  The agent's members open every Environment of that agent, read at each request, so a change reaches every one of them at once and nothing is copied into each; an Environment's members add people to that one only.
+  Each list only adds people: nobody narrows an Environment below its agent's list.
+  Only people set the lists: the owner and the agent's editors set the agent's on its page, and the owner sets one Environment's in its Share dialog.
+  The Owning Agent sets neither and reads neither: its tools refuse an `access` list with a message that a person shares it in the app, and say only how many people may open each Environment, never who, so a prompt the agent reads cannot share the owner's app with a stranger.
   A visitor matches by the email their identity provider verified, compared trimmed and lowercased; an account without one matches nobody's list.
+  An Environment is never public.
 - **The share host is the front door.** An address without a session gives the browser a sign-in secret in a cookie of its own and sends a page load to `/e/<address>` on the [share host](artifact-library.md#the-share-host--trust-boundary), with the secret's hash.
   The share host signs the visitor in with its own session and identity provider client, the ones a restricted artifact uses, so a visitor signs in once for both; one already signed in passes straight through, with no page and no click.
-  It checks the owner and the effective list, and either shows a refusal naming the account the visitor is signed in with, whom to ask and a switch of account, or hands the address a code that works once, for that address and the browser holding the secret only, within a minute, so a code that leaks through a log, the history or a referrer opens nothing elsewhere.
+  It checks the owner and the people who may open it, and either shows a refusal naming the account the visitor is signed in with, whom to ask and a switch of account, or hands the address a code that works once, for that address and the browser holding the secret only, within a minute, so a code that leaks through a log, the history or a referrer opens nothing elsewhere.
   The address trades the code for a session cookie of its own: `__Host-platform-env` over HTTPS, scoped to that one origin, so no other Environment can set or read it.
 - **One sign-in covers every endpoint.** In an Environment with several endpoints, the first address's code sends the browser on through each other endpoint, which gets a session the same way, bound to a secret of its own, and the last returns the visitor to the page they asked for.
   So an app whose pages call another of its endpoints, such as its own login server or API, finds a session there.
   Each step is a page that moves on by itself, not a redirect, so an Environment with many endpoints never reaches a browser's limit on redirects in a row.
-- **The address checks again on every request**, by its session and the list as it stands, so a person taken off the list is refused at their next request.
+- **The address checks again on every request**, by its session and the lists as they stand, so a person taken off either list is refused at their next request.
   The session lasts only while the share host's session it came from does; signing out of an address ends both and the identity provider's session, and comes back to the share host's sign-in.
   Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out, which never reach the app.
 - **Only the visitor's own pages act in their name.** Every page under the platform's parent domain is the same site as an address, so the browser sends the session cookie with a request any of them makes, an artifact or another Environment's app included.
@@ -145,13 +150,20 @@ The [end-to-end suite](e2e.md#running-it) runs against such an install on its ba
 **The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to an Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
 
-**The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
-In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
-The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address with its empty text, so a stale link still works.
-While the agent has none, the Manage card of its General section links to the section, because the list of people can be set before the first Environment exists and is the list that first Environment inherits.
-What an Environment runs, its Startup Items and their output, is not shown there yet.
-The sidebar lists an agent's Environments under it, once it is expanded and only once it has one: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
-The owner creates none there; the agent does.
-Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the list that decides whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up.
+**The owner** lists their Environments, extends, shares or deletes one, and reads and sets an agent's Environment Members through the `environments` tRPC router, under the same scopes as the agent's own management; listing every Environment and setting the agent's members refuse a key bound to one Agent, which the agent itself may hold.
+In the app, behind the feature:
 
-The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's list of people, each new session with the person's email, and each refusal.
+- **The Artifacts list** has an **Environments** group above its folders, which only the owner sees, as with artifacts, and only while there is one to show (see [artifact library](artifact-library.md#ui-surfaces)).
+  In an Agent's chat it starts on that Agent's Environments; anywhere else it lists every one, each naming its agent; a search finds them by name.
+  A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, its agent, and a link per address that opens a new tab.
+  Its menu has the artifact's delete-after control for the expiry, which cannot be turned off, and Delete.
+- **The Share dialog** of an Environment says who opens it through its agent — the owner, the agent's editors, and how many people the agent's page names, counted, never listed — links to that page, and edits the Environment's own members.
+- **An agent's page** has an **Environments** section with the agent's Environment Members, edited once the list has loaded, and a link to the Artifacts list.
+  The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address, so a stale link still works.
+  While the agent has none, the Manage card of its General section links to the section, because the members can be named before the first Environment exists.
+
+What an Environment runs, its Startup Items and their output, is not shown yet.
+The owner creates none there; the agent does.
+Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the lists that decide whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up, and the Artifacts list polls while it shows them, because the agent's own changes to an Environment raise no hint.
+
+The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's or an Environment's members, each new session with the person's email, and each refusal.
