@@ -21,9 +21,10 @@ There is no telemetry and no anonymous reporting — the platform collects nothi
 One deliberate exception is `dam ssh`'s editor modes: dam's own SSH host entries live in `$XDG_CONFIG_HOME/dam/ssh_config`, and a single `Include` line is added to `~/.ssh/config` so an external editor's SSH client can resolve the agent host.
 dam never touches the user's own `~/.ssh` keys (see [SSH access](#ssh-access)).
 
-The other exception is `dam version`: it also asks the npm registry for the `latest` dist-tag of `@dam-agents/cli`, so it can tell an out-of-date CLI even when the server cannot.
+The other exception is CLI version management: `dam version` and `dam update` ask the npm registry for the `latest` dist-tag of `@dam-agents/cli`, so they can find an out-of-date CLI even when the server cannot.
 It asks `registry.npmjs.org`, or the registry in `npm_config_registry` when that variable is set.
-It sends nothing about the user, and no other verb makes the call.
+`dam update` then runs npm to replace a global CLI installation with that exact stable version; it never invokes `sudo`, changes CLI state or contacts a Platform deployment.
+These commands send nothing about the user, and no other verb makes the registry call.
 
 ## Config
 
@@ -117,6 +118,7 @@ The CLI is at parity with the web UI across these groups.
 Each concept's depth lives on its owning architecture page; per-verb flags, exit-code numbers, and tRPC procedure names live in the code, not here.
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
+- **`update`** (`upgrade` alias) — update the documented global npm installation to the latest stable CLI release, or report that it is current.
 - **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns with the Metered Spend of each ([Spend limits](spend-limits.md#ledger)), and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
