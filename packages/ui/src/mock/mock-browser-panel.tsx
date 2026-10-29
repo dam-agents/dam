@@ -225,7 +225,7 @@ export function MockBrowserPanel({
                   "group/tab flex max-w-[240px] shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm",
                   isActive
                     ? "bg-[#f2f4f8] text-foreground dark:bg-[#343a3f]"
-                    : "bg-background text-muted-foreground hover:text-foreground",
+                    : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 {t.loading ? <Spinner size={14} className="shrink-0" /> : null}
