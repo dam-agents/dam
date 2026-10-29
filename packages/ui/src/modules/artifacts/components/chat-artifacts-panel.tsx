@@ -2,6 +2,7 @@ import { FolderAdd, Upload } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import {
   type CSSProperties,
+  Fragment,
   type Ref,
   useCallback,
   useEffect,
@@ -260,7 +261,11 @@ export function ChatArtifactsPanel({
         >
           {groups.map((group) => {
             if (!group.folder)
-              return group.artifacts.map((a) => renderRow(a, 0));
+              return (
+                <Fragment key={group.key}>
+                  {group.artifacts.map((a) => renderRow(a, 0))}
+                </Fragment>
+              );
             const collapsed =
               folderCollapse?.[group.key] ?? group.artifacts.length === 0;
             return (

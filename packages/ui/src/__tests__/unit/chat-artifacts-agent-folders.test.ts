@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: In an Agent's chat the Artifacts section on This agent lists only the folders that hold that Agent's artifacts; All lists every folder; a drag shows every folder as a drop target and keeps the one dropped on; a folder created in the section shows at once, empty.
+// TEST_OVERVIEW: In an Agent's chat the Artifacts section on This agent lists only the folders that hold that Agent's artifacts; All lists every folder; a drag shows every folder as a drop target, keeps the dragged row mounted, and keeps the folder dropped on; a folder created in the section shows at once, empty.
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -195,6 +195,16 @@ it("hides the other folders again when a drag ends without a drop", () => {
   act(() => drag().onStart(null));
   act(() => drag().onEnd());
   expect(listed()).toEqual([]);
+});
+
+// TEST_SCENARIO: the dragged row keeps its DOM node when the drag lists the folders above it, so the browser's dragend still reaches it.
+it("keeps the dragged row mounted when a drag starts", () => {
+  fake.artifacts = [...fake.artifacts, artifact("b1", "agent-b", null)];
+  mount("agent-b");
+  const row = container.querySelector("[data-artifact='b1']");
+  act(() => drag().onStart(null));
+  expect(listed()).toEqual([expect.stringContaining("Reports")]);
+  expect(container.querySelector("[data-artifact='b1']")).toBe(row);
 });
 
 // TEST_SCENARIO: AC-5 — agent B creates Drafts from the section; Drafts is listed at once, empty, while Reports stays hidden.

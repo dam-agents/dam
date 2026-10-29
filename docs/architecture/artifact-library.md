@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-27
+Last verified: 2026-10-29
 
 ## Overview
 
@@ -208,7 +208,7 @@ flowchart LR
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
   Folders are listed first and unfiled artifacts after them at the top level.
   The whole library lists every user folder, empty ones included; a list of one Agent's artifacts lists only the folders that hold at least one of them, because a folder belongs to the user's library and not to one Agent.
-  That list still shows every folder while an artifact is dragged, so any folder can take the drop, and keeps a folder created there or dropped on in view, empty or not; **Move to folder…** offers every folder.
+  That list still shows every folder while an artifact is dragged, so any folder can take the drop, and keeps a folder created there or dropped on in view, empty or not; the artifact menu's **Move** offers every folder.
 - Opening an artifact docks a **preview** in the same tab, or, in a chat with both experiments off, in the panel docked beside the conversation; it reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.
   An owner can **change a text artifact's content** from the preview, which publishes a version like any other revision, so the artifact keeps its identity, its link and every earlier version.
   Only the current version is editable; a past one is read-only.
