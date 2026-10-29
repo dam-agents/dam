@@ -280,6 +280,12 @@ export {
   spendTurnWindows,
   type SpendTurnWindow,
 } from "./modules/spend/turn-windows.js";
+export {
+  HARNESS_CALL_COSTS_MAX,
+  harnessCallCostsInputSchema,
+  type HarnessCallCostsInput,
+  type SpendCallCostReader,
+} from "./modules/spend/harness.js";
 export type {
   AgentSpend,
   AgentSpendQuery,
