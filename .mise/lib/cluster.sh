@@ -330,43 +330,49 @@ k3s_running() {
   fi
 }
 
-# A sandbox's machine root can be an overlay, as the platform's own agent
-# images' is, and runc cannot idmap a mount whose source is on one. The VM
-# runner pod runs in a user namespace (hostUsers: false), so every volume it
-# takes from there — its emptyDirs under the kubelet's root, and the node
-# directories the chart hands it — fails its start with "MOUNT_ATTR_IDMAP ...
-# invalid argument". Those go to the home disk instead, which an overlay root
-# leaves a plain filesystem. A host where the path is no overlay keeps it.
-SANDBOX_NODE_HOME="$HOME/.local/share"
+# A node's machine root can be an overlay, as the platform's own agent
+# images' is — a sandbox's, or an Environment's — and runc cannot idmap a
+# mount whose source is on one. The VM runner pod runs in a user namespace
+# (hostUsers: false), so every volume it takes from there — its emptyDirs
+# under the kubelet's root, and the node directories the chart hands it —
+# fails its start with "MOUNT_ATTR_IDMAP ... invalid argument". Those go to
+# the node's home disk instead, which an overlay root leaves a plain
+# filesystem. A node where the path is no overlay keeps it. Every helper runs
+# on the node through node_sh, so a sandbox and an Environment take the same
+# path.
+NODE_HOME_SHARE=/home/agent/.local/share
+[ "$CLUSTER_TARGET" = environment ] || NODE_HOME_SHARE="$HOME/.local/share"
 # After 50-container-log-rotation.yaml: its plain `kubelet-arg:` replaces every
 # append in a drop-in that sorts before it.
-SANDBOX_KUBELET_DROPIN=/etc/rancher/k3s/config.yaml.d/60-kubelet-root.yaml
+NODE_KUBELET_DROPIN=/etc/rancher/k3s/config.yaml.d/60-kubelet-root.yaml
 
-# on_overlay <path>: whether the path, or its nearest parent that exists, is on
-# an overlay.
+# on_overlay <path>: whether the path on the node, or its nearest parent that
+# exists, is on an overlay.
 on_overlay() {
-  local p="$1"
-  while [ ! -e "$p" ]; do p="$(dirname "$p")"; done
-  [ "$(stat -f -c %T "$p" 2>/dev/null)" = overlayfs ]
+  node_sh sh -c 'p="$1"; while [ ! -e "$p" ]; do p="$(dirname "$p")"; done; [ "$(stat -f -c %T "$p" 2>/dev/null)" = overlayfs ]' _ "$1"
 }
 
-# sandbox_kubelet_root: moves the kubelet's root to the home disk when its own
-# is on an overlay. Returns 0 when it wrote the drop-in, which a running k3s
-# takes only at its next start, and 1 when there was nothing to write.
-sandbox_kubelet_root() {
-  local want
+# node_kubelet_root_needed: whether the kubelet's root must move to the home
+# disk: it is on an overlay, and no drop-in moves it yet. The drop-in is
+# written by node_kubelet_root_write only once no k3s runs on the old root, so
+# one on disk proves the move took, and a stop that failed leaves none.
+node_kubelet_root_needed() {
   on_overlay /var/lib/kubelet || return 1
-  if on_overlay "$SANDBOX_NODE_HOME"; then
-    echo "WARNING: /var/lib/kubelet and $SANDBOX_NODE_HOME are both on an overlay; the VM runner pod cannot start here." >&2
+  if on_overlay "$NODE_HOME_SHARE"; then
+    echo "WARNING: /var/lib/kubelet and $NODE_HOME_SHARE are both on an overlay; the VM runner pod cannot start here." >&2
     return 1
   fi
-  want="# The machine root is an overlay, where runc cannot idmap the VM runner pod's
-# volumes: the kubelet keeps them on the home disk (cluster:install).
-kubelet-arg+:
-  - \"root-dir=$SANDBOX_NODE_HOME/kubelet\""
-  ! as_root grep -qF "root-dir=$SANDBOX_NODE_HOME/kubelet" "$SANDBOX_KUBELET_DROPIN" 2>/dev/null || return 1
-  as_root mkdir -p "$(dirname "$SANDBOX_KUBELET_DROPIN")" "$SANDBOX_NODE_HOME/kubelet"
-  printf '%s\n' "$want" | as_root tee "$SANDBOX_KUBELET_DROPIN" >/dev/null
+  ! node_sh grep -qF "root-dir=$NODE_HOME_SHARE/kubelet" "$NODE_KUBELET_DROPIN" 2>/dev/null
+}
+
+# node_kubelet_root_write: the drop-in that moves the kubelet's root to the
+# home disk, which k3s takes at its next start.
+node_kubelet_root_write() {
+  node_sh mkdir -p "$(dirname "$NODE_KUBELET_DROPIN")" "$NODE_HOME_SHARE/kubelet"
+  printf '%s\n' "# The machine root is an overlay, where runc cannot idmap the VM runner pod's" \
+    "# volumes: the kubelet keeps them on the home disk (cluster:install)." \
+    "kubelet-arg+:" "  - \"root-dir=$NODE_HOME_SHARE/kubelet\"" |
+    node_sh tee "$NODE_KUBELET_DROPIN" >/dev/null
 }
 
 # node_dir_roots <values file>... -- <helm flag>...: the node directories an
@@ -391,27 +397,29 @@ node_dir_roots() {
   for key in "${!dirs[@]}"; do [ -z "${dirs[$key]}" ] || printf '%s\n' "${dirs[$key]}"; done
 }
 
-# sandbox_host_dirs <dir>...: bind-mounts $SANDBOX_NODE_HOME/host-<name> over
-# each node directory that is on an overlay and not yet a mount point, and
-# names the ones it mounted in SANDBOX_MOUNTED. A bind mount does not outlive
-# the machine, so every install makes it again, and the directory behind it
-# keeps what was staged there.
-sandbox_host_dirs() {
+# node_host_dirs <dir>...: bind-mounts $NODE_HOME_SHARE/host-<name> over each
+# node directory that is on an overlay and not yet a mount point, and names
+# the ones it mounted in NODE_MOUNTED. A bind mount does not outlive the
+# machine, so every install makes it again, and the directory behind it keeps
+# what was staged there; what a directory held before its first mount is
+# copied over, so a node that staged images on the overlay keeps them.
+node_host_dirs() {
   local dir src
-  SANDBOX_MOUNTED=()
+  NODE_MOUNTED=()
   for dir in "$@"; do
     [ -n "$dir" ] || continue
-    ! mountpoint -q "$dir" 2>/dev/null || continue
+    ! node_sh mountpoint -q "$dir" 2>/dev/null || continue
     on_overlay "$dir" || continue
-    on_overlay "$SANDBOX_NODE_HOME" && {
-      echo "WARNING: $dir and $SANDBOX_NODE_HOME are both on an overlay; the VM runner pod cannot mount it." >&2
+    on_overlay "$NODE_HOME_SHARE" && {
+      echo "WARNING: $dir and $NODE_HOME_SHARE are both on an overlay; the VM runner pod cannot mount it." >&2
       continue
     }
-    src="$SANDBOX_NODE_HOME/host-$(basename "$dir")"
+    src="$NODE_HOME_SHARE/host-$(basename "$dir")"
     echo "Mounting $src over $dir (the machine root is an overlay)..."
-    as_root mkdir -p "$src" "$dir"
-    as_root mount --bind "$src" "$dir"
-    SANDBOX_MOUNTED+=("$dir")
+    node_sh mkdir -p "$src" "$dir"
+    node_sh sh -c '[ -z "$(ls -A "$2")" ] || [ -n "$(ls -A "$1")" ] || cp -a "$2/." "$1/"' _ "$src" "$dir"
+    node_sh mount --bind "$src" "$dir"
+    NODE_MOUNTED+=("$dir")
   done
 }
 

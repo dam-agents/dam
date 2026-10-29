@@ -29,10 +29,10 @@ elif [ -n "${IS_SANDBOX:-}" ]; then
     # all behind. Pods outlive k3s in their shims, their mounts stay, and their
     # iptables rules live in the host netns — a stale hostport DNAT sends the
     # next start's ingress port to a pod IP that no longer exists. On an overlay
-    # root the kubelet's own root is on the home disk (sandbox_kubelet_root).
+    # root the kubelet's own root is on the home disk (node_kubelet_root_needed).
     as_root pkill -9 -f '/var/lib/rancher/k3s/data/[^ ]*/containerd-shim' || true
     for _ in 1 2 3; do
-      mount | awk '{print $3}' | grep -E -e '^/(run/k3s|var/lib/kubelet|var/lib/rancher/k3s|run/netns|var/run/netns)' -e "^$SANDBOX_NODE_HOME/kubelet/" | sort -r \
+      mount | awk '{print $3}' | grep -E -e '^/(run/k3s|var/lib/kubelet|var/lib/rancher/k3s|run/netns|var/run/netns)' -e "^$NODE_HOME_SHARE/kubelet/" | sort -r \
         | as_root xargs -r -n1 umount -l 2>/dev/null || true
     done
     for backend in iptables iptables-legacy; do
