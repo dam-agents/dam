@@ -184,7 +184,9 @@ describe("slack multi-channel bindings (#3086) — session isolation", () => {
     await h.mention(C_TWO, "4.4");
     h.gw.resetOutbound();
 
-    expect(await h.worker.reply("agent-1", { text: "answering" })).toEqual({
+    expect(
+      await h.worker.reply("agent-1", { text: "answering" }),
+    ).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([

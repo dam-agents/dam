@@ -233,6 +233,7 @@ What the agent sees:
 - **Cross-channel tools.** `describe_channel` reports the chats an Agent can reach; `send_channel_message` makes a **new top-level post** — for proactive or cross-channel messages, and on Slack never a turn reply, which `reply` owns.
   A post into a channel still counts as answering the newest turn in flight there, whichever thread that turn is in, so that turn is not nudged.
   Telegram has no thread to reply into, so there it is also how a turn is answered.
+  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; a post Slack makes by sharing its file, or a file sent alone, names no `ts`.
   Where a target is ambiguous the worker refuses and names the candidates rather than picking one.
 - **The agent meets people as ids, and resolves them itself.** A messenger names a person only by their user id — in speaker labels, injected history, and mentions inside message text — so `describe_channel_users` turns ids into people, as far as the workspace discloses.
   An id means something only inside one workspace, so the lookup asks the workspace of the conversation it is named or called from, and an Agent in several workspaces that settles neither is refused rather than answered from a guess.
@@ -264,6 +265,7 @@ What the agent sees:
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
   A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can.
+  Like `send_channel_message`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one, and neither does a private reply to a whisper, which only its sender sees.
   A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
   Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
   Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.

@@ -32,7 +32,12 @@ export interface ChannelReaction {
 }
 
 export const sendResultSchema = z.union([
-  z.object({ ok: z.literal(true), attachmentError: z.string().optional() }),
+  z.object({
+    ok: z.literal(true),
+    attachmentError: z.string().optional(),
+    conversationId: z.string().optional(),
+    ts: z.string().optional(),
+  }),
   z.object({ error: z.string() }),
 ]);
 export type ChannelSendResult = z.infer<typeof sendResultSchema>;
