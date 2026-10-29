@@ -62,7 +62,8 @@ export function compose(): Command {
   program
     .name("dam")
     .description("Command-line client for a Platform deployment")
-    .version(cli.cliVersion);
+    .version(cli.cliVersion)
+    .enablePositionalOptions();
 
   for (const module of [
     cli,
