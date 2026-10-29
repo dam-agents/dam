@@ -6,6 +6,8 @@ import { ARTIFACT_PROMPT_TYPE, ARTIFACT_REQUEST_TYPE } from "api-server-api";
 
 import { SHARED_BRIDGE_REFUSAL } from "../../modules/artifact-library/viewer/bridge-shim.js";
 import { createContentApp } from "../../modules/artifact-library/viewer/content-app.js";
+import { createShareAuthRoutes } from "../../modules/artifact-library/viewer/share-auth-routes.js";
+import type { ShareAuthService } from "../../modules/artifact-library/services/share-auth-service.js";
 import { createShareViewerApp } from "../../modules/artifact-library/viewer/viewer-app.js";
 import type {
   FolderResolution,
@@ -242,6 +244,60 @@ describe("share viewer app", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("http://app.localhost");
   });
+
+  it("tells search engines not to index any share-host response, errors included", async () => {
+    const app = appWith(publicViewer());
+    const folderApp = appWith(
+      fakeViewer({
+        resolveFolder: () =>
+          Promise.resolve({
+            state: "ok",
+            folder: { name: "Reports" },
+            artifacts: [],
+          } as unknown as FolderResolution),
+      }),
+    );
+    const responses = [
+      await app.request("/a/slug-a"),
+      await app.request("/a/slug-a/raw"),
+      await folderApp.request("/f/folder-a"),
+      await appWith(fakeViewer({})).request("/a/nope"),
+      await appWith(fakeViewer({})).request("/f/nope"),
+      await app.request("/anything/else"),
+      await app.request("/a/slug-a/request", { method: "POST" }),
+    ];
+    expect(responses.map((r) => r.status)).toEqual([
+      200, 200, 200, 404, 404, 302, 403,
+    ]);
+    for (const res of responses)
+      expect(res.headers.get("X-Robots-Tag")).toBe(
+        "noindex, nofollow, noarchive",
+      );
+    expect(await responses[0]!.text()).toContain(
+      '<meta name="robots" content="noindex, nofollow"/>',
+    );
+  });
+
+  it("disallows every crawler in robots.txt", async () => {
+    const res = await appWith(fakeViewer({})).request("/robots.txt");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/plain");
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow, noarchive");
+    expect(await res.text()).toBe("User-agent: *\nDisallow: /\n");
+  });
+
+  it("tells search engines not to index the sign-in routes", async () => {
+    const routes = createShareAuthRoutes({
+      auth: {
+        beginLogin: () => Promise.resolve("https://idp.example.com/authorize"),
+      } as unknown as ShareAuthService,
+      brandName: "Platform",
+      sessionCookie: shareSessionCookie("https://share.example.com"),
+    });
+    const res = await routes.request("/login?next=/a/slug-a");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow, noarchive");
+  });
 });
 
 describe("content app", () => {
@@ -394,6 +450,29 @@ describe("content app", () => {
       expect(res.headers.get("Location")).toBeNull();
       expect(res.headers.get("Content-Type")).toContain("text/plain");
     }
+  });
+
+  it("tells search engines not to index any content-host response, errors included", async () => {
+    const app = contentAppWith(publicViewer());
+    const responses = [
+      await app.request("/a/slug-a?v=1"),
+      await app.request("/a/slug-a/raw?v=1"),
+      await app.request("/a/slug-a?v=2"),
+      await contentAppWith(fakeViewer({})).request("/a/nope/raw"),
+      await app.request("/f/anything"),
+    ];
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 404, 404, 404]);
+    for (const res of responses)
+      expect(res.headers.get("X-Robots-Tag")).toBe(
+        "noindex, nofollow, noarchive",
+      );
+  });
+
+  it("disallows every crawler in robots.txt", async () => {
+    const res = await contentAppWith(fakeViewer({})).request("/robots.txt");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow, noarchive");
+    expect(await res.text()).toBe("User-agent: *\nDisallow: /\n");
   });
 });
 
