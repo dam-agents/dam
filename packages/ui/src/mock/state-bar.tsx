@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ColorPalette,
+  Dashboard,
   Document,
   ListBoxes,
   Renew,
@@ -197,6 +198,24 @@ function MockStateBarPanel() {
         aria-label="Add action designs"
       >
         <Add size={16} className="text-foreground" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          if (view === "artifact-item-designs") {
+            useStore.setState({ view: "chat" });
+          } else {
+            setView("artifact-item-designs");
+          }
+        }}
+        className={cn(
+          "fixed bottom-4 right-[172px] z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
+          view === "artifact-item-designs" && "bg-muted",
+        )}
+        aria-label="Artifact item designs"
+      >
+        <Dashboard size={16} className="text-foreground" />
       </button>
 
       <button

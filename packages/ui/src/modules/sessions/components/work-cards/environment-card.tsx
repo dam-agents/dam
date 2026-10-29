@@ -1,6 +1,5 @@
 import {
   CloudApp,
-  Launch,
   Locked,
   OverflowMenuVertical,
   Share,
@@ -96,16 +95,12 @@ function EnvironmentTrailingIcon({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="relative shrink-0"
+            className="shrink-0"
             aria-label="Environment actions"
           >
-            <Launch
-              size={16}
-              className={`transition-opacity ${menuOpen ? "opacity-0" : "group-hover/card:opacity-0"}`}
-            />
             <OverflowMenuVertical
               size={16}
-              className={`absolute inset-0 transition-opacity ${menuOpen ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
+              className={`transition-opacity ${menuOpen ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
             />
           </button>
         </DropdownMenuTrigger>
@@ -114,6 +109,11 @@ function EnvironmentTrailingIcon({
             onSelect={() => setTimeout(() => setShareOpen(true), 0)}
           >
             <Share size={13} /> Share
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setTimeout(() => setShareOpen(true), 0)}
+          >
+            Manage access…
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -180,6 +180,7 @@ function EnvironmentTrailingIcon({
 
 export function EnvironmentCard({ part }: { part: WorkEnvironment }) {
   const devOverride = useDevToolsState((s) => s.environmentStatus);
+  const setOpenEnvironment = useStore((s) => s.setOpenEnvironment);
   const status: EnvironmentStatus =
     (import.meta.env.VITE_MOCK ? devOverride : null) ??
     part.status ??
@@ -209,17 +210,20 @@ export function EnvironmentCard({ part }: { part: WorkEnvironment }) {
         />
       }
       trailingIcon={
-        expired ? (
-          <Launch size={16} />
-        ) : (
+        expired ? undefined : (
           <EnvironmentTrailingIcon name={name} accessLabel={part.accessLabel} />
         )
       }
       disabled={expired}
       onClick={() => {
-        if (part.url) {
-          window.open(part.url, "_blank", "noopener");
-        }
+        setOpenEnvironment({
+          name,
+          status,
+          url: part.url,
+          expiresAt: part.expiresAt,
+          accessLabel: part.accessLabel,
+          items: part.items ?? [],
+        });
       }}
     />
   );

@@ -1,12 +1,25 @@
 import {
+  Calendar,
   CloudApp,
   Dashboard,
+  Download,
+  Edit,
   Launch,
   Locked,
+  Move,
   OverflowMenuVertical,
   Share,
+  TrashCan,
 } from "@carbon/icons-react";
+import { useState } from "react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu.js";
 import { WorkCardShell } from "../../modules/sessions/components/work-cards/work-card-shell.js";
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
@@ -71,17 +84,95 @@ function CardDetail({
   );
 }
 
-function EnvTrailingIcon() {
+function EnvironmentTrailingIcon() {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
-    <span className="relative shrink-0">
-      <Launch
-        size={16}
-        className="transition-opacity group-hover/card:opacity-0"
-      />
-      <OverflowMenuVertical
-        size={16}
-        className="absolute inset-0 opacity-0 transition-opacity group-hover/card:opacity-100"
-      />
+    <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="relative shrink-0"
+            aria-label="Environment actions"
+          >
+            <Launch
+              size={16}
+              className={`transition-opacity ${menuOpen ? "opacity-0" : "group-hover/card:opacity-0"}`}
+            />
+            <OverflowMenuVertical
+              size={16}
+              className={`absolute inset-0 transition-opacity ${menuOpen ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
+            />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => {}}>
+            <Share size={13} /> Share
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {}}>
+            Manage access…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => {}}>Extend 1 day</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {}}>Extend 7 days</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {}}>
+            Extend 30 days
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem tone="danger" onSelect={() => {}}>
+            <TrashCan size={13} /> Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
+  );
+}
+
+function ArtifactTrailingIcon() {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  return (
+    <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="relative shrink-0"
+            aria-label="Artifact actions"
+          >
+            <Launch
+              size={16}
+              className={`transition-opacity ${menuOpen ? "opacity-0" : "group-hover/card:opacity-0"}`}
+            />
+            <OverflowMenuVertical
+              size={16}
+              className={`absolute inset-0 transition-opacity ${menuOpen ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"}`}
+            />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => {}}>
+            <Edit size={13} /> Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {}}>
+            <Move size={13} /> Move
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {}}>
+            <Share size={13} /> Share
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => {}}>
+            <Download size={13} /> Download
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => {}}>
+            <Calendar size={13} /> Set expiration
+          </DropdownMenuItem>
+          <DropdownMenuItem tone="danger" onSelect={() => {}}>
+            <TrashCan size={13} /> Delete artifact
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </span>
   );
 }
@@ -156,6 +247,59 @@ const ARTIFACT_CARDS: {
   },
 ];
 
+function EnvironmentOverflowMenuPanel() {
+  return (
+    <div className="w-48 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        <Share size={13} /> Share
+      </button>
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        Manage access…
+      </button>
+      <div className="my-1 h-px bg-border" />
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        Extend 1 day
+      </button>
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        Extend 7 days
+      </button>
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        Extend 30 days
+      </button>
+      <div className="my-1 h-px bg-border" />
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10">
+        <TrashCan size={13} /> Delete
+      </button>
+    </div>
+  );
+}
+
+function ArtifactOverflowMenuPanel() {
+  return (
+    <div className="w-48 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        <Edit size={13} /> Rename
+      </button>
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        <Move size={13} /> Move
+      </button>
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        <Share size={13} /> Share
+      </button>
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        <Download size={13} /> Download
+      </button>
+      <div className="my-1 h-px bg-border" />
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted">
+        <Calendar size={13} /> Set expiration
+      </button>
+      <button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10">
+        <TrashCan size={13} /> Delete artifact
+      </button>
+    </div>
+  );
+}
+
 export function WorkCardDesigns() {
   return (
     <div className="space-y-10">
@@ -191,7 +335,11 @@ export function WorkCardDesigns() {
                 />
               }
               trailingIcon={
-                card.expired ? <Launch size={16} /> : <EnvTrailingIcon />
+                card.expired ? (
+                  <Launch size={16} />
+                ) : (
+                  <EnvironmentTrailingIcon />
+                )
               }
               disabled={card.expired}
               onClick={() => {}}
@@ -215,10 +363,21 @@ export function WorkCardDesigns() {
                   expiry={a.expiry}
                 />
               }
+              trailingIcon={<ArtifactTrailingIcon />}
               onClick={() => {}}
             />
           ))}
         </div>
+      </section>
+
+      <section>
+        <SectionHeading>Environment Overflow Menu</SectionHeading>
+        <EnvironmentOverflowMenuPanel />
+      </section>
+
+      <section>
+        <SectionHeading>Artifact Overflow Menu</SectionHeading>
+        <ArtifactOverflowMenuPanel />
       </section>
     </div>
   );

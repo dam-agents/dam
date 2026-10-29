@@ -8,6 +8,7 @@ import { Badge } from "./components/ui/badge.js";
 import { emitToast } from "./lib/toast.js";
 import { AddActionDesigns } from "./mock/data/add-action-designs.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
+import { ArtifactItemDesigns } from "./mock/data/artifact-item-designs.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
 import { WorkCardDesigns } from "./mock/data/work-card-designs.js";
 import { HandoffSheet } from "./mock/handoff-sheet.js";
@@ -186,6 +187,8 @@ function MainApp() {
                 <WorkCardDesigns />
               ) : view === "add-action-designs" ? (
                 <AddActionDesigns />
+              ) : view === "artifact-item-designs" ? (
+                <ArtifactItemDesigns />
               ) : (
                 <HomeView />
               )}

@@ -897,9 +897,6 @@ export function IconRail({
                                 )}
                               </div>
                             )}
-                          {isExpanded && clickVariant === 0 && (
-                            <AgentEnvironments agentId={agent.id} now={now} />
-                          )}
                         </div>
                       </div>
                     );
@@ -1680,6 +1677,11 @@ function AgentEnvironments({ agentId, now }: { agentId: string; now: Date }) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => {}}>Share</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => {}}>
+                  Manage access…
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={() =>
                     emitToast({

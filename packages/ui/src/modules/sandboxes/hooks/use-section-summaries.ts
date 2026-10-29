@@ -165,11 +165,17 @@ export function useSectionSummaries(agent: AgentView | null): {
   return {
     summaries: {
       setup,
+      people: "You + 2 editors",
+      providers: "1 attached",
       connections,
+      network: "Trusted defaults",
+      environment: "3 variables",
       channels: channelsSummary,
+      "chat-forms": "On — whenever they help",
       skills,
       schedules: schedulesSummary,
       artifacts: artifactsSummary,
+      environments: "1 running",
       usage: usageSummary,
     },
     warnings: missingProvider

@@ -34,6 +34,9 @@ export function ArtifactRowMenuItems({
       <DropdownMenuItem onSelect={() => onShare(artifact)}>
         Share
       </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => onShare(artifact)}>
+        Manage access…
+      </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void downloadArtifact(artifact.id)}>
         Download
       </DropdownMenuItem>

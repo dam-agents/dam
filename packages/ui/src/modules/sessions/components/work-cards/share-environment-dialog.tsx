@@ -1,5 +1,6 @@
 import {
   Add,
+  Calendar,
   Checkmark,
   Copy,
   Locked,
@@ -23,12 +24,27 @@ import { emitToast } from "@/lib/toast";
 interface Props {
   name: string;
   accessLabel?: string;
+  expiresAt?: string;
   onClose: () => void;
 }
 
 type Visibility = "private" | "restricted";
 
-export function ShareEnvironmentDialog({ name, accessLabel, onClose }: Props) {
+function expiryLabel(expiresAt: string | undefined): string | undefined {
+  if (!expiresAt) return undefined;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return "Expired";
+  const days = Math.ceil(ms / 86_400_000);
+  if (days === 1) return "Expires in 1 day";
+  return `Expires in ${days} days`;
+}
+
+export function ShareEnvironmentDialog({
+  name,
+  accessLabel,
+  expiresAt,
+  onClose,
+}: Props) {
   const initial: Visibility =
     accessLabel &&
     accessLabel.toLowerCase() !== "private" &&
@@ -110,71 +126,103 @@ export function ShareEnvironmentDialog({ name, accessLabel, onClose }: Props) {
             </RadioGroupPrimitive.Item>
           </RadioGroupPrimitive.Root>
 
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="name@company.com"
-              size="sm"
-              value={email}
-              onChange={(e) => setEmail(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addPerson();
-                }
-              }}
-            />
-            <Button variant="outline" size="sm" onClick={addPerson}>
-              <Add size={14} />
-              Add
-            </Button>
-          </div>
+          {visibility === "restricted" && (
+            <>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="name@company.com"
+                  size="sm"
+                  value={email}
+                  onChange={(e) => setEmail(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addPerson();
+                    }
+                  }}
+                />
+                <Button variant="outline" size="sm" onClick={addPerson}>
+                  <Add size={14} />
+                  Add
+                </Button>
+              </div>
 
-          {people.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">
-                {people.length} / 50 people on the list
-              </span>
-              {people.map((p) => (
-                <div
-                  key={p}
-                  className="flex items-center justify-between py-1.5 text-sm text-foreground"
-                >
-                  {p}
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`Remove ${p}`}
-                    onClick={() => removePerson(p)}
-                  >
-                    <TrashCan size={14} className="text-muted-foreground" />
-                  </Button>
+              {people.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">
+                    {people.length} / 50 people on the list
+                  </span>
+                  {people.map((p) => (
+                    <div
+                      key={p}
+                      className="flex items-center justify-between py-1.5 text-sm text-foreground"
+                    >
+                      {p}
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`Remove ${p}`}
+                        onClick={() => removePerson(p)}
+                      >
+                        <TrashCan size={14} className="text-muted-foreground" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              <div className="flex items-center gap-2">
+                <Input
+                  readOnly
+                  value={shareUrl}
+                  size="sm"
+                  variant="monospace"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Copy link"
+                  tooltip="Copy link"
+                  onClick={() => void copy(shareUrl)}
+                >
+                  {copied ? (
+                    <Checkmark size={14} className="text-success" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
+          {expiresAt && (
+            <div className="flex flex-col gap-2 border-t border-border pt-4">
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Calendar size={14} />
+                {expiryLabel(expiresAt)}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Extend expiry:
+                </span>
+                {[1, 7, 30].map((days) => (
+                  <Button
+                    key={days}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      emitToast({
+                        kind: "success",
+                        message: `Extended "${name}" by ${days} day${days !== 1 ? "s" : ""}.`,
+                      });
+                    }}
+                  >
+                    {days} {days === 1 ? "day" : "days"}
+                  </Button>
+                ))}
+              </div>
             </div>
           )}
-
-          <div className="flex items-center gap-2">
-            <Input
-              readOnly
-              value={shareUrl}
-              size="sm"
-              variant="monospace"
-              onFocus={(e) => e.currentTarget.select()}
-            />
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Copy link"
-              tooltip="Copy link"
-              onClick={() => void copy(shareUrl)}
-            >
-              {copied ? (
-                <Checkmark size={14} className="text-success" />
-              ) : (
-                <Copy size={14} />
-              )}
-            </Button>
-          </div>
         </div>
       </DialogBody>
       <DialogActions

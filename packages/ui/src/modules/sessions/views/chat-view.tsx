@@ -605,6 +605,11 @@ export function ChatView() {
   const browserFullscreen =
     browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
 
+  const setSidebarExpanded = useStore((s) => s.setSidebarExpanded);
+  useEffect(() => {
+    if (rightDockOpen) setSidebarExpanded(false);
+  }, [rightDockOpen, setSidebarExpanded]);
+
   const chrome: AgentChrome = {
     agentId: selectedAgent,
     name: selectedAgentName ?? "",

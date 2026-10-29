@@ -54,7 +54,7 @@ export function ShareModalDemo() {
     }
   };
 
-  const showLink = access === "public" || access === "restricted";
+  const showLink = access === "restricted";
 
   return (
     <div className="w-[560px] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
@@ -96,7 +96,7 @@ export function ShareModalDemo() {
           />
         </RadioGroup>
 
-        {/* Share link — visible for Public and Restricted */}
+        {/* Share link — visible only for Restricted */}
         {showLink && (
           <div className="flex items-center gap-2">
             <Input

@@ -28,7 +28,8 @@ type ParameterlessView =
   | "placeholder-texts"
   | "handoff-sheet"
   | "work-card-designs"
-  | "add-action-designs";
+  | "add-action-designs"
+  | "artifact-item-designs";
 
 export interface NavigationSlice {
   view: View;

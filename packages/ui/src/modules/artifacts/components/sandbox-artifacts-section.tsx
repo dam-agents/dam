@@ -22,6 +22,56 @@ function ToolChip({ name }: { name: string }) {
   );
 }
 
+const COLLAPSED_LIMIT = 5;
+
+function ArtifactList({
+  artifacts,
+  onPreview,
+  onRename,
+  onMove,
+  onShare,
+  onSetRetention,
+}: {
+  artifacts: LibraryArtifact[];
+  onPreview: (a: LibraryArtifact) => void;
+  onRename: (a: LibraryArtifact) => void;
+  onMove: (a: LibraryArtifact) => void;
+  onShare: (a: LibraryArtifact) => void;
+  onSetRetention: (a: LibraryArtifact) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasMore = artifacts.length > COLLAPSED_LIMIT;
+  const visible = expanded ? artifacts : artifacts.slice(0, COLLAPSED_LIMIT);
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="-mt-px">
+        {visible.map((artifact) => (
+          <ArtifactRow
+            key={artifact.id}
+            artifact={artifact}
+            showAgent={false}
+            onPreview={onPreview}
+            onRename={onRename}
+            onMove={onMove}
+            onShare={onShare}
+            onSetRetention={onSetRetention}
+          />
+        ))}
+      </div>
+      {hasMore && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="w-full border-t border-border px-4 py-2.5 text-center text-sm font-medium text-accent hover:bg-muted/60"
+        >
+          Expand more ({artifacts.length - COLLAPSED_LIMIT} remaining)
+        </button>
+      )}
+    </Card>
+  );
+}
+
 export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
@@ -68,23 +118,14 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
           </p>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          {}
-          <div className="-mt-px">
-            {artifacts.map((artifact) => (
-              <ArtifactRow
-                key={artifact.id}
-                artifact={artifact}
-                showAgent={false}
-                onPreview={setPreviewTarget}
-                onRename={setRenameTarget}
-                onMove={setMoveTarget}
-                onShare={setShareTarget}
-                onSetRetention={setRetentionTarget}
-              />
-            ))}
-          </div>
-        </Card>
+        <ArtifactList
+          artifacts={artifacts}
+          onPreview={setPreviewTarget}
+          onRename={setRenameTarget}
+          onMove={setMoveTarget}
+          onShare={setShareTarget}
+          onSetRetention={setRetentionTarget}
+        />
       )}
 
       {renameTarget && (
