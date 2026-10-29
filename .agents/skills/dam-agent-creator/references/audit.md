@@ -121,7 +121,8 @@ gets an answer.
 Trust invariants: ground truth lives **outside** the pipeline's inputs (a set naming its own answers is never scored); fixture creation and scored runs never share a session; one scored run at a time behind a lock; results append-only and validated before entering the history; nothing in the production domain touched beyond its own report.
 Difficulty: grade it in the ground truth on two axes, so the report can say "good enough for simple work, not for complex".
 The task tier (`simple` \| `complex`: size, files, interacting changes) belongs to each fixture, with a minimum count per tier in the set; item difficulty (`easy` \| `hard`, hard = needs reasoning across items or steps, never a surface pattern) belongs to each seeded item.
-Score each tier by pooling its fixtures into one sample (summed hits and totals, never an average of small fractions), report easy and hard recall beside each other, and give each tier one verdict against an operator-set bar (own config table, documented defaults): sufficient, borderline, insufficient, or too few items to decide.
+Score each tier by pooling its fixtures into one sample (summed hits, false alarms and totals, never an average of small fractions), report easy and hard recall beside each other, and give each tier one verdict against an operator-set bar (own config table, documented defaults): sufficient, borderline, insufficient, or too few items to decide.
+The bar has two measures per tier, recall over the seeded items and a false-alarm measure (precision, or wrong outputs on clean items), each with its own threshold; a tier is sufficient only when both clear.
 Show the counts behind every verdict (`17/20`), and keep the verdicts beside the headline index, never inside it, so earlier runs stay comparable.
 Propose it only where the operator would act on the numbers: it costs real tokens, and the complex tier costs the most.
 
