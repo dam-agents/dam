@@ -265,16 +265,19 @@ wait_for_nodes() {
 # node_kubelet_root_needed in .mise/lib/cluster.sh). The node directories come
 # from this install's own values, so the e2e lane's cache root is mounted as
 # the dev install's is. A running kubelet keeps its root, and its pods their
-# volumes there, so k3s stops first, its pods and their mounts with it; the
-# drop-in is written only once it has, so a stop that fails fails the install
-# and the next one tries again. A pod that started before its directory was
-# mounted keeps the overlay one, so with k3s left up the pods that mount one
-# are deleted below, in MOUNTED_LATE.
+# volumes there, so k3s stops first; the drop-in is written only once it has,
+# so a stop that fails fails the install and the next one tries again. A pod
+# that started before its directory was mounted keeps the overlay one, and
+# only the sandbox's cluster:stop takes the pods' containers and mounts down
+# with k3s: an Environment's `rc-service k3s stop` leaves them running. So
+# whenever k3s ran before this install, the pods that mount a directory
+# mounted now are deleted below, in MOUNTED_LATE, once k3s is up again.
 node_k3s_running() {
   if [ "$CLUSTER_TARGET" = environment ]; then env_k3s status >/dev/null 2>&1; else k3s_running; fi
 }
 node_volumes_on_home() {
-  local dirs
+  local dirs was_running=0
+  node_k3s_running && was_running=1
   mapfile -t dirs < <(node_dir_roots helm/values.yaml helm/values-local.yaml ${HELM_VALUES:+"$HELM_VALUES"} -- ${HELM_EXTRA_ARGS[@]+"${HELM_EXTRA_ARGS[@]}"} | sort -u)
   node_host_dirs ${dirs[@]+"${dirs[@]}"}
   MOUNTED_LATE=(${NODE_MOUNTED[@]+"${NODE_MOUNTED[@]}"})
@@ -286,7 +289,7 @@ node_volumes_on_home() {
     fi
     node_kubelet_root_write
   fi
-  node_k3s_running || MOUNTED_LATE=()
+  [ "$was_running" = 1 ] || MOUNTED_LATE=()
 }
 MOUNTED_LATE=()
 
