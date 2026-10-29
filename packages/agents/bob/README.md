@@ -90,6 +90,13 @@ A cancel during that compaction makes Bob replace the whole history with an empt
 The same patch therefore makes two more edits: a loop already cancelled starts no compaction, and a compaction that was cancelled or produced an empty summary leaves the history as it was.
 Drop them once a Bob release does both on its own.
 
+### Send now and a running command
+
+**Send now** on a queued message cancels Bob's turn while a command runs ([interrupt and continue](../../../docs/architecture/sessions.md#prompt-delivery)).
+Bob 2.0.6 then stops only the command's own shell, and a process that the command started keeps running.
+Checked on 2026-10-29: after **Send now** during `bash -c 'sleep 120; echo DONE > <file>'`, the file held DONE two minutes later.
+So the `<turn-continued>` notice tells the agent that a cut command may still be running.
+
 ## Authentication
 
 Bob expects `BOBSHELL_API_KEY` in the machine's env (2.0 renamed it to `BOB_API_KEY`, but the old name is a supported alias — Bob copies it over and errors only if both are set to different values).

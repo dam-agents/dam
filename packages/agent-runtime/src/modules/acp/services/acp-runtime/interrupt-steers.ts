@@ -9,7 +9,7 @@ import {
 
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
-import { TURN_CONTINUED_NOTICE } from "../interrupted-turn-recovery.js";
+import { turnContinuedNotice } from "../interrupted-turn-recovery.js";
 import type { PromptSubmission, SteerOutcome } from "./prompt-scheduler.js";
 
 const CONTINUATION_RETRIES = 3;
@@ -30,6 +30,7 @@ export interface InterruptSteersDeps {
   ): void;
   resolveSteer(sessionId: string, outcome: SteerOutcome): void;
   openToolCalls(sessionId: string): string[];
+  cancelApprovals(sessionId: string): string[];
   closeCutToolCalls(sessionId: string, toolCallIds: string[]): void;
   rememberUndelivered(sessionId: string, id: string, frame: unknown): void;
   forgetUndelivered(sessionId: string, id: string): void;
@@ -97,15 +98,18 @@ function failed(frame: unknown): boolean {
  * UNIT_BOUNDARY_DESCRIPTION: steers a harness that cannot take a message into
  * its running turn (interrupt and continue). At a steer point it cancels the
  * harness's turn and, once the harness answers cancelled, sends the waiting
- * messages as a new prompt followed by the turn-continued notice. For every
- * client this stays one turn: the turn keeps its prompt id and moves to the new
- * harness prompt, whose answer answers the client. Only the harness's answer to
- * the new prompt or its first output for it proves that the harness took it; a
- * late frame of the cancelled prompt proves nothing. Until then nothing that
- * reacts to a turn's end runs. A cancel cannot be undone, so every way the gap
- * can end delivers the messages once: the turn ending on its own or a person's
- * Stop before the harness answers the cancel gives the steer back as refused;
- * once the harness has the new prompt, the messages are delivered, also when a
+ * messages as a new prompt followed by the turn-continued notice. As the client
+ * of a cancelled turn must, it answers the session's open tool call approvals
+ * as cancelled, and it closes every tool call the cancel cut, so the notice
+ * tells the agent to check what such a call left. For every client this stays
+ * one turn: the turn keeps its prompt id and moves to the new harness prompt,
+ * whose answer answers the client. Only the harness's answer to the new prompt
+ * or its first output for it proves that the harness took it; a late frame of
+ * the cancelled prompt proves nothing. Until then nothing that reacts to a
+ * turn's end runs. A cancel cannot be undone, so every way the gap can end
+ * delivers the messages once: the turn ending on its own or a person's Stop
+ * before the harness answers the cancel gives the steer back as refused; once
+ * the harness has the new prompt, the messages are delivered, also when a
  * person's Stop then ends the turn, and a Stop while the runtime waits to ask
  * again cancels the new prompt as soon as it is sent; a harness that refuses
  * the new prompt is asked a few more times; and the batch is recorded as
@@ -136,7 +140,13 @@ export function createInterruptSteers(
       method: "session/prompt",
       params: {
         sessionId: it.sessionId,
-        prompt: [...it.prompt, { type: "text", text: TURN_CONTINUED_NOTICE }],
+        prompt: [
+          ...it.prompt,
+          {
+            type: "text",
+            text: turnContinuedNotice(it.cutToolCalls.length > 0),
+          },
+        ],
       },
     });
     if (!sent) {
@@ -187,8 +197,13 @@ export function createInterruptSteers(
             method: "session/cancel",
             params: { sessionId },
           })
-        )
+        ) {
           finish(it, "refused");
+          return;
+        }
+        for (const toolCallId of deps.cancelApprovals(sessionId))
+          if (!it.cutToolCalls.includes(toolCallId))
+            it.cutToolCalls.push(toolCallId);
       });
     },
 

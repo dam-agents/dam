@@ -718,7 +718,7 @@ function handleToolCall(
     kind: "tool",
     toolCallId: u.toolCallId,
     title: u.title,
-    status: u.status ?? "pending",
+    status: cutBySteer(u) ? "cancelled" : (u.status ?? "pending"),
     content: content?.length
       ? content
       : (adapterOutput(u, undefined) ?? content),

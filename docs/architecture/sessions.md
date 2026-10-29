@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-27
+Last verified: 2026-10-29
 
 ## Session inside the machine
 
@@ -130,6 +130,10 @@ A cancel can stop a running tool, so such a steer never waits out the minute and
 Between the cancel and the harness taking the new prompt the turn still runs for everything that reacts to a turn's end; a person's Stop in that gap stops the turn, and a turn that ends on its own there starts the messages as the next turn.
 The harness has taken the new prompt once it answers it or writes output for it; a late frame of the cancelled prompt does not count.
 From then on the messages count as delivered, also when a person's Stop ends the turn, so they never run a second time.
+**Send now** on such a harness cancels at once and so cuts the tool call that is running.
+The runtime then answers the Session's open tool call approvals as cancelled, as the client that cancels a turn must, so no approval card stays open, and the cut call shows as stopped, not as failed.
+The harness's own history records the cut call as failed, so the runtime keeps the ids of the calls it cut in the session metadata and marks them again when it rebuilds the log from that history.
+The notice tells the agent that a tool call was cut, may have partly run and may still be running, because a harness can stop a command's shell but not a process the command started.
 Scheduled fires, invocation outcomes and CLI runs always queue.
 A message from another of the agent's sessions is steered like a typed one.
 

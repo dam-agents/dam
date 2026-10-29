@@ -37,12 +37,12 @@ Apply `/typescript-engineering`.
 
 ## Acceptance criteria
 
-- [ ] In a Bob chat in which the agent runs `sleep 120`, **Send now** on a queued message puts it into the running work within ten seconds.
-- [ ] The cut command shows the way a command cut by Stop shows, not as failed, also after a reload.
-- [ ] The agent's next step mentions that the command was stopped, and does not run it again without a check.
-- [ ] With Bob in its asking mode, **Send now** while a permission request is open closes the request in the chat, and the turn continues with the message.
-- [ ] The process check result is in Bob's README.
-- [ ] `mise run check` and `mise run test` pass for `agent-runtime`.
+- [x] In a Bob chat in which the agent runs `sleep 120`, **Send now** on a queued message puts it into the running work within ten seconds.
+- [x] The cut command shows the way a command cut by Stop shows, not as failed, also after a reload.
+- [x] The agent's next step mentions that the command was stopped, and does not run it again without a check.
+- [x] With Bob in its asking mode, **Send now** while a permission request is open closes the request in the chat, and the turn continues with the message.
+- [x] The process check result is in Bob's README.
+- [x] `mise run check` and `mise run test` pass for `agent-runtime`.
 
 ## Smoke test
 

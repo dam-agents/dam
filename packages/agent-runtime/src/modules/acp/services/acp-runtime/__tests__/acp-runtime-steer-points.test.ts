@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TURN_CONTINUED_NOTICE } from "../../interrupted-turn-recovery.js";
+import { turnContinuedNotice } from "../../interrupted-turn-recovery.js";
 import {
   createInMemoryUndeliveredStore,
   createWorld,
@@ -350,7 +350,7 @@ describe("acp-runtime: interrupt and continue, races in the gap", () => {
     expect(bob.reply(3)).toMatchObject({ result: { stopReason: "cancelled" } });
     const prompts = world.harness().received("session/prompt");
     expect(prompts.map((p) => promptTexts(p).at(-1))).not.toContain(
-      TURN_CONTINUED_NOTICE,
+      turnContinuedNotice(false),
     );
     expect(undelivered.readFor(SESSION)).toEqual([]);
   });
@@ -396,7 +396,7 @@ describe("acp-runtime: interrupt and continue, races in the gap", () => {
     expect(prompts).toHaveLength(3);
     expect(promptTexts(prompts[2])).toEqual([
       "Change of plan",
-      TURN_CONTINUED_NOTICE,
+      turnContinuedNotice(false),
     ]);
     world.harness().emit(frames.agentMessage(SESSION, "Understood."));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });

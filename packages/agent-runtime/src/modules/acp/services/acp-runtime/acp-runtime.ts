@@ -129,6 +129,7 @@ import { createSessionTranscript } from "./session-transcript.js";
 import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
 import { platformOf, withPlatform } from "../../domain/platform-meta.js";
 import { verdictOf, withoutAnsweredBy } from "../../domain/attribution.js";
+import { cutToolCallFrame, withCutMark } from "../../domain/cut-tool-calls.js";
 
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
@@ -614,21 +615,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     resolveSteer: (sessionId, outcome) =>
       promptScheduler.resolveSteer(sessionId, outcome),
     openToolCalls: (sessionId) => [...(openToolCalls.get(sessionId) ?? [])],
+    cancelApprovals: (sessionId) => pendingRequests.cancelApprovals(sessionId),
     closeCutToolCalls(sessionId, toolCallIds) {
+      deps.sessionMetadata?.recordCutToolCalls(sessionId, toolCallIds);
       for (const toolCallId of toolCallIds) {
-        const frame = {
-          jsonrpc: "2.0",
-          method: "session/update",
-          params: {
-            sessionId,
-            update: {
-              sessionUpdate: "tool_call_update",
-              toolCallId,
-              status: "failed",
-              _meta: { platform: { cutBySteer: true } },
-            },
-          },
-        };
+        const frame = cutToolCallFrame(sessionId, toolCallId);
         transcript.append(
           sessionId,
           JSON.stringify(frame),
@@ -2473,8 +2464,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const activity = deps.onToolActivity && toolActivityIn(frame);
         if (activity) deps.onToolActivity?.(activity);
       }
+      const logged = withCutMark(
+        line,
+        deps.sessionMetadata?.cutToolCallsOf(sessionId) ?? [],
+      );
       if (bootstrap.has(sessionId)) {
-        transcript.appendReplay(sessionId, line);
+        transcript.appendReplay(sessionId, logged);
       } else {
         interruptSteers.onSessionUpdate(sessionId, frame);
         const reportedModel = extractReportedModel(frame);
@@ -2515,7 +2510,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const promptTurn = promptScheduler.activeTurnId(sessionId);
         transcript.append(
           sessionId,
-          line,
+          logged,
           promptTurn ?? autonomousTurns.turnFor(sessionId, update),
         );
         if (promptTurn === null) autonomousTurns.afterFrame(sessionId, update);
