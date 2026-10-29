@@ -62,7 +62,11 @@ export function compose(): Command {
   program
     .name("dam")
     .description("Command-line client for a Platform deployment")
-    .version(cli.cliVersion);
+    .version(cli.cliVersion)
+    // A command group that declares an option its subcommands declare too
+    // (`run --server` beside `run get --server`) leaves what follows a
+    // subcommand to that subcommand only when every parent stops at it.
+    .enablePositionalOptions();
 
   for (const module of [
     cli,
