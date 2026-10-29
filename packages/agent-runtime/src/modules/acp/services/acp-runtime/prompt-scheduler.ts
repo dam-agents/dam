@@ -94,6 +94,7 @@ export interface PromptScheduler {
   };
   activeTurnId(sessionId: string): string | null;
   hasTurnInFlight(sessionId: string): boolean;
+  turnStartedAt(sessionId: string): number | null;
   isRunTurn(sessionId: string): boolean;
   hasWork(sessionId: string): boolean;
   anyWork(): boolean;
@@ -660,6 +661,10 @@ export function createPromptScheduler(
 
     hasTurnInFlight(sessionId) {
       return activeTurns.has(sessionId);
+    },
+
+    turnStartedAt(sessionId) {
+      return activeTurns.get(sessionId)?.startedAt ?? null;
     },
 
     isRunTurn(sessionId) {

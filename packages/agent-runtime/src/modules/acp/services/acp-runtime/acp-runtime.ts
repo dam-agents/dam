@@ -598,6 +598,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
     },
+    turnStartedAt(sessionId) {
+      const at = promptScheduler.turnStartedAt(sessionId);
+      return at === null ? undefined : new Date(at).toISOString();
+    },
     interruption(sessionId) {
       if (promptScheduler.hasTurnInFlight(sessionId)) return undefined;
       return deps.activeTurns

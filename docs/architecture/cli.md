@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-26
+Last verified: 2026-10-29
 
 ## Overview
 
@@ -241,6 +241,10 @@ Every attempt reads the token again, so an access token that expired during a lo
 The attempt targets the session the harness last moved its PTY to, and the screen is cleared just before the replay.
 On exit, on a drop that does not reconnect, and when it gives up or the user stops it, the CLI prints a ready-to-paste resume command and the leave hint again.
 `dam session list` reads the same agent-owned session list.
+`dam session show` reads one Session: it lists the sessions first, so an id the agent does not have is refused with a pointer to `dam session list`, then loads it over the same ACP relay the UI uses and prints its Session Transcript as messages and tool calls.
+A tool call's duration is the time between the stamps the runtime puts on the frame that started it and the frame that finished it, since no harness reports one.
+The load answer says whether a turn is running and when it started, for any Session, so the CLI tells how long a turn has been going even where the run fields of the session list stay empty: those count unattended runs only.
+`--follow` keeps the connection open and prints each new step and the turn's end as they come.
 
 ## Headless runs
 

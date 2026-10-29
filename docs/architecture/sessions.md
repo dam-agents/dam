@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-26
+Last verified: 2026-10-29
 
 ## Session inside the machine
 
@@ -41,7 +41,7 @@ A start whose prompt is not in view — older than the loaded tail — sits abov
 The runtime keeps who did what in a Session the same way, in its metadata, for [Agent Editors](agent-editors.md#who-did-what).
 A prompt, a queue edit or a rewrite that carries a **Sender** in `_meta.platform.sender`, which the api-server's relay writes, records that Sender with its prompt id and the time the prompt started, and the first one recorded is the Session's **Session Starter**; the harness never sees it.
 A permission answer that carries who answered in `result._meta.platform.answeredBy` records the verdict under the harness's tool call id.
-Engaged viewers hear each Sender and verdict as it is recorded, and the Sender of each turn as it starts; a load hands back the Senders, the verdicts and the running turn's Sender, and the session list carries the Session Starter.
+Engaged viewers hear each Sender and verdict as it is recorded, and the Sender of each turn as it starts; a load hands back the Senders, the verdicts, and the running turn's Sender and the time it started, and the session list carries the Session Starter.
 A client matches a Sender to its message by prompt id, and by time when the log was rebuilt from the harness's history and the ids changed, as it places run starts.
 A rewind keeps the Senders, the verdicts and the Session Starter; a fork keeps the Senders and the verdicts, and its Session Starter is whoever sent its first prompt.
 

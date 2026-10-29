@@ -217,6 +217,21 @@ A run that outlasts `--timeout` keeps going on the agent, and the CLI prints its
 A new run starts on the agent's default harness and model.
 To choose for one run, pass `--harness`, `--model` or `--setting`; see [Models and harnesses](#models-and-harnesses).
 
+### What is my agent doing?
+
+```sh
+dam session list my-agent
+dam session show my-agent <session-id>
+dam session show my-agent <session-id> --follow
+```
+
+`dam session list` finds the session; `--json` marks the one whose turn runs with `running: true`.
+`dam session show` prints when the running turn started and how long it has been going, then the session's messages and tool calls, newest last: each tool call with its tool, a summary of its command or input, its status and its duration.
+It works for every session: one a person drives, one from Slack or Telegram, or one a schedule started.
+`--json` prints one object, `{ session, turn: { running, turnStartedAt, turnElapsedMs }, steps }`.
+`--follow` keeps printing new steps and the end of the turn until you stop it (Ctrl+C); with `--json`, one object per line.
+A long tool call is often the reason a turn is slow: look at its duration, or at the one still `in_progress`.
+
 ### Models and harnesses
 
 Every session of an agent runs on a **harness** (the coding agent inside it, such as `claude-code` or `codex`) and a **model** from a **model provider** connection granted to the agent.

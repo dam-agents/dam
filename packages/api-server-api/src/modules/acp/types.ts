@@ -170,6 +170,7 @@ export const platformClippedReplayMetaSchema = z.object({
 
 export const platformReplayTurnMetaSchema = z.object({
   inFlight: z.boolean(),
+  startedAt: z.string().datetime({ offset: true }).optional(),
   sender: senderSchema.optional(),
   interruptedAt: z.string().optional(),
   interruptedByStop: z.boolean().optional(),

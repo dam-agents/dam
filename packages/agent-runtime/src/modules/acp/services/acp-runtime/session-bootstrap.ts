@@ -85,6 +85,7 @@ export interface SessionBootstrapDeps {
   onProviderServed(sessionId: string): void;
   harnessLoadOrphaned(sessionId: string): boolean;
   turnInFlight(sessionId: string): boolean;
+  turnStartedAt(sessionId: string): string | undefined;
   interruption(
     sessionId: string,
   ): { startedAt: string; stopped?: true } | undefined;
@@ -193,8 +194,10 @@ export function createSessionBootstrap(
   function turnMetaOf(sessionId: string): PlatformReplayTurnMeta {
     const interruption = deps.interruption(sessionId);
     const sender = deps.turnSenderOf(sessionId);
+    const startedAt = deps.turnStartedAt(sessionId);
     return {
       inFlight: deps.turnInFlight(sessionId),
+      ...(startedAt !== undefined && { startedAt }),
       ...(sender !== undefined && { sender }),
       ...(interruption && { interruptedAt: interruption.startedAt }),
       ...(interruption?.stopped && { interruptedByStop: true }),
