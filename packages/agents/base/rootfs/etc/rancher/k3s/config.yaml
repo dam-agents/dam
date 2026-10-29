@@ -1,3 +1,9 @@
 # The machine root is an overlay, which overlayfs refuses as an upperdir, and
 # the home is the one guest path on the storage disk.
 data-dir: /home/agent/.local/share/k3s
+# The port cluster:install's own k3s listens on, as a plain process in a
+# sandbox and in the lima dev VM, so a cluster made by one of them runs under
+# this service with its kubeconfigs unchanged. 16443, not k3s's own 6443,
+# which other local clusters often hold.
+https-listen-port: 16443
+write-kubeconfig-mode: "644"

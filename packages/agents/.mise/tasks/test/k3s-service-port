@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+//MISE description="Test that the image's k3s service listens on 16443, and keeps the port a cluster in its data dir was made on"
+//MISE sources=["base/rootfs/etc/init.d/k3s", "base/rootfs/etc/rancher/k3s/config.yaml", ".mise/tasks/test/k3s-service-port"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const rootfs = fileURLToPath(new URL("../../../base/rootfs", import.meta.url));
+const service = readFileSync(join(rootfs, "etc/init.d/k3s"), "utf8");
+const config = readFileSync(join(rootfs, "etc/rancher/k3s/config.yaml"), "utf8");
+const dir = mkdtempSync(join(tmpdir(), "k3s-service-port-"));
+const data = join(dir, "k3s");
+const configFile = join(dir, "config.yaml");
+writeFileSync(configFile, config.replace(/^data-dir: .*$/m, `data-dir: ${data}`));
+
+const script = join(dir, "start_pre.sh");
+writeFileSync(
+  script,
+  [
+    "platform_ca_bundle() { :; }",
+    "command() { :; }",
+    service
+      .split("\n")
+      .filter((line) => !line.startsWith("#!"))
+      .join("\n")
+      .replaceAll("platform-ca-bundle", "platform_ca_bundle")
+      .replaceAll("/etc/rancher/k3s/config.yaml", configFile),
+    "start_pre",
+    'printf "%s" "$command_args"',
+  ].join("\n"),
+);
+const startArgs = () => execFileSync("/bin/sh", [script], { encoding: "utf8" });
+const madeOn = (apiServerPort) => {
+  mkdirSync(join(data, "server/cred"), { recursive: true });
+  writeFileSync(
+    join(data, "server/cred/admin.kubeconfig"),
+    `apiVersion: v1\nclusters:\n- cluster:\n    server: https://127.0.0.1:${apiServerPort}\n  name: local\n`,
+  );
+};
+
+try {
+  // TEST_SCENARIO: cluster:install's plain process, the lima VM and CI start k3s on 16443, so a sandbox cluster made by one runs under the image's service with its kubeconfigs unchanged.
+  assert.match(config, /^https-listen-port: 16443$/m);
+  assert.equal(startArgs(), "server");
+
+  // TEST_SCENARIO: a cluster made on 16443 keeps the API server's kubeconfigs on 16444, and the service starts it on 16443.
+  madeOn(16444);
+  assert.equal(startArgs(), "server --https-listen-port 16443");
+
+  // TEST_SCENARIO: an Environment made before the move keeps its kubeconfigs on 6444, and k3s exits on any other port, so the service keeps 6443 for it until it is made again.
+  madeOn(6444);
+  assert.equal(startArgs(), "server --https-listen-port 6443");
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}
