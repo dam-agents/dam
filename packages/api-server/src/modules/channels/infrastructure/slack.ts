@@ -2247,13 +2247,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     attachment: ChannelAttachment | undefined,
     threadTs: string | undefined,
     persona: Pick<SlackPostMessage, "username" | "iconUrl">,
-    post: (fileIds: string[]) => Promise<unknown>,
+    post: (fileIds: string[]) => Promise<{ ts: string } | null>,
     fileBlocks: SlackBlock[] | null,
-  ): Promise<string | null> {
-    if (!attachment) {
-      await post([]);
-      return null;
-    }
+  ): Promise<{ uploadError: string | null; ts?: string }> {
+    const posted = async (fileIds: string[]) => {
+      const message = await post(fileIds);
+      return message ? { ts: message.ts } : {};
+    };
+    if (!attachment) return { uploadError: null, ...(await posted([])) };
     const share = (fileId: string, blocks?: SlackBlock[]) =>
       gw.shareFile({
         fileId,
@@ -2275,25 +2276,23 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               () => null,
               (err: unknown) => formatError(err),
             )));
-      if (failure === null) return null;
+      if (failure === null) return { uploadError: null };
       getLogger().warn(
         { channelId: target.id, err: failure },
         "slack.file_post.failed: posting the text and the file apart",
       );
     }
     const staged = await stageFile(gw, target.teamId, attachment);
-    if ("error" in staged) {
-      await post([]);
-      return staged.error;
-    }
-    await post([staged.reserved.fileId]);
-    const uploadError = await staged.bytesSent;
-    if (uploadError !== null) return uploadError;
+    if ("error" in staged)
+      return { uploadError: staged.error, ...(await posted([])) };
+    const message = await posted([staged.reserved.fileId]);
+    const bytesError = await staged.bytesSent;
+    if (bytesError !== null) return { uploadError: bytesError, ...message };
     try {
       await share(staged.reserved.fileId);
-      return null;
+      return { uploadError: null, ...message };
     } catch (err) {
-      return formatError(err);
+      return { uploadError: formatError(err), ...message };
     }
   }
 
@@ -6114,8 +6113,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
       try {
         let attachmentError: string | null = null;
+        let ts: string | undefined;
         if (text) {
-          attachmentError = await postWithAttachment(
+          ({ uploadError: attachmentError, ts } = await postWithAttachment(
             gw,
             target,
             attachment,
@@ -6135,7 +6135,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             unfurlLinks === false || unfurlMedia === false
               ? null
               : fileShareBlocks(sign(text, "**"), contextBlock),
-          );
+          ));
         } else if (attachment) {
           try {
             await gw.uploadFile({
@@ -6154,9 +6154,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           messaged: true,
           ...(text ? { replyText: text } : {}),
         });
-        return attachmentError
-          ? { ok: true as const, attachmentError }
-          : { ok: true as const };
+        return {
+          ok: true as const,
+          conversationId: target.id,
+          ...(ts !== undefined ? { ts } : {}),
+          ...(attachmentError ? { attachmentError } : {}),
+        };
       } catch (err) {
         return { error: formatError(err) };
       }
@@ -6444,10 +6447,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           (ref) => ref.threadTs === threadTs && ref.channel === target.id,
           { messaged: true },
         );
-        return { ok: true as const };
+        return { ok: true as const, conversationId: target.id };
       }
       try {
-        const uploadError = await postWithAttachment(
+        const { uploadError, ts } = await postWithAttachment(
           gw,
           target,
           args.attachment,
@@ -6481,9 +6484,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           (ref) => ref.threadTs === threadTs && ref.channel === target.id,
           { messaged: true, replyText: args.text },
         );
-        return uploadError
-          ? { ok: true as const, attachmentError: uploadError }
-          : { ok: true as const };
+        return {
+          ok: true as const,
+          conversationId: target.id,
+          ...(ts !== undefined ? { ts } : {}),
+          ...(uploadError ? { attachmentError: uploadError } : {}),
+        };
       } catch (err) {
         return { error: formatError(err) };
       }

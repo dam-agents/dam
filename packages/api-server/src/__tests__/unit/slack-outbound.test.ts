@@ -117,7 +117,7 @@ describe("slack outbound — cross-workspace reach", () => {
     const posts = vi.spyOn(h.gw, "postMessage");
     const text = "Before\n```ps -ef\nkill -9 <pid>```\nAfter.";
 
-    expect(await h.post(text)).toEqual({ ok: true });
+    expect(await h.post(text)).toMatchObject({ ok: true });
     expect(posts.mock.calls[0]![0]).toMatchObject({
       text: signed(text),
       blocks: [
@@ -179,9 +179,13 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(h.messages()).toHaveLength(0);
   });
 
-  it("omitted chatId still posts to the bound channel", async () => {
+  it("omitted chatId still posts to the bound channel, and names the post", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    expect(await h.post("hello")).toEqual({ ok: true });
+    expect(await h.post("hello")).toEqual({
+      ok: true,
+      conversationId: BOUND,
+      ts: expect.any(String),
+    });
     expect(h.messages()).toMatchObject([
       { channel: BOUND, text: signed("hello") },
     ]);
@@ -207,7 +211,7 @@ describe("slack outbound — cross-workspace reach", () => {
 
   it("bound-channel chatId short-circuits — works even when discovery knows nothing", async () => {
     const h = harness({ boundChannelId: BOUND, channels: [] });
-    expect(await h.post("hello", { conversationId: BOUND })).toEqual({
+    expect(await h.post("hello", { conversationId: BOUND })).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([{ channel: BOUND }]);
@@ -215,7 +219,9 @@ describe("slack outbound — cross-workspace reach", () => {
 
   it("posts into another channel the bot is a member of", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    expect(await h.post("update", { conversationId: "C-GENERAL" })).toEqual({
+    expect(
+      await h.post("update", { conversationId: "C-GENERAL" }),
+    ).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([{ channel: "C-GENERAL" }]);
@@ -247,8 +253,9 @@ describe("slack outbound — cross-workspace reach", () => {
       channels: workspace,
       ownerSlackUsers: ["UOWNER"],
     });
-    expect(await h.post("psst", { conversationId: "UOWNER" })).toEqual({
+    expect(await h.post("psst", { conversationId: "UOWNER" })).toMatchObject({
       ok: true,
+      conversationId: "D-UOWNER",
     });
     expect(h.messages()).toMatchObject([{ channel: "D-UOWNER" }]);
   });
@@ -276,9 +283,11 @@ describe("slack outbound — cross-workspace reach", () => {
       channels: workspace,
       ownerSlackUsers: ["UOWNER"],
     });
-    expect(await h.post("again", { conversationId: "D-UOWNER" })).toEqual({
-      ok: true,
-    });
+    expect(await h.post("again", { conversationId: "D-UOWNER" })).toMatchObject(
+      {
+        ok: true,
+      },
+    );
     expect(h.messages()).toMatchObject([{ channel: "D-UOWNER" }]);
   });
 
@@ -294,7 +303,7 @@ describe("slack outbound — cross-workspace reach", () => {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, conversationId: "C-ALERTS" });
     expect(h.messages()).toEqual([]);
     expect(h.uploads()).toMatchObject([
       {
@@ -313,7 +322,7 @@ describe("slack outbound — cross-workspace reach", () => {
       threadTs: "1700000000.000100",
       attachment: { filename: "lorem-ipsum.txt", data: Buffer.from("x") },
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
     expect(h.messages()).toEqual([]);
     expect(h.uploads()).toEqual([
       {
@@ -348,7 +357,7 @@ describe("slack outbound — cross-workspace reach", () => {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
     expect(
       h.gw
         .readOutbound()
@@ -399,7 +408,7 @@ describe("slack outbound — cross-workspace reach", () => {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       attachmentError: expect.stringContaining("upload_error"),
     });
@@ -460,7 +469,7 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
     });
     expect(
       await h.worker.reply("agent-1", { ...stale, conversationId: SECOND }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     expect(h.messages()).toMatchObject([
       { channel: SECOND, threadTs: stale.threadTs },
     ]);
@@ -468,10 +477,10 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
 
   it("either bound conversation is a valid chatId", async () => {
     const h = multi();
-    expect(await h.post("one", { conversationId: BOUND })).toEqual({
+    expect(await h.post("one", { conversationId: BOUND })).toMatchObject({
       ok: true,
     });
-    expect(await h.post("two", { conversationId: SECOND })).toEqual({
+    expect(await h.post("two", { conversationId: SECOND })).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([
@@ -486,7 +495,7 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
       extraBoundChannelIds: [SECOND],
       channels: [],
     });
-    expect(await h.post("hi", { conversationId: SECOND })).toEqual({
+    expect(await h.post("hi", { conversationId: SECOND })).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([{ channel: SECOND }]);
@@ -582,7 +591,7 @@ describe("slack outbound — reach follows the owner (#4165)", () => {
     expect(listed).toContain("C-GENERAL");
     expect(listed).not.toContain("C-THEIRS");
 
-    expect(await h.post("hi", { conversationId: "C-GENERAL" })).toEqual({
+    expect(await h.post("hi", { conversationId: "C-GENERAL" })).toMatchObject({
       ok: true,
     });
     expect(await h.post("leak", { conversationId: "C-THEIRS" })).toMatchObject({
@@ -620,10 +629,10 @@ describe("slack outbound — a direct message stays within reach (#5509)", () =>
       channels,
       ownerSlackUsers: ["UOWNER"],
     });
-    expect(await h.post("hi", { conversationId: "UOWNER" })).toEqual({
+    expect(await h.post("hi", { conversationId: "UOWNER" })).toMatchObject({
       ok: true,
     });
-    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toEqual({
+    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toMatchObject({
       ok: true,
     });
     for (const conversationId of ["USTRANGER", "D-USTRANGER"]) {
@@ -643,7 +652,7 @@ describe("slack outbound — a direct message stays within reach (#5509)", () =>
       extraBoundChannelIds: ["D-UFRIEND"],
       channels,
     });
-    expect(await h.post("hi", { conversationId: "UFRIEND" })).toEqual({
+    expect(await h.post("hi", { conversationId: "UFRIEND" })).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([{ channel: "D-UFRIEND" }]);
@@ -651,7 +660,7 @@ describe("slack outbound — a direct message stays within reach (#5509)", () =>
 
   it("an owner with no linked Slack identity reaches only members of bound conversations", async () => {
     const h = harness({ boundChannelId: BOUND, channels, ownerSlackUsers: [] });
-    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toEqual({
+    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toMatchObject({
       ok: true,
     });
     expect(

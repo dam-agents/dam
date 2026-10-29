@@ -297,7 +297,7 @@ describe("slack ambient inbound", () => {
     const result = await h.worker.reply("agent-1", {
       text: "here's the runbook",
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
     expect(h.messages()[0]).toMatchObject({
       channel: "C1",
       threadTs: "7.7",
@@ -511,7 +511,7 @@ describe("slack ambient inbound", () => {
       text: "answering two",
       threadTs: "2.2",
     });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.messages()[0]).toMatchObject({
       threadTs: "2.2",
       text: signed("answering two"),
@@ -635,7 +635,7 @@ describe("slack ambient inbound", () => {
       text: "late answer",
       threadTs: "T.1",
     });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.messages()[0]).toMatchObject({ threadTs: "T.1" });
 
     pending[1]!.resolve("");
