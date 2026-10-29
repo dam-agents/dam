@@ -2339,6 +2339,7 @@ export async function bootstrap() {
       reader: metricsReader,
       spend: spend.agentSpend,
     }),
+    spendCalls: spend.agentSpend,
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
     scriptOutputs,
