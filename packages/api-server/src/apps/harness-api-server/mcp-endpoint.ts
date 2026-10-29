@@ -133,6 +133,15 @@ export async function textTool<T>(
   }
 }
 
+function namePost(
+  sent: string,
+  post: { conversationId?: string; ts?: string },
+) {
+  return post.ts !== undefined && post.conversationId !== undefined
+    ? `${sent} to chatId ${post.conversationId} as ts ${post.ts}`
+    : sent;
+}
+
 function renderAttachmentFailure(
   sent: string,
   repost: string,
@@ -327,7 +336,7 @@ export function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.`,
+    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, the result names the posted message's chatId and ts: pass them to reply as chatId and threadTs to continue in its thread, or to react as chatId and messageTs. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z
@@ -411,13 +420,14 @@ export function createMcpSession(
         },
       });
       if ("error" in result) return errorResult(result.error);
+      const sent = namePost("Message sent", result);
       if (attachmentError)
         return renderAttachmentFailure(
-          "Message sent",
+          sent,
           "send the message again",
           attachmentError,
         );
-      return textResult("Message sent");
+      return textResult(sent);
     },
   );
 
@@ -619,7 +629,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. The result names the reply's chatId and ts: pass them to react as chatId and messageTs. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
       text: z
         .string()
@@ -714,13 +724,14 @@ export function createMcpSession(
         },
       });
       if ("error" in result) return errorResult(result.error);
+      const posted = namePost("Reply posted", result);
       if (attachmentError)
         return renderAttachmentFailure(
-          "Reply posted",
+          posted,
           "post the reply again",
           attachmentError,
         );
-      return textResult("Reply posted");
+      return textResult(posted);
     },
   );
 

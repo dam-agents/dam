@@ -260,7 +260,11 @@ describe("slack reply / react tools", () => {
     h.gw.resetOutbound();
 
     const result = await h.worker.reply("agent-1", { text: "here you go" });
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({
+      ok: true,
+      conversationId: "C1",
+      ts: expect.any(String),
+    });
 
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
@@ -305,7 +309,7 @@ describe("slack reply / react tools", () => {
       threadTs: "7.7",
       alsoSendToChannel: true,
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
 
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
@@ -523,7 +527,7 @@ describe("slack reply / react tools", () => {
     const result = await h.worker.react("agent-1", {
       emoji: ":white_check_mark:",
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
 
     const reactions = h.records().filter((r) => r.kind === "reaction");
     expect(reactions).toHaveLength(1);
@@ -645,7 +649,7 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
       text: "for thread A",
       threadTs: "100.1",
     });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({
@@ -682,7 +686,7 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     h.gw.resetOutbound();
 
     const ok = await h.worker.reply("agent-1", { text: "sole turn" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({ threadTs: "100.1" });
@@ -731,7 +735,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       text: "late answer",
       threadTs: "100.1",
     });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       threadTs: "100.1",
     });
@@ -755,7 +759,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     h.gw.resetOutbound();
 
     const ok = await h.worker.reply("agent-1", { text: "late answer" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({ threadTs: "100.1" });
@@ -774,7 +778,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     h.gw.resetOutbound();
 
     const ok = await h.worker.reply("agent-1", { text: "for the live turn" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       threadTs: "200.2",
     });
@@ -828,7 +832,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     h.gw.resetOutbound();
 
     const ok = await h.worker.reply("agent-1", { text: "same thread" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       threadTs: "100.1",
     });
@@ -987,7 +991,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     bound = "C2";
     h.gw.resetOutbound();
     const ok = await h.worker.reply("agent-1", { text: "for C1's thread" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       channel: "C1",
       threadTs: "100.1",
@@ -998,7 +1002,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       text: "explicit id",
       threadTs: "100.1",
     });
-    expect(okExplicit).toEqual({ ok: true });
+    expect(okExplicit).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       channel: "C1",
       threadTs: "100.1",

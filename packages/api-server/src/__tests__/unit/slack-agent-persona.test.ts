@@ -78,7 +78,7 @@ function harness(
     gw,
     async post() {
       await worker.connect();
-      expect(await worker.postMessage("agent-1", "hello")).toEqual({
+      expect(await worker.postMessage("agent-1", "hello")).toMatchObject({
         ok: true,
       });
       const [message] = gw.readOutbound();
@@ -88,7 +88,7 @@ function harness(
       await worker.connect();
       expect(
         await worker.reply("agent-1", { text: "hi", threadTs: "1.1" }),
-      ).toEqual({ ok: true });
+      ).toMatchObject({ ok: true });
       const [message] = gw.readOutbound();
       return message;
     },
