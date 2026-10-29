@@ -26,8 +26,6 @@ If the issue isn't in context, fetch it with `gh` (URL or number) and read title
 This skill usually follows a conversation that already discussed the feature; don't redo that work.
 
 Context is enough when no open question (scope, boundaries, edge cases, where things live, naming) could change the decomposition, and the plan is grounded in the relevant pages under [`docs/architecture/`](../../../docs/architecture/) and in real files, modules and seams.
-A feature a user sees also needs acceptance criteria in the issue's **Done when**, in the format of [`docs/guidelines/acceptance-criteria.md`](../../../docs/guidelines/acceptance-criteria.md): a tester checks the finished feature against them without reading the code.
-Missing or untestable criteria are a gap like any other; propose criteria the user can add to the issue.
 
 **If it falls short, stop.** Don't gather it yourself: tell the user what's missing or undecided and let them supply or discuss it.
 Offer `/grill-me` as one way to close the gaps, but leave the choice to them.
@@ -51,7 +49,6 @@ Write `README.md` and one `NN-slug.md` per sub-issue (`01-`, `02-`, … encode o
 While drafting:
 
 - Apply `/typescript-engineering` (server-side TS) and `/react-ui-engineering` (UI, `packages/ui`), and name the relevant skill in each sub-issue so the implementer applies it.
-- Copy the issue's acceptance criteria into the README word for word; the whole-feature smoke test walks them, and no sub-issue rewrites them.
 - **Don't prescribe new tests.** The implementer doesn't author tests by default; verification is the **existing** suite (`mise run test` / `mise run check`) plus a **manual** smoke test.
   Call for a new test only when behavior is otherwise unverifiable (e.g. a pure algorithm with tricky edges and no manual smoke path), flagged as the exception.
 
@@ -102,11 +99,6 @@ Closes #NNN
 
 <What we're building and why, from the issue and conversation. User-visible outcome.>
 
-## Acceptance criteria
-
-<The issue's acceptance criteria, copied word for word from its Done when: the
-`### AC-<k>` blocks a tester checks through the web UI, Slack or GitHub.>
-
 ## Approach
 
 <Overall architecture and how the feature fits the system. Reference the architecture
@@ -129,8 +121,7 @@ must apply: /typescript-engineering, /react-ui-engineering.>
 
 ## Whole-feature smoke test
 
-<End-to-end check that the assembled feature works, once all sub-issues are done: walk each
-acceptance criterion above through the UI.>
+<End-to-end check that the assembled feature works, once all sub-issues are done.>
 
 ## Delivery
 
@@ -158,8 +149,7 @@ and/or /react-ui-engineering skill (UI) while implementing.>
 ## Acceptance criteria
 
 <Checks the implementing agent validates before declaring the slice done. Phrase each as
-something verifiable, not aspirational. These are this slice's checks for the implementer;
-the issue's acceptance criteria for a tester stay in the README.>
+something verifiable, not aspirational.>
 
 - [ ] …
 - [ ] …
