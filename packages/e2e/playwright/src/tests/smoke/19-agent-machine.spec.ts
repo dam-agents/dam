@@ -157,8 +157,8 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       "EOF",
       `chmod 755 /etc/init.d/${probeService}`,
       `rm -f ${probeStopped}`,
-      `/sbin/rc-update add ${probeService} default >/dev/null`,
-      `/sbin/rc-service ${probeService} start >/dev/null`,
+      `rc-update add ${probeService} default >/dev/null`,
+      `rc-service ${probeService} start >/dev/null`,
       `rm -f ${startupItemRuns}`,
       "mkdir -p /home/agent/.config/rc/init.d /home/agent/.config/rc/runlevels/default",
       `cat > /home/agent/.config/rc/init.d/${startupItem} <<'EOF'`,
@@ -190,7 +190,7 @@ test("starts docker as an openrc service with only the gateway of the agent's en
     agentId,
     [
       "agent=$(head -1 /sys/fs/cgroup/entrypoint/cgroup.procs)",
-      "xargs -0 sh -c 'exec env -i \"$@\" /sbin/rc-service docker start' _ < /proc/$agent/environ >/dev/null",
+      "xargs -0 sh -c 'exec env -i \"$@\" rc-service docker start' _ < /proc/$agent/environ >/dev/null",
       "docker=$(dirname $(readlink /proc/$(cat /run/dockerd.pid)/exe))/docker",
       "for i in $(seq 60); do $docker info >/dev/null 2>&1 && break; sleep 1; done",
       "echo info $($docker info --format '{{.DockerRootDir}}')",
@@ -198,7 +198,7 @@ test("starts docker as an openrc service with only the gateway of the agent's en
       'echo "$env" | grep -q ^HTTPS_PROXY= && echo proxy',
       'echo "$env" | grep -q ^PLATFORM_AGENT_ID= && echo agent-id',
       'echo "$env" | grep -q ^PATH=/run/platform/bin: && echo runc-first',
-      "/sbin/rc-service docker stop >/dev/null; echo stopped $(/sbin/rc-service docker status 2>&1 | grep -c stopped)",
+      "rc-service docker stop >/dev/null; echo stopped $(rc-service docker status 2>&1 | grep -c stopped)",
     ].join("\n"),
   );
   expect(guest).toMatch(/^info \/home\/agent\/\.local\/share\/docker$/m);
@@ -280,7 +280,7 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
   await expectHomeFile(token, agentId, markerPath, marker);
   const guest = inGuest(
     agentId,
-    `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; echo item-runs $(grep -c '^run$' ${startupItemRuns}); echo item-env $(grep -cE '^env (true|false)$' ${startupItemRuns}); true`,
+    `test -e ${probeStopped} && echo stopped; rc-service ${probeService} status 2>&1; echo item-runs $(grep -c '^run$' ${startupItemRuns}); echo item-env $(grep -cE '^env (true|false)$' ${startupItemRuns}); true`,
   );
   expect(guest, "openrc ran the service's stop_post on the stop").toMatch(
     /^stopped$/m,
@@ -299,7 +299,7 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
   inGuest(
     agentId,
     [
-      `/sbin/rc-update del ${probeService} default >/dev/null`,
+      `rc-update del ${probeService} default >/dev/null`,
       `HOME=/home/agent XDG_RUNTIME_DIR=/tmp/platform-display rc-service --user ${startupItem} stop >/dev/null`,
       `rm -f /home/agent/.config/rc/runlevels/default/${startupItem} /home/agent/.config/rc/init.d/${startupItem}`,
     ].join("\n"),
