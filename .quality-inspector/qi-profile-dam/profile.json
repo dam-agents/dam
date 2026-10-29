@@ -12,6 +12,8 @@
     "app_port": 4444,
     "traefik_port": true,
     "apply_chart_crds": true,
+    "kvm": true,
+    "host_dirs": ["/var/lib/platform-vm-images", "/var/lib/platform-vm-runner-releases"],
     "channels": {
       "main": { "tag": "^0\\.0\\.0-main\\.[0-9]+$", "order": "numeric-suffix" },
       "release": { "tag": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "order": "semver" }
@@ -40,7 +42,8 @@
                  "httproutes.gateway.networking.k8s.io", "referencegrants.gateway.networking.k8s.io"] },
       { "kind": "helm", "name": "istio-base", "repo": "https://istio-release.storage.googleapis.com/charts", "chart": "base",
         "version": "{{config:istio_version}}", "namespace": "istio-system", "set": { "defaultRevision": "" } },
-      { "kind": "manifest", "name": "no-mesh-marker", "file": "no-mesh-marker.yaml" }
+      { "kind": "manifest", "name": "no-mesh-marker", "file": "no-mesh-marker.yaml" },
+      { "kind": "manifest", "name": "kvm-device-plugin", "file": "kvm-device-plugin.yaml", "unless": "ns/kvm-device-plugin" }
     ],
     "values": {
       "domain": "localhost",
@@ -60,7 +63,7 @@
       },
       "controller": { "gatewayUpstreamExtraCAs": "{{gateway_ca}}" },
       "virtualization": {
-        "runner": { "resources": { "limits": { "memory": "4Gi" } } },
+        "runner": { "devices": { "squat.ai/kvm": "1" }, "resources": { "limits": { "memory": "4Gi" } } },
         "imageCache": { "hostPath": "/var/lib/platform-vm-images" } }
     },
     "overlays": [
@@ -83,6 +86,7 @@
     { "host": "get.helm.sh", "method": "GET", "why": "the helm binary" },
     { "host": "mirror.gcr.io", "method": "GET", "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror; layers come from the same host)" },
     { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
+    { "host": "ghcr.io", "method": "GET", "why": "the KVM device plugin's image (squat's generic-device-plugin), which hands /dev/kvm to the VM runner" },
     { "host": "api.github.com", "method": "GET", "path": "/user", "why": "sandbox: DAM checks a saved GitHub token, or a GitHub sign-in, and shows the test user's login as the connection's account" },
     { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/issues", "why": "sandbox: an agent files the issue a test asks for" },
     { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/issues/*", "why": "sandbox: the agent or the test closes it" },
