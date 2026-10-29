@@ -28,7 +28,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Visibility = "private" | "restricted";
+type Visibility = "private" | "public" | "restricted";
 
 function expiryLabel(expiresAt: string | undefined): string | undefined {
   if (!expiresAt) return undefined;
@@ -49,7 +49,9 @@ export function ShareEnvironmentDialog({
     accessLabel &&
     accessLabel.toLowerCase() !== "private" &&
     accessLabel.toLowerCase() !== "only you"
-      ? "restricted"
+      ? accessLabel.toLowerCase() === "your team"
+        ? "public"
+        : "restricted"
       : "private";
   const [visibility, setVisibility] = useState<Visibility>(initial);
   const [email, setEmail] = useState("");
@@ -78,7 +80,9 @@ export function ShareEnvironmentDialog({
       message:
         visibility === "private"
           ? `${name} is now private.`
-          : `${name} shared with ${people.length} ${people.length === 1 ? "person" : "people"}.`,
+          : visibility === "public"
+            ? `${name} is now visible to your team.`
+            : `${name} shared with ${people.length} ${people.length === 1 ? "person" : "people"}.`,
     });
     onClose();
   };
@@ -105,6 +109,23 @@ export function ShareEnvironmentDialog({
                   Private <Locked size={14} />
                 </span>
                 <span className="text-sm text-muted-foreground">Only you</span>
+              </span>
+            </RadioGroupPrimitive.Item>
+
+            <RadioGroupPrimitive.Item
+              value="public"
+              className="flex w-full items-start gap-2.5 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-primary">
+                <RadioGroupPrimitive.Indicator className="size-2 rounded-full bg-primary" />
+              </span>
+              <span className="flex flex-col gap-0.5">
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  Your team <Share size={14} />
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  Everyone on your team can access
+                </span>
               </span>
             </RadioGroupPrimitive.Item>
 
