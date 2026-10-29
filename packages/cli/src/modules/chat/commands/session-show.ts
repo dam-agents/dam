@@ -7,6 +7,7 @@ import {
 import {
   elapsedMs,
   formatDuration,
+  isFinished,
   type Step,
 } from "../domain/session-steps.js";
 import type {
@@ -27,6 +28,15 @@ function safe(text: string): string {
   return text.replace(CONTROL, " ");
 }
 
+const JSON_UNSAFE = /[\u007f-\u009f]/g;
+
+function jsonLine(value: unknown): string {
+  return JSON.stringify(value).replace(
+    JSON_UNSAFE,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
 function oneLine(text: string, max: number): string {
   const collapsed = safe(text).replace(/\s+/g, " ").trim();
   return collapsed.length <= max
@@ -44,7 +54,7 @@ export function stepLine(step: Step, now: number): string {
   const took =
     step.durationMs !== null
       ? formatDuration(step.durationMs)
-      : step.startedAt !== null && step.endedAt === null
+      : step.startedAt !== null && !isFinished(step)
         ? `${formatDuration(elapsedMs(step.startedAt, now) ?? 0)} so far`
         : "-";
   return `${clock(step.startedAt)}  tool   ${oneLine(step.tool, 60)} [${oneLine(step.status, 30)}, ${took}] ${oneLine(step.summary, SUMMARY_MAX)}`;
@@ -137,7 +147,7 @@ export function buildSessionShowCommand(deps: {
             : null;
 
         if (opts.json)
-          write(JSON.stringify({ ...showJson(watch, now()), steps: shown }));
+          write(jsonLine({ ...showJson(watch, now()), steps: shown }));
         else {
           process.stdout.write(header(watch, now()));
           for (const step of shown) write(stepLine(step, now()));
@@ -151,7 +161,7 @@ export function buildSessionShowCommand(deps: {
         const emitStep = (step: Step) =>
           write(
             opts.json
-              ? JSON.stringify({ event: "step", step })
+              ? jsonLine({ event: "step", step })
               : stepLine(step, now()),
           );
         const flush = () => {
@@ -163,7 +173,7 @@ export function buildSessionShowCommand(deps: {
             flush();
             write(
               opts.json
-                ? JSON.stringify({ event: "turn", ...event.turn })
+                ? jsonLine({ event: "turn", ...event.turn })
                 : turnLine(event.turn, now()),
             );
             return;
@@ -187,7 +197,7 @@ export function buildSessionShowCommand(deps: {
         await watch.closed;
         flush();
         if (stopped) return;
-        if (opts.json) write(JSON.stringify({ event: "closed" }));
+        if (opts.json) write(jsonLine({ event: "closed" }));
         process.stderr.write(
           `error: connection lost; run the command again to go on following\n`,
         );

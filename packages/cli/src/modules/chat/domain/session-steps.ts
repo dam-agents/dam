@@ -28,6 +28,10 @@ export interface StepChange {
 }
 
 const FINISHED = new Set(["completed", "failed", "cancelled"]);
+
+export function isFinished(step: ToolStep): boolean {
+  return step.endedAt !== null || FINISHED.has(step.status);
+}
 const SUMMARY_FIELDS = [
   "command",
   "file_path",

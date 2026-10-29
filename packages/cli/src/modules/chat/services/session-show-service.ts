@@ -213,7 +213,7 @@ export function createSessionShowService(
           `session '${input.sessionId}' could not be loaded: ${load.error.message}`,
         );
       Object.assign(turn, turnFromLoad(load.result, session));
-      if (!turn.running) log.settle(null);
+      if (!turn.running) log.settle(now().toISOString());
       loaded = true;
 
       return ok({

