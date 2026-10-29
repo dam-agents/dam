@@ -26,10 +26,12 @@ function extractArtifactId(chip: ToolChip): string | null {
 }
 
 export function isArtifactToolChip(chip: ToolChip): boolean {
-  return (
+  if (
     chip.title.includes("create_artifact") ||
     chip.title.includes("update_artifact")
-  );
+  )
+    return true;
+  return extractArtifactId(chip) !== null;
 }
 
 export function InlineArtifactCard({ chip }: { chip: ToolChip }) {
