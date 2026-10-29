@@ -4,7 +4,8 @@ import { dropOwnImport } from "./bob-preload-lib.mjs";
 
 const BOB_VERSION = "2.0.6";
 const UPSTREAM_GAP =
-  "Bob starts the MCP servers of mcp.json in the background in `bob acp` too, as `bob chat` does";
+  "Bob starts the MCP servers of mcp.json in the background in `bob acp` too, as `bob chat` does, " +
+  "and a cancel during its automatic context compaction no longer replaces the history with an empty summary";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: `bob acp` builds every session's harness as a
@@ -17,13 +18,29 @@ const UPSTREAM_GAP =
  * process start those servers in the background, as `bob chat` does. The
  * servers a session carries, the platform entry among them, are registered
  * after that startup and are still awaited, so the platform tools are there
- * on the first turn. The preload takes its own --import out of NODE_OPTIONS
+ * on the first turn. Bob also compacts its context right after a batch of
+ * tool calls, which is where the platform cancels a turn to steer it, and a
+ * cancel during that compaction makes Bob replace the whole history with an
+ * empty summary. The second edit starts no compaction in a loop already
+ * cancelled; the third keeps the history when the compaction was cancelled or
+ * produced no summary. The preload takes its own --import out of NODE_OPTIONS
  * once Bob's bundle loads, so the processes Bob starts do not inherit it.
  */
 const edits = [
   {
     find: 'startupMode:l?"startInBackground":"blockUntilReady"',
     replace: 'startupMode:"startInBackground"',
+    count: 1,
+  },
+  {
+    find: "if(o&&S8i(u.getSpend().contextTokens,o,a))",
+    replace: "if(o&&!n.cancelled()&&S8i(u.getSpend().contextTokens,o,a))",
+    count: 1,
+  },
+  {
+    find: "v=e.getSpend().contextTokens;e.replaceMessagesWithSummary(B,{autoTriggered:r})",
+    replace:
+      "v=e.getSpend().contextTokens;if(t?.cancelled()||!B?.trim())return;e.replaceMessagesWithSummary(B,{autoTriggered:r})",
     count: 1,
   },
 ];

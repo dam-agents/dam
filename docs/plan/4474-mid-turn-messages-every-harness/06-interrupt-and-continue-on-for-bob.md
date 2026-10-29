@@ -80,16 +80,16 @@ Read [sessions](../../architecture/sessions.md) "Prompt delivery" and "Surviving
 
 ## Acceptance criteria
 
-- [ ] On a Bob agent, the machine log has no `bob-acp-patch: not applied` line.
-- [ ] In a Bob chat, a message sent during the first command of the three-command task shows **Send now** and joins the running work within a minute after that command ends.
-- [ ] After "Change of plan: run no more commands, reply only DONE", the agent's last words are DONE and no later command runs.
-- [ ] After "Also tell me today's date", the agent's reply has ALPHA, BRAVO, CHARLIE and the date.
-- [ ] The conversation shows no "Stopped" mark, no error and no failed step, also after a reload of the chat.
-- [ ] A message sent during a command of 90 seconds waits until that command ends.
-- [ ] Stop pressed while a message waits stops the turn; the message then starts the next turn.
-- [ ] A Bob schedule's run into which the owner sends a message mid-run is reported as succeeded.
-- [ ] Claude Code, Codex and Pi steer as before.
-- [ ] `mise run check` and `mise run test` pass for `agent-runtime`, `ui` and `packages/agents`.
+- [x] On a Bob agent, the machine log has no `bob-acp-patch: not applied` line.
+- [x] In a Bob chat, a message sent during the first command of the three-command task shows **Send now** and joins the running work within a minute after that command ends.
+- [x] After "Change of plan: run no more commands, reply only DONE", the agent's last words are DONE and no later command runs.
+- [x] After "Also tell me today's date", the agent's reply has ALPHA, BRAVO, CHARLIE and the date.
+- [x] The conversation shows no "Stopped" mark, no error and no failed step, also after a reload of the chat.
+- [x] A message sent during a command of 90 seconds waits until that command ends.
+- [x] Stop pressed while a message waits stops the turn; the message then starts the next turn.
+- [x] A Bob schedule's run into which the owner sends a message mid-run is reported as succeeded.
+- [x] Claude Code, Codex and Pi steer as before.
+- [x] `mise run check` and `mise run test` pass for `agent-runtime`, `ui` and `packages/agents`.
 
 ## Smoke test
 

@@ -119,6 +119,7 @@ import {
   type PromptSubmission,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
+import { createInterruptSteers } from "./interrupt-steers.js";
 import { createServedSteers, type ServedSteers } from "./served-steers.js";
 import {
   createSessionBootstrap,
@@ -252,6 +253,8 @@ export interface SessionSettingFrame {
 
 export const SCHEDULE_SURFACE = "schedule";
 
+const INTERRUPT_QUIET_MS = 500;
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the surface of a message another of the agent's
  * Sessions sent. Nobody waits on it, and it may join a turn in flight as a
@@ -304,8 +307,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let harnessSteers = false;
   const sessionSteering = (): SessionSteering | null =>
     deps.steering ?? (harnessSteers ? "native" : null);
+  const steersByInterrupt = (): boolean => sessionSteering() === "interrupt";
   const runtimeSteers = (): boolean =>
-    sessionSteering() === "native" && harnessSteers;
+    steersByInterrupt() || (sessionSteering() === "native" && harnessSteers);
   const servedSteers = deps.servedSteers ?? createServedSteers();
   const sessionCapabilities = (): SessionCapabilities => {
     const steering = sessionSteering();
@@ -315,6 +319,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     };
   };
   const openToolCalls = new Map<string, Set<string>>();
+  const toolsSettledAt = new Map<string, number>();
   const generating = new Set<string>();
   const turnSenders = new Map<string, Sender>();
   let sessionForkSupported = false;
@@ -464,6 +469,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }) => {
       autonomousTurns.end(sessionId);
       finishHeldRun(sessionId);
+      interruptSteers.onTurnStarted(sessionId);
       generating.add(sessionId);
       localCommandEchoes.start(sessionId, typed);
       const echoId = promptId ?? randomUUID();
@@ -488,9 +494,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       checkPendingRestart();
     },
     canSteer: () => runtimeSteers(),
+    steersByInterrupt: () => steersByInterrupt(),
     atSteerPoint: (sessionId) =>
-      !generating.has(sessionId) && !(openToolCalls.get(sessionId)?.size ?? 0),
-    steer: (entry) => steerIntoTurn(entry),
+      !generating.has(sessionId) &&
+      !(openToolCalls.get(sessionId)?.size ?? 0) &&
+      (!steersByInterrupt() ||
+        Date.now() - (toolsSettledAt.get(sessionId) ?? 0) >=
+          INTERRUPT_QUIET_MS),
+    steer: (entry, batch) =>
+      steersByInterrupt()
+        ? interruptSteers.steer(entry, batch)
+        : steerIntoTurn(entry),
     onSteered: (
       {
         sessionId,
@@ -582,6 +596,55 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     ...(deps.queueParkMs !== undefined
       ? { queueParkMs: deps.queueParkMs }
       : {}),
+  });
+
+  const interruptSteers = createInterruptSteers({
+    sendToHarness,
+    nextOutboundId: () => nextOutboundId++,
+    continueTurn(sessionId, outboundId, client) {
+      mapOutbound(outboundId, {
+        channel: client.channel,
+        originalId: client.originalId,
+        method: "session/prompt",
+        promptSessionId: sessionId,
+      });
+      promptScheduler.restartTurn(sessionId, outboundId);
+      generating.add(sessionId);
+    },
+    resolveSteer: (sessionId, outcome) =>
+      promptScheduler.resolveSteer(sessionId, outcome),
+    openToolCalls: (sessionId) => [...(openToolCalls.get(sessionId) ?? [])],
+    closeCutToolCalls(sessionId, toolCallIds) {
+      for (const toolCallId of toolCallIds) {
+        const frame = {
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            sessionId,
+            update: {
+              sessionUpdate: "tool_call_update",
+              toolCallId,
+              status: "failed",
+              _meta: { platform: { cutBySteer: true } },
+            },
+          },
+        };
+        transcript.append(
+          sessionId,
+          JSON.stringify(frame),
+          promptScheduler.activeTurnId(sessionId),
+        );
+        trackSteerPoint(sessionId, frame);
+      }
+    },
+    rememberUndelivered: (sessionId, id, frame) =>
+      deps.undeliveredPrompts.remember(sessionId, [
+        undeliveredOf(id, frame, new Date().toISOString()),
+      ]),
+    forgetUndelivered: (sessionId, id) => {
+      deps.undeliveredPrompts.forget(sessionId, id);
+    },
+    log: (msg) => deps.log?.(msg),
   });
 
   const sessionIsRunning = (sessionId: string): boolean =>
@@ -1134,6 +1197,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
     heldRuns.clear();
     harnessActivity.clear();
+    interruptSteers.clear();
     promptScheduler.clear();
     autonomousTurns.clear();
     localCommandEchoes.clear();
@@ -1422,7 +1486,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!open.delete(call.toolCallId) && !call.started) return;
     if (open.size > 0) return;
     openToolCalls.delete(sessionId);
-    promptScheduler.onSteerPoint(sessionId);
+    toolsSettledAt.set(sessionId, Date.now());
+    if (!steersByInterrupt()) {
+      promptScheduler.onSteerPoint(sessionId);
+      return;
+    }
+    setTimeout(
+      () => promptScheduler.onSteerPoint(sessionId),
+      INTERRUPT_QUIET_MS,
+    );
   }
 
   function requestFromHarness(
@@ -2166,6 +2238,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (settleOrphanedLoad(mapping.attachSessionId, outboundId)) return;
 
+        if (
+          mapping.promptSessionId !== null &&
+          interruptSteers.consumePromptAnswer(
+            mapping.promptSessionId,
+            outboundId,
+            { channel: mapping.channel, originalId: mapping.originalId },
+            frame,
+          )
+        )
+          return;
+
         if (mapping.method === "initialize") {
           sessionCloseSupported = hasSessionCapability(frame, "close");
           sessionResumeSupported = hasSessionCapability(frame, "resume");
@@ -2393,6 +2476,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);
       } else {
+        interruptSteers.onSessionUpdate(sessionId, frame);
         const reportedModel = extractReportedModel(frame);
         if (reportedModel !== null) turnModels.set(sessionId, reportedModel);
         const reportedMode = extractReportedMode(frame);
@@ -2847,6 +2931,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const notifSid = extractParamsSessionId(frame);
     if (notifSid) engage(channel, notifSid);
+    if (notifSid && (frame as { method?: unknown }).method === "session/cancel")
+      interruptSteers.onClientCancel(notifSid);
     const held = notifSid === null ? undefined : heldRuns.get(notifSid);
     if (held && (frame as { method?: unknown }).method === "session/cancel")
       held.cancelled = true;

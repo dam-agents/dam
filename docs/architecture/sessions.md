@@ -123,6 +123,13 @@ The user can send a queued prompt now: it is steered at once, with every prompt 
 A turn that ends first starts the waiting prompts as the next turn, again as one batch; a prompt never waits longer than a minute for a steer point.
 Until then it is an ordinary queued prompt the user can still change.
 A refused steer queues again at the head, so the agent receives each prompt once and in order.
+A harness image names its way to steer in its manifest: **native**, where the harness takes the message into its turn itself, or **interrupt and continue**, for a harness that cannot.
+There, at a steer point, the runtime cancels the harness's turn and, once the harness answers cancelled, sends the waiting messages as a new prompt with a `<turn-continued>` notice that tells the agent why its last step stopped and that its finished tool results are kept.
+For every client and observer that stays one turn under its own prompt id: no stop, no run failure and no cancelled outcome show, and the senders are answered when the continued turn ends.
+A cancel can stop a running tool, so such a steer never waits out the minute and cuts in: it waits for a steer point, and that counts only after a short quiet window with no new tool call, because a harness can run tool calls one after another.
+Between the cancel and the harness taking the new prompt the turn still runs for everything that reacts to a turn's end; a person's Stop in that gap stops the turn, and a turn that ends on its own there starts the messages as the next turn.
+The harness has taken the new prompt once it answers it or writes output for it; a late frame of the cancelled prompt does not count.
+From then on the messages count as delivered, also when a person's Stop ends the turn, so they never run a second time.
 Scheduled fires, invocation outcomes and CLI runs always queue.
 A message from another of the agent's sessions is steered like a typed one.
 
@@ -179,6 +186,7 @@ agent-runtime pushes back first: nearing the limit it kills the largest tool pro
 A turn that dies anyway is recovered from an [active-turns marker](persistence.md) surviving to the next boot: it resumes on its own, up to five times, with a notice to pick the task back up.
 The resumed turn is unattended: nobody reads it live, so it waits for the harness to hold the Session again and never for a viewer, and it runs on a Sleep's wake with no chat open.
 A turn the platform stopped — a Sleep, an eviction, a restart, all of which reach the runtime as SIGTERM — is marked stopped as the runtime shuts down, so the notice and the chat name the stop instead of blaming memory.
+The messages of an interrupt-and-continue steer are recorded as undelivered prompts from the cancel until the harness takes them, so a crash in that gap leaves them for the person to send again.
 The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#prompt-delivery) of a prompt it never got.
 A harness stores a new session only while its first turn runs, so the runtime flags a session from `session/new` as unstored until the harness answers a prompt of it, and the marker of an unstored session's turn keeps that turn's prompt.
 A scheduled session the harness never stored cannot be resumed at all — the harness holds no such conversation — so recovery runs the marker's prompt again in a fresh session of the same schedule, unattended, which is how a fire that landed on a hibernated Agent still does its work when the machine goes down on its first turn.

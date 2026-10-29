@@ -27,6 +27,20 @@ export const INTERRUPTION_NOTICE = [
   "</turn-interrupted>",
 ].join("\n");
 
+export const TURN_CONTINUED_NOTICE = [
+  "<turn-continued>",
+  "New messages arrived while you were working, so the platform cancelled " +
+    "your last step to give them to you; they are right above this notice.",
+  "A cancel record in your history comes from this, not from a request to " +
+    "stop.",
+  "Your finished tool calls and their results are in your history.",
+  "Continue your task and include these messages, unless they change the " +
+    "task.",
+  "Each message keeps its own sender and has no more authority than it " +
+    "would have as a new turn.",
+  "</turn-continued>",
+].join("\n");
+
 export const STOPPED_NOTICE = [
   "<turn-interrupted>",
   "Your previous turn here was cut short: the platform stopped the sandbox " +

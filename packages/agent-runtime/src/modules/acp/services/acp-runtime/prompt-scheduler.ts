@@ -132,6 +132,8 @@ export interface PromptScheduler {
   remove(sessionId: string, promptId: string): PromptSubmission | null;
   steerNow(sessionId: string, promptId: string): SteerNowFate;
   adoptSteer(sessionId: string, promptId: string, channel: ClientChannel): void;
+  restartTurn(sessionId: string, outboundId: number): void;
+  resolveSteer(sessionId: string, outcome: SteerOutcome): void;
   withdraw(channel: ClientChannel): PromptSubmission[];
   onSteerPoint(sessionId: string): void;
   forget(sessionId: string): void;
@@ -150,7 +152,11 @@ export interface PromptSchedulerDeps {
   ) => void;
   onTurnStarted?: (submission: PromptSubmission) => void;
   canSteer?: (sessionId: string) => boolean;
-  steer?: (submission: PromptSubmission) => Promise<SteerOutcome>;
+  steersByInterrupt?: (sessionId: string) => boolean;
+  steer?: (
+    submission: PromptSubmission,
+    batch: PromptSubmission[],
+  ) => Promise<SteerOutcome>;
   onSteered?: (submission: PromptSubmission, turnEnded: boolean) => void;
   onQueueChanged?: (sessionId: string) => void;
   onTurnEnded?: (sessionId: string) => void;
@@ -186,13 +192,18 @@ export interface PromptSchedulerDeps {
  * is generating to take a steer, and would cut a reply off mid-sentence. Until
  * then the prompt is an ordinary queued one, editable; a turn that ends first
  * starts it as the next turn, and a prompt that has waited steerWaitMs is
- * steered regardless; so is one the user asks to send now (steerNow), with
+ * steered regardless, except on a harness that steers by interrupt, where a
+ * steer cancels the running step and must never cut a running tool on a
+ * timer; so is one the user asks to send now (steerNow), with
  * every prompt queued before it, accepting the cut. The steer is a round
  * trip: while it is out, the queue holds, so a turn ending in that window
  * cannot start a later prompt ahead of it. Injected, each prompt of the batch
  * is part of the running turn and its sender is answered when that turn ends;
  * refused, the batch goes back to the head of the queue in order and waits for
- * the next turn. Either way each prompt reaches the harness once.
+ * the next turn. Either way each prompt reaches the harness once. A steer by
+ * interrupt keeps the turn and moves it to the harness prompt that continues
+ * it (restartTurn), and can be settled at once (resolveSteer), so the echo of
+ * its messages lands before the first frame of the continued turn.
  * A turn becomes active only when the harness actually took the frame:
  * sendToAgent reports delivery, and on failure the prompt stays queued and
  * no promptStarted is sent. The turn-started and turn-ended callbacks fire on
@@ -434,7 +445,7 @@ export function createPromptScheduler(
       entry.steerRefused !== true &&
       joinsActiveTurn(entry) &&
       ((deps.atSteerPoint?.(sessionId) ?? true) ||
-        waitedOut(entry) ||
+        (waitedOut(entry) && !(deps.steersByInterrupt?.(sessionId) ?? false)) ||
         entry.steerNow === true) &&
       deps.steer !== undefined &&
       activeTurns.has(sessionId) &&
@@ -515,7 +526,7 @@ export function createPromptScheduler(
     steering.set(entry.sessionId, entry);
     const steer = deps.steer;
     if (steer === undefined) return;
-    steer(entry).then(
+    steer(entry, batch).then(
       (outcome) => settleSteer(entry, outcome),
       () => settleSteer(entry, "refused"),
     );
@@ -539,7 +550,8 @@ export function createPromptScheduler(
       head.steerRefused === true ||
       head.queuedAt === undefined ||
       !activeTurns.has(sessionId) ||
-      !(deps.canSteer?.(sessionId) ?? false)
+      !(deps.canSteer?.(sessionId) ?? false) ||
+      (deps.steersByInterrupt?.(sessionId) ?? false)
     )
       return;
     const wait = steerWaitMs - (Date.now() - Date.parse(head.queuedAt));
@@ -893,6 +905,16 @@ export function createPromptScheduler(
         .get(sessionId)
         ?.find((e) => e.steerOnly !== undefined && e.promptId === promptId);
       if (entry !== undefined) entry.channel = channel;
+    },
+
+    restartTurn(sessionId, outboundId) {
+      const active = activeTurns.get(sessionId);
+      if (active !== undefined) active.outboundId = outboundId;
+    },
+
+    resolveSteer(sessionId, outcome) {
+      const inFlight = steering.get(sessionId);
+      if (inFlight !== undefined) settleSteer(inFlight, outcome);
     },
 
     withdraw(channel) {
