@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="The image's k3s service and cluster:install's own k3s listen on one port, so a cluster made by one runs under the other"
+#MISE sources=["etc/lima/k3s.yaml", ".mise/tasks/cluster/install", "packages/agents/base/rootfs/etc/rancher/k3s/config.yaml", ".mise/tasks/check/k3s-port"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# A sandbox cluster is made by cluster:install's plain process or by the image's
+# k3s service, and later runs under the other one. k3s exits when it listens on
+# another port than the one its stored kubeconfigs name, so the two must agree,
+# and the lima dev VM, whose template a sandbox with an init system provisions,
+# with them. The e2e VM (k3s-test.yaml, also CI's) has a port of its own, beside
+# the dev VM on one host.
+set -euo pipefail
+fail=0
+image="$(yq '.https-listen-port' packages/agents/base/rootfs/etc/rancher/k3s/config.yaml)"
+[ "$image" != null ] || { echo "the image's k3s config.yaml sets no https-listen-port, so its service listens on k3s's 6443" >&2; exit 1; }
+lima="$(yq '.provision[].script' etc/lima/k3s.yaml | sed -n 's/.*INSTALL_K3S_EXEC=".*--https-listen-port \([0-9]*\).*/\1/p')"
+plain="$(sed -n 's/.* k3s server .*--https-listen-port \([0-9]*\).*/\1/p' .mise/tasks/cluster/install)"
+forward="$(yq ".portForwards[] | select(.guestPort == $image) | .hostPort" etc/lima/k3s.yaml)"
+for pair in "etc/lima/k3s.yaml's provision:$lima" ".mise/tasks/cluster/install's plain process:$plain" "etc/lima/k3s.yaml's port forward:$forward"; do
+  [ "${pair##*:}" = "$image" ] || { echo "${pair%:*} has port '${pair##*:}' where the image's k3s service has $image" >&2; fail=1; }
+done
+exit "$fail"
