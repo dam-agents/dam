@@ -195,7 +195,10 @@ export function createPullRequestFinder(deps: {
     if (!fresh) {
       const stored: Cached = { at, link };
       cache.set(key, stored);
-      void link.then((found) => (stored.none = found === null));
+      void link.then(
+        (found) => (stored.none = found === null),
+        () => undefined,
+      );
     }
     return link.then((found) => found && newest(at, found));
   }

@@ -63,7 +63,10 @@ A harness that sets none, Bob today, has a command linked to the only Session ru
 A pushed branch is looked up on the remote it tracks.
 
 That record is per Session and survives the panel being closed and the machine restarting; it is bounded per Session and in total.
-A Session's pull request is one it pushed to: the open pull request of a branch the Session pushed is attached to that Session's record alone, right after the push and when its tool calls settle, at most once in 30 seconds per Session, with a lookup skipped inside that window run once it ends, so one opened after the push is found too and a new link tells the list to read again; a pushed branch is looked up on the remote it tracks, whatever its worktree has checked out since.
+A Session's pull request is one it pushed to: the open pull request of a branch the Session pushed is attached to that Session's record alone, looked up on the remote the branch tracks, whatever its worktree has checked out since.
+It is looked up twice.
+Right after the push, the pushed branch is looked up at once, and the panel reads the record again with the push.
+When the Session's tool calls settle, all its pushed branches are looked up, at most once in 30 seconds per Session, with a lookup skipped inside that window run once it ends; so one opened after the push is found too, and a new link from this lookup tells the sessions list to read again.
 A commit links no pull request: another Session that only committed on a branch gets no link to its pull request, while each Session that pushed it does; the panel shows the branch's pull request, but only refreshes the state of one a Session already has.
 A link once found is kept, so a Session still links its pull request after it is merged.
 Its state is not frozen with it: while someone watches the sessions list, the runtime reads the state of the pull requests the list showed again once a minute, fifty to a query, and a change tells the list to read again.

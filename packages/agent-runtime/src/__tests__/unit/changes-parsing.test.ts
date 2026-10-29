@@ -535,6 +535,34 @@ describe("pull request finder", () => {
    * time to live answers the newer state, not the one it cached, so the
    * badge does not turn yellow again.
    */
+  /**
+   * TEST_SCENARIO: GitHub may answer a null inside a branch's pull requests,
+   * and the lookup rejects. The rejection reaches the caller alone: the
+   * finder's own bookkeeping on the lookup raises no unhandled rejection.
+   */
+  it("should leave a rejected lookup to the caller alone", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const finder = createPullRequestFinder({
+        token: () => "gateway-placeholder",
+        fetch: async () =>
+          graphql({ repository: { pullRequests: { nodes: [null] } } }),
+        log: () => undefined,
+      });
+
+      await expect(
+        finder.find("https://github.com/acme/app", "feat/x"),
+      ).rejects.toThrow();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("should not answer an older state than the refresh read", async () => {
     let reviewDecision = "REVIEW_REQUIRED";
     let clock = 0;
