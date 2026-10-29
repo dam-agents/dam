@@ -159,6 +159,7 @@ describe("telegram worker turns", () => {
         expect(steer).toHaveBeenCalledWith(
           "s-1",
           expect.stringContaining("oh, and also this"),
+          expect.objectContaining({ targetPromptId: "p-1" }),
         ),
       );
       expect(h.prompts).toHaveLength(1);

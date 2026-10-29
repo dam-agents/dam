@@ -1,8 +1,14 @@
 import type { Sender } from "agent-runtime-api";
-import { isNonNullObject, isRequest, isResponse } from "api-server-api";
+import {
+  isNonNullObject,
+  isRequest,
+  isResponse,
+  STEER_METHOD,
+} from "api-server-api";
 
 const SENT_BY_A_PERSON = new Set([
   "session/prompt",
+  STEER_METHOD,
   "platform/updateQueued",
   "platform/rewriteFrom",
 ]);
@@ -22,10 +28,10 @@ function withPlatformStamp(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: writes the person signed in on the chat socket
- * into the frames that make them a Sender (a prompt, a queue edit, a rewrite)
- * and into their answer to a permission request. It replaces whatever the
- * client wrote there, because only the relay knows who is signed in. Null
- * when the frame needs no stamp, so the relay passes it on unchanged.
+ * into the frames that make them a Sender (a prompt, a steer, a queue edit, a
+ * rewrite) and into their answer to a permission request. It replaces
+ * whatever the client wrote there, because only the relay knows who is signed
+ * in. Null when the frame needs no stamp, so the relay passes it on unchanged.
  */
 export function stampSender(frame: unknown, person: Sender): object | null {
   if (isRequest(frame) && SENT_BY_A_PERSON.has(frame.method)) {

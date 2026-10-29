@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createWorld, frames, type Client, type World } from "./acp-world.js";
+import { turnContinuedNotice } from "../../interrupted-turn-recovery.js";
+import {
+  createInMemoryUndeliveredStore,
+  createWorld,
+  frames,
+  type Client,
+  type World,
+} from "./acp-world.js";
 
 /**
  * TEST_OVERVIEW: When a prompt sent mid-turn is steered into the running turn.
@@ -261,5 +268,141 @@ describe("acp-runtime: steer points", () => {
     expect(steers).toHaveLength(1);
     expect(promptTexts(steers[0])).toEqual(["the spec changed"]);
     expect(world.harness().received("session/prompt")).toHaveLength(1);
+  });
+});
+
+async function interruptedAtSteerPoint(): Promise<{
+  world: World;
+  bob: Client;
+  undelivered: ReturnType<typeof createInMemoryUndeliveredStore>;
+}> {
+  const undelivered = createInMemoryUndeliveredStore();
+  const world = createWorld({
+    steering: "interrupt",
+    undeliveredPrompts: undelivered,
+  });
+  const bob = world.connect();
+  bob.send(frames.initialize(1));
+  world.harness().replyTo("initialize", {});
+  bob.send(frames.newSession(2));
+  world.harness().replyTo("session/new", { sessionId: SESSION });
+  await settle();
+  bob.send(uiPrompt(3, "Run three commands."));
+  await settle();
+  world.harness().emit(
+    update({
+      sessionUpdate: "tool_call",
+      toolCallId: "t1",
+      status: "in_progress",
+    }),
+  );
+  bob.send(uiPrompt(4, "Change of plan"));
+  await settle();
+  world.harness().emit(
+    update({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t1",
+      status: "completed",
+    }),
+  );
+  await new Promise((r) => setTimeout(r, 600));
+  await settle();
+  expect(world.harness().received("session/cancel")).toHaveLength(1);
+  return { world, bob, undelivered };
+}
+
+describe("acp-runtime: interrupt and continue, races in the gap", () => {
+  /**
+   * TEST_SCENARIO: The runtime cancelled the harness's turn to steer, but the
+   * turn ended on its own before the cancel landed. The turn ends as the
+   * harness said, the waiting message starts as the next turn without the
+   * continuation notice, and no undelivered record is left behind.
+   */
+  it("starts the message as the next turn when the turn ends first", async () => {
+    const { world, bob, undelivered } = await interruptedAtSteerPoint();
+
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    await settle();
+
+    expect(bob.reply(3)).toMatchObject({ result: { stopReason: "end_turn" } });
+    const prompts = world.harness().received("session/prompt");
+    expect(prompts).toHaveLength(2);
+    expect(promptTexts(prompts[1])).toEqual(["Change of plan"]);
+    expect(undelivered.readFor(SESSION)).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: The person pressed Stop between the runtime's cancel and
+   * the harness's answer. Stop must still stop: the turn ends cancelled, and
+   * no continuation is sent in its place.
+   */
+  it("lets a person's Stop in the gap end the turn", async () => {
+    const { world, bob, undelivered } = await interruptedAtSteerPoint();
+
+    bob.send({
+      jsonrpc: "2.0",
+      method: "session/cancel",
+      params: { sessionId: SESSION },
+    });
+    world.harness().replyTo("session/prompt", { stopReason: "cancelled" });
+    await settle();
+
+    expect(bob.reply(3)).toMatchObject({ result: { stopReason: "cancelled" } });
+    const prompts = world.harness().received("session/prompt");
+    expect(prompts.map((p) => promptTexts(p).at(-1))).not.toContain(
+      turnContinuedNotice({ toolCall: false, reply: "" }),
+    );
+    expect(undelivered.readFor(SESSION)).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: The harness exited after the runtime's cancel and before it
+   * took the waiting message. The message was never delivered, so it must be
+   * recorded as undelivered, once, for the person to send again.
+   */
+  it("records the message once when the harness exits in the gap", async () => {
+    const { world, undelivered } = await interruptedAtSteerPoint();
+
+    world.harness().exit();
+    await settle();
+
+    const texts = undelivered
+      .readFor(SESSION)
+      .flatMap((p) => p.blocks)
+      .map((block) => (block as { text?: string }).text);
+    expect(texts.filter((text) => text === "Change of plan")).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: The harness refuses the continuing prompt for a moment
+   * while it finishes the cancel. The runtime asks again, and once the
+   * harness takes it, the turn goes on as one turn: the message joins it,
+   * and the client's prompt ends as the continued turn ends.
+   */
+  it("asks again when the harness refuses the continuing prompt", async () => {
+    const { world, bob } = await interruptedAtSteerPoint();
+
+    world.harness().replyTo("session/prompt", { stopReason: "cancelled" });
+    await settle();
+    expect(world.harness().received("session/prompt")).toHaveLength(2);
+    world.harness().refuseTo("session/prompt", {
+      code: -32000,
+      message: "the previous turn is still being cancelled",
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    await settle();
+
+    const prompts = world.harness().received("session/prompt");
+    expect(prompts).toHaveLength(3);
+    expect(promptTexts(prompts[2])).toEqual([
+      "Change of plan",
+      turnContinuedNotice({ toolCall: false, reply: "" }),
+    ]);
+    world.harness().emit(frames.agentMessage(SESSION, "Understood."));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    await settle();
+
+    expect(bob.reply(3)).toMatchObject({ result: { stopReason: "end_turn" } });
+    expect(bob.reply(4)).toMatchObject({ result: { stopReason: "end_turn" } });
   });
 });

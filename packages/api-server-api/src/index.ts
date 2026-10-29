@@ -882,6 +882,8 @@ export {
   platformRunEndedParamsSchema,
   buildPlatformRunEndedNotification,
   RUN_ENDED_CAPABILITY,
+  SERVES_STEERING_CAPABILITY,
+  servesSteeringSupported,
   runEndedSupported,
   jsonRpcErrorDetails,
   platformPromptAcceptedParamsSchema,
@@ -935,7 +937,9 @@ export {
   platformRewriteFromParamsSchema,
   STEER_METHOD,
   steerResponseSchema,
+  steerRequestParamsSchema,
   steeringSupported,
+  sessionSteeringSchema,
   isNonNullObject,
   isRequest,
   isResponse,
@@ -971,6 +975,8 @@ export type {
   PlatformSessionResetParams,
   PlatformUpdateQueuedParams,
   PlatformRewriteFromParams,
+  SessionSteering,
+  SteerRequestParams,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

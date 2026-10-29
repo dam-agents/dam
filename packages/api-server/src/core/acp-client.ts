@@ -1,11 +1,12 @@
 import type { SessionPair } from "api-server-api";
+import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { match } from "ts-pattern";
 import {
   platformRunResultResponseSchema,
+  servesSteeringSupported,
   STEER_METHOD,
   steerResponseSchema,
-  steeringSupported,
   type AcpPermissionOption,
 } from "api-server-api";
 import { NO_MODEL_REASON, PIN_MODEL_METHOD } from "agent-runtime-api";
@@ -33,8 +34,6 @@ const MAX_MISSED_PONGS = 2;
 const STALL_PROBE_RPC_TIMEOUT_MS = 15_000;
 const TURN_STATUS_DEADLINE_MS = 20_000;
 const RUN_RESULT_METHOD = "platform/runResult";
-
-const STEER_CEILING_MS = 30_000;
 
 export class AcpSessionLoadError extends Error {
   constructor(message: string, opts?: { cause?: unknown }) {
@@ -197,6 +196,12 @@ export interface TriggerSessionResult {
 export type SteerOutcome =
   "injected" | "no-running-turn" | "unsupported" | "failed";
 
+export interface SteerOpts {
+  promptId: string;
+  targetPromptId: string;
+  signal?: AbortSignal;
+}
+
 type SessionAttach =
   | { resumeSessionId: string }
   | { onSessionCreated: (sessionId: string) => Promise<void> };
@@ -240,7 +245,7 @@ export type SendPromptOpts = (
 ) & {
   onImagesDropped?: () => Promise<void> | void;
   onUpdate?: (update: PromptUpdate) => void;
-  onSession?: (sessionId: string) => void;
+  onSession?: (sessionId: string, promptId?: string) => void;
   signal?: AbortSignal;
 };
 
@@ -260,6 +265,7 @@ export interface AcpClient {
   steer(
     sessionId: string,
     prompt: string | ContentBlock[],
+    opts: SteerOpts,
   ): Promise<SteerOutcome>;
   triggerSession(opts: TriggerSessionOpts): Promise<TriggerSessionResult>;
   turnStatus(sessionId: string): Promise<AcpTurnStatus>;
@@ -642,8 +648,9 @@ export function createAcpClient(opts: {
             sessionId = s.sessionId;
             watchSessionId = sessionId;
           }
+          const promptId = randomUUID();
           try {
-            sendOpts.onSession?.(sessionId);
+            sendOpts.onSession?.(sessionId, promptId);
           } catch (err) {
             getLogger().debug(
               { err },
@@ -673,6 +680,7 @@ export function createAcpClient(opts: {
             connection.agent.request("session/prompt", {
               sessionId,
               prompt: finalBlocks,
+              _meta: { platform: { promptId } },
             });
           const cancel = () => {
             connection.agent
@@ -703,23 +711,45 @@ export function createAcpClient(opts: {
     async steer(
       sessionId: string,
       prompt: string | ContentBlock[],
+      steerOpts: SteerOpts,
     ): Promise<SteerOutcome> {
       const blocks: ContentBlock[] =
         typeof prompt === "string" ? [{ type: "text", text: prompt }] : prompt;
+      const { promptId, targetPromptId, signal } = steerOpts;
       try {
+        signal?.throwIfAborted();
         return await withAcpConnection(
           url,
           agentId,
           "platform-steer",
           {},
-          { kind: "deadline", ms: STEER_CEILING_MS },
+          { kind: "turn", stallProbeMs, sessionId: () => sessionId },
           async (connection, init) => {
-            if (!steeringSupported(init)) return "unsupported";
-            const raw = await connection.agent.request(STEER_METHOD, {
+            if (!servesSteeringSupported(init)) return "unsupported";
+            signal?.throwIfAborted();
+            const answer = connection.agent.request(STEER_METHOD, {
               sessionId,
               prompt: blocks,
-              _meta: { steering: { idleBehavior: "promptRequired" } },
+              _meta: {
+                steering: { idleBehavior: "promptRequired" },
+                platform: { promptId, targetPromptId },
+              },
             });
+            const aborted = new Promise<never>((_, reject) => {
+              signal?.addEventListener(
+                "abort",
+                () => reject(new Error("steer aborted")),
+                { once: true },
+              );
+            });
+            let raw: unknown;
+            try {
+              raw = await Promise.race([answer, aborted]);
+            } catch (err) {
+              if ((err as { code?: unknown } | null)?.code === -32601)
+                return "unsupported";
+              throw err;
+            }
             const parsed = steerResponseSchema.safeParse(raw);
             const outcome = parsed.success ? parsed.data.outcome : undefined;
             if (outcome === "injected") return "injected";

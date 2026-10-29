@@ -39,7 +39,7 @@ A thread draws each of those beside the prompt that opens its run, so a run boun
 A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
 
 The runtime keeps who did what in a Session the same way, in its metadata, for [Agent Editors](agent-editors.md#who-did-what).
-A prompt, a queue edit or a rewrite that carries a **Sender** in `_meta.platform.sender`, which the api-server's relay writes, records that Sender with its prompt id and the time the prompt started, and the first one recorded is the Session's **Session Starter**; the harness never sees it.
+A prompt, a steer, a queue edit or a rewrite that carries a **Sender** in `_meta.platform.sender`, which the api-server's relay writes, records that Sender with its prompt id and the time the prompt started, and the first one recorded is the Session's **Session Starter**; the harness never sees it.
 A permission answer that carries who answered in `result._meta.platform.answeredBy` records the verdict under the harness's tool call id.
 Engaged viewers hear each Sender and verdict as it is recorded, and the Sender of each turn as it starts; a load hands back the Senders, the verdicts, and the running turn's Sender and the time it started, and the session list carries the Session Starter.
 A client matches a Sender to its message by prompt id, and by time when the log was rebuilt from the harness's history and the ids changed, as it places run starts.
@@ -113,6 +113,8 @@ The queue marks a prompt that waits only for its session — nothing running ahe
 Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
 
 A harness that can **steer** takes a prompt into the turn it is running rather than after it.
+A client learns whether a Session steers from `_meta.platform.steering` on `session/new`, `session/load` and `session/resume`, as it learns `forks`, because the client's `initialize` answer is the default harness's and carries no steering.
+The value comes from the harness image's manifest key, so it is known before any harness process runs, as a load filled by the session-history provider needs; the runtime still steers natively only when the harness's own `initialize` answer also advertises it, and an image without the key steers when that answer says it can.
 A web UI prompt sent mid-turn is then **steered** — a fourth fate, reported in place of a start — and queued prompts drain into a running turn the same way.
 The harness takes a steer by aborting whatever the agent is generating, so a steer waits for a **steer point** — the agent neither writing nor running a tool, which is right after its tool calls finish — and the agent reads the prompt beside their results instead of having a reply cut off.
 Prompts waiting together go as one batch — one message carrying each of them in order — since a later one may change what an earlier one asked; separate steers sent together would be merged by the harness on its own, in no reliable order.
@@ -121,8 +123,35 @@ The user can send a queued prompt now: it is steered at once, with every prompt 
 A turn that ends first starts the waiting prompts as the next turn, again as one batch; a prompt never waits longer than a minute for a steer point.
 Until then it is an ordinary queued prompt the user can still change.
 A refused steer queues again at the head, so the agent receives each prompt once and in order.
+A harness image names its way to steer in its manifest: **native**, where the harness takes the message into its turn itself, or **interrupt and continue**, for a harness that cannot.
+There, at a steer point, the runtime cancels the harness's turn and, once the harness answers cancelled, sends the waiting messages as a new prompt with a `<turn-continued>` notice that tells the agent why its last step stopped and that its finished tool results are kept.
+For every client and observer that stays one turn under its own prompt id: no stop, no run failure and no cancelled outcome show, and the senders are answered when the continued turn ends.
+A cancel can stop a running tool, so such a steer never waits out the minute and cuts in: it waits for a steer point, and that counts only after a short quiet window with no new tool call, because a harness can run tool calls one after another.
+Between the cancel and the harness taking the new prompt the turn still runs for everything that reacts to a turn's end; a person's Stop in that gap stops the turn, and a turn that ends on its own there starts the messages as the next turn.
+The harness has taken the new prompt once it answers it or writes output for it; a late frame of the cancelled prompt does not count.
+From then on the messages count as delivered, also when a person's Stop ends the turn, so they never run a second time.
+**Send now** on such a harness cancels at once and so cuts the tool call that is running.
+The runtime then answers the Session's open tool call approvals as cancelled, as the client that cancels a turn must, so no approval card stays open, and the cut call shows as stopped, not as failed.
+The harness's own history records the cut call as failed, so the runtime keeps the ids of the calls it cut in the session metadata and marks them again when it rebuilds the log from that history.
+The notice tells the agent that a tool call was cut, may have partly run and may still be running, because a harness may stop only a command's shell and not a process the command started.
+When the cut stops a reply that the agent was writing, the notice quotes what the agent wrote since its last tool call and tells it to go on from the cut, because both harnesses otherwise write the whole reply again.
 Scheduled fires, invocation outcomes and CLI runs always queue.
 A message from another of the agent's sessions is steered like a typed one.
+
+| Harness     | Steers by                                   | The agent reads a waiting message                                               | A message can wait                                                      | **Send now**                                                                      |
+| ----------- | ------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Claude Code | native                                      | at the steer point, beside its tool results                                     | until the next steer point, at most a minute                            | steers at once; a running command moves to the background and keeps running       |
+| Codex       | native                                      | at Codex's next model request, which can be one tool step after the steer point | until the next steer point, at most a minute, then until that request   | steers at once; a running command runs to its end first                           |
+| Pi          | native, through the platform's pi-acp patch | when Pi's run takes its steer queue, after the tool calls of its current step   | until the next steer point, at most a minute, then until that step ends | steers at once; a running command runs to its end first                           |
+| Bob         | interrupt and continue                      | at the steer point, after the quiet window, in the continued prompt             | while tool calls run, with no limit                                     | cancels at once and stops the running command; a process it started keeps running |
+| Copilot     | interrupt and continue                      | at the steer point, after the quiet window, in the continued prompt             | while tool calls run, with no limit                                     | cancels at once and stops the running command with the processes it started       |
+
+A client can ask for a steer itself with `_session/steering`, as the channel workers do; the runtime serves it and never forwards it to the harness.
+The request names its own batch (`promptId`) and the turn it may join (`targetPromptId`), and becomes a **steer-only** entry of the same queue: it waits for a steer point as any steer does, joins only while its target turn runs, and waits behind its target while that prompt is still queued or starting.
+It is answered `injected` the moment it joins, and `promptRequired` on every other way out of the queue — its target ended or never ran, the harness refused it, the queue was dropped — and its sender then sends it as a prompt; it never starts a turn and is never recorded as undelivered.
+A request sent again with the same `promptId` gets the first answer, so the message reaches the agent once.
+A steer-only entry still waiting is withdrawn when its connection closes; one already sent to the harness is always answered.
+The router answers `promptRequired` itself when no harness process holds work for the Session, so a steer never starts a harness, and its `initialize` answer says `servesSteering`, which a sender checks before it steers.
 
 ### Messages between sessions
 
@@ -149,7 +178,7 @@ A client fails a prompt on evidence instead:
 - **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs.
   The user is told it is waiting, which is true.
 
-A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, so the last channel leaving **parks** the queue for a grace window, and a client engaging again within it resumes it.
+A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, except steer-only entries, which belong to their sender, so the last channel leaving **parks** the queue for a grace window, and a client engaging again within it resumes it.
 A queue holding only unattended fires is never parked: nobody is coming back for it, and it needs nobody.
 A queue leaves the scheduler by four routes — the window expiring, the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the machine, whole, inline images capped; the refusal errors each sender instead.
 Each session load hands the records back, marked on the conversation to send again or delete, and says whether a turn is still running; a record sent again or deleted is **retired** so its earlier echo drops from the replay rather than doubling.
@@ -170,6 +199,7 @@ agent-runtime pushes back first: nearing the limit it kills the largest tool pro
 A turn that dies anyway is recovered from an [active-turns marker](persistence.md) surviving to the next boot: it resumes on its own, up to five times, with a notice to pick the task back up.
 The resumed turn is unattended: nobody reads it live, so it waits for the harness to hold the Session again and never for a viewer, and it runs on a Sleep's wake with no chat open.
 A turn the platform stopped — a Sleep, an eviction, a restart, all of which reach the runtime as SIGTERM — is marked stopped as the runtime shuts down, so the notice and the chat name the stop instead of blaming memory.
+The messages of an interrupt-and-continue steer are recorded as undelivered prompts from the cancel until the harness takes them, so a crash in that gap leaves them for the person to send again.
 The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#prompt-delivery) of a prompt it never got.
 A harness stores a new session only while its first turn runs, so the runtime flags a session from `session/new` as unstored until the harness answers a prompt of it, and the marker of an unstored session's turn keeps that turn's prompt.
 A scheduled session the harness never stored cannot be resumed at all — the harness holds no such conversation — so recovery runs the marker's prompt again in a fresh session of the same schedule, unattended, which is how a fire that landed on a hibernated Agent still does its work when the machine goes down on its first turn.

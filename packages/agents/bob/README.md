@@ -82,6 +82,22 @@ The patch takes its own `--import` out of `NODE_OPTIONS` once Bob's bundle loads
 `mise run //packages/agents:check:bob-acp-patch` fails when the image pins another Bob than the patch names, so a bump runs `mise run //packages/agents:test:bob-mcp-startup` with `BOB_CLI` naming the new Bob.
 Its control scenario fails when Bob starts the servers in the background on its own, which is the moment to delete the patch, its line in `harness-chat`, the test and the check; its other scenario fails when the patch stops working.
 
+### Compaction and cancel
+
+Bob 2.0.6 compacts its context automatically right after a batch of tool calls, when the context passes its threshold.
+That is the steer point, where the agent-runtime cancels Bob's turn to give it a waiting message ([interrupt and continue](../../../docs/architecture/sessions.md#prompt-delivery)).
+A cancel during that compaction makes Bob replace the whole history with an empty summary, and a person's Stop at that moment did the same.
+The same patch therefore makes two more edits: a loop already cancelled starts no compaction, and a compaction that was cancelled or produced an empty summary leaves the history as it was.
+Drop them once a Bob release does both on its own.
+
+### Send now and a running command
+
+**Send now** on a queued message cancels Bob's turn while a command runs ([interrupt and continue](../../../docs/architecture/sessions.md#prompt-delivery)).
+Bob 2.0.6 then stops only the command's own shell, and a process that the command started keeps running.
+Checked on 2026-10-29: after **Send now** during `bash -c 'sleep 120; echo DONE > <file>'`, the file held DONE two minutes later.
+So the `<turn-continued>` notice tells the agent that a cut command may still be running.
+**Send now** while Bob writes a reply made it write the whole reply again from the top, so the notice also quotes the cut reply and tells Bob to go on from the cut.
+
 ## Authentication
 
 Bob expects `BOBSHELL_API_KEY` in the machine's env (2.0 renamed it to `BOB_API_KEY`, but the old name is a supported alias — Bob copies it over and errors only if both are set to different values).

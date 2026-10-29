@@ -60,6 +60,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
       if (meta?.threadTs !== undefined) sessionKeys.push(meta.threadTs);
       sendOpts.onSession?.(
         meta?.threadTs ? `${SESSION}-${meta.threadTs}` : SESSION,
+        `prompt-${prompts.length}`,
       );
       if (holdTurns) {
         await new Promise<void>((resolve) => gates.push({ release: resolve }));
@@ -193,7 +194,9 @@ describe("slack addressed turns — coalescing", () => {
 
     expect(h.steered).toHaveLength(1);
     expect(h.steered[0]).toContain("specifically the migration");
-    expect(h.steered[0]).toContain("Answer everything in one reply");
+    expect(h.steered[0]).toContain(
+      "If you have not posted a reply yet, answer everything in one reply.",
+    );
 
     h.releaseAll();
     await h.waitFor(() => false);

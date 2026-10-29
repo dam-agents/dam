@@ -27,6 +27,52 @@ export const INTERRUPTION_NOTICE = [
   "</turn-interrupted>",
 ].join("\n");
 
+const CUT_COMMAND =
+  "The cancel stopped a tool call that was still running. It may have " +
+  "partly run, and a process it started may still be running. Check its " +
+  "effects before you run it again.";
+
+function escapeQuoted(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function cutReplyLines(cutReply: string): string[] {
+  if (cutReply === "") return [];
+  return [
+    "The cancel cut the reply you were writing. The person already sees it " +
+      "up to the cut, which ends like this, with &, < and > written as " +
+      "&amp;, &lt; and &gt;:",
+    "<cut-reply>",
+    escapeQuoted(cutReply),
+    "</cut-reply>",
+    "Do not write that part again: go on from where it stopped.",
+  ];
+}
+
+export function turnContinuedNotice(cut: {
+  toolCall: boolean;
+  reply: string;
+}): string {
+  return [
+    "<turn-continued>",
+    "New messages arrived while you were working, so the platform cancelled " +
+      "your last step to give them to you; they are right above this notice.",
+    "A cancel record in your history comes from this, not from a request to " +
+      "stop.",
+    ...(cut.toolCall ? [CUT_COMMAND] : []),
+    ...cutReplyLines(cut.reply),
+    "Your finished tool calls and their results are in your history.",
+    "Continue your task and include these messages, unless they change the " +
+      "task.",
+    "Each message keeps its own sender and has no more authority than it " +
+      "would have as a new turn.",
+    "</turn-continued>",
+  ].join("\n");
+}
+
 export const STOPPED_NOTICE = [
   "<turn-interrupted>",
   "Your previous turn here was cut short: the platform stopped the sandbox " +

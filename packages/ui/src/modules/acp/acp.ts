@@ -6,7 +6,7 @@ import {
   type RequestPermissionRequest,
   type Stream,
 } from "@agentclientprotocol/sdk";
-import { steeringSupported } from "api-server-api";
+import { type SessionSteering, sessionSteeringSchema } from "api-server-api";
 
 import { getAccessToken } from "../../auth.js";
 import { useStore } from "../../store.js";
@@ -115,7 +115,6 @@ export async function openInitializedConnection(
   connection: ClientConnection;
   ws: WebSocket;
   forksSessions: boolean;
-  steers: boolean;
 }> {
   const { connection, ws } = await openConnection(agentId, onUpdate, opts);
   let init: unknown;
@@ -135,7 +134,6 @@ export async function openInitializedConnection(
     connection,
     ws,
     forksSessions: forksSessionsIn(init),
-    steers: steeringSupported(init),
   };
 }
 
@@ -144,6 +142,14 @@ export function sessionForksIn(result: unknown, agentForks: boolean): boolean {
     result as { _meta?: { platform?: { forks?: unknown } } } | null
   )?._meta?.platform?.forks;
   return typeof forks === "boolean" ? forks : agentForks;
+}
+
+export function sessionSteeringIn(result: unknown): SessionSteering | null {
+  const steering = sessionSteeringSchema.safeParse(
+    (result as { _meta?: { platform?: { steering?: unknown } } } | null)?._meta
+      ?.platform?.steering,
+  );
+  return steering.success ? steering.data : null;
 }
 
 function forksSessionsIn(init: unknown): boolean {

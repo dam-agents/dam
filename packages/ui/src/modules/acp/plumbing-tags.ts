@@ -15,6 +15,7 @@ export const PLUMBING_TAGS = [
   "attached-files",
   "turn-undelivered",
   "turn-interrupted",
+  "turn-continued",
   "system-reminder",
   "task-notification",
   "agent-message",

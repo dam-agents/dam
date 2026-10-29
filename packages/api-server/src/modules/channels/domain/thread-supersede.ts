@@ -14,6 +14,7 @@ type RunningTurn = {
   channel: string;
   sessionKey: string;
   carries: () => readonly string[];
+  claim?: (ts: string) => void;
   cancel: () => void;
   record: SupersededTurn;
   settled: Promise<void>;
@@ -32,6 +33,7 @@ export interface ThreadSupersede {
       channel: string;
       sessionKey: string;
       carries: () => readonly string[];
+      claim?: (ts: string) => void;
       cancel: () => void;
     },
   ): HeldTurn;
@@ -54,9 +56,11 @@ export interface ThreadSupersede {
  *  other messages too runs to its end, so those are not dropped. Either way
  *  the thread's turn is handed what each of them ran and posted, so it builds
  *  on that instead of repeating it. A turn not started yet leaves the opener
- *  out for that Agent. Only that Agent's turns are touched — other Agents keep
- *  theirs — and only those in another session: turns in the thread's own
- *  session already run one at a time, and the session remembers them. */
+ *  out for that Agent, and a turn whose steer still holds the opener is told
+ *  to take it back, so it starts no second delivery of it. Only that Agent's
+ *  turns are touched — other Agents keep theirs — and only those in another
+ *  session: turns in the thread's own session already run one at a time, and
+ *  the session remembers them. */
 export function createThreadSupersede(): ThreadSupersede {
   const running = new Map<string, Set<RunningTurn>>();
   const superseded = new Map<string, number>();
@@ -81,6 +85,7 @@ export function createThreadSupersede(): ThreadSupersede {
         channel: held.channel,
         sessionKey: held.sessionKey,
         carries: held.carries,
+        ...(held.claim && { claim: held.claim }),
         cancel: held.cancel,
         record: { cancelled: false, tools: [], replies: [] },
         settled: new Promise<void>((resolve) => {
@@ -122,6 +127,7 @@ export function createThreadSupersede(): ThreadSupersede {
           turn.carries().includes(thread.rootTs),
       );
       if (carrying.length === 0) return null;
+      for (const turn of carrying) turn.claim?.(thread.rootTs);
       for (const turn of carrying) {
         if (turn.carries().length !== 1 || turn.record.cancelled) continue;
         turn.record.cancelled = true;

@@ -70,6 +70,7 @@ function gatedAcp(opts: {
           typeof sendOpts.resumeSessionId === "string"
           ? sendOpts.resumeSessionId
           : "s-live",
+        `prompt-${call}`,
       );
       if (call === opts.blockCall) {
         started();

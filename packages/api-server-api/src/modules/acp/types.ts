@@ -98,7 +98,23 @@ export const STEER_METHOD = "_session/steering";
 
 export const steerResponseSchema = z.object({
   outcome: z.string().optional(),
+  reason: z.string().optional(),
 });
+
+export const steerRequestParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  prompt: z.array(z.unknown()).min(1),
+  _meta: z.object({
+    platform: z.object({
+      promptId: z.string().min(1),
+      targetPromptId: z.string().min(1),
+    }),
+  }),
+});
+export type SteerRequestParams = z.infer<typeof steerRequestParamsSchema>;
+
+export const sessionSteeringSchema = z.enum(["native", "interrupt"]);
+export type SessionSteering = z.infer<typeof sessionSteeringSchema>;
 
 export function steeringSupported(initializeResult: unknown): boolean {
   const parsed = z
@@ -293,6 +309,21 @@ export const platformRunResultResponseSchema = z.discriminatedUnion("status", [
 ]);
 
 export const RUN_ENDED_CAPABILITY = "runEnded";
+
+export const SERVES_STEERING_CAPABILITY = "servesSteering";
+
+export function servesSteeringSupported(initializeResult: unknown): boolean {
+  const parsed = z
+    .object({
+      _meta: z.object({
+        platform: z.object({
+          [SERVES_STEERING_CAPABILITY]: z.literal(true),
+        }),
+      }),
+    })
+    .safeParse(initializeResult);
+  return parsed.success;
+}
 
 export function runEndedSupported(initializeResult: unknown): boolean {
   const parsed = z

@@ -116,7 +116,8 @@ A few observations the diagram glosses over:
   A capped read says so, and the Agent is told to act only on what is still open.
   Excluded: Telegram.
 - **A conversation answers a burst once, one turn at a time.** People write a thought over several messages, so messages for one conversation gather behind a short quiet period and one turn carries them all.
-  A message arriving while a turn runs is **steered** into it where the harness advertises support for that, so the Agent reads it before calling its reply tool; otherwise it becomes the next turn, never a second turn racing the first.
+  A message arriving while a turn runs is **steered** into it where the harness can take one, so the Agent reads it before calling its reply tool; otherwise it becomes the next turn, never a second turn racing the first.
+  The agent-runtime decides each steer at a steer point, into the conversation's own running turn ([sessions](sessions.md#prompt-delivery)); a message it took is never run again, and a steer whose answer was lost is asked again under its own id.
   Both the batch and the wait are capped.
   A message carrying attachments is never steered — they reach the Agent through their own turn — and it holds back what follows, so nothing is reordered.
   Both messengers share the queue, and so does read-along traffic — but a read-along batch is never steered, since it fans out to one turn per reading Agent and there is no single turn to steer into.
@@ -177,6 +178,7 @@ A relayed turn has **no time limit** — like a session driven from the UI, it r
 While the relay's connection is up it watches for *life*, not length: transport pings guard the socket, and once frames have been silent for the stall-probe window the relay asks agent-runtime whether the session still has a turn running — alive means keep waiting, however long the work takes.
 The probe window is floor-bounded by the egress-approval hold at config load (raising a lower setting with a startup warning), so a turn silently waiting on an approval is never probed early.
 The relay abandons a turn on exactly two verdicts — the connection is lost, or the runtime reports the turn gone — and abandoning the relay never touches the work: the harness keeps running detached, and its late reply still lands through the lingering turn record.
+A steer held for a running turn has no time limit either; the turn is judged only once its steers have their answers.
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
 A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.
@@ -190,12 +192,15 @@ An abandoned turn is handed to the **recovery watch**, which polls the session's
 The work counts as over only on a positive signal: the runtime says the turn ended or that its own boot recovery gave the turn up, or the platform reports the machine gone — which under a running turn means the turn is over, because the idle checker never hibernates a machine holding one.
 A failed status read is unknown and simply polled again; only a session that never shows life runs out the watch's rolling window.
 Once the work is over, delivery is judged by **how it ended, never by timing**: a turn that ended in-process made its full disposition and is nudged only when it posted and declined nothing — the same verdict a never-abandoned turn gets — while an interrupted turn never completed, so any interim post was a partial and it is nudged unless its silence was deliberate.
-The nudge resumes the session with an undelivered-turn notice and the agent posts its own late answer, or declines — which keeps the invariant that the platform never authors assistant text; the nudge, boot recovery's interruption resume ([agent-lifecycle](agent-lifecycle.md)), the notice that an owner deleted one of the agent's posts ([the Agent Footer](#the-agent-footer)) and a one-time schedule's continuation or reported result ([schedules](schedules.md#one-time-schedules)) are the only platform-authored prompts an agent ever sees — each carries the agent's own words or task, never the platform's.
+The nudge resumes the session with an undelivered-turn notice and the agent posts its own late answer, or declines — which keeps the invariant that the platform never authors assistant text; the nudge, boot recovery's interruption resume ([agent-lifecycle](agent-lifecycle.md)), the notice that an owner deleted one of the agent's posts ([the Agent Footer](#the-agent-footer)), the turn-continued notice of a steer by interrupt ([sessions](sessions.md#prompt-delivery)) and a one-time schedule's continuation or reported result ([schedules](schedules.md#one-time-schedules)) are the only platform-authored prompts an agent ever sees — each carries the agent's own words or task, never the platform's.
 A later turn answering on the same session dismisses the watch, so a person who re-asked never gets two answers.
 The watch runs on Slack's addressed turns only: an ambient turn is never nudged — nobody summoned the agent — and a Telegram addressed turn gets the failure copy alone.
 
 What counts as answered spans everything the turn gathered, not the batch it opened with: a message steered into a running turn takes its own place in that turn, and the agent's one reply may land against it rather than the message that started things.
 Judging on the opening batch alone reads an answered turn as silent — and then repairs it, which is how a person ends up sent the same answer twice.
+A steered message can arrive after the agent already replied, so a turn carrying one is answered only when, for each reply target, its newest steered message got a reply, decline, hand-off or reaction of its own; a reply counts for the message that was newest when the agent called the tool.
+A turn that replied but left such messages unanswered gets a nudge that names them, and only them.
+Telegram has no nudge: such a turn leaves a warning in the log.
 
 A turn that never lost its relay needs no watch, and is judged the moment it ends.
 An addressed Slack turn that finishes having posted nothing, declined nothing and handed nothing on has left its answer undelivered — the agent wrote it as ordinary text, and the relay discards that — so it goes to the same watch with its ending already known: no poll, the verdict runs at once, and the recovery is the one the watch would have reached anyway.

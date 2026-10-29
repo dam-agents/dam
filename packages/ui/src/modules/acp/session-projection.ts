@@ -718,7 +718,7 @@ function handleToolCall(
     kind: "tool",
     toolCallId: u.toolCallId,
     title: u.title,
-    status: u.status ?? "pending",
+    status: cutBySteer(u) ? "cancelled" : (u.status ?? "pending"),
     content: content?.length
       ? content
       : (adapterOutput(u, undefined) ?? content),
@@ -779,7 +779,7 @@ function patchToolChip(
             p.kind === "tool" && p.toolCallId === u.toolCallId
               ? {
                   ...p,
-                  status: u.status ?? p.status,
+                  status: cutBySteer(u) ? "cancelled" : (u.status ?? p.status),
                   title: u.title ?? p.title,
                   content: content?.length
                     ? content
@@ -791,6 +791,12 @@ function patchToolChip(
           ),
         },
   );
+}
+
+function cutBySteer(u: ToolCall | ToolCallUpdate): boolean {
+  const platform = (u._meta as { platform?: { cutBySteer?: unknown } } | null)
+    ?.platform;
+  return platform?.cutBySteer === true;
 }
 
 function appendAgentParts(
