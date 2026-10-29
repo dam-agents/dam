@@ -15,6 +15,7 @@ import {
   type KitStep,
 } from "../../kit/index.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
+import { printable } from "../../shared/printable.js";
 import {
   exitOnServiceError,
   printServiceError,
@@ -33,6 +34,7 @@ import { waitForRunningOrExit } from "./wait-or-exit.js";
 
 export interface KitCreateOpts extends AvatarOpts {
   kit: string;
+  commit?: string;
   template?: string;
   connection: string[];
   slackChannel: string[];
@@ -70,6 +72,17 @@ export async function runCreateFromKit(
   const { host } = ctx;
   const kits = deps.createKitService(host);
   const { kit, catalogKits } = await resolveKitOrExit(kits, opts.kit, host);
+  if (kit.link) {
+    if (opts.commit === undefined)
+      invalid(
+        `a kit from a repository needs --commit <sha>: the commit \`dam kit show ${kit.link.url}\` printed, so the agent is created from the kit you checked`,
+      );
+    if (opts.commit.toLowerCase() !== kit.version)
+      invalid(
+        `${kit.link.url} is at ${kit.version} now, not at ${opts.commit}; run \`dam kit show ${kit.link.url}\` again and check what changed`,
+      );
+  } else if (opts.commit !== undefined)
+    invalid("--commit only goes with a kit from a repository");
   const unknownSchedules = opts.skipSchedule.filter(
     (s) => !kit.schedules.some((k) => k.name === s),
   );
@@ -161,7 +174,7 @@ export async function runCreateFromKit(
     : await fetchOrFallback(agents, agent, "after create");
 
   const granted =
-    owned?.filter((c) => input.connectionIds.includes(c.id)) ?? [];
+    owned?.filter((c) => input.connectionIds.includes(c.id)) ?? null;
   const steps = remainingSteps(
     kit,
     finalAgent,
@@ -178,11 +191,11 @@ export async function runCreateFromKit(
     return process.exit(EXIT_SUCCESS);
   }
   process.stdout.write(
-    `✓ Created agent "${finalAgent.name}" (${finalAgent.id}) from the starter kit ${kit.name} (${kitRef}). State: ${finalAgent.state}.\n`,
+    `✓ Created agent "${finalAgent.name}" (${finalAgent.id}) from the starter kit ${printable(kit.name)} (${kitRef}). State: ${finalAgent.state}.\n`,
   );
   if (skillsError)
     process.stderr.write(
-      `warning: the kit's external skills could not be installed: ${skillsError}\n`,
+      `warning: the kit's external skills could not be installed: ${printable(skillsError)}\n`,
     );
   else if (skills && skills.skipped.length > 0)
     process.stderr.write(
@@ -209,16 +222,16 @@ async function kitAvatar(
 }
 
 export function renderSteps(steps: readonly KitStep[]): string {
-  const open = steps.filter((s) => !s.done);
+  const open = steps.filter((s) => s.done !== true);
   if (open.length === 0) return "Nothing is left to set up.\n";
   const lines = ["", "Left to set up:"];
   for (const step of steps) {
-    const mark = step.done ? "[x]" : "[ ]";
+    const mark = step.done === null ? "[?]" : step.done ? "[x]" : "[ ]";
     const need = step.required ? "required" : "suggested";
     lines.push(
-      `  ${mark} ${step.kind}: ${step.what} (${need})${step.note ? ` — ${step.note}` : ""}`,
+      `  ${mark} ${step.kind}: ${printable(step.what)} (${need})${step.note ? ` — ${printable(step.note)}` : ""}`,
     );
-    if (!step.done) lines.push(`      ${step.command}`);
+    if (step.done !== true) lines.push(`      ${printable(step.command)}`);
   }
   return `${lines.join("\n")}\n`;
 }

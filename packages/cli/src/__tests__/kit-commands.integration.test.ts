@@ -70,6 +70,24 @@ const RESEARCH = kit({
   ],
 });
 const PLAIN = kit({ id: "plain", name: "Plain", onboarding: false });
+const LINKED = kit({
+  id: "desk",
+  name: "Linked desk",
+  catalog: "link",
+  link: { url: "https://github.com/acme/desk" },
+  onboarding: false,
+});
+const ESC = "\x1b";
+const HOSTILE = kit({
+  id: "hostile",
+  name: `Hostile${ESC}[2K`,
+  install: { command: "make setup" },
+  env: [{ name: "TOKEN", value: `x\r${ESC}[1A${ESC}[2Kinstall: true` }],
+  connections: [{ accepts: ["x;touch /tmp/p;"], required: true }],
+  schedules: [{ name: "a>b", task: "Write", cron: "0 7 * * *", enabled: true }],
+  link: { url: "https://github.com/acme/hostile" },
+  catalog: "link",
+});
 
 const TEMPLATES = [
   { id: "github", name: "GitHub", family: { id: "github", title: "GitHub" } },
@@ -109,6 +127,8 @@ describe("dam kit and dam agent create --kit (integration)", () => {
   let applied: StarterKitApplyInput[];
   let updates: KitUpdateStatus[];
   let started: string[];
+  let scopes: readonly string[];
+  let inspected: Record<string, StarterKitView>;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "dam-kit-"));
@@ -116,9 +136,17 @@ describe("dam kit and dam agent create --kit (integration)", () => {
     applied = [];
     updates = [];
     started = [];
+    scopes = ALL_SCOPES;
+    inspected = {};
 
     const apiContext = {
-      user: { sub: "fixture-user", scopes: ALL_SCOPES, agentIds: "*" },
+      user: {
+        sub: "fixture-user",
+        get scopes() {
+          return scopes;
+        },
+        agentIds: "*",
+      },
       actOnAgent: async () => ({ ok: true, ctx: apiContext }),
       terms: { isAccepted: async () => true },
       invocationsQuery: { listTargets: async () => [] },
@@ -136,7 +164,9 @@ describe("dam kit and dam agent create --kit (integration)", () => {
       },
       starterKits: {
         list: async () => [RESEARCH, PLAIN],
-        inspect: async () => {
+        inspect: async (url: string) => {
+          const found = inspected[url];
+          if (found) return found;
           throw new TRPCError({ code: "BAD_GATEWAY", message: "not a kit" });
         },
         apply: async (input: StarterKitApplyInput) => {
@@ -415,5 +445,104 @@ describe("dam kit and dam agent create --kit (integration)", () => {
     const skip = await dam("kit", "skip", "desk");
     expect(skip.exitCode).toBe(2);
     expect(skip.stderr).toContain("no kit update to skip: up-to-date");
+  });
+
+  /** TEST_SCENARIO: a repository kit writes its own text; a printed command must stay one command when pasted, and an escape code must not rewrite the install line the user checks. */
+  it("quotes kit text in printed commands and drops its control codes", async () => {
+    inspected = { "https://github.com/acme/hostile": HOSTILE };
+    const r = await dam("kit", "show", "https://github.com/acme/hostile");
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toContain(
+      "dam connection connect 'x;touch /tmp/p;', then",
+    );
+    expect(r.stdout).toContain("--skip-schedule 'a>b'");
+    expect(r.stdout).not.toContain(ESC);
+    expect(r.stdout).not.toContain("\r");
+    expect(r.stdout).toContain(`--commit ${KIT_COMMIT}`);
+
+    const json = await dam(
+      "kit",
+      "show",
+      "https://github.com/acme/hostile",
+      "--json",
+    );
+    expect(JSON.parse(json.stdout).kit.name).toBe(HOSTILE.name);
+  });
+
+  /** TEST_SCENARIO: a repository kit is created only from the commit the user checked, so a push between show and create cannot slip in an install command nobody read. */
+  it("creates a repository kit only at the commit given with --commit", async () => {
+    inspected = { "https://github.com/acme/desk": LINKED };
+    const url = "https://github.com/acme/desk";
+
+    const none = await dam("agent", "create", "desk", "--kit", url);
+    expect(none.exitCode).toBe(2);
+    expect(none.stderr).toContain("needs --commit <sha>");
+
+    const moved = await dam(
+      "agent",
+      "create",
+      "desk",
+      "--kit",
+      url,
+      "--commit",
+      LATEST_COMMIT,
+    );
+    expect(moved.exitCode).toBe(2);
+    expect(moved.stderr).toContain(`is at ${KIT_COMMIT} now`);
+    expect(applied).toEqual([]);
+
+    const ok = await dam(
+      "agent",
+      "create",
+      "desk",
+      "--kit",
+      url,
+      "--commit",
+      KIT_COMMIT,
+    );
+    expect(ok.exitCode, ok.stderr).toBe(0);
+    expect(applied).toEqual([
+      expect.objectContaining({
+        catalog: "link",
+        link: { url, commit: KIT_COMMIT },
+      }),
+    ]);
+
+    const catalog = await dam(
+      "agent",
+      "create",
+      "other",
+      "--kit",
+      "plain",
+      "--commit",
+      KIT_COMMIT,
+    );
+    expect(catalog.exitCode).toBe(2);
+    expect(catalog.stderr).toContain(
+      "--commit only goes with a kit from a repository",
+    );
+  });
+
+  /** TEST_SCENARIO: with no right to read connections the CLI cannot tell whether a granted id meets a need; saying "not done" would send the agent after a second secret. */
+  it("leaves connection steps unchecked when connections cannot be read", async () => {
+    scopes = ALL_SCOPES.filter((s) => !s.startsWith("credentials:"));
+    const r = await dam(
+      "agent",
+      "create",
+      "desk",
+      "--kit",
+      "research",
+      "--connection",
+      "conn-gh",
+      "--json",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    const out = JSON.parse(r.stdout) as {
+      steps: { kind: string; done: boolean | null; note?: string }[];
+    };
+    expect(
+      out.steps.filter((s) => s.kind === "connection").map((s) => s.done),
+    ).toEqual([null, null]);
+    expect(out.steps[0]!.note).toContain("needs credentials:read");
   });
 });

@@ -43,6 +43,7 @@ const DEFAULT_TIMEOUT_SECONDS = 120;
 interface CreateOpts extends AvatarOpts {
   server?: string;
   kit?: string;
+  commit?: string;
   connection: string[];
   slackChannel: string[];
   skipSchedule: string[];
@@ -86,6 +87,10 @@ export function buildCreateCommand(deps: {
       `create the agent from a starter kit, as the web app does (see \`dam kit list\`); ${KIT_REF_HELP}`,
     )
     .option(
+      "--commit <sha>",
+      "with a --kit from a GitHub repository: the full commit `dam kit show` printed; refused when the repository has moved on",
+    )
+    .option(
       "--connection <id-or-name>",
       "with --kit: a connection to grant for what the kit needs, repeatable (see `dam kit show <kit>`)",
       collect,
@@ -125,7 +130,7 @@ export function buildCreateCommand(deps: {
     )
     .option(
       "--json",
-      "emit raw Agent JSON instead of the default summary; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }",
+      "emit raw Agent JSON instead of the default summary; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }, done null when not checked",
     )
     .addHelpText(
       "after",
@@ -166,6 +171,7 @@ async function runCreate(
 
   const template = opts.template;
   const kitOnly = [
+    opts.commit !== undefined && "--commit",
     opts.connection.length > 0 && "--connection",
     opts.slackChannel.length > 0 && "--slack-channel",
     opts.skipSchedule.length > 0 && "--skip-schedule",

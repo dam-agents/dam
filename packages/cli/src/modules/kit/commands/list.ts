@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { printable } from "../../shared/printable.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import { renderTable, truncate } from "../../shared/render-table.js";
@@ -56,9 +57,9 @@ export function buildListCommand(deps: {
           ["ID", "NAME", "CATEGORY", "DESCRIPTION"],
           ...sorted.map((k) => [
             k.ref,
-            k.name,
-            k.category,
-            truncate(k.tagline ?? k.description, DESCRIPTION_MAX),
+            printable(k.name),
+            printable(k.category),
+            truncate(printable(k.tagline ?? k.description), DESCRIPTION_MAX),
           ]),
         ]),
         EXIT_SUCCESS,

@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { printable } from "../../shared/printable.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import {
@@ -80,28 +81,28 @@ function renderKit(
   needs: readonly KitNeed[],
 ): string {
   const lines = [
-    `${kit.name} (${ref})`,
-    kit.description,
+    `${printable(kit.name)} (${ref})`,
+    printable(kit.description, { lines: true }),
     "",
-    `Category: ${kit.category}`,
-    `Version:  ${shortKitVersion(kit.version)}`,
+    `Category: ${printable(kit.category)}`,
+    `Version:  ${kit.link ? kit.version : shortKitVersion(kit.version)}`,
   ];
   if (kit.link)
     lines.push(
-      `Source:   ${kit.link.url} — not reviewed by anyone on this server; check its install command and environment below`,
+      `Source:   ${kit.link.url} — not reviewed by anyone on this server; check its install command and environment below, then create from it with --commit ${kit.version}`,
     );
-  if (kit.docsUrl) lines.push(`Docs:     ${kit.docsUrl}`);
+  if (kit.docsUrl) lines.push(`Docs:     ${printable(kit.docsUrl)}`);
   lines.push("", "Sets up:");
   for (const seed of seeds)
     lines.push(
-      `  ${seed.kind.padEnd(11)}${seed.what}${seed.detail ? ` — ${seed.detail}` : ""}`,
+      `  ${seed.kind.padEnd(11)}${printable(seed.what)}${seed.detail ? ` — ${printable(seed.detail)}` : ""}`,
     );
   lines.push("", "You set up:");
   if (needs.length === 0) lines.push("  nothing");
   for (const need of needs) {
     lines.push(
-      `  ${need.kind.padEnd(11)}${need.what} (${need.required ? "required" : "suggested"})${need.note ? ` — ${need.note}` : ""}`,
-      `  ${" ".repeat(11)}${need.command}`,
+      `  ${need.kind.padEnd(11)}${printable(need.what)} (${need.required ? "required" : "suggested"})${need.note ? ` — ${printable(need.note)}` : ""}`,
+      `  ${" ".repeat(11)}${printable(need.command)}`,
     );
   }
   return `${lines.join("\n")}\n`;

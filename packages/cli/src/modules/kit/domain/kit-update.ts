@@ -1,3 +1,4 @@
+import { printable } from "../../shared/printable.js";
 import type { KitUpdateChanges, KitUpdateStatus } from "api-server-api";
 import { shortKitVersion } from "./kit-ref.js";
 
@@ -27,14 +28,15 @@ export function renderChanges(changes: KitUpdateChanges | null): string {
   if (changes === null) return "No changes to show.\n";
   const range =
     changes.versionFrom && changes.versionTo
-      ? `${changes.versionFrom} → ${changes.versionTo}`
+      ? `${printable(changes.versionFrom)} → ${printable(changes.versionTo)}`
       : `${shortKitVersion(changes.from)} → ${shortKitVersion(changes.to)}`;
   const lines = [`Kit update · ${range}`];
-  if (changes.changelog) lines.push("", changes.changelog.trimEnd());
+  if (changes.changelog)
+    lines.push("", printable(changes.changelog, { lines: true }).trimEnd());
   if (changes.commits) {
     lines.push("");
     for (const c of changes.commits)
-      lines.push(`${shortKitVersion(c.sha)} ${c.subject}`);
+      lines.push(`${shortKitVersion(c.sha)} ${printable(c.subject)}`);
     const hidden = (changes.totalCommits ?? 0) - changes.commits.length;
     if (hidden > 0) lines.push(`and ${hidden} more`);
   }
@@ -45,6 +47,6 @@ export function renderChanges(changes: KitUpdateChanges | null): string {
         ? `${changes.totalCommits} new commits.`
         : "The summary is not available right now.",
     );
-  lines.push("", `Compare: ${changes.compareUrl}`);
+  lines.push("", `Compare: ${printable(changes.compareUrl)}`);
   return `${lines.join("\n")}\n`;
 }

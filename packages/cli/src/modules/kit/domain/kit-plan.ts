@@ -56,7 +56,7 @@ export interface KitStep {
   what: string;
   note?: string;
   command: string;
-  done: boolean;
+  done: boolean | null;
 }
 
 const NEW_AGENT = "dam agent create <name> --kit <kit>";
@@ -179,13 +179,13 @@ function connectionCommand(
   owned: readonly OwnedConnection[],
   agent: string | null,
 ): string {
-  const grant = (ref: string) =>
+  const grant = (word: string) =>
     agent === null
-      ? `${NEW_AGENT} --connection ${shellWord(ref)}`
-      : `dam connection grant ${shellWord(agent)} --connection ${shellWord(ref)}`;
+      ? `${NEW_AGENT} --connection ${word}`
+      : `dam connection grant ${shellWord(agent)} --connection ${word}`;
   const match = ownedMatches(requirement, owned, templates)[0];
-  if (match) return grant(match.name ?? match.id);
-  return `dam connection connect ${connectTemplate(requirement, templates)}, then ${grant("<connection>")}`;
+  if (match) return grant(shellWord(match.name ?? match.id));
+  return `dam connection connect ${shellWord(connectTemplate(requirement, templates))}, then ${grant("<connection>")}`;
 }
 
 function channelCommand(
@@ -269,23 +269,30 @@ export function preselectedGrants(
  * created from a kit: each connection the kit asks for and whether a granted
  * one meets it, each channel and whether one of its type is bound, and the
  * onboarding session the kit's briefing opens. Each step names the `dam`
- * command that does it, so a user's agent can work down the list.
+ * command that does it, so a user's agent can work down the list. With no
+ * connections read (`granted` null), a connection step is not checked.
  */
 export function remainingSteps(
   kit: StarterKitView,
   agent: { name: string; channels: readonly ChannelConfig[] },
-  granted: readonly OwnedConnection[],
+  granted: readonly OwnedConnection[] | null,
   owned: readonly OwnedConnection[],
   templates: TemplateIndex,
 ): KitStep[] {
-  const steps: KitStep[] = kit.connections.map((r) => ({
-    kind: "connection",
-    required: r.required,
-    what: describeAccepts(r.accepts, templates),
-    ...(r.note && { note: r.note }),
-    command: connectionCommand(r, templates, owned, agent.name),
-    done: ownedMatches(r, granted, templates).length > 0,
-  }));
+  const steps: KitStep[] = kit.connections.map((r) => {
+    const note = connectionNote(r.note, granted === null);
+    return {
+      kind: "connection",
+      required: r.required,
+      what: describeAccepts(r.accepts, templates),
+      ...(note && { note }),
+      command: connectionCommand(r, templates, owned, agent.name),
+      done:
+        granted === null
+          ? null
+          : ownedMatches(r, granted, templates).length > 0,
+    };
+  });
   for (const channel of kit.channels)
     steps.push({
       kind: "channel",
@@ -311,8 +318,17 @@ export function remainingSteps(
   return steps;
 }
 
+function connectionNote(
+  note: string | undefined,
+  unchecked: boolean,
+): string | undefined {
+  if (!unchecked) return note;
+  const why = "not checked: reading your connections needs credentials:read";
+  return note ? `${note}; ${why}` : why;
+}
+
 function shellWord(word: string): string {
-  return /^[A-Za-z0-9_@%+=:,./<>-]+$/.test(word)
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word)
     ? word
     : `'${word.replace(/'/g, `'\\''`)}'`;
 }

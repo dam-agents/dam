@@ -241,6 +241,7 @@ No admin is involved and no catalog changes.
 - **Reviewed by the user, at one commit.** The modal shows everything the kit sets up, as for a catalog kit, and adds what a catalog's review would otherwise cover: a notice that nobody on the platform reviewed the kit, naming the repository and the commit, and the kit's install command and environment.
   An unreviewed kit can set up nothing the user could not set up by hand on a new Agent — its image, egress, install command and schedules are all things the plain create and the agent's settings already offer the same user — so the review is the user's, and the modal gives them what they need for it.
 - **Created from the commit the user saw.** Apply names the link and that commit; the server reads the kit again at the commit rather than trusting what the browser sends, and refuses when the repository now holds a different kit.
+  The CLI has no modal between the read and the apply, so `agent create --kit <repository>` takes that commit as `--commit` and refuses when the repository's head has moved past it.
   The Agent is stamped `link/<kit>@<commit>`.
 - **A refusal says why.** A repository with no `kit.yaml`, an invalid field, a missing or private repository, and one that cannot be reached right now each come back as a message the person who pasted the link can act on.
   GitHub answers an anonymous read of a missing, renamed or private repository the same way (401 or 404 on the ref advertisement), so all three read as "could not be found, or it is not public" — for the kit and for its seed.
