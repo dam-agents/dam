@@ -68,6 +68,7 @@ import type {
 } from "../services/worker-contract.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
+  AcpModelRefusedError,
   AcpSessionLoadError,
   AcpTurnAbandonedError,
   type AcpClient,
@@ -2843,9 +2844,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         opts: Parameters<typeof acp.sendPrompt>[1],
       ) => {
         args.signal?.throwIfAborted();
-        const answer = await acp.sendPrompt(built.prompt, opts);
-        built.commit();
-        return answer;
+        try {
+          const answer = await acp.sendPrompt(built.prompt, opts);
+          built.commit();
+          return answer;
+        } catch (err) {
+          if (err instanceof AcpModelRefusedError) built.commit();
+          throw err;
+        }
       };
       if (existing) {
         const resume = await args.buildResumePrompt();
@@ -3154,7 +3160,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff))
         return;
       await postNotice(
-        `${failure.copy({ uiBaseUrl, agentId: instanceName })}${renderTurnFiles(ctx)}`,
+        `${failure.copy({ uiBaseUrl, agentId: instanceName, threads: true })}${renderTurnFiles(ctx)}`,
       );
       failurePosted = true;
     };

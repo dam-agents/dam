@@ -733,7 +733,13 @@ export function createTelegramWorker(deps: {
       const sleeping = isAgentStoppedError(err) && !err.disabled;
       if (!ambientTurn && !sleeping)
         await thread
-          .post(failure.copy({ uiBaseUrl: deps.uiBaseUrl, agentId }))
+          .post(
+            failure.copy({
+              uiBaseUrl: deps.uiBaseUrl,
+              agentId,
+              threads: false,
+            }),
+          )
           .catch(() => {});
     } finally {
       releaseAttendance();
