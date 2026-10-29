@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import { slackWorkerHarness } from "../helpers/slack-worker.js";
-import type { AcpClient } from "../../core/acp-client.js";
+import { AcpModelRefusedError, type AcpClient } from "../../core/acp-client.js";
 import {
   selectUnseen,
   type ThreadEntry,
@@ -34,7 +34,8 @@ function countAcross(prompts: Array<unknown>, sub: string): number {
  * it; a delivered batch moves the boundary to its newest send time, whatever
  * order Slack delivered the events in; a message steered into a delivered turn
  * counts as seen; a failed turn leaves the boundary where it was, so the next
- * turn shows its messages again; and a read that hits its limit never moves
+ * turn shows its messages again, except a turn the model refused, which the
+ * session did receive; and a read that hits its limit never moves
  * the boundary past the messages the turn was shown.
  */
 const harness = (opts: Parameters<typeof slackWorkerHarness>[0] = {}) =>
@@ -492,6 +493,46 @@ describe("steered messages and the boundary", () => {
     expect(recovered).toContain(AWAY);
     expect(recovered).toContain(BRAVO);
     expect(recovered).toContain(CHARLIE);
+  });
+
+  /**
+   * TEST_SCENARIO: A turn the model refused did reach the session: the refused
+   * message is in its transcript. So the boundary advances past it, and the
+   * next turn in the thread does not hand it to the agent again as missed, a
+   * message the model would refuse once more.
+   */
+  it("counts a message the model refused as seen", async () => {
+    const h = harness({
+      makeAcp: (base) => ({
+        ...base,
+        sendPrompt: async (prompt, sendOpts) => {
+          const answer = await base.sendPrompt(prompt, sendOpts);
+          if (String(prompt).includes(BRAVO))
+            throw new AcpModelRefusedError("s-1");
+          return answer;
+        },
+      }),
+    });
+    await h.worker.connect();
+
+    for (const [upTo, ts, text] of [
+      [1, T1, ALPHA],
+      [2, T2, BRAVO],
+      [3, T3, CHARLIE],
+    ] as const) {
+      h.gw.setThreadedHistory(threadedHistory(upTo));
+      await h.gw.fireMention({
+        user: "U9",
+        channel: BOUND,
+        ts,
+        ...thread,
+        text,
+      });
+    }
+
+    const next = h.prompts.map(String).find((p) => p.includes(CHARLIE));
+    expect(next).toBeDefined();
+    expect(next).not.toContain(BRAVO);
   });
 });
 

@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { SANDBOX_SECTIONS } from "api-server-api";
 import { describe, expect, it } from "vitest";
+import { AcpModelRefusedError } from "../../core/acp-client.js";
 import { ChannelProfileRefusedError } from "../../modules/channels/infrastructure/channel-profile.js";
 import { classifyTurnFailure } from "../../modules/channels/infrastructure/turn-failure-copy.js";
 
@@ -46,7 +47,25 @@ describe("links to an agent's page", () => {
     expect(failure.kind).toBe("plain");
     if (failure.kind !== "plain") return;
     expect(
-      failure.copy({ uiBaseUrl: "https://dam.example", agentId: "agent-1" }),
+      failure.copy({
+        uiBaseUrl: "https://dam.example",
+        agentId: "agent-1",
+        threads: true,
+      }),
     ).toContain("https://dam.example/sandboxes/agent-1/channels");
+  });
+
+  /** TEST_SCENARIO: a message the model refused sends the owner to the agent's Providers section, where another model can be picked. */
+  it("sends a model refusal to the Providers section", () => {
+    const failure = classifyTurnFailure(new AcpModelRefusedError("s-1"));
+    expect(failure.kind).toBe("plain");
+    if (failure.kind !== "plain") return;
+    expect(
+      failure.copy({
+        uiBaseUrl: "https://dam.example",
+        agentId: "agent-1",
+        threads: true,
+      }),
+    ).toContain("https://dam.example/sandboxes/agent-1/providers");
   });
 });

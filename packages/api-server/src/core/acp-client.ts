@@ -55,6 +55,15 @@ export class AcpTurnAbandonedError extends Error {
   }
 }
 
+export const MODEL_REFUSAL_STOP_REASON = "refusal";
+
+export class AcpModelRefusedError extends Error {
+  constructor(readonly sessionId: string) {
+    super(`the model refused the prompt in session ${sessionId}`);
+    this.name = "AcpModelRefusedError";
+  }
+}
+
 type ConnectionWatch =
   | { kind: "deadline"; ms: number }
   | {
@@ -673,8 +682,9 @@ export function createAcpClient(opts: {
               );
           };
           signal?.addEventListener("abort", cancel, { once: true });
+          let ended: { stopReason?: string };
           try {
-            await ("resumeSessionId" in sendOpts
+            ended = await ("resumeSessionId" in sendOpts
               ? promptPinningDefault(connection, sessionId, send, () =>
                   resolvePair(opts.firePair, agentId),
                 )
@@ -682,6 +692,8 @@ export function createAcpClient(opts: {
           } finally {
             signal?.removeEventListener("abort", cancel);
           }
+          if (ended.stopReason === MODEL_REFUSAL_STOP_REASON)
+            throw new AcpModelRefusedError(sessionId);
         },
       );
 
