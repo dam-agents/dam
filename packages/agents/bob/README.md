@@ -96,6 +96,7 @@ Drop them once a Bob release does both on its own.
 Bob 2.0.6 then stops only the command's own shell, and a process that the command started keeps running.
 Checked on 2026-10-29: after **Send now** during `bash -c 'sleep 120; echo DONE > <file>'`, the file held DONE two minutes later.
 So the `<turn-continued>` notice tells the agent that a cut command may still be running.
+**Send now** while Bob writes a reply made it write the whole reply again from the top, so the notice also quotes the cut reply and tells Bob to go on from the cut.
 
 ## Authentication
 

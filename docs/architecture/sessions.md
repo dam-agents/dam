@@ -133,9 +133,18 @@ From then on the messages count as delivered, also when a person's Stop ends the
 **Send now** on such a harness cancels at once and so cuts the tool call that is running.
 The runtime then answers the Session's open tool call approvals as cancelled, as the client that cancels a turn must, so no approval card stays open, and the cut call shows as stopped, not as failed.
 The harness's own history records the cut call as failed, so the runtime keeps the ids of the calls it cut in the session metadata and marks them again when it rebuilds the log from that history.
-The notice tells the agent that a tool call was cut, may have partly run and may still be running, because a harness can stop a command's shell but not a process the command started.
+The notice tells the agent that a tool call was cut, may have partly run and may still be running, because a harness may stop only a command's shell and not a process the command started.
+When the cut stops a reply that the agent was writing, the notice quotes what the agent wrote since its last tool call and tells it to go on from the cut, because both harnesses otherwise write the whole reply again.
 Scheduled fires, invocation outcomes and CLI runs always queue.
 A message from another of the agent's sessions is steered like a typed one.
+
+| Harness     | Steers by                                   | The agent reads a waiting message                                               | A message can wait                                                      | **Send now**                                                                      |
+| ----------- | ------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Claude Code | native                                      | at the steer point, beside its tool results                                     | until the next steer point, at most a minute                            | steers at once; a running command moves to the background and keeps running       |
+| Codex       | native                                      | at Codex's next model request, which can be one tool step after the steer point | until the next steer point, at most a minute, then until that request   | steers at once; a running command runs to its end first                           |
+| Pi          | native, through the platform's pi-acp patch | when Pi's run takes its steer queue, after the tool calls of its current step   | until the next steer point, at most a minute, then until that step ends | steers at once; a running command runs to its end first                           |
+| Bob         | interrupt and continue                      | at the steer point, after the quiet window, in the continued prompt             | while tool calls run, with no limit                                     | cancels at once and stops the running command; a process it started keeps running |
+| Copilot     | interrupt and continue                      | at the steer point, after the quiet window, in the continued prompt             | while tool calls run, with no limit                                     | cancels at once and stops the running command with the processes it started       |
 
 A client can ask for a steer itself with `_session/steering`, as the channel workers do; the runtime serves it and never forwards it to the harness.
 The request names its own batch (`promptId`) and the turn it may join (`targetPromptId`), and becomes a **steer-only** entry of the same queue: it waits for a steer point as any steer does, joins only while its target turn runs, and waits behind its target while that prompt is still queued or starting.

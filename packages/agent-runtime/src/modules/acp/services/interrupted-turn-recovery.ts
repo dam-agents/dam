@@ -32,14 +32,33 @@ const CUT_COMMAND =
   "partly run, and a process it started may still be running. Check its " +
   "effects before you run it again.";
 
-export function turnContinuedNotice(cutToolCall: boolean): string {
+function cutReplyLines(cutReply: string): string[] {
+  if (cutReply === "") return [];
+  const quoted = cutReply
+    .replaceAll("</cut-reply>", "")
+    .replaceAll("</turn-continued>", "");
+  return [
+    "The cancel cut the reply you were writing. The person already sees it " +
+      "up to the cut, which ends like this:",
+    "<cut-reply>",
+    quoted,
+    "</cut-reply>",
+    "Do not write that part again: go on from where it stopped.",
+  ];
+}
+
+export function turnContinuedNotice(cut: {
+  toolCall: boolean;
+  reply: string;
+}): string {
   return [
     "<turn-continued>",
     "New messages arrived while you were working, so the platform cancelled " +
       "your last step to give them to you; they are right above this notice.",
     "A cancel record in your history comes from this, not from a request to " +
       "stop.",
-    ...(cutToolCall ? [CUT_COMMAND] : []),
+    ...(cut.toolCall ? [CUT_COMMAND] : []),
+    ...cutReplyLines(cut.reply),
     "Your finished tool calls and their results are in your history.",
     "Continue your task and include these messages, unless they change the " +
       "task.",

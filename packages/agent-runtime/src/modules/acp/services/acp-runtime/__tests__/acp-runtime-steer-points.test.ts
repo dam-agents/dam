@@ -350,7 +350,7 @@ describe("acp-runtime: interrupt and continue, races in the gap", () => {
     expect(bob.reply(3)).toMatchObject({ result: { stopReason: "cancelled" } });
     const prompts = world.harness().received("session/prompt");
     expect(prompts.map((p) => promptTexts(p).at(-1))).not.toContain(
-      turnContinuedNotice(false),
+      turnContinuedNotice({ toolCall: false, reply: "" }),
     );
     expect(undelivered.readFor(SESSION)).toEqual([]);
   });
@@ -396,7 +396,7 @@ describe("acp-runtime: interrupt and continue, races in the gap", () => {
     expect(prompts).toHaveLength(3);
     expect(promptTexts(prompts[2])).toEqual([
       "Change of plan",
-      turnContinuedNotice(false),
+      turnContinuedNotice({ toolCall: false, reply: "" }),
     ]);
     world.harness().emit(frames.agentMessage(SESSION, "Understood."));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });

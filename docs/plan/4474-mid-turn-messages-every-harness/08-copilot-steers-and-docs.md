@@ -38,10 +38,10 @@ Apply `/typescript-engineering` for any runtime change that a check makes necess
 
 ## Acceptance criteria
 
-- [ ] In a Copilot chat, a message sent during the first command of the three-command task shows **Send now** and joins the running work within a minute after that command ends.
-- [ ] After "Also tell me today's date", Copilot's reply has ALPHA, BRAVO, CHARLIE and the date, and the conversation shows no failure mark.
-- [ ] **Send now** during `sleep 120` on Copilot puts the message into the running work within ten seconds, and the command shows as stopped.
-- [ ] Each check of step 2 has a recorded result, and a failed check has its consequence in the docs.
+- [x] In a Copilot chat, a message sent during the first command of the three-command task shows **Send now** and joins the running work within a minute after that command ends.
+- [x] After "Also tell me today's date", Copilot's reply has ALPHA, BRAVO, CHARLIE and the date, and the conversation shows no failure mark.
+- [x] **Send now** during `sleep 120` on Copilot puts the message into the running work within ten seconds, and the command shows as stopped.
+- [x] Each check of step 2 has a recorded result, and a failed check has its consequence in the docs.
 - [ ] Every acceptance criterion of the README passes in the whole-feature smoke test.
 - [ ] `mise run check` and `mise run test` pass for the whole repository.
 

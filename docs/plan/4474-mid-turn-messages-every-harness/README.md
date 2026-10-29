@@ -216,7 +216,7 @@ The slices meet at these points.
 | 05  | [A late follow-up gets an answer](05-a-late-follow-up-gets-an-answer.md)                           | Frame wording, the per-message answered rule, a nudge for unanswered follow-ups, Telegram logging.                                  | 04         | ✅   |
 | 06  | [Interrupt and continue, on for Bob](06-interrupt-and-continue-on-for-bob.md)                      | The interrupt steer and its restarting state; the notice; Bob's compaction patch; Bob set to `interrupt`.                           | 03         | ✅   |
 | 07  | [Send now cuts a running command](07-send-now-cuts-a-running-command.md)                           | Pending permission requests, the cut tool's look, the notice for a cut command, the process check.                                  | 06         | ✅   |
-| 08  | [Copilot steers, and the per-harness docs](08-copilot-steers-and-docs.md)                          | Copilot set to `interrupt` with its checks; the per-harness table in the docs; the whole-feature walk.                              | 05, 07     |      |
+| 08  | [Copilot steers, and the per-harness docs](08-copilot-steers-and-docs.md)                          | Copilot set to `interrupt` with its checks; the per-harness table in the docs; the whole-feature walk.                              | 05, 07     | ✅   |
 
 ```mermaid
 graph LR

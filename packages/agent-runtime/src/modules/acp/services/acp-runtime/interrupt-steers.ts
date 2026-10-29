@@ -14,6 +14,7 @@ import type { PromptSubmission, SteerOutcome } from "./prompt-scheduler.js";
 
 const CONTINUATION_RETRIES = 3;
 const CONTINUATION_BACKOFF_MS = 250;
+const CUT_REPLY_KEPT = 4_000;
 
 export interface ClientOfTurn {
   channel: ClientChannel | null;
@@ -60,6 +61,7 @@ interface Interrupt {
   phase: "cancelling" | "continuing";
   undeliveredId: string | null;
   cutToolCalls: string[];
+  cutReply: string;
   client: ClientOfTurn | null;
   continuationId: number | null;
   retries: number;
@@ -75,6 +77,17 @@ function promptOf(entry: PromptSubmission): unknown[] {
 function stopReasonOf(frame: unknown): string | null {
   const reason = resultOf(frame)?.stopReason;
   return typeof reason === "string" ? reason : null;
+}
+
+function replyTextOf(frame: unknown): string | null {
+  const update = sessionUpdateOf(frame);
+  if (update?.sessionUpdate !== "agent_message_chunk") return null;
+  const content = update.content;
+  return isNonNullObject(content) &&
+    content.type === "text" &&
+    typeof content.text === "string"
+    ? content.text
+    : null;
 }
 
 const CONTINUED_TURN_UPDATES = new Set([
@@ -101,12 +114,14 @@ function failed(frame: unknown): boolean {
  * messages as a new prompt followed by the turn-continued notice. As the client
  * of a cancelled turn must, it answers the session's open tool call approvals
  * as cancelled, and it closes every tool call the cancel cut, so the notice
- * tells the agent to check what such a call left. For every client this stays
- * one turn: the turn keeps its prompt id and moves to the new harness prompt,
- * whose answer answers the client. Only the harness's answer to the new prompt
- * or its first output for it proves that the harness took it; a late frame of
- * the cancelled prompt proves nothing. Until then nothing that reacts to a
- * turn's end runs. A cancel cannot be undone, so every way the gap can end
+ * tells the agent to check what such a call left. It keeps what the agent wrote
+ * since its last tool call, so a cut reply is quoted in the notice and the
+ * agent goes on from the cut instead of writing it again. For every client this
+ * stays one turn: the turn keeps its prompt id and moves to the new harness
+ * prompt, whose answer answers the client. Only the harness's answer to the new
+ * prompt or its first output for it proves that the harness took it; a late
+ * frame of the cancelled prompt proves nothing. Until then nothing that reacts
+ * to a turn's end runs. A cancel cannot be undone, so every way the gap can end
  * delivers the messages once: the turn ending on its own or a person's Stop
  * before the harness answers the cancel gives the steer back as refused; once
  * the harness has the new prompt, the messages are delivered, also when a
@@ -121,6 +136,20 @@ export function createInterruptSteers(
 ): InterruptSteers {
   const interrupts = new Map<string, Interrupt>();
   const cancelledByClient = new Set<string>();
+  const replies = new Map<string, string>();
+
+  function noteReply(sessionId: string, frame: unknown): void {
+    if (sessionUpdateOf(frame)?.sessionUpdate === "tool_call") {
+      replies.delete(sessionId);
+      return;
+    }
+    const text = replyTextOf(frame);
+    if (text === null) return;
+    replies.set(
+      sessionId,
+      ((replies.get(sessionId) ?? "") + text).slice(-CUT_REPLY_KEPT),
+    );
+  }
 
   function finish(it: Interrupt, outcome: SteerOutcome): void {
     if (interrupts.get(it.sessionId) !== it) return;
@@ -144,7 +173,10 @@ export function createInterruptSteers(
           ...it.prompt,
           {
             type: "text",
-            text: turnContinuedNotice(it.cutToolCalls.length > 0),
+            text: turnContinuedNotice({
+              toolCall: it.cutToolCalls.length > 0,
+              reply: it.cutReply,
+            }),
           },
         ],
       },
@@ -156,6 +188,7 @@ export function createInterruptSteers(
     }
     it.phase = "continuing";
     it.continuationId = outboundId;
+    replies.delete(it.sessionId);
     deps.continueTurn(it.sessionId, outboundId, it.client);
     if (cancelledByClient.has(it.sessionId))
       deps.sendToHarness({
@@ -185,6 +218,7 @@ export function createInterruptSteers(
           phase: "cancelling",
           undeliveredId,
           cutToolCalls: deps.openToolCalls(sessionId),
+          cutReply: "",
           client: null,
           continuationId: null,
           retries: 0,
@@ -213,6 +247,7 @@ export function createInterruptSteers(
 
     onTurnStarted(sessionId) {
       cancelledByClient.delete(sessionId);
+      replies.delete(sessionId);
     },
 
     consumePromptAnswer(sessionId, outboundId, client, frame) {
@@ -227,6 +262,7 @@ export function createInterruptSteers(
           return false;
         }
         it.client = client;
+        it.cutReply = replies.get(sessionId) ?? "";
         deps.closeCutToolCalls(sessionId, it.cutToolCalls);
         sendContinuation(it);
         return true;
@@ -249,6 +285,7 @@ export function createInterruptSteers(
     },
 
     onSessionUpdate(sessionId, frame) {
+      noteReply(sessionId, frame);
       const it = interrupts.get(sessionId);
       if (it?.phase === "continuing" && continuesTurn(frame))
         finish(it, "injected");
@@ -262,6 +299,7 @@ export function createInterruptSteers(
       }
       interrupts.clear();
       cancelledByClient.clear();
+      replies.clear();
     },
   };
 }
