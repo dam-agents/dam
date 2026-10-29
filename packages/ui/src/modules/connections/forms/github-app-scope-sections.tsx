@@ -112,17 +112,17 @@ interface GithubScopeFieldsProps {
   selection: ScopeSelection;
   locked?: { note: ReactNode; saving: string };
   unlisted?: { count: number; note: string };
-  dropped?: number;
+  dropped?: { count: number; widens: boolean };
   children?: ReactNode;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the repositories and permissions body both GitHub scope dialogs render. A locked listing replaces the repository list with why it cannot be changed and what saving keeps; the unlisted callout names the selected repositories a partial listing does not show, which saving keeps, and the dropped callout counts those a complete listing does not show, which saving drops. The caller adds whatever else its scope can say.
+// UNIT_BOUNDARY_DESCRIPTION: the repositories and permissions body both GitHub scope dialogs render. A locked listing replaces the repository list with why it cannot be changed and what saving keeps; the unlisted callout names the selected repositories a partial listing does not show, which saving keeps, and the dropped callout counts those a complete listing does not show, which saving drops, or asks for another repository when none would be left. The caller adds whatever else its scope can say.
 export function GithubScopeFields({
   installation,
   selection,
   locked,
   unlisted,
-  dropped = 0,
+  dropped,
   children,
 }: GithubScopeFieldsProps) {
   return (
@@ -148,12 +148,15 @@ export function GithubScopeFields({
               save.
             </Callout>
           )}
-          {dropped > 0 && (
+          {dropped && dropped.count > 0 && (
             <Callout tone="danger" size="sm">
-              {dropped} selected{" "}
-              {dropped === 1 ? "repository is" : "repositories are"} no longer
-              reachable by the installation — removed from it, deleted or moved.
-              Saving will drop {dropped === 1 ? "it" : "them"}.
+              {dropped.count} selected{" "}
+              {dropped.count === 1 ? "repository is" : "repositories are"} no
+              longer reachable — removed, deleted, moved, or access to{" "}
+              {dropped.count === 1 ? "it" : "them"} was revoked.{" "}
+              {dropped.widens
+                ? "No selected repository would be left, which reaches every repository: choose one from the list, or full access."
+                : `Saving will drop ${dropped.count === 1 ? "it" : "them"}.`}
             </Callout>
           )}
         </>

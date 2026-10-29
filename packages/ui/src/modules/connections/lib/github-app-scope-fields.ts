@@ -49,22 +49,40 @@ export function writeRepositoryIds(ids: readonly number[]): string {
   return [...ids].sort((a, b) => a - b).join(" ");
 }
 
+export interface UnlistedRepos {
+  saved: number[];
+  kept: number;
+  dropped: number;
+  droppedAll: boolean;
+}
+
 export function splitUnlistedRepos(
   ticked: ReadonlySet<number>,
-  listing: {
-    repositories: readonly { id: number }[];
-    repositoriesTruncated?: boolean;
-    repositoriesUnavailable?: string;
-  },
-): { saved: number[]; kept: number; dropped: number } {
+  listing:
+    | {
+        repositories: readonly { id: number }[];
+        repositoriesTruncated?: boolean;
+        repositoriesUnavailable?: string;
+      }
+    | undefined,
+): UnlistedRepos {
+  if (!listing)
+    return { saved: [...ticked], kept: 0, dropped: 0, droppedAll: false };
   const listed = new Set(listing.repositories.map((r) => r.id));
   const unlisted = [...ticked].filter((id) => !listed.has(id)).length;
   if (listing.repositoriesTruncated || listing.repositoriesUnavailable)
-    return { saved: [...ticked], kept: unlisted, dropped: 0 };
+    return {
+      saved: [...ticked],
+      kept: unlisted,
+      dropped: 0,
+      droppedAll: false,
+    };
+  const saved = [...ticked].filter((id) => listed.has(id));
   return {
-    saved: [...ticked].filter((id) => listed.has(id)),
+    saved,
     kept: 0,
     dropped: unlisted,
+    droppedAll: unlisted > 0 && saved.length === 0,
   };
 }
 

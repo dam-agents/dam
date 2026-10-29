@@ -13,7 +13,7 @@ type AppScope = NonNullable<ConnectionView["githubAppScope"]>;
 
 const NO_NAMES: readonly string[] = [];
 
-// UNIT_BOUNDARY_DESCRIPTION: what a GitHub App installation connection is about to reach, while a dialog edits it: full access, or the repositories and permissions read from the installation. Repository names the connection already holds are matched to the listing's ids; when the listing cannot show them all, the names and ids the connection holds are kept as they are; when it shows them all, a held id it does not list is dropped on save, since GitHub refuses a token naming a repository the installation cannot reach. The choice is null until at least one repository or permission is chosen, so Save stays off.
+// UNIT_BOUNDARY_DESCRIPTION: what a GitHub App installation connection is about to reach, while a dialog edits it: full access, or the repositories and permissions read from the installation. Repository names the connection already holds are matched to the listing's ids; when the listing cannot show them all, the names and ids the connection holds are kept as they are; when it shows them all, a held id it does not list is dropped on save, since GitHub refuses a token naming a repository the installation cannot reach; when that drops every repository, the choice is null, since a scope naming no repository reaches the whole installation. The choice is null until at least one repository or permission is chosen, so Save stays off.
 export function useGithubAppScopeDraft(
   connectionId: string,
   current: { scope?: AppScope; fullAccess?: boolean },
@@ -56,12 +56,11 @@ export function useGithubAppScopeDraft(
     Boolean(installation?.repositoriesUnavailable) ||
     Boolean(installation?.repositoriesTruncated && heldNames.length > 0);
 
-  const unlisted = installation
-    ? splitUnlistedRepos(scope.repoIds, installation)
-    : { saved: [...scope.repoIds], kept: 0, dropped: 0 };
+  const unlisted = splitUnlistedRepos(scope.repoIds, installation);
+  const widensOnDrop = access !== "full" && unlisted.droppedAll;
 
   const choice =
-    access === "full" || installation
+    !widensOnDrop && (access === "full" || installation)
       ? appScopeChoice({
           access,
           repositories: repositoriesLocked ? heldNames : NO_NAMES,
@@ -80,6 +79,7 @@ export function useGithubAppScopeDraft(
     repositoriesLocked,
     keptUnlisted: unlisted.kept,
     droppedUnlisted: unlisted.dropped,
+    widensOnDrop,
     access,
     setAccess,
     choice,

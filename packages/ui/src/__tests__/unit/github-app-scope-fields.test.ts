@@ -96,6 +96,14 @@ describe("splitUnlistedRepos", () => {
       saved: [1],
       kept: 0,
       dropped: 1,
+      droppedAll: false,
+    });
+  });
+
+  it("flags a drop that leaves no repository, which would reach them all", () => {
+    expect(splitUnlistedRepos(new Set([9]), { repositories })).toMatchObject({
+      saved: [],
+      droppedAll: true,
     });
   });
 
@@ -105,6 +113,6 @@ describe("splitUnlistedRepos", () => {
         repositories,
         repositoriesTruncated: true,
       }),
-    ).toEqual({ saved: [1, 9], kept: 1, dropped: 0 });
+    ).toEqual({ saved: [1, 9], kept: 1, dropped: 0, droppedAll: false });
   });
 });

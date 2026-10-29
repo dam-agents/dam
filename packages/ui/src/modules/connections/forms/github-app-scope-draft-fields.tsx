@@ -65,7 +65,7 @@ export function GithubAppScopeDraftFields({
             }
           : undefined
       }
-      dropped={draft.droppedUnlisted}
+      dropped={{ count: draft.droppedUnlisted, widens: draft.widensOnDrop }}
     >
       {!repositoriesLocked && draft.unresolvedNames.length > 0 && (
         <Callout tone="danger" size="sm">
@@ -74,7 +74,7 @@ export function GithubAppScopeDraftFields({
           {draft.unresolvedNames.length === 1 ? "it" : "them"}.
         </Callout>
       )}
-      {draft.choice === null && (
+      {draft.choice === null && !draft.widensOnDrop && (
         <p
           className="text-sm text-muted-foreground"
           data-testid="github-app-scope-needed"
