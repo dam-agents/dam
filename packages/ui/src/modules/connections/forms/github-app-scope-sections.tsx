@@ -112,15 +112,17 @@ interface GithubScopeFieldsProps {
   selection: ScopeSelection;
   locked?: { note: ReactNode; saving: string };
   unlisted?: { count: number; note: string };
+  dropped?: number;
   children?: ReactNode;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the repositories and permissions body both GitHub scope dialogs render. A locked listing replaces the repository list with why it cannot be changed and what saving keeps; the unlisted callout names the selected repositories the listing does not show, which saving keeps. The caller adds whatever else its scope can say.
+// UNIT_BOUNDARY_DESCRIPTION: the repositories and permissions body both GitHub scope dialogs render. A locked listing replaces the repository list with why it cannot be changed and what saving keeps; the unlisted callout names the selected repositories a partial listing does not show, which saving keeps, and the dropped callout counts those a complete listing does not show, which saving drops. The caller adds whatever else its scope can say.
 export function GithubScopeFields({
   installation,
   selection,
   locked,
   unlisted,
+  dropped = 0,
   children,
 }: GithubScopeFieldsProps) {
   return (
@@ -144,6 +146,14 @@ export function GithubScopeFields({
               {unlisted.count === 1 ? "repository is" : "repositories are"} not
               in the list above{unlisted.note}. They stay selected when you
               save.
+            </Callout>
+          )}
+          {dropped > 0 && (
+            <Callout tone="danger" size="sm">
+              {dropped} selected{" "}
+              {dropped === 1 ? "repository is" : "repositories are"} no longer
+              reachable by the installation — removed from it, deleted or moved.
+              Saving will drop {dropped === 1 ? "it" : "them"}.
             </Callout>
           )}
         </>

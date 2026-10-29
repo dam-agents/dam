@@ -49,6 +49,25 @@ export function writeRepositoryIds(ids: readonly number[]): string {
   return [...ids].sort((a, b) => a - b).join(" ");
 }
 
+export function splitUnlistedRepos(
+  ticked: ReadonlySet<number>,
+  listing: {
+    repositories: readonly { id: number }[];
+    repositoriesTruncated?: boolean;
+    repositoriesUnavailable?: string;
+  },
+): { saved: number[]; kept: number; dropped: number } {
+  const listed = new Set(listing.repositories.map((r) => r.id));
+  const unlisted = [...ticked].filter((id) => !listed.has(id)).length;
+  if (listing.repositoriesTruncated || listing.repositoriesUnavailable)
+    return { saved: [...ticked], kept: unlisted, dropped: 0 };
+  return {
+    saved: [...ticked].filter((id) => listed.has(id)),
+    kept: 0,
+    dropped: unlisted,
+  };
+}
+
 export function canProbe(
   fields: Record<string, string>,
   hostRequired = false,

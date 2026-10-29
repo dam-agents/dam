@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { useProbeGitHubUserToken } from "../api/mutations.js";
 import type { GithubAccess } from "../lib/github-access.js";
+import { splitUnlistedRepos } from "../lib/github-app-scope-fields.js";
 import { userTokenScopeChoice } from "../lib/github-user-token-scope.js";
 import { useGithubScopeSelection } from "./use-github-scope-selection.js";
 
@@ -29,11 +30,9 @@ export function useGithubUserTokenScopeDraft(
   const chosen = installations.find((i) => i.targetId === targetId);
   const chosenMissing =
     probe.data !== undefined && targetId !== null && !chosen;
-  const unlistedRepoCount = chosen
-    ? [...scope.repoIds].filter(
-        (id) => !chosen.repositories.some((r) => r.id === id),
-      ).length
-    : 0;
+  const unlisted = chosen
+    ? splitUnlistedRepos(scope.repoIds, chosen)
+    : { saved: [...scope.repoIds], kept: 0, dropped: 0 };
 
   const chooseAccount = (next: number) => {
     if (next === targetId) return;
@@ -44,7 +43,7 @@ export function useGithubUserTokenScopeDraft(
   const choice = userTokenScopeChoice({
     access,
     targetId: chosen ? targetId : null,
-    repositoryIds: scope.repoIds,
+    repositoryIds: new Set(unlisted.saved),
     permissions: scope.permissions,
   });
 
@@ -53,7 +52,8 @@ export function useGithubUserTokenScopeDraft(
     installations,
     chosen,
     chosenMissing,
-    unlistedRepoCount,
+    unlistedRepoCount: unlisted.kept,
+    droppedRepoCount: unlisted.dropped,
     targetId,
     targetLogin: current.scope?.targetLogin,
     chooseAccount,

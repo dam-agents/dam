@@ -65,6 +65,7 @@ export function GithubAppScopeDraftFields({
             }
           : undefined
       }
+      dropped={draft.droppedUnlisted}
     >
       {!repositoriesLocked && draft.unresolvedNames.length > 0 && (
         <Callout tone="danger" size="sm">

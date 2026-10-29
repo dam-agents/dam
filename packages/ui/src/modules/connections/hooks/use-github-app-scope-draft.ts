@@ -3,14 +3,17 @@ import { useEffect, useState } from "react";
 
 import { useProbeGitHubAppInstallationForConnection } from "../api/mutations.js";
 import type { GithubAccess } from "../lib/github-access.js";
-import { appScopeChoice } from "../lib/github-app-scope-fields.js";
+import {
+  appScopeChoice,
+  splitUnlistedRepos,
+} from "../lib/github-app-scope-fields.js";
 import { useGithubScopeSelection } from "./use-github-scope-selection.js";
 
 type AppScope = NonNullable<ConnectionView["githubAppScope"]>;
 
 const NO_NAMES: readonly string[] = [];
 
-// UNIT_BOUNDARY_DESCRIPTION: what a GitHub App installation connection is about to reach, while a dialog edits it: full access, or the repositories and permissions read from the installation. Repository names the connection already holds are matched to the listing's ids; when the listing cannot show them all, the names and ids the connection holds are kept as they are. The choice is null until at least one repository or permission is chosen, so Save stays off.
+// UNIT_BOUNDARY_DESCRIPTION: what a GitHub App installation connection is about to reach, while a dialog edits it: full access, or the repositories and permissions read from the installation. Repository names the connection already holds are matched to the listing's ids; when the listing cannot show them all, the names and ids the connection holds are kept as they are; when it shows them all, a held id it does not list is dropped on save, since GitHub refuses a token naming a repository the installation cannot reach. The choice is null until at least one repository or permission is chosen, so Save stays off.
 export function useGithubAppScopeDraft(
   connectionId: string,
   current: { scope?: AppScope; fullAccess?: boolean },
@@ -53,11 +56,9 @@ export function useGithubAppScopeDraft(
     Boolean(installation?.repositoriesUnavailable) ||
     Boolean(installation?.repositoriesTruncated && heldNames.length > 0);
 
-  const keptUnlisted = installation
-    ? [...scope.repoIds].filter(
-        (id) => !installation.repositories.some((r) => r.id === id),
-      ).length
-    : 0;
+  const unlisted = installation
+    ? splitUnlistedRepos(scope.repoIds, installation)
+    : { saved: [...scope.repoIds], kept: 0, dropped: 0 };
 
   const choice =
     access === "full" || installation
@@ -66,7 +67,7 @@ export function useGithubAppScopeDraft(
           repositories: repositoriesLocked ? heldNames : NO_NAMES,
           repositoryIds: repositoriesLocked
             ? (current.scope?.repositoryIds ?? [])
-            : [...scope.repoIds],
+            : unlisted.saved,
           permissions: scope.permissions,
         })
       : null;
@@ -77,7 +78,8 @@ export function useGithubAppScopeDraft(
     scope,
     unresolvedNames,
     repositoriesLocked,
-    keptUnlisted,
+    keptUnlisted: unlisted.kept,
+    droppedUnlisted: unlisted.dropped,
     access,
     setAccess,
     choice,
