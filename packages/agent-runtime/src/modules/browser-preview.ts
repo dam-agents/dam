@@ -109,7 +109,9 @@ export function fileLog(
 export const LAUNCH = ["get", "url"];
 export const CDP_URL = ["get", "cdp-url"];
 
-export const timedOut = (err: Error) => /timed out/i.test(err.message);
+// UNIT_BOUNDARY_DESCRIPTION: a command that ran out of time rather than failed: our own bound, or agent-browser's 30 s read of its daemon, which reports that the daemon took the command and gave no answer yet. A browser still starting on a slow guest answers so, and stopping it then would start it again from nothing.
+export const timedOut = (err: Error) =>
+  /timed out|no response came back/i.test(err.message);
 
 export function commandTimeoutMs(args: string[]): number {
   if (args[0] === LAUNCH[0] && args[1] === LAUNCH[1]) return 60_000;

@@ -39,6 +39,7 @@ function fakeBrowser() {
     alive: false,
     url: "about:blank",
     launchFailures: 0,
+    launchError: "Chrome exited early",
     hangPing: false,
     failPing: false,
     pings: 0,
@@ -52,7 +53,7 @@ function fakeBrowser() {
     if (isLaunch(args)) {
       if (!browser.alive && browser.launchFailures > 0) {
         browser.launchFailures--;
-        throw new Error("Chrome exited early");
+        throw new Error(browser.launchError);
       }
       browser.alive = true;
       return browser.url;
@@ -501,6 +502,25 @@ describe("recovery", () => {
     expect(
       panel.snapshots.find((s) => s.state === "failed")?.message,
     ).toContain("Chrome exited early");
+  });
+
+  // TEST_SCENARIO: on a slow guest Chrome takes longer to start than agent-browser waits for its daemon's answer, so the launch fails with no response while Chrome keeps starting. The supervisor counts that as a timeout and leaves the browser to finish, rather than stopping it on every second try and starting it again from nothing.
+  it("lets a browser that is slow to answer its launch finish starting", async () => {
+    const fake = fakeBrowser();
+    fake.browser.launchFailures = 3;
+    fake.browser.launchError =
+      "agent-browser get exited 1: ✗ Failed to read: Resource temporarily unavailable (os error 11) (the command reached the daemon but no response came back; it may or may not have run, so it was not retried)";
+    let stops = 0;
+    const browser = preview(fake, {
+      stopBrowser: async () => {
+        stops++;
+      },
+    });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().at(-1) === "ready");
+    expect(fake.calls.filter(isLaunch)).toHaveLength(4);
+    expect(stops).toBe(0);
   });
 
   // TEST_SCENARIO: the browser can die under an open panel — the agent closed it, Chrome crashed. Its CDP connection drops at once; the panel is told the browser is starting, and the supervisor launches it again.
