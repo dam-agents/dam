@@ -6,16 +6,18 @@ Last verified: 2026-10-29
 
 The `dam` CLI is a TypeScript Node package, distributed via npm, that users install on their own machine and point at a configured Platform deployment.
 It never runs inside the cluster.
-It reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
+For deployment operations, it reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
 Command groups are singular (`agent`, `connection`, `channel`, …) to match `gh`, `git`, and `docker`.
 
-The CLI is at parity with the web UI: every action a user can take in the browser has a verb.
-It owns no domain logic of its own — each command group is a thin surface over the api-server procedures the corresponding subsystem already exposes, so the concepts live on their owning architecture pages (see [Command surface](#command-surface)).
+The CLI is at parity with the web UI for deployment operations: every action a user can take in the browser has a verb.
+Its local client-management commands configure the CLI, inspect its version and update its npm installation without a web counterpart.
+It owns no deployment domain logic of its own — each deployment-facing command group is a thin surface over the api-server procedures the corresponding subsystem already exposes, so the concepts live on their owning architecture pages (see [Command surface](#command-surface)).
 
 ## Trust boundary
 
 The CLI runs on the user's machine.
-It reads and writes only under the XDG config and state directories and makes outbound network calls only to the configured server.
+It reads and writes its own state only under the XDG config and state directories and makes deployment calls only to the configured server.
+Its version and update commands may query the npm registry, and update invokes npm to replace the global package.
 There is no telemetry and no anonymous reporting — the platform collects nothing, and the CLI does not break that posture.
 
 One deliberate exception is `dam ssh`'s editor modes: dam's own SSH host entries live in `$XDG_CONFIG_HOME/dam/ssh_config`, and a single `Include` line is added to `~/.ssh/config` so an external editor's SSH client can resolve the agent host.
@@ -114,7 +116,8 @@ The `agent` module gives users a human-friendly way to name an Agent and exports
 
 ## Command surface
 
-The CLI is at parity with the web UI across these groups.
+The deployment-facing groups are at parity with the web UI.
+Local commands such as `config`, `version` and `update` manage or inspect the client itself and have no browser counterpart.
 Each concept's depth lives on its owning architecture page; per-verb flags, exit-code numbers, and tRPC procedure names live in the code, not here.
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
@@ -135,7 +138,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md).
-  `mcp` and `shell` are the two verbs with no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.
+  Within the deployment-facing groups, `mcp` and `shell` have no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.
   The group marks itself experimental in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 - **`schedule`** — time-triggered tasks on an agent: recurrences, including the Precheck that decides each occurrence, and one-time schedules at a local moment or now, owned by [schedules.md](schedules.md).
 - **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit; for a platform operator, also listing, setting and removing each user's Spend Ceiling by the user's email; owned by [spend-limits.md](spend-limits.md).
@@ -145,7 +148,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 
 ## Shared conventions
 
-Every command group is a thin client over the procedures its subsystem already exposes, holding no service state beyond a per-host client.
+Every deployment-facing command group is a thin client over the procedures its subsystem already exposes, holding no service state beyond a per-host client.
 The recurring patterns, stated once:
 
 - **Thin surface, server-authoritative.** The CLI does not re-validate domain rules it doesn't own; it sends the request and classifies the server's typed error, surfacing the server's reason for bad input, conflicts, and authorization failures.

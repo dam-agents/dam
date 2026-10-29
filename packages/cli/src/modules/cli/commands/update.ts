@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { CLI_PACKAGE } from "../infrastructure/npm-latest-probe.js";
 import type { UpdateError, UpdateService } from "../services/update-service.js";
 import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 
 export interface UpdateCommandDeps {
   service: UpdateService;
@@ -11,23 +12,28 @@ export function buildUpdateCommand(deps: UpdateCommandDeps): Command {
   return new Command("update")
     .alias("upgrade")
     .description("Update the CLI to the latest stable release")
+    .option("--json", "emit { status, from, to } as JSON")
     .addHelpText("after", "\nAlias: `dam upgrade`\n")
-    .action(async () => {
+    .action(async (opts: { json?: boolean }) => {
       const result = await deps.service.update();
       if (!result.ok) {
         printError(result.error);
         process.exit(EXIT_RUNTIME_FAILURE);
       }
       if (result.value.kind === "current") {
-        process.stdout.write(
-          `CLI ${result.value.version} is already up to date.\n`,
+        return writeStdoutAndExit(
+          opts.json
+            ? `${JSON.stringify({ status: "current", from: result.value.version, to: result.value.version })}\n`
+            : `CLI ${result.value.version} is already up to date.\n`,
+          EXIT_SUCCESS,
         );
-        process.exit(EXIT_SUCCESS);
       }
-      process.stdout.write(
-        `Updated CLI from ${result.value.from} to ${result.value.to}.\n`,
+      return writeStdoutAndExit(
+        opts.json
+          ? `${JSON.stringify({ status: "updated", from: result.value.from, to: result.value.to })}\n`
+          : `Updated CLI from ${result.value.from} to ${result.value.to}.\n`,
+        EXIT_SUCCESS,
       );
-      process.exit(EXIT_SUCCESS);
     });
 }
 

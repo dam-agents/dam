@@ -100,11 +100,14 @@ describe("dam update (integration)", () => {
     await writeFile(configPath, 'server = "https://example.test"\n');
     await writeFile(authPath, "saved-auth-state\n");
 
-    const result = await spawnDam(["update"], env());
+    const result = await spawnDam(["update", "--json"], env());
 
     expect(result.exitCode, result.stderr).toBe(0);
-    expect(result.stdout).toContain("Updated CLI");
-    expect(result.stdout).toContain("to 99.0.0");
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "updated",
+      from: await localCliVersion(),
+      to: "99.0.0",
+    });
     expect(await readFile(npmArgs, "utf-8")).toBe(
       "install\n--global\n@dam-agents/cli@99.0.0\n",
     );
@@ -123,6 +126,20 @@ describe("dam update (integration)", () => {
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toContain(`CLI ${version} is already up to date`);
     await expect(readFile(npmArgs, "utf-8")).rejects.toThrow();
+  });
+
+  it("reports the current outcome as JSON", async () => {
+    const version = await localCliVersion();
+    registry.setLatest(version);
+
+    const result = await spawnDam(["update", "--json"], env());
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "current",
+      from: version,
+      to: version,
+    });
   });
 
   it("explains an npm failure and exits unsuccessfully", async () => {

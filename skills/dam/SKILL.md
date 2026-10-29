@@ -46,7 +46,7 @@ npm install -g @dam-agents/cli
 ```
 
 `pnpm add -g @dam-agents/cli` and `yarn global add @dam-agents/cli` work too.
-To update, install `@dam-agents/cli@latest` the same way, then match this skill to it again.
+To update a global npm installation, run `dam update`, then match this skill to it again.
 
 ### Match this skill to the CLI
 

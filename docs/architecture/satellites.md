@@ -214,7 +214,7 @@ Its **+ New** catalog lists them under MCP servers, which is where a grant is gi
 A Satellite is an MCP server to the agent, so the catalog has no tab of its own for it; the form that adds a remote MCP server points at `dam satellite` for one that runs on the user's own machine.
 The Connections page and the catalog poll while open, so a machine that has just connected, or just gone offline, shows without a reload.
 
-The CLI is at parity plus `dam satellite mcp` and `dam satellite shell`, whose **log is the interface**.
+For deployment operations, the CLI is at parity plus `dam satellite mcp` and `dam satellite shell`, whose **log is the interface**.
 The parsed Command Patterns print at startup.
 Right after connecting, the worker prints where in the UI to add the machine to an Agent, since until someone does, no Agent can reach it.
 Every request is one line naming the Agent that sent it and what it asked for.
