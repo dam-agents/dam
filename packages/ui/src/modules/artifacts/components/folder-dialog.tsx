@@ -15,9 +15,10 @@ import { useCreateFolder, useUpdateFolder } from "../api/mutations.js";
 interface Props {
   folder: ArtifactFolder | null;
   onClose: () => void;
+  onCreated?: (folder: ArtifactFolder) => void;
 }
 
-export function FolderDialog({ folder, onClose }: Props) {
+export function FolderDialog({ folder, onClose, onCreated }: Props) {
   const [name, setName] = useState(folder?.name ?? "");
   const create = useCreateFolder();
   const update = useUpdateFolder();
@@ -29,7 +30,15 @@ export function FolderDialog({ folder, onClose }: Props) {
     if (folder) {
       update.mutate({ id: folder.id, name: trimmed }, { onSuccess: onClose });
     } else {
-      create.mutate({ name: trimmed }, { onSuccess: onClose });
+      create.mutate(
+        { name: trimmed },
+        {
+          onSuccess: (created) => {
+            onCreated?.(created);
+            onClose();
+          },
+        },
+      );
     }
   };
 
