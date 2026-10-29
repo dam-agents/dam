@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
 import { runOnce } from "../../core/run-once.js";
 import { runGit } from "../../modules/changes/infrastructure/git.js";
-import type { PullRequestFinder } from "../../modules/changes/infrastructure/pull-requests.js";
+import {
+  createPullRequestFinder,
+  type PullRequestFinder,
+} from "../../modules/changes/infrastructure/pull-requests.js";
 import { createTouchedRepositoryStore } from "../../modules/changes/infrastructure/touched-repositories.js";
 import {
   createChangesService,
@@ -780,6 +783,88 @@ describe("session pushes", { timeout: 30_000 }, () => {
       expect(announced).toBe(true);
       expect(service.repositoriesOf("s1")).toEqual([
         expect.objectContaining({ path: repo, pullRequest: link }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: The push finds no pull request on GitHub, and the finder
+   * keeps that answer. The session opens one a few seconds later. The lookup
+   * run when the session's window ends asks GitHub again, past the finder's
+   * "none" answer, and links it.
+   */
+  it("should link a pull request opened after a push found none", async () => {
+    const { repo, remote } = await repositoryWithRemote();
+    await git(
+      repo,
+      "remote",
+      "set-url",
+      "origin",
+      "https://github.com/acme/app.git",
+    );
+    await git(repo, "config", "remote.origin.pushurl", remote);
+    let opened = false;
+    let lookups = 0;
+    service = serviceFor(
+      [home],
+      createPullRequestFinder({
+        token: () => "gateway-placeholder",
+        fetch: async () => {
+          lookups++;
+          return new Response(
+            JSON.stringify({
+              data: {
+                repository: {
+                  pullRequests: {
+                    nodes: opened
+                      ? [
+                          {
+                            number: 9,
+                            url: "https://github.com/acme/app/pull/9",
+                            state: "OPEN",
+                            isDraft: false,
+                            reviewDecision: "REVIEW_REQUIRED",
+                            mergeable: "MERGEABLE",
+                            headRepositoryOwner: { login: "acme" },
+                          },
+                        ]
+                      : [],
+                  },
+                },
+              },
+            }),
+          );
+        },
+        now: () => Date.now(),
+        log: () => undefined,
+      }),
+    );
+    const env = { CLAUDE_CODE_SESSION_ID: "s1" };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    await traced(env, repo, "push", "--quiet", "-u", "origin", "feat/push");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      service.onToolCallSettled("s1");
+      await vi.advanceTimersByTimeAsync(5_000);
+      opened = true;
+      service.onToolCallSettled("s1");
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(lookups).toBe(1);
+      expect(service.repositoriesOf("s1")).toEqual([
+        expect.objectContaining({ path: repo, pullRequest: null }),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(lookups).toBe(2);
+      expect(service.repositoriesOf("s1")).toEqual([
+        expect.objectContaining({
+          path: repo,
+          pullRequest: expect.objectContaining({ number: 9 }),
+        }),
       ]);
     } finally {
       vi.useRealTimers();
