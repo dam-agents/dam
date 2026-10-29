@@ -94,6 +94,7 @@ import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { optimisticInsertSession, setSessionRunning } from "../api/queries.js";
+import { AgentQuickSettings } from "../components/agent-quick-settings.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -599,6 +600,7 @@ export function ChatView() {
                 />
               </span>
             )}
+            {agentView && <AgentQuickSettings agent={agentView} />}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

@@ -9,6 +9,10 @@ import type {
   Role,
   ToolChip as ToolChipPart,
 } from "../../../types.js";
+import {
+  InlineArtifactCard,
+  isArtifactToolChip,
+} from "../../artifacts/components/inline-artifact-card.js";
 import { DelegationBlock } from "../../invocations/components/delegation-block.js";
 import { useOwnedSpawns } from "../../invocations/components/delegation-owners.js";
 import { ActivityBlock } from "./activity-block.js";
@@ -18,11 +22,9 @@ import { ToolChip } from "./tool-chip.js";
 
 function ToolPart({ chip }: { chip: ToolChipPart }) {
   const spawns = useOwnedSpawns(chip);
-  return spawns ? (
-    <DelegationBlock chip={chip} spawns={spawns} />
-  ) : (
-    <ToolChip chip={chip} />
-  );
+  if (spawns) return <DelegationBlock chip={chip} spawns={spawns} />;
+  if (isArtifactToolChip(chip)) return <InlineArtifactCard chip={chip} />;
+  return <ToolChip chip={chip} />;
 }
 
 function HistoryBlock({ text }: { text: string }) {

@@ -55,7 +55,7 @@ export const createFilesSlice: StateCreator<
   FilesSlice
 > = (set) => ({
   openFilePath: null,
-  filesSectionOpen: readPersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, true),
+  filesSectionOpen: readPersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, false),
   openFileDirty: false,
   openFileEdit: false,
   expandedDirs: {},

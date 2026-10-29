@@ -50,7 +50,7 @@ export function SidebarFolderGroup({
         aria-expanded={!collapsed}
         data-testid={testId}
         className={cn(
-          "flex h-8 w-full items-center gap-1.5 px-3 text-left text-sm",
+          "flex h-9 w-full items-center gap-1.5 px-3 text-left text-sm font-medium",
           "text-foreground transition-colors hover:bg-muted",
         )}
       >
@@ -61,9 +61,11 @@ export function SidebarFolderGroup({
         />
         <Folder size={14} className="shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {count} artifact{count === 1 ? "" : "s"}
-        </span>
+        {count > 0 && (
+          <span className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        )}
       </button>
       {!collapsed && children}
     </div>

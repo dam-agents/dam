@@ -1,8 +1,4 @@
-import {
-  ArrowsVertical,
-  Link,
-  OverflowMenuVertical,
-} from "@carbon/icons-react";
+import { OverflowMenuVertical } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import {
   type CSSProperties,
@@ -219,16 +215,11 @@ function ArtifactListRow({
       {...(drag ? dragProps : {})}
       title={artifact.title}
       className={cn(
-        "group flex h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+        "group flex h-8 w-full cursor-pointer items-center gap-2 py-1 pl-8 pr-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
         active && "bg-muted text-foreground",
         dragging && "opacity-50",
       )}
     >
-      <ArrowsVertical
-        size={12}
-        aria-hidden
-        className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-      />
       <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
       {artifact.shareUrl !== null && (
         <Tooltip
@@ -246,20 +237,7 @@ function ArtifactListRow({
         </Tooltip>
       )}
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className={HOVER_ACTION}
-          aria-label="Share"
-          tooltip="Share"
-          onClick={() => onShare(artifact)}
-        >
-          <Link size={16} />
-        </Button>
-      </div>
-      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
-          {}
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
@@ -267,7 +245,7 @@ function ArtifactListRow({
               className={HOVER_ACTION}
               aria-label="More actions"
             >
-              <OverflowMenuVertical size={13} />
+              <OverflowMenuVertical size={14} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
