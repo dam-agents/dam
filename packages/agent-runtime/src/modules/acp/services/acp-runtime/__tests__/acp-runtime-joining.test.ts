@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { createWorld, frames, transcriptOf } from "./acp-world.js";
 
 /**
@@ -269,4 +269,46 @@ describe("acp-runtime: joining mid-conversation", () => {
     expect(alice.saw("platform/turnEnded")).toEqual([ended]);
     expect(bob.saw("platform/turnEnded")).toEqual([ended]);
   });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * TEST_SCENARIO: A turn nobody attends is running when Bob opens the
+   * conversation: a scheduled fire, sent by a machine client that is no
+   * viewer. Bob must learn when that turn started, to tell how long it has
+   * been going. A turn that ended leaves no start behind.
+   *
+   * The harness never says when a turn began; only the runtime saw the prompt
+   * go out, whichever client sent it.
+   */
+  it("should tell a joiner when the running turn started", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T08:00:00.000Z"));
+    const world = createWorld();
+
+    const machine = world.connect({ viewer: false });
+    machine.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    machine.send(frames.prompt(2, SESSION, "nightly triage"));
+    vi.setSystemTime(new Date("2026-10-29T08:42:00.000Z"));
+
+    const bob = world.connect();
+    bob.send(frames.loadSession(3, SESSION));
+    expect(turnOf(bob.reply(3))).toEqual({
+      inFlight: true,
+      startedAt: "2026-10-29T08:00:00.000Z",
+    });
+
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    const later = world.connect();
+    later.send(frames.loadSession(4, SESSION));
+    expect(turnOf(later.reply(4))).toEqual({ inFlight: false });
+  });
 });
+
+function turnOf(reply: unknown): unknown {
+  return (reply as { result?: { _meta?: { platform?: { turn?: unknown } } } })
+    ?.result?._meta?.platform?.turn;
+}

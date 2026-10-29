@@ -7,10 +7,12 @@ import { startFailure } from "../agent/commands/wait-or-exit.js";
 import { buildChatCommand } from "./commands/chat.js";
 import { buildRunCommand, trackStdout } from "./commands/run.js";
 import { buildSessionListCommand } from "./commands/session-list.js";
+import { buildSessionShowCommand } from "./commands/session-show.js";
 import { createAcpSessionClient } from "./infrastructure/acp-session-client.js";
 import { createBootstrap } from "./services/bootstrap.js";
 import { createChatService } from "./services/chat-service.js";
 import { createRunService } from "./services/run-service.js";
+import { createSessionShowService } from "./services/session-show-service.js";
 import { createSessionsPort } from "./services/sessions-service.js";
 
 export const buildSessionsPort = (host: string, token: string) =>
@@ -84,13 +86,15 @@ export function composeChatModule({
     isTty: Boolean(process.stdin.isTTY),
   });
 
+  const bootstrap = createBootstrap({
+    compatService,
+    configService,
+    tokenProvider,
+    createAgentService,
+  });
+
   const runService = createRunService({
-    bootstrap: createBootstrap({
-      compatService,
-      configService,
-      tokenProvider,
-      createAgentService,
-    }),
+    bootstrap,
     out: trackStdout,
     errOut: (line) => process.stderr.write(`${line}\n`),
     onInterrupt: (handler) => {
@@ -107,6 +111,12 @@ export function composeChatModule({
   sessionParent.addCommand(buildSessionListCommand({ chatService }), {
     isDefault: true,
   });
+  sessionParent.addCommand(
+    buildSessionShowCommand({
+      sessionShowService: createSessionShowService({ bootstrap }),
+      onInterrupt: (handler) => process.once("SIGINT", handler),
+    }),
+  );
 
   return {
     commands: [

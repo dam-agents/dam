@@ -25,7 +25,7 @@ interface PlatformMeta {
   runCount?: number;
 }
 
-interface ListedSession {
+export interface ListedSession {
   sessionId: string;
   title?: string | null;
   updatedAt?: string | null;
@@ -71,7 +71,7 @@ export function acpUrl(host: string, agentId: string, token: string): string {
   return wsUrl(host, `/api/agents/${encodeURIComponent(agentId)}/acp`, token);
 }
 
-function toSessionView(agentId: string, s: ListedSession): SessionView {
+export function toSessionView(agentId: string, s: ListedSession): SessionView {
   const p = s._meta?.platform;
   return {
     sessionId: s.sessionId,
