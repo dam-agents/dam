@@ -7,7 +7,7 @@ import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useProbeGitHubAppInstallation } from "../api/mutations.js";
-import { fullAccessReach } from "../lib/github-access.js";
+import { fullAccessReach, laterDescription } from "../lib/github-access.js";
 import {
   appScopeFieldsChosen,
   canProbe,
@@ -192,6 +192,7 @@ export function GithubAppScopePicker({
             onChange={field.onChange}
             narrowedLabel="Choose repositories and permissions"
             fullAccessReach={fullAccessReach({ authKind: "github-app" })}
+            laterDescription={laterDescription({ authKind: "github-app" })}
             testIdPrefix="github-app"
           >
             <p className="text-sm text-muted-foreground">

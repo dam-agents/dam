@@ -8,10 +8,12 @@ export function CatalogCreateChildPane({
   parent,
   onBack,
   onCreated,
+  onLater,
 }: {
   parent: ConnectionView;
   onBack: () => void;
   onCreated: (id: string) => void;
+  onLater?: () => void;
 }) {
   const heading = createChildHeading(parent);
   return (
@@ -25,6 +27,7 @@ export function CatalogCreateChildPane({
         parent={parent}
         onCreated={onCreated}
         onCancel={onBack}
+        onLater={onLater}
         layout={(fields, footer) => (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">{fields}</div>
