@@ -130,8 +130,6 @@ function wsStream(
     ws.on("open", () => {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
-          // A listener that throws takes the whole process down: a frame that
-          // is not JSON closes this connection alone, as invalid payload.
           ws.on("message", (data) => {
             const text = data.toString();
             let frame: AnyMessage;
