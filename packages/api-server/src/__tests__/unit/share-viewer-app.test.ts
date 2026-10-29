@@ -282,7 +282,9 @@ describe("share viewer app", () => {
     const res = await appWith(fakeViewer({})).request("/robots.txt");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/plain");
-    expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow, noarchive");
+    expect(res.headers.get("X-Robots-Tag")).toBe(
+      "noindex, nofollow, noarchive",
+    );
     expect(await res.text()).toBe("User-agent: *\nDisallow: /\n");
   });
 
@@ -296,7 +298,9 @@ describe("share viewer app", () => {
     });
     const res = await routes.request("/login?next=/a/slug-a");
     expect(res.status).toBe(302);
-    expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow, noarchive");
+    expect(res.headers.get("X-Robots-Tag")).toBe(
+      "noindex, nofollow, noarchive",
+    );
   });
 });
 
@@ -471,7 +475,9 @@ describe("content app", () => {
   it("disallows every crawler in robots.txt", async () => {
     const res = await contentAppWith(fakeViewer({})).request("/robots.txt");
     expect(res.status).toBe(200);
-    expect(res.headers.get("X-Robots-Tag")).toBe("noindex, nofollow, noarchive");
+    expect(res.headers.get("X-Robots-Tag")).toBe(
+      "noindex, nofollow, noarchive",
+    );
     expect(await res.text()).toBe("User-agent: *\nDisallow: /\n");
   });
 });
