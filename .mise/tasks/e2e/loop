@@ -64,6 +64,13 @@ mise run e2e:reset
 # a warm --rebuild of keycloak/traefik gets the same stability check.
 mise run e2e:gate
 
+# 3c. A warm cluster shares its machine's CPUs with the browser and whatever
+# else runs there, so an action takes seconds where CI's takes tenths. The
+# default test and expect timeouts get room for that: on a starved sandbox the
+# first UI specs otherwise time out on the login roundtrip's blank page while
+# the app still loads (#6034). CI's `e2e` keeps the defaults.
+export E2E_TIMEOUT_SCALE="${E2E_TIMEOUT_SCALE:-3}"
+
 # 4. Run the specs against the warm cluster. No teardown — the cluster stays up
 # for the next loop. The arguments ride after `--` so mise appends them to the
 # playwright command instead of parsing them as its own flags. In an

@@ -6,6 +6,20 @@ const storageState = "./.auth/user.json";
 
 const full = process.env.E2E_FULL === "1";
 
+const timeoutScale = timeoutScaleFromEnv();
+
+function timeoutScaleFromEnv(): number {
+  const raw = process.env.E2E_TIMEOUT_SCALE;
+  if (raw === undefined || raw.trim() === "") return 1;
+  const scale = Number(raw);
+  if (!Number.isFinite(scale) || scale < 1) {
+    throw new Error(
+      `E2E_TIMEOUT_SCALE must be a number of at least 1, got "${raw}"`,
+    );
+  }
+  return scale;
+}
+
 type NamedProject = Project & { name: string };
 
 const suite: NamedProject[] = [
@@ -132,13 +146,16 @@ const projects = [...suite, agentMachine, runnerRelease].filter(
  * takes, and in what order. E2E_SCOPE=pr narrows a pull request's run to the specs
  * that fail for real there, and the merge queue, the nightly run and a tag take every
  * one (docs/architecture/e2e.md). No spec a PR run keeps reads state an excluded spec
- * creates.
+ * creates. E2E_TIMEOUT_SCALE multiplies the default test and expect timeouts: e2e:loop
+ * sets it, as a warm cluster shares the machine's CPUs with the browser and an action
+ * takes seconds there, where it takes tenths in CI. A spec's own timeout stays as it is.
  */
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
   workers: 2,
   retries: 0,
+  timeout: 30_000 * timeoutScale,
   reporter: [
     ["list"],
     ["html", { open: "never" }],
@@ -146,7 +163,7 @@ export default defineConfig({
       ? [["json", { outputFile: process.env.E2E_REPORT_JSON }] as const]
       : []),
   ],
-  expect: { timeout: 15_000 },
+  expect: { timeout: 15_000 * timeoutScale },
   use: {
     baseURL,
     trace: "on",
