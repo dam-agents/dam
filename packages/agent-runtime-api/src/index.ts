@@ -313,11 +313,17 @@ export type {
   KbPublishService,
 } from "./modules/kb-publish/types.js";
 export {
+  ARTIFACT_API_CALLER_EMAIL_HEADER,
+  ARTIFACT_API_CALLER_ROLE_HEADER,
   ARTIFACT_API_MAX_BODY_BYTES,
   ARTIFACT_API_PORT,
   ARTIFACT_API_TIMEOUT_MS,
+  artifactApiCallerEmail,
+  artifactApiCallerSchema,
   artifactApiMethodSchema,
   artifactApiRequestInputSchema,
+  type ArtifactApiCaller,
+  type ArtifactApiRelayInput,
   type ArtifactApiRequestInput,
   type ArtifactApiRequestResult,
 } from "./modules/artifact-api/schemas.js";

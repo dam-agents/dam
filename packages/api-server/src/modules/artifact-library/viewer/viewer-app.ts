@@ -9,7 +9,10 @@ import type {
   ShareSessionCookie,
 } from "../domain/share-session.js";
 import type { RelayCaller } from "../domain/relay-grant.js";
-import { viewerPromptInputSchema } from "../domain/viewer-bridge.js";
+import {
+  shareCaller,
+  viewerPromptInputSchema,
+} from "../domain/viewer-bridge.js";
 import type {
   ShareBridgeService,
   ViewerCallKind,
@@ -237,9 +240,14 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
       );
     }
 
-    const relayToken =
+    const relay =
       artifact.interactive && isRestricted(artifact) && authorized.signIn
-        ? await relayTokens.mint(relayCaller(artifact, authorized.signIn))
+        ? {
+            token: await relayTokens.mint(
+              relayCaller(artifact, authorized.signIn),
+            ),
+            caller: shareCaller(artifact, authorized.signIn.session),
+          }
         : undefined;
 
     viewer.recordView(artifact);
@@ -251,7 +259,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
         slug,
         version,
         downloadName: artifact.fileName,
-        ...(relayToken ? { relayToken } : {}),
+        ...(relay ? { relay } : {}),
       }),
     );
   });

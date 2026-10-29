@@ -1,8 +1,11 @@
 import {
+  ARTIFACT_API_CALLER_EMAIL_HEADER,
+  ARTIFACT_API_CALLER_ROLE_HEADER,
   ARTIFACT_API_MAX_BODY_BYTES,
   ARTIFACT_API_PORT,
   ARTIFACT_API_TIMEOUT_MS,
-  type ArtifactApiRequestInput,
+  type ArtifactApiCaller,
+  type ArtifactApiRelayInput,
   type ArtifactApiRequestResult,
   type ArtifactApiService,
 } from "agent-runtime-api";
@@ -37,20 +40,33 @@ async function readCapped(
   return { ok: true, bytes };
 }
 
+function callerHeaders(
+  caller: ArtifactApiCaller | undefined,
+): Record<string, string> {
+  if (!caller) return {};
+  return {
+    [ARTIFACT_API_CALLER_ROLE_HEADER]: caller.role,
+    ...(caller.email !== null
+      ? { [ARTIFACT_API_CALLER_EMAIL_HEADER]: caller.email }
+      : {}),
+  };
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the relay from the harness port to the Agent's
  * Artifact API on 127.0.0.1 at the Artifact API Port. The host is fixed and
  * the page's path is only appended to it, so a request can never reach
- * another host. Only content-type is sent, redirects are not followed, and
- * the 30 s timeout and 1 MiB response cap apply. Any HTTP status the server
- * gives is a success; nothing listening, a timeout and a too-large body come
- * back as failure reasons, never as thrown errors.
+ * another host. Only content-type and the platform's caller headers are
+ * sent, redirects are not followed, and the 30 s timeout and 1 MiB response
+ * cap apply. Any HTTP status the server gives is a success; nothing
+ * listening, a timeout and a too-large body come back as failure reasons,
+ * never as thrown errors.
  */
 export function composeArtifactApi(): ArtifactApiService {
   const origin = `http://127.0.0.1:${ARTIFACT_API_PORT}`;
 
   async function request(
-    input: ArtifactApiRequestInput,
+    input: ArtifactApiRelayInput,
   ): Promise<ArtifactApiRequestResult> {
     const contentType =
       input.contentType ??
@@ -58,7 +74,10 @@ export function composeArtifactApi(): ArtifactApiService {
     try {
       const response = await fetch(`${origin}${input.path}`, {
         method: input.method,
-        headers: contentType ? { "content-type": contentType } : {},
+        headers: {
+          ...(contentType ? { "content-type": contentType } : {}),
+          ...callerHeaders(input.caller),
+        },
         body: input.body,
         redirect: "manual",
         signal: AbortSignal.timeout(ARTIFACT_API_TIMEOUT_MS),

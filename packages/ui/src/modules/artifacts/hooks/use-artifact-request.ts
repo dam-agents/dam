@@ -3,11 +3,20 @@ import {
   ARTIFACT_RESPONSE_TYPE,
   type ArtifactCallAgentApiResult,
   type ArtifactResponseMessage,
+  artifactWhoamiMessageSchema,
+  type ArtifactWhoamiResponseMessage,
 } from "api-server-api";
 import { type RefObject, useEffect } from "react";
 
+import { getUser } from "../../../auth.js";
 import { useCallAgentApi } from "../api/mutations.js";
 import { readArtifactRequest } from "../lib/artifact-request.js";
+
+function signedInEmail(): string | null {
+  const profile = getUser()?.profile;
+  if (profile?.email_verified !== true || !profile.email) return null;
+  return profile.email.trim().toLowerCase();
+}
 
 export function useArtifactRequest(
   frame: RefObject<HTMLIFrameElement | null>,
@@ -20,6 +29,18 @@ export function useArtifactRequest(
     let inFlight = 0;
     const receive = (event: MessageEvent) => {
       const pageWindow = frame.current?.contentWindow;
+      const whoami = artifactWhoamiMessageSchema.safeParse(event.data);
+      if (pageWindow && event.source === pageWindow && whoami.success) {
+        const message: ArtifactWhoamiResponseMessage = {
+          type: ARTIFACT_RESPONSE_TYPE,
+          id: whoami.data.id,
+          ok: true,
+          role: "owner",
+          email: signedInEmail(),
+        };
+        pageWindow.postMessage(message, "*");
+        return;
+      }
       const read = readArtifactRequest(event, pageWindow);
       if (!read || !pageWindow) return;
       const reply = (result: ArtifactCallAgentApiResult) => {

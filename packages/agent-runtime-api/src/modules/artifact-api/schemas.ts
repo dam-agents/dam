@@ -47,6 +47,25 @@ export const artifactApiRequestInputSchema = z
     path: ["body"],
   });
 
+export const ARTIFACT_API_CALLER_ROLE_HEADER = "x-platform-caller-role";
+export const ARTIFACT_API_CALLER_EMAIL_HEADER = "x-platform-caller-email";
+
+const CALLER_EMAIL = /^[\x21-\x7e]{1,320}$/;
+
+export const artifactApiCallerSchema = z.object({
+  role: z.enum(["owner", "viewer"]),
+  email: z.string().regex(CALLER_EMAIL).nullable(),
+});
+
+export function artifactApiCallerEmail(email: string | null): string | null {
+  return email !== null && CALLER_EMAIL.test(email) ? email : null;
+}
+
+export const artifactApiRelayInputSchema =
+  artifactApiRequestInputSchema.safeExtend({
+    caller: artifactApiCallerSchema.optional(),
+  });
+
 export const artifactApiRelayFailureReasonSchema = z.enum([
   "app-not-listening",
   "timeout",
@@ -69,6 +88,8 @@ export const artifactApiRequestResultSchema = z.discriminatedUnion("ok", [
 export type ArtifactApiRequestInput = z.infer<
   typeof artifactApiRequestInputSchema
 >;
+export type ArtifactApiCaller = z.infer<typeof artifactApiCallerSchema>;
+export type ArtifactApiRelayInput = z.infer<typeof artifactApiRelayInputSchema>;
 export type ArtifactApiRequestResult = z.infer<
   typeof artifactApiRequestResultSchema
 >;

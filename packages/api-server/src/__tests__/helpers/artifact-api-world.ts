@@ -1,4 +1,5 @@
 import type {
+  ArtifactApiRelayInput,
   ArtifactApiRequestInput,
   ArtifactApiRequestResult,
 } from "agent-runtime-api";
@@ -22,7 +23,7 @@ interface FakeAgent {
   awake: boolean;
   reachable: boolean;
   oldRuntime: boolean;
-  app: ((request: ArtifactApiRequestInput) => AppAnswer) | null;
+  app: ((request: ArtifactApiRelayInput) => AppAnswer) | null;
   received: string[];
 }
 
@@ -30,7 +31,7 @@ export interface AgentHandle {
   hibernate(): AgentHandle;
   failToWake(): AgentHandle;
   runOldRuntime(): AgentHandle;
-  serve(app: (request: ArtifactApiRequestInput) => AppAnswer): AgentHandle;
+  serve(app: (request: ArtifactApiRelayInput) => AppAnswer): AgentHandle;
   isAwake(): boolean;
   received(): string[];
 }
@@ -59,7 +60,7 @@ function ownerScopedRepo(rows: ArtifactRow[]): ArtifactLibraryRepository {
   });
 }
 
-function relay(agent: FakeAgent, request: ArtifactApiRequestInput) {
+function relay(agent: FakeAgent, request: ArtifactApiRelayInput) {
   if (agent.oldRuntime)
     return { ok: false, reason: "unsupported-runtime" } as const;
   if (!agent.app) return { ok: false, reason: "app-not-listening" } as const;
@@ -151,7 +152,11 @@ export function createArtifactApiWorld() {
   function call(
     artifactId: string,
     request: ArtifactApiRequestInput,
-    caller: { as?: string; keyBoundTo?: readonly string[] } = {},
+    caller: {
+      as?: string;
+      keyBoundTo?: readonly string[];
+      email?: string;
+    } = {},
   ): Promise<ArtifactCallAgentApiResult> {
     const library = createArtifactLibraryService({
       repo: ownerScopedRepo(rows),
@@ -166,7 +171,7 @@ export function createArtifactApiWorld() {
     });
     return library.callAgentApi(
       { artifactId, ...request },
-      { agentIds: caller.keyBoundTo ?? "*" },
+      { agentIds: caller.keyBoundTo ?? "*", email: caller.email ?? null },
     );
   }
 
