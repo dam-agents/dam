@@ -260,8 +260,44 @@ wait_for_nodes() {
   for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
 }
 
+# node_volumes_on_home: on a node whose root is an overlay, the VM runner
+# pod's volumes go to the home disk before k3s starts where it can (see
+# node_kubelet_root_needed in .mise/lib/cluster.sh). The node directories come
+# from this install's own values, so the e2e lane's cache root is mounted as
+# the dev install's is. A running kubelet keeps its root, and its pods their
+# volumes there, so k3s stops first; the drop-in is written only once it has,
+# so a stop that fails fails the install and the next one tries again. A pod
+# that started before its directory was mounted keeps the overlay one, and
+# only the sandbox's cluster:stop takes the pods' containers and mounts down
+# with k3s: an Environment's `rc-service k3s stop` leaves them running. So
+# whenever k3s ran before this install, the pods that mount a directory
+# mounted now are deleted below, in MOUNTED_LATE, once k3s is up again.
+node_k3s_running() {
+  if [ "$CLUSTER_TARGET" = environment ]; then env_k3s status >/dev/null 2>&1; else k3s_running; fi
+}
+node_volumes_on_home() {
+  local dirs was_running=0
+  node_k3s_running && was_running=1
+  mapfile -t dirs < <(node_dir_roots helm/values.yaml helm/values-local.yaml ${HELM_VALUES:+"$HELM_VALUES"} -- ${HELM_EXTRA_ARGS[@]+"${HELM_EXTRA_ARGS[@]}"} | sort -u)
+  node_host_dirs ${dirs[@]+"${dirs[@]}"}
+  MOUNTED_LATE=(${NODE_MOUNTED[@]+"${NODE_MOUNTED[@]}"})
+  if node_kubelet_root_needed; then
+    if node_k3s_running; then
+      echo "Stopping k3s, to start it on the kubelet's new root..."
+      if [ "$CLUSTER_TARGET" = environment ]; then env_k3s stop; else mise run cluster:stop; fi ||
+        { echo "FATAL: k3s did not stop, so its kubelet cannot move to the home disk" >&2; exit 1; }
+    fi
+    node_kubelet_root_write
+  fi
+  [ "$was_running" = 1 ] || MOUNTED_LATE=()
+}
+MOUNTED_LATE=()
+
 # 1. Provision cluster and set KUBECONFIG
 if [ "$CLUSTER_TARGET" = environment ]; then
+  # An Environment runs the platform's agent image, whose root is an overlay,
+  # as a sandbox's is.
+  node_volumes_on_home
   # The image's k3s service, in the default runlevel from now on, and the
   # tunnel to its API once k3s has written its kubeconfig.
   echo "Starting k3s on Environment $CLUSTER_ENVIRONMENT..."
@@ -270,6 +306,7 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   for _ in $(seq 1 60); do env_tunnel && break; sleep 2; done
   wait_for_nodes
 elif [ -n "${IS_SANDBOX:-}" ]; then
+  node_volumes_on_home
   # A running systemd, not an installed systemctl: containers often ship the
   # binary with something else as PID 1, and the k3s installer then fails
   # to enable a unit nothing will ever start.
@@ -404,6 +441,20 @@ else
   wait_for_nodes
 fi
 kubectl wait --for=condition=Ready node --all --timeout=120s
+if [ ${#MOUNTED_LATE[@]} -gt 0 ]; then
+  kubectl get pods -A -o json | yq -r '.items[] | .metadata.namespace as $ns | .metadata.name as $pod
+      | .spec.volumes[]? | select(.hostPath != null) | $ns + " " + $pod + " " + .hostPath.path' |
+    while read -r ns pod path; do
+      for dir in "${MOUNTED_LATE[@]}"; do
+        case "$path/" in
+          "$dir"/*)
+            echo "Restarting $ns/$pod onto $dir as now mounted..."
+            kubectl -n "$ns" delete pod "$pod" --wait=false --ignore-not-found
+            break ;;
+        esac
+      done
+    done
+fi
 
 # 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
 # path for VMs created before this flag was added). New VMs already have

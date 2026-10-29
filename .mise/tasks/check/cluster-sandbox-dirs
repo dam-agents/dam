@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+#MISE description="On an overlay root a sandbox's or an Environment's cluster keeps the kubelet's root and the runner's node directories on the home disk, and nowhere else"
+#MISE sources=["helm/values*.yaml", ".mise/lib/cluster.sh", ".mise/lib/root.sh", ".mise/tasks/check/cluster-sandbox-dirs"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# The VM runner pod runs in a user namespace, and runc cannot idmap a volume
+# whose source is on an overlay: in an agent sandbox, whose machine root is
+# one, the pod never started after a restart until someone moved the kubelet's
+# root and bind-mounted the node directories by hand (#6017). The helpers in
+# .mise/lib/cluster.sh do it now; this runs them against a stubbed root, mount
+# and filesystem, so no cluster, root or overlay is needed.
+set -euo pipefail
+
+unset IS_SANDBOX DAM_INSTALL CLUSTER_ENVIRONMENT E2E_LANE E2E_ENVIRONMENT CLUSTER_ANNOUNCED usage_environment usage_name
+# shellcheck disable=SC1091
+CLUSTER_RESOLVE_ONLY=1 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+cd "$MISE_CONFIG_ROOT"
+fail=0
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+same() { # <what> <want> <got>
+  [ "$2" = "$3" ] || { echo "FAIL: $1: got '$3', want '$2'" >&2; fail=1; }
+}
+sorted() { sort | paste -sd' ' -; }
+
+# --- which node directories an install hands its runners -------------------
+same "the dev install" "/var/lib/platform-vm-images /var/lib/platform-vm-runner-releases" \
+  "$(node_dir_roots helm/values.yaml helm/values-local.yaml -- | sorted)"
+same "the e2e lane's own cache root replaces the dev one" "/var/lib/platform-vm-runner-releases /var/lib/vm-images" \
+  "$(node_dir_roots helm/values.yaml helm/values-local.yaml helm/values-e2e.yaml -- \
+    --set=domain=localhost --set=virtualization.imageCache.hostPath=/var/lib/vm-images --set=virtualization.runner.machineCPUs=1 | sorted)"
+same "a --set-string and a legacy path" "/srv/old /srv/releases" \
+  "$(node_dir_roots helm/values.yaml -- --set-string=virtualization.runner.releaseHostPath=/srv/releases \
+    --set=virtualization.imageCache.legacyPath=/srv/old | sorted)"
+
+# --- the stubs: which paths are on an overlay, what is mounted, what root ran
+OVERLAY=""
+on_overlay() { case " $OVERLAY " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+MOUNTED=""
+node_sh() {
+  case "$1" in
+    mount) echo "$*" >> "$work/root.log" ;;
+    mountpoint) case " $MOUNTED " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
+    *) "$@" ;;
+  esac
+}
+NODE_HOME_SHARE="$work/home"
+NODE_KUBELET_DROPIN="$work/config.yaml.d/60-kubelet-root.yaml"
+
+# --- the kubelet's root ----------------------------------------------------
+dropin() { [ -e "$NODE_KUBELET_DROPIN" ] && echo present || echo absent; }
+rc=0; node_kubelet_root_needed || rc=$?
+same "no overlay: nothing to move" "1 absent" "$rc $(dropin)"
+OVERLAY="/var/lib/kubelet"
+rc=0; node_kubelet_root_needed || rc=$?
+same "an overlay root: the kubelet's root must move" 0 "$rc"
+same "asking writes nothing, so a stop that fails after it leaves no drop-in" absent "$(dropin)"
+rc=0; node_kubelet_root_needed || rc=$?
+same "a failed stop is tried again on the next install" 0 "$rc"
+node_kubelet_root_write
+grep -qF "  - \"root-dir=$NODE_HOME_SHARE/kubelet\"" "$NODE_KUBELET_DROPIN" ||
+  { echo "FAIL: the drop-in does not move the kubelet's root to $NODE_HOME_SHARE/kubelet" >&2; fail=1; }
+grep -q '^kubelet-arg+:' "$NODE_KUBELET_DROPIN" ||
+  { echo "FAIL: the drop-in replaces kubelet-arg instead of appending to it" >&2; fail=1; }
+rc=0; node_kubelet_root_needed || rc=$?
+same "a drop-in already there: nothing to restart for" 1 "$rc"
+# k3s merges config.yaml.d in name order, and a plain `kubelet-arg:` replaces
+# every append before it.
+[[ "$(basename "$NODE_KUBELET_DROPIN")" > 50-container-log-rotation.yaml ]] ||
+  { echo "FAIL: $(basename "$NODE_KUBELET_DROPIN") sorts before 50-container-log-rotation.yaml, whose kubelet-arg would drop it" >&2; fail=1; }
+rm -f "$NODE_KUBELET_DROPIN"
+OVERLAY="/var/lib/kubelet $NODE_HOME_SHARE"
+rc=0; node_kubelet_root_needed 2>/dev/null || rc=$?
+same "the home on an overlay too: nothing to move" "1 absent" "$rc $(dropin)"
+
+# --- the node directories --------------------------------------------------
+: > "$work/root.log"
+OVERLAY="" node_host_dirs "$work/var/vm-images"
+same "no overlay: nothing mounted" "|" "$(cat "$work/root.log")|${NODE_MOUNTED[*]}"
+: > "$work/root.log"
+mkdir -p "$work/var/vm-images/default"
+echo staged > "$work/var/vm-images/default/image"
+OVERLAY="$work/var/vm-images $work/var/releases" MOUNTED="$work/var/releases"
+node_host_dirs "$work/var/vm-images" "$work/var/releases" ""
+same "an overlay directory is mounted from the home disk, an existing mount is left" \
+  "mount --bind $NODE_HOME_SHARE/host-vm-images $work/var/vm-images|$work/var/vm-images" \
+  "$(cat "$work/root.log")|${NODE_MOUNTED[*]}"
+same "what the overlay directory held is kept behind the mount" staged \
+  "$(cat "$NODE_HOME_SHARE/host-vm-images/default/image" 2>/dev/null)"
+
+exit "$fail"
