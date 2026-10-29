@@ -348,6 +348,25 @@ describe("the default profile a new agent starts on", () => {
     expect(defaultProfile).not.toHaveBeenCalled();
   });
 
+  /** TEST_SCENARIO: A kit that lists its providers decides the agent's
+   * provider as one that names its model does, so the default profile stays
+   * out and the provider order hears the kit's list. */
+  it("leaves a kit that lists its providers to that list", async () => {
+    const { agents, defaultProfile, defaultProviders } = setup(
+      [provider],
+      templates,
+    );
+    await agents.create({
+      ...byTemplate,
+      starterKitProviders: ["ibm-litellm"],
+    });
+    expect(defaultProfile).not.toHaveBeenCalled();
+    expect(defaultProviders).toHaveBeenCalledWith([], {
+      harness: "claude-code",
+      preferred: ["ibm-litellm"],
+    });
+  });
+
   /** TEST_SCENARIO: A failed binding is not a failed create; the first-hello
    * conversion still gives the agent a default, and the log says why the
    * agent missed the default profile, whether the binder threw or declined. */
@@ -512,6 +531,38 @@ describe("the harness and default provider a new agent gets", () => {
     );
     expect(
       await provisioner.defaultProviders([], { harness: "claude-code" }),
+    ).toEqual(["conn-provider"]);
+  });
+
+  /** TEST_SCENARIO: A starter kit whose engine needs one gateway lists it,
+   * and an owner who holds it gets it ahead of the harness's home provider;
+   * an owner who holds none of the kit's list still gets the harness's
+   * first, so the list never blocks a create (#6040). */
+  it("grants a provider the kit lists first, else the harness's first", async () => {
+    const ibm = { ...provider, id: "conn-ibm", templateId: "ibm-litellm" };
+    const provisionerFor = (rows: Connection[]) => {
+      const { connections } = setup(rows);
+      return connectionGrantProvisioner(
+        { ...connections, listConnections: async () => [] },
+        {
+          harnesses: [
+            {
+              name: "claude-code",
+              displayName: "Claude",
+              providers: ["ibm-litellm", "anthropic"],
+              tags: [],
+              experimental: false,
+            },
+          ],
+        },
+      );
+    };
+    const kitWants = { harness: "claude-code", preferred: ["ibm-litellm"] };
+    expect(
+      await provisionerFor([ibm, provider]).defaultProviders([], kitWants),
+    ).toEqual(["conn-ibm"]);
+    expect(
+      await provisionerFor([provider]).defaultProviders([], kitWants),
     ).toEqual(["conn-provider"]);
   });
 });

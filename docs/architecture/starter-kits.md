@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-27
+Last verified: 2026-10-29
 
 ## Overview
 
@@ -94,9 +94,10 @@ flowchart LR
   The kit modal offers every messenger the install has, not only the kit's, and marks the kit's own with its badge and note.
   For Slack it takes channels by name from the [channel picker](channels.md), which offers only channels the person and the bot are both in, so they are bound at apply, before the onboarding turn is composed and names them.
   A `direct` channel gets no picker, since the platform does not pick a DM for the person: the modal gives the in-chat bind steps instead, as it does for a DM beside a picked channel and for Telegram, whose chats the bot cannot list.
-- **Provider compatibility** — a kit never states a provider as a Connection Requirement: it lists the provider presets it supports in `providers` (a kit with its own image states them on the image instead).
-  The requirement list is for the connections the *job* needs; a kit from an external catalog that still declares a provider under `accepts` is read as its provider list and kept out of the Connections section.
-  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
+- **Provider preference** — a kit never states a provider as a Connection Requirement: it may list the provider presets its job works best on in `providers` (a kit with its own image states them on the image instead).
+  The list is a preference, never a filter: any provider the kit's harness runs on can create the kit's Agent.
+  The requirement list is for the connections the *job* needs; the apply form keeps a provider that a kit from an external catalog still declares under `accepts` out of the Connections section.
+  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, one of the kit's `providers` when the user holds one, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
 - **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.
