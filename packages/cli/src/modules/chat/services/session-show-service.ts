@@ -72,6 +72,11 @@ function platformOf(value: unknown): Record<string, unknown> | null {
   return objectOf(objectOf(objectOf(value)?._meta)?.platform);
 }
 
+function stampOf(params: unknown): string | undefined {
+  const at = platformOf(params)?.at;
+  return typeof at === "string" && at !== "" ? at : undefined;
+}
+
 function turnFromLoad(result: unknown, listed: SessionView): TurnState {
   const parsed = platformReplayTurnMetaSchema.safeParse(
     platformOf(result)?.turn,
@@ -94,9 +99,12 @@ function turnFromLoad(result: unknown, listed: SessionView): TurnState {
  * answer says whether a turn is running and, from a runtime that knows it,
  * when that turn started. After the load, the same connection keeps hearing
  * the Session live: new steps, and `platform/turnStarted` and
- * `platform/turnEnded`, which the caller may follow until it closes. Replayed
- * turn ends are ignored, since the load answer already says how the turn
- * stands. It never sends a prompt and never answers a permission request.
+ * `platform/turnEnded`, which the caller may follow until it closes. Every
+ * turn end, replayed or live, closes the tool calls its turn left open; a
+ * replayed one does not change the turn state, since the load answer already
+ * says how the turn stands, and a load that finds no turn running closes what
+ * is still open. It never sends a prompt and never answers a permission
+ * request.
  */
 export function createSessionShowService(
   deps: SessionShowServiceDeps,
@@ -131,6 +139,18 @@ export function createSessionShowService(
               if (change !== null && loaded) emit({ kind: "step", change });
               return;
             }
+            const ended =
+              method === "platform/turnEnded"
+                ? platformTurnEndedParamsSchema.safeParse(params)
+                : null;
+            if (ended?.success) {
+              const settled = log.settle(
+                stampOf(params) ?? now().toISOString(),
+                ended.data.stopReason,
+              );
+              if (loaded)
+                for (const change of settled) emit({ kind: "step", change });
+            }
             if (!loaded || platformOf(params)?.replayFor === loadToken) return;
             if (
               method === "platform/turnStarted" &&
@@ -141,10 +161,7 @@ export function createSessionShowService(
               emit({ kind: "turn", turn: { ...turn } });
               return;
             }
-            if (
-              method === "platform/turnEnded" &&
-              platformTurnEndedParamsSchema.safeParse(params).success
-            ) {
+            if (ended?.success) {
               turn.running = false;
               turn.turnStartedAt = null;
               emit({ kind: "turn", turn: { ...turn } });
@@ -196,6 +213,7 @@ export function createSessionShowService(
           `session '${input.sessionId}' could not be loaded: ${load.error.message}`,
         );
       Object.assign(turn, turnFromLoad(load.result, session));
+      if (!turn.running) log.settle(null);
       loaded = true;
 
       return ok({

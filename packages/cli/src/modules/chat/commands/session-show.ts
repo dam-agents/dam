@@ -1,6 +1,9 @@
 import { Command } from "commander";
 
-import { EXIT_INVALID_INPUT } from "../../shared/exit-codes.js";
+import {
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+} from "../../shared/exit-codes.js";
 import {
   elapsedMs,
   formatDuration,
@@ -17,8 +20,15 @@ import { exitCodeFor, printError } from "./chat.js";
 const SUMMARY_MAX = 160;
 const TEXT_MAX = 400;
 
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
+
+function safe(text: string): string {
+  return text.replace(CONTROL, " ");
+}
+
 function oneLine(text: string, max: number): string {
-  const collapsed = text.replace(/\s+/g, " ").trim();
+  const collapsed = safe(text).replace(/\s+/g, " ").trim();
   return collapsed.length <= max
     ? collapsed
     : `${collapsed.slice(0, max - 1)}…`;
@@ -37,7 +47,7 @@ export function stepLine(step: Step, now: number): string {
       : step.startedAt !== null && step.endedAt === null
         ? `${formatDuration(elapsedMs(step.startedAt, now) ?? 0)} so far`
         : "-";
-  return `${clock(step.startedAt)}  tool   ${step.tool} [${step.status}, ${took}] ${oneLine(step.summary, SUMMARY_MAX)}`;
+  return `${clock(step.startedAt)}  tool   ${oneLine(step.tool, 60)} [${oneLine(step.status, 30)}, ${took}] ${oneLine(step.summary, SUMMARY_MAX)}`;
 }
 
 export function turnLine(turn: TurnState, now: number): string {
@@ -65,7 +75,7 @@ function header(watch: SessionWatch, now: number): string {
   const s = watch.session;
   return [
     `session: ${s.sessionId}${s.title ? `  ${oneLine(s.title, 80)}` : ""}`,
-    `type: ${s.type}   mode: ${s.mode}   created: ${s.createdAt}`,
+    `type: ${safe(s.type)}   mode: ${safe(s.mode)}   created: ${safe(s.createdAt)}`,
     turnLine(watch.turn, now),
     "",
   ].join("\n");
@@ -169,9 +179,19 @@ export function buildSessionShowCommand(deps: {
             emitStep(step);
           }
         });
-        deps.onInterrupt?.(() => watch.close());
+        let stopped = false;
+        deps.onInterrupt?.(() => {
+          stopped = true;
+          watch.close();
+        });
         await watch.closed;
         flush();
+        if (stopped) return;
+        if (opts.json) write(JSON.stringify({ event: "closed" }));
+        process.stderr.write(
+          `error: connection lost; run the command again to go on following\n`,
+        );
+        process.exitCode = EXIT_RUNTIME_FAILURE;
       },
     );
 }

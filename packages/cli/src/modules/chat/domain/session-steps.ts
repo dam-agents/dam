@@ -27,7 +27,7 @@ export interface StepChange {
   added: boolean;
 }
 
-const FINISHED = new Set(["completed", "failed"]);
+const FINISHED = new Set(["completed", "failed", "cancelled"]);
 const SUMMARY_FIELDS = [
   "command",
   "file_path",
@@ -92,8 +92,10 @@ function durationOf(
  * consecutive chunks of one role when the harness sends none) become one
  * message. A tool call's duration is the time between the `_meta.platform.at`
  * stamp of its `tool_call` frame and that of the update that finished it,
- * because no harness reports a duration of its own. Thoughts and plans are
- * not steps.
+ * because no harness reports a duration of its own. A turn that ends by a
+ * stop or an error sends no closing update for the calls still open, so
+ * settle closes them as `cancelled` or `failed`, with an end time and no
+ * duration, the way the web chat does. Thoughts and plans are not steps.
  */
 export function createStepLog() {
   const steps: Step[] = [];
@@ -165,6 +167,17 @@ export function createStepLog() {
 
   return {
     steps: steps as readonly Step[],
+    settle(at: string | null, stopReason?: string): StepChange[] {
+      const settled: StepChange[] = [];
+      steps.forEach((step, index) => {
+        if (step.kind !== "tool" || step.endedAt !== null) return;
+        if (FINISHED.has(step.status)) return;
+        step.status = stopReason === "cancelled" ? "cancelled" : "failed";
+        step.endedAt = at;
+        settled.push({ index, step, added: false });
+      });
+      return settled;
+    },
     apply(params: unknown): StepChange | null {
       const p = objectOf(params);
       const update = objectOf(p?.update);
