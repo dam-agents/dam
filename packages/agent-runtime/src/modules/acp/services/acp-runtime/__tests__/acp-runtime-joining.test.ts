@@ -16,6 +16,10 @@ import { createWorld, frames, transcriptOf } from "./acp-world.js";
 const SESSION = "sess-shared";
 
 describe("acp-runtime: joining mid-conversation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /**
    * TEST_SCENARIO: Alice asks a question, and the agent is halfway through answering when
    * Bob opens the same conversation. Everything the agent says from that
@@ -268,10 +272,6 @@ describe("acp-runtime: joining mid-conversation", () => {
     };
     expect(alice.saw("platform/turnEnded")).toEqual([ended]);
     expect(bob.saw("platform/turnEnded")).toEqual([ended]);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   /**
