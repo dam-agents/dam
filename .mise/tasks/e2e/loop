@@ -12,7 +12,11 @@ set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 PLAYWRIGHT_ARGS=()
-[ "${usage_headed:-}" != true ] || PLAYWRIGHT_ARGS+=(--headed)
+if [ "${usage_headed:-}" = true ]; then
+  # An Environment's browser has no display to show a window on.
+  [ "$CLUSTER_TARGET" != environment ] || { echo "FATAL: --headed has no window to open in an Environment, whose browser runs there" >&2; exit 1; }
+  PLAYWRIGHT_ARGS+=(--headed)
+fi
 [ "${usage_full:-}" != true ] || export E2E_FULL=1
 # --test fully narrows the run only for full-only projects, which have no
 # dependencies — e.g. --full --test=prompt-delivery runs just the four
@@ -75,9 +79,12 @@ export E2E_TIMEOUT_SCALE="${E2E_TIMEOUT_SCALE:-3}"
 # for the next loop. The arguments ride after `--` so mise appends them to the
 # playwright command instead of parsing them as its own flags. In an
 # Environment the suite reaches the backchannel and the API over a forward
-# that stays open until the suite ends.
+# that stays open until the suite ends, and drives a browser that runs in the
+# Environment (env_e2e_browser): the specs stay here, beside the checkout and
+# the tools they call.
 trap env_e2e_forward_close EXIT
 e2e_endpoint
+[ "$CLUSTER_TARGET" != environment ] || env_e2e_browser
 PLATFORM_BASE_URL="$E2E_BASE_URL" \
 PLATFORM_KEYCLOAK_URL="$E2E_KEYCLOAK_URL" \
 PLATFORM_E2E_LOGIN_LOCK_PORT="$E2E_LOGIN_LOCK_PORT" \

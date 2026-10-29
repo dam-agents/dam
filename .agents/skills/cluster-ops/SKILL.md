@@ -183,9 +183,11 @@ The Environment is one made as in [In an Environment](#in-an-environment), on an
 3. **Run the suite on the backchannel.** The lane's backchannel answers at `localhost:<port>` and `keycloak.localhost:<port>`, on a port of the Environment's own from 6560–6599, so the local lane's 6555 and several Environments run side by side on one agent.
    The port is the one the install already answers on, else the first one no other of this agent's Environments holds; the agent's `~/.cache/platform-cluster/env-<name>/e2e-port` records it.
    One SSH link forwards that port and the Environment's k3s API to this agent for as long as the suite runs, and the specs that act on the cluster (`kubectl`, `helm`) use that API through `KUBECONFIG`.
+   The specs run here, and the browser they drive runs in the Environment: Playwright's browser server, from this checkout's `playwright-core`, on the Environment's loopback, reached over its own forward through `PW_TEST_CONNECT_WS_ENDPOINT`, so a busy agent slows the specs' own calls but not the pages they load.
+   The browser is the image's when it is this Playwright's revision, else one installed into the Environment's home once; traces, videos and the report come back over the connection into the checkout, as a local run leaves them, and `--headed` is refused, since there is no window to open there.
    Each lane has its own Keycloak login lock port, so two suites never wait on each other's logins.
 
-Two Environments share nothing but this agent, which builds their changed images and runs their browsers: each has its own k3s, install, data and port.
+Two Environments share nothing but this agent, which builds their changed images and runs their specs: each has its own k3s, install, browser, data and port.
 Two runs on one Environment at once are not supported: they would reset each other's data.
 Run two Environments from two checkouts (an agent's slots are): the suite keeps its login and its report in the checkout's `packages/e2e/playwright`.
 
