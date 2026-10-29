@@ -28,7 +28,7 @@ Untracked files are part of the change.
 It also links the open pull request of the branch, with where it stands: a draft, waiting for review, approved, changes requested, merged or closed, and whether it has merge conflicts.
 The lookup asks GitHub's GraphQL API, and goes through the agent's own GitHub connection, so the credential gateway decides it like any call the agent makes: an agent with no GitHub connection gets no link.
 GitHub matches a head branch by its name alone, so a pull request from a fork's branch of the same name is not taken for the branch's own.
-Lookups are cached for a short time, because every refresh would otherwise ask GitHub again.
+Lookups are cached for a short time, because every refresh would otherwise ask GitHub again; a branch with no pull request is kept for less than a Session's lookup window, so the lookup at the window's end asks again.
 
 A diff compares a Change Set to its base or to its last commit (the uncommitted part only).
 Large diffs are cut per file and overall, and the answer says so; the panel then names the file it cannot show rather than failing.
@@ -64,7 +64,7 @@ A pushed branch is looked up on the remote it tracks.
 
 That record is per Session and survives the panel being closed and the machine restarting; it is bounded per Session and in total.
 A Session's pull request is one it pushed to: the open pull request of a branch the Session pushed is attached to that Session's record alone, right after the push and when its tool calls settle, at most once in 30 seconds per Session, with a lookup skipped inside that window run once it ends, so one opened after the push is found too and a new link tells the list to read again; a pushed branch is looked up on the remote it tracks, whatever its worktree has checked out since.
-A commit links no pull request, and neither does another Session pushing the same branch from the same clone: the panel shows the branch's pull request, but only refreshes the state of one a Session already has.
+A commit links no pull request: another Session that only committed on a branch gets no link to its pull request, while each Session that pushed it does; the panel shows the branch's pull request, but only refreshes the state of one a Session already has.
 A link once found is kept, so a Session still links its pull request after it is merged.
 Its state is not frozen with it: while someone watches the sessions list, the runtime reads the state of the pull requests the list showed again once a minute, fifty to a query, and a change tells the list to read again.
 A merged pull request is not read again: nothing changes it any more.
