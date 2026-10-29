@@ -119,8 +119,6 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
     .description(
       "Run an agent headlessly: submit a prompt and stream the answer",
     )
-    // `run` and its subcommands share --server, --timeout and --json: what
-    // follows `get` or `cancel` is the subcommand's, never `run`'s (#6064).
     .enablePositionalOptions()
     .argument("<agent>", "agent name or ID")
     .option("--server <url>", "override the configured server URL")
