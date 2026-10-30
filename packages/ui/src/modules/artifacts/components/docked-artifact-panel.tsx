@@ -15,8 +15,8 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
-import { useFullPage } from "../hooks/use-full-page.js";
 import { useArtifactSessionPrompt } from "../hooks/use-artifact-session-prompt.js";
+import { useFullPage } from "../hooks/use-full-page.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import {
   canStartArtifactSession,
