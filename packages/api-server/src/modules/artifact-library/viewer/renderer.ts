@@ -45,7 +45,7 @@ function chromePage(title: string, body: string): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="robots" content="noindex"/>
+<meta name="robots" content="noindex, nofollow"/>
 <title>${escapeHtml(title)}</title>
 <style>${CHROME_CSS}</style>
 </head>
@@ -149,7 +149,7 @@ export function renderWrapper(input: WrapperInput): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="robots" content="noindex"/>
+<meta name="robots" content="noindex, nofollow"/>
 <title>${escapeHtml(input.title)}</title>
 <style>
   :root { color-scheme: light dark; }

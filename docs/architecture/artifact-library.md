@@ -170,6 +170,7 @@ Rendering is entirely client-side — the server never compiles or sanitizes use
   Raw bytes are served inline only for images — everything else is download-only, so no user-controlled document can execute on either by-link origin *outside* the frame.
 
 The viewer sends conservative headers (no-referrer, nosniff, framing pinned to the share origin) but deliberately no restrictive content CSP: the dedicated content origin provides origin isolation; the sandbox restricts specific browser capabilities.
+No search engine may index user content: every share- and content-host response, errors included, carries `X-Robots-Tag: noindex, nofollow, noarchive`, and both hosts answer `robots.txt` with `Disallow: /`.
 
 Blob bytes relay through the api-server with constant memory: raw views stream store → response without ever buffering the object (the store is deliberately never exposed to the public side — no presigned links leave this origin), page renders buffer only size-capped text sources (anything bigger falls back to the download card), and the public folder listing is bounded.
 What remains on the api-server per public view is bounded work: a small HTML wrapper, an indexed slug lookup, and pass-through bandwidth.
