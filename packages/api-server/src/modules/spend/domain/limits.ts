@@ -53,10 +53,16 @@ export type SpendBlock = "ceiling" | "limit";
 
 export type SpendHoldReason = SpendBlock;
 
-// UNIT_BOUNDARY_DESCRIPTION: the question every gate asks before it starts work for an Agent — may this spend today? — answered with the limit that holds it, or null to go ahead.
+export type OwnerToldWork =
+  | { readonly kind: "schedule" }
+  | { readonly kind: "ambient"; readonly channel: "slack" | "telegram" }
+  | { readonly kind: "mention"; readonly channel: "slack" | "telegram" };
+
+// UNIT_BOUNDARY_DESCRIPTION: the question every gate asks before it starts work for an Agent — may this spend today? — answered with the limit that holds it, or null to go ahead. A gate whose hold the owner must hear about, because nobody who can lift the limit is watching, names the work in `tellOwner`.
 export type SpendHoldGate = (input: {
   agentId: string;
   connectionId?: string;
+  tellOwner?: OwnerToldWork;
 }) => Promise<SpendHoldReason | null>;
 
 const WARN_SHARE = 0.8;
@@ -167,4 +173,96 @@ export function blockOf(
   if (ceiling?.state === "reached") return "ceiling";
   if (limits.some((reading) => reading.state === "reached")) return "limit";
   return null;
+}
+
+export type SpendLevel =
+  | { readonly kind: "ceiling"; readonly amountMicros: number }
+  | {
+      readonly kind: "limit";
+      readonly limitId: string;
+      readonly scope: LimitScope;
+      readonly unit: SpendUnit;
+      readonly amountMicros: number;
+      readonly extensions: number;
+    };
+
+export interface NearLevel {
+  readonly level: SpendLevel;
+  readonly spentMicros: number;
+  readonly effectiveMicros: number;
+}
+
+export interface SpendStop {
+  readonly level: SpendLevel;
+  readonly near: readonly NearLevel[];
+}
+
+const SCOPE_RANK: Readonly<Record<LimitScope["kind"], number>> = {
+  connection: 0,
+  agent: 1,
+  "owner-connection": 2,
+  owner: 3,
+};
+
+function levelOfLimit({ limit }: LimitReading): SpendLevel {
+  return {
+    kind: "limit",
+    limitId: limit.id,
+    scope: limit.scope,
+    unit: limit.unit,
+    amountMicros: limit.amountMicros,
+    extensions: limit.extensions,
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: which reached level a stop is about. The ceiling
+ * is above every limit, and a limit that counts more work is above one that
+ * counts less: an agent's Connection limit, the agent limit, the Connection
+ * limit for all agents, then the own limit. The highest reached level stops
+ * the work whatever happens below it, so the owner hears about that one first;
+ * a lower one becomes the stop once the owner lifts the higher. `near` holds
+ * the other levels at their warning share or past it.
+ */
+export function stopOf(
+  ceiling: CeilingReading | null,
+  limits: readonly LimitReading[],
+): SpendStop | null {
+  const nearOf = (readings: readonly LimitReading[]): NearLevel[] =>
+    readings
+      .filter((reading) => reading.state !== "ok")
+      .map((reading) => ({
+        level: levelOfLimit(reading),
+        spentMicros: reading.spentMicros,
+        effectiveMicros: reading.effectiveMicros,
+      }));
+  if (ceiling?.state === "reached")
+    return {
+      level: { kind: "ceiling", amountMicros: ceiling.ceiling.amountMicros },
+      near: nearOf(limits),
+    };
+  const [highest] = limits
+    .filter((reading) => reading.state === "reached")
+    .sort(
+      (a, b) => SCOPE_RANK[b.limit.scope.kind] - SCOPE_RANK[a.limit.scope.kind],
+    );
+  if (!highest) return null;
+  return {
+    level: levelOfLimit(highest),
+    near: [
+      ...nearOf(limits.filter((reading) => reading !== highest)),
+      ...(ceiling?.state === "warn"
+        ? [
+            {
+              level: {
+                kind: "ceiling",
+                amountMicros: ceiling.ceiling.amountMicros,
+              } as const,
+              spentMicros: ceiling.spentMicros,
+              effectiveMicros: ceiling.ceiling.amountMicros,
+            },
+          ]
+        : []),
+    ],
+  };
 }

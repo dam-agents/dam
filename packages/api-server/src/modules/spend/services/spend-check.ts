@@ -1,6 +1,7 @@
 import { match } from "ts-pattern";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
+import { emit, EventType, type SpendStoppedWork } from "../../../events.js";
 import type { ApiDialect } from "../domain/call.js";
 import {
   UNKNOWN_CONNECTION,
@@ -16,11 +17,13 @@ import {
   limitsOnCall,
   readCeiling,
   readLimit,
+  stopOf,
   type CeilingReading,
   type LimitedCall,
   type LimitReading,
   type LimitScope,
   type SpendBlock,
+  type OwnerToldWork,
 } from "../domain/limits.js";
 import {
   CEILING_TEXT,
@@ -72,6 +75,7 @@ export interface SpendCheck {
   holdFor(input: {
     payer: string;
     connectionId?: string;
+    tellOwner?: OwnerToldWork;
   }): Promise<SpendHold | null>;
 }
 
@@ -174,25 +178,50 @@ export function createSpendCheck(deps: {
     return { limits: readings, ceiling: ceilingReading };
   };
 
+  const tellStopped = (
+    call: LimitedCall,
+    day: string,
+    readings: {
+      limits: readonly LimitReading[];
+      ceiling: CeilingReading | null;
+    },
+    work: SpendStoppedWork,
+  ) => {
+    const stop = stopOf(readings.ceiling, readings.limits);
+    if (!stop) return;
+    emit({
+      type: EventType.SpendWorkStopped,
+      ownerSub: call.ownerSub,
+      payer: call.payer,
+      day,
+      level: stop.level,
+      near: stop.near,
+      work,
+    });
+  };
+
   return {
     async checkCall(call) {
       const day = utcDay(call.startedAt);
       const { provider } = payingProvider(call.providers);
       const unit = unitOf(provider);
-      const readings = await read(
-        {
-          payer: call.payer,
-          ownerSub: call.ownerSub,
-          connectionId: call.connectionId,
-          unit,
-        },
-        day,
-      );
+      const limited: LimitedCall = {
+        payer: call.payer,
+        ownerSub: call.ownerSub,
+        connectionId: call.connectionId,
+        unit,
+      };
+      const readings = await read(limited, day);
       const block = blockOf(readings.ceiling, readings.limits);
       if (block === null) {
         await deps.ingest.callStarted(call);
         return { verdict: "allow" };
       }
+      tellStopped(limited, day, readings, {
+        kind: "call",
+        agentId: call.agentId,
+        sessionId: call.sessionId,
+      });
 
       await deps.ledger
         .addRefusal({
@@ -240,24 +269,23 @@ export function createSpendCheck(deps: {
         .exhaustive();
     },
 
-    async holdFor({ payer, connectionId }) {
+    async holdFor({ payer, connectionId, tellOwner }) {
       const ownerSub = await deps.owners.ownerOf(payer);
       if (!ownerSub) return null;
       const template = connectionId
         ? await deps.connections.templateOf(payer, connectionId)
         : null;
       const day = utcDay(new Date());
-      const readings = await read(
-        {
-          payer,
-          ownerSub,
-          connectionId: template ? (connectionId ?? null) : null,
-          unit: template ? unitOf(template) : "usd",
-        },
-        day,
-      );
+      const limited: LimitedCall = {
+        payer,
+        ownerSub,
+        connectionId: template ? (connectionId ?? null) : null,
+        unit: template ? unitOf(template) : "usd",
+      };
+      const readings = await read(limited, day);
       const reason = blockOf(readings.ceiling, readings.limits);
       if (reason === null) return null;
+      if (tellOwner) tellStopped(limited, day, readings, tellOwner);
       return {
         reason,
         ownerSub,

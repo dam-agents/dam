@@ -284,6 +284,7 @@ export function createSchedulerRunner(
   async function spendHeld(
     sched: Schedule,
     payload: Record<string, unknown>,
+    fire: "scheduled" | "run-now",
   ): Promise<(typeof SPEND_HOLD)[SpendHoldReason] | null> {
     if (!deps.spendHold) return null;
     const reason = await deps.spendHold({
@@ -291,6 +292,7 @@ export function createSchedulerRunner(
       ...(typeof payload.provider === "string" && {
         connectionId: payload.provider,
       }),
+      ...(fire === "scheduled" && { tellOwner: { kind: "schedule" } }),
     });
     return reason ? SPEND_HOLD[reason] : null;
   }
@@ -409,7 +411,7 @@ export function createSchedulerRunner(
         const payload = await triggerPayload(sched, fireAt, {
           wakeFirst: true,
         });
-        const held = await spendHeld(sched, payload);
+        const held = await spendHeld(sched, payload, "scheduled");
         if (held) {
           const until = new Date(
             Math.min(
@@ -515,7 +517,7 @@ export function createSchedulerRunner(
     let stage: "commit" | "poke" = "commit";
     try {
       const payload = await triggerPayload(sched, fireAt, { wakeFirst: true });
-      const held = await spendHeld(sched, payload);
+      const held = await spendHeld(sched, payload, "scheduled");
       if (held) {
         log(`fire: agent ${sched.agentId} ${held.result}`);
         noteFire("held", { holdReason: held.holdReason });
@@ -619,7 +621,7 @@ export function createSchedulerRunner(
         const payload = await triggerPayload(sched, firedAt, {
           wakeFirst: false,
         });
-        const held = await spendHeld(sched, payload);
+        const held = await spendHeld(sched, payload, "run-now");
         if (held) {
           log(`run-now: agent ${sched.agentId} ${held.result}; refusing`);
           return held.runNow;

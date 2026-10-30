@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-27
+Last verified: 2026-10-30
 
 ## Overview
 
@@ -274,11 +274,12 @@ It counts the refusal under an unknown model, because the gate does not read the
 At a refusal by a limit, the gate asks the owner on Home with a spend-limit approval, one for each reached limit, on the agent whose call was refused.
 A hold of unattended work asks in the same way ([Unattended work](#unattended-work)).
 A refusal by the ceiling asks nothing.
-There is one question per limit, day and extension count, so further refusals at the same level add no question.
+There is one question per limit, amount, day and extension count, so further refusals at the same level add no question, and a limit that the owner changed asks again once it is reached.
 "Continue" is any allow verdict on it: it adds one extension for that day, so the effective limit is the amount times one plus the extensions, and the gate asks again at the new level.
-A deny stops the agent for the day: the limit stays reached, and the gate does not ask again that day.
-A limit that counts all agents, the own limit or a Connection limit for all agents, asks once for all of them, on the agent whose call reached it first, and says so: a continue lets every agent go on, and a deny stops every agent that it counts.
-A question expires at the next UTC midnight, when the limit starts again, and no verdict on it writes an egress rule.
+A question cannot be denied, because a deny would change nothing: the limit stays reached until the owner continues it, changes it, or the day ends.
+A limit that counts all agents, the own limit or a Connection limit for all agents, asks once for all of them, on the agent whose call reached it first, and says so: a continue lets every agent go on.
+Its card and its toast name "All your agents" instead of that agent, with no avatar.
+A question expires at the next UTC midnight, when the limit starts again, and continuing it writes no egress rule.
 Setting or removing a limit closes its pending question, so a new refusal asks again, and so does removing the Connection of a Connection limit.
 
 ## Unattended work
@@ -294,11 +295,28 @@ A channel thread whose session runs on another pair is still checked against the
 - **Channels:** a turn does not start, and the agent does not wake.
   Whoever waits for an answer is told why none comes: a person gets a notice that only they see in Slack, or a chat post in Telegram; an app or another agent that mentioned the agent gets one notice in the thread; an agent that hands a turn over gets the reason as an error.
   A notice names the time when the agent answers again, and Slack and Telegram show that time in each reader's own time zone.
-  Ambient reading waits for nobody, so it skips the agent silently ([channels](channels.md)).
+  Ambient reading waits for nobody, so it skips the agent with no notice in the channel ([channels](channels.md)); the owner hears of it ([Telling the owner](#unattended-work)).
 - **Shared interactive artifacts:** a viewer's prompt does not start a turn or wake the agent, and the page tells the viewer the agent reached its spend limit ([artifact library](artifact-library.md#viewers-of-a-shared-page)).
 
 At a soft limit, a hold also asks the owner whether to continue, so the owner is asked even when the call that reached the limit was the last one of its turn.
 The ceiling asks nothing.
+
+**Telling the owner.** Only the owner can lift a limit, and the owner rarely sees work stop outside the web app, so the owner gets a message about it at once.
+It is sent when a scheduled fire, an ambient turn, or a mention or handoff in Slack or Telegram is held, and when the gate refuses a call of a Session that a schedule or a channel started, because that turn stops partway.
+A held mention still gives whoever mentioned the agent its own notice, the owner included; the message comes beside it.
+A web chat sends nothing, because the owner sees its refusal there.
+Each level of each limit counts on its own: a limit at its amount and today's extension count, or the ceiling at its amount.
+The first stop at a level sends one message, and more stops at the same level send nothing, whichever agent or work they hold.
+Continue, a changed limit or a changed ceiling makes a new level, so the next stop sends again; the reset at midnight sends nothing.
+So one agent stopped by its LiteLLM limit and then by its Bob limit gets two messages, and a limit for all agents gets one for all of them.
+When several limits are reached, the message is about the one highest up: the ceiling, then the own limit, then the Connection limit for all agents, then the agent limit, then the agent's Connection limit.
+It stops the work whatever happens below it; a lower limit gets its own message once the owner lifts the higher one and work stops again.
+The message names the limit with its amount, what stops, and the time the day resets; it names an agent only when the limit is that agent's own, and never the work that was held, because everything the limit counts stops.
+It links to the page that sets the limit: the agent's Usage section for the agent limit, its Providers section for its Connection limit, Settings › Providers for a Connection limit for all agents, and Settings › Usage for the own limit and the ceiling.
+The spend-limit question with its "Continue" waits behind the Approvals bell on every page, so the message needs no link to it; at the ceiling it says instead that only the platform operator raises it.
+A last line lists the other limits that count the work and are at 80% or more, so the owner can change several at once.
+A Redis key per level, claimed before the message goes out, keeps two replicas from sending it twice; a send that fails is not repeated.
+The message goes to the owner's Slack direct message, and to the owner's private Telegram chats only when Slack reaches nobody ([channels](channels.md)).
 
 **The agent's view.** Through a platform tool, an agent reads the limits that count its calls, today's spend, what is left, the state of each limit, and when the day resets.
 It has no tool to set, clear or continue a limit.
@@ -376,7 +394,7 @@ The screens:
 
 A meter is the foreground colour on a light tint of it, takes the warning colour at 80% of its limit and the danger colour when the limit is reached, and shows the share of the limit used beside it; the resource meters on Home use the same fill.
 A sub-agent's page sets no limit: its spend counts for its root driver, so the page names the root driver instead.
-A spend-limit question shows on Home with "Continue" and "Stop for today"; Home's "Deny all" leaves it out, because a deny there stops the agent for the day.
+A spend-limit question shows on Home with "Continue" only; "Dismiss" hides it from Home and leaves it open, and Home's "Deny all" leaves it out.
 The surfaces name five limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, the user's spend limit for all agents on a Connection ("Your ‹Connection› spend limit (all agents)"), and the spend ceiling that the operator sets.
 Every surface calls the ceiling the spend ceiling; its help tip says that the operator sets it.
 The Claude subscription's unit shows in dollars as "covered", for example "covered by subscriptions today" in a Connection limit; the help tips call it the subscription value at API prices.

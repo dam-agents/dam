@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-29
+Last verified: 2026-10-30
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -327,7 +327,7 @@ Everything else (DM people, attach files, look people up, react) is within the o
 
 ### Platform notices
 
-The platform DMs a linked person, as the app, when something needs them that no Agent would say: a resource alert ([budgets](budgets.md)).
+The platform DMs a linked person, as the app, when something needs them that no Agent would say: a resource alert ([budgets](budgets.md)), or unattended work that a spend limit stopped ([spend-limits](spend-limits.md#unattended-work)).
 
 | What           | Decided by | Drawback                                                                                               |
 | -------------- | ---------- | ------------------------------------------------------------------------------------------------------ |

@@ -3345,6 +3345,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         .with({ kind: "plain" }, ({ copy }) =>
           copy({ uiBaseUrl, agentId: instanceName, threads: true }),
         )
+        .with({ kind: "spend" }, ({ block }) =>
+          spendHoldUserCopy(
+            block,
+            "This agent",
+            brand.name,
+            slackResetTime(new Date()),
+          ),
+        )
         .with({ kind: "provider-unavailable" }, () =>
           slackProviderOutageCopy(outage, brand.name),
         )
@@ -5556,7 +5564,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
 
-    const held = await spendHold?.(args.instanceName);
+    const held = await spendHold?.(args.instanceName, {
+      kind: "mention",
+      channel: "slack",
+    });
     if (held) {
       const text = spendHoldUserCopy(
         held,
@@ -5953,7 +5964,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             );
             continue;
           }
-          const held = await spendHold?.(entry.instanceName);
+          const held = await spendHold?.(entry.instanceName, {
+            kind: "ambient",
+            channel: "slack",
+          });
           if (held) {
             getLogger().debug(
               { agentId: entry.instanceName, channelId, reason: held },
@@ -6553,7 +6567,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             "must accept the Terms of Use first. Answer it yourself, or say " +
             "you can't.",
         };
-      const held = await spendHold?.(target.instanceName);
+      const held = await spendHold?.(target.instanceName, {
+        kind: "mention",
+        channel: "slack",
+      });
       if (held)
         return {
           error:
