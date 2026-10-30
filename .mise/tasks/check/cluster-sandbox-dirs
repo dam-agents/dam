@@ -29,7 +29,7 @@ same "the dev install" "/var/lib/platform-vm-images /var/lib/platform-vm-runner-
   "$(node_dir_roots helm/values.yaml helm/values-local.yaml -- | sorted)"
 same "the e2e lane's own cache root replaces the dev one" "/var/lib/platform-vm-runner-releases /var/lib/vm-images" \
   "$(node_dir_roots helm/values.yaml helm/values-local.yaml helm/values-e2e.yaml -- \
-    --set=domain=localhost --set=virtualization.imageCache.hostPath=/var/lib/vm-images --set=virtualization.runner.machineCPUs=1 | sorted)"
+    --set=domain=localhost --set=virtualization.imageCache.hostPath=/var/lib/vm-images --set=virtualization.runner.machineCPUs=4 | sorted)"
 same "a --set-string and a legacy path" "/srv/old /srv/releases" \
   "$(node_dir_roots helm/values.yaml -- --set-string=virtualization.runner.releaseHostPath=/srv/releases \
     --set=virtualization.imageCache.legacyPath=/srv/old | sorted)"

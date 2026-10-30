@@ -109,10 +109,18 @@ export function fileLog(
 export const LAUNCH = ["get", "url"];
 export const CDP_URL = ["get", "cdp-url"];
 
-export const timedOut = (err: Error) => /timed out/i.test(err.message);
+// UNIT_BOUNDARY_DESCRIPTION: a command that ran out of time rather than failed: our own bound, or agent-browser's 30 s read of its daemon, which reports that the daemon took the command and gave no answer yet. A browser still starting on a slow guest answers so, and stopping it then would start it again from nothing.
+export const timedOut = (err: Error) =>
+  /timed out|no response came back/i.test(err.message);
+
+// UNIT_BOUNDARY_DESCRIPTION: the launch, and the CDP address asked for right after it, get the start's minute: on a cold guest the address waits on the same Chromium start the launch did, and asking it twice changes nothing.
+const STARTS_BROWSER = [LAUNCH, CDP_URL];
 
 export function commandTimeoutMs(args: string[]): number {
-  if (args[0] === LAUNCH[0] && args[1] === LAUNCH[1]) return 60_000;
+  if (
+    STARTS_BROWSER.some(([verb, what]) => args[0] === verb && args[1] === what)
+  )
+    return 60_000;
   if (args[0] === "close") return 30_000;
   return 15_000;
 }

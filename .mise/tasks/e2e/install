@@ -43,10 +43,14 @@ fi
 # virtualization on the lima VM, or a KVM host in sandbox mode. GitHub's
 # standard x64 Linux runners expose it; e2e.yml opens it to the runner's user.
 #
-# Every machine gets one vCPU and counts a booting one at 1Gi. One vCPU is what
-# the lane's 1-CPU mock Size gave each machine before machines took their shape
-# from the install, on a small CI node that nests KVM beside k3s and the
-# browser. The controller raises the owner's runner pod's memory request by
+# Every machine gets four vCPUs, as in production, and counts a booting one at
+# 1Gi. The vCPUs are threads of the runner and its CPU request is zero, so they
+# reserve nothing on the node and block no start: they only bound the runner's
+# CPU limit, which on the small CI node shares its cores among the machines.
+# One vCPU each, the lane's old figure, left a guest's one core to the runtime,
+# the display stack and Chromium at once: a cold Chromium start took longer than
+# the browser launcher's deadline, and the runtime missed the runner's probes
+# while it ran. The controller raises the owner's runner pod's memory request by
 # each booting machine's count, and on the single 16 GB CI node the control
 # plane already requests about 5Gi, so a 2Gi boot estimate took more from what
 # the agents' gateways and the other pods can be scheduled into. The mock
@@ -63,7 +67,7 @@ INSTALL_ARGS+=(
   # would write the trees where no runner mounts and the first boot would
   # fail.
   --set=virtualization.imageCache.hostPath=/var/lib/vm-images
-  --set=virtualization.runner.machineCPUs=1
+  --set=virtualization.runner.machineCPUs=4
   --set=virtualization.runner.bootMiB=1024
   # The lane boots one harness Template on the default image and its baked
   # tools (smoke/22-harness-tools).

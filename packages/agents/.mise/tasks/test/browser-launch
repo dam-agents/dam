@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-//MISE description="Test that the panel browser's launcher starts Chromium with its automation report off and its own Google calls off"
+//MISE description="Test that the panel browser's launcher starts Chromium with its automation report off and its own Google calls off, and that a start agent-browser gave up on is carried on rather than begun again"
 //MISE sources=["base/rootfs/usr/local/bin/platform-browser", "base/rootfs/etc/opt/chrome_for_testing/policies/managed/platform.json", "base/base.toml", ".mise/tasks/test/browser-launch"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +41,56 @@ try {
   assert.equal(policy.AlternateErrorPagesEnabled, false);
   assert.deepEqual(policy.SpellcheckLanguageBlocklist, ["en-US", "en-GB"]);
   assert.equal(policy.SpellcheckEnabled, undefined);
+
+  // TEST_SCENARIO: a launch with a profile. agent-browser waits 30 s for DevToolsActivePort and then kills the process group it started; a cold start on a small guest is slower, so Chromium must outlive that kill, and the next launch on the profile must adopt it rather than start again. The fake Chromium writes its port file after a delay and runs until it is stopped.
+  const slow = join(dir, "slow-chromium");
+  writeFileSync(
+    slow,
+    '#!/bin/sh\nfor a; do case "$a" in --user-data-dir=*) p="${a#--user-data-dir=}";; esac; done\necho started >> "$p/starts"\nsleep 1; printf "4242\\n/devtools/browser/x\\n" > "$p/DevToolsActivePort"\nsleep 30\n',
+    { mode: 0o755 },
+  );
+  writeFileSync(join(dir, "slow-browser"), readFileSync(launcher, "utf8").replaceAll("/opt/ms-playwright/chromium", slow));
+  const profile = join(dir, "profile");
+  mkdirSync(profile);
+  const start = () =>
+    spawn("/bin/sh", [join(dir, "slow-browser"), `--user-data-dir=${profile}`], {
+      env: { PATH: process.env.PATH },
+      detached: true,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const pidOf = () => Number(readFileSync(join(profile, ".platform-browser.pid"), "utf8"));
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const first = start();
+  await sleep(300);
+  process.kill(-first.pid, "SIGKILL");
+  await sleep(1500);
+  const chromiumPid = pidOf();
+  assert.ok(alive(chromiumPid), "Chromium outlives the kill of the launcher's process group");
+  assert.ok(existsSync(join(profile, ".platform-browser.port")), "the launcher keeps the port Chromium wrote");
+
+  rmSync(join(profile, "DevToolsActivePort"));
+  const second = start();
+  let said = "";
+  second.stderr.on("data", (d) => (said += d));
+  await sleep(1000);
+  assert.equal(pidOf(), chromiumPid, "a second launch adopts the running Chromium");
+  assert.equal(readFileSync(join(profile, "starts"), "utf8"), "started\n", "Chromium was started once");
+  assert.equal(readFileSync(join(profile, "DevToolsActivePort"), "utf8"), "4242\n/devtools/browser/x\n", "the adopted Chromium's port is put back");
+  assert.match(said, /^DevTools listening on ws:\/\/127\.0\.0\.1:4242\/devtools\/browser\/x$/m);
+
+  // TEST_SCENARIO: stopping the launcher agent-browser watches stops the Chromium it adopted, so agent-browser's close leaves no browser behind.
+  process.kill(second.pid, "SIGTERM");
+  await sleep(500);
+  assert.ok(!alive(chromiumPid), "a stopped launcher stops its Chromium");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
