@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { SlackTeamIllustration } from "./slack-team-illustration.js";
 
+import photoEdgar from "../assets/testimonials/edgar-castaneda.jpg";
+import photoAlexander from "../assets/testimonials/alexander-merschel.jpg";
+import photoAshley from "../assets/testimonials/ashley-evans.png";
+import photoMudhakar from "../assets/testimonials/mudhakar-srivatsa.jpg";
+import photoTom from "../assets/testimonials/tom-morris.png";
+
 const LOGIN_DOCS_URL = "https://ibm.biz/dam-docs";
 
 /* ── Shared typography ──────────────────────────────────────────────── */
@@ -66,6 +72,14 @@ const STACK_GESTURE_CSS = `
 .group:hover .bee-char[data-icon="stack"] svg > rect:nth-of-type(1) {
   animation: bee-char-bob 0.4s ease-in-out 0.2s;
 }
+.cap-zoom { zoom: 0.46; }
+@media (min-width: 430px) { .cap-zoom { zoom: 0.53; } }
+@media (min-width: 640px) { .cap-zoom { zoom: 0.65; } }
+@media (min-width: 1024px) { .cap-zoom { zoom: 1; } }
+.slack-zoom { zoom: 0.50; }
+@media (min-width: 430px) { .slack-zoom { zoom: 0.58; } }
+@media (min-width: 640px) { .slack-zoom { zoom: 0.89; } }
+@media (min-width: 768px) { .slack-zoom { zoom: 1; } }
 `;
 
 function useStackGestureStyles() {
@@ -567,43 +581,49 @@ export function BandCapabilities({ brandName }: { brandName: string }) {
             </div>
 
             {/* Right — agent with floating scene cards */}
-            <div className="relative min-h-[400px] overflow-hidden lg:min-h-[660px] lg:overflow-visible -order-1 lg:order-none">
-              {/* Everything positioned from the center of this container */}
-              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%)" }}>
-                {/* Agent — center focal point */}
-                <div className="group relative z-10 cursor-pointer overflow-visible">
-                  <div className="bee-avatar bee-char bee-awake overflow-visible" data-icon="stack">
-                    <svg viewBox="850 350 1800 2800" fill="none" className="h-[150px] w-auto overflow-visible" aria-hidden="true">
-                      <g className="bee-eyes-wake">
-                        <path fillRule="evenodd" clipRule="evenodd" d="M1391.43 447C1253.67 447 1142 558.7 1142 696.5C1142 834.3 1253.67 946 1391.43 946C1529.18 946 1640.84 834.3 1640.84 696.5C1640.84 558.7 1529.18 447 1391.43 447Z" fill="#E89DA8" />
-                        <path fillRule="evenodd" clipRule="evenodd" d="M2094.25 447C1956.52 447 1844.84 558.7 1844.84 696.5C1844.84 834.3 1956.52 946 2094.25 946C2232 946 2343.67 834.3 2343.67 696.5C2343.67 558.7 2232 447 2094.25 447Z" fill="#E89DA8" />
-                      </g>
-                      <rect x="935" y="1125" width="1616" height="489.42" fill="#5B76D2" />
-                      <rect x="935" y="1837.52" width="1616" height="489.41" fill="#5B76D2" />
-                      <rect x="935" y="2550.04" width="1616" height="489.41" fill="#5B76D2" />
-                    </svg>
+            <div className="relative min-h-[400px] lg:min-h-[660px] -order-1 lg:order-none">
+              {/* On mobile, center & scale the constellation to fit; on lg+ it fills naturally */}
+              <div className="absolute inset-0 flex items-center justify-center lg:static">
+                <div className="cap-zoom origin-center">
+                  <div className="relative" style={{ width: 820, height: 700 }}>
+                    <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%)" }}>
+                      {/* Agent — center focal point */}
+                      <div className="group relative z-10 cursor-pointer overflow-visible">
+                        <div className="bee-avatar bee-char bee-awake overflow-visible" data-icon="stack">
+                          <svg viewBox="850 350 1800 2800" fill="none" className="h-[150px] w-auto overflow-visible" aria-hidden="true">
+                            <g className="bee-eyes-wake">
+                              <path fillRule="evenodd" clipRule="evenodd" d="M1391.43 447C1253.67 447 1142 558.7 1142 696.5C1142 834.3 1253.67 946 1391.43 946C1529.18 946 1640.84 834.3 1640.84 696.5C1640.84 558.7 1529.18 447 1391.43 447Z" fill="#E89DA8" />
+                              <path fillRule="evenodd" clipRule="evenodd" d="M2094.25 447C1956.52 447 1844.84 558.7 1844.84 696.5C1844.84 834.3 1956.52 946 2094.25 946C2232 946 2343.67 834.3 2343.67 696.5C2343.67 558.7 2232 447 2094.25 447Z" fill="#E89DA8" />
+                            </g>
+                            <rect x="935" y="1125" width="1616" height="489.42" fill="#5B76D2" />
+                            <rect x="935" y="1837.52" width="1616" height="489.41" fill="#5B76D2" />
+                            <rect x="935" y="2550.04" width="1616" height="489.41" fill="#5B76D2" />
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Cards orbiting the agent — offsets from center */}
+                    <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-180px, -190px) scale(0.73) rotate(-2deg)" }}>
+                      <SchedulesScene />
+                    </div>
+                    <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(65px, -195px) scale(0.75) rotate(1.5deg)" }}>
+                      <FilesScene />
+                    </div>
+                    <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-305px, -10px) scale(0.71) rotate(1deg)" }}>
+                      <ConnectionsScene />
+                    </div>
+                    <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(140px, 10px) scale(0.74) rotate(-1.5deg)" }}>
+                      <SkillsScene />
+                    </div>
+                    <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-200px, 180px) scale(0.72) rotate(2deg)" }}>
+                      <KnowledgeScene />
+                    </div>
+                    <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(90px, 190px) scale(0.73) rotate(-1deg)" }}>
+                      <ArtifactsScene />
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Cards orbiting the agent — offsets from center */}
-              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-180px, -190px) scale(0.73) rotate(-2deg)" }}>
-                <SchedulesScene />
-              </div>
-              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(65px, -195px) scale(0.75) rotate(1.5deg)" }}>
-                <FilesScene />
-              </div>
-              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-305px, -10px) scale(0.71) rotate(1deg)" }}>
-                <ConnectionsScene />
-              </div>
-              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(140px, 10px) scale(0.74) rotate(-1.5deg)" }}>
-                <SkillsScene />
-              </div>
-              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-200px, 180px) scale(0.72) rotate(2deg)" }}>
-                <KnowledgeScene />
-              </div>
-              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(90px, 190px) scale(0.73) rotate(-1deg)" }}>
-                <ArtifactsScene />
               </div>
             </div>
           </div>
@@ -856,11 +876,9 @@ export function BandChannels() {
 
       <div className="relative z-20 flex min-h-[100dvh] flex-col items-center bg-background lg:flex-row lg:bg-transparent">
         {/* Mobile-only illustration — hidden at lg where the absolute split-screen takes over */}
-        <div className="flex w-full items-center justify-center px-2 pt-20 lg:hidden">
-          <div className="h-[375px] w-full max-w-[480px] overflow-hidden sm:h-auto sm:overflow-visible">
-            <div className="w-[480px] origin-top-left scale-[0.75] sm:w-auto sm:scale-100">
-              <SlackTeamIllustration />
-            </div>
+        <div className="w-full px-4 pt-20 lg:hidden">
+          <div className="slack-zoom mx-auto" style={{ width: 680 }}>
+            <SlackTeamIllustration />
           </div>
         </div>
         <div className="mx-auto w-full max-w-[540px] px-6 pb-20 pt-8 lg:mx-0 lg:flex lg:w-1/2 lg:max-w-none lg:items-center lg:justify-center lg:py-28">
@@ -1026,9 +1044,8 @@ export function BandDevOps() {
               Our Code Reviewer agent assesses every PR. Our Monitoring Agent
               reads your cluster over kubectl and diagnoses what broke.
             </p>
-            <p className="mt-4 text-[16px] leading-relaxed text-muted-foreground">
-              Your agents live in Slack, GitHub, your terminal, and your editor.
-              Chat with it wherever you already work.
+            <p className="mt-4 text-[16px] font-semibold text-foreground">
+              Your keys never reach the agent.
             </p>
           </div>
 
@@ -1135,122 +1152,128 @@ function testimonials(brandName: string) {
       role: "Software Developer, Technology CPQ - SOVA",
       quote:
         "I have it integrated with Jira and GitHub, and I’ve given it context regarding everything my team does. It saves me a lot of time on routine tasks. It’s incredibly easy to work with.",
+      initials: "EC",
+      color: "#4589ff",
+      photo: photoEdgar,
+    },
+    {
+      name: "Ashley Evans",
+      role: "Research Software Engineer",
+      quote: `We use ${brandName} across our whole software development lifecycle, from planning, drafting GitHub issues, writing and reviewing code, to analysing production logs, monitoring OpenShift cluster health and keeping watch over our system architecture, and its Slack integration has turned it from a UI tool into a shared workspace where 16 team members work with ${brandName} and each other in one channel.`,
+      initials: "AE",
+      color: "#42be65",
+      photo: photoAshley,
     },
     {
       name: "Alexander Merschel",
       role: "AI Leader, IBM z Software",
       quote:
         "The Slack integration and the general setup is a gamechanger in how we work together.",
-    },
-    {
-      name: "Ashley Evans",
-      role: "Research Software Engineer",
-      quote: `We use ${brandName} across our whole software development lifecycle, from planning, drafting GitHub issues, writing and reviewing code, to analysing production logs, monitoring OpenShift cluster health and keeping watch over our system architecture, and its Slack integration has turned it from a UI tool into a shared workspace where 16 team members work with ${brandName} and each other in one channel.`,
+      initials: "AM",
+      color: "#a56eff",
+      photo: photoAlexander,
     },
     {
       name: "Mudhakar Srivatsa",
       role: "Distinguished Engineer, AI Platform",
       quote:
         "Immensely useful to have this agent on Spyre Slack channels.",
+      initials: "MS",
+      color: "#ee5396",
+      photo: photoMudhakar,
     },
     {
       name: "Tom Morris",
       role: "Infrastructure & Operations Lead, AI Platform Enablement",
       quote: `${brandName} is doing a fleet sweep for me for several of my clusters every morning, and I use it to bridge Slack requests to GitHub.`,
+      initials: "TM",
+      color: "#0f62fe",
+      photo: photoTom,
     },
   ];
 }
 
-function useTestimonialCarousel() {
-  const [idx, setIdx] = useState(0);
-  const [fade, setFade] = useState(true);
+function TestimonialCard({
+  name,
+  role,
+  quote,
+  initials,
+  color,
+  photo,
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      setFade(false);
-      setTimeout(() => {
-        setIdx((prev) => (prev + 1) % 5);
-        setFade(true);
-      }, 400);
-    }, 20000);
-    return () => clearInterval(id);
-  }, []);
-
-  const goTo = (i: number) => {
-    setFade(false);
-    setTimeout(() => {
-      setIdx(i);
-      setFade(true);
-    }, 300);
-  };
-
-  return { idx, fade, goTo };
-}
-
-function CarouselDots({ count, idx, onSelect }: { count: number; idx: number; onSelect: (i: number) => void }) {
+}: {
+  name: string;
+  role: string;
+  quote: string;
+  initials: string;
+  color: string;
+  photo?: string;
+}) {
   return (
-    <div className="mt-4 flex gap-2">
-      {Array.from({ length: count }, (_, i) => (
-        <button
-          key={i}
-          onClick={() => onSelect(i)}
-          className={`h-1.5 rounded-full transition-all duration-300 ${
-            i === idx
-              ? "w-6 bg-foreground"
-              : "w-1.5 bg-foreground/20 hover:bg-foreground/40"
-          }`}
-          aria-label={`Quote ${i + 1}`}
-        />
-      ))}
+    <div className="break-inside-avoid rounded-2xl border border-[#dde1e6] bg-background p-6">
+      <svg
+        viewBox="0 0 24 24"
+        className="size-6 text-foreground/10"
+        fill="currentColor"
+        aria-hidden
+      >
+        <path d="M11.3 5.1C7.6 6.4 5.2 9.3 5.2 13c0 2.4 1.3 4 3.2 4 1.5 0 2.7-1 2.7-2.4 0-1.4-1-2.3-2.4-2.3-.4 0-.8.1-1 .2.3-2 2-4 4.2-5l-.6-2.4zm8 0C15.6 6.4 13.2 9.3 13.2 13c0 2.4 1.3 4 3.2 4 1.5 0 2.7-1 2.7-2.4 0-1.4-1-2.3-2.4-2.3-.4 0-.8.1-1 .2.3-2 2-4 4.2-5l-.6-2.4z" />
+      </svg>
+      <p className="mt-3 text-[15px] leading-relaxed text-foreground/80">
+        {quote}
+      </p>
+      <div className="mt-5 flex items-center gap-3">
+        {photo ? (
+          <img
+            src={photo}
+            alt=""
+            className="size-10 rounded-full object-cover"
+          />
+        ) : (
+          <div
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
+            style={{ background: color }}
+          >
+            {initials}
+          </div>
+        )}
+        <div>
+          <p className="text-[14px] font-semibold text-foreground">{name}</p>
+          <p className="text-[13px] text-muted-foreground">{role}</p>
+        </div>
+      </div>
     </div>
   );
 }
 
 export function BandTestimonials({ brandName }: { brandName: string }) {
   const items = testimonials(brandName);
-  const { idx, fade, goTo } = useTestimonialCarousel();
-  const t = items[idx]!;
 
   return (
-    <section className="flex min-h-[100dvh] snap-start flex-col justify-center overflow-hidden py-24 lg:py-32">
+    <section className="min-h-[100dvh] snap-start overflow-hidden bg-muted/30 py-24 lg:py-32">
       <div className="mx-auto w-full max-w-[1120px] px-6">
-        <div className="mb-8 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center text-[14px] font-medium text-amber-700 dark:text-amber-400">
-          The content on this page is NOT finalized and requires users&rsquo;
-          approval prior to publishing anywhere
+        <div className="text-center">
+          <SectionLabel>From the community</SectionLabel>
+          <SectionTitle>
+            See how your colleagues
+            <br />
+            are using {brandName}.
+          </SectionTitle>
+          <p className="mt-4 text-[16px] leading-relaxed text-muted-foreground">
+            Real stories from teams running agents every day.
+          </p>
         </div>
-        <div className="grid items-center gap-12 lg:grid-cols-2">
-          <div>
-            <SectionLabel>From the community</SectionLabel>
-            <SectionTitle>
-              See how your colleagues
-              <br />
-              are using {brandName}.
-            </SectionTitle>
-            <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted-foreground">
-              Real stories from teams running agents every day.
-            </p>
-          </div>
 
-          <div className="flex flex-col items-center justify-center">
-            <div
-              className="min-h-[320px] w-full transition-opacity duration-400"
-              style={{ opacity: fade ? 1 : 0 }}
-            >
-              <div className="border-l-2 border-foreground/10 pl-4">
-                <p className="text-[20px] font-normal leading-[1.5] text-foreground md:text-[24px]">
-                  &ldquo;{t.quote}&rdquo;
-                </p>
-              </div>
-              <div className="mt-6">
-                <p className="text-[16px] font-semibold text-foreground">
-                  {t.name}
-                </p>
-                <p className="mt-1 text-[14px] text-muted-foreground">
-                  {t.role}
-                </p>
-              </div>
-            </div>
-            <CarouselDots count={items.length} idx={idx} onSelect={goTo} />
+        <div className="mt-16 flex flex-col gap-5">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {items.slice(0, 3).map((t, i) => (
+              <TestimonialCard key={i} {...t} />
+            ))}
+          </div>
+          <div className="mx-auto grid w-full grid-cols-1 gap-5 md:grid-cols-2 lg:max-w-[calc(66.666%+10px)]">
+            {items.slice(3).map((t, i) => (
+              <TestimonialCard key={i + 3} {...t} />
+            ))}
           </div>
         </div>
       </div>
