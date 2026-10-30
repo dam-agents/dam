@@ -70,7 +70,7 @@ describe("dam update (integration)", () => {
     const fakeNpm = join(bin, "npm");
     await writeFile(
       fakeNpm,
-      '#!/bin/sh\nprintf "%s\\n" "$@" > "$DAM_TEST_NPM_ARGS"\nexit "${DAM_TEST_NPM_EXIT:-0}"\n',
+      '#!/bin/sh\nprintf "%s\\n" "$@" > "$DAM_TEST_NPM_ARGS"\necho "added 1 package in 2s"\nexit "${DAM_TEST_NPM_EXIT:-0}"\n',
     );
     await chmod(fakeNpm, 0o755);
   });
@@ -115,6 +115,14 @@ describe("dam update (integration)", () => {
       'server = "https://example.test"\n',
     );
     expect(await readFile(authPath, "utf-8")).toBe("saved-auth-state\n");
+  });
+
+  it("keeps npm's own output out of the JSON result", async () => {
+    const result = await spawnDam(["update", "--json"], env());
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "updated" });
+    expect(result.stderr).toContain("added 1 package in 2s");
   });
 
   it("supports upgrade as an alias and skips npm when current", async () => {

@@ -21,7 +21,7 @@ export function createNpmInstaller(): NpmInstaller {
           ["install", "--global", `${CLI_PACKAGE}@${version}`],
           {
             shell: false,
-            stdio: "inherit",
+            stdio: ["inherit", process.stderr, "inherit"],
           },
         );
         let settled = false;
