@@ -2047,6 +2047,7 @@ export async function bootstrap() {
     hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,
+    openCalls: spend.openCalls,
   });
   const invocationPinReconciler = composeInvocationPinReconciler({
     db,
@@ -2300,6 +2301,7 @@ export async function bootstrap() {
     satellitesBoot,
     secretStore,
     spendHold,
+    openCalls: spend.openCalls,
     spendStatusFor: async (agentId: string, owner: string) =>
       spend
         .forOwner({

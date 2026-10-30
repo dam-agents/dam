@@ -118,6 +118,7 @@ export interface HarnessApiServerAppDeps {
   satellitesBoot: SatellitesComposition;
   secretStore: SecretStore;
   spendHold: SpendHoldGate;
+  openCalls: (agentId: string) => Promise<number>;
   spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
   toolApprovalsFor: (owner: string) => ToolApprovalReports;
 }
@@ -198,6 +199,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
+      openCalls: deps.openCalls,
       readHarnessConfigSupport,
       scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,

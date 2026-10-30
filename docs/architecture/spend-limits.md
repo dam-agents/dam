@@ -167,6 +167,8 @@ A missing counter, for example after a Redis restart, is rebuilt from the rollup
 The api-server keeps the amounts it last applied for each call and adds only the difference, in one atomic step, so two replicas never count the same part twice and a call counts once.
 A periodic record that arrives after the final one changes nothing.
 
+**Open calls per agent.** Redis also keeps, per calling agent, the calls still in flight and when a record of each was last heard, so the [Invocation reaper](invocations.md#outcomes) can wait until a reported sub-agent's model calls have ended.
+
 ## Estimates
 
 DAM counts high and marks a call estimated when its usage is missing or unsure:
@@ -183,6 +185,7 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
   A real record that arrives later corrects the estimate.
 
 An estimated call keeps the Session and the calling agent of its stamp, and the gate's own row for a refused call keeps them too.
+Each estimate writes one `spend.call_estimated` log line with its reasons, whether the payer's most expensive call priced it, the calling agent and whether it is a sub-agent, the Connection, the model, the cost, the reply size and the duration, so the share of spend that estimates add can be measured.
 
 **Shutdown.** A stopping api-server takes no new streams, ends every open record stream with a success status so that each gateway reconnects to another replica and loses no record, and gives the open calls twenty seconds before it closes the port.
 
