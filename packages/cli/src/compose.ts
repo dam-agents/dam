@@ -10,6 +10,8 @@ import { composeConnectionModule } from "./modules/connection/compose.js";
 import { composeEgressModule } from "./modules/egress/compose.js";
 import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
+import { composeKitModule } from "./modules/kit/compose.js";
+import { createKitService } from "./modules/kit/index.js";
 import { composeScheduleModule } from "./modules/schedule/compose.js";
 import { composeSkillModule } from "./modules/skill/compose.js";
 import { composeBudgetModule } from "./modules/budget/index.js";
@@ -34,12 +36,15 @@ export function compose(): Command {
     configService,
     compatService,
   });
+  const kitService = (host: string) =>
+    createKitService({ trpc: buildTrpc(host) });
   const agent = composeAgentModule({
     buildTrpc,
     tokenProvider,
     configService,
     compatService,
     templateService: template.exports.createService,
+    kitService,
   });
   const base = {
     tokenProvider,
@@ -69,6 +74,7 @@ export function compose(): Command {
     cli,
     auth,
     template,
+    composeKitModule({ ...base, createKitService: kitService }),
     composeChatModule(base),
     agent,
     composeImportModule(base),
