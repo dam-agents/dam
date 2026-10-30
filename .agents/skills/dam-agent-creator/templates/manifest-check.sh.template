@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# manifest-check.sh — checks an agent manifest (docs/manifest.md) before it is
+# published, and a peer's manifest before the agent relies on it.
+#
+# The agent writes the manifest; this script only reports. It never edits the
+# card except in `stamp` mode, which writes source.version and nothing else.
+#
+#   check   <card.json>   own card: shape, references, version, privacy scan
+#   publish <card.json>   as check, plus: no `<placeholder>` left, version stamped
+#   stamp   <card.json>   write source.version = digest of the card without
+#                         source and runtime; prints the digest
+#   peer    <card.json>   a peer's card: shape and references only
+#   digest  <card.json>   print the digest, change nothing
+#
+#   ok   <check> — <detail>
+#   warn <check> — <detail>
+#   FAIL <check> — <problem> — fix: <instruction>
+#
+# Exit 0 iff nothing FAILed. Needs bash and jq; with python3 + jsonschema
+# present it also runs the full JSON Schema.
+
+set -u
+export LC_ALL=C
+
+HOME_DIR="${AGENT_HOME:-$HOME}"
+SCHEMA="${MANIFEST_SCHEMA:-$HOME_DIR/docs/manifest.schema.json}"
+CONFIG="${WORK_DIR:-$HOME_DIR/work}/CONFIG.md"
+SPEC="dam-agent-manifest/1"
+# Config keys whose values may appear in the public card (labels, logins, the
+# target repo). Every other CONFIG.md value is private.
+# MANIFEST_PUBLIC_KEYS overrides the list for a one-time run (references/manifest.md
+# → Existing agents).
+# TODO(creator): list this agent's public keys from the design.
+PUBLIC_KEYS="${MANIFEST_PUBLIC_KEYS:-TODO(creator)}"
+
+mode="${1:-}"; card="${2:-}"
+case "$mode" in (check|publish|stamp|peer|digest) ;; (*) echo "usage: $0 check|publish|stamp|peer|digest <card.json>" >&2; exit 2;; esac
+[ -r "$card" ] || { echo "FAIL card — $card not readable — fix: write the card first (docs/manifest.md)"; exit 1; }
+jq -e . "$card" >/dev/null 2>&1 || { echo "FAIL json — $card is not valid JSON — fix: rewrite it as one JSON object"; exit 1; }
+
+sha() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi; }
+digest() { jq -S -c 'del(.source, .runtime)' "$card" | sha | cut -c1-12 | sed 's/^/sha256:/'; }
+
+if [ "$mode" = digest ]; then digest; exit 0; fi
+if [ "$mode" = stamp ]; then
+  d="$(digest)"; tmp="$(mktemp)"
+  jq --arg d "$d" '.source.version = $d' "$card" > "$tmp" && mv "$tmp" "$card"
+  echo "$d"; exit 0
+fi
+
+fails=0
+ok()   { echo "ok   $1 — $2"; }
+warn() { echo "warn $1 — $2"; }
+fail() { echo "FAIL $1 — $2 — fix: $3"; fails=$((fails + 1)); }
+each() { jq -r "$1" "$card"; }
+
+# 1. Shape: the parts of the schema that a reader depends on.
+[ "$(each '.manifest')" = "$SPEC" ] && ok spec "$SPEC" \
+  || fail spec "manifest is $(each '.manifest'), expected $SPEC" "set .manifest to \"$SPEC\" and follow docs/manifest.schema.json"
+for k in readme agent source surfaces triggers skills trust; do
+  jq -e --arg k "$k" 'has($k)' "$card" >/dev/null || fail "key-$k" "required key $k is missing" "add $k (docs/manifest.md → Sections)"
+done
+extra="$(jq -r --slurpfile s "$SCHEMA" 'keys - ($s[0].properties | keys) | .[]' "$card" 2>/dev/null)"
+[ -z "$extra" ] || fail keys "unknown top-level keys: $(echo $extra)" "remove them or move their content into an existing section"
+jq -e '(.readme | type == "string") and (.readme | length > 80)' "$card" >/dev/null \
+  || fail readme "readme is missing or shorter than one paragraph" "write one paragraph for a reader that does not know this format"
+jq -e '.agent | (.name and .description and .version) and ((.roles // []) | length > 0)' "$card" >/dev/null \
+  || fail agent "agent needs name, description, version and at least one role" "fill .agent from the definition"
+bad_ids="$(each '[(.triggers, .skills, .contracts) // {} | keys[] | select(test("^[a-z0-9]+(-[a-z0-9]+)*$") | not)] | join(" ")')"
+[ -z "$bad_ids" ] || fail ids "keys not kebab-case: $bad_ids" "rename them and every reference to them"
+nodesc="$(each '[.triggers // {} | to_entries[] | select((.value.description // "") == "") | .key] | join(" ")')"
+[ -z "$nodesc" ] || fail trigger-description "triggers without description: $nodesc" "say in one or two sentences when to use it and what happens"
+noway="$(each '[.skills // {} | to_entries[] | select((.value.triggers // [] | length) == 0 and (.value.schedule // "") == "") | .key] | join(" ")')"
+[ -z "$noway" ] || fail skill-start "skills with neither triggers nor schedule: $noway" "add the trigger that starts it or its schedule"
+
+# 2. References: every name in a list points at an entry of this card.
+refs="$(jq -r '
+  (.triggers // {}) as $t | (.skills // {}) as $s | (.contracts // {}) as $k | (.surfaces // {}) as $f
+  | [ ($t | to_entries[] | .key as $id | .value.starts as $sk | .value.surface as $sf
+        | (if ($s | has($sk)) then empty else "trigger \($id) starts unknown skill \($sk)" end),
+          (if ($f | has($sf)) then empty else "trigger \($id) names unknown surface \($sf)" end)),
+      ($s | to_entries[] | .key as $n | .value as $v
+        | ((($v.triggers // [])[]) as $tr
+            | if ($t | has($tr)) | not then "skill \($n) names unknown trigger \($tr)"
+              elif $t[$tr].starts != $n then "skill \($n) lists trigger \($tr) that starts \($t[$tr].starts)"
+              else empty end),
+          ((($v.reads // []) + ($v.writes // []))[] as $c
+            | if ($k | has($c)) then empty else "skill \($n) names unknown contract \($c)" end)),
+      ((.handoffs // [])[] | .via as $v | .direction as $d
+        | if (if $d == "in" then ($t | has($v)) else ($k | has($v)) end) then empty else "handoff \($d) via unknown \($v)" end),
+      ([$s[] | (.reads // []) + (.writes // []) | .[]] as $used
+        | $k | keys[] | . as $id | if ($used | index($id)) then empty else "contract \($id) is not read or written by any skill" end),
+      ((($f.artifact // {}).pages // [])[] | .name as $pn | .contract as $pc
+        | if $pc == null or ($k | has($pc)) then empty else "page \($pn) names unknown contract \($pc)" end)
+    ] | .[]' "$card" 2>&1)" || refs="jq could not read the card: $refs"
+if [ -z "$refs" ]; then ok references "every trigger, skill and contract reference resolves"
+else while IFS= read -r r; do fail references "$r" "fix the name or add the entry"; done <<< "$refs"; fi
+
+# Optional full schema pass.
+if python3 -c 'import jsonschema' 2>/dev/null && [ -r "$SCHEMA" ]; then
+  out="$(python3 -I -c '
+import json, sys, jsonschema
+s = json.load(open(sys.argv[1])); c = json.load(open(sys.argv[2]))
+for e in jsonschema.Draft202012Validator(s).iter_errors(c):
+    print("/".join(map(str, e.path)) or "(root)", "—", e.message)' "$SCHEMA" "$card")"
+  if [ -z "$out" ]; then ok schema "valid against $(basename "$SCHEMA")"
+  else while IFS= read -r r; do fail schema "$r" "match docs/manifest.schema.json"; done <<< "$out"; fi
+else
+  warn schema "full JSON Schema pass skipped (python3 jsonschema not installed); shape checks above still ran"
+fi
+
+[ "$mode" = peer ] && { [ "$fails" -eq 0 ] && echo PASS; exit $(( fails > 0 )); }
+
+# 3. Version: source.version is the digest of what readers use.
+d="$(digest)"; v="$(each '.source.version // ""')"
+[ "$v" = "$d" ] && ok version "$v" \
+  || fail version "source.version is ${v:-empty}, content digest is $d" "run: bash scripts/manifest-check.sh stamp <card>"
+
+# 4. Privacy: no private config value and no private shape in the card.
+if [ -r "$CONFIG" ]; then
+  leaks=""
+  while IFS= read -r line; do
+    key="${line%%:*}"; key="${key#- }"; val="${line#*: }"; val="${val%%  #*}"; val="${val//\`/}"
+    case " $PUBLIC_KEYS " in (*" $key "*) continue;; esac
+    for part in $(echo "$val" | tr ',' ' '); do
+      [ "${#part}" -ge 4 ] || continue
+      case "$part" in (enabled|disabled|true|false|none|off|on|dam|both|label|chat) continue;; esac
+      grep -qwF -- "$part" "$card" && leaks="$leaks $key"
+    done
+  done < <(grep -E '^- [a-z_]+:' "$CONFIG")
+  leaks="$(echo $leaks | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+  [ -z "${leaks// /}" ] && ok privacy-config "no private CONFIG.md value in the card" \
+    || fail privacy-config "values of private config keys appear: $leaks" "remove them, or add the key to PUBLIC_KEYS only when the design marks it public"
+else
+  warn privacy-config "$CONFIG not readable; config scan skipped"
+fi
+shapes="$( (grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}|xox[abposr]-[A-Za-z0-9-]+|gh[pousr]_[A-Za-z0-9]{20,}|/home/agent/work/[^" ]*' "$card"; grep -oE '\b[UWCGD][A-Z0-9]{8,11}\b' "$card" | grep '[0-9]') | sort -u | head -5)"
+[ -z "$shapes" ] && ok privacy-shapes "no e-mail, Slack id, token or work/ path" \
+  || fail privacy-shapes "private shapes in the card: $(echo $shapes)" "replace with names or remove (docs/manifest.md → What stays out)"
+
+# 5. Publish gate.
+if [ "$mode" = publish ]; then
+  ph="$(grep -c 'TODO(manifest)' "$card")"
+  [ "$ph" -eq 0 ] && ok placeholders "none" || fail placeholders "$ph unfilled TODO(manifest) values" "fill them from the runtime sources (docs/manifest.md → Sources) or remove the field"
+fi
+size="$(wc -c < "$card")"; [ "$size" -le 32768 ] && ok size "$size bytes" || warn size "$size bytes; keep the card under 32 KB"
+
+[ "$fails" -eq 0 ] && echo PASS
+exit $(( fails > 0 ))

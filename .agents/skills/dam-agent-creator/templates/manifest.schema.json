@@ -1,0 +1,505 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dam-agents/dam/blob/main/.agents/skills/dam-agent-creator/templates/manifest.schema.json",
+  "title": "DAM agent manifest",
+  "description": "The outer interface of one DAM agent, written by the agent itself: where it listens, what starts its work, what it reads and writes, what it publishes and which packages it offers. Everything the agent offers in public belongs here; instance internals stay out. Keys of triggers, skills and contracts are kebab-case ids; lists refer to them by key.",
+  "type": "object",
+  "required": [
+    "manifest",
+    "readme",
+    "agent",
+    "source",
+    "surfaces",
+    "triggers",
+    "skills",
+    "trust"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "manifest": {
+      "const": "dam-agent-manifest/1"
+    },
+    "readme": {
+      "type": "string",
+      "description": "One paragraph for a reader that does not know this format: what the agent is and how to use this file."
+    },
+    "agent": {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "version",
+        "roles"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/role"
+          }
+        },
+        "owner": {
+          "type": "string",
+          "description": "A role, never a person."
+        },
+        "autonomy": {
+          "enum": [
+            "proposes",
+            "acts-with-approval",
+            "acts"
+          ]
+        },
+        "links": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "kit": {
+          "type": "string",
+          "description": "Starter kit <catalog>/<kit>@<version> the agent was created from."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "version",
+        "generatedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Digest of the manifest without source."
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "surfaces": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "account"
+        ],
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "channels": {
+            "type": "array",
+            "description": "Slack or Telegram conversations the agent is bound to: names from describe_channel, never ids, never 1:1 DMs. ambient and defaultAgent come from the agent's last turn in that conversation; null until one arrives.",
+            "items": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "use": {
+                  "type": "string"
+                },
+                "ambient": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "The agent reads every message and may answer untagged."
+                },
+                "defaultAgent": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "A bare tag of the bot reaches this agent."
+                },
+                "seenAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "pickup": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "description": "How to reach the agent on this surface."
+          },
+          "pages": {
+            "type": "array",
+            "description": "Public pages the agent publishes.",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "url",
+                "updates"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "updates": {
+                  "type": "string"
+                },
+                "contract": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "propertyNames": {
+        "enum": [
+          "github",
+          "slack",
+          "telegram",
+          "artifact",
+          "chat"
+        ]
+      }
+    },
+    "triggers": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "surface",
+          "type",
+          "value",
+          "who",
+          "starts",
+          "description"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "surface": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "event",
+              "label",
+              "mention",
+              "review-request",
+              "message",
+              "command",
+              "schedule",
+              "reaction"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "who": {
+            "type": "string"
+          },
+          "starts": {
+            "type": "string"
+          },
+          "agentRemovesIt": {
+            "type": "boolean"
+          },
+          "when": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "description"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "triggers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "When the skill runs on its own. A skill needs triggers, a schedule, or both."
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "triggers"
+            ]
+          },
+          {
+            "required": [
+              "schedule"
+            ]
+          }
+        ]
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "where",
+          "format",
+          "meaning"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "where": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "meaning": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "handoffs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "direction",
+          "role",
+          "via",
+          "meaning"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "role": {
+            "$ref": "#/$defs/role"
+          },
+          "via": {
+            "type": "string",
+            "description": "A trigger key (in) or a contract key (out)."
+          },
+          "meaning": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "flow": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "trust": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "notOffered": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Harness and models. Filled by the weekly audit from PLATFORM_HARNESS, get_metrics (models actually used) and list_schedules (explicit schedule overrides). Not part of source.version.",
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "harnessFamily": {
+          "type": "string"
+        },
+        "observed": {
+          "type": "object",
+          "required": [
+            "window",
+            "at",
+            "models"
+          ],
+          "properties": {
+            "window": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "model"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "<provider alias>/<model id>, as get_metrics reports it."
+                  },
+                  "share": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "skill"
+            ],
+            "properties": {
+              "skill": {
+                "type": "string"
+              },
+              "harness": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "description": "Public skills or tools the agent offers for others to install.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "use"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "use": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "role": {
+      "enum": [
+        "code-reviewer",
+        "implementer",
+        "qa-tester",
+        "quality-advisor",
+        "reporter"
+      ]
+    }
+  }
+}
