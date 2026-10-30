@@ -437,7 +437,7 @@ function DottedCircle({
   );
 }
 
-export function BandIntegrations() {
+function BandIntegrations() {
   return (
     <section className="relative min-h-[100dvh] snap-start overflow-hidden">
       <div className="relative flex min-h-[100dvh] items-center">
@@ -550,9 +550,11 @@ export function BandCapabilities({ brandName }: { brandName: string }) {
                 Agents that work like teammates
               </SectionTitle>
               <p className="mt-5 max-w-md text-[16px] leading-relaxed text-muted-foreground">
-                Each agent runs in its own sandbox, keeps its files, and keeps
-                working after you log off. Build it from reusable blocks,
-                connect the tools you already use, and hand off the work.
+                {brandName} is IBM Research&rsquo;s solution for safely running
+                long-lived agents. Agents use the same tools as your team,
+                remember what you&rsquo;ve taught them, and keep working after
+                you log off. Hand off work to agents that run on schedules in
+                isolated sandboxes even after your laptop closes.
               </p>
               <a
                 href={LOGIN_DOCS_URL}
@@ -865,13 +867,16 @@ export function BandChannels() {
           <div className="w-full max-w-[460px]">
             <SectionLabel color="#3F6C45">For everyone on the team</SectionLabel>
             <SectionTitle>
-              Add it to a channel.
-              <br />
-              It keeps things moving.
+              Agents that work where your team works
             </SectionTitle>
             <p className="mt-5 text-[16px] leading-relaxed text-muted-foreground">
-              It watches Slack, organizes what your team knows, sets up meetings,
-              triages issues, and answers first-line questions.
+              Agents live in Slack where they can monitor channels, answer
+              questions, triage issues, schedule meetings, and organize your
+              team&rsquo;s knowledge.
+            </p>
+            <p className="mt-3 text-[16px] leading-relaxed text-muted-foreground">
+              Agents can also live in GitHub, your terminal, and your editor.
+              Bring agents to where your work lives.
             </p>
           </div>
         </div>
@@ -905,12 +910,12 @@ export function BandSandbox() {
               Run any coding agent in its own sandbox.
             </SectionTitle>
             <p className="mt-5 text-[16px] leading-relaxed text-muted-foreground">
-              Claude Code, Codex, Bob, Pi. Run as many as you need, side by side.
+              Claude Code, Codex, Bob, and Pi running side by side.
             </p>
             <ul className="mt-6 space-y-3">
-              <FeatureBullet>Docker and k3s inside</FeatureBullet>
+              <FeatureBullet>Docker and k3s in every sandbox</FeatureBullet>
               <FeatureBullet>Built-in web browser</FeatureBullet>
-              <FeatureBullet>Workspace that persists</FeatureBullet>
+              <FeatureBullet>Persistent workspaces</FeatureBullet>
             </ul>
           </div>
         </div>
@@ -1015,16 +1020,15 @@ export function BandDevOps() {
           <div className="lg:w-[420px] lg:shrink-0">
             <SectionLabel color="#DE9950">For DevOps</SectionLabel>
             <SectionTitle>
-              Agents on your repos
-              <br />
-              and clusters.
+              Run agents on your repos and clusters.
             </SectionTitle>
             <p className="mt-5 text-[16px] leading-relaxed text-muted-foreground">
-              Code Guardian reviews every PR. A monitoring agent reads your cluster
-              over kubectl and diagnoses what broke.
+              Our Code Reviewer agent assesses every PR. Our Monitoring Agent
+              reads your cluster over kubectl and diagnoses what broke.
             </p>
-            <p className="mt-4 text-[16px] font-semibold text-foreground">
-              Your keys never reach the agent.
+            <p className="mt-4 text-[16px] leading-relaxed text-muted-foreground">
+              Your agents live in Slack, GitHub, your terminal, and your editor.
+              Chat with it wherever you already work.
             </p>
           </div>
 
@@ -1127,25 +1131,32 @@ function ClusterWatchCard() {
 function testimonials(brandName: string) {
   return [
     {
-      tag: "Code review across repos",
-      role: "A four-person product dev team",
-      description:
-        "The team works alongside chemists and PMs and runs scheduled code-review agents across its GitHub repos. A Slack-connected agent answers non-developers’ questions about a codebase the team inherited.",
+      name: "Edgar Bruney Castañeda",
+      role: "Software Developer, Technology CPQ - SOVA",
       quote:
-        "We have now set up many scheduled PR code-guardian agents for many of our code repos. This was done just via natural language. No friction setting it up.",
+        "I have it integrated with Jira and GitHub, and I’ve given it context regarding everything my team does. It saves me a lot of time on routine tasks. It’s incredibly easy to work with.",
     },
     {
-      tag: "Fleet operations",
-      role: "An infrastructure and operations lead",
-      description: `Their ${brandName} agent sweeps a fleet of clusters every morning and carries requests from Slack over to the team’s GitHub.`,
+      name: "Alexander Merschel",
+      role: "AI Leader, IBM z Software",
+      quote:
+        "The Slack integration and the general setup is a gamechanger in how we work together.",
+    },
+    {
+      name: "Ashley Evans",
+      role: "Research Software Engineer",
+      quote: `We use ${brandName} across our whole software development lifecycle, from planning, drafting GitHub issues, writing and reviewing code, to analysing production logs, monitoring OpenShift cluster health and keeping watch over our system architecture, and its Slack integration has turned it from a UI tool into a shared workspace where 16 team members work with ${brandName} and each other in one channel.`,
+    },
+    {
+      name: "Mudhakar Srivatsa",
+      role: "Distinguished Engineer, AI Platform",
+      quote:
+        "Immensely useful to have this agent on Spyre Slack channels.",
+    },
+    {
+      name: "Tom Morris",
+      role: "Infrastructure & Operations Lead, AI Platform Enablement",
       quote: `${brandName} is doing a fleet sweep for me for several of my clusters every morning, and I use it to bridge Slack requests to GitHub.`,
-    },
-    {
-      tag: "Team knowledge base",
-      role: "A compiler team",
-      description: `The team keeps its shared knowledge base on ${brandName}, and an agent in six of the team’s Slack channels answers engineers’ questions from it. The team now owns and runs the agent itself.`,
-      quote:
-        "Immensely useful to have this agent on [our] Slack channels.",
     },
   ];
 }
@@ -1158,7 +1169,7 @@ function useTestimonialCarousel() {
     const id = setInterval(() => {
       setFade(false);
       setTimeout(() => {
-        setIdx((prev) => (prev + 1) % 3);
+        setIdx((prev) => (prev + 1) % 5);
         setFade(true);
       }, 400);
     }, 20000);
@@ -1203,6 +1214,10 @@ export function BandTestimonials({ brandName }: { brandName: string }) {
   return (
     <section className="flex min-h-[100dvh] snap-start flex-col justify-center overflow-hidden py-24 lg:py-32">
       <div className="mx-auto w-full max-w-[1120px] px-6">
+        <div className="mb-8 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center text-[14px] font-medium text-amber-700 dark:text-amber-400">
+          The content on this page is NOT finalized and requires users&rsquo;
+          approval prior to publishing anywhere
+        </div>
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <div>
             <SectionLabel>From the community</SectionLabel>
@@ -1221,20 +1236,17 @@ export function BandTestimonials({ brandName }: { brandName: string }) {
               className="min-h-[320px] w-full transition-opacity duration-400"
               style={{ opacity: fade ? 1 : 0 }}
             >
-              <div className="mb-5 flex items-center gap-3">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  {t.tag}
-                </span>
-              </div>
-              <p className="text-[16px] font-semibold text-foreground">
-                {t.role}
-              </p>
-              <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
-                {t.description}
-              </p>
-              <div className="mt-6 border-l-2 border-foreground/10 pl-4">
+              <div className="border-l-2 border-foreground/10 pl-4">
                 <p className="text-[20px] font-normal leading-[1.5] text-foreground md:text-[24px]">
                   &ldquo;{t.quote}&rdquo;
+                </p>
+              </div>
+              <div className="mt-6">
+                <p className="text-[16px] font-semibold text-foreground">
+                  {t.name}
+                </p>
+                <p className="mt-1 text-[14px] text-muted-foreground">
+                  {t.role}
                 </p>
               </div>
             </div>
@@ -1261,7 +1273,7 @@ export function BandAccess({
         <div className="flex flex-col items-center gap-12 lg:flex-row lg:items-start">
           <div className="flex-1 text-center lg:text-left">
             <SectionLabel>Get started</SectionLabel>
-            <SectionTitle>Hand off your first task.</SectionTitle>
+            <SectionTitle>Meet your new AI teammate.</SectionTitle>
 
             {formEl && (
               <div className="mx-auto mt-8 max-w-[var(--width-login-col)] lg:mx-0">

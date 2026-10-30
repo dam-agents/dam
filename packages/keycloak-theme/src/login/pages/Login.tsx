@@ -13,7 +13,6 @@ import {
   BandCapabilities,
   BandChannels,
   BandDevOps,
-  BandIntegrations,
   BandSandbox,
   BandTestimonials,
 } from "../components/info-bands.js";
@@ -330,10 +329,9 @@ function ScrollPage({
       <div id="info-bands" className="overflow-x-hidden">
         <BandCapabilities brandName={kcContext.realm.displayName || "Platform"} />
         <BandChannels />
+        <BandTestimonials brandName={kcContext.realm.displayName || "Platform"} />
         <BandSandbox />
         <BandDevOps />
-        <BandIntegrations />
-        <BandTestimonials brandName={kcContext.realm.displayName || "Platform"} />
         <BandAccess
           formEl={bottomFormEl}
           characters={<InteractiveCharacterWidget />}
@@ -359,6 +357,9 @@ function HeroLeft({
       <div className="max-w-sm space-y-6">
         <p className="text-7xl font-light leading-[0.95] -tracking-[0.04em] text-foreground">
           Deploy Agents Massively
+        </p>
+        <p className="text-lg text-muted-foreground">
+          Work better with AI agent teammates.
         </p>
         {message}
         {heroFormEl}
