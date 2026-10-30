@@ -1,11 +1,11 @@
 # Invocations
 
-Last verified: 2026-10-27
+Last verified: 2026-10-30
 
 ## Overview
 
 An **Invocation** is a run-once request from one Agent to another: a **Driver** asks a **target** to do one piece of work and return one result that matches a JSON Schema the Driver supplied, or, for a script, the script's exit code and output.
-The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped as soon as the Invocation goes terminal.
+The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped soon after the Invocation goes terminal ([Outcomes](#outcomes)).
 
 A Driver reaches Invocations two ways.
 A script — a loop an agent wrote that fans work out and gathers the results — speaks over the per-agent HTTP surface on the harness port through the [Driver SDK](#driver-sdk).
@@ -84,9 +84,14 @@ A spawn whose root Driver is at a [spend limit or the Spend Ceiling](spend-limit
 
 ## Outcomes
 
-**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — flips the Invocation to done and reaps the target 30 seconds later, so the target's closing reply and the last telemetry it exported land before its machine goes.
+**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — and flips the Invocation to done.
 The harness still sends the accepted answer back to the model, which costs one more model call; the answer tells the target to end its turn at once, so that call stays short.
-A closing call that runs longer is cut, and the spend ledger counts it as an estimate ([spend-limits](spend-limits.md#ledger)).
+**A reported target goes once its model calls have ended.** The target is reaped when the gateway meter shows no open model call of it on two checks five seconds apart, the first ten seconds after the report, so the closing reply and the last telemetry it exported land before its machine goes.
+A delete that cut the closing call would leave the meter no usage, and the spend ledger would count the call as an estimate ([spend-limits](spend-limits.md#estimates)).
+A call counts as open while the gateway still sends its records, every two seconds, so a call whose gateway went away stops counting ten seconds after its last record.
+A call that never ends does not keep the target: it is reaped 90 seconds after the report whatever still runs, since a finished target still holds its share of the owner's memory.
+When the meter cannot be read, the target is reaped 30 seconds after the report.
+The liveness sweep reaps a reported target that no wait holds any more, as after an api-server restart: from 30 seconds after the report when one read finds no open call, else at the 90-second limit.
 The schema lives on the Invocation record and never on a Kubernetes resource.
 
 **Failure says why.** A failed Invocation carries the platform's reason, because the target is gone by the time the Driver sees it.
@@ -144,7 +149,7 @@ Spend is not on the record; it stays in telemetry, keyed by the invocation id th
 The root Driver reads it per sub-agent through its own cost read, which the delegation view's figures match ([metrics — agent-facing read](metrics.md#agent-facing-read)).
 The record also names each sub-agent row in the root Driver's spend by agent, by its label, else the first line of its prompt, after the target is gone ([spend limits](spend-limits.md#grouped-read)).
 
-**The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its machine and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
+**The target's conversation is kept on the root Driver's volume.** When a target reports, and again before its reap, the platform reads the target's one session out of its machine and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
 Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest.
 Capture is best effort and bounded: it never blocks a report, never fails a reap, and **never wakes the root** — a root that is not up (sleeping, crashed, or whose script did not await its spawn) keeps no copy.
 A cascade that deletes the root itself skips capture, since the root's volume goes too.

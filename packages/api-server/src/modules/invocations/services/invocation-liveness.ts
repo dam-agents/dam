@@ -1,5 +1,6 @@
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
-import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
+import type { TargetReaper } from "./target-reaper.js";
+import type { ReportedTargetReap } from "./reported-target-reap.js";
 import {
   HARNESS_CONFIG_STEP,
   type ReadHarnessConfigSupport,
@@ -9,6 +10,7 @@ import { createSetupFailure } from "./setup-failure.js";
 import type { ScriptOutputs } from "./script-outputs.js";
 
 const SCRIPT_STEP = "script";
+const UNREAPED_AFTER_MS = 30_000;
 
 const NO_SCRIPT_RUNNER_REASON =
   "the image's agent-runtime predates script sub-agents; rebuild the image on a current base image";
@@ -25,6 +27,7 @@ export interface TargetRestartState {
 export interface CreateInvocationLivenessSweepDeps {
   repo: InvocationsRepository;
   reaper: TargetReaper;
+  reportedReap: Pick<ReportedTargetReap, "due">;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   hasAgent: (agentId: string) => Promise<boolean>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
@@ -99,12 +102,13 @@ export function createInvocationLivenessSweep(
         }
       }
 
-      const graceEnd = new Date(now().getTime() - REPORT_GRACE_MS);
       const unreaped = await deps.repo.listTerminalUnreaped(
-        graceEnd,
+        new Date(now().getTime() - UNREAPED_AFTER_MS),
         deps.batchSize,
       );
       for (const row of unreaped) {
+        if (row.status === "done" && !(await deps.reportedReap.due(row)))
+          continue;
         await deps.reaper.reap(row);
         try {
           if (!(await deps.hasAgent(row.rootDriverId))) {
