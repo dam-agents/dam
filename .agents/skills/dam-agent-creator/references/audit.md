@@ -75,7 +75,7 @@ Include what applies; add domain checks from the design's effects list.
 - **A human overruled the agent's verdict** (a change request after the agent's approve, a reverted item it passed): each is a defect the agent let through; read it, name the missed class, record the lesson, list the items under *Action needed*.
 - Config validity: required keys present and parseable; roster integrity when one exists.
 - **Agent manifest** (`references/manifest.md`): rewrite the card from its sources, `manifest-check.sh stamp` then `publish`, and publish on change under `agent_manifest: dam`; a `FAIL` keeps the old card and is a `fail` here.
-  Then each peer in `work/PEERS.md`: fetch, `manifest-check.sh peer`, compare with the pinned version; a changed id the definition `uses` is **Action needed** (the operator adopts the new version).
+  Then each peer in `work/PEERS.md`: fetch, `manifest-check.sh peer`, compare with the pinned version; a changed id the definition `uses` is **Action needed** (the operator adopts the new version through **Pin a peer**); a config value that differs from the pinned copy is a `warn`, and the config wins.
 
 ## Trend history
 

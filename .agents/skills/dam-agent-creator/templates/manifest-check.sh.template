@@ -9,7 +9,7 @@
 #   publish <card.json>   as check, plus: no `<placeholder>` left, version stamped
 #   stamp   <card.json>   write source.version = digest of the card without
 #                         source and runtime; prints the digest
-#   peer    <card.json>   a peer's card: shape and references only
+#   peer    <card.json>   a peer's card: shape, references and version digest
 #   digest  <card.json>   print the digest, change nothing
 #
 #   ok   <check> — <detail>
@@ -112,12 +112,14 @@ else
   warn schema "full JSON Schema pass skipped (python3 jsonschema not installed); shape checks above still ran"
 fi
 
-[ "$mode" = peer ] && { [ "$fails" -eq 0 ] && echo PASS; exit $(( fails > 0 )); }
-
 # 3. Version: source.version is the digest of what readers use.
 d="$(digest)"; v="$(each '.source.version // ""')"
 [ "$v" = "$d" ] && ok version "$v" \
-  || fail version "source.version is ${v:-empty}, content digest is $d" "run: bash scripts/manifest-check.sh stamp <card>"
+  || if [ "$mode" = peer ]; then
+       fail version "source.version is ${v:-empty}, content digest is $d: the card changed after it was stamped" "do not pin this copy; tell the operator and the peer's owner"
+     else fail version "source.version is ${v:-empty}, content digest is $d" "run: bash scripts/manifest-check.sh stamp <card>"; fi
+
+[ "$mode" = peer ] && { [ "$fails" -eq 0 ] && echo PASS; exit $(( fails > 0 )); }
 
 # 4. Privacy: no private config value and no private shape in the card.
 if [ -r "$CONFIG" ]; then
