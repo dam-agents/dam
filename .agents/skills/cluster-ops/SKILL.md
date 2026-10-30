@@ -179,7 +179,7 @@ The Environment is one made as in [In an Environment](#in-an-environment), on an
 1. **Install what changed.** `e2e:install -- --environment <name>` runs through `cluster:install -- --environment <name> --backchannel`, with the lane's values (mock agents, the e2e control API, one vCPU and 1Gi a boot) and the default harness Template.
    An image the registry has for this checkout's source is pulled by the node; one it lacks is built here and streamed in, unless the node already holds that build.
    Only a deployment whose image changed is restarted, and only an agent image that changed is staged again, from the node's own copy, so a second run that changed nothing changes nothing.
-   It still takes minutes, so `e2e:loop` skips it when the Environment's last lane install that passed its gate was of the checkout's commit from a clean tree: `~/.cache/platform-cluster/env-<name>/e2e-installed` records that commit, and `cluster:install` and `cluster:build` there clear it.
+   It still takes minutes, so `e2e:loop` skips it when the Environment's last lane install that passed its gate was of the checkout's commit from a clean tree, into the same cluster: `~/.cache/platform-cluster/env-<name>/e2e-installed` records that commit and the UID of the cluster's `kube-system` namespace, so an Environment made again under the same name installs, and `cluster:install` and `cluster:build` there clear it.
    A new commit or any local change, tracked or not, installs as before.
    `--no-install` skips it whatever the checkout changed, for a rerun that changed only specs.
    A skipped install prints one line that says so and which commit the Environment runs.

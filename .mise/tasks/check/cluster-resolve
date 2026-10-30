@@ -116,24 +116,27 @@ done
 
 # --- an Environment's install is skipped only on its recorded, clean commit --
 # e2e:loop skips e2e:install when the Environment's last lane install was of
-# the checkout's commit from a clean tree (e2e_install_current), and says so.
-# current <checkout> <record>: what e2e_install_current makes of it.
+# the checkout's commit from a clean tree, into the same cluster
+# (e2e_install_current), and says so.
+# current <checkout> <record> <cluster-id>: what e2e_install_current makes of it.
 current() {
   (
     # shellcheck disable=SC1090
     CLUSTER_RESOLVE_ONLY=1 . "$LIB"
-    if MISE_CONFIG_ROOT="$1" e2e_install_current "$2" >/dev/null; then echo current; else echo install; fi
+    if MISE_CONFIG_ROOT="$1" e2e_install_current "$2" "$3" >/dev/null; then echo current; else echo install; fi
   )
 }
-skips() { # <what> <current|install> <checkout> <record>
+skips() { # <what> <current|install> <checkout> <record> [cluster-id]
   local got
-  got="$(current "$3" "$4")"
+  got="$(current "$3" "$4" "${5-cluster-a}")"
   [ "$got" = "$2" ] || { echo "FAIL: $1: got '$got', want '$2'" >&2; fail=1; }
 }
 record="$work/e2e-installed"
 skips "no record installs" install "$WT" "$record"
-git -C "$WT" rev-parse HEAD > "$record"
+echo "$(git -C "$WT" rev-parse HEAD) cluster-a" > "$record"
 skips "the recorded commit, clean, skips" current "$WT" "$record"
+skips "the recorded commit on a cluster made again installs" install "$WT" "$record" cluster-b
+skips "a cluster that does not answer installs" install "$WT" "$record" ""
 touch "$WT/untracked"
 skips "an untracked file installs" install "$WT" "$record"
 rm "$WT/untracked"

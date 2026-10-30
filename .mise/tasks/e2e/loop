@@ -34,7 +34,8 @@ REBUILD="${usage_rebuild:-}"
 # the install brings it to the checkout: it builds and streams in only the
 # images this checkout changed, and restarts only what runs them. It still
 # takes minutes, so it is skipped when the Environment's last install that
-# passed its gate was of this same commit from a clean tree, or with
+# passed its gate was of this same commit from a clean tree, into this same
+# cluster rather than an earlier Environment of that name, or with
 # --no-install; either way one line says what the Environment runs, so a stale
 # one is never silent.
 [ "${usage_no_install:-}" != true ] || [ "$CLUSTER_TARGET" = environment ] ||
@@ -48,10 +49,10 @@ elif ! kubectl get deployment platform-apiserver >/dev/null 2>&1; then
   NEEDS_BOOTSTRAP=true
 fi
 if [ "$CLUSTER_TARGET" = environment ]; then
-  INSTALLED="$(cat "$ENV_E2E_INSTALLED" 2>/dev/null || true)"
+  INSTALLED="$(cut -d' ' -f1 "$ENV_E2E_INSTALLED" 2>/dev/null || true)"
   if [ "${usage_no_install:-}" = true ]; then
     echo "Skipping the install (--no-install): Environment $CLUSTER_ENVIRONMENT runs ${INSTALLED:-an install of no recorded commit}, whatever this checkout changed since."
-  elif CURRENT="$(e2e_install_current "$ENV_E2E_INSTALLED")"; then
+  elif CURRENT="$(e2e_install_current "$ENV_E2E_INSTALLED" "$(e2e_cluster_id)")"; then
     echo "Skipping the install: Environment $CLUSTER_ENVIRONMENT already runs $CURRENT, this checkout's commit, with a clean tree."
   else
     echo "Installing what this checkout changed into Environment $CLUSTER_ENVIRONMENT..."

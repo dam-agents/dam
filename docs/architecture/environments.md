@@ -139,7 +139,7 @@ Beside the chart it installs two pieces the gate needs:
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
 
 A second install of the same checkout changes nothing: an image the node already holds is not sent again, only a deployment whose image changed is restarted, and an agent image is staged again only when the node's copy changed.
-The [end-to-end suite](e2e.md#running-it) runs against such an install on its backchannel: `e2e:loop -- --environment <name>` installs the lane's values there, then runs the suite over the link.
+The [end-to-end suite](e2e.md#running-it) runs against such an install on its backchannel: `e2e:loop -- --environment <name>` installs the lane's values there, unless the Environment already runs that install of the checkout's commit or `--no-install` asks, then runs the suite over the link.
 
 ## Surfaces
 

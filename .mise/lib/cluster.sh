@@ -438,16 +438,25 @@ e2e_checkout_commit() {
   git -C "$MISE_CONFIG_ROOT" rev-parse HEAD 2>/dev/null || true
 }
 
-# e2e_install_current <record>: prints the commit the e2e lane's install that
-# <record> names is of, and succeeds, when it is this checkout's: e2e:install
-# recorded it, and the checkout is still on that commit with a clean tree. A
-# missing record, another commit or a dirty tree is not current, and the next
-# run installs as it always did.
+# e2e_cluster_id: the identity of the cluster kubectl reaches, the UID of its
+# kube-system namespace: a cluster made again, as a recreated Environment's
+# is, has another. Prints nothing when the cluster does not answer.
+e2e_cluster_id() {
+  kubectl get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true
+}
+
+# e2e_install_current <record> <cluster-id>: prints the commit the e2e lane's
+# install that <record> names is of, and succeeds, when it is this checkout's
+# on this cluster: e2e:install recorded it as `<commit> <cluster-id>`, the
+# cluster is still the one it installed into, and the checkout is still on
+# that commit with a clean tree. A missing record, another cluster, another
+# commit or a dirty tree is not current, and the next run installs as it
+# always did.
 e2e_install_current() {
   local recorded head
   recorded="$(cat "$1" 2>/dev/null)" || return 1
   head="$(e2e_checkout_commit)"
-  [ -n "$head" ] && [ "$recorded" = "$head" ] || return 1
+  [ -n "$head" ] && [ -n "$2" ] && [ "$recorded" = "$head $2" ] || return 1
   printf '%s' "$head"
 }
 

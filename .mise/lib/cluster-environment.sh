@@ -289,8 +289,8 @@ env_e2e_port() {
   cat "$ENV_DIR/e2e-port"
 }
 
-# The commit the e2e lane's install in this Environment is of, beside its port:
-# e2e:install writes it once its gate passed, and cluster:install clears it as
+# The commit the e2e lane's install in this Environment is of, and the cluster
+# it went into, beside its port: e2e:install writes them once its gate passed, and cluster:install clears it as
 # it starts there, so an install that failed or was not the lane's is never
 # taken for this checkout's (e2e_install_current).
 ENV_E2E_INSTALLED="$ENV_DIR/e2e-installed"
