@@ -7,7 +7,6 @@ import { Markdown } from "../../../components/markdown.js";
 import { useStore } from "../../../store.js";
 import { ActivityBlock } from "./activity-block.js";
 
-/** The last line of the thoughts that holds text: what the model is on now. */
 export function latestThoughtLine(text: string): string {
   const lines = text.split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
