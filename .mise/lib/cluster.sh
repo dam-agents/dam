@@ -482,10 +482,15 @@ node_claim_fs() {
     "start() { mkdir -p $NODE_CLAIM_DIR && { mountpoint -q $NODE_CLAIM_DIR || mount -o loop,discard $NODE_CLAIM_IMAGE $NODE_CLAIM_DIR; }; }" |
     node_sh tee "$NODE_CLAIM_SERVICE" >/dev/null
   node_sh chmod 755 "$NODE_CLAIM_SERVICE"
-  node_sh rc-update add "$(basename "$NODE_CLAIM_SERVICE")" default >/dev/null 2>&1 || true
-  # A service openrc marks started while the mount has gone starts again.
-  node_sh "$NODE_CLAIM_SERVICE" start >/dev/null 2>&1 || true
-  node_sh mountpoint -q "$NODE_CLAIM_DIR" || node_sh "$NODE_CLAIM_SERVICE" restart >/dev/null 2>&1 || true
+  if node_sh test -x /sbin/openrc-run; then
+    node_sh rc-update add "$(basename "$NODE_CLAIM_SERVICE")" default >/dev/null 2>&1 || true
+    # A service openrc marks started while the mount has gone starts again.
+    node_sh "$NODE_CLAIM_SERVICE" start >/dev/null 2>&1 || true
+    node_sh mountpoint -q "$NODE_CLAIM_DIR" || node_sh "$NODE_CLAIM_SERVICE" restart >/dev/null 2>&1 || true
+  else
+    echo "WARNING: no OpenRC on the node, so nothing mounts the runners' claim filesystem after a reboot" >&2
+    node_sh sh -c 'mkdir -p "$1" && { mountpoint -q "$1" || mount -o loop,discard "$2" "$1"; }' _ "$NODE_CLAIM_DIR" "$NODE_CLAIM_IMAGE" || true
+  fi
   node_sh mountpoint -q "$NODE_CLAIM_DIR" ||
     { echo "FATAL: the runners' claim filesystem did not mount at $NODE_CLAIM_DIR" >&2; return 1; }
   have="$(node_sh stat -c %s "$NODE_CLAIM_IMAGE")"
