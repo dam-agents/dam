@@ -16,7 +16,7 @@ pub fn stage0() -> ! {
         fatal!("the VMM names no share at {}", guest::SHARE_PATH);
     };
     let at = Path::new(guest::STAGE0_SHARE);
-    if let Err(e) = mount_virtiofs(&share.tag, at, true) {
+    if let Err(e) = mount_virtiofs(&share.tag, at, true, ShareRead::Dax) {
         fatal!("mounting the share {} at {}: {e}", share.tag, at.display());
     }
     let init = at.join("init");
@@ -53,19 +53,56 @@ pub fn boot_mounts() -> Vec<BootMount> {
         .collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts a virtiofs share, with DAX where the VMM gave the share a window, so a large binary run from it is mapped from the host's page cache rather than copied into the guest. A share without a window refuses the option, and is mounted without it. Each mount is a console line, `virtiofs mount active: <tag> at <target>, dax=<bool>`, which is how a host tells whether its machines' mounts are DAX-mapped.
-fn mount_virtiofs(tag: &str, target: &Path, read_only: bool) -> io::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: how a virtiofs share is read. A share is mapped with DAX where the VMM gave it a window, so a large binary run from it is mapped from the host's page cache rather than copied into the guest. The image tree is copied instead, through a large read-ahead: it holds the image's tools, and a DAX-mapped one reads at about 10 MB/s whatever its read-ahead, so Chrome (400 MB) and the Claude binary (290 MB) took 30–40 s to start the first time and the browser panel gave up on Chrome. Copied with a 4 MiB read-ahead the same reads run at about 70 MB/s; the cost is the guest's RAM, as each machine keeps its own page cache of the tools it read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ShareRead {
+    Dax,
+    Copied { read_ahead_kib: u32 },
+}
+
+const IMAGE_TREE_READ: ShareRead = ShareRead::Copied {
+    read_ahead_kib: 4096,
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: mounts a virtiofs share read as `read` says. A share without a DAX window refuses the option, and is mounted without it; a read-ahead the guest cannot set is a warning, since the share still reads, only slower. Each mount is a console line, `virtiofs mount active: <tag> at <target>, dax=<bool>`, with the read-ahead after it when one was set, which is how a host tells how its machines' mounts are read.
+fn mount_virtiofs(tag: &str, target: &Path, read_only: bool, read: ShareRead) -> io::Result<()> {
     mkdir_all(target)?;
     let flags = if read_only { libc::MS_RDONLY } else { 0 };
-    let dax = mount_typed(tag, target, "virtiofs", flags, "dax").is_ok();
+    let dax = read == ShareRead::Dax && mount_typed(tag, target, "virtiofs", flags, "dax").is_ok();
     if !dax {
         mount_typed(tag, target, "virtiofs", flags, "")?;
     }
-    announce(&format!(
+    let mut line = format!(
         "virtiofs mount active: {tag} at {}, dax={dax}",
         target.display()
-    ));
+    );
+    if let ShareRead::Copied { read_ahead_kib } = read {
+        match set_read_ahead(target, read_ahead_kib) {
+            Ok(()) => line.push_str(&format!(", read_ahead={read_ahead_kib}KiB")),
+            Err(e) => logf!(
+                "WARNING: setting a {read_ahead_kib} KiB read-ahead on {}: {e}",
+                target.display()
+            ),
+        }
+    }
+    announce(&line);
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a FUSE mount's read-ahead is its backing device's, which sysfs names by the mount's anonymous device number.
+fn set_read_ahead(target: &Path, kib: u32) -> io::Result<()> {
+    fs::write(
+        read_ahead_path(fs::metadata(target)?.dev()),
+        format!("{kib}\n"),
+    )
+}
+
+fn read_ahead_path(dev: u64) -> PathBuf {
+    PathBuf::from(format!(
+        "/sys/class/bdi/{}:{}/read_ahead_kb",
+        libc::major(dev),
+        libc::minor(dev)
+    ))
 }
 
 pub fn mount_typed(
@@ -135,7 +172,7 @@ pub fn prepare() -> Machine {
         fatal!("the VMM shares no image tree (SMOLVM_PACKED_LAYERS)");
     };
     let image = Path::new(STAGE).join("image");
-    if let Err(e) = mount_virtiofs(&tag, &image, true) {
+    if let Err(e) = mount_virtiofs(&tag, &image, true, IMAGE_TREE_READ) {
         fatal!("mounting the image tree {tag}: {e}");
     }
     let mut shares = vec![(
@@ -147,7 +184,7 @@ pub fn prepare() -> Machine {
             continue;
         }
         let staged = Path::new(STAGE).join("shares").join(&share.tag);
-        if let Err(e) = mount_virtiofs(&share.tag, &staged, share.read_only) {
+        if let Err(e) = mount_virtiofs(&share.tag, &staged, share.read_only, ShareRead::Dax) {
             fatal!(
                 "mounting the share {} for {}: {e}",
                 share.tag,
@@ -945,6 +982,21 @@ mod tests {
     fn the_storage_disk_discards_before_it_reuses() {
         assert!(STORAGE_DISK_OPTIONS.contains("discard=sync"));
         assert!(STORAGE_DISK_OPTIONS.contains("compress=zstd:1"));
+    }
+
+    // TEST_SCENARIO: the image tree, which holds the image's tools, is copied through a 4 MiB read-ahead rather than DAX-mapped, and that read-ahead is set on the backing device sysfs names by the mount's device number.
+    #[test]
+    fn the_image_tree_is_read_through_a_large_read_ahead() {
+        assert_eq!(
+            IMAGE_TREE_READ,
+            ShareRead::Copied {
+                read_ahead_kib: 4096
+            }
+        );
+        assert_eq!(
+            read_ahead_path(libc::makedev(0, 42)),
+            Path::new("/sys/class/bdi/0:42/read_ahead_kb")
+        );
     }
 
     // TEST_SCENARIO: the shares reach the guest as smolvm's launcher names them, `tag:target:mode`. A target is any absolute path, a colon included, and anything but `rw` is read-only, so a share is never writable by a misread.
