@@ -34,6 +34,23 @@ same "a --set-string and a legacy path" "/srv/old /srv/releases" \
   "$(node_dir_roots helm/values.yaml -- --set-string=virtualization.runner.releaseHostPath=/srv/releases \
     --set=virtualization.imageCache.legacyPath=/srv/old | sorted)"
 
+# --- the runners' claim filesystem in an Environment (#6128) --------------
+same "the claim size of the dev install" 42949672960 \
+  "$(node_runner_storage helm/values.yaml helm/values-local.yaml helm/values-e2e.yaml --)"
+same "a --set of the size wins" 21474836480 \
+  "$(node_runner_storage helm/values.yaml helm/values-local.yaml -- --set=domain=localhost --set-string=virtualization.runner.storage=20Gi)"
+manifest="$(node_claim_class_manifest rancher/local-path-provisioner:v0)"
+same "the class is the provisioner's own" "platform.local/$NODE_CLAIM_CLASS platform.local/$NODE_CLAIM_CLASS" \
+  "$(printf '%s\n' "$manifest" | yq -r 'select(.kind == "StorageClass") | .provisioner' | paste -sd' ' -) $(printf '%s\n' "$manifest" |
+    yq -o json 'select(.kind == "Deployment")' | jq -r '.spec.template.spec.containers[0].command | .[index("--provisioner-name") + 1]')"
+same "the provisioner reads its own ConfigMap, not k3s's" "$NODE_CLAIM_CLASS $NODE_CLAIM_CLASS" \
+  "$(printf '%s\n' "$manifest" | yq -o json 'select(.kind == "Deployment")' |
+    jq -r '.spec.template.spec | (.containers[0].command | .[index("--configmap-name") + 1]) + " " + .volumes[0].configMap.name')"
+config="$(KUBECONFIG=/dev/null node_claim_class_config 'kind: Pod')"
+same "its one path is the claim filesystem" "$NODE_CLAIM_DIR" \
+  "$(printf '%s\n' "$config" | yq -r '.data["config.json"] | from_json | .nodePathMap[0].paths | join(" ")')"
+same "its helper pod is the one handed in" "kind: Pod" "$(printf '%s\n' "$config" | yq -r '.data["helperPod.yaml"]')"
+
 # --- the stubs: which paths are on an overlay, what is mounted, what root ran
 OVERLAY=""
 on_overlay() { case " $OVERLAY " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
