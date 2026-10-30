@@ -10,6 +10,7 @@ import {
 import type { BrowserSnapshot } from "agent-runtime-api";
 import {
   LAUNCH,
+  CDP_URL,
   commandTimeoutMs,
   createCommandQueue,
   displayAvailable,
@@ -713,9 +714,10 @@ describe("display stack", () => {
 });
 
 describe("stopping a stuck browser", () => {
-  // TEST_SCENARIO: a page that stops answering leaves every browser command hanging. Commands get a short deadline — longer for the launch, which starts Chromium, and for closing it — so none can hang the panel for a minute.
+  // TEST_SCENARIO: a page that stops answering leaves every browser command hanging. Commands get a short deadline — longer for the launch, which starts Chromium, for the CDP address asked right after it, which waits on that same start on a cold guest, and for closing it — so none can hang the panel for a minute.
   it("gives commands a short deadline, launching and closing a longer one", () => {
     expect(commandTimeoutMs(LAUNCH)).toBe(60_000);
+    expect(commandTimeoutMs(CDP_URL)).toBe(60_000);
     expect(commandTimeoutMs(["close"])).toBe(30_000);
     expect(commandTimeoutMs(["eval", "location.href"])).toBe(15_000);
   });
