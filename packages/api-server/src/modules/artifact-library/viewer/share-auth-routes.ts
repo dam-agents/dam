@@ -9,6 +9,7 @@ import {
 } from "../domain/share-session.js";
 import type { ShareAuthService } from "../services/share-auth-service.js";
 import { renderSignInFailed } from "./renderer.js";
+import { X_ROBOTS_TAG } from "./robots.js";
 
 export interface ShareAuthRoutesDeps {
   auth: ShareAuthService;
@@ -43,6 +44,7 @@ export function createShareAuthRoutes(deps: ShareAuthRoutesDeps): Hono {
     await next();
     c.header("X-Content-Type-Options", "nosniff");
     c.header("Referrer-Policy", "no-referrer");
+    c.header("X-Robots-Tag", X_ROBOTS_TAG);
     c.header("Cache-Control", "no-store");
     c.header(
       "Content-Security-Policy",
