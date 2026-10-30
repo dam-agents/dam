@@ -55,6 +55,10 @@ import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import {
+  runtimeDriverSessions,
+  scriptSpawningSession,
+} from "./spawning-session.js";
+import {
   createDriverOps,
   driverDefaultModel,
   type DriverOpsDeps,
@@ -315,6 +319,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   });
   mountInvocationRoutes(app, {
     readAgent: (id) => deps.agentStateCache.get(id),
+    spawningSession: scriptSpawningSession(
+      runtimeDriverSessions(config.namespace),
+    ),
     ...driverOpsDeps,
   });
   mountRuntimeTrpc(app, {
