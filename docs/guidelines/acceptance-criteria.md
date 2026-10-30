@@ -22,12 +22,12 @@ A criterion the tester cannot check from the outside gives no verdict.
 After the grilling, not when the issue is filed: the criteria come out of the agreed design, and a criterion guessed from a one-line problem statement tends to encode a solution.
 Until then **Done when** reads `TBD (after grilling)` and the issue carries the `needs-ac` label, which keeps it out of In Progress and away from the QA agent.
 The grilling writes the criteria and removes the label ([work-process.md](work-process.md)).
-Criteria the requester supplies when filing are reformatted to the format below, and need no label.
+Criteria that already exist at filing — the requester supplied them, or a grilling before filing wrote them — are reformatted to the format below, and need no label.
 
 ## Where
 
 In the issue's `## Done when` section, one `### AC-<k> — <name>` block per criterion, numbered from 1.
-Nothing else goes in that section.
+Nothing else goes in that section, except `TBD (after grilling)` until the criteria are written.
 The QA agent reads only this section when the issue has one, and the whole body when it does not.
 When the issue text changes, the QA agent tests it again from the new text.
 

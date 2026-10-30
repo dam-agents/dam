@@ -29,7 +29,8 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
 
    **Leave the acceptance criteria to the grilling.** Feature, bug, and task bodies whose template asks for criteria get `TBD (after grilling)` as the whole `## Done when` section, in place of `### AC-<k>` blocks, and the issue is filed with the `needs-ac` label (see [work-process.md](../../../docs/guidelines/work-process.md)).
    Never invent criteria from the request: they would encode a guessed solution.
-   When the requester supplies criteria themselves, reformat them to [acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md) without adding to them, and leave the label off.
+   When criteria already exist — the requester supplied them, or a grilling wrote them — put them in **Done when**, reformatted to [acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md) without adding to them, and leave the label off.
+   `needs-ac` goes on only when no criteria are written yet.
 
 3. **Check for duplicates** before drafting, or at the latest before filing, with several keyword variations from the request:
 

@@ -62,7 +62,7 @@ A feature, a bug, and a task that changes what a user sees state their acceptanc
 A tester — a person or the QA agent — checks each one through the web UI, Slack or GitHub without reading the code, so write only what a user can see.
 
 They are written after the grilling, not when the issue is filed (see [work-process.md](work-process.md)).
-A new issue's **Done when** reads `TBD (after grilling)` and the issue carries the `needs-ac` label, unless the requester supplied the criteria themselves.
+A new issue's **Done when** reads `TBD (after grilling)` and the issue carries the `needs-ac` label, unless criteria already exist: the requester supplied them, or a grilling before filing wrote them.
 
 ## Attribution
 

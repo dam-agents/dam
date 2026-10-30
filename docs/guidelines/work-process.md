@@ -16,7 +16,7 @@ Acceptance criteria written from a one-line problem statement tend to encode a g
 So the criteria are written once the grilling has settled the design, not when the issue is filed.
 
 - **At filing**, **Done when** reads `TBD (after grilling)` and the issue gets the `needs-ac` label.
-  When the requester supplies acceptance criteria themselves, the issue carries them, reformatted as in [acceptance-criteria.md](acceptance-criteria.md), and no label.
+  When criteria already exist at filing — the requester supplied them, or a grilling before filing wrote them — the issue carries them, reformatted as in [acceptance-criteria.md](acceptance-criteria.md), and no label.
 - **The grilling** ends by writing the criteria into **Done when** and removing `needs-ac`.
 - **Criteria describe an observable outcome**, never the implementation that produces it.
 - **An issue with `needs-ac`** does not move to In Progress and does not go to the QA agent until the label is removed.
