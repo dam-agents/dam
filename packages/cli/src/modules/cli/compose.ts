@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { buildConfigSetCommand } from "./commands/config-set.js";
 import { buildPingCommand } from "./commands/ping.js";
+import { buildUpdateCommand } from "./commands/update.js";
 import { buildVersionCommand } from "./commands/version.js";
 import { defaultConfigPath } from "./infrastructure/config-path.js";
 import { createTomlConfigStore } from "./infrastructure/config-store.js";
@@ -9,6 +10,7 @@ import {
   createHttpNpmLatestProbe,
   DEFAULT_NPM_REGISTRY,
 } from "./infrastructure/npm-latest-probe.js";
+import { createNpmInstaller } from "./infrastructure/npm-installer.js";
 import { createHttpVersionProbe } from "./infrastructure/version-probe.js";
 import {
   createCompatService,
@@ -18,6 +20,7 @@ import {
   createConfigService,
   type ConfigService,
 } from "./services/config-service.js";
+import { createUpdateService } from "./services/update-service.js";
 
 declare const __CLI_VERSION__: string | undefined;
 
@@ -42,6 +45,9 @@ export function composeCliModule(): CliModule {
     probe: createHttpVersionProbe(),
     localCliVersion: cliVersion,
   });
+  const npmLatest = createHttpNpmLatestProbe({
+    registry: envReader.get(NPM_REGISTRY_ENV_VAR) ?? DEFAULT_NPM_REGISTRY,
+  });
 
   return {
     commands: [
@@ -49,10 +55,15 @@ export function composeCliModule(): CliModule {
       buildPingCommand({ service: compatService, configService }),
       buildVersionCommand({
         service: compatService,
-        npm: createHttpNpmLatestProbe({
-          registry: envReader.get(NPM_REGISTRY_ENV_VAR) ?? DEFAULT_NPM_REGISTRY,
-        }),
+        npm: npmLatest,
         localCliVersion: cliVersion,
+      }),
+      buildUpdateCommand({
+        service: createUpdateService({
+          latest: npmLatest,
+          installer: createNpmInstaller(),
+          localCliVersion: cliVersion,
+        }),
       }),
     ],
     services: { compatService, configService },
