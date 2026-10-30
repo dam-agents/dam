@@ -9,6 +9,7 @@ set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 export E2E_MOCK_ONLY=1
+INSTALLED_FROM="$(e2e_checkout_commit)"
 
 INSTALL_ARGS=(
   --lima-template=etc/lima/k3s-test.yaml
@@ -77,3 +78,9 @@ mise run cluster:install -- "${INSTALL_ARGS[@]}"
 # Readiness gate — shared task, see e2e:gate.
 mise run e2e:gate
 e2e_mark "gate passed"
+# In an Environment, the commit now installed there, so the next e2e:loop of
+# the same clean commit skips the install: the one the install started from,
+# when the tree was clean then and still is on that commit now.
+if [ "$CLUSTER_TARGET" = environment ] && [ -n "$INSTALLED_FROM" ] && [ "$(e2e_checkout_commit)" = "$INSTALLED_FROM" ]; then
+  printf '%s\n' "$INSTALLED_FROM" > "$ENV_E2E_INSTALLED"
+fi

@@ -8,6 +8,9 @@ eval "components=($usage_component)"
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 cluster_require_install || exit 1
+# A rebuild changes what the Environment runs, so its install is no longer the
+# commit the e2e lane recorded (ENV_E2E_INSTALLED).
+[ "$CLUSTER_TARGET" != environment ] || rm -f "$ENV_E2E_INSTALLED"
 
 # The agents the cluster has deployed, from its ConfigMaps: their entries in
 # the harness-templates ConfigMap (one CM keyed by "<name>.yaml"), plus the

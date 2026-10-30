@@ -158,7 +158,7 @@ The cluster tasks load the tools' PATH from the image's mise themselves; in a sh
 
 - `mise run e2e` — full from-scratch run: nuke the test VM, install a fresh cluster, run specs, tear down (the CI path)
 - `mise run e2e:loop` — fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs.
-  Options: `--headed --full --rebuild=controller,api-server,ui,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking)
+  Options: `--headed --full --rebuild=controller,api-server,ui,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking); in an Environment also `--no-install`
 - `mise run e2e:reset` — data wipe only: drop+recreate the platform DB, delete agents (CMs/sts/pods/PVCs) and VM runners, clear stored Playwright auth.
   Leaves the cluster running
 
@@ -176,9 +176,13 @@ Iterate with `e2e:loop`; use `e2e` after helm/realm/infra changes.
 It is the command the agent kit's `verify_environment` names: `mise run e2e:loop -- --environment {environment}`.
 The Environment is one made as in [In an Environment](#in-an-environment), on an install whose agents nest, since every agent the suite creates is a machine.
 
-1. **Install what changed.** `e2e:install -- --environment <name>` runs every time, through `cluster:install -- --environment <name> --backchannel`, with the lane's values (mock agents, the e2e control API, one vCPU and 1Gi a boot) and the default harness Template.
+1. **Install what changed.** `e2e:install -- --environment <name>` runs through `cluster:install -- --environment <name> --backchannel`, with the lane's values (mock agents, the e2e control API, one vCPU and 1Gi a boot) and the default harness Template.
    An image the registry has for this checkout's source is pulled by the node; one it lacks is built here and streamed in, unless the node already holds that build.
    Only a deployment whose image changed is restarted, and only an agent image that changed is staged again, from the node's own copy, so a second run that changed nothing changes nothing.
+   It still takes minutes, so `e2e:loop` skips it when the Environment's last lane install that passed its gate was of the checkout's commit from a clean tree: `~/.cache/platform-cluster/env-<name>/e2e-installed` records that commit, and `cluster:install` and `cluster:build` there clear it.
+   A new commit or any local change, tracked or not, installs as before.
+   `--no-install` skips it whatever the checkout changed, for a rerun that changed only specs.
+   A skipped install prints one line that says so and which commit the Environment runs.
 2. **Reset and gate**, as on the test cluster: `e2e:reset` and `e2e:gate` take `--environment` too.
 3. **Run the suite on the backchannel.** The lane's backchannel answers at `localhost:<port>` and `keycloak.localhost:<port>`, on a port of the Environment's own from 6560–6599, so the local lane's 6555 and several Environments run side by side on one agent.
    The port is the one the install already answers on, else the first one no other of this agent's Environments holds; the agent's `~/.cache/platform-cluster/env-<name>/e2e-port` records it.
@@ -186,6 +190,18 @@ The Environment is one made as in [In an Environment](#in-an-environment), on an
    The specs run here, and the browser they drive runs in the Environment: Playwright's browser server, from this checkout's `playwright-core`, on the Environment's loopback, reached over its own forward through `PW_TEST_CONNECT_WS_ENDPOINT`, so a busy agent slows the specs' own calls but not the pages they load.
    The browser is the image's when it is this Playwright's revision, else one installed into the Environment's home once; traces, videos and the report come back over the connection into the checkout, as a local run leaves them, and `--headed` is refused, since there is no window to open there.
    Each lane has its own Keycloak login lock port, so two suites never wait on each other's logins.
+
+**Debugging one failure** in an Environment:
+
+1. Install once: a plain `e2e:loop -- --environment <name>`, or `e2e:install -- --environment <name>`.
+2. Iterate on the one spec with `e2e:loop -- --environment <name> --test <spec>`, and add `--no-install` once nothing outside `packages/e2e/` changed, so a rerun goes straight to the reset.
+   A change to the app, a chart or an image needs the install again: drop `--no-install` for that run.
+   Or reproduce it by hand in the Environment (`cluster:kubectl`, `cluster:shell`, `ssh env-<name>`) and read the logs with timestamps (`kubectl logs --timestamps`), which says more per minute than a rerun.
+   `--test` on a smoke spec still runs its whole dependency chain (the comment at the top of `e2e:loop` says why); only a full-only spec, with `--full`, runs alone.
+3. Run the full suite once, at the end, on the final commit with a clean tree: that run is the one a pull request reports.
+
+When a setup step fails — the install, `e2e:reset`, `e2e:gate`, image staging — stop and fix its cause before the next run.
+Never rerun the same failing setup unchanged: it fails the same way and costs a whole cycle before a single spec runs.
 
 Two Environments share nothing but this agent, which builds their changed images and runs their specs: each has its own k3s, install, browser, data and port.
 Two runs on one Environment at once are not supported: they would reset each other's data.
@@ -196,7 +212,8 @@ What differs from the local lane:
 - **No mesh**: the Environment's kernel cannot run ambient, so no AuthorizationPolicy is enforced there, and the run says nothing about isolation; CI's lanes still cover it.
 - **`mise run e2e` refuses `--environment`**: it deletes its cluster before and after the suite, and an Environment's install goes with the Environment.
   For a fresh Environment, delete it and create it again.
-- **`--rebuild`** does nothing there: the install already took every change of the checkout.
+- **`--rebuild`** does nothing there: the install already took every change of the checkout, or `--no-install` asked for none.
+- **`--no-install`** is for an Environment only: on the test cluster `e2e:loop` never reinstalls a warm cluster anyway, and refuses the flag.
 - **No spec is skipped there by design**: the specs that reach into the cluster or a runner (`19-agent-machine`, `22-harness-tools`, `27-vm-boot-matrix`, `28-runner-release`, `29-vm-storage-trim`) reach the Environment's own through its API.
   `28-runner-release` derives its second runner release from the registry's runner image the Environment pulled, or from the one built here, and streams it in.
 
