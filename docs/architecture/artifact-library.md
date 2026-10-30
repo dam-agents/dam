@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-29
+Last verified: 2026-10-30
 
 ## Overview
 
@@ -50,11 +50,16 @@ The call names an artifact, never an Agent: the api-server reads the publishing 
 It serves only artifacts that are owned by the caller, HTML, interactive and not public, whatever the feature flag says.
 Any HTTP status the server returns is a normal answer; a typed failure reason reports only what the platform could not deliver, such as nothing listening on the port, a timeout, a body over the size cap or too many requests in flight from one frame.
 The bridge also rejects any request the host has not answered within three minutes, longer than a wake plus the relay timeout, so every call settles even when the host drops it.
-Bodies are text only and capped both ways, and only the content type crosses in either direction.
+Bodies are text only and capped both ways, and only the content type crosses in either direction, plus the caller headers below.
 The Agent starts and keeps its server alive itself; the platform never starts, supervises or restarts it, so after hibernation the page reports nothing listening until the Agent starts it again.
+Every relayed request names **who is calling**, in headers agent-runtime sets on the loopback request and the page cannot: `x-platform-caller-role` (`owner` or `viewer`), `x-platform-caller-sub` (the person's identity provider subject, which the share host's own client shares with the app because both sit in one realm) and, when the identity provider verified it and it is plain ASCII (a header value), `x-platform-caller-email`, trimmed and lowercased.
+The owner's own calls are `owner`; on a share page the owner, recognised by sub as the share host lets them in, is `owner` and everyone else `viewer`.
+The identity tells the Agent's server who to serve, so it can keep each person's data apart; it grants nothing, since every call still runs under the owner's grant.
+The page gets the same values from the bridge's `whoami`, answered by the host without reaching the Agent: for display only, never proof to send back.
+An Agent Editor gets no role of its own, because the in-app bridge reaches only the caller's own artifacts.
 The contract is in [`packages/api-server-api/`](../../packages/api-server-api/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 
-The renderer injects a platform-owned bridge (`sendPrompt` and `request`) without changing the stored HTML.
+The renderer injects a platform-owned bridge (`sendPrompt`, `request` and `whoami`) without changing the stored HTML.
 It sends requests to the host over `window.postMessage`; the in-app sandbox retains an opaque origin and receives no app credentials.
 The host validates both the message payload and the sending window against its preview frame: the injected API is an authoring convenience, not an authorization gate.
 The page still never holds a credential for either call.
@@ -66,7 +71,7 @@ The same preview on a page outside that chat and historical versions cannot send
 There is no permanent Session binding: the currently open conversation is the destination.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
 The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
-The dialog warns the owner there that viewers can read and change the Agent's data and send it prompts, under the owner's Agent.
+The dialog warns the owner there that viewers can read and change the Agent's data and send it prompts, under the owner's Agent, and that the Agent sees their email.
 
 ### Viewers of a shared page
 
@@ -84,7 +89,7 @@ A page that relies on its own browser storage loses it there, as in the in-app p
 Each call is checked again from the start: the viewer's share session and the viewer list, then that the artifact is still restricted, interactive and published by an Agent, and that its owner has the interactive-artifacts feature on.
 A page the owner makes private or plain, a viewer the owner removes, and turning the feature off all stop the next call.
 
-- **A request** wakes the Agent and goes to its Artifact API server, with the same limits and failure reasons as the owner's.
+- **A request** wakes the Agent and goes to its Artifact API server, with the same limits and failure reasons as the owner's, naming the viewer in the caller headers.
 - **A prompt** starts or continues the viewer's own Session on the Agent, one per viewer and artifact, titled with the viewer's email and the artifact's title, so the owner sees who asked for what.
   The prompt names the viewer and the page, and tells the Agent the viewer sees only the page, not its reply.
   The viewer gets an answer once the Agent is awake, without waiting for the turn, and the page shows a short notice.

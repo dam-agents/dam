@@ -1,4 +1,7 @@
-import { artifactApiRequestInputSchema } from "agent-runtime-api";
+import {
+  artifactApiRequestInputSchema,
+  type ArtifactApiCaller,
+} from "agent-runtime-api";
 import { z } from "zod";
 
 import type { ArtifactCallAgentApiResult } from "./types.js";
@@ -28,3 +31,16 @@ export type ArtifactResponseMessage = {
   type: typeof ARTIFACT_RESPONSE_TYPE;
   id: string;
 } & ArtifactCallAgentApiResult;
+
+export const ARTIFACT_WHOAMI_TYPE = "artifact.whoami";
+
+export const artifactWhoamiMessageSchema = z.object({
+  type: z.literal(ARTIFACT_WHOAMI_TYPE),
+  id: z.string().min(1).max(64),
+});
+
+export type ArtifactWhoamiResponseMessage = {
+  type: typeof ARTIFACT_RESPONSE_TYPE;
+  id: string;
+  ok: true;
+} & ArtifactApiCaller;

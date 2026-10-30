@@ -442,7 +442,10 @@ export {
   ARTIFACT_REQUEST_TIMEOUT_MS,
   artifactRequestEnvelopeSchema,
   artifactRequestMessageSchema,
+  ARTIFACT_WHOAMI_TYPE,
+  artifactWhoamiMessageSchema,
   type ArtifactResponseMessage,
+  type ArtifactWhoamiResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
   artifactKindSchema,

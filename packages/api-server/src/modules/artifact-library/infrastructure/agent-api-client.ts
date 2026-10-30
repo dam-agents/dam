@@ -1,7 +1,7 @@
 import { TRPCClientError } from "@trpc/client";
 import {
   ARTIFACT_API_TIMEOUT_MS,
-  type ArtifactApiRequestInput,
+  type ArtifactApiRelayInput,
 } from "agent-runtime-api";
 import type { ArtifactCallAgentApiResult } from "api-server-api";
 
@@ -14,7 +14,7 @@ const REQUEST_TIMEOUT_MS =
 export interface AgentApiClient {
   request(
     agentId: string,
-    input: ArtifactApiRequestInput,
+    input: ArtifactApiRelayInput,
   ): Promise<ArtifactCallAgentApiResult>;
 }
 

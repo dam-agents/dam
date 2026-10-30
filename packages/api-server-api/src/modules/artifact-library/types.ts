@@ -155,7 +155,7 @@ export interface ArtifactLibraryService {
   folderShareUrl(id: string): Promise<string | null>;
   callAgentApi(
     input: ArtifactCallAgentApiInput,
-    caller: { agentIds: readonly string[] | "*" },
+    caller: { agentIds: readonly string[] | "*"; email: string | null },
   ): Promise<ArtifactCallAgentApiResult>;
 }
 

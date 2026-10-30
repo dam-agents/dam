@@ -128,7 +128,8 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 >
                   People you invite use this page as you do: it can read and
                   change your agent&apos;s data, and its buttons send your agent
-                  prompts. Your agent acts on them under your account.
+                  prompts. Your agent acts on them under your account and sees
+                  their email.
                 </Callout>
               )}
               {hasPendingViewer && (
