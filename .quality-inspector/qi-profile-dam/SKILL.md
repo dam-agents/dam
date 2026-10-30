@@ -98,6 +98,8 @@ Builds published before these accounts were added have only `qa-owner`; there an
   With `false`, an agent is created, shown, shared and configured as usual, but none of its sessions starts: DAM reports that it "can't start" because the owner's VM runner cannot be scheduled.
   That message is this limit, not a product failure: an AC that needs an agent to start, reply or run a task (the Mock agent included) is `testable: no — no VM agents`; one that only checks what the UI offers or records stays testable.
   With `true`, that message, or an agent that never reaches running, is a finding like any other.
+- In a platform Environment (`env.sh where` says `environment`) the install is the same, at the same `localhost` address for the tests.
+  A build older than `0.0.0-main.9300` or `0.2.24` gets no public addresses there, so a kept Environment of such a build is no use to a person: release it (`env.sh release <label>`) instead of keeping it, and say so in the report.
 - No email, no SSO federation, no real billing.
 
 ## Tested elsewhere

@@ -13,6 +13,13 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
   Its image comes from `ghcr.io`, which `egress` names; the layers come from `pkg-containers.githubusercontent.com`, a GitHub host a profile may not name, which the `trusted` preset allows.
 - The **Mock** harness template (`mock_image`) is on by default: the scripted e2e mock agent, pinned to the source sha it was built from (`quay.io/dam-agents/mock` has no release tags).
   It carries the agent runtime of that sha, so bump it when a chart change needs a newer runtime: `mise run image:resolve -- source-sha mock` on main gives the tag.
+- `environment` — the platform Environment the inspector may run the nested install in (quality-inspector 3.45.0 or later; its `nested_target`).
+  Its four endpoints `app`, `keycloak`, `share` and `content` share port 4400, where the engine's host-name bridge (`environment_bridge`, the chart's own Envoy image) listens and passes requests to the ingress on 4444.
+  The `@environment` overlay gives the chart those public addresses (`urls.*`, `scheme`) and keeps the inspector's own address on the backchannel, `http://localhost:4444`, which the inspector forwards over the Environment Link.
+  Its `tags` limit it to the builds with the backchannel (#5803): `0.0.0-main.9300` and later, `0.2.24` and later.
+  An older build in an Environment installs with the `localhost` addresses only: the tests run, but a person cannot sign in at the Environment's address.
+  `account: owner` — a person who opens a kept Environment signs in as the owner test account (`qa-owner`); its password stays in the inspector's `work/env/credentials.env`.
+  No `storage`: the platform's default, because the owner's runner claim holds the inspector's own disk too.
 - The images the chart takes from `mirror.gcr.io` are in `egress`, so the nested product stays inside the inspector's egress, which is deny-by-default on GitHub.
 - The cert-manager and Gateway API manifests are `github.com` release files the inspector's kit opens (quality-inspector 3.1.0 or later); the `trusted` preset allows the hosts GitHub redirects them to, so `egress` names neither.
 - `no-mesh-marker.yaml` — the `kube-system/platform-local-no-mesh` ConfigMap that lets the chart take `istio.enforce=false`.
