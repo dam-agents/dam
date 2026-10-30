@@ -6,6 +6,11 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
 
 - `profile.json` — the chart, its channels (`main` = `0.0.0-main.<n>`, `release` = `X.Y.Z`), the prerequisites (cert-manager, Gateway API CRDs, Istio CRDs without the mesh dataplane), the Helm values for a QA install with four generated test accounts (owner, member, inspector, outsider — `keycloak.testUser` and `keycloak.extraTestUsers`), egress, the injection canary's object (one Mock agent, its text in the name), requirements, config keys.
 - `virtualization.runner.resources.limits.memory` and `virtualization.imageCache.hostPath` are the VM runner values the chart refuses to render without.
+- `kvm-device-plugin.yaml` — a copy of `helm/extra/kvm-device-plugin.yaml` (keep its digest in step), applied as a `file` prerequisite: it hands the VM's `/dev/kvm` to the VM runner as `squat.ai/kvm`, which `virtualization.runner.devices` names.
+  The install does not wait for it: an image it cannot pull stops only the agents, not the install.
+  `engine_config.kvm` opens the device to the runner's user namespace and moves the kubelet's root off the VM's overlay root, and `host_dirs` does the same for the node directories the chart hands the runner (quality-inspector 3.44.0 or later; an older engine warns on the two keys and the runner pod does not start).
+  Agents start only where the platform that hosts the inspector gives its VM nested virtualization (DAM's chart does by default).
+  Its image comes from `ghcr.io`, which `egress` names; the layers come from `pkg-containers.githubusercontent.com`, a GitHub host a profile may not name, which the `trusted` preset allows.
 - The **Mock** harness template (`mock_image`) is on by default: the scripted e2e mock agent, pinned to the source sha it was built from (`quay.io/dam-agents/mock` has no release tags).
   It carries the agent runtime of that sha, so bump it when a chart change needs a newer runtime: `mise run image:resolve -- source-sha mock` on main gives the tag.
 - The images the chart takes from `mirror.gcr.io` are in `egress`, so the nested product stays inside the inspector's egress, which is deny-by-default on GitHub.
