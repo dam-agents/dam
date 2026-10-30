@@ -703,7 +703,7 @@ test("launches the claim filler and takes it down as the runner would", () => {
       0,
     );
     groups.push(readFileSync(`${filler}.pid`, "utf8").trim().split(" ")[1]);
-    // A fill that `rm -f` cannot remove whoever runs it, root included, as the runner's teardown runs: a directory with content. A claim directory without write permission would block only a user that is not root.
+    // TEST_SCENARIO: a fill that `rm -f` cannot remove whoever runs it, root included, as the runner's teardown runs: a directory with content. A claim directory without write permission would block only a user that is not root.
     mkdirSync(claim);
     writeFileSync(join(claim, "content"), "content");
     const blocked = run(locally(stopFillerAndClear()));
@@ -724,7 +724,7 @@ test("launches the claim filler and takes it down as the runner would", () => {
     ).toBe(0);
     expect(existsSync(claim), "the retried teardown left the fill").toBe(false);
 
-    // A record that nobody can write, root included: its directory is a plain file, so nothing can be created under it.
+    // TEST_SCENARIO: a record that nobody can write, root included: its directory is a plain file, so nothing can be created under it.
     const recordDir = join(dir, "record-dir");
     writeFileSync(recordDir, "");
     const refused = run(
