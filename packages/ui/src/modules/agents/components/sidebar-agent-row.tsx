@@ -30,9 +30,6 @@ interface Props {
   children?: ReactNode;
 }
 
-// Where the row makes room for its actions, and where the session filter sits
-// beside them: always on a selected row, and on any other row while it is
-// revealed — hovered, focused or with a menu open, as HOVER_REVEAL.
 const ACTIONS_LAYOUT = {
   3: {
     padding: {
