@@ -36,6 +36,8 @@ import {
 } from "../lib/undelivered-store.js";
 
 const TOOL_ACTIVITY_EXPANDED_STORAGE_KEY = "platform-tool-activity-expanded";
+const THINKING_EXPANDED_WHILE_STREAMING_STORAGE_KEY =
+  "platform-thinking-expanded-while-streaming";
 
 export type RewriteMode = "rewind" | "fork";
 
@@ -102,6 +104,7 @@ export interface SessionsSlice {
   chatRequest: ChatRequest | null;
   newSessionAgent: string | null;
   toolActivityExpanded: boolean;
+  thinkingExpandedWhileStreaming: boolean;
 
   setSessionId: (id: string | null) => void;
   setPendingResumeSessionId: (
@@ -113,6 +116,7 @@ export interface SessionsSlice {
   requestChat: (request: ChatRequest | null) => void;
   markNewSession: (agentId: string | null) => void;
   setToolActivityExpanded: (expanded: boolean) => void;
+  setThinkingExpandedWhileStreaming: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
   setLastOutputAt: (at: string | null) => void;
@@ -239,6 +243,10 @@ export const createSessionsSlice: StateCreator<
       TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
       false,
     ),
+    thinkingExpandedWhileStreaming: readPersistedFlag(
+      THINKING_EXPANDED_WHILE_STREAMING_STORAGE_KEY,
+      true,
+    ),
 
     setSessionId: (id) => set({ sessionId: id }),
     setPendingResumeSessionId: (id, mode = null) =>
@@ -254,6 +262,13 @@ export const createSessionsSlice: StateCreator<
     setToolActivityExpanded: (expanded) => {
       writePersistedFlag(TOOL_ACTIVITY_EXPANDED_STORAGE_KEY, expanded);
       set({ toolActivityExpanded: expanded });
+    },
+    setThinkingExpandedWhileStreaming: (expanded) => {
+      writePersistedFlag(
+        THINKING_EXPANDED_WHILE_STREAMING_STORAGE_KEY,
+        expanded,
+      );
+      set({ thinkingExpandedWhileStreaming: expanded });
     },
     setMessages: (updater) =>
       set((s) => ({

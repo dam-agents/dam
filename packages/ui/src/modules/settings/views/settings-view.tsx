@@ -22,6 +22,7 @@ import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.j
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
 import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
 import { AboutTab } from "../components/about-tab.js";
+import { ThinkingSetting } from "../components/thinking-setting.js";
 import { ToolActivitySetting } from "../components/tool-activity-setting.js";
 import { useSettingsTabs } from "../hooks/use-settings-tabs.js";
 
@@ -128,6 +129,7 @@ export function SettingsView() {
             </div>
 
             <ToolActivitySetting />
+            <ThinkingSetting />
           </div>
         )}
 
