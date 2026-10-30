@@ -61,6 +61,9 @@ Epics have no parent.
 A feature, a bug, and a task that changes what a user sees state their acceptance criteria in **Done when**, one `### AC-<k>` block per criterion, in the format of [acceptance-criteria.md](acceptance-criteria.md).
 A tester — a person or the QA agent — checks each one through the web UI, Slack or GitHub without reading the code, so write only what a user can see.
 
+They are written after the grilling, not when the issue is filed (see [work-process.md](work-process.md)).
+A new issue's **Done when** reads `TBD (after grilling)` and the issue carries the `needs-ac` label, unless the requester supplied the criteria themselves.
+
 ## Attribution
 
 GitHub credits the account that files the issue.
@@ -201,7 +204,7 @@ A feature is the type most likely to name a solution in its title; write the tit
 
 ## Done when
 
-<The acceptance criteria — one block per outcome a user can see; see [acceptance-criteria.md](acceptance-criteria.md).>
+<At filing: `TBD (after grilling)`, with the `needs-ac` label. After grilling: the acceptance criteria — one block per outcome a user can see; see [acceptance-criteria.md](acceptance-criteria.md).>
 
 ### AC-1 — <short name of the outcome>
 
@@ -261,7 +264,7 @@ It's the one type where naming engineering work is expected — keep it as plain
 
 ## Done when
 
-<The observable end state — how we know it's finished. When a user can see the change, write acceptance criteria instead, as in the Feature template.>
+<The observable end state — how we know it's finished. When a user can see the change, it gets acceptance criteria instead, as in the Feature template: `TBD (after grilling)` and the `needs-ac` label at filing.>
 
 ## Follow up
 
@@ -307,7 +310,7 @@ Reproduction steps should be minimal and numbered.
 
 ## Done when
 
-<The expected behavior as acceptance criteria, starting from the reproduction steps; see [acceptance-criteria.md](acceptance-criteria.md).>
+<At filing: `TBD (after grilling)`, with the `needs-ac` label. After grilling: the expected behavior as acceptance criteria, starting from the reproduction steps; see [acceptance-criteria.md](acceptance-criteria.md).>
 
 ### AC-1 — <short name of the outcome>
 

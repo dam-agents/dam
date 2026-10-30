@@ -27,6 +27,10 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
    **Keep the research out of the issue**: no file paths, function names, line numbers, data structures or architectural detail.
    A sentence that only makes sense to someone who has read the code gets rewritten.
 
+   **Leave the acceptance criteria to the grilling.** Feature, bug, and task bodies whose template asks for criteria get `TBD (after grilling)` as the whole `## Done when` section, in place of `### AC-<k>` blocks, and the issue is filed with the `needs-ac` label (see [work-process.md](../../../docs/guidelines/work-process.md)).
+   Never invent criteria from the request: they would encode a guessed solution.
+   When the requester supplies criteria themselves, reformat them to [acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md) without adding to them, and leave the label off.
+
 3. **Check for duplicates** before drafting, or at the latest before filing, with several keyword variations from the request:
 
    ```sh
@@ -73,7 +77,7 @@ Use `gh issue create`, never the GitHub MCP tools (`mcp__github__*`):
 - `--repo owner/repo`: from the git remote or earlier context; ask if ambiguous
 - `--title`: exactly as approved
 - `--body`: exactly as approved, Filed by footer included, **Epic** line removed (it's draft metadata, applied as the parent below); pass via HEREDOC so markdown survives
-- `--label`: only labels the user specified
+- `--label`: `needs-ac` when **Done when** reads `TBD (after grilling)`, plus only labels the user specified
 
 ```sh
 gh issue create --repo owner/repo --title "Short declarative title" --body "$(cat <<'EOF'
