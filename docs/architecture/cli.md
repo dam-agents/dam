@@ -250,8 +250,11 @@ On exit, on a drop that does not reconnect, and when it gives up or the user sto
 `dam session list` reads the same agent-owned session list.
 `dam session show` reads one Session: it lists the sessions first, so an id the agent does not have is refused with a pointer to `dam session list`, then loads it over the same ACP relay the UI uses and prints its Session Transcript as messages and tool calls.
 A tool call's duration is the time between the stamps the runtime puts on the frame that started it and the frame that finished it, since no harness reports one.
-The load answer says whether a turn is running and when it started, for any Session, so the CLI tells how long a turn has been going even where the run fields of the session list stay empty: those count unattended runs only.
-`--follow` keeps the connection open and prints each new step and the turn's end as they come.
+A call its turn left open, by a stop or an error, is closed when the turn ends, or by the load when no turn runs: it gets an end time and no duration.
+The load answer says whether a turn is running, and the runtime adds when it started, for any Session, so the CLI tells how long a turn has been going even where the run fields of the session list stay empty: those count unattended runs only.
+A runtime that does not send the start leaves it unknown, and the CLI says so.
+`--follow` keeps the connection open and prints each new step, the turn's start and the turn's end as they come.
+It does not reconnect, unlike an attach: a lost connection ends it with exit code 1 and a hint to run it again.
 
 ## Headless runs
 
