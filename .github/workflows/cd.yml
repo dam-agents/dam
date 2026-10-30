@@ -19,7 +19,7 @@ on:
   # The merge queue's gate: a merge group verifies like a PR and publishes
   # nothing a consumer reads, only cache tags for later groups (build.yml's
   # build-images). The push to main that follows only builds and publishes;
-  # see e2e. Mergify tests its batches as draft PRs from
+  # see e2e. Mergify tests queued PRs as draft queue PRs from
   # mergify/merge-queue/* branches, so a pull_request run on such a branch is
   # a merge group too (`queue` below). merge_group stays while GitHub's queue
   # is the rollback.
@@ -164,7 +164,7 @@ jobs:
 
   verify-queue:
     name: verify-queue
-    # Mergify's merge condition, on a batch PR only. A check the PR never
+    # Mergify's merge condition, on a queue PR only. A check the PR never
     # passes keeps the queue two-step: Mergify's Direct Merge would otherwise
     # merge a PR that is up to date with main on its PR-scope `verify` alone,
     # without the full e2e.

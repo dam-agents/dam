@@ -27,7 +27,7 @@ on:
         required: true
       queue:
         description: >-
-          A merge queue run, a merge_group event or a Mergify batch PR: verify
+          A merge queue run, a merge_group event or a Mergify queue PR: verify
           like a merge group (EVENT=merge_group for image:resolve and the :mq
           cache tags).
         type: boolean
