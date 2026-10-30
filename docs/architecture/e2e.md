@@ -73,7 +73,8 @@ It tests each queued pull request on top of `main` and the pull requests queued 
 A warm cluster shares its machine's CPUs with the browser, so `e2e:loop` sets `E2E_TIMEOUT_SCALE` to 3 and the config multiplies its default test and expect timeouts by it; a spec that sets its own timeout keeps it, and CI keeps the defaults.
 
 An agent runs the suite for its checkout in an [Environment](environments.md) of its own with `e2e:loop -- --environment <name>`, so its parallel runs do not take turns on one test cluster.
-The install there takes only what the checkout changed, and the suite reaches the install's backchannel and its cluster's API over the Environment Link, on a port of that Environment's own, so several Environments and the local test cluster run side by side on one agent.
+The install there takes only what the checkout changed, and is skipped when the Environment already runs the checkout's commit from a clean tree, or when `--no-install` asks; a skipped install says which commit the Environment runs.
+The suite reaches the install's backchannel and its cluster's API over the Environment Link, on a port of that Environment's own, so several Environments and the local test cluster run side by side on one agent.
 The specs run on the agent, and the browser they drive runs in the Environment beside the install, so the pages a spec loads do not wait on the agent's other work.
 An Environment runs no mesh, so a run there says nothing about the mesh's policies; the CI lanes still run them.
 

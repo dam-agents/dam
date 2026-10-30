@@ -430,6 +430,36 @@ e2e_mark() {
   [ -z "${E2E_TIMINGS:-}" ] || printf '%s\t%s\n' "$(date +%s)" "$1" >> "$E2E_TIMINGS"
 }
 
+# e2e_checkout_commit: the commit this checkout is on, when its tree is clean
+# — nothing changed, tracked or not, outside what git ignores. Prints nothing
+# for a dirty tree: what an install of it holds is no commit's.
+e2e_checkout_commit() {
+  [ -z "$(git -C "$MISE_CONFIG_ROOT" status --porcelain 2>/dev/null)" ] || return 0
+  git -C "$MISE_CONFIG_ROOT" rev-parse HEAD 2>/dev/null || true
+}
+
+# e2e_cluster_id: the identity of the cluster kubectl reaches, the UID of its
+# kube-system namespace: a cluster made again, as a recreated Environment's
+# is, has another. Prints nothing when the cluster does not answer.
+e2e_cluster_id() {
+  kubectl get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true
+}
+
+# e2e_install_current <record> <cluster-id>: prints the commit the e2e lane's
+# install that <record> names is of, and succeeds, when it is this checkout's
+# on this cluster: e2e:install recorded it as `<commit> <cluster-id>`, the
+# cluster is still the one it installed into, and the checkout is still on
+# that commit with a clean tree. A missing record, another cluster, another
+# commit or a dirty tree is not current, and the next run installs as it
+# always did.
+e2e_install_current() {
+  local recorded head
+  recorded="$(cat "$1" 2>/dev/null)" || return 1
+  head="$(e2e_checkout_commit)"
+  [ -n "$head" ] && [ -n "$2" ] && [ "$recorded" = "$head $2" ] || return 1
+  printf '%s' "$head"
+}
+
 # The port the e2e lane answers on from this agent: the test cluster's, which
 # e2e:install sets. An Environment takes one of its own (env_e2e_port), so a
 # local lane and several Environments run side by side on one agent.

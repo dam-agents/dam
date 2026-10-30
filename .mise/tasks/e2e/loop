@@ -7,6 +7,7 @@
 #USAGE flag "--rebuild <components>" help="Comma-separated cluster:build components (controller, api-server, ui, keycloak, agents); asked for when omitted on a terminal"
 #USAGE flag "--test <filter>" help="Playwright file/title filter, e.g. prompt-delivery"
 #USAGE flag "--environment <name>" help="Run in this agent's Environment of that name: install what the checkout changed there, then run the suite over the link"
+#USAGE flag "--no-install" help="With --environment: skip the install, and run on what the Environment already has"
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
@@ -30,9 +31,15 @@ REBUILD="${usage_rebuild:-}"
 
 # 1. Ensure a warm cluster exists. Bootstrap once if it's missing; never try to
 # heal a broken one — fail loud and let the operator decide. In an Environment
-# the install runs every time: it builds and streams in only the images this
-# checkout changed, and restarts only what runs them, so it is what brings the
-# Environment to the checkout, and a run that changed nothing changes nothing.
+# the install brings it to the checkout: it builds and streams in only the
+# images this checkout changed, and restarts only what runs them. It still
+# takes minutes, so it is skipped when the Environment's last install that
+# passed its gate was of this same commit from a clean tree, into this same
+# cluster rather than an earlier Environment of that name, or with
+# --no-install; either way one line says what the Environment runs, so a stale
+# one is never silent.
+[ "${usage_no_install:-}" != true ] || [ "$CLUSTER_TARGET" = environment ] ||
+  { echo "FATAL: --no-install is for an Environment (--environment <name>); a warm test cluster is never reinstalled" >&2; exit 1; }
 NEEDS_BOOTSTRAP=false
 if [ "$CLUSTER_TARGET" = environment ]; then
   NEEDS_BOOTSTRAP=true
@@ -42,8 +49,15 @@ elif ! kubectl get deployment platform-apiserver >/dev/null 2>&1; then
   NEEDS_BOOTSTRAP=true
 fi
 if [ "$CLUSTER_TARGET" = environment ]; then
-  echo "Installing what this checkout changed into Environment $CLUSTER_ENVIRONMENT..."
-  mise run e2e:install
+  INSTALLED="$(cut -d' ' -f1 "$ENV_E2E_INSTALLED" 2>/dev/null || true)"
+  if [ "${usage_no_install:-}" = true ]; then
+    echo "Skipping the install (--no-install): Environment $CLUSTER_ENVIRONMENT runs ${INSTALLED:-an install of no recorded commit}, whatever this checkout changed since."
+  elif CURRENT="$(e2e_install_current "$ENV_E2E_INSTALLED" "$(e2e_cluster_id)")"; then
+    echo "Skipping the install: Environment $CLUSTER_ENVIRONMENT already runs $CURRENT, this checkout's commit, with a clean tree."
+  else
+    echo "Installing what this checkout changed into Environment $CLUSTER_ENVIRONMENT..."
+    mise run e2e:install
+  fi
 elif [ "$NEEDS_BOOTSTRAP" = true ]; then
   echo "No warm e2e cluster found — bootstrapping once (slow, ~minutes)..."
   mise run e2e:install

@@ -45,6 +45,9 @@
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 e2e_mark "install started"
+# Whatever this install leaves in an Environment, it is no longer the e2e
+# lane's recorded one: e2e:install records it again once its gate passes.
+[ "$CLUSTER_TARGET" != environment ] || rm -f "$ENV_E2E_INSTALLED"
 
 # --no-mesh is for a developer's own cluster whose kernel cannot run the
 # ambient dataplane: ztunnel and istio-cni write nftables rules that set
