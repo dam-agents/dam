@@ -1,8 +1,9 @@
 import { nextUtcMidnight } from "api-server-api";
-import type { SpendHoldReason } from "../../spend/index.js";
+import type { OwnerToldWork, SpendHoldReason } from "../../spend/index.js";
 
 export type ChannelSpendHold = (
   agentId: string,
+  tellOwner?: OwnerToldWork,
 ) => Promise<SpendHoldReason | null>;
 
 export function spendHoldUserCopy(

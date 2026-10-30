@@ -328,9 +328,12 @@ import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
   listSpendLimitAgentIds,
+  type SpendHoldGate,
 } from "./modules/spend/index.js";
+import type { ChannelSpendHold } from "./modules/channels/infrastructure/spend-hold-copy.js";
 import { composeProviderStatus } from "./modules/provider-status/index.js";
 import { composeOutageAlerts } from "./modules/outage-alerts/index.js";
+import { startSpendAlerts } from "./modules/spend-alerts/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -1578,17 +1581,16 @@ export async function bootstrap() {
   );
 
   const spendQuestions = composeSpendLimitQuestions(db);
-  const spendHold = async ({
+  const spendHold: SpendHoldGate = async ({
     agentId,
     connectionId,
-  }: {
-    agentId: string;
-    connectionId?: string;
+    tellOwner,
   }) => {
     const payer = await payerOf(agentId);
     const hold = await spend.check.holdFor({
       payer,
       ...(connectionId ? { connectionId } : {}),
+      ...(tellOwner ? { tellOwner } : {}),
     });
     if (hold === null) return null;
     await spendQuestions.ask({
@@ -1598,7 +1600,7 @@ export async function bootstrap() {
     });
     return hold.reason;
   };
-  const channelSpendHold = async (agentId: string) => {
+  const channelSpendHold: ChannelSpendHold = async (agentId, tellOwner) => {
     const provider = (
       await firePair(agentId, "channel", {}).catch((err: unknown) => {
         if (isNoDefaultModelError(err)) return undefined;
@@ -1608,6 +1610,7 @@ export async function bootstrap() {
     return spendHold({
       agentId,
       ...(provider ? { connectionId: provider } : {}),
+      ...(tellOwner ? { tellOwner } : {}),
     });
   };
 
@@ -2012,6 +2015,19 @@ export async function bootstrap() {
     delayMs: config.outageAlertDelayMinutes * 60_000,
   });
   const outageAlertsSaga = outageAlerts.startSaga();
+  const spendAlertsConnectionNames = createConnectionNames(db);
+  const spendAlertsSaga = startSpendAlerts({
+    redis: sharedRedis,
+    notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
+    agentName: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent && !agent.disabled ? agent.name : null;
+    },
+    connectionNames: (ownerSub) => spendAlertsConnectionNames.namesOf(ownerSub),
+    sessionCategories: (agentIds, sessionIds) =>
+      sessionDirectory.categorize(agentIds, sessionIds),
+    uiBaseUrl: config.uiBaseUrl,
+  });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
     async (event, input) => {
@@ -2654,6 +2670,7 @@ export async function bootstrap() {
     spend.connectionLimitsSaga.unsubscribe();
     providerStatusSaga.unsubscribe();
     outageAlertsSaga.unsubscribe();
+    spendAlertsSaga.unsubscribe();
     defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();

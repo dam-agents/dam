@@ -260,9 +260,7 @@ export function createApprovalsService(
 
     async denyForever(id) {
       const row = await loadOwned(deps, id);
-      if (row?.type === "spend_limit") {
-        return answerSpendQuestion(deps, row, "deny");
-      }
+      if (row?.type === "spend_limit") refuseSpendDeny();
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") {
         return declineProposal(deps, row);
@@ -279,12 +277,18 @@ export function createApprovalsService(
       return resolveAndDeliverAcpNative(deps, row, "deny");
     },
 
-    dismiss: (id) => dismissOne(deps, id),
+    async dismiss(id) {
+      const row = await loadOwned(deps, id);
+      if (row?.type === "spend_limit") refuseSpendDeny();
+      return dismissOne(deps, row);
+    },
 
     async dismissMany(ids) {
       let applied = 0;
       for (const id of new Set(ids)) {
-        const { outcome } = await dismissOne(deps, id);
+        const row = await loadOwned(deps, id);
+        if (row?.type === "spend_limit") continue;
+        const { outcome } = await dismissOne(deps, row);
         if (outcome === "applied") applied += 1;
       }
       return { applied };
@@ -294,12 +298,8 @@ export function createApprovalsService(
 
 async function dismissOne(
   deps: CreateApprovalsServiceDeps,
-  id: string,
+  row: PendingApprovalRow | null,
 ): Promise<ApprovalActionOutcome> {
-  const row = await loadOwned(deps, id);
-  if (row?.type === "spend_limit") {
-    return answerSpendQuestion(deps, row, "deny");
-  }
   if (!row || row.status !== "pending") return NOT_ACTIONABLE;
   if (row.payload.kind === "egress_proposal") {
     return declineProposal(deps, row);
@@ -325,13 +325,21 @@ async function declineProposal(
     : NOT_ACTIONABLE;
 }
 
+function refuseSpendDeny(): never {
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message:
+      "a spend-limit question cannot be denied: the limit stays reached until you continue it, change it, or the UTC day ends.",
+  });
+}
+
 async function answerSpendQuestion(
   deps: CreateApprovalsServiceDeps,
   row: PendingApprovalRow,
-  verdict: "allow" | "deny",
+  verdict: "allow",
 ): Promise<ApprovalActionOutcome> {
   if (row.status !== "pending") return NOT_ACTIONABLE;
-  if (verdict === "allow" && deps.agentBinding !== "*") {
+  if (deps.agentBinding !== "*") {
     throw new TRPCError({
       code: "FORBIDDEN",
       message:

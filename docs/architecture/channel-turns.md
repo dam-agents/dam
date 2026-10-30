@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-29
+Last verified: 2026-10-30
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -186,6 +186,8 @@ A turn the model refused ends with ACP's `refusal` stop reason rather than an er
 The reply says the model refused the message and links the agent's Providers section, where the owner can switch models.
 On Slack it also advises a new thread: the refused message stays in the thread's session, so asking there again is refused too.
 For the same reason the refused message counts as delivered, and the next turn's catch-up does not hand it to the agent again.
+A turn that a spend limit or the ceiling stops partway fails with the harness's report of the gate's refusal, and the relay counts it as failed with the `spend-limit` or `spend-ceiling` reason.
+Its reply is the notice that a turn the limit holds before it starts gets, with the time the agent answers again ([spend-limits](spend-limits.md#unattended-work)).
 The failure reason still rides the turn event either way.
 
 An abandoned turn is handed to the **recovery watch**, which polls the session's run status for as long as the runtime reports it alive.

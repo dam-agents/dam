@@ -18,6 +18,8 @@ import {
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
+import { spendRefusalIn } from "../../spend/index.js";
+import { spendHoldUserCopy } from "./spend-hold-copy.js";
 
 export type TurnFailure =
   | {
@@ -27,6 +29,8 @@ export type TurnFailure =
         uiBaseUrl: string;
         agentId: string;
         threads: boolean;
+        brandName: string;
+        resetAt: string;
       }) => string;
     }
   | {
@@ -55,6 +59,14 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
         modelRefusedUserCopy(agentPageUrl(uiBaseUrl, agentId, "providers"), {
           threads,
         }),
+    };
+  const spend = spendRefusalIn(errorText(err));
+  if (spend !== null)
+    return {
+      kind: "plain",
+      reason: spend === "ceiling" ? "spend-ceiling" : "spend-limit",
+      copy: ({ brandName, resetAt }) =>
+        spendHoldUserCopy(spend, "This agent", brandName, resetAt),
     };
   if (isAgentStoppedError(err))
     return {

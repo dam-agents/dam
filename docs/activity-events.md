@@ -44,6 +44,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ApprovalRequested` | _elsewhere_ | approvals |
 | `ApprovalResolved` | _elsewhere_ | approvals |
 | `SpendLimitsChanged` | _elsewhere_ | spend |
+| `SpendWorkStopped` | _elsewhere_ | spend |
 | `GatewayCallEnded` | _elsewhere_ | spend |
 | `ProviderStatusEvaluated` | _elsewhere_ | provider-status |
 | `ScheduleCreated` | _elsewhere_ | schedules |

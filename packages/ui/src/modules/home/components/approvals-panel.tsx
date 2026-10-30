@@ -18,6 +18,7 @@ import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useOutageAlerts } from "../hooks/use-outage-alerts.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
+import { ALL_AGENTS_SUBJECT, countsAllAgents } from "../lib/approval-copy.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
 import { FeedDefaultModelCard } from "./feed-default-model-card.js";
@@ -128,13 +129,16 @@ function ApprovalsList({ view }: { view: ApprovalsView }) {
         <div className="flex flex-col gap-1">
           {groups.map((group) => {
             const item = group[0]!;
-            const agent = agentOf(item.agentId);
+            const allAgents = countsAllAgents(item.approval);
+            const agent = allAgents ? undefined : agentOf(item.agentId);
             return (
               <FeedApprovalCard
                 key={groupKeyOf(item)}
                 approval={item.approval}
                 ids={group.map((member) => member.approval.id)}
-                agentName={agent?.name ?? item.agentId}
+                agentName={
+                  allAgents ? ALL_AGENTS_SUBJECT : (agent?.name ?? item.agentId)
+                }
                 avatarName={agent?.name}
                 avatar={agent?.avatar}
                 meta={item.at ? timeAgo(item.at, now) : "—"}
