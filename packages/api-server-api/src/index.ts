@@ -1020,6 +1020,10 @@ export type {
   SlackFireMessageInput,
   SlackOutboundRecord,
 } from "./modules/e2e/types.js";
+export {
+  E2E_CONTROL_CALL_TIMEOUT_MS,
+  E2E_PERFORM_FETCH_MAX_TIMEOUT_MS,
+} from "./modules/e2e/schemas.js";
 
 export type { SecretRef } from "./modules/secret-store/types.js";
 

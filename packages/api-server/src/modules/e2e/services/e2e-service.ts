@@ -1,11 +1,12 @@
 import { createTRPCClient, createWSClient, wsLink } from "@trpc/client";
 import { TRPCError } from "@trpc/server";
-import type {
-  E2eService,
-  SlackFireCommandInput,
-  SlackFireMentionInput,
-  SlackFireMessageInput,
-  SlackOutboundRecord,
+import {
+  E2E_CONTROL_CALL_TIMEOUT_MS,
+  type E2eService,
+  type SlackFireCommandInput,
+  type SlackFireMentionInput,
+  type SlackFireMessageInput,
+  type SlackOutboundRecord,
 } from "api-server-api";
 import type { FakeSlackTokenRotation } from "../../channels/infrastructure/fake-slack-token-rotation.js";
 import type { AppRouter as MockAppRouter } from "mock-agent-api";
@@ -40,8 +41,6 @@ export interface SlackE2eControl {
   resetOutbound(): void;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an env change recycles the harness, and a control frame in flight at that moment is dropped without a reply while the socket stays open. Without a bound the call waits forever, and a test that polls it hangs on that one call. The bound is above the mock's longest call, a 30 s harness spawn.
-const CONTROL_CALL_TIMEOUT_MS = 45_000;
 export function createE2eService(deps: {
   namespace: string;
   slack?: SlackE2eControl;
@@ -87,7 +86,7 @@ export function createE2eService(deps: {
     const client = createTRPCClient<MockAppRouter>({
       links: [wsLink({ client: wsClient })],
     });
-    const timeout = AbortSignal.timeout(CONTROL_CALL_TIMEOUT_MS);
+    const timeout = AbortSignal.timeout(E2E_CONTROL_CALL_TIMEOUT_MS);
     try {
       return await Promise.race([
         fn(client),
