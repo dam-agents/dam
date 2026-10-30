@@ -73,6 +73,9 @@ nodesc="$(each '[.triggers // {} | to_entries[] | select((.value.description // 
 noway="$(each '[.skills // {} | to_entries[] | select((.value.triggers // [] | length) == 0 and (.value.schedule // "") == "") | .key] | join(" ")')"
 [ -z "$noway" ] || fail skill-start "skills with neither triggers nor schedule: $noway" "add the trigger that starts it or its schedule"
 
+rt="$(each '.runtime // {} | keys - ["harness", "providers", "listedAt"] | join(" ")')"
+[ -z "$rt" ] || fail runtime "runtime carries $rt" "keep only harness, providers and listedAt: the card says what the agent can use, never how it is used"
+
 # 2. References: every name in a list points at an entry of this card.
 refs="$(jq -r '
   (.triggers // {}) as $t | (.skills // {}) as $s | (.contracts // {}) as $k | (.surfaces // {}) as $f

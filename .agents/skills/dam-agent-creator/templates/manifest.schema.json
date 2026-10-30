@@ -391,73 +391,43 @@
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Harness and models. Filled by the weekly audit from PLATFORM_HARNESS, get_metrics (models actually used) and list_schedules (explicit schedule overrides). Not part of source.version.",
+      "description": "What the agent can run on, never how it is used. Not part of source.version.",
       "properties": {
-        "note": {
-          "type": "string"
+        "harness": {
+          "type": "string",
+          "description": "PLATFORM_HARNESS, e.g. claude-code."
         },
-        "harnessFamily": {
-          "type": "string"
-        },
-        "observed": {
-          "type": "object",
-          "required": [
-            "window",
-            "at",
-            "models"
-          ],
-          "properties": {
-            "window": {
-              "type": "string"
-            },
-            "at": {
-              "type": "string"
-            },
-            "models": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "model"
-                ],
-                "properties": {
-                  "model": {
-                    "type": "string",
-                    "description": "<provider alias>/<model id>, as get_metrics reports it."
-                  },
-                  "share": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "overrides": {
+        "providers": {
           "type": "array",
           "items": {
             "type": "object",
             "required": [
-              "skill"
+              "alias",
+              "models"
             ],
+            "additionalProperties": false,
             "properties": {
-              "skill": {
-                "type": "string"
+              "alias": {
+                "type": "string",
+                "description": "Provider alias as the Model Router names it."
               },
-              "harness": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+              "name": {
+                "type": "string",
+                "description": "Display name, from list_harnesses."
               },
-              "model": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+              "models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Model ids this harness can use on the provider."
               }
             }
           }
+        },
+        "listedAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },

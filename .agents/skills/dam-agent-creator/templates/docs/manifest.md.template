@@ -23,6 +23,7 @@ Yes → it goes in. No → it stays out.
 - Config key names, file paths under `work/`, session and schedule internals, lock and queue design.
 - People: names, logins of persons, e-mail addresses, Slack or Telegram ids, 1:1 DMs.
 - Private repositories, private pages, credentials, model prices, the operator's notes.
+- How the agent is used: spend, call or session counts, which models actually ran, the settings of single sessions or schedules.
 - Anything a config key marks private. `scripts/manifest-check.sh` scans for these; its `PUBLIC_KEYS` list is the only allowlist.
 
 ## Sections
@@ -41,7 +42,7 @@ Yes → it goes in. No → it stays out.
 | `packages` | Public skills or tools others can install: name, url, use. |
 | `flow` | Ordered steps for an agent that works with this one. |
 | `trust`, `notOffered`, `limits` | Short sentences. |
-| `runtime` | Harness and models: see **Sources**. Not part of `source.version`. |
+| `runtime` | The harness and the providers with the models they offer: see **Sources**. Not part of `source.version`. |
 
 A trigger belongs to exactly one skill: the skill it `starts`.
 When a skill can start another skill, say so in its description.
@@ -55,9 +56,8 @@ Take the content from wherever it is true; the schema fixes only the shape.
 - **The platform**:
   - `describe_channel` (`slack`, `telegram`) → the conversation names for `surfaces.<channel>.channels`. Names only, never ids; leave out 1:1 DMs.
   - The frame of each Slack or Telegram turn says whether the conversation is ambient and whether you are its default agent. Record both per conversation in `work/manifest-channels.json` when a turn arrives (`ambient`, `defaultAgent`, `seenAt`); copy them into the card. Unknown → `null`.
-  - `PLATFORM_HARNESS` → `runtime.harnessFamily`.
-  - `get_metrics` (`days: 7`, per-model split) → `runtime.observed.models`: the models that actually ran, with their share. No tool reports the configured default model; never guess it.
-  - `list_schedules` → `runtime.overrides`: schedules that name their own harness or model, by the skill they run.
+  - `PLATFORM_HARNESS` → `runtime.harness`.
+  - The Model Router's catalog → `runtime.providers`: `curl -fsS -H "X-Platform-Harness: $PLATFORM_HARNESS" "http://127.0.0.1:${PLATFORM_MODEL_ROUTER_PORT:-24180}/v1/models"` lists the models this harness can use as `<provider alias>/<model id>`; group them by alias. `list_harnesses` gives the provider's display name for `name`. A 503 means the catalog has not listed yet: keep the last card's list.
   - The share URLs of the public pages you publish → `surfaces.artifact.pages`.
 - **The operator**, in the direct session: the owner role, and anything the definition cannot know.
 

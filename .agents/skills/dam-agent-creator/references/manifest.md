@@ -11,7 +11,7 @@ The agent-facing procedure is `templates/docs/manifest.md.template`; the shape i
 
 ## Design rules
 
-- **The agent writes it, at runtime.** Neither this skill nor a script generates the card: the agent knows what is true now (its channels, its public pages, the models that ran) and chooses its sources.
+- **The agent writes it, at runtime.** Neither this skill nor a script generates the card: the agent knows what is true now (its channels, its public pages, the providers and models it can use) and chooses its sources.
   The script only checks.
 - **Everything public, nothing private.** An entry belongs in the card when a person or an agent outside the instance sees it, uses it or relies on it.
   Config key names, `work/` paths, people, ids and private repositories stay out; `manifest-check.sh` scans for them with the design's `PUBLIC_KEYS`.
@@ -19,7 +19,8 @@ The agent-facing procedure is `templates/docs/manifest.md.template`; the shape i
 - **Ids are keys.** Triggers, skills and contracts are maps keyed by kebab-case ids; every list refers to them by key, and the check resolves every reference.
 - **Handoffs name roles, never agents.** `code-reviewer`, `implementer`, `qa-tester`, `quality-advisor`, `reporter`.
   A role list that grows is a schema change in this skill.
-- **Freshness has two clocks.** `source.version` is the digest of the interface and changes only when a reader must re-read; `runtime` (harness, observed models, schedule overrides) changes more often and stays outside the digest.
+- **Freshness has two clocks.** `source.version` is the digest of the interface and changes only when a reader must re-read; `runtime` (the harness, the providers and their models) changes more often and stays outside the digest.
+  It names what the agent can use, never how it is used: no spend, counts or models that ran.
 - **One name for every card.** The published artifact is always titled `Agent manifest: <agent.name>`, file `agent-manifest.json`, public, type `code`; the agent-facing procedure holds the exact call.
 - **Peers are local.** Each agent keeps its own `work/PEERS.md` with the manifest links the operator gives it; nothing new lives in DAM.
 
