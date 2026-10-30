@@ -167,6 +167,8 @@ A missing counter, for example after a Redis restart, is rebuilt from the rollup
 The api-server keeps the amounts it last applied for each call and adds only the difference, in one atomic step, so two replicas never count the same part twice and a call counts once.
 A periodic record that arrives after the final one changes nothing.
 
+**Open calls per agent.** Redis also keeps, per calling agent, the calls still in flight and when a record of each was last heard, so the [Invocation reaper](invocations.md#outcomes) can wait until a reported sub-agent's model calls have ended.
+
 ## Estimates
 
 DAM counts high and marks a call estimated when its usage is missing or unsure:

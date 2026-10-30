@@ -5,7 +5,7 @@ Last verified: 2026-10-30
 ## Overview
 
 An **Invocation** is a run-once request from one Agent to another: a **Driver** asks a **target** to do one piece of work and return one result that matches a JSON Schema the Driver supplied, or, for a script, the script's exit code and output.
-The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped as soon as the Invocation goes terminal.
+The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped soon after the Invocation goes terminal ([Outcomes](#outcomes)).
 
 A Driver reaches Invocations two ways.
 A script — a loop an agent wrote that fans work out and gathers the results — speaks over the per-agent HTTP surface on the harness port through the [Driver SDK](#driver-sdk).
