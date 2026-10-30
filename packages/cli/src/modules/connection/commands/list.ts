@@ -13,6 +13,11 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { formatExpiry } from "../domain/credential-check.js";
+import {
+  defaultCell,
+  defaultMarks,
+  type DefaultMark,
+} from "../domain/default-account.js";
 import { childrenOf, parentLabel } from "../domain/github-parent.js";
 import { formatScope, scopeKindOf, scopeOf } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
@@ -80,9 +85,12 @@ function treeRows(
   });
 }
 
-function tableFor(views: readonly ConnectionView[]): string {
+function tableFor(
+  views: readonly ConnectionView[],
+  marks?: ReadonlyMap<string, DefaultMark>,
+): string {
   return renderTable([
-    HEADER,
+    marks ? [...HEADER, "DEFAULT"] : HEADER,
     ...treeRows(views).map(({ view: c, branch, children }) => [
       c.id,
       `${branch}${c.name}`,
@@ -92,14 +100,23 @@ function tableFor(views: readonly ConnectionView[]): string {
       c.hosts.join(","),
       c.check?.expiresAt ? formatExpiry(c.check.expiresAt) : "—",
       scopeCell(c, children),
+      ...(marks ? [defaultCell(marks.get(c.id))] : []),
     ]),
   ]);
 }
 
-function withScope(views: readonly ConnectionView[]) {
+function withScope(
+  views: readonly ConnectionView[],
+  marks?: ReadonlyMap<string, DefaultMark>,
+) {
   return views.map((c) => {
     const scope = scopeOf(c);
-    return scope ? { ...c, scope } : c;
+    const mark = marks?.get(c.id);
+    return {
+      ...c,
+      ...(scope && { scope }),
+      ...(mark && { default: mark }),
+    };
   });
 }
 
@@ -139,7 +156,8 @@ export function buildListCommand(deps: {
       "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, fullAccess?, account?, repositories?, repositoryIds?, permissions? }, " +
         "with fullAccess: true when it reaches everything its sign-in or installation reaches; " +
         "a GitHub sign-in or installation carries isParent: true, and each connection made from it parentId; " +
-        "a checked credential carries its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }",
+        "a checked credential carries its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }; " +
+        "listed for an agent, a connection that shares its host with another granted one carries default { kind, scope, active }",
     )
     .addHelpText(
       "after",
@@ -151,6 +169,9 @@ export function buildListCommand(deps: {
         "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
         "`preferred` on the one a new agent's sessions use when `dam agent create`\n" +
         "names no --provider.\n" +
+        "\nListed for an agent, DEFAULT marks which of several GitHub accounts on one\n" +
+        "host, or of several Object Storage connections, the agent acts as unless it\n" +
+        "switches itself; change it with `dam connection default`.\n" +
         "\nExamples:\n" +
         "  dam connection list\n" +
         "  dam connection list --providers\n" +
@@ -192,26 +213,27 @@ export function buildListCommand(deps: {
           host,
         );
 
-        const [idsRes, allRes] = await Promise.all([
-          svc.agentConnectionIds(agent.id),
+        const [grantsRes, allRes] = await Promise.all([
+          svc.agentGrants(agent.id),
           svc.list(),
         ]);
-        exitOnServiceError(idsRes, host);
+        exitOnServiceError(grantsRes, host);
         exitOnServiceError(allRes, host);
 
         const byId = new Map(allRes.value.map((c) => [c.id, c]));
         const granted: ConnectionView[] = [];
         const missing: string[] = [];
-        for (const id of idsRes.value) {
-          const view = byId.get(id);
+        for (const { connectionId } of grantsRes.value) {
+          const view = byId.get(connectionId);
           if (view) granted.push(view);
-          else missing.push(id);
+          else missing.push(connectionId);
         }
+        const marks = defaultMarks(granted, grantsRes.value);
         const matched = onlyProviders(granted, opts.providers);
 
         if (opts.json) {
           return writeStdoutAndExit(
-            `${JSON.stringify(withScope(matched))}\n`,
+            `${JSON.stringify(withScope(matched, marks))}\n`,
             EXIT_SUCCESS,
           );
         }
@@ -227,7 +249,7 @@ export function buildListCommand(deps: {
           );
         }
         if (matched.length > 0) {
-          return writeStdoutAndExit(tableFor(matched), EXIT_SUCCESS);
+          return writeStdoutAndExit(tableFor(matched, marks), EXIT_SUCCESS);
         }
         process.exit(EXIT_SUCCESS);
       },
