@@ -69,9 +69,10 @@ A value you cannot get yet: write `TODO(manifest)`; the publish gate refuses it,
 2. `bash "$HOME/scripts/manifest-check.sh" stamp "$HOME/work/manifest.json"`.
 3. `bash "$HOME/scripts/manifest-check.sh" publish "$HOME/work/manifest.json"`. Fix every `FAIL` and run again until `PASS`.
 4. Under `agent_manifest: dam`, publish the card as a **public** DAM artifact:
-   first time `create_artifact {title: "<display name> manifest", content, file_name: "manifest.json", type: "code", visibility: "public"}`; keep its id and `shareUrl` in `work/manifest-publish.json`.
+   first time `create_artifact {title: "Agent manifest: <agent.name>", content, file_name: "agent-manifest.json", type: "code", visibility: "public"}`; keep its id and `shareUrl` in `work/manifest-publish.json`.
+   The title and file name are fixed for every DAM agent (`Agent manifest: Code Reviewer`, `agent-manifest.json`): `<agent.name>` is the card's `agent.name` exactly, without emoji, so people and agents find every manifest by the same prefix.
    Put `<shareUrl>/raw` into `source.url` (the raw bytes a reader agent fetches), then re-run steps 2–3.
-   Later: `update_artifact {id, content}` on the kept id, so the URL never changes.
+   Later: `update_artifact {id, content}` on the kept id, so the URL never changes; when `agent.name` changed, pass the new `title` too.
    An artifact's kind is fixed when it is created: never publish the card as HTML.
 5. Under `agent_manifest: off`, keep the card local and say so in the audit report.
 
@@ -106,3 +107,4 @@ Weekly audit, per row:
 
 Every weekly audit rewrites the card from its sources, runs `stamp` and `publish`, publishes on change, then checks the peers.
 Report one line: `manifest: <version> · <published | unchanged | local only | FAIL> · peers <ok>/<total>`.
+A published title or file name that differs from **Write, check, publish** step 4 is a `warn`; fix it with `update_artifact`.

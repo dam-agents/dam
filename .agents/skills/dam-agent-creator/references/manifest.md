@@ -11,12 +11,16 @@ The agent-facing procedure is `templates/docs/manifest.md.template`; the shape i
 
 ## Design rules
 
-- **The agent writes it, at runtime.** Neither this skill nor a script generates the card: the agent knows what is true now (its channels, its public pages, the models that ran) and chooses its sources. The script only checks.
-- **Everything public, nothing private.** An entry belongs in the card when a person or an agent outside the instance sees it, uses it or relies on it. Config key names, `work/` paths, people, ids and private repositories stay out; `manifest-check.sh` scans for them with the design's `PUBLIC_KEYS`.
+- **The agent writes it, at runtime.** Neither this skill nor a script generates the card: the agent knows what is true now (its channels, its public pages, the models that ran) and chooses its sources.
+  The script only checks.
+- **Everything public, nothing private.** An entry belongs in the card when a person or an agent outside the instance sees it, uses it or relies on it.
+  Config key names, `work/` paths, people, ids and private repositories stay out; `manifest-check.sh` scans for them with the design's `PUBLIC_KEYS`.
 - **Plain words over schemas.** A contract is `where`, `format`, `meaning` in sentences a reader agent understands; the card holds no nested JSON Schema.
 - **Ids are keys.** Triggers, skills and contracts are maps keyed by kebab-case ids; every list refers to them by key, and the check resolves every reference.
-- **Handoffs name roles, never agents.** `code-reviewer`, `implementer`, `qa-tester`, `quality-advisor`, `reporter`. A role list that grows is a schema change in this skill.
+- **Handoffs name roles, never agents.** `code-reviewer`, `implementer`, `qa-tester`, `quality-advisor`, `reporter`.
+  A role list that grows is a schema change in this skill.
 - **Freshness has two clocks.** `source.version` is the digest of the interface and changes only when a reader must re-read; `runtime` (harness, observed models, schedule overrides) changes more often and stays outside the digest.
+- **One name for every card.** The published artifact is always titled `Agent manifest: <agent.name>`, file `agent-manifest.json`, public, type `code`; the agent-facing procedure holds the exact call.
 - **Peers are local.** Each agent keeps its own `work/PEERS.md` with the manifest links the operator gives it; nothing new lives in DAM.
 
 ## What the proposal decides
@@ -24,13 +28,16 @@ The agent-facing procedure is `templates/docs/manifest.md.template`; the shape i
 - The roles the agent serves and its handoffs (which trigger another role uses to pass it work, which of its contracts is work for another role).
 - `PUBLIC_KEYS`: the config keys whose values the card may show.
 - The packages it offers (skills in its definition repo that others can install).
-- Whether `agent_manifest` defaults to `dam` (publish) or `off`. Publishing is public by nature; it is asked at onboarding like every other publish.
+- Whether `agent_manifest` defaults to `dam` (publish) or `off`.
+  Publishing is public by nature; it is asked at onboarding like every other publish.
 
 ## Existing agents (one-time)
 
 An agent created before this skill had the manifest gets it in two steps, both in its direct session, both started by its operator.
 
-**1. One card now.** The operator pastes this message into the agent's direct session:
+### Step 1: one card now
+
+The operator pastes this message into the agent's direct session:
 
 > Write your agent manifest once, following the DAM agent-creator skill.
 > Download into a new directory under `$TMPDIR`, not into your definition:
@@ -41,10 +48,13 @@ An agent created before this skill had the manifest gets it in two steps, both i
 > Before you write, show me the config keys whose values you will show in public and wait for my answer.
 > Write the card to `work/manifest.json`, then run, with `MANIFEST_SCHEMA=<dir>/manifest.schema.json` and `MANIFEST_PUBLIC_KEYS="<the keys I approved>"`:
 > `bash <dir>/manifest-check.sh stamp work/manifest.json` and `bash <dir>/manifest-check.sh publish work/manifest.json`, until it prints PASS.
-> Show me the card. When I agree, publish it as a public DAM artifact per **Write, check, publish** step 4, and give me the link.
+> Show me the card.
+> When I agree, publish it as a public DAM artifact per **Write, check, publish** step 4, and give me the link.
 > Do not change your definition, config or schedules in this step.
 
 The card is then a snapshot: it does not follow later changes.
 
-**2. Keep it current.** The agent adopts the procedure into its own definition through its usual definition-change path (its self-modification rules, a pull request on its definition repo): copy the three files to `docs/manifest.md`, `docs/manifest.schema.json` and `scripts/manifest-check.sh` with its `PUBLIC_KEYS`, add the audit task, the `agent_manifest` config key and `work/PEERS.md`, and an upgrade step in its changelog that writes the first card.
+### Step 2: keep it current
+
+The agent adopts the procedure into its own definition through its usual definition-change path (its self-modification rules, a pull request on its definition repo): copy the three files to `docs/manifest.md`, `docs/manifest.schema.json` and `scripts/manifest-check.sh` with its `PUBLIC_KEYS`, add the audit task, the `agent_manifest` config key and `work/PEERS.md`, and an upgrade step in its changelog that writes the first card.
 After that, its weekly audit rewrites and republishes the card, and step 1 is not needed again.
