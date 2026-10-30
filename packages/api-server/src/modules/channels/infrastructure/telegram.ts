@@ -797,14 +797,16 @@ export function createTelegramWorker(deps: {
           .post(
             match(failure)
               .with({ kind: "plain" }, ({ copy }) =>
-                copy({
-                  uiBaseUrl: deps.uiBaseUrl,
-                  agentId,
-                  threads: false,
-                  brandName,
-                  resetAt: "00:00 UTC",
-                }),
+                copy({ uiBaseUrl: deps.uiBaseUrl, agentId, threads: false }),
               )
+              .with({ kind: "spend" }, ({ block }) => ({
+                markdown: spendHoldUserCopy(
+                  block,
+                  "This agent",
+                  brandName,
+                  telegramResetTime(new Date()),
+                ),
+              }))
               .with({ kind: "provider-unavailable" }, () => ({
                 markdown: telegramProviderOutageCopy(outage, brandName),
               }))

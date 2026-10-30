@@ -3343,13 +3343,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return;
       const copy = match(failure)
         .with({ kind: "plain" }, ({ copy }) =>
-          copy({
-            uiBaseUrl,
-            agentId: instanceName,
-            threads: true,
-            brandName: brand.name,
-            resetAt: slackResetTime(new Date()),
-          }),
+          copy({ uiBaseUrl, agentId: instanceName, threads: true }),
+        )
+        .with({ kind: "spend" }, ({ block }) =>
+          spendHoldUserCopy(
+            block,
+            "This agent",
+            brand.name,
+            slackResetTime(new Date()),
+          ),
         )
         .with({ kind: "provider-unavailable" }, () =>
           slackProviderOutageCopy(outage, brand.name),

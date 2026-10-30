@@ -18,8 +18,7 @@ import {
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
-import { spendRefusalIn } from "../../spend/index.js";
-import { spendHoldUserCopy } from "./spend-hold-copy.js";
+import { spendRefusalIn, type SpendHoldReason } from "../../spend/index.js";
 
 export type TurnFailure =
   | {
@@ -29,9 +28,12 @@ export type TurnFailure =
         uiBaseUrl: string;
         agentId: string;
         threads: boolean;
-        brandName: string;
-        resetAt: string;
       }) => string;
+    }
+  | {
+      kind: "spend";
+      reason: "spend-limit" | "spend-ceiling";
+      block: SpendHoldReason;
     }
   | {
       kind: "provider-unavailable";
@@ -63,10 +65,9 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
   const spend = spendRefusalIn(errorText(err));
   if (spend !== null)
     return {
-      kind: "plain",
+      kind: "spend",
       reason: spend === "ceiling" ? "spend-ceiling" : "spend-limit",
-      copy: ({ brandName, resetAt }) =>
-        spendHoldUserCopy(spend, "This agent", brandName, resetAt),
+      block: spend,
     };
   if (isAgentStoppedError(err))
     return {

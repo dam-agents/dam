@@ -166,7 +166,7 @@ A few observations the diagram glosses over:
   On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, a refusal by the model, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, a refusal by the model, `spend-limit` or `spend-ceiling`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
   A failure because the provider is down also names the Connection template that the turn ran on.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.

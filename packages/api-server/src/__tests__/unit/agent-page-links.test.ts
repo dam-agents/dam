@@ -51,8 +51,6 @@ describe("links to an agent's page", () => {
         uiBaseUrl: "https://dam.example",
         agentId: "agent-1",
         threads: true,
-        brandName: "DAM",
-        resetAt: "00:00 UTC",
       }),
     ).toContain("https://dam.example/sandboxes/agent-1/channels");
   });
@@ -67,8 +65,6 @@ describe("links to an agent's page", () => {
         uiBaseUrl: "https://dam.example",
         agentId: "agent-1",
         threads: true,
-        brandName: "DAM",
-        resetAt: "00:00 UTC",
       }),
     ).toContain("https://dam.example/sandboxes/agent-1/providers");
   });
