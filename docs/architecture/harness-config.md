@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-27
+Last verified: 2026-10-30
 
 ## Overview
 
@@ -184,6 +184,7 @@ Each harness's manifest declares in its `modelRouter` section the dialects it sp
 The catalog is built when the env rail materialises, rebuilt on every env change and on a timer; a failed listing keeps that Connection's last good list, marked unavailable, and never empties another's.
 A failed listing is retried after two seconds, then twice as long each time up to five minutes, and an env change starts that ladder over: a grant also restarts the agent's egress gateway, so the listings that follow it fail until the gateway is back.
 A Connection granted but not yet listed is in the view at once, unavailable and never listed, and every change to the catalog sends the harness-config watch notice.
+A change is what a reader of the view sees change, so a first listing that fails is none: it leaves that Connection as unavailable and empty as it was, and since every change also recycles the routed harnesses so their spawn env follows the catalog, it would otherwise take an idle process down for nothing.
 A routed harness answers its model list from the catalog; `harnessConfig.catalog` on the runtime's tRPC returns the same view, for the spawn check and the default conversion.
 
 ## The Model Router
