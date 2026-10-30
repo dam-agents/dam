@@ -4,7 +4,7 @@ import type { ConnectionView } from "api-server-api";
 import type { AgentView } from "../modules/agent/domain/agent-view.js";
 import { buildDefaultCommand } from "../modules/connection/commands/default.js";
 import { buildListCommand } from "../modules/connection/commands/list.js";
-import type { AgentGrant } from "../modules/connection/services/connection-service.js";
+import type { AgentGrant } from "../modules/connection/domain/default-account.js";
 import { EXIT_INVALID_INPUT } from "../modules/shared/exit-codes.js";
 import {
   captureOutput,
@@ -104,6 +104,21 @@ describe("dam connection default", () => {
     expect(out).toContain(
       "scout acts as ghe-second by default on github.ibm.com",
     );
+  });
+
+  /** TEST_SCENARIO: with --json, the command names the agent and the connection it made the default. */
+  it("reports the new default in --json", async () => {
+    const out = await run(buildDefaultCommand(deps(service(), agents)), [
+      "scout",
+      "--connection",
+      "conn-second",
+      "--json",
+    ]);
+    expect(JSON.parse(out)).toEqual({
+      ok: true,
+      agentId: "agent-00000000000000aa",
+      connectionId: "conn-second",
+    });
   });
 
   /** TEST_SCENARIO: a connection the agent does not hold, or one that is not an account a default is picked among, is refused and nothing changes. */

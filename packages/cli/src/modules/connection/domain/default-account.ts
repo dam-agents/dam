@@ -1,14 +1,24 @@
 import {
   contestedDefaultAccounts,
+  preferenceGroupOf,
   type ConnectionView,
   type DefaultAccountKindId,
 } from "api-server-api";
-import type { AgentGrant } from "../services/connection-service.js";
+
+export interface AgentGrant {
+  connectionId: string;
+  grantedAt: string;
+  preferred: boolean;
+}
 
 export interface DefaultMark {
   kind: DefaultAccountKindId;
   scope: string;
   active: boolean;
+}
+
+export function isDefaultAccount(connection: ConnectionView): boolean {
+  return preferenceGroupOf(connection.contributions) !== undefined;
 }
 
 export function defaultMarks(

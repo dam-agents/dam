@@ -1,5 +1,4 @@
 import { Command } from "commander";
-import { preferenceGroupOf } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
@@ -7,6 +6,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
+import { isDefaultAccount } from "../domain/default-account.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 export function buildDefaultCommand(deps: {
@@ -73,7 +73,7 @@ export function buildDefaultCommand(deps: {
           );
           process.exit(EXIT_INVALID_INPUT);
         }
-        if (preferenceGroupOf(match.contributions) === undefined) {
+        if (!isDefaultAccount(match)) {
           process.stderr.write(
             `error: ${match.name} (${match.id}) is not an account the agent picks a default among; only GitHub and Object Storage connections are\n`,
           );

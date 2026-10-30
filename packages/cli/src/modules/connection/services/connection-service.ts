@@ -1,5 +1,4 @@
 import type {
-  AgentConnections,
   ClusterCaProbe,
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
@@ -16,13 +15,9 @@ import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
+import type { AgentGrant } from "../domain/default-account.js";
 
 type ConnResult<T> = Result<T, TransportError | AuthRequiredError>;
-
-export type AgentGrant = Omit<
-  AgentConnections["connections"][number],
-  "connection"
->;
 
 export interface ConnectionService {
   list(): Promise<ConnResult<readonly ConnectionView[]>>;
