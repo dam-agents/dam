@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-29
+Last verified: 2026-10-30
 
 ## Overview
 
@@ -196,6 +196,7 @@ The CLI warns when a checked token expires within a day, and `dam connection lis
 A GitHub App connection's check names the bot it acts as and the repositories it reaches, and `dam connection scope` reports the check of the new scope.
 A GitHub sign-in or App installation is a parent no agent holds ([github-connections](github-connections.md)), and the CLI follows the UI there: `connect` ends in a connection made from it only with a scope or an explicit full access, and otherwise keeps the parent alone and shows what it reaches; `connect --from` adds another connection beside those it has; `list` shows each parent with its connections underneath and marks full access; and removing a parent first names its connections and the agents that lose them.
 A name a parent shares with its first connection means the connection, so the agent's usual references keep naming what it holds.
+An agent that holds several accounts on one host acts as its [default account](connections.md#addressing-a-connection) there, as the web app's Connections panel shows: `dam connection list <agent>` marks it in a DEFAULT column and in `--json`, and `dam connection default` makes another granted account the default.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 
