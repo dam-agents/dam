@@ -5,7 +5,10 @@ import {
 } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
-import { canUseArtifactBridge } from "../../modules/artifacts/lib/artifact-bridge.js";
+import {
+  canStartArtifactSession,
+  canUseArtifactBridge,
+} from "../../modules/artifacts/lib/artifact-bridge.js";
 import { readArtifactPrompt } from "../../modules/artifacts/lib/artifact-prompt.js";
 
 const artifact: LibraryArtifact = {
@@ -69,7 +72,54 @@ describe("artifact callback eligibility", () => {
   });
 });
 
+describe("starting a session from an artifact outside a chat", () => {
+  it("allows the latest interactive HTML its agent published", () => {
+    expect(canStartArtifactSession(artifact, true, 2)).toBe(true);
+    expect(
+      canStartArtifactSession(
+        { ...artifact, visibility: "restricted" },
+        true,
+        2,
+      ),
+    ).toBe(true);
+  });
+
+  it.each<Partial<LibraryArtifact>>([
+    { interactive: false },
+    { kind: "jsx" },
+    { visibility: "public" },
+    { agentId: null },
+  ])("refuses an ineligible artifact: %j", (patch) => {
+    expect(canStartArtifactSession({ ...artifact, ...patch }, true, 2)).toBe(
+      false,
+    );
+  });
+
+  it("refuses historical versions and a disabled feature", () => {
+    expect(canStartArtifactSession(artifact, true, 1)).toBe(false);
+    expect(canStartArtifactSession(artifact, false, 2)).toBe(false);
+    expect(canStartArtifactSession(null, true, 2)).toBe(false);
+  });
+});
+
 describe("artifact frame messages", () => {
+  it("passes on a page's request for a session of its own", () => {
+    const { port1, port2 } = new MessageChannel();
+    const data = { type: ARTIFACT_PROMPT_TYPE, prompt: "Go", newSession: true };
+    expect(readArtifactPrompt({ source: port1, data }, port1)).toEqual({
+      prompt: "Go",
+      newSession: true,
+    });
+    expect(
+      readArtifactPrompt(
+        { source: port1, data: { ...data, newSession: "yes" } },
+        port1,
+      ),
+    ).toBeNull();
+    port1.close();
+    port2.close();
+  });
+
   it("accepts only the exact frame and forwards only its prompt", () => {
     const { port1, port2 } = new MessageChannel();
     const data = {
@@ -78,9 +128,9 @@ describe("artifact frame messages", () => {
       agentId: "other",
       sessionId: "other",
     };
-    expect(readArtifactPrompt({ source: port1, data }, port1)).toBe(
-      data.prompt,
-    );
+    expect(readArtifactPrompt({ source: port1, data }, port1)).toEqual({
+      prompt: data.prompt,
+    });
     expect(readArtifactPrompt({ source: port2, data }, port1)).toBeNull();
     expect(readArtifactPrompt({ source: port1, data }, null)).toBeNull();
     port1.close();

@@ -6,6 +6,7 @@ import type {
 import type {
   ArtifactCallAgentApiResult,
   ArtifactKind,
+  ArtifactSendPromptResult,
   ArtifactVisibility,
 } from "api-server-api";
 
@@ -15,6 +16,10 @@ import type {
   ArtifactRow,
 } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import { createArtifactLibraryService } from "../../modules/artifact-library/services/artifact-library-service.js";
+import type {
+  ViewerPromptDelivery,
+  ViewerPromptOutcome,
+} from "../../modules/artifact-library/services/share-bridge-service.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 
 type AppAnswer = { status: number; contentType: string | null; body: string };
@@ -68,9 +73,14 @@ function relay(agent: FakeAgent, request: ArtifactApiRelayInput) {
   return { ok: true, ...agent.app(request) } satisfies ArtifactApiRequestResult;
 }
 
+type DeliveredPrompt = Parameters<ViewerPromptDelivery["deliver"]>[0];
+
 export function createArtifactApiWorld() {
   const rows: ArtifactRow[] = [];
   const agents = new Map<string, FakeAgent>();
+  const prompts: DeliveredPrompt[] = [];
+  let featureOn = true;
+  let promptOutcome: ViewerPromptOutcome = "accepted";
 
   function fakeAgent(agentId: string): FakeAgent {
     let agent = agents.get(agentId);
@@ -149,16 +159,14 @@ export function createArtifactApiWorld() {
     return id;
   }
 
-  function call(
-    artifactId: string,
-    request: ArtifactApiRequestInput,
-    caller: {
-      as?: string;
-      keyBoundTo?: readonly string[];
-      email?: string;
-    } = {},
-  ): Promise<ArtifactCallAgentApiResult> {
-    const library = createArtifactLibraryService({
+  interface Caller {
+    as?: string;
+    keyBoundTo?: readonly string[];
+    email?: string;
+  }
+
+  function library(caller: Caller) {
+    return createArtifactLibraryService({
       repo: ownerScopedRepo(rows),
       artifacts: new Proxy({} as ArtifactService, {
         get: (_target, method: string) => () => unused(`artifacts.${method}`),
@@ -168,12 +176,49 @@ export function createArtifactApiWorld() {
       shareBaseUrl: "https://share.example.test",
       ensureReady: cluster.ensureReady,
       agentApi: cluster.agentApi,
+      featureOn: () => Promise.resolve(featureOn),
+      prompts: {
+        deliver: (input) => {
+          prompts.push(input);
+          return Promise.resolve(promptOutcome);
+        },
+      },
     });
-    return library.callAgentApi(
+  }
+
+  function call(
+    artifactId: string,
+    request: ArtifactApiRequestInput,
+    caller: Caller = {},
+  ): Promise<ArtifactCallAgentApiResult> {
+    return library(caller).callAgentApi(
       { artifactId, ...request },
       { agentIds: caller.keyBoundTo ?? "*", email: caller.email ?? null },
     );
   }
 
-  return { agent, publish, call };
+  function prompt(
+    artifactId: string,
+    text: string,
+    caller: Caller = {},
+  ): Promise<ArtifactSendPromptResult> {
+    return library(caller).sendPrompt(
+      { artifactId, prompt: text },
+      { agentIds: caller.keyBoundTo ?? "*", email: caller.email ?? null },
+    );
+  }
+
+  return {
+    agent,
+    publish,
+    call,
+    prompt,
+    prompts: () => [...prompts],
+    turnFeatureOff: () => {
+      featureOn = false;
+    },
+    answerPromptsWith: (outcome: ViewerPromptOutcome) => {
+      promptOutcome = outcome;
+    },
+  };
 }
