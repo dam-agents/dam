@@ -36,10 +36,14 @@ window.platform = (() => {
     });
   };
   return Object.freeze({
-    sendPrompt(prompt) {
+    sendPrompt(prompt, options) {
       if (typeof prompt !== "string" || !prompt.trim() || prompt.trim().length > ${ARTIFACT_PROMPT_MAX_LENGTH})
         throw new Error("Provide a nonempty prompt of at most ${ARTIFACT_PROMPT_MAX_LENGTH} characters.");
-      window.parent.postMessage({ type: ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}, prompt }, "*");
+      if (options !== undefined && (options === null || typeof options !== "object"))
+        throw new Error("Provide the options as an object, such as { newSession: true }.");
+      const message = { type: ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}, prompt };
+      if (options && options.newSession === true) message.newSession = true;
+      window.parent.postMessage(message, "*");
     },
     request({ method, path, body, contentType } = {}) {
       if (!${JSON.stringify(METHODS)}.includes(method))

@@ -29,11 +29,14 @@ Call it from a button click or a form handler that prevents the default submissi
 
 The owner must enable Interactive artifacts and open the latest artifact version beside an existing chat with its publishing agent.
 The prompt is sent as a normal chat message, using the chat's existing queue and error handling.
+To let a button work where the owner opens the page outside that chat, such as from the library, pass `{ newSession: true }`: `platform.sendPrompt('Refresh this dashboard.', { newSession: true })`.
+Outside a chat the prompt then starts or continues the owner's own Session for this page with you, unattended, so a tool call that asks for permission is refused; in the chat it still goes into the chat.
+Without the option, a prompt sent outside the chat goes nowhere.
 On a page shared with named people, a viewer's prompt starts or continues that viewer's own Session with you instead, and the page shows them a short notice that it was sent.
 The agent replies in chat and may publish a new artifact version normally.
 The function returns no answer or delivery receipt; do not await a result or claim the task is complete.
 
-Buttons do not send prompts from library previews, historical versions, another agent's chat, or while the feature is disabled.
+Buttons do not send prompts from historical versions, another agent's chat, or while the feature is disabled, nor from library previews unless they pass `{ newSession: true }`.
 Keep the page readable without this capability.
 Send prompts only in response to user actions, never automatically on load or on a timer.
 Prompts must be nonempty strings of at most 16,384 characters.

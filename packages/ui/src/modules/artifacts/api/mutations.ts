@@ -145,3 +145,10 @@ export function useCallAgentApi() {
     meta: { suppressErrorToast: true },
   });
 }
+
+export function useSendArtifactPrompt() {
+  return useMutation({
+    ...trpc.artifactLibrary.sendPrompt.mutationOptions(),
+    meta: { suppressErrorToast: true },
+  });
+}

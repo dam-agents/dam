@@ -100,3 +100,17 @@ export function viewerPromptText(input: {
     `Message: ${input.prompt}`,
   ].join("\n");
 }
+
+export function ownerPromptText(input: {
+  artifactId: string;
+  artifactTitle: string;
+  prompt: string;
+}): string {
+  return [
+    `Your owner sent this from a button on the interactive artifact "${input.artifactTitle}" (id ${input.artifactId}), opened outside a chat with you, so it starts or continues a Session of its own.`,
+    "They see the page, and this Session only when they open it. To show them a result, change the data the page reads from you, or publish a new version of the artifact.",
+    "Nobody answers permission prompts on this turn: a tool call that asks is refused.",
+    "",
+    `Message: ${input.prompt}`,
+  ].join("\n");
+}
