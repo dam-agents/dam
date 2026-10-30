@@ -374,8 +374,17 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
                 .and_then(|exe| exe.parent().and_then(vm_runner::release::runtime_id)),
             cgroup_dir: cfg!(target_os = "linux").then(|| PathBuf::from("/sys/fs/cgroup")),
             measure_storage: {
-                let claim = args.state_dir.clone();
-                Arc::new(move || vm_runner::storage::measure(&claim))
+                let state = args.state_dir.clone();
+                let disks = std::env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_default();
+                Arc::new(move || {
+                    let mut dirs = vec![state.as_path()];
+                    if !disks.as_os_str().is_empty() && disks != state {
+                        dirs.push(disks.as_path());
+                    }
+                    vm_runner::storage::measure(&dirs)
+                })
             },
         },
         runtime,
