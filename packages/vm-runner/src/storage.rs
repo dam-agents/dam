@@ -1,6 +1,6 @@
 use std::path::Path;
 
-// UNIT_BOUNDARY_DESCRIPTION: how full the owner's claim is: every machine disk, the runner's bookkeeping and, on a runner that caches its own images, the image cache. The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails, and its filesystem reports the loss. So the runner watches the claim itself. Used is what the filesystem has handed out, and usable is that plus what an unprivileged writer may still take, so the blocks kept back for root do not hide the point where the runner's writes start to fail.
+// UNIT_BOUNDARY_DESCRIPTION: how full the owner's claim is: every machine disk, the runner's bookkeeping and, on a runner that caches its own images, the image cache. The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails, and its filesystem reports the loss. So the runner watches the claim itself. Used is the blocks the runner's own directories hold (see `measure`), and usable is that plus what an unprivileged writer may still take, so the blocks kept back for root do not hide the point where the runner's writes start to fail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StorageUse {
     pub used: u64,

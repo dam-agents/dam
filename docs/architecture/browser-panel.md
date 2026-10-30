@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-25
+Last verified: 2026-10-30
 
 ## Overview
 
@@ -127,7 +127,7 @@ sequenceDiagram
   It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows its tabs and the one on screen ([Tabs](#tabs)): their addresses, titles, whether they are loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back, forward and new tab and the tab bar's select and close run on the tab they name directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue.
   Words typed into the address bar that are not an address search DuckDuckGo.
   A dropped DevTools connection means the browser is gone, and the supervisor launches it again.
-  A health check that times out finds the browser busy — a heavy page, or the agent keeping it busy — not gone, so it is left alone; when the browser fails to start, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay.
+  A health check that times out finds the browser busy — a heavy page, or the agent keeping it busy — not gone, so it is left alone; agent-browser's own "no response came back" from its daemon counts as such a timeout, and the launch and the CDP address asked for right after it each get a minute, as a cold guest starts Chromium slowly; when the browser fails to start, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay.
   The panels stay connected through all of it and show the browser starting, or the failure with a Restart button.
   Only http and https addresses open.
 - **The stream socket** is one more agent relay beside chat, terminal and SSH, with the same admission ([cli](cli.md)) plus the named-connections gate; it is relayed as it is to the runtime's `/api/browser/display`, which hands it to Selkies.
@@ -148,6 +148,8 @@ The browser's profile lives in the agent's home, so sign-ins survive hibernation
 The agent can use them — the panel says so once — and "Clear browser data" stops the browser and deletes the profile.
 "Restart browser" stops it and the supervisor launches a fresh one on the same profile while the panels stay connected.
 Every browser command has a short deadline and runs in its own process group, killed whole when the deadline passes, so a stuck page cannot pile commands up.
+Chromium itself is the exception: agent-browser waits a fixed 30 s for `DevToolsActivePort` and then kills the group it started and launches again, which on a cold guest killed every start partway.
+So `platform-browser` starts Chromium in a session of its own, keeps its pid and its DevTools port beside the profile, and a launch on a profile whose Chromium still runs adopts that one instead of starting a second; the launcher stays the process agent-browser watches, and stopping it stops Chromium.
 Launches, failures and restarts go to a log file in the agent's home, so a misbehaving panel can be read after the fact.
 
 The browser keeps running when the last panel closes, since the agent may be using it; agent-browser never idle-closes a headed browser.

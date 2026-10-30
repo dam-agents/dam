@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-27
+Last verified: 2026-10-30
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -33,6 +33,7 @@ The harness is chosen per session ([sessions](sessions.md#session-inside-the-mac
 The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir.
 The build installs them there with the image's own installer, run in the image's root under chroot with the image's env, so every path an install records is the one the image runs it from, and packs that directory as one root-owned layer, rebuilt only when the tool config or the installer changes.
 CI exports `MISE_GITHUB_TOKEN` for those installs, which mise reads; the task hands it to the chroot's mise in a root-only file that the install removes, so no layer holds it.
+A host that reaches the internet only through a proxy hands its proxy variables (`HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, either case) in the same file, since the image's env names none and a proxy address may carry a password; no image carries them.
 mise's user config and data directories keep their defaults, in the home, so what `mise use -g` pins and installs persists with the home.
 A node holds the tools as it holds any image: the kubelet's image collection and the [vm image cache](vm-image-cache.md)'s eviction drop the versions no agent runs.
 
