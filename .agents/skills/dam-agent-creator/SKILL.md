@@ -195,6 +195,7 @@ Offer a test pass: walk one work item through the pipeline (mentally or against 
   Grep before committing.
   `kit.yaml` binds every deployment made from it: only values *every* instance shares go in its `env`.
 - **Safe defaults.** Anything that contacts people or publishes defaults to off, opt-in at onboarding.
+  The one exception is the agent manifest: public by default, because it repeats only what is already public (`references/manifest.md`).
 - **Slim always-loaded core.** CLAUDE.md holds contracts and invariants; procedures live in `docs/`, read only when their work fires.
   One home per concept; links, not restatements.
 - **Determinism into scripts.** Mechanical decisions go in versioned, auditable scripts; judgment and outward effects stay with the agent, with its own action-time re-checks.

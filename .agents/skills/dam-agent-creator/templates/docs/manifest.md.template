@@ -68,13 +68,13 @@ A value you cannot get yet: write `TODO(manifest)`; the publish gate refuses it,
 1. Write the card to `work/manifest.json`.
 2. `bash "$HOME/scripts/manifest-check.sh" stamp "$HOME/work/manifest.json"`.
 3. `bash "$HOME/scripts/manifest-check.sh" publish "$HOME/work/manifest.json"`. Fix every `FAIL` and run again until `PASS`.
-4. Under `agent_manifest: dam`, publish the card as a **public** DAM artifact:
+4. Under `agent_manifest: dam` (the default; a missing key is `dam`), publish the card as a **public** DAM artifact:
    first time `create_artifact {title: "Agent manifest: <agent.name>", content, file_name: "agent-manifest.json", type: "code", visibility: "public"}`; keep its id and `shareUrl` in `work/manifest-publish.json`.
    The title and file name are fixed for every DAM agent (`Agent manifest: Code Reviewer`, `agent-manifest.json`): `<agent.name>` is the card's `agent.name` exactly, without emoji, so people and agents find every manifest by the same prefix.
    Put `<shareUrl>/raw` into `source.url` (the raw bytes a reader agent fetches), then re-run steps 2–3.
    Later: `update_artifact {id, content}` on the kept id, so the URL never changes; when `agent.name` changed, pass the new `title` too.
    An artifact's kind is fixed when it is created: never publish the card as HTML.
-5. Under `agent_manifest: off`, keep the card local and say so in the audit report.
+5. Under `agent_manifest: off` (the operator's choice only), keep the card local and say so in the audit report.
 
 Publish only when `source.version` or the `runtime` section changed since the last publish.
 A failed publish is a `warn` in the audit; the old card stays in place.

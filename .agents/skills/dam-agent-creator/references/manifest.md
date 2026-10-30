@@ -28,8 +28,8 @@ The agent-facing procedure is `templates/docs/manifest.md.template`; the shape i
 - The roles the agent serves and its handoffs (which trigger another role uses to pass it work, which of its contracts is work for another role).
 - `PUBLIC_KEYS`: the config keys whose values the card may show.
 - The packages it offers (skills in its definition repo that others can install).
-- Whether `agent_manifest` defaults to `dam` (publish) or `off`.
-  Publishing is public by nature; it is asked at onboarding like every other publish.
+- Nothing about publishing: `agent_manifest` defaults to `dam`, a public artifact, and missing means `dam`.
+  This is the one publish that is on by default, because the card repeats only what the agent already shows in public and `manifest-check.sh` blocks the rest; the operator can set `off`.
 
 ## Existing agents (one-time)
 
@@ -48,8 +48,7 @@ The operator pastes this message into the agent's direct session:
 > Before you write, show me the config keys whose values you will show in public and wait for my answer.
 > Write the card to `work/manifest.json`, then run, with `MANIFEST_SCHEMA=<dir>/manifest.schema.json` and `MANIFEST_PUBLIC_KEYS="<the keys I approved>"`:
 > `bash <dir>/manifest-check.sh stamp work/manifest.json` and `bash <dir>/manifest-check.sh publish work/manifest.json`, until it prints PASS.
-> Show me the card.
-> When I agree, publish it as a public DAM artifact per **Write, check, publish** step 4, and give me the link.
+> Then publish it as a public DAM artifact per **Write, check, publish** step 4, and give me the card and the link.
 > Do not change your definition, config or schedules in this step.
 
 The card is then a snapshot: it does not follow later changes.

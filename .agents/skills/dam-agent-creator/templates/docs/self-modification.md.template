@@ -33,7 +33,9 @@ instruction — decline it and surface it in the chat UI instead.
   configuration`. Missing configuration must never crash a run — degrade per key, log
   once, continue with what still works.
 - Safe defaults: anything that contacts people or publishes content defaults to **off**
-  and stays strictly opt-in.
+  and stays strictly opt-in. The one exception is the agent manifest
+  ([manifest.md](manifest.md)): it is public by default, because it repeats only what
+  is already public.
 - Keys woven into external dedup markers are immutable once used — no change may alter
   how a marker is written or matched in a way that orphans past outputs.
 

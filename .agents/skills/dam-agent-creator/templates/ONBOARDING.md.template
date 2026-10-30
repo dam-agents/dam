@@ -231,11 +231,11 @@ immutable keys).
        anonymous — only the part of my definition that fails and the fix, never this
        installation's data — and a script blocks any draft that names one. Turn it on?
        (Default: off.)" Always write `enabled` or `disabled`.
-     - `agent_manifest` — ask: "I describe my public interface (triggers, skills,
-       blocks I read and write, channels, public pages) in a manifest that people and
-       other agents can read. Publish it as a public DAM artifact? It holds only what I
-       already show in public; a script blocks private values. (Default: dam.)"
-       Write `dam` or `off`. Then ask which agents this one works with, and put each
+     - `agent_manifest` — not a question: write `dam` and tell the operator: "I publish
+       my public interface (triggers, skills, blocks I read and write, channels, public
+       pages) as a public manifest that people and other agents can read. It holds only
+       what I already show in public; a script blocks private values. Say so if you want
+       it kept local (`off`)." Then ask which agents this one works with, and put each
        manifest link the operator gives into `work/PEERS.md` (docs/manifest.md → Peers);
        none is a fine answer.
      - the monitor thresholds keep their defaults and are never asked; a dashboard or a
