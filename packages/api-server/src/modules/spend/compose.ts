@@ -65,6 +65,7 @@ function composePriceBook(
 
 export interface SpendSystem {
   ingest: SpendIngest;
+  openCalls(agentId: string): Promise<number>;
   check: SpendCheck;
   extendSaga: Subscription;
   lastKnownNameSaga: Subscription;
@@ -113,9 +114,10 @@ export function composeSpendSystem(deps: {
       startedAt = null;
       throw error;
     }));
+  const calls = createRedisCallStates(deps.redis);
   const ingest = createSpendIngest({
     priceBook: composePriceBook(deps.priceOverrides),
-    calls: createRedisCallStates(deps.redis),
+    calls,
     ledger,
     counters,
     owners: deps.owners,
@@ -123,6 +125,7 @@ export function composeSpendSystem(deps: {
   });
   return {
     ingest,
+    openCalls: (agentId) => calls.openCount(agentId),
     agentSpend: createAgentSpend({
       ledger,
       payers: deps.payers,

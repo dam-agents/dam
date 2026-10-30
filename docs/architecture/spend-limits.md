@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-27
+Last verified: 2026-10-30
 
 ## Overview
 
@@ -183,6 +183,7 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
   A real record that arrives later corrects the estimate.
 
 An estimated call keeps the Session and the calling agent of its stamp, and the gate's own row for a refused call keeps them too.
+Each estimate writes one `spend.call_estimated` log line with its reasons, whether the payer's most expensive call priced it, the calling agent and whether it is a sub-agent, the Connection, the model, the cost, the reply size and the duration, so the share of spend that estimates add can be measured.
 
 **Shutdown.** A stopping api-server takes no new streams, ends every open record stream with a success status so that each gateway reconnects to another replica and loses no record, and gives the open calls twenty seconds before it closes the port.
 

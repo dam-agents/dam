@@ -42,13 +42,16 @@ export interface CallStates {
   restore(callId: string, applied: AppliedCall): Promise<void>;
   read(callId: string): Promise<CallState | null>;
   overdue(startedBefore: Date, limit: number): Promise<string[]>;
-  release(callId: string): Promise<boolean>;
+  release(callId: string, agentId: string | null): Promise<boolean>;
   reclaim(callId: string): Promise<void>;
-  forget(callId: string): Promise<void>;
+  forget(callId: string, agentId: string | null): Promise<void>;
   rebook(callId: string, sessionId: string): Promise<void>;
+  heard(callId: string): Promise<void>;
+  openCount(agentId: string): Promise<number>;
 }
 
 const CALL_TTL_SECONDS = 2 * 60 * 60;
+const OPEN_CALL_SILENCE_MS = 10_000;
 const IN_FLIGHT_KEY = "spend:inflight";
 const ROW_FIELDS = [
   "day",
@@ -84,8 +87,33 @@ for i = 0, amounts - 1 do
   redis.call('HSET', key, field, ARGV[base + 1 + i * 2])
 end
 if final == '1' then redis.call('HSET', key, 'final', '1') end
+local now = redis.call('TIME')
+redis.call('HSET', key, 'seen', now[1] * 1000 + math.floor(now[2] / 1000))
 redis.call('EXPIRE', key, ARGV[2])
 return out
+`;
+
+const HEARD_SCRIPT = `
+if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+local now = redis.call('TIME')
+redis.call('HSET', KEYS[1], 'seen', now[1] * 1000 + math.floor(now[2] / 1000))
+return 1
+`;
+
+const OPEN_COUNT_SCRIPT = `
+local now = redis.call('TIME')
+local since = now[1] * 1000 + math.floor(now[2] / 1000) - tonumber(ARGV[1])
+local open = 0
+for _, call_id in ipairs(redis.call('SMEMBERS', KEYS[1])) do
+  if redis.call('ZSCORE', KEYS[2], call_id) then
+    local call = 'spend:call:' .. call_id
+    local seen = redis.call('HGET', call, 'seen') or redis.call('HGET', call, 'm_started')
+    if seen and tonumber(seen) >= since then open = open + 1 end
+  else
+    redis.call('SREM', KEYS[1], call_id)
+  end
+end
+return open
 `;
 
 const REBOOK_SCRIPT = `
@@ -96,12 +124,18 @@ return 0
 `;
 
 const callKey = (callId: string) => `spend:call:${callId}`;
+const agentKey = (agentId: string) => `spend:inflight:agent:${agentId}`;
 
 export function createRedisCallStates(redis: Redis): CallStates {
   return {
     async started(callId, meta) {
-      await redis
-        .multi()
+      const multi = redis.multi();
+      if (meta.agentId) {
+        multi
+          .sadd(agentKey(meta.agentId), callId)
+          .expire(agentKey(meta.agentId), CALL_TTL_SECONDS);
+      }
+      await multi
         .hset(callKey(callId), {
           m_agent: meta.agentId,
           m_payer: meta.payer,
@@ -190,8 +224,11 @@ export function createRedisCallStates(redis: Redis): CallStates {
       );
     },
 
-    async release(callId) {
-      return (await redis.zrem(IN_FLIGHT_KEY, callId)) === 1;
+    async release(callId, agentId) {
+      const multi = redis.multi().zrem(IN_FLIGHT_KEY, callId);
+      if (agentId) multi.srem(agentKey(agentId), callId);
+      const out = await multi.exec();
+      return out?.[0]?.[1] === 1;
     },
 
     async reclaim(callId) {
@@ -199,16 +236,33 @@ export function createRedisCallStates(redis: Redis): CallStates {
       await redis.zadd(IN_FLIGHT_KEY, Number(started ?? 0), callId);
     },
 
-    async forget(callId) {
-      await redis
+    async forget(callId, agentId) {
+      const multi = redis
         .multi()
         .zrem(IN_FLIGHT_KEY, callId)
-        .del(callKey(callId))
-        .exec();
+        .del(callKey(callId));
+      if (agentId) multi.srem(agentKey(agentId), callId);
+      await multi.exec();
     },
 
     async rebook(callId, sessionId) {
       await redis.eval(REBOOK_SCRIPT, 1, callKey(callId), sessionId);
+    },
+
+    async heard(callId) {
+      await redis.eval(HEARD_SCRIPT, 1, callKey(callId));
+    },
+
+    async openCount(agentId) {
+      return Number(
+        await redis.eval(
+          OPEN_COUNT_SCRIPT,
+          2,
+          agentKey(agentId),
+          IN_FLIGHT_KEY,
+          String(OPEN_CALL_SILENCE_MS),
+        ),
+      );
     },
   };
 }

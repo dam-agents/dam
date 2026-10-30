@@ -43,7 +43,8 @@ import {
 } from "../domain/harness-config-refusal.js";
 import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import type { DriverResolution } from "./driver-resolution.js";
-import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
+import type { TargetReaper } from "./target-reaper.js";
+import type { ReportedTargetReap } from "./reported-target-reap.js";
 import type {
   InvocationOrigin,
   InvocationsRepository,
@@ -218,13 +219,12 @@ export function createInvocationsService(deps: {
   scriptOutputsAvailable: boolean;
   spendHold?: SpendHoldGate;
   reaper: TargetReaper;
-  reportGraceMs?: number;
+  reportedReap: Pick<ReportedTargetReap, "afterReport">;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
   now?: () => Date;
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
-  const reportGraceMs = deps.reportGraceMs ?? REPORT_GRACE_MS;
   const ajv = new Ajv({ allErrors: true, strict: false });
   const failSetup = createSetupFailure({
     repo: deps.repo,
@@ -565,11 +565,7 @@ export function createInvocationsService(deps: {
       if (!stored) {
         return { ok: false, errors: "invocation is no longer running" };
       }
-      const timer = setTimeout(
-        () => void deps.reaper.reap({ id: row.id, owner: row.owner }),
-        reportGraceMs,
-      );
-      timer.unref();
+      deps.reportedReap.afterReport({ id: row.id, owner: row.owner });
       return { ok: true };
     },
   };

@@ -79,6 +79,7 @@ function makeSweep(
         deleted.push(row.id);
       },
     },
+    reportedReap: { due: async () => true },
     readTargetRestart,
     hasAgent: opts.hasAgent ?? (async () => true),
     readHarnessConfigSupport: async () => null,
