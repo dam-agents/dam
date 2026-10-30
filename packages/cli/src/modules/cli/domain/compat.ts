@@ -58,6 +58,14 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 {
   return comparePreRelease(pa.preRelease, pb.preRelease);
 }
 
+export function isPreRelease(v: string): boolean {
+  try {
+    return parseSemver(v).preRelease.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function isVersion(v: string): boolean {
   try {
     parseSemver(v);
