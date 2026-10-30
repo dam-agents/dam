@@ -12,7 +12,7 @@ import { externalLinkProps } from "@/lib/external-link";
 import { emitToast } from "@/lib/toast";
 
 import { getBrand } from "../../../brand.js";
-import { CLI_REFERENCE_URL, MCP_DOCS_URL } from "../../../constants.js";
+import { useDocsUrl } from "../../links/api/queries.js";
 import { DisclosureBox } from "../forms/disclosure-box.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import { useMcpAuthDetection } from "../hooks/use-mcp-auth-detection.js";
@@ -108,6 +108,8 @@ export function McpCreatePane({
 
   const { detected, detecting } = useMcpAuthDetection(url);
   const cli = getBrand().short;
+  const cliReferenceUrl = useDocsUrl("cliReference");
+  const mcpDocsUrl = useDocsUrl("mcpServers");
 
   const overriding = filled(clientId) || filled(headerValue);
   const wantsOAuth = filled(clientId)
@@ -193,13 +195,17 @@ export function McpCreatePane({
             help={
               <>
                 Running an MCP server on your own machine? Install the{" "}
-                <a
-                  href={CLI_REFERENCE_URL}
-                  {...externalLinkProps}
-                  className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
-                >
-                  {cli} CLI
-                </a>{" "}
+                {cliReferenceUrl ? (
+                  <a
+                    href={cliReferenceUrl}
+                    {...externalLinkProps}
+                    className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
+                  >
+                    {cli} CLI
+                  </a>
+                ) : (
+                  `${cli} CLI`
+                )}{" "}
                 and run{" "}
                 <code className="whitespace-nowrap">
                   {cli} satellite --help
@@ -212,17 +218,19 @@ export function McpCreatePane({
             title="Advanced configuration"
             variant="section"
             description={
-              <>
-                See{" "}
-                <a
-                  href={MCP_DOCS_URL}
-                  {...externalLinkProps}
-                  className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
-                >
-                  documentation
-                </a>{" "}
-                for more details
-              </>
+              mcpDocsUrl && (
+                <>
+                  See{" "}
+                  <a
+                    href={mcpDocsUrl}
+                    {...externalLinkProps}
+                    className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
+                  >
+                    documentation
+                  </a>{" "}
+                  for more details
+                </>
+              )
             }
           >
             <div className="flex flex-col gap-4">

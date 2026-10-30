@@ -47,6 +47,23 @@ const MINOR_SETTINGS: ReadonlySet<SettingsTab> = new Set([
   "about",
 ]);
 
+function docsCommand(
+  docsUrl: string | null,
+  act: PaletteActions,
+): PaletteCommand[] {
+  if (docsUrl === null) return [];
+  return [
+    command({
+      id: "go:docs",
+      label: "open documentation",
+      keywords: ["help"],
+      icon: Book,
+      prior: PRIOR.docs,
+      run: () => act.openDocs(docsUrl),
+    }),
+  ];
+}
+
 function globalCommands(
   input: PaletteInput,
   act: PaletteActions,
@@ -79,14 +96,7 @@ function globalCommands(
           run: () => act.goTo(page.view),
         }),
       ),
-    command({
-      id: "go:docs",
-      label: "open documentation",
-      keywords: ["help"],
-      icon: Book,
-      prior: PRIOR.docs,
-      run: act.openDocs,
-    }),
+    ...docsCommand(input.docsUrl, act),
     command({
       id: "agent:new",
       prefix: "agent: ",

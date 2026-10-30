@@ -6,6 +6,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { LiteLlmProxyForm } from "../../modules/providers/components/litellm-proxy/form.js";
 
+vi.mock(
+  "../../modules/links/api/queries.js",
+  () => import("./support/fake-links.js"),
+);
+
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
