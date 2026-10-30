@@ -1,0 +1,178 @@
+{
+  "schema": "design-desk-profile/v1",
+  "product": "DAM",
+  "ui": {
+    "paths": [
+      "packages/ui/**"
+    ]
+  },
+  "style": {
+    "repo": "dam-agents/dam",
+    "kind": "repo",
+    "framework": "react",
+    "ui_dir": "packages/ui",
+    "styling": "tailwind",
+    "tailwind_major": 4,
+    "css_entry": "packages/ui/src/App.css",
+    "icon_package": "@carbon/icons-react",
+    "class_merge": "tailwind-merge",
+    "fonts": [
+      "IBM Plex Sans",
+      "IBM Plex Mono"
+    ],
+    "dark_mode": "class",
+    "shell": [
+      "packages/ui/src/app.tsx",
+      "packages/ui/src/main.tsx"
+    ],
+    "components": [
+      "packages/ui/src/components/ui",
+      "packages/ui/src/components"
+    ]
+  },
+  "boundary": {
+    "allow": [
+      "packages/ui/src/**/components/**",
+      "packages/ui/src/**/views/**",
+      "packages/ui/src/components/**",
+      "packages/ui/src/App.css",
+      "packages/ui/src/styles/**",
+      "packages/ui/public/**"
+    ],
+    "deny": [
+      "packages/ui/src/**/api/**",
+      "packages/ui/src/**/hooks/**",
+      "packages/ui/src/**/store/**",
+      "packages/ui/src/**/lib/**",
+      "packages/ui/src/**/utils/**",
+      "packages/ui/src/**/forms/**",
+      "packages/ui/src/__tests__/**",
+      "packages/ui/src/*.ts"
+    ],
+    "global_styles": [
+      "packages/ui/src/App.css",
+      "packages/ui/src/styles/**"
+    ],
+    "presentational_imports": [
+      "^@carbon/icons-react$",
+      "^@carbon/pictograms-react$",
+      "^@/components/ui/",
+      "^@/lib/utils$",
+      "^clsx$",
+      "^tailwind-merge$",
+      "^class-variance-authority$"
+    ],
+    "aliases": {
+      "@/": "packages/ui/src/"
+    },
+    "code": {
+      "class_helpers": [
+        "cn",
+        "clsx",
+        "cva",
+        "twMerge"
+      ],
+      "copy_helpers": []
+    },
+    "ignored_ok": [
+      "helm/charts/**",
+      "**/*.tsbuildinfo",
+      ".mise.local.toml",
+      "**/.vite/**"
+    ]
+  },
+  "docs": {
+    "glossary": "docs/ubiquitous-language.md",
+    "architecture": [
+      "docs/architecture.md",
+      "docs/architecture/"
+    ],
+    "decisions": [
+      "the hidden author-decisions block at the end of a pull request body",
+      "the pull request's Web UI proof screenshots and its linked issue"
+    ]
+  },
+  "screens": {
+    "Home": "packages/ui/src/modules/home/",
+    "Agent chat": "packages/ui/src/modules/sessions/",
+    "Agent configuration": "packages/ui/src/modules/sandboxes/",
+    "Artifacts": "packages/ui/src/modules/artifacts/",
+    "Starter kits": "packages/ui/src/modules/starter-kits/",
+    "Settings": "packages/ui/src/modules/settings/",
+    "App shell and sidebar": "packages/ui/src/modules/platform/"
+  },
+  "capture": {
+    "base_url": "",
+    "routes": {
+      "Home": "/",
+      "Artifacts": "/artifacts",
+      "Starter kits": "/starter-kits",
+      "Settings": "/settings",
+      "Providers": "/settings/providers",
+      "Connections": "/settings/connections",
+      "Usage": "/settings/usage"
+    },
+    "login": {
+      "path": "/",
+      "user_field": "#username",
+      "password_field": "#password",
+      "submit": "#kc-login"
+    }
+  },
+  "engine": {
+    "endpoints": [
+      {
+        "name": "app",
+        "port": 4400
+      },
+      {
+        "name": "keycloak",
+        "port": 4400
+      },
+      {
+        "name": "share",
+        "port": 4400
+      },
+      {
+        "name": "content",
+        "port": 4400
+      }
+    ],
+    "open_endpoint": "app",
+    "storage": "60Gi",
+    "egress": [
+      {
+        "host": "quay.io",
+        "why": "the platform's chart and images a prototype install pulls, and their tag listings"
+      },
+      {
+        "host": "*.quay.io",
+        "why": "the image layers quay.io redirects to"
+      },
+      {
+        "host": "mirror.gcr.io",
+        "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror)"
+      },
+      {
+        "host": "ghcr.io",
+        "why": "the KVM device plugin's image an install inside an Environment needs"
+      },
+      {
+        "host": "get.helm.sh",
+        "why": "the helm binary"
+      },
+      {
+        "host": "istio-release.storage.googleapis.com",
+        "why": "Istio's charts (CRDs only; an Environment runs no mesh)"
+      }
+    ]
+  },
+  "handoff": {
+    "labels": []
+  },
+  "tests": [
+    "packages/ui/src/__tests__/**",
+    "packages/e2e/**"
+  ],
+  "contacts": "the pull request's author; the person who filed its linked issue"
+}

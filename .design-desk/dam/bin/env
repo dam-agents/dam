@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# bin/env — the design-desk engine for this repository (design-desk docs/profile.md → The engine contract).
+# A live prototype is this repository's own install in an Environment, from the prototype's worktree:
+# `cluster:install --environment` pulls every image the registry already has and builds only the
+# changed ones, which for a design change is the UI. The cluster-ops skill owns those tasks.
+# Environment: PROTO_NAME, PROTO_WORKTREE, PROTO_BASE, PROTO_PROFILE_DIR, PROTO_STATE.
+set -u
+verb="${1:-}"
+: "${PROTO_NAME:?}" "${PROTO_WORKTREE:?}" "${PROTO_STATE:?}"
+CREDS="$PROTO_STATE/credentials.json"
+VALUES="$PROTO_STATE/values-prototype.yaml"
+# The backchannel is how this agent's own browser reaches the install (the public addresses
+# need a person's sign-in). Its port is part of every address, so each prototype gets its own.
+n="${PROTO_NAME//[!0-9]/}"
+BC_PORT=$(( 4500 + ${n:-0} % 400 ))
+
+# One demo account per prototype, made here and shown to the people on the Environment's list.
+# The Environment's gate lets only them reach its sign-in page.
+demo_account() {
+  [ -s "$CREDS" ] && return
+  local pw; pw="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)"
+  jq -n --arg u designer --arg p "$pw" \
+    '{user: $u, password: $p, hint: "A demo account of this prototype only. Its data is sample data."}' > "$CREDS"
+  chmod 600 "$CREDS"
+}
+
+values() {
+  jq -r '"keycloak:\n  extraTestUsers:\n    - username: \(.user)\n      password: \(.password)\n      firstName: Demo\n      lastName: Designer\n"' "$CREDS" > "$VALUES"
+  chmod 600 "$VALUES"
+}
+
+case "$verb" in
+  up)
+    demo_account; values
+    cd "$PROTO_WORKTREE" || exit 1
+    mise trust -q . >/dev/null 2>&1 || true
+    mise run cluster:install -- --environment "$PROTO_NAME" --backchannel --backchannel-port "$BC_PORT" --helm-values "$VALUES"
+    ;;
+  update)
+    cd "$PROTO_WORKTREE" || exit 1
+    mise run cluster:build -- --environment "$PROTO_NAME" ui
+    ;;
+  status)
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=20 "env-$PROTO_NAME" true 2>/dev/null; then
+      jq -cn '{state: "absent", detail: "the Environment does not answer over the Environment Link"}'; exit 0
+    fi
+    pending="$(cd "$PROTO_WORKTREE" && mise run -q cluster:kubectl -- --environment "$PROTO_NAME" get pods -A --no-headers 2>/dev/null \
+      | awk '$4 != "Running" && $4 != "Completed" {n++} END {print n + 0}')"
+    total="$(cd "$PROTO_WORKTREE" && mise run -q cluster:kubectl -- --environment "$PROTO_NAME" get pods -A --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "${total:-0}" -eq 0 ]; then jq -cn '{state: "installing", detail: "no pods yet"}'
+    elif [ "${pending:-0}" -gt 0 ]; then jq -cn --arg n "$pending" --arg t "$total" '{state: "installing", detail: "\($n) of \($t) pods not ready"}'
+    else jq -cn --arg t "$total" '{state: "running", detail: "\($t) pods ready"}'; fi
+    ;;
+  credentials)
+    [ -s "$CREDS" ] && cat "$CREDS" || jq -cn '{error: "no demo account yet; run up first"}'
+    ;;
+  tunnel)
+    pidf="$PROTO_STATE/tunnel.pid"
+    if ! { [ -s "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; }; then
+      (cd "$PROTO_WORKTREE" && nohup mise run cluster:open -- --environment "$PROTO_NAME" --port "$BC_PORT" >"$PROTO_STATE/tunnel.log" 2>&1 & echo $! > "$pidf")
+    fi
+    for _ in $(seq 1 30); do curl -s -o /dev/null --max-time 2 "http://localhost:$BC_PORT/" && break; sleep 2; done
+    jq -cn --arg u "http://localhost:$BC_PORT" '{url: $u}'
+    ;;
+  untunnel)
+    pidf="$PROTO_STATE/tunnel.pid"
+    [ -s "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null; rm -f "$pidf"
+    ;;
+  down)
+    exit 0
+    ;;
+  *) echo "usage: bin/env up|update|status|credentials|tunnel|untunnel|down" >&2; exit 2;;
+esac
