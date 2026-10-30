@@ -344,6 +344,12 @@ install_tools() {
   # the install, and no image carries the host's CA.
   [ ! -r "${SSL_CERT_FILE:-}" ] || ${sudo[@]+"${sudo[@]}"} sh -c 'cat "$1" >> "$2"' _ "$SSL_CERT_FILE" "$r/run/platform/ca-certificates.crt"
   mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" | grep -E '^[A-Z_][A-Z0-9_]*=')
+  # A host that reaches the internet only through a proxy, and resolves no
+  # public name itself, hands the installer its proxy: the image's env names
+  # none, and env -i would leave the downloads with no route at all.
+  for v in HTTPS_PROXY https_proxy HTTP_PROXY http_proxy NO_PROXY no_proxy; do
+    [ -z "${!v:-}" ] || envv+=("$v=${!v}")
+  done
   # The GitHub token stays out of every command line, where any user on the
   # host reads it: sudo keeps it in the environment, and it crosses env -i in a
   # root-only file the chroot's shell reads into the installer's environment.
