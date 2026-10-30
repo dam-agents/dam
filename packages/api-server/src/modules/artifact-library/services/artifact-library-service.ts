@@ -11,6 +11,7 @@ import type {
   ArtifactKind,
   ArtifactLibraryService,
   ArtifactListFilter,
+  ArtifactSendPromptResult,
   ArtifactSharingInput,
   ArtifactUpdateInput,
   ArtifactUploadTicket,
@@ -35,6 +36,11 @@ import {
 } from "../domain/artifact-kind.js";
 import { generateSlug } from "../domain/share-crypto.js";
 import {
+  ownerPromptText,
+  viewerSessionKey,
+  viewerSessionTitle,
+} from "../domain/viewer-bridge.js";
+import {
   isOwnStagingKey,
   stagingKey,
   versionKey,
@@ -47,6 +53,7 @@ import type {
 } from "../infrastructure/artifact-library-repository.js";
 import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
+import type { ViewerPromptDelivery } from "./share-bridge-service.js";
 import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
@@ -100,6 +107,8 @@ export interface ArtifactLibraryDeps {
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
+  featureOn: () => Promise<boolean>;
+  prompts: ViewerPromptDelivery;
 }
 
 type AgentApiAccess =
@@ -754,6 +763,44 @@ export function createArtifactLibraryService(
           sub: owner,
         },
       });
+    },
+
+    async sendPrompt(
+      { artifactId, prompt },
+      { agentIds, email },
+    ): Promise<ArtifactSendPromptResult> {
+      const row = await repo.getArtifact(artifactId, owner);
+      const access = agentApiAccess(row, agentIds);
+      const denial = !access.allowed
+        ? access.denial
+        : (await deps.featureOn())
+          ? null
+          : "feature-off";
+      securityLog(denial === null ? "info" : "warn", "artifact.owner_prompt", {
+        category: "authz",
+        actor: owner,
+        actorKind: "user",
+        surface: securitySurface(surface),
+        decision: denial === null ? "allow" : "deny",
+        target: artifactId,
+        ...(row?.agentId ? { agentId: row.agentId } : {}),
+        ...(denial === null ? {} : { reason: denial }),
+      });
+      if (!row || !access.allowed || denial !== null)
+        return { ok: false, reason: "not-allowed" };
+      const outcome = await deps.prompts.deliver({
+        agentId: access.agentId,
+        sessionKey: viewerSessionKey(row.id, owner),
+        sessionTitle: viewerSessionTitle(email ?? owner, row.title),
+        prompt: ownerPromptText({
+          artifactId: row.id,
+          artifactTitle: row.title,
+          prompt,
+        }),
+      });
+      return outcome === "accepted"
+        ? { ok: true }
+        : { ok: false, reason: outcome };
     },
 
     async recordTouch({ agentId, sessionId, artifactId, version }) {

@@ -254,6 +254,7 @@ import {
   composeShareAuth,
   composeShareRelayTokens,
   composeShareRenderTokens,
+  composeArtifactPromptDelivery,
   composeShareBridge,
   composeShareViewer,
   createAgentApiClient,
@@ -1668,21 +1669,26 @@ export async function bootstrap() {
     });
 
   const agentApiClient = createAgentApiClient(config.namespace);
-  const shareBridge = composeShareBridge({
-    featureOn: async (owner) =>
-      (
-        await composeFeaturesForOwner({
-          db,
-          owner,
-          surface: "system",
-          modes: config.featureModes,
-        }).features.flags()
-      )["interactive-artifacts"],
-    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    agentApi: agentApiClient,
+  const interactiveArtifactsOn = async (owner: string) =>
+    (
+      await composeFeaturesForOwner({
+        db,
+        owner,
+        surface: "system",
+        modes: config.featureModes,
+      }).features.flags()
+    )["interactive-artifacts"];
+  const artifactPrompts = composeArtifactPromptDelivery({
     makeAcpClient,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     spendHold: channelSpendHold,
     attendance: turnAttendance,
+  });
+  const shareBridge = composeShareBridge({
+    featureOn: interactiveArtifactsOn,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    agentApi: agentApiClient,
+    prompts: artifactPrompts,
   });
   const kbShareServing = composeKbShareServing({
     db,
@@ -2072,6 +2078,8 @@ export async function bootstrap() {
       agentExists: opts?.agentExists,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
+      featureOn: interactiveArtifactsOn,
+      prompts: artifactPrompts,
     }).artifactLibrary;
   const environments = composeEnvironments({
     db,

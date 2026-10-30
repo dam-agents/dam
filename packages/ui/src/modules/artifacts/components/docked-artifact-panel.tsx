@@ -15,9 +15,13 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
+import { useArtifactSessionPrompt } from "../hooks/use-artifact-session-prompt.js";
 import { useFullPage } from "../hooks/use-full-page.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
-import { canUseArtifactBridge } from "../lib/artifact-bridge.js";
+import {
+  canStartArtifactSession,
+  canUseArtifactBridge,
+} from "../lib/artifact-bridge.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { ArtifactVisibilityButton } from "./artifact-badges.js";
@@ -105,6 +109,11 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
     agentId,
     shownVersion,
   );
+  const sessionPrompt = useArtifactSessionPrompt(
+    agentId === null && canStartArtifactSession(artifact, enabled, shownVersion)
+      ? artifact?.id
+      : undefined,
+  );
   const frame =
     artifact && preview.data ? (
       <DeferredFrame
@@ -114,6 +123,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
         className="h-full w-full bg-white"
         deferMs={0}
         onSendPrompt={bridgeOpen ? onSendPrompt : undefined}
+        onNewSessionPrompt={sessionPrompt}
         agentApiArtifactId={bridgeOpen ? artifact.id : undefined}
       />
     ) : null;
