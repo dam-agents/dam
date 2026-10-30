@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The classic sidebar marks unread work in blue with a text equivalent: on an unread Session row, and on the row of an Agent with an unread Session. An Activity row names its Agent with the Agent's avatar beside the name. An Agent row whose Sessions are closed keeps its unread marker and is not highlighted when its chat shows a Session.
+// TEST_OVERVIEW: The classic sidebar marks unread work in blue with a text equivalent: on an unread Session row, and on the row of an Agent with an unread Session. An Activity row names its Agent with the Agent's avatar beside the name. An Agent row whose Sessions are closed keeps its unread marker and is not highlighted when its chat shows a Session. A revealed Agent row hides its blue dot, so it never sits on an action, and a filtered row keeps the dot at the right end with the filter icon next to it.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -38,6 +38,8 @@ const agentRow = (props: {
   open: boolean;
   selected: boolean;
   actionCount?: 3 | 4;
+  filtered?: boolean;
+  unread?: boolean;
 }) =>
   renderToStaticMarkup(
     createElement(SidebarAgentRow, {
@@ -51,7 +53,7 @@ const agentRow = (props: {
       onOpenPeople: () => {},
       actions: null,
       actionCount: 3,
-      filter: null,
+      filter: createElement("span", { "data-filter": true }),
       filtered: false,
       ...props,
     }),
@@ -112,6 +114,61 @@ describe("unread markers", () => {
     const html = agentRow({ open: true, selected: true, actionCount: 4 });
     expect(html).toContain("pr-[112px]");
     expect(html).not.toContain("pr-[86px]");
+  });
+
+  const unreadDotClass = (html: string) =>
+    /<span aria-hidden="true" class="([^"]*)"><span class="[^"]*bg-accent/.exec(
+      html,
+    )?.[1] ?? "";
+  const filterClass = (html: string) =>
+    /<div class="([^"]*)"><span data-filter="true"><\/span>/.exec(html)?.[1] ??
+    "";
+
+  it("TEST_SCENARIO: an unselected Agent whose actions show because it has focus or an open menu hides its blue dot and makes room for them, so the dot never sits on Configure agent", () => {
+    const html = agentRow({ open: false, selected: false, actionCount: 4 });
+    for (const reveal of [
+      "group-hover/agent",
+      "group-focus-within/agent",
+      "group-has-[[data-state=open]]/agent",
+    ]) {
+      expect(unreadDotClass(html)).toContain(`${reveal}:hidden`);
+      expect(html).toContain(`${reveal}:pr-[112px]`);
+    }
+  });
+
+  it("TEST_SCENARIO: a filtered, unselected Agent with an unread Session keeps the blue dot at the right end, with the filter icon next to it", () => {
+    const html = agentRow({ open: false, selected: false, filtered: true });
+    expect(unreadDotClass(html)).toContain("ml-6");
+    expect(html).not.toContain("pr-[34px]");
+    expect(filterClass(html)).toMatch(/(^| )right-6( |$)/);
+    expect(filterClass(html)).toContain("group-hover/agent:right-[56px]");
+  });
+
+  it("TEST_SCENARIO: a filtered Agent with nothing unread keeps the filter icon at the right end", () => {
+    const html = agentRow({
+      open: false,
+      selected: false,
+      filtered: true,
+      unread: false,
+    });
+    expect(html).toContain("pr-[34px]");
+    expect(filterClass(html)).toMatch(/(^| )right-1( |$)/);
+  });
+
+  it("TEST_SCENARIO: a selected Agent places the filter icon just left of its actions", () => {
+    expect(
+      filterClass(agentRow({ open: true, selected: true, filtered: true })),
+    ).toMatch(/(^| )right-\[56px\]( |$)/);
+    expect(
+      filterClass(
+        agentRow({
+          open: true,
+          selected: true,
+          actionCount: 4,
+          filtered: true,
+        }),
+      ),
+    ).toMatch(/(^| )right-\[82px\]( |$)/);
   });
 });
 
