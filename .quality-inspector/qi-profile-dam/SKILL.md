@@ -82,7 +82,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   - Filing an issue or deciding anything needs a real model.
     Two ways make it testable:
     with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template;
-    when the instance credential `E2E_LITELLM_CURVE_BENDER_TOKEN` is set, the test creates the **IBM ETE LiteLLM CurveBender** provider connection whose key is that value, and the agent uses a real model that key serves.
+    when the instance credential `E2E_LITELLM_CURVE_BENDER_TOKEN` is set, the test creates the **CurveBender (own key)** provider connection whose key is that value, and the agent uses a real model that key serves.
     With neither, such ACs are `blocked`, naming `lend_model` and `E2E_LITELLM_CURVE_BENDER_TOKEN`.
   - A sandbox whose credentials are not set leaves its ACs `testable: no — external dependency`; so does a second user or person this instance lacks, for an AC that needs two.
 - Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`), where an agent can run at all (see *Agents run only where* below): it replies "Hello from the mock agent."
