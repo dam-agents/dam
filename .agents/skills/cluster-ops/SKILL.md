@@ -144,6 +144,10 @@ What it installs beside the chart:
   The gate hands each request to `127.0.0.1:<port>` with `Host: 127.0.0.1:<port>`, and the ingress routes by host name, so the bridge puts `X-Forwarded-Host` back as the host, and states the public scheme and port.
 - **Traefik's app entrypoint trusts forwarded headers**, so `X-Forwarded-Proto: https` reaches Keycloak and its cookies are `Secure`.
   Only the node's loopback reaches that entrypoint.
+- **A claim filesystem for the VM runners**: a sparse ext4 file, `~/.local/share/runner-claims.img`, loop-mounted at `~/.local/share/runner-claims` by the `platform-runner-claims` openrc service before k3s at every boot, and the storage class `platform-runner-claims` on it, which the install sets as `virtualization.runner.storageClass`.
+  It is `virtualization.runner.storage` in size, or the disk's free room when that is less, and only grows.
+  The runner's storage guard reads `statvfs` of its claim; on k3s's own `local-path` that is the whole Environment disk, which the Environment's own storage guard mostly preallocates, so the runner refused every new agent at its 90% level (#6128).
+  A runner claim made on `local-path` by an older install keeps that class: `e2e:reset`, or deleting the claim, moves it.
 
 **Signing in from the agent's own browser** needs the backchannel addresses (`backchannel.*` in the values): `cluster:install -- --environment <name> --backchannel` turns them on at `http://localhost:4444`, and `mise run cluster:open -- --environment <name>`, started in the background, forwards that port to this agent.
 `--backchannel-port <port>` moves them; `cluster:open` then needs the same `--port <port>`, as the command the install prints at its end has.
