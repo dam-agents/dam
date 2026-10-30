@@ -18,7 +18,7 @@ const (
 	ownerGatewayCredentialRoot = envoyBootstrapMount
 	ownerGatewayLDSKey         = "lds.yaml"
 	ownerGatewayCDSKey         = "cds.yaml"
-	ownerGatewayLeafSDSKey     = "leaf-sds.yaml"
+	ownerGatewayLeafSDSKey     = envoyLeafSDSKey
 	ownerGatewayBootstrap      = "envoy.yaml"
 	envoyLeafSDSName           = "leaf"
 	harnessGuardHeader         = "x-platform-harness-agent"
@@ -97,7 +97,13 @@ func renderOwnerGatewayAt(agents []ownerGatewayAgent, cfg *config.Config, repair
 	if out.CDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.cluster.v3.Cluster", repair.xdsVersion(), clusters)); err != nil {
 		return out, err
 	}
-	out.LeafSDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret", repair.xdsVersion(), []any{ev{
+	out.LeafSDS, err = renderLeafSDS(repair.xdsVersion())
+	return out, err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: Envoy reads a leaf named by plain filenames once, when it builds the listener, and never again; only a leaf delivered by SDS is re-read when its directory moves. cert-manager rewrites the leaf Secret whenever the hosts a gateway intercepts change — at an agent's create, when its first grants land a second after the agent, and at every promotion — and the kubelet swaps the mounted files in place. So every gateway, an agent's own as well as an owner's, reads its leaf through this file, which watches the leaf's directory: a pod that mounted the leaf just before the re-issue serves the new one within the kubelet's sync rather than presenting a certificate that does not name the host until the pod next restarts.
+func renderLeafSDS(version string) (string, error) {
+	return marshalYAML(discoveryResponse("type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret", version, []any{ev{
 		"name": envoyLeafSDSName,
 		"tls_certificate": ev{
 			"certificate_chain": ev{"filename": envoyLeafTLSMount + "/tls.crt"},
@@ -105,7 +111,6 @@ func renderOwnerGatewayAt(agents []ownerGatewayAgent, cfg *config.Config, repair
 			"watched_directory": ev{"path": envoyLeafTLSMount},
 		},
 	}}))
-	return out, err
 }
 
 func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation, epoch int, credentialRoot string) bootstrapParams {
@@ -126,7 +131,6 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation, epoch
 	p.HealthBody = "pending"
 	p.FlatCredentials = true
 	p.CredentialsRoot = credentialRoot
-	p.LeafSDSPath = envoyBootstrapMount + "/" + ownerGatewayLeafSDSKey
 	p.LuaDir = envoyBootstrapMount
 	p.RepairGeneration = generation
 	p.ArrivalEpoch = epoch
