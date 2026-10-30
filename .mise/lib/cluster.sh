@@ -458,7 +458,8 @@ node_runner_storage() {
 # mounts the bare directory beneath it.
 node_claim_fs() {
   local want room have
-  room="$(node_sh stat -f -c '%a %S' "$NODE_HOME_SHARE" | awk '{ print $1 * $2 }')"
+  room="$(node_sh stat -f -c '%a %S' "$NODE_HOME_SHARE")" || return 1
+  room=$(( ${room% *} * ${room#* } ))
   want="$1"
   [ "$room" -ge "$want" ] || want="$room"
   node_sh sh -c 'command -v mkfs.ext4 >/dev/null || {
