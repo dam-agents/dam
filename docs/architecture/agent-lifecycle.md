@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-25
+Last verified: 2026-10-29
 
 ## Overview
 
@@ -77,6 +77,7 @@ A plain create names neither a harness nor a provider, since each session picks 
 One, not every fitting one, so the [default](harness-config.md#session-settings) its runtime saves at its first `hello` sits on that provider and is the model its image presets, and no call goes to a provider the owner never chose for this agent; picking a profile that runs on another provider grants that provider on its Providers section.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 A create that names a provider gets that one alone.
+A create from a [starter kit](starter-kits.md) that lists its providers gets one of them first, when the caller holds one, and the harness's order otherwise.
 Only a template create gets default providers; a bare image and a [sub-agent](invocations.md) hold only what they name.
 A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none, when it is the owner's first provider that agent's harness runs on.
 An agent that holds none while an older such provider exists was detached on purpose, and stays so.

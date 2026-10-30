@@ -15,6 +15,7 @@ export interface AgentView {
   podTerminationReason?: string;
   podTerminationCode?: string;
   channels: ChannelConfig[];
+  starterKit?: string | null;
 }
 
 export function displayState(agent: AgentView): string {

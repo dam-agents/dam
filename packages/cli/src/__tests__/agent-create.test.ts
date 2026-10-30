@@ -77,6 +77,9 @@ function setup(connections: ConnectionView[] = [provider]) {
     }),
     createTrpcClient: () => trpc,
     createAvatarUploader: () => ({ upload: vi.fn() }),
+    createKitService: () => {
+      throw new Error("no kit in a plain create");
+    },
   });
 
   async function run(args: string[], exitCode: number) {

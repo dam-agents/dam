@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-27
+Last verified: 2026-10-29
 
 ## Overview
 
@@ -94,9 +94,10 @@ flowchart LR
   The kit modal offers every messenger the install has, not only the kit's, and marks the kit's own with its badge and note.
   For Slack it takes channels by name from the [channel picker](channels.md), which offers only channels the person and the bot are both in, so they are bound at apply, before the onboarding turn is composed and names them.
   A `direct` channel gets no picker, since the platform does not pick a DM for the person: the modal gives the in-chat bind steps instead, as it does for a DM beside a picked channel and for Telegram, whose chats the bot cannot list.
-- **Provider compatibility** — a kit never states a provider as a Connection Requirement: it lists the provider presets it supports in `providers` (a kit with its own image states them on the image instead).
-  The requirement list is for the connections the *job* needs; a kit from an external catalog that still declares a provider under `accepts` is read as its provider list and kept out of the Connections section.
-  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
+- **Provider preference** — a kit never states a provider as a Connection Requirement: it may list the provider presets its job works best on in `providers` (a kit with its own image states them on the image instead).
+  The list is a preference, never a filter: any provider the kit's harness runs on can create the kit's Agent.
+  The requirement list is for the connections the *job* needs; the apply form keeps a provider that a kit from an external catalog still declares under `accepts` out of the Connections section.
+  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, one of the kit's `providers` when the user holds one, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
 - **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.
@@ -213,6 +214,7 @@ The catalog is one view shown in two places: the **Starter kits** page at `/star
 Its first card, **The Generalist**, is no kit: it creates a plain agent at once.
 A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channels — then applies without a further page.
 Every kit shows at one size.
+The CLI reaches the same kits through the same procedures ([CLI](cli.md#command-surface)): it lists the catalog, shows a kit's setup and what it needs, and applies it with the connections the modal would preselect — for each required need, the one connection the user owns that it accepts — then names each step left, since it has no modal to walk the user through them.
 Neither sits behind a flag: kits are how an agent is set up here, so the catalog is part of the product rather than something to opt into.
 The widget renders nothing when the install has no catalog.
 
@@ -240,6 +242,7 @@ No admin is involved and no catalog changes.
 - **Reviewed by the user, at one commit.** The modal shows everything the kit sets up, as for a catalog kit, and adds what a catalog's review would otherwise cover: a notice that nobody on the platform reviewed the kit, naming the repository and the commit, and the kit's install command and environment.
   An unreviewed kit can set up nothing the user could not set up by hand on a new Agent — its image, egress, install command and schedules are all things the plain create and the agent's settings already offer the same user — so the review is the user's, and the modal gives them what they need for it.
 - **Created from the commit the user saw.** Apply names the link and that commit; the server reads the kit again at the commit rather than trusting what the browser sends, and refuses when the repository now holds a different kit.
+  The CLI has no modal between the read and the apply, so `agent create --kit <repository>` takes that commit as `--commit` and refuses when the repository's head has moved past it.
   The Agent is stamped `link/<kit>@<commit>`.
 - **A refusal says why.** A repository with no `kit.yaml`, an invalid field, a missing or private repository, and one that cannot be reached right now each come back as a message the person who pasted the link can act on.
   GitHub answers an anonymous read of a missing, renamed or private repository the same way (401 or 404 on the ref advertisement), so all three read as "could not be found, or it is not public" — for the kit and for its seed.
@@ -291,4 +294,5 @@ An abandoned update stays pending; the button then reopens its session or starts
 - Contract: [`packages/api-server-api/src/modules/starter-kits/`](../../packages/api-server-api/src/modules/starter-kits/)
 - Implementation: [`packages/api-server/src/modules/starter-kits/`](../../packages/api-server/src/modules/starter-kits/)
 - UI: [`packages/ui/src/modules/starter-kits/`](../../packages/ui/src/modules/starter-kits/)
+- CLI: [`packages/cli/src/modules/kit/`](../../packages/cli/src/modules/kit/)
 - Built-in catalog: [`helm/starter-kits/`](../../helm/starter-kits/)

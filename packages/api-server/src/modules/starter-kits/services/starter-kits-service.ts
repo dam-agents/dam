@@ -367,6 +367,7 @@ export function createStarterKitsService(
         ...(kit.defaultModel
           ? { starterKitDefaultModel: kit.defaultModel }
           : {}),
+        ...(kit.providers ? { starterKitProviders: kit.providers } : {}),
         connectionIds: input.connectionIds,
         ...(kit.hibernationTimeoutMin !== undefined
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }

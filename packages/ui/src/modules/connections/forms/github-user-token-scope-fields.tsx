@@ -92,6 +92,10 @@ export function GithubUserTokenScopeFields({
                 }
               : undefined
           }
+          dropped={{
+            count: draft.droppedRepoCount,
+            widens: draft.widensOnDrop,
+          }}
         />
       )}
     </>

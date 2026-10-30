@@ -5,6 +5,7 @@ import {
   levelsUpTo,
   readPermissions,
   readRepositoryIds,
+  splitUnlistedRepos,
   writePermissions,
   writeRepositoryIds,
 } from "@/modules/connections/lib/github-app-scope-fields";
@@ -84,5 +85,34 @@ describe("canProbe", () => {
     expect(canProbe({ ...withoutHost, host: "  " }, true)).toBe(false);
     expect(canProbe({ ...withoutHost, host: "ghe.acme.com" }, true)).toBe(true);
     expect(canProbe(withoutHost, false)).toBe(true);
+  });
+});
+
+describe("splitUnlistedRepos", () => {
+  const repositories = [{ id: 1 }, { id: 2 }];
+
+  it("drops a ticked repository a complete listing does not show", () => {
+    expect(splitUnlistedRepos(new Set([1, 9]), { repositories })).toEqual({
+      saved: [1],
+      kept: 0,
+      dropped: 1,
+      droppedAll: false,
+    });
+  });
+
+  it("flags a drop that leaves no repository, which would reach them all", () => {
+    expect(splitUnlistedRepos(new Set([9]), { repositories })).toMatchObject({
+      saved: [],
+      droppedAll: true,
+    });
+  });
+
+  it("keeps a ticked repository a truncated listing does not show", () => {
+    expect(
+      splitUnlistedRepos(new Set([1, 9]), {
+        repositories,
+        repositoriesTruncated: true,
+      }),
+    ).toEqual({ saved: [1, 9], kept: 1, dropped: 0, droppedAll: false });
   });
 });

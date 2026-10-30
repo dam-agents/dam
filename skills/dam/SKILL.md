@@ -1,7 +1,7 @@
 ---
 name: dam
 description: >
-  Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, and manage schedules, connections, network rules, approvals, channels, skills and spend.
+  Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, create agents from starter kits and take kit updates, and manage schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
   Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
 ---
@@ -176,6 +176,7 @@ Run `dam <command> --help` for every flag; it is the authority when it disagrees
 dam agent list --json
 dam agent get my-agent --json
 dam template list
+dam kit list
 dam connection list
 ```
 
@@ -191,6 +192,37 @@ dam agent create my-agent --wait --json
   If it lists none, the user connects one first ([Secrets](#secrets)); `dam connection templates --providers` lists the kinds there are.
   To change the providers or the default model later, see [Models and harnesses](#models-and-harnesses).
 - `--wait` returns once the agent is running, and stops early on an error or when there is no room to start it.
+
+### Starter kits
+
+A starter kit is a proven way of working that an agent is created from: it brings its own setup, skills and network rules, and asks for the connections, channels and schedules the job needs.
+A kit is not a template.
+A template (`dam template list`) is only the image an agent runs; when the user asks which kits there are, answer with `dam kit list`, never with templates.
+
+```sh
+dam kit list
+dam kit show research --json
+dam agent create my-desk --kit research --connection github --json
+```
+
+- `dam kit show <kit>` lists what the kit sets up (`seeds`) and what the user sets up (`needs`).
+  Each need is marked `required` or not, and carries the `dam` command that sets it up.
+  Show the user both lists before they pick the kit.
+- `<kit>` is the `ref` that `dam kit list --json` gives, or the address of a GitHub repository that holds a kit.
+  Nobody on the server reviewed a kit from a repository: show the user its install command and environment from `dam kit show` and create from it only once they agree.
+  Pass the full commit `dam kit show` printed as `--commit <sha>`; create refuses when the repository has moved on since, so run `dam kit show` again and check what changed.
+- A required connection the user does not have yet is made first ([Secrets](#secrets)), then passed with `--connection`.
+  When the user has exactly one connection a required need accepts, `dam agent create --kit` grants it without being told, as the web app does.
+- `--slack-channel <channel-id>` binds a Slack channel at create, `--skip-schedule <name>` leaves out one of the kit's schedules, and `--template <id>` picks the template for a kit that brings no image.
+- `--json` returns `steps`: what is left to set up, each with `done` and the `command` that does it.
+  `done: null` means not checked: without `credentials:read` the CLI cannot read which connections meet a need, so ask the user before setting up another one.
+  Work through the steps that are not done, with the user.
+  Most kits open a first session that asks the user for what the kit needs: find it with `dam session list <agent>` and relay the user's answers with `dam run <agent> --session <session-id> -p "<answer>"`.
+
+`dam agent get <agent>` names the kit an agent came from (`STARTER KIT`, and `starterKit` in `--json`) and whether a newer version of the kit is out (`KIT UPDATE`, and `kitUpdate.state` in `--json`: `available`, `pending`, `skipped`, `onboarding`, `unreachable` or `up-to-date`).
+`dam kit changes <agent>` shows what the newer version changes.
+`dam kit update <agent>` takes it: the agent opens a session of its own that brings its setup up to date and asks the user about each change, so relay that session as above.
+`dam kit skip <agent>` keeps the current version until the next one is out.
 
 ### Give an agent work
 

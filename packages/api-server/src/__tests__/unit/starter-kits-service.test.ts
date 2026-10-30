@@ -398,6 +398,18 @@ describe("starter kits: apply", () => {
     });
   });
 
+  // TEST_SCENARIO: a kit whose job needs particular providers lists them in kit.yaml, and the create carries the list so the Agent is granted one of them where the owner holds one.
+  it("creates the agent with the providers the kit listed", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({ providers: ["ibm-litellm"] }),
+    });
+    await service.apply(APPLY);
+    expect(calls.created[0]).toMatchObject({
+      starterKitProviders: ["ibm-litellm"],
+    });
+  });
+
   it("creates a knowledge-base kit as a regular kit: its share roots stamped, its install queued before its first session", async () => {
     const wiki = kit({
       schedules: [],
