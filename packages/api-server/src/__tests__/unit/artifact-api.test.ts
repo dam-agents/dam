@@ -55,7 +55,9 @@ describe("Artifact API — asking the publishing agent", () => {
 
     await world.call(dashboard, ping, { email: "alice@example.com" });
 
-    expect(seen).toEqual([{ role: "owner", email: "alice@example.com" }]);
+    expect(seen).toEqual([
+      { role: "owner", email: "alice@example.com", sub: "alice" },
+    ]);
   });
 
   /**

@@ -38,6 +38,7 @@ export function useArtifactRequest(
           ok: true,
           role: "owner",
           email: signedInEmail(),
+          sub: getUser()?.profile.sub ?? "",
         };
         pageWindow.postMessage(message, "*");
         return;

@@ -52,10 +52,10 @@ Any HTTP status the server returns is a normal answer; a typed failure reason re
 The bridge also rejects any request the host has not answered within three minutes, longer than a wake plus the relay timeout, so every call settles even when the host drops it.
 Bodies are text only and capped both ways, and only the content type crosses in either direction, plus the caller headers below.
 The Agent starts and keeps its server alive itself; the platform never starts, supervises or restarts it, so after hibernation the page reports nothing listening until the Agent starts it again.
-Every relayed request names **who is calling**, in headers agent-runtime sets on the loopback request and the page cannot: `x-platform-caller-role` (`owner` or `viewer`) and, when the identity provider verified it and it is plain ASCII (a header value), `x-platform-caller-email`, trimmed and lowercased.
+Every relayed request names **who is calling**, in headers agent-runtime sets on the loopback request and the page cannot: `x-platform-caller-role` (`owner` or `viewer`), `x-platform-caller-sub` (the person's identity provider subject, which the share host's own client shares with the app because both sit in one realm) and, when the identity provider verified it and it is plain ASCII (a header value), `x-platform-caller-email`, trimmed and lowercased.
 The owner's own calls are `owner`; on a share page the owner, recognised by sub as the share host lets them in, is `owner` and everyone else `viewer`.
 The identity tells the Agent's server who to serve, so it can keep each person's data apart; it grants nothing, since every call still runs under the owner's grant.
-The page gets the same pair from the bridge's `whoami`, answered by the host without reaching the Agent: for display only, never proof to send back.
+The page gets the same values from the bridge's `whoami`, answered by the host without reaching the Agent: for display only, never proof to send back.
 An Agent Editor gets no role of its own, because the in-app bridge reaches only the caller's own artifacts.
 The contract is in [`packages/api-server-api/`](../../packages/api-server-api/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 

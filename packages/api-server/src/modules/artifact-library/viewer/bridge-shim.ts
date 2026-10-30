@@ -54,7 +54,7 @@ window.platform = (() => {
       );
     },
     whoami() {
-      return call({ type: ${JSON.stringify(ARTIFACT_WHOAMI_TYPE)} }, (data) => ({ role: data.role, email: data.email }));
+      return call({ type: ${JSON.stringify(ARTIFACT_WHOAMI_TYPE)} }, (data) => ({ role: data.role, email: data.email, sub: data.sub }));
     },
   });
 })();

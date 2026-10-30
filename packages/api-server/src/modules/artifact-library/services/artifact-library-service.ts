@@ -748,7 +748,11 @@ export function createArtifactLibraryService(
       }
       return deps.agentApi.request(access.agentId, {
         ...request,
-        caller: { role: "owner", email: artifactApiCallerEmail(email) },
+        caller: {
+          role: "owner",
+          email: artifactApiCallerEmail(email),
+          sub: owner,
+        },
       });
     },
 

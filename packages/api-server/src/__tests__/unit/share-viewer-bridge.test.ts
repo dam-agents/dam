@@ -268,10 +268,10 @@ describe("a viewer's request on a shared interactive page", () => {
     const { w, app } = world();
     await call(app, "/a/slug-a/request", {
       ...getState,
-      caller: { role: "owner", email: "bob@example.com" },
+      caller: { role: "owner", email: "bob@example.com", sub: "bob-sub" },
     });
     expect(w.appCallers).toEqual([
-      { role: "viewer", email: "alice@example.com" },
+      { role: "viewer", email: "alice@example.com", sub: "alice-sub" },
     ]);
   });
 
@@ -642,7 +642,11 @@ describe("the share page relay", () => {
         ? {
             relay: {
               token: "relay-token-1234567890",
-              caller: { role: "viewer" as const, email: "alice@example.com" },
+              caller: {
+                role: "viewer" as const,
+                email: "alice@example.com",
+                sub: "alice-sub",
+              },
             },
           }
         : {}),

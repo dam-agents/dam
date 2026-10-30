@@ -5,7 +5,7 @@ status: accepted
 supersedes:
 subsystem: artifact-library
 tags: [artifacts, sharing, identity, privacy]
-summary: Every request the platform relays to an Agent's Artifact API names the person using the page, owner or viewer, with their verified email, in headers only the platform sets; the page can read the same pair for display, and nothing about authority changes.
+summary: Every request the platform relays to an Agent's Artifact API names the person using the page, owner or viewer, with their stable subject and verified email, in headers only the platform sets; the page can read the same values for display, and nothing about authority changes.
 ---
 
 # ADR-125: The Artifact API names who is using an interactive page
@@ -22,7 +22,8 @@ The platform already knows who calls: the owner's session in the app, and the vi
 
 ## Decision
 
-Every request the platform relays to an Agent's Artifact API names the person using the page: a role, owner or viewer, and their email when the identity provider verified it, trimmed and lowercased.
+Every request the platform relays to an Agent's Artifact API names the person using the page: a role, owner or viewer, their identity provider subject, and their email when the identity provider verified it, trimmed and lowercased.
+The subject is the stable key, since an email can change; the email is what the owner's lists of people name.
 The platform sets these as request headers on the loopback hop; the page cannot set, read or forge them.
 The identity tells the Agent who is calling, and grants nothing: every call still runs under the owner's grant, and any rule per person is the Agent's to enforce.
 The page can ask the bridge who is using it, for display only; the host answers that without reaching the Agent.
@@ -30,10 +31,11 @@ On a share page the owner, recognised by sub as the share host lets them in, is 
 
 ## Consequences
 
-- **Easier:** an Agent can serve each person their own data on one shared page, without a sign-in of its own.
+- **Easier:** an Agent can serve each person their own data on one shared page, without a sign-in of its own, and keeps it when their email changes.
 - **Harder:** a viewer's email now reaches the Agent's sandbox on every request, not only with a prompt; the Share dialog says so before the owner shares.
 - **Harder:** an Agent Editor has no role yet, because the in-app bridge reaches only the caller's own artifacts; adding one is a new role value.
 - **Committed-to:** the caller headers are part of the Artifact API contract, and the relay must never let the page supply them.
+- **Committed-to:** the app and the share host must keep one subject per person, so the share host's client cannot use pairwise subjects.
 
 ## Alternatives Considered
 

@@ -49,12 +49,14 @@ export const artifactApiRequestInputSchema = z
 
 export const ARTIFACT_API_CALLER_ROLE_HEADER = "x-platform-caller-role";
 export const ARTIFACT_API_CALLER_EMAIL_HEADER = "x-platform-caller-email";
+export const ARTIFACT_API_CALLER_SUB_HEADER = "x-platform-caller-sub";
 
 const CALLER_EMAIL = /^[\x21-\x7e]{1,320}$/;
 
 export const artifactApiCallerSchema = z.object({
   role: z.enum(["owner", "viewer"]),
   email: z.string().regex(CALLER_EMAIL).nullable(),
+  sub: z.string().regex(/^[\x21-\x7e]{1,255}$/),
 });
 
 export function artifactApiCallerEmail(email: string | null): string | null {

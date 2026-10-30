@@ -93,16 +93,17 @@ It rejects only when the platform cannot deliver the request, with an `Error` wh
 
 ### Who is using the page
 
-Every request carries two headers that the platform sets and the page cannot:
+Every request carries headers that the platform sets and the page cannot:
 
 - `x-platform-caller-role`: `owner` for the artifact's owner, `viewer` for a person it is shared with.
+- `x-platform-caller-sub`: that person's stable account id; it stays the same when their email changes.
 - `x-platform-caller-email`: that person's verified email, lowercased; absent when the platform has no verified email for them or it is not plain ASCII.
 
-Use them to give each person their own data, for example to key saved answers by email or to show a viewer only their own rows.
+Use them to give each person their own data: key what you store by `sub`, and use the email to show who it is or to match a list of people the owner gave you.
 Everyone still acts under the owner's authority; the headers say who is calling, not what they may do, so the rules are yours to enforce.
 A request without the role header did not come through the platform, for example your own `curl`.
 
-`platform.whoami()` resolves with `{ role, email }` for the same person, for showing "Signed in as …" in the page.
+`platform.whoami()` resolves with `{ role, email, sub }` for the same person, for showing "Signed in as …" in the page.
 It works where `request` works and fails the same way elsewhere.
 Never send it back to your server as proof of identity: read the headers instead.
 

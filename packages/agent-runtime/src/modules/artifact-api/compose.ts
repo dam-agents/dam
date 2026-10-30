@@ -1,6 +1,7 @@
 import {
   ARTIFACT_API_CALLER_EMAIL_HEADER,
   ARTIFACT_API_CALLER_ROLE_HEADER,
+  ARTIFACT_API_CALLER_SUB_HEADER,
   ARTIFACT_API_MAX_BODY_BYTES,
   ARTIFACT_API_PORT,
   ARTIFACT_API_TIMEOUT_MS,
@@ -46,6 +47,7 @@ function callerHeaders(
   if (!caller) return {};
   return {
     [ARTIFACT_API_CALLER_ROLE_HEADER]: caller.role,
+    [ARTIFACT_API_CALLER_SUB_HEADER]: caller.sub,
     ...(caller.email !== null
       ? { [ARTIFACT_API_CALLER_EMAIL_HEADER]: caller.email }
       : {}),

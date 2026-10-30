@@ -70,6 +70,7 @@ export function shareCaller(
         ? session.email.trim().toLowerCase()
         : null,
     ),
+    sub: session.sub,
   };
 }
 
