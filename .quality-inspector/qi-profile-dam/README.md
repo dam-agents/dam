@@ -34,6 +34,8 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
   `suite/lib/sandbox.ts` → `connectSlackChannel` picks the sandbox channel in the *Connect Slack channels* dialog.
   That picker lists channels only for a DAM user who linked their Slack account, which a user does only with `/dam login` or `/dam bind` in Slack, and no Slack API sends a slash command.
   So the Slack journeys stay blocked until the QA install can link the owner's account to the test person at install; `SKILL.md` states the limit.
+- `operator_credentials` (quality-inspector 3.47.0 or later) — one value the inspector's operator fills once, not an account to create: `LITELLM_CURVE_BENDER_TOKEN`, a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com`, seeded empty as `E2E_LITELLM_CURVE_BENDER_TOKEN` and reported by `verify-onboarding.sh`.
+  Optional: without it a criterion that needs a real model is `blocked` (`SKILL.md` → *What the nested install cannot do*).
 - `scenarios/` — the smoke regression suite: the journeys the inspector replays nightly, listed under [Smoke regression suite](#smoke-regression-suite).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, what the nested install cannot do, and what the per-PR e2e suite already keeps true (`## Tested elsewhere`; a PR that adds or removes such a flow there updates the list).
   User-facing only — never implementation detail.
@@ -84,3 +86,12 @@ An older DAM without the tool keeps the manual path: the operator adds the rule 
 | `slack`   | a workspace, a channel, DAM's app from `etc/slack/app-manifest.yaml`, a test person (`sandbox/slack.md`)                                                             | `E2E_SANDBOX_SLACK_BOT_TOKEN`, `_APP_TOKEN`, `_HUMAN_TOKEN`, `_CHANNEL_ID`                                    |
 | `github2` | a second test user with an authenticator code, a member of `github`'s organization with Write on its repository, its fine-grained token (`sandbox/github-second.md`) | `E2E_SANDBOX_GITHUB2_TOKEN`, `_LOGIN`, `_PASSWORD`, `_TOTP_SECRET`                                            |
 | `slack2`  | a second test person in `slack`'s channel, with an app of its own (`sandbox/slack-second.md`)                                                                        | `E2E_SANDBOX_SLACK2_HUMAN_TOKEN`                                                                              |
+
+## Operator credentials
+
+One value a person pastes, not an account to create (`operator_credentials` in `profile.json`): the inspector's `env.sh init` seeds it as an empty line and `verify-onboarding.sh` reports whether it is set.
+It is optional; `required: false`.
+
+| Line in `work/env/credentials.env` | What the operator fills                                               | Without it                                       |
+| ---------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------ |
+| `E2E_LITELLM_CURVE_BENDER_TOKEN`   | a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com` | a criterion that needs a real model is `blocked` |
