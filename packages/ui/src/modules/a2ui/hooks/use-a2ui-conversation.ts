@@ -12,6 +12,7 @@ import {
   pendingResponses,
   trailingAutomaticReplies,
 } from "../lib/function-replies.js";
+import { openSurfaceIds } from "../lib/open-surfaces.js";
 import { withRendererMetadata as attachMetadata } from "../lib/outgoing.js";
 
 function lastReply(messages: readonly Message[]): Message | undefined {
@@ -21,7 +22,7 @@ function lastReply(messages: readonly Message[]): Message | undefined {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: replays every A2UI block of the loaded Session Transcript in order, so a later agent message can update or delete a surface an earlier message created, and only the surface the newest finished message touched accepts input.
+ * UNIT_BOUNDARY_DESCRIPTION: replays every A2UI block of the loaded Session Transcript in order, so a later agent message can update or delete a surface an earlier message created, and a surface accepts input until the user answers it or a newer one.
  */
 export function useA2uiConversation(
   messages: readonly Message[],
@@ -37,6 +38,10 @@ export function useA2uiConversation(
   const last = lastReply(messages);
   const liveMessageId =
     last && last.role === "assistant" && !last.streaming ? last.id : null;
+  const openSurfaces = useMemo(
+    () => openSurfaceIds(conversation, messages, liveMessageId),
+    [conversation, messages, liveMessageId],
+  );
   const answeredCalls = useMemo(
     () => (enabled ? answeredCallIds(messages) : new Set<string>()),
     [enabled, messages],
@@ -71,6 +76,7 @@ export function useA2uiConversation(
       conversation,
       sessionKey,
       liveMessageId,
+      openSurfaces,
       withRendererMetadata,
       answeredCalls,
       pendingResponses: pending,
@@ -80,6 +86,7 @@ export function useA2uiConversation(
       conversation,
       sessionKey,
       liveMessageId,
+      openSurfaces,
       withRendererMetadata,
       answeredCalls,
       pending,
