@@ -37,10 +37,11 @@ export interface TouchedRepositoryStore {
     },
   ): void;
   linkPullRequest(
+    sessionId: string,
     path: string,
-    branch: string | null,
+    branch: string,
     pullRequest: PullRequestLink,
-  ): void;
+  ): boolean;
   updatePullRequest(pullRequest: PullRequestLink): boolean;
   editedAtOf(sessionId: string): Map<string, string>;
   paths(): string[];
@@ -114,22 +115,23 @@ export function createTouchedRepositoryStore(
       store.write({ sessions: bounded({ ...sessions, [sessionId]: kept }) });
     },
 
-    linkPullRequest(path, branch, pullRequest) {
+    linkPullRequest(sessionId, path, branch, pullRequest) {
       const { sessions } = store.read();
-      let changed = false;
-      const next: TouchedBySession = {};
-      for (const [sessionId, entries] of Object.entries(sessions)) {
-        const entry = entries[path];
-        const stale =
-          entry !== undefined &&
-          entry.branch === branch &&
-          !sameLink(entry.pullRequest, pullRequest);
-        if (stale) changed = true;
-        next[sessionId] = stale
-          ? { ...entries, [path]: { ...entry, pullRequest } }
-          : entries;
-      }
-      if (changed) store.write({ sessions: next });
+      const entries = sessions[sessionId];
+      const entry = entries?.[path];
+      if (
+        !entry ||
+        entry.branch !== branch ||
+        sameLink(entry.pullRequest, pullRequest)
+      )
+        return false;
+      store.write({
+        sessions: {
+          ...sessions,
+          [sessionId]: { ...entries, [path]: { ...entry, pullRequest } },
+        },
+      });
+      return true;
     },
 
     updatePullRequest(pullRequest) {
