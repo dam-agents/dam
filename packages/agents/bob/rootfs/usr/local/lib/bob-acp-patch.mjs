@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { dropOwnImport } from "./bob-preload-lib.mjs";
 
-const BOB_VERSION = "2.0.6";
+const BOB_VERSION = "2.0.8";
 const UPSTREAM_GAP =
   "Bob starts the MCP servers of mcp.json in the background in `bob acp` too, as `bob chat` does, " +
   "and a cancel during its automatic context compaction no longer replaces the history with an empty summary";

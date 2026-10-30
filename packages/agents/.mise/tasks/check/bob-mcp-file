@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
-const pinned = read("bob/image.toml").match(/^\[tools\."http:bob"\]\nversion = "([^"]+)"$/m)?.[1];
+const pinned = read("bob/image.toml").match(/^"npm:@ibm\/bob" = "([^"]+)"$/m)?.[1];
 const targeted = read("bob/rootfs/usr/local/lib/bob-mcp-file.mjs").match(/^const BOB_VERSION = "([^"]+)";$/m)?.[1];
 
 if (pinned === undefined || pinned !== targeted) {
