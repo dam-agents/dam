@@ -185,7 +185,6 @@ const platformSessionMetaSchema = z.object({
   initialization: z.boolean().optional(),
   threadTs: z.string().optional(),
   createdAt: z.string().optional(),
-  // The runtime lists a session nobody renamed with `customTitle: null`.
   customTitle: z
     .string()
     .nullish()
