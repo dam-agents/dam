@@ -142,12 +142,6 @@
                     "null"
                   ],
                   "description": "A bare tag of the bot reaches this agent."
-                },
-                "seenAt": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
                 }
               }
             }

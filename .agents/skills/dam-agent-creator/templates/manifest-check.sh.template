@@ -60,8 +60,12 @@ each() { jq -r "$1" "$card"; }
 for k in readme agent source surfaces triggers skills trust; do
   jq -e --arg k "$k" 'has($k)' "$card" >/dev/null || fail "key-$k" "required key $k is missing" "add $k (docs/manifest.md → Sections)"
 done
-extra="$(jq -r --slurpfile s "$SCHEMA" 'keys - ($s[0].properties | keys) | .[]' "$card" 2>/dev/null)"
-[ -z "$extra" ] || fail keys "unknown top-level keys: $(echo $extra)" "remove them or move their content into an existing section"
+if extra="$(jq -r --slurpfile s "$SCHEMA" 'keys - ($s[0].properties | keys) | .[]' "$card" 2>/dev/null)"; then
+  [ -z "$extra" ] && ok keys "no unknown top-level key" \
+    || fail keys "unknown top-level keys: $(echo $extra)" "remove them or move their content into an existing section"
+else
+  warn keys "$SCHEMA not readable or not a schema; unknown-key check skipped"
+fi
 jq -e '(.readme | type == "string") and (.readme | length > 80)' "$card" >/dev/null \
   || fail readme "readme is missing or shorter than one paragraph" "write one paragraph for a reader that does not know this format"
 jq -e '.agent | (.name and .description and .version) and ((.roles // []) | length > 0)' "$card" >/dev/null \
@@ -99,17 +103,23 @@ refs="$(jq -r '
 if [ -z "$refs" ]; then ok references "every trigger, skill and contract reference resolves"
 else while IFS= read -r r; do fail references "$r" "fix the name or add the entry"; done <<< "$refs"; fi
 
-# Optional full schema pass.
-if python3 -c 'import jsonschema' 2>/dev/null && [ -r "$SCHEMA" ]; then
+# Optional full schema pass: `ok` only when the validator ran and found nothing.
+if [ ! -r "$SCHEMA" ]; then
+  warn schema "$SCHEMA not readable; full JSON Schema pass skipped"
+elif ! python3 -I -c 'import jsonschema' 2>/dev/null; then
+  warn schema "full JSON Schema pass skipped (python3 -I cannot import jsonschema); shape checks above still ran"
+else
   out="$(python3 -I -c '
 import json, sys, jsonschema
 s = json.load(open(sys.argv[1])); c = json.load(open(sys.argv[2]))
-for e in jsonschema.Draft202012Validator(s).iter_errors(c):
-    print("/".join(map(str, e.path)) or "(root)", "—", e.message)' "$SCHEMA" "$card")"
-  if [ -z "$out" ]; then ok schema "valid against $(basename "$SCHEMA")"
-  else while IFS= read -r r; do fail schema "$r" "match docs/manifest.schema.json"; done <<< "$out"; fi
-else
-  warn schema "full JSON Schema pass skipped (python3 jsonschema not installed); shape checks above still ran"
+errs = list(jsonschema.Draft202012Validator(s).iter_errors(c))
+for e in errs: print("/".join(map(str, e.path)) or "(root)", "—", e.message)
+sys.exit(3 if errs else 0)' "$SCHEMA" "$card" 2>&1)"; rc=$?
+  case "$rc" in
+    (0) ok schema "valid against $(basename "$SCHEMA")";;
+    (3) while IFS= read -r r; do fail schema "$r" "match docs/manifest.schema.json"; done <<< "$out";;
+    (*) warn schema "validator did not run: $(printf '%s\n' "$out" | tail -1)";;
+  esac
 fi
 
 # 3. Version: source.version is the digest of what readers use.
@@ -127,6 +137,7 @@ if [ -r "$CONFIG" ]; then
   while IFS= read -r line; do
     key="${line%%:*}"; key="${key#- }"; val="${line#*: }"; val="${val%%  #*}"; val="${val//\`/}"
     case " $PUBLIC_KEYS " in (*" $key "*) continue;; esac
+    case "$key" in (*_*) grep -qwF -- "$key" "$card" && leaks="$leaks $key";; esac
     for part in $(echo "$val" | tr ',' ' '); do
       [ "${#part}" -ge 4 ] || continue
       case "$part" in (enabled|disabled|true|false|none|off|on|dam|both|label|chat) continue;; esac
@@ -134,12 +145,12 @@ if [ -r "$CONFIG" ]; then
     done
   done < <(grep -E '^- [a-z_]+:' "$CONFIG")
   leaks="$(echo $leaks | tr ' ' '\n' | sort -u | tr '\n' ' ')"
-  [ -z "${leaks// /}" ] && ok privacy-config "no private CONFIG.md value in the card" \
-    || fail privacy-config "values of private config keys appear: $leaks" "remove them, or add the key to PUBLIC_KEYS only when the design marks it public"
+  [ -z "${leaks// /}" ] && ok privacy-config "no private CONFIG.md key or value in the card" \
+    || fail privacy-config "private config keys or their values appear: $leaks" "remove them, or add the key to PUBLIC_KEYS only when the design marks it public"
 else
   warn privacy-config "$CONFIG not readable; config scan skipped"
 fi
-shapes="$( (grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}|xox[abposr]-[A-Za-z0-9-]+|gh[pousr]_[A-Za-z0-9]{20,}|/home/agent/work/[^" ]*' "$card"; grep -oE '\b[UWCGD][A-Z0-9]{8,11}\b' "$card" | grep '[0-9]') | sort -u | head -5)"
+shapes="$( (grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}|xox[abposr]-[A-Za-z0-9-]+|gh[pousr]_[A-Za-z0-9]{20,}|/home/agent/work/[^" ]*' "$card"; sed 's/^/ /' "$card" | grep -oE '[^A-Za-z0-9_./-]((\$HOME|~|\$\{HOME\})/)?work/[^" ]*' | cut -c2-; grep -oE '\b[UWCGD][A-Z0-9]{8,11}\b' "$card" | grep '[0-9]') | sort -u | head -5)"
 [ -z "$shapes" ] && ok privacy-shapes "no e-mail, Slack id, token or work/ path" \
   || fail privacy-shapes "private shapes in the card: $(echo $shapes)" "replace with names or remove (docs/manifest.md → What stays out)"
 

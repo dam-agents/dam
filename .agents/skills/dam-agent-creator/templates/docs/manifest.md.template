@@ -55,7 +55,7 @@ Take the content from wherever it is true; the schema fixes only the shape.
 - **`work/CONFIG.md`**: the values of public keys only (labels, the target repo, the bot account, enabled features). A disabled feature is not a skill; a feature that people expect and this instance turned off goes to `notOffered`.
 - **The platform**:
   - `describe_channel` (`slack`, `telegram`) → the conversation names for `surfaces.<channel>.channels`. Names only, never ids; leave out 1:1 DMs.
-  - The frame of each Slack or Telegram turn says whether the conversation is ambient and whether you are its default agent. Record both per conversation in `work/manifest-channels.json` when a turn arrives (`ambient`, `defaultAgent`, `seenAt`); copy them into the card. Unknown → `null`.
+  - The frame of each Slack or Telegram turn says whether the conversation is ambient and whether you are its default agent. Record both per conversation in `work/manifest-channels.json` when a turn arrives (`ambient`, `defaultAgent`, `seenAt`); copy `ambient` and `defaultAgent` into the card. `seenAt` stays in that file: a time in the card would change `source.version` on every turn. Unknown → `null`.
   - `PLATFORM_HARNESS` → `runtime.harness`.
   - The Model Router's catalog → `runtime.providers`: `curl -fsS -H "X-Platform-Harness: $PLATFORM_HARNESS" "http://127.0.0.1:${PLATFORM_MODEL_ROUTER_PORT:-24180}/v1/models"` lists the models this harness can use as `<provider alias>/<model id>`; group them by alias. `list_harnesses` gives the provider's display name for `name`. A 503 means the catalog has not listed yet: keep the last card's list.
   - The share URLs of the public pages you publish → `surfaces.artifact.pages`.
