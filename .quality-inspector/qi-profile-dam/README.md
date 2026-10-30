@@ -36,6 +36,7 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
   So the Slack journeys stay blocked until the QA install can link the owner's account to the test person at install; `SKILL.md` states the limit.
 - `operator_credentials` (quality-inspector 3.47.0 or later) — one value the inspector's operator fills once, not an account to create: `LITELLM_CURVE_BENDER_TOKEN`, a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com`, seeded empty as `E2E_LITELLM_CURVE_BENDER_TOKEN` and reported by `verify-onboarding.sh`.
   Optional: without it a criterion that needs a real model is `blocked` (`SKILL.md` → *What the nested install cannot do*).
+  `egress` names `litellm.cb.ete.res.ibm.com` host-wide, so the nested agent's model calls with that key pass the inspector's gate.
 - `scenarios/` — the smoke regression suite: the journeys the inspector replays nightly, listed under [Smoke regression suite](#smoke-regression-suite).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, what the nested install cannot do, and what the per-PR e2e suite already keeps true (`## Tested elsewhere`; a PR that adds or removes such a flow there updates the list).
   User-facing only — never implementation detail.
