@@ -48,16 +48,16 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
 - `main` merges through the Mergify merge queue (`.mergify.yml`); the ruleset's one required check is `verify`.
   Merging is queueing: add the `queue` label, `gh api -X POST repos/<repo>/issues/<n>/labels -f 'labels[]=queue'`.
   Mergify queues the PR once Code Guardian has approved it and its `verify` passed, so the label may go on before that.
-  Never `gh pr merge`: a direct merge skips the queue's full e2e and restarts every batch in flight.
+  Never `gh pr merge`: a direct merge skips the queue's full e2e and restarts every queue PR in flight.
   A stack: queue the bottom PR; once it merges, merge `main` into the next one, wait for green, and queue it.
   Being behind `main` needs no merge; the queue tests the PR on top of `main` and the PRs ahead of it.
 - Queued → wait until `gh pr view <n> --json state` is `MERGED`.
   While a freeze is on, nothing merges; the queue still tests.
-  Mergify tests a batch as a draft PR from a `mergify/merge-queue/*` branch; its status comment on the PR links it.
-  The batch PR's CI/CD run is a `pull_request` run that takes both e2e lanes in full and reports `verify-queue`; `gh pr checks <n>` on your PR never shows it.
-  A failed batch is retried once, then split; a PR whose batch failed still merges when a later batch that holds it passes, so a red batch run alone is no ejection.
-- Kicked out → the PR is `OPEN` and out of the queue; Mergify's status comment names the reason and the batch PR.
-  Find its runs: `gh run list --workflow cd.yml --branch <batch-branch> --json databaseId,conclusion,headSha`.
+  Mergify tests the PR, on top of `main` and the PRs queued ahead of it, as a draft queue PR from a `mergify/merge-queue/*` branch; its status comment on the PR links it.
+  The queue PR's CI/CD run is a `pull_request` run that takes both e2e lanes in full and reports `verify-queue`; `gh pr checks <n>` on your PR never shows it.
+  A failed queue PR is retried once; a PR whose queue PR failed still merges when a later queue PR that holds it passes, so a red queue PR run alone is no ejection.
+- Kicked out → the PR is `OPEN` and out of the queue; Mergify's status comment names the reason and the queue PR.
+  Find its runs: `gh run list --workflow cd.yml --branch <queue-branch> --json databaseId,conclusion,headSha`.
   `verify-queue` only aggregates: it fails when any job it needs failed or was cancelled, so read the jobs, not `verify-queue`: `gh run view <run> --json jobs --jq '.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|"\(.name) \(.conclusion) \(.startedAt) \(.completedAt) \(.databaseId)"'`.
   A `cancelled` job whose run time equals its `timeout-minutes` timed out: `--json jobs` lists its steps with times, and `gh run view <run> --log --job <job-id>` shows the step it hung in.
   Infra or flake when the failed job's log shows one of:

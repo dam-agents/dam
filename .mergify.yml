@@ -1,35 +1,33 @@
 # The merge queue for main. A PR queues once its own CI/CD run's `verify`
 # passed (mise check and the reduced smoke set) and the ruleset's approval is
 # in; Mergify reads the approval and `verify` from the Main protection ruleset
-# itself. A batch is tested as a draft PR from mergify/merge-queue/*, whose
-# CI/CD run cd.yml treats as a merge group: both e2e lanes, in full.
+# itself. Mergify tests each queued PR on top of main and the PRs queued ahead
+# of it, as a draft queue PR from mergify/merge-queue/*, whose CI/CD run cd.yml
+# treats as a merge group: both e2e lanes, in full. No batch_size: the Open
+# Source plan has no batches, so each queue PR holds one more PR than the one
+# ahead of it.
 queue_rules:
   - name: default
     queue_conditions:
       - base=main
       - label=queue
       - check-success=verify
-    # Evaluated on the batch's draft PR. A check distinct from `verify` makes
-    # the queue two-step, which turns off Direct Merge (merging an up-to-date
-    # PR on its own CI, without a batch run).
+    # Evaluated on the queue PR. A check distinct from `verify` makes the queue
+    # two-step, which turns off Direct Merge (merging an up-to-date PR on its
+    # own CI, without a queue PR run).
     merge_conditions:
       - check-success=verify-queue
     merge_method: squash
-    # One PR per batch while the queue is light, up to 4 when it backs up.
-    # With 3 parallel checks a failed batch of 4 finds its culprit in one split
-    # round (sizes 1, 4, 13 keep all 3 checks busy).
-    batch_size:
-      min: 1
-      max: 4
-    # One rerun of a failed batch before it is split: a split whose parts all
-    # pass ejects the batch's last PR untested, so a flake would eject a good
-    # PR.
+    # One rerun of a failed queue PR before its PR is ejected: most queue e2e
+    # failures are flakes. A retry count above 0 also makes Mergify always open a
+    # queue PR and never check a PR in place, where `verify-queue` never runs.
     max_checks_retries: 1
 
 merge_queue:
+  # Up to 3 queue PRs at once, each holding every PR queued ahead of it.
   max_parallel_checks: 3
-  # A PR whose batch failed still merges when a later batch holding it passes,
-  # as GitHub's queue did with HEADGREEN.
+  # A PR whose own queue PR failed still merges when a later queue PR that
+  # holds it passes, as GitHub's queue did with HEADGREEN.
   skip_intermediate_results: true
 
 pull_request_rules:

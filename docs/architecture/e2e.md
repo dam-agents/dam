@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-29
+Last verified: 2026-10-30
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -63,7 +63,7 @@ Each lane's job summary states the scope beside its timings, so a green pull req
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
 
 The merge queue is Mergify's.
-It tests a batch of queued pull requests as a draft pull request from a `mergify/merge-queue/*` branch, so its run is a `pull_request` run.
+It tests each queued pull request on top of `main` and the pull requests queued ahead of it, as a draft pull request from a `mergify/merge-queue/*` branch, so its run is a `pull_request` run.
 `cd.yml` tells that run from a pull request's own run by the branch name, and gives it the merge queue's scope: both lanes, every spec, and the `verify-queue` check the queue merges on.
 
 ## Running it

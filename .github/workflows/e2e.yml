@@ -23,7 +23,7 @@ on:
         required: true
       queue:
         description: >-
-          A merge queue run, a merge_group event or a Mergify batch PR: reuse
+          A merge queue run, a merge_group event or a Mergify queue PR: reuse
           an earlier queue run's images, as build.yml's `queue` input says.
         type: boolean
         required: true
