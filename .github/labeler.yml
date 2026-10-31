@@ -1,0 +1,18 @@
+# actions/labeler's map of labels to the files a pull request changes; see
+# workflows/labeler.yml.
+
+# The files that render a screen: the web UI, the sign-in theme and the pages
+# the api-server renders itself. The Quality Inspector's design check picks
+# its pull requests by this label (.quality-inspector/qi-profile-dam/README.md).
+# A change to tests alone renders nothing.
+qa:design:
+  - any:
+      - changed-files:
+          - all-globs-to-any-file:
+              - "{packages/ui,packages/keycloak-theme}/**"
+              - "!**/__tests__/**"
+              - "!**/vitest.config.ts"
+          - any-glob-to-any-file:
+              - packages/api-server/src/modules/usage/analytics-page.ts
+              - packages/api-server/src/modules/environments/gate/pages.ts
+              - packages/api-server/src/modules/artifact-library/viewer/renderer.ts

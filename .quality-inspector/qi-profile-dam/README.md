@@ -37,6 +37,23 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
 - `operator_credentials` (quality-inspector 3.47.0 or later) — one value the inspector's operator fills once, not an account to create: `LITELLM_CURVE_BENDER_TOKEN`, a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com`, seeded empty as `E2E_LITELLM_CURVE_BENDER_TOKEN` and reported by `verify-onboarding.sh`.
   Optional: without it a criterion that needs a real model is `blocked` (`SKILL.md` → *What the nested install cannot do*).
   `egress` names `litellm.cb.ete.res.ibm.com` host-wide, so the nested agent's model calls with that key pass the inspector's gate.
+- `design` (quality-inspector 3.52.0 or later) — what the design check of a pull request labeled `qa:design` knows of DAM's design system.
+  `.github/labeler.yml` puts the label on a pull request that changes `packages/ui`, `packages/keycloak-theme` or a page the api-server renders itself (the usage report, the Environment gate, the artifact viewer); a change to tests alone does not get it.
+  DAM publishes no build of a pull request, so there is no `engine_config.pull_requests`: a change is tested after it merges, on main's build.
+  The inspector's design check runs only on an open pull request's own build, so a labeled one waits, and the per-screen checks run for DAM only once the inspector can check a merged pull request on main; its weekly radar (`consistency_radar`) compares main's screens today.
+  `tokens` are the custom properties Tailwind sets on `:root` from the `@theme` of `packages/ui/src/App.css`: colours `--color-*`, font sizes `--text-*`, corner radii `--radius-*`, and `--spacing` (4px), whose whole multiples count as tokens.
+  The raw palette (`--c-*`) and shadcn's source variables (`--background`, …) reach a page only through `--color-*`, so they are left out; a Tailwind palette step that some screen uses is a `--color-*` variable too and counts.
+  No `dark_theme`: the UI follows the system theme (`platform-theme` defaults to `system`, which reads `prefers-color-scheme` and sets `dark` on `<html>`), so the check's emulation turns it on.
+  `retired_words` is the *Retired words* table of [`docs/ubiquitous-language.md`](../../docs/ubiquitous-language.md) in the forms a screen shows; a change to that table updates this list in the same PR.
+  The check matches each as a whole word or phrase in any case, so a word that is still right on today's screens in another sense is left out or narrowed to its retired phrases:
+  - *Experiment* stays whole, and covers "Experiment SDK" and "experiment agent".
+    No screen says it except the sign-in page's tagline ("Run AI-driven experiments…"), which a check of that page reports until the tagline or the table changes.
+  - *sandbox / sandboxes* only in the phrases the rename to agent (#3397) replaced: `your sandbox(es)`, `Delete`, `Stop`, `Update` and `Configure sandbox`, `Sandbox actions`, `temporary sandbox`.
+    The machine sense stays right: the Environments section ("Sandboxes this agent creates"), the skills ("sandbox image"), the browser panel.
+  - *image* is left out.
+    Its picture sense (an avatar's "Upload image", a "pasted image") and its machine sense ("sandbox image", "runs a newer image") are both right on today's screens, and no phrase isolates the retired one, picking what to run.
+  - *shell* is left out.
+    "Bob Shell" is a provider's name and a schedule's precheck is "a shell command"; no screen ever called an agent a shell in a phrase a list could catch.
 - `scenarios/` — the smoke regression suite: the journeys the inspector replays nightly, listed under [Smoke regression suite](#smoke-regression-suite).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, what the nested install cannot do, and what the per-PR e2e suite already keeps true (`## Tested elsewhere`; a PR that adds or removes such a flow there updates the list).
   User-facing only — never implementation detail.
