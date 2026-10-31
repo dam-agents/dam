@@ -120,7 +120,7 @@
     { "host": "github.githubassets.com", "method": "GET", "path": "/assets/*", "why": "sandbox: the sign-in pages' scripts and styles (the authorize button is enabled by a script)" },
     { "host": "slack.com", "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through" },
     { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" },
-    { "host": "{profile.ux_signals_host}", "method": "GET", "path": "/api/usage/ui/signals", "why": "real-user UI signals" },
+    { "host": "{profile.ux_signals_host}", "method": "GET", "path": "/api/usage/ui/signals?*", "why": "real-user UI signals" },
     { "host": "litellm.cb.ete.res.ibm.com", "why": "operator credential: the nested agent's model calls with the operator's CurveBender key" }
   ],
   "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },

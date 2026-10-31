@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-27
+Last verified: 2026-10-31
 
 ## Overview
 
@@ -108,6 +108,9 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`).
   Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary.
   Owned by [usage-tracking](usage-tracking.md).
+- **UI telemetry log** — the views, clicks, friction signals and journey steps the web UI records (`ui_events`), only on an install that enables it.
+  Pseudonymized `actor_sub` at the write boundary, kept apart from the activity log, and deleted after 30 days by a daily job.
+  Owned by [usage-tracking](usage-tracking.md#ui-telemetry).
 - **session directory** — the kind of each Session, reported by its agent.
   A deliberate copy of agent-owned state, kept only so spend can still be attributed to how the work was started once the agent hibernates or is deleted; it is not a Session store and no Session is read from it.
   Owned by [metrics](metrics.md#session-directory).

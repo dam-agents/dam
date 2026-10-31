@@ -20,9 +20,10 @@ const JS_ERROR_GAP_MS = 1_000;
 const MAX_BATCHES_PER_FLUSH = 4;
 const SELF_PATH = "usage.uiEvents";
 
-const INTERACTIVE =
-  "a,button,input,select,label,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=switch],[role=option]";
+const CLICK_TARGET =
+  "a:not([target=_blank]):not([download]),button,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=switch],[role=option]";
 const DIALOG = "[role=dialog],[role=alertdialog]";
+const OVERLAY = `${DIALOG},[role=menu],[role=listbox],[data-sonner-toast]`;
 const TOAST =
   "[data-sonner-toast][data-type=error],[data-sonner-toast][data-type=warning]";
 const ALERT = "[role=alert]";
@@ -66,6 +67,13 @@ const testIdOf = (el: Element | null | undefined): string | null => {
 const sanitizedBuild = (value: string): string =>
   value.replace(/[^A-Za-z0-9._+-]/g, "_").slice(0, 64) || "unknown";
 
+const touchesOverlay = (nodes: NodeList): boolean =>
+  [...nodes].some(
+    (node) =>
+      node instanceof Element &&
+      (node.matches(OVERLAY) || node.querySelector(OVERLAY) !== null),
+  );
+
 const within = <T extends Element>(node: Element, selector: string): T[] => [
   ...(node.matches(selector) ? [node as T] : []),
   ...node.querySelectorAll<T>(selector),
@@ -97,7 +105,7 @@ function installUiTelemetry(build: string): void {
   });
   window.addEventListener("popstate", syncRoute);
 
-  let lastMutationAt = 0;
+  let lastOverlayAt = -Infinity;
   let lastAction: { element: string; at: number } | null = null;
   const dialogs = new Map<Element, OpenDialog>();
   const dialogOf = (target: EventTarget | null) =>
@@ -136,19 +144,19 @@ function installUiTelemetry(build: string): void {
   };
 
   new MutationObserver((records) => {
-    lastMutationAt = performance.now();
     for (const record of records) {
       for (const node of record.addedNodes) {
         if (node instanceof Element) noticeAdded(node);
       }
+      if (
+        touchesOverlay(record.addedNodes) ||
+        touchesOverlay(record.removedNodes)
+      ) {
+        lastOverlayAt = performance.now();
+      }
     }
     if (dialogs.size > 0) closeDetachedDialogs();
-  }).observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    characterData: true,
-  });
+  }).observe(document.body, { childList: true, subtree: true });
 
   document.addEventListener(
     "click",
@@ -170,10 +178,27 @@ function installUiTelemetry(build: string): void {
       const at = performance.now();
       rec.click(element);
       lastAction = { element, at };
-      if (!target.closest(INTERACTIVE)) return;
-      const clickedOn = location.pathname;
+      const control = target.closest(CLICK_TARGET);
+      if (!control) return;
+      const clickedOn = location.href;
+      let changed = false;
+      const own = new MutationObserver(() => {
+        changed = true;
+      });
+      own.observe(control, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
       setTimeout(() => {
-        if (lastMutationAt < at && location.pathname === clickedOn) {
+        own.disconnect();
+        if (
+          !changed &&
+          control.isConnected &&
+          lastOverlayAt < at &&
+          location.href === clickedOn
+        ) {
           rec.signal("dead_click", element);
         }
       }, DEAD_CLICK_MS);

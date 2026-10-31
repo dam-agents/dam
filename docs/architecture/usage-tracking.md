@@ -344,7 +344,7 @@ The kinds are:
 
 - a **view** of a route, with how long the page was open before the user left it or hid the tab;
 - an **action** — a click on an element with a test id, caught by one listener for the whole page;
-- a **signal**, computed in the browser: a rage click (three clicks on one element within a second), a dead click (a control that changed nothing within a second), an error shown (an error toast or a form error, attributed to the field or to the click just before it), a script error, a navigation bounce (back to the previous page within five seconds), an abandoned dialog (one the user typed into and closed without an action), and a slow request (a call to the api-server that took longer than a few seconds, named by its procedure);
+- a **signal**, computed in the browser: a rage click (three clicks on one element within a second), a dead click (a button, link or tab that within a second changed nothing in itself, opened or closed no dialog, menu or toast, and did not change the page address), an error shown (an error toast or a form error, attributed to the field or to the click just before it), a script error, a navigation bounce (back to the previous page within five seconds), an abandoned dialog (one the user typed into and closed without an action), and a slow request (a call to the api-server that took longer than a few seconds, named by its procedure);
 - a **journey step** — the start, submission and completion of the key journeys: an Agent from a Starter Kit, a Slack channel bound, a schedule created, an artifact uploaded.
 
 Each page load gets a random tab id and numbers its events, so the order within a tab is exact; a view takes its number when the page opens, so it precedes what happened on it.
