@@ -175,8 +175,16 @@
         "why": "the helm binary"
       },
       {
-        "host": "istio-release.storage.googleapis.com",
-        "why": "Istio's charts (CRDs only; an Environment runs no mesh)"
+        "host": "blob.istio.io",
+        "why": "Istio's charts, which cluster:install takes from version 1.31 on"
+      },
+      {
+        "host": "istio-release.r2.istio.io",
+        "why": "the bucket that blob.istio.io redirects its downloads to"
+      },
+      {
+        "host": "clickhouse.github.io",
+        "why": "the clickstack chart that helm dependency build fetches, with the feature off"
       }
     ]
   },

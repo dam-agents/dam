@@ -35,8 +35,8 @@ This is taste, not a spec: read the real components for shapes and values.
 - Simple and quiet: the smallest clean change; reuse an existing row, badge, section or dialog before inventing a device.
 - Avoid meters, trays, steppers and side panels; if a control needs a legend, it is too complex.
 - Buttons are black (`bg-primary`).
-- Blue is only for links, the active navigation item and focus.
-- Colors have fixed meanings: green is success and running; amber is a warning and the dot on a session waiting for approval; red is an error or a destructive action; purple is starter kits and templates; blue is the accent and the unread dot.
+- Blue (`accent`) is only for links, the active navigation item, focus and the unread dot.
+- Colors have fixed meanings: green is success and running; amber is a warning and the dot on a session waiting for approval; red is an error or a destructive action; purple is starter kits and templates.
 - Destructive means red and a confirmation dialog whose verb repeats the action ("Remove", "Delete"); a warning (for example switching a running agent's provider) is an amber icon with a black button, never red.
   In code this is `confirm-dialog.tsx` with `destructive` or `default`.
 - Mono type (IBM Plex Mono, tabular figures) for repository names, URLs, ids and numbers.
@@ -61,7 +61,7 @@ The imports from `packages/ui/src/app.tsx` are the map; these paths are hints th
 - The right side: `modules/sessions/components/side-panel-bar.tsx`, and which tabs a view hides (`hiddenSidePanelTabs()` in `modules/sessions/lib/side-panel.ts`).
 - An agent's configuration page: `modules/sandboxes/views/sandbox-home-view.tsx`, its sections in `components/sandbox-section-nav.tsx`, and their derived counts in `hooks/use-section-summaries.ts`.
   Read the function behind a count ("4 enabled") and make sample data agree with it.
-- The chat: `modules/sessions/views/chat-view.tsx` and, with flags off, `classic-chat-layout.tsx`.
+- The chat: `modules/sessions/views/chat-view.tsx`, whose only layout is `modules/sessions/components/classic-chat-layout.tsx`.
 
 ## Feature flags
 

@@ -61,7 +61,11 @@ case "$verb" in
   tunnel)
     pidf="$PROTO_STATE/tunnel.pid"
     if ! { [ -s "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; }; then
-      (cd "$PROTO_WORKTREE" && nohup mise run cluster:open -- --environment "$PROTO_NAME" --port "$BC_PORT" >"$PROTO_STATE/tunnel.log" 2>&1 & echo $! > "$pidf")
+      # Its own process group, so the stop verbs also stop the ssh that mise starts.
+      set -m
+      ( cd "$PROTO_WORKTREE" && exec nohup mise run cluster:open -- --environment "$PROTO_NAME" --port "$BC_PORT" >"$PROTO_STATE/tunnel.log" 2>&1 ) &
+      echo $! > "$pidf"
+      set +m
     fi
     for _ in $(seq 1 30); do
       if curl -s -o /dev/null --max-time 2 "http://localhost:$BC_PORT/"; then jq -cn --arg u "http://localhost:$BC_PORT" '{url: $u}'; exit 0; fi
@@ -71,12 +75,12 @@ case "$verb" in
     ;;
   untunnel)
     pidf="$PROTO_STATE/tunnel.pid"
-    [ -s "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null; rm -f "$pidf"
+    [ -s "$pidf" ] && kill -- -"$(cat "$pidf")" 2>/dev/null; rm -f "$pidf"
     ;;
   down)
     # The agent deletes the Environment itself; this stops what runs on its own machine.
     pidf="$PROTO_STATE/tunnel.pid"
-    [ -s "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null; rm -f "$pidf"
+    [ -s "$pidf" ] && kill -- -"$(cat "$pidf")" 2>/dev/null; rm -f "$pidf"
     exit 0
     ;;
   *) echo "usage: bin/env up|update|status|credentials|tunnel|untunnel|down" >&2; exit 2;;
