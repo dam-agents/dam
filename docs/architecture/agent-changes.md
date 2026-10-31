@@ -1,6 +1,6 @@
 # Agent changes
 
-Last verified: 2026-10-26
+Last verified: 2026-10-29
 
 ## Overview
 
@@ -28,7 +28,7 @@ Untracked files are part of the change.
 It also links the open pull request of the branch, with where it stands: a draft, waiting for review, approved, changes requested, merged or closed, and whether it has merge conflicts.
 The lookup asks GitHub's GraphQL API, and goes through the agent's own GitHub connection, so the credential gateway decides it like any call the agent makes: an agent with no GitHub connection gets no link.
 GitHub matches a head branch by its name alone, so a pull request from a fork's branch of the same name is not taken for the branch's own.
-Lookups are cached for a short time, because every refresh would otherwise ask GitHub again.
+Lookups are cached for a short time, because every refresh would otherwise ask GitHub again; a branch with no pull request is kept for less than a Session's lookup window, so the lookup at the window's end asks again.
 
 A diff compares a Change Set to its base or to its last commit (the uncommitted part only).
 Large diffs are cut per file and overall, and the answer says so; the panel then names the file it cannot show rather than failing.
@@ -59,18 +59,22 @@ Nor does a pull, or the merge or rebase it starts as a git process of its own: i
 git records only the environment variables it is told to, and those name the Session.
 A terminal Session's processes carry the platform's own Session id; a harness sets its own on the shell commands of a chat Session — `CLAUDE_CODE_SESSION_ID` on Claude Code, `CODEX_THREAD_ID` on Codex, `PI_SESSION_ID` on Pi — each the same id the runtime knows the Session by.
 Each harness's runtime manifest names its variable (`sessionEnvVar`), so a new harness brings its own without a runtime change; the platform's own variable comes first.
-A harness that sets none, Bob today, has a command linked to the only Session running a turn, and to nobody when several are, logged rather than guessed.
+A harness that sets none, Bob today, has a command linked to the only Session running a turn, and to nobody when several are, logged rather than guessed; such a push links no pull request, since someone else may have run it.
 A pushed branch is looked up on the remote it tracks.
 
 That record is per Session and survives the panel being closed and the machine restarting; it is bounded per Session and in total.
-The open pull request of a recorded branch is attached to the record when the panel finds it, when the Session's tool calls settle, and right after a push; a pushed branch is looked up on the remote it tracks, whatever its worktree has checked out since.
+A Session's pull request is one it pushed to: the open pull request of a branch the Session pushed is attached to that Session's record alone, looked up on the remote the branch tracks, whatever its worktree has checked out since.
+It is looked up twice.
+Right after the push, the pushed branch is looked up at once, and the panel reads the record again with the push.
+When the Session's tool calls settle, all its pushed branches are looked up, at most once in 30 seconds per Session, with a lookup skipped inside that window run once it ends; so one opened after the push is found too, and a new link from this lookup tells the sessions list to read again.
+A commit links no pull request: another Session that only committed on a branch gets no link to its pull request, while each Session that pushed it does; the panel shows the branch's pull request, but only refreshes the state of one a Session already has.
 A link once found is kept, so a Session still links its pull request after it is merged.
 Its state is not frozen with it: while someone watches the sessions list, the runtime reads the state of the pull requests the list showed again once a minute, fifty to a query, and a change tells the list to read again.
 A merged pull request is not read again: nothing changes it any more.
 
 The sessions list carries this record as badges of the repositories a Session has a pull request in, each with its number, wherever the clone is — `/tmp` included.
 A repository the Session only committed in shows no badge: the tools an agent runs commit in repositories of their own too, so a badge without a pull request tells the user nothing.
-Two badges of one repository add their branch, or the worktree's directory when the branch is the same, so they are told apart without hovering.
+Each pull request shows once, as `<repository> #<number>`: two clones a Session pushed one branch from link the same one, and its badge stands for the clone the Session edited last; the clone means nothing to the user, so a badge never names it.
 A badge's color follows its pull request's state, the way Claude Code colors its pull request indicator: gray for a draft, yellow while review is pending, green once approved, red for changes requested, purple once merged.
 A closed pull request is red as on GitHub, with its number struck through so it is not read as changes requested, and merge conflicts show in orange over the review color.
 The badge's tooltip names the state, so the color is not the only signal.

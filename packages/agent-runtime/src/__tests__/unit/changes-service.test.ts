@@ -1,12 +1,15 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
 import { runOnce } from "../../core/run-once.js";
 import { runGit } from "../../modules/changes/infrastructure/git.js";
-import type { PullRequestFinder } from "../../modules/changes/infrastructure/pull-requests.js";
+import {
+  createPullRequestFinder,
+  type PullRequestFinder,
+} from "../../modules/changes/infrastructure/pull-requests.js";
 import { createTouchedRepositoryStore } from "../../modules/changes/infrastructure/touched-repositories.js";
 import {
   createChangesService,
@@ -423,11 +426,12 @@ describe("changes service", { timeout: 30_000 }, () => {
   });
 
   /**
-   * TEST_SCENARIO: A branch with an open pull request carries its link. The
-   * session that committed on it gets the link once a tool call of it
-   * settles, before anyone opens the panel, so the sessions list can show it.
+   * TEST_SCENARIO: A branch with an open pull request carries its link in
+   * the panel. A session that only committed on it does not get the link,
+   * not when its tool calls settle and not when the panel finds it: a
+   * session's pull request is one it pushed.
    */
-  it("should link the pull request of a branch a session committed on", async () => {
+  it("should not link the pull request of a branch a session only committed on", async () => {
     const repo = path.join(home, "work", "app");
     await repository(repo, { "a.txt": "a\n" });
     await git(
@@ -439,12 +443,8 @@ describe("changes service", { timeout: 30_000 }, () => {
     );
     await git(repo, "checkout", "--quiet", "-b", "feat/x");
     const link = { number: 7, url: "https://github.com/acme/app/pull/7" };
-    const asked: [string | null, string | null][] = [];
     service = serviceFor([home], {
-      find: async (remote, branch) => {
-        asked.push([remote, branch]);
-        return branch === "feat/x" ? link : null;
-      },
+      find: async (_remote, branch) => (branch === "feat/x" ? link : null),
       states: async () => [],
     });
     await traced(
@@ -456,17 +456,15 @@ describe("changes service", { timeout: 30_000 }, () => {
       "-m",
       "x",
     );
-    expect(service.repositoriesOf("s1")[0]?.pullRequest).toBeNull();
 
     service.onToolCallSettled("s1");
-    await expect
-      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest, settles)
-      .toEqual(link);
     const { changeSets } = await service.list("s1");
 
     expect(changeSets[0]?.pullRequest).toEqual(link);
     expect(changeSets[0]?.repository.name).toBe("acme/app");
-    expect(asked).toContainEqual(["https://github.com/acme/app.git", "feat/x"]);
+    expect(service.repositoriesOf("s1")).toEqual([
+      expect.objectContaining({ path: repo, pullRequest: null }),
+    ]);
   });
 
   /**
@@ -680,6 +678,217 @@ describe("session pushes", { timeout: 30_000 }, () => {
       }),
     ]);
   });
+
+  /**
+   * TEST_SCENARIO: Session A commits on a branch in a clone, and session B
+   * pushes the same branch from that clone. The pull request is B's: only B
+   * gets the link, also once A's tool calls settle.
+   */
+  it("should link a pushed pull request only to the session that pushed it", async () => {
+    const { repo } = await repositoryWithRemote();
+    service = serviceFor([home], findsFeature);
+    running = ["a", "b"];
+
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "a" },
+      repo,
+      "commit",
+      "--quiet",
+      "--allow-empty",
+      "-m",
+      "a's commit",
+    );
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "b" },
+      repo,
+      "push",
+      "--quiet",
+      "-u",
+      "origin",
+      "feat/push",
+    );
+    service.onToolCallSettled("a");
+    service.onToolCallSettled("b");
+    await service.list("a");
+
+    expect(service.repositoriesOf("a")).toEqual([
+      expect.objectContaining({ path: repo, pullRequest: null }),
+    ]);
+    expect(service.repositoriesOf("b")).toEqual([
+      expect.objectContaining({ path: repo, pullRequest: link }),
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: One session pushes one branch from two clones of a
+   * repository, as an agent with work slots does. Each clone carries the
+   * same pull request, which the sessions list shows once.
+   */
+  it("should link one pull request to both clones a session pushed from", async () => {
+    const { repo, remote } = await repositoryWithRemote();
+    await git(repo, "push", "--quiet", "origin", "feat/push");
+    const clone = path.join(home, "work", "slots", "3");
+    await git(tmp, "clone", "--quiet", "--branch", "feat/push", remote, clone);
+    await git(clone, "commit", "--quiet", "--allow-empty", "-m", "more");
+    service = serviceFor([home], findsFeature);
+    const env = { CLAUDE_CODE_SESSION_ID: "s1" };
+
+    await traced(env, clone, "push", "--quiet", "origin", "feat/push");
+    await git(repo, "pull", "--quiet", "--no-rebase", "origin", "feat/push");
+    await traced(env, repo, "push", "--quiet", "origin", "feat/push");
+
+    expect(
+      service.repositoriesOf("s1").map((r) => [r.path, r.pullRequest]),
+    ).toEqual(
+      expect.arrayContaining([
+        [repo, link],
+        [clone, link],
+      ]),
+    );
+    expect(service.repositoriesOf("s1")).toHaveLength(2);
+  });
+
+  /**
+   * TEST_SCENARIO: A session pushes its branch, a tool call settles before
+   * the pull request exists, and the session opens it in the next tool call,
+   * inside the lookup's 30 s window. The skipped lookup runs once the window
+   * ends, links the pull request and tells the list to read again.
+   */
+  it("should link a pull request opened inside the lookup window", async () => {
+    const { repo } = await repositoryWithRemote();
+    let opened = false;
+    service = serviceFor([home], {
+      find: async (remote, branch) =>
+        opened ? findsFeature.find(remote, branch) : null,
+      states: async () => [],
+    });
+    const env = { CLAUDE_CODE_SESSION_ID: "s1" };
+    await traced(env, repo, "push", "--quiet", "-u", "origin", "feat/push");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      let announced = false;
+      service.onPullRequestsChanged(() => (announced = true));
+      service.onToolCallSettled("s1");
+      await vi.advanceTimersByTimeAsync(5_000);
+      opened = true;
+      service.onToolCallSettled("s1");
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(service.repositoriesOf("s1")).toEqual([
+        expect.objectContaining({ path: repo, pullRequest: null }),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(announced).toBe(true);
+      expect(service.repositoriesOf("s1")).toEqual([
+        expect.objectContaining({ path: repo, pullRequest: link }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: The push finds no pull request on GitHub, and the finder
+   * keeps that answer. The session opens one a few seconds later. The lookup
+   * run when the session's window ends asks GitHub again, past the finder's
+   * "none" answer, and links it.
+   */
+  it("should link a pull request opened after a push found none", async () => {
+    const { repo, remote } = await repositoryWithRemote();
+    await git(
+      repo,
+      "remote",
+      "set-url",
+      "origin",
+      "https://github.com/acme/app.git",
+    );
+    await git(repo, "config", "remote.origin.pushurl", remote);
+    let opened = false;
+    let lookups = 0;
+    service = serviceFor(
+      [home],
+      createPullRequestFinder({
+        token: () => "gateway-placeholder",
+        fetch: async () => {
+          lookups++;
+          return new Response(
+            JSON.stringify({
+              data: {
+                repository: {
+                  pullRequests: {
+                    nodes: opened
+                      ? [
+                          {
+                            number: 9,
+                            url: "https://github.com/acme/app/pull/9",
+                            state: "OPEN",
+                            isDraft: false,
+                            reviewDecision: "REVIEW_REQUIRED",
+                            mergeable: "MERGEABLE",
+                            headRepositoryOwner: { login: "acme" },
+                          },
+                        ]
+                      : [],
+                  },
+                },
+              },
+            }),
+          );
+        },
+        now: () => Date.now(),
+        log: () => undefined,
+      }),
+    );
+    const env = { CLAUDE_CODE_SESSION_ID: "s1" };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    await traced(env, repo, "push", "--quiet", "-u", "origin", "feat/push");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      service.onToolCallSettled("s1");
+      await vi.advanceTimersByTimeAsync(5_000);
+      opened = true;
+      service.onToolCallSettled("s1");
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(lookups).toBe(1);
+      expect(service.repositoriesOf("s1")).toEqual([
+        expect.objectContaining({ path: repo, pullRequest: null }),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(lookups).toBe(2);
+      expect(service.repositoriesOf("s1")).toEqual([
+        expect.objectContaining({
+          path: repo,
+          pullRequest: expect.objectContaining({ number: 9 }),
+        }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: A push that names no Session goes to the one Session
+   * running a turn as work, but links no pull request to it: someone else
+   * may have run it.
+   */
+  it("should not link a pull request from a push that names no Session", async () => {
+    const { repo } = await repositoryWithRemote();
+    service = serviceFor([home], findsFeature);
+    running = ["bob"];
+
+    await traced({}, repo, "push", "--quiet", "-u", "origin", "feat/push");
+    service.onToolCallSettled("bob");
+    await service.list("bob");
+
+    expect(service.repositoriesOf("bob")).toEqual([
+      expect.objectContaining({ path: repo, pullRequest: null }),
+    ]);
+  });
 });
 
 describe("pull request states", { timeout: 30_000 }, () => {
@@ -690,15 +899,12 @@ describe("pull request states", { timeout: 30_000 }, () => {
    * list to read again, so the badge turns green without a new push.
    */
   it("should refresh the state of a pull request the list shows", async () => {
+    const remote = path.join(tmp, "remote.git");
+    await fs.mkdir(remote, { recursive: true });
+    await git(remote, "init", "--quiet", "--bare");
     const repo = path.join(home, "work", "app");
     await repository(repo, { "a.txt": "a\n" });
-    await git(
-      repo,
-      "remote",
-      "add",
-      "origin",
-      "https://github.com/acme/app.git",
-    );
+    await git(repo, "remote", "add", "origin", remote);
     await git(repo, "checkout", "--quiet", "-b", "feat/x");
     const url = "https://github.com/acme/app/pull/7";
     let state: "pending" | "approved" = "pending";
@@ -718,13 +924,12 @@ describe("pull request states", { timeout: 30_000 }, () => {
     await traced(
       { CLAUDE_CODE_SESSION_ID: "s1" },
       repo,
-      "commit",
+      "push",
       "--quiet",
-      "--allow-empty",
-      "-m",
-      "x",
+      "-u",
+      "origin",
+      "feat/x",
     );
-    service.onToolCallSettled("s1");
     await expect
       .poll(() => service.repositoriesOf("s1")[0]?.pullRequest?.state, settles)
       .toBe("pending");

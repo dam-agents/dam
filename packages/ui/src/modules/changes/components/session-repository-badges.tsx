@@ -3,7 +3,7 @@ import type { SessionRepository } from "agent-runtime-api";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-import { repositoryBadgeLabels } from "../lib/pull-request-links.js";
+import { repositoryShortName } from "../lib/pull-request-links.js";
 import { pullRequestStatus } from "../lib/pull-request-state.js";
 
 const SHOWN_REPOSITORIES = 3;
@@ -14,7 +14,6 @@ export function SessionRepositoryBadges({
   repositories: readonly SessionRepository[];
 }) {
   const shown = repositories.slice(0, SHOWN_REPOSITORIES);
-  const labels = repositoryBadgeLabels(shown);
   const hidden = repositories.length - shown.length;
 
   return (
@@ -22,7 +21,7 @@ export function SessionRepositoryBadges({
       className="flex min-w-0 flex-wrap items-center gap-1"
       aria-label="Repositories this session has pull requests in"
     >
-      {shown.map((repository, index) => {
+      {shown.map((repository) => {
         const status = repository.pullRequest
           ? pullRequestStatus(repository.pullRequest)
           : null;
@@ -42,7 +41,9 @@ export function SessionRepositoryBadges({
                 : []),
             ].join("\n")}
           >
-            <span className="truncate">{labels[index]}</span>
+            <span className="truncate">
+              {repositoryShortName(repository.name)}
+            </span>
             {repository.pullRequest && (
               <a
                 href={repository.pullRequest.url}

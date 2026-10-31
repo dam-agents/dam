@@ -90,33 +90,52 @@ export function createChangesService(deps: {
     };
   }
 
+  const pullRequestListeners = new Set<() => void>();
   const pullRequestsCheckedAt = new Map<string, number>();
+  const pullRequestsTrailing = new Set<string>();
+
+  function linkSessionPullRequestsLater(sessionId: string): void {
+    void linkSessionPullRequests(sessionId).catch((error: unknown) =>
+      deps.log(
+        `linking the session's pull requests failed: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  }
 
   async function linkSessionPullRequests(sessionId: string): Promise<void> {
     const checkedAt = pullRequestsCheckedAt.get(sessionId) ?? 0;
-    if (Date.now() - checkedAt < SESSION_PULL_REQUEST_CHECK_MS) return;
+    const wait = checkedAt + SESSION_PULL_REQUEST_CHECK_MS - Date.now();
+    if (wait > 0) {
+      if (pullRequestsTrailing.has(sessionId)) return;
+      const timer = setTimeout(() => {
+        pullRequestsTrailing.delete(sessionId);
+        linkSessionPullRequestsLater(sessionId);
+      }, wait);
+      timer.unref?.();
+      pullRequestsTrailing.add(sessionId);
+      return;
+    }
     pullRequestsCheckedAt.set(sessionId, Date.now());
-    const pushes = deps.touched.pushesOf(sessionId);
-    for (const push of pushes) {
+    let linked = false;
+    for (const push of deps.touched.pushesOf(sessionId)) {
       const pullRequest = await deps.pullRequests.find(
         push.remote,
         push.branch,
       );
-      if (pullRequest)
-        deps.touched.linkPullRequest(push.path, push.branch, pullRequest);
+      if (
+        pullRequest &&
+        deps.touched.linkPullRequest(
+          sessionId,
+          push.path,
+          push.branch,
+          pullRequest,
+        )
+      )
+        linked = true;
     }
-    for (const touched of deps.touched.repositoriesOf(sessionId)) {
-      if (touched.branch === null) continue;
-      if (pushes.some((push) => push.path === touched.path)) continue;
-      const { branch, remote } = await describe(touched.path);
-      if (branch !== touched.branch) continue;
-      const pullRequest = await deps.pullRequests.find(remote, branch);
-      if (pullRequest)
-        deps.touched.linkPullRequest(touched.path, branch, pullRequest);
-    }
+    if (linked) for (const listener of pullRequestListeners) listener();
   }
 
-  const pullRequestListeners = new Set<() => void>();
   const shownPullRequests = new Map<string, PullRequestLink>();
   let refreshingStates = false;
 
@@ -190,8 +209,7 @@ export function createChangesService(deps: {
             state.branch && state.branch !== defaultBranch
               ? await deps.pullRequests.find(remote, state.branch)
               : null;
-          if (pullRequest)
-            deps.touched.linkPullRequest(state.path, state.branch, pullRequest);
+          if (pullRequest) deps.touched.updatePullRequest(pullRequest);
           return {
             state,
             changeSet: {
@@ -306,8 +324,9 @@ export function createChangesService(deps: {
     if (location === null) return;
     const path = location.toplevel;
     const { name, branch, remote } = await describe(path);
+    const push = command.push && command.sessionId !== null;
     const upstream =
-      command.push && branch
+      push && branch
         ? await deps.git(path, ["config", "--get", `branch.${branch}.remote`])
         : null;
     const pushRemote =
@@ -326,12 +345,13 @@ export function createChangesService(deps: {
       name,
       branch,
       editedAt: now().toISOString(),
-      ...(command.push && { remote: remoteUrl }),
+      ...(push && { remote: remoteUrl }),
     });
     workedThisBoot.add(path);
-    if (command.push && branch) {
+    if (push && branch) {
       const pullRequest = await deps.pullRequests.find(remoteUrl, branch);
-      if (pullRequest) deps.touched.linkPullRequest(path, branch, pullRequest);
+      if (pullRequest)
+        deps.touched.linkPullRequest(sessionId, path, branch, pullRequest);
     }
     changed();
   }
@@ -394,11 +414,7 @@ export function createChangesService(deps: {
 
     onToolCallSettled(sessionId) {
       changed();
-      void linkSessionPullRequests(sessionId).catch((error: unknown) =>
-        deps.log(
-          `linking the session's pull requests failed: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      );
+      linkSessionPullRequestsLater(sessionId);
     },
 
     repositoriesOf(sessionId) {
