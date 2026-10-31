@@ -231,6 +231,13 @@ immutable keys).
        anonymous — only the part of my definition that fails and the fix, never this
        installation's data — and a script blocks any draft that names one. Turn it on?
        (Default: off.)" Always write `enabled` or `disabled`.
+     - `agent_manifest` — not a question: write `dam` and tell the operator: "I publish
+       my public interface (triggers, skills, blocks I read and write, channels, public
+       pages) as a public manifest that people and other agents can read. It holds only
+       what I already show in public; a script blocks private values. Say so if you want
+       it kept local (`off`)." Then ask which agents this one works with, and put each
+       manifest link the operator gives into `work/PEERS.md` (docs/manifest.md → Peers);
+       none is a fine answer.
      - the monitor thresholds keep their defaults and are never asked; a dashboard or a
        direct-delivery opt-in is a message of its own, default off.
      Each is a checklist item only when it needs the operator's answer. -->
@@ -306,6 +313,12 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$HOME/.{{AGENT_NAME}}-onboarded"
 
 The sentinel goes first so a failure in the verification below does not re-run the whole
 runbook — the repair loop is the verification's own.
+
+Then write the agent manifest: follow `docs/manifest.md` → **Write, check, publish**
+(the card in `work/manifest.json`, published under `agent_manifest: dam`) and create
+`work/PEERS.md` with the operator's rows from Step 3. Pin each row now
+(`docs/manifest.md` → **Pin a peer**), so `work/peers/` holds a copy before the first
+run reads it.
 
 Then verify that onboarding produced the structure the templates promise — offline
 first, then the live end-to-end pass:
