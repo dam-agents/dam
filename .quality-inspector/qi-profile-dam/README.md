@@ -37,6 +37,12 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
 - `operator_credentials` (quality-inspector 3.47.0 or later) — one value the inspector's operator fills once, not an account to create: `LITELLM_CURVE_BENDER_TOKEN`, a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com`, seeded empty as `E2E_LITELLM_CURVE_BENDER_TOKEN` and reported by `verify-onboarding.sh`.
   Optional: without it a criterion that needs a real model is `blocked` (`SKILL.md` → *What the nested install cannot do*).
   `egress` names `litellm.cb.ete.res.ibm.com` host-wide, so the nested agent's model calls with that key pass the inspector's gate.
+- `ux_signals` — where the inspector reads how real people use the web UI: `GET /api/usage/ui/signals?from=<ISO>&to=<ISO>` on the DEV install, never the nested QA install, which has no real users.
+  UI telemetry is off by default and on only in the DEV environment for now; an install with it off answers 404.
+  The bearer is an API key of a user in the inspector role, kept in `DAM_INSPECTOR_API_KEY`.
+  The answer holds feature use, friction signals per route and element with their rate against the route's views and the previous period's rate, the funnels of the journeys in `flows`, and the last steps before a friction signal.
+  Every row describes at least `min_users` people; the inspector leaves friction under `min_rate` alone.
+  `flows` are the journeys the web UI marks step by step: an agent created from a Starter Kit, a Slack channel bound, a schedule created, an artifact uploaded.
 - `scenarios/` — the smoke regression suite: the journeys the inspector replays nightly, listed under [Smoke regression suite](#smoke-regression-suite).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, what the nested install cannot do, and what the per-PR e2e suite already keeps true (`## Tested elsewhere`; a PR that adds or removes such a flow there updates the list).
   User-facing only — never implementation detail.

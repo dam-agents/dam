@@ -1007,9 +1007,23 @@ export {
 } from "./modules/terms/schemas.js";
 export { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 
-export type { EntryPointChoice, UsageService } from "./modules/usage/types.js";
+export type {
+  EntryPointChoice,
+  UiEvent,
+  UiEventsInput,
+  UiFlow,
+  UiFlowStep,
+  UiSignal,
+  UiTelemetrySettings,
+  UsageService,
+} from "./modules/usage/types.js";
 export {
+  UI_EVENTS_MAX_BATCH,
+  UI_FLOW_STEPS,
+  UI_FLOWS,
+  UI_SIGNALS,
   USAGE_REPORT_FRAME,
+  uiEventsInputSchema,
   usageReportFrameReadySchema,
 } from "./modules/usage/schemas.js";
 

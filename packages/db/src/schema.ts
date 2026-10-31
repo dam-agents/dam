@@ -403,6 +403,31 @@ export const actorRoles = pgTable("actor_roles", {
     .notNull(),
 });
 
+export const uiEvents = pgTable(
+  "ui_events",
+  {
+    id: bigint("id", { mode: "number" })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
+    actorSub: text("actor_sub").notNull(),
+    tab: text("tab").notNull(),
+    build: text("build").notNull(),
+    seq: integer("seq").notNull(),
+    kind: text("kind").notNull(),
+    route: text("route").notNull(),
+    element: text("element"),
+    signal: text("signal"),
+    flow: text("flow"),
+    step: text("step"),
+    durationMs: integer("duration_ms"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("ui_events_occurred_idx").on(table.occurredAt),
+    index("ui_events_tab_seq_idx").on(table.tab, table.seq),
+  ],
+);
+
 export const externalActorLinks = pgTable(
   "external_actor_links",
   {

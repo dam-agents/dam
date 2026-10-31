@@ -7,6 +7,7 @@ export interface KeycloakUserDirectory {
   resolveManyBySub(subs: string[]): Promise<Map<string, string>>;
   searchSubs(text: string, max: number): Promise<Set<string>>;
   isActive(sub: string): Promise<boolean>;
+  hasRealmRole(sub: string, role: string): Promise<boolean>;
 }
 
 export interface KeycloakUserDirectoryConfig {
@@ -69,6 +70,7 @@ export function createKeycloakUserDirectory(
   let tokenCache: CachedToken | null = null;
   const subCache = new Map<string, CachedUser>();
   const emailToSubCache = new Map<string, CachedLookup>();
+  const realmRoleCache = new Map<string, { has: boolean; expiresAt: number }>();
 
   async function getAdminToken(signal?: AbortSignal): Promise<string> {
     const now = Date.now() / 1000;
@@ -204,6 +206,37 @@ export function createKeycloakUserDirectory(
       }
       const user = (await res.json()) as { enabled?: boolean };
       return user.enabled !== false;
+    },
+
+    async hasRealmRole(sub, role) {
+      const key = `${sub}\u0000${role}`;
+      const now = Date.now();
+      const cached = realmRoleCache.get(key);
+      if (cached && cached.expiresAt > now) return cached.has;
+      try {
+        const res = await adminFetch(
+          `/users/${encodeURIComponent(sub)}/role-mappings/realm/composite`,
+          AbortSignal.timeout(USER_LOOKUP_TIMEOUT_MS),
+        );
+        if (!res.ok) {
+          process.stderr.write(
+            `[keycloak-user-directory] realm roles of ${sub} failed: ${res.status}\n`,
+          );
+          return false;
+        }
+        const roles = (await res.json()) as Array<{ name?: string }>;
+        const has = roles.some((r) => r.name === role);
+        boundedSet(realmRoleCache, key, {
+          has,
+          expiresAt: now + LOOKUP_TTL_MS,
+        });
+        return has;
+      } catch (err) {
+        process.stderr.write(
+          `[keycloak-user-directory] realm roles of ${sub} errored: ${err}\n`,
+        );
+        return false;
+      }
     },
 
     async searchSubs(text, max) {

@@ -1260,7 +1260,13 @@ export async function bootstrap() {
     db,
     subPseudonymizer,
     activityTrackingEnabled: config.activityTrackingEnabled,
+    uiTelemetryEnabled: config.uiTelemetryEnabled,
+    appVersion: config.appVersion,
     inspectorRole: config.keycloakInspectorRole ?? "",
+    keyOwnerIsInspector: (sub) =>
+      config.keycloakInspectorRole
+        ? userDirectory.hasRealmRole(sub, config.keycloakInspectorRole)
+        : Promise.resolve(false),
     listK8sAgents: async () => {
       const agents = readsRows(config.agentStore)
         ? await agentStateCache.list()
@@ -1294,6 +1300,11 @@ export async function bootstrap() {
       "activity-retention",
       7 * 24 * 60 * 60 * 1000,
       () => usage.retentionTick(),
+    );
+    await periodicJobs.register(
+      "ui-events-retention",
+      24 * 60 * 60 * 1000,
+      () => usage.uiEventsRetentionTick(),
     );
   }
 
@@ -2520,6 +2531,7 @@ export async function bootstrap() {
         }),
       ),
     mountUsageRoutes: usage.mount,
+    usageUiTelemetry: usage.uiTelemetry,
     mountCaseStudiesRoutes: caseStudies.mount,
     listRegisteredAgentIds,
     subPseudonymizer,

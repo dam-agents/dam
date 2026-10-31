@@ -148,6 +148,13 @@
       "what": "a real CurveBender (LiteLLM) API key for litellm.cb.ete.res.ibm.com, so a nested agent can use a real model; optional — without it a criterion that needs one is blocked",
       "required": false }
   ],
+  "ux_signals": {
+    "endpoint": "/api/usage/ui/signals",
+    "api_key_env": "DAM_INSPECTOR_API_KEY",
+    "flows": ["starter_kit_agent", "connect_slack", "create_schedule", "publish_artifact"],
+    "min_users": 3,
+    "min_rate": 0.05
+  },
   "config": {
     "chart_ref": { "default": "oci://quay.io/dam-agents/charts/platform", "about": "OCI chart the builds come from" },
     "mock_image": { "default": "quay.io/dam-agents/mock:cb334b15595863567e8a4d61474886a1cbf10aef", "about": "image of the scripted mock harness template, so nested agents answer without a model; empty = none" },
