@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { artifactApiRequestInputSchema } from "agent-runtime-api";
 
+import { ARTIFACT_PROMPT_MAX_LENGTH } from "./prompt.js";
+
 export const artifactKindSchema = z.enum([
   "html",
   "jsx",
@@ -165,6 +167,19 @@ export const artifactCallAgentApiInputSchema =
   artifactApiRequestInputSchema.safeExtend({
     artifactId: z.string().min(1),
   });
+
+export const artifactSendPromptInputSchema = z.object({
+  artifactId: z.string().min(1),
+  prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+});
+
+export const artifactSendPromptResultSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true) }),
+  z.object({
+    ok: z.literal(false),
+    reason: z.enum(["not-allowed", "agent-unreachable", "spend-limit"]),
+  }),
+]);
 
 export const artifactCallAgentApiResultSchema = z.discriminatedUnion("ok", [
   z.object({

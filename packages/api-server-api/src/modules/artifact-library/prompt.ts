@@ -12,7 +12,10 @@ export const ARTIFACT_PROMPT_MAX_LENGTH = 16_384;
 export const artifactPromptSchema = z.object({
   type: z.literal(ARTIFACT_PROMPT_TYPE),
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+  newSession: z.boolean().optional(),
 });
+
+export type ArtifactPrompt = z.infer<typeof artifactPromptSchema>;
 
 export const ARTIFACT_REQUEST_TYPE = "artifact.request";
 export const ARTIFACT_RESPONSE_TYPE = "artifact.response";

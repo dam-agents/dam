@@ -13,6 +13,7 @@ import {
   artifactCreateInputSchema,
   artifactIdInputSchema,
   artifactListInputSchema,
+  artifactSendPromptInputSchema,
   artifactSharingInputSchema,
   artifactTouchListInputSchema,
   artifactUpdateInputSchema,
@@ -119,6 +120,15 @@ export const artifactLibraryRouter = t.router({
     .input(artifactCallAgentApiInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.artifactLibrary.callAgentApi(input, {
+        agentIds: ctx.user.agentIds,
+        email: editorEmailOf(ctx.user),
+      }),
+    ),
+
+  sendPrompt: operateAgentsProcedure
+    .input(artifactSendPromptInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.artifactLibrary.sendPrompt(input, {
         agentIds: ctx.user.agentIds,
         email: editorEmailOf(ctx.user),
       }),

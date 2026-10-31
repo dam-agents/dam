@@ -16,7 +16,7 @@ import {
 import { renderHtmlInner } from "../../modules/artifact-library/viewer/renderer.js";
 
 interface PageApi {
-  sendPrompt(prompt: unknown): void;
+  sendPrompt(prompt: unknown, options?: unknown): void;
   request(input?: unknown): Promise<unknown>;
 }
 
@@ -55,6 +55,32 @@ describe("artifact prompt buttons", () => {
       "*",
     );
   });
+
+  it("asks for a session of its own only when the page opts in", () => {
+    const { platform, postMessage } = page();
+    platform.sendPrompt("Refresh this dashboard.", { newSession: true });
+    platform.sendPrompt("Refresh this dashboard.", { newSession: "yes" });
+    expect(postMessage.mock.calls).toEqual([
+      [
+        {
+          type: ARTIFACT_PROMPT_TYPE,
+          prompt: "Refresh this dashboard.",
+          newSession: true,
+        },
+        "*",
+      ],
+      [{ type: ARTIFACT_PROMPT_TYPE, prompt: "Refresh this dashboard." }, "*"],
+    ]);
+  });
+
+  it.each([null, "new", 1])(
+    "refuses options that are not an object: %j",
+    (options) => {
+      const { platform, postMessage } = page();
+      expect(() => platform.sendPrompt("Refresh.", options)).toThrow();
+      expect(postMessage).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([null, {}, 42, "", "  ", "x".repeat(ARTIFACT_PROMPT_MAX_LENGTH + 1)])(
     "refuses an invalid prompt: %j",
