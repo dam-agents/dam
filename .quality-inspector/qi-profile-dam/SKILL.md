@@ -127,6 +127,13 @@ A flow that needs real Slack, real GitHub, a real model or real time passing is 
 
 Builds are chart versions: `0.0.0-main.<n>` after every merge to main, `X.Y.Z` releases.
 Candidate `main` = the newest dev chart; baseline `release` = the newest release.
+There is no build of a pull request: a change is tested after it merges, in the next `0.0.0-main.<n>`.
+
+## Design
+
+- The words DAM retired are `design.retired_words` in `profile.json`, from its glossary.
+  "Sandbox" is still right for the machine an agent runs in (an Environment, a "sandbox image"), "image" for a picture or what an agent runs, and "shell" in *Bob Shell* or a shell command.
+- The UI follows the system's light or dark theme until the user picks one under Settings → Appearance.
 
 ## CLI and API
 

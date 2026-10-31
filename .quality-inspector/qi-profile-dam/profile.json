@@ -126,6 +126,22 @@
   "expected_requests": [
     { "method": "GET", "path": "/api/slack/install/status", "status": 404, "why": "the QA install sets no Slack app, so Settings asks and hides the Slack workspaces tab" }
   ],
+  "design": {
+    "retired_words": [
+      { "word": "Experiment", "say": "Invocations written from a Driver script; the Driver SDK" },
+      { "word": "Experiments", "say": "Invocations written from a Driver script; the Driver SDK" },
+      { "word": "your sandbox", "say": "your agent" },
+      { "word": "your sandboxes", "say": "your agents" },
+      { "word": "Delete sandbox", "say": "Delete agent" },
+      { "word": "Stop sandbox", "say": "Stop agent" },
+      { "word": "Update sandbox", "say": "Update agent" },
+      { "word": "Update sandboxes", "say": "Update agents" },
+      { "word": "Configure sandbox", "say": "Configure agent" },
+      { "word": "Sandbox actions", "say": "Agent actions" },
+      { "word": "temporary sandbox", "say": "temporary agent" }
+    ],
+    "tokens": { "prefixes": ["--color-", "--text-", "--radius-"], "spacing_step": "--spacing" }
+  },
   "environment": {
     "endpoints": [ { "name": "app", "port": 4400 }, { "name": "keycloak", "port": 4400 }, { "name": "share", "port": 4400 }, { "name": "content", "port": 4400 } ],
     "account": "owner"

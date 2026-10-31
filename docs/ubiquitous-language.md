@@ -39,6 +39,7 @@ Two rules govern the whole set:
 | shell                                                   | agent                                                                     | A terminal in the agent is not an SSH login shell, and users never have to make that distinction                                                                                |
 
 The retirement list is what stops a struck word from creeping back: a surface that wants one of the left-hand words needs a decision on this table first, not a local exception.
+The Quality Inspector's design check finds them on screens from `design.retired_words` in [`.quality-inspector/qi-profile-dam/profile.json`](../.quality-inspector/qi-profile-dam/profile.json), so a change to this table updates that list in the same PR.
 
 ## Substrate
 
