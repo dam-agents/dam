@@ -44,9 +44,12 @@ case "$verb" in
     if ! ssh -o BatchMode=yes -o ConnectTimeout=20 "env-$PROTO_NAME" true 2>/dev/null; then
       jq -cn '{state: "absent", detail: "the Environment does not answer over the Environment Link"}'; exit 0
     fi
-    pending="$(cd "$PROTO_WORKTREE" && mise run -q cluster:kubectl -- --environment "$PROTO_NAME" get pods -A --no-headers 2>/dev/null \
-      | awk '$4 != "Running" && $4 != "Completed" {n++} END {print n + 0}')"
-    total="$(cd "$PROTO_WORKTREE" && mise run -q cluster:kubectl -- --environment "$PROTO_NAME" get pods -A --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+    # A failed listing is not an empty cluster: it is reported as unknown, never as "installing".
+    if ! pods="$(cd "$PROTO_WORKTREE" && mise run -q cluster:kubectl -- --environment "$PROTO_NAME" get pods -A --no-headers 2>"$PROTO_STATE/status.err")"; then
+      jq -cn --arg e "$(tail -1 "$PROTO_STATE/status.err" 2>/dev/null)" '{state: "unknown", detail: ("cannot list the pods: " + $e)}'; exit 1
+    fi
+    total="$(printf '%s' "$pods" | grep -c . || true)"
+    pending="$(printf '%s\n' "$pods" | awk 'NF && $4 != "Running" && $4 != "Completed" {n++} END {print n + 0}')"
     if [ "${total:-0}" -eq 0 ]; then jq -cn '{state: "installing", detail: "no pods yet"}'
     elif [ "${pending:-0}" -gt 0 ]; then jq -cn --arg n "$pending" --arg t "$total" '{state: "installing", detail: "\($n) of \($t) pods not ready"}'
     else jq -cn --arg t "$total" '{state: "running", detail: "\($t) pods ready"}'; fi
@@ -59,14 +62,20 @@ case "$verb" in
     if ! { [ -s "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; }; then
       (cd "$PROTO_WORKTREE" && nohup mise run cluster:open -- --environment "$PROTO_NAME" --port "$BC_PORT" >"$PROTO_STATE/tunnel.log" 2>&1 & echo $! > "$pidf")
     fi
-    for _ in $(seq 1 30); do curl -s -o /dev/null --max-time 2 "http://localhost:$BC_PORT/" && break; sleep 2; done
-    jq -cn --arg u "http://localhost:$BC_PORT" '{url: $u}'
+    for _ in $(seq 1 30); do
+      if curl -s -o /dev/null --max-time 2 "http://localhost:$BC_PORT/"; then jq -cn --arg u "http://localhost:$BC_PORT" '{url: $u}'; exit 0; fi
+      sleep 2
+    done
+    jq -cn --arg p "$BC_PORT" --arg log "$(tail -1 "$PROTO_STATE/tunnel.log" 2>/dev/null)" '{error: ("nothing answers on localhost:" + $p + " after 60 s: " + $log)}'; exit 1
     ;;
   untunnel)
     pidf="$PROTO_STATE/tunnel.pid"
     [ -s "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null; rm -f "$pidf"
     ;;
   down)
+    # The agent deletes the Environment itself; this stops what runs on its own machine.
+    pidf="$PROTO_STATE/tunnel.pid"
+    [ -s "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null; rm -f "$pidf"
     exit 0
     ;;
   *) echo "usage: bin/env up|update|status|credentials|tunnel|untunnel|down" >&2; exit 2;;
