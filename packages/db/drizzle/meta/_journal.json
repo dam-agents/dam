@@ -855,6 +855,20 @@
       "when": 1793102652509,
       "tag": "0121_binding_slots",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1793444840020,
+      "tag": "0122_ui_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1793444842050,
+      "tag": "0123_ui_events_views",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-10-23
+Last verified: 2026-10-31
 
 ## Overview
 
@@ -22,6 +22,7 @@ Three design choices follow:
 The subsystem is the **api-server's** responsibility end-to-end.
 The controller does not participate; the agent-runtime does not participate.
 Writes happen in-process on the existing event bus, fed by other modules' events plus one inbound tRPC mutation the subsystem owns — `usage.entryPointChosen`, the browser reporting which way in the user picked; reads happen on a Keycloak-authenticated HTTP route mounted under the same Hono app.
+A second, separate stream — [UI telemetry](#ui-telemetry), how people move through the web UI — arrives as batches from the browser and is written straight to its own table, off the bus.
 
 ## Diagram
 
@@ -35,6 +36,7 @@ flowchart LR
   user-import[user imports a file bundle]
   user-entry[new user picks a way in]
   user-link[user links a Slack / Telegram identity]
+  user-ui[web UI reports views, clicks, friction]
 
   agent-create[agent CM created]
   agent-status[controller rewrites Agent status]
@@ -48,6 +50,7 @@ flowchart LR
     oom[out-of-memory watch]
     boot[agent-bootstrap]
     retain[retention job]
+    uiingest[UI events ingest]
     pseudo[HMAC pseudonymizer]
     routes[/api/usage/* routes]
   end
@@ -84,6 +87,9 @@ flowchart LR
 
   retain --> postgres
 
+  user-ui -->|usage.uiEvents| uiingest
+  uiingest --> pseudo
+
   inspector -->|HTML / JSON / bearer token| routes
   routes -->|SELECT ... FROM usage_*| postgres
   routes -.live Agents, in-memory replica.-> agentres[(Agent resources)]
@@ -106,6 +112,7 @@ The subsystem owns:
 - **`agents`** — Postgres mirror of agent ConfigMaps.
   Columns: `id`, `owner_sub` (HMACed), `created_at`, `deleted_at`, the Agent that spawned it when it is a sub-agent, and for an Agent created from a Starter Kit, the kit and when it first declared its onboarding complete.
   Lets SQL views resolve agent ownership without a K8s API round-trip, and keeps those facts past the activity log's retention, the invocation's reaping and the Agent's deletion.
+- **`ui_events`** — the UI telemetry log, kept apart from the activity log: see [UI telemetry](#ui-telemetry).
 - **`usage_*` SQL views** — the read API, in two surfaces: aggregate views backing the inspector report, and `usage_src_*` passthroughs forming the external-analytics surface (see [source passthrough views](#source-passthrough-views)).
   View names form the public surface; the underlying tables are internal.
 
@@ -237,7 +244,7 @@ Rotating the key orphans every existing row; it is treated as permanent for the 
 
 ## Read interface
 
-Four Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
+Five Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 
 | Endpoint                     | Returns                                        | Audience                      |
 | ---------------------------- | ---------------------------------------------- | ----------------------------- |
@@ -245,6 +252,7 @@ Four Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 | `GET /api/usage?view=<name>` | one view's rows as JSON                        | programmatic consumers        |
 | `GET /api/usage/analytics`   | the usage analytics report as JSON             | programmatic consumers, tests |
 | `GET /api/usage/report`      | the usage analytics dashboard as one HTML page | human inspectors              |
+| `GET /api/usage/ui/signals`  | UI telemetry aggregates for a period, as JSON  | the QA agent, by API key      |
 
 The dashboard and its JSON are one report: the api-server computes every number, embeds the result in the page as escaped data, and a script in the page only draws it, so charts fit the window's width and carry hover detail without the browser doing any arithmetic.
 The page loads nothing but its fonts, follows the viewer's colour scheme, and takes the app's theme when the app embeds it.
@@ -321,10 +329,45 @@ For inspectors who have been granted the role: open `/analytics` in the platform
 The report is built on every open, and its Download button saves a copy to pass on.
 A user without the role sees a no-access page at that address and no Analytics tab; an install with no inspector role configured shows the report to no one.
 
+## UI telemetry
+
+How people use the web UI itself — what they open, what they click, where they struggle — so that a QA agent can turn friction into reproducible UI bugs.
+It is collected in the browser, by the platform's own code, and never leaves the cluster.
+
+**Off unless the install turns it on.** A chart value, off by default and dependent on activity tracking, enables it; for now it is on only in the DEV environment, until the people using a production install are told through the terms of use.
+The browser asks the api-server at start whether it is on, and with it off installs no listener and keeps nothing; the api-server ignores reported batches and does not mount the signals endpoint.
+
+**What the browser records.** Every event names the route as a pattern, never with an Agent, Session or kit in it, and the element by its test id, the stable identity the UI already gives its controls.
+A test id built from an identifier — a Connection, a repository, an account login — is reduced to its fixed prefix before it is recorded, and a test in the UI keeps the list of such prefixes complete.
+No input value, message text or free-form error text is ever recorded.
+The kinds are:
+
+- a **view** of a route, with how long the page was open before the user left it or hid the tab;
+- an **action** — a click on an element with a test id, caught by one listener for the whole page;
+- a **signal**, computed in the browser: a rage click (three clicks on one element within a second), a dead click (a button, link or tab that within a second changed nothing in itself, opened or closed no dialog, menu or toast, and did not change the page address), an error shown (an error toast or a form error, attributed to the field or to the click just before it), a script error, a navigation bounce (back to the previous page within five seconds), an abandoned dialog (one the user typed into and closed without an action), and a slow request (a call to the api-server that took longer than a few seconds, named by its procedure);
+- a **journey step** — the start, submission and completion of the key journeys: an Agent from a Starter Kit, a Slack channel bound, a schedule created, an artifact uploaded.
+
+Each page load gets a random tab id and numbers its events, so the order within a tab is exact; a view takes its number when the page opens, so it precedes what happened on it.
+The browser sends batches of at most fifty events every ten seconds and when the tab is hidden, with the build it runs and each event's age instead of a clock time, which the api-server turns into a time of its own — a skewed client clock cannot misplace an event.
+
+**Storage.** A table of its own rather than the activity log: it is far busier and kept 30 days instead of 180.
+The actor is pseudonymized with the same key as every other actor column.
+Writes are skipped entirely when UI telemetry or activity tracking is off; retention still ages out what an earlier setting left.
+
+**Reading.** Base views leave the core team out, attach to each signal the last ten views and clicks before it in the same tab, and place each journey step against the start of that journey.
+The api-server applies the period on top of them and drops every row that fewer than three distinct people stand behind.
+The signals endpoint returns, for the period: the builds seen; use per route and element; friction per signal, route and element with its rate against the route's views and the same rate for the period just before; each journey's steps with the people who reached them and the median time from its start; and the most common trails — a signal with the steps that led to it, identified by a hash of the signal, its place and the step sequence, so the same path keeps its identity across periods.
+A row names the newest build its signal was seen on.
+The period is at most 31 days, the retention.
+
+The record is pseudonymized and personal data, like the activity log; the notice a production install needs belongs to the terms of use, outside this subsystem.
+
 ## Retention
 
 A weekly retention job runs a bulk DELETE of rows in `activity_events` older than 180 days.
 It is one of the scheduled per-period jobs described on [platform-topology](platform-topology.md) — Redis-backed, one execution per period across the api-server replicas, each tick idempotent.
+
+A second, daily job deletes UI telemetry older than 30 days; it registers under the same condition.
 
 Retention registers only when activity tracking is enabled: an install with writes disabled ages nothing out, keeping whatever history existed when the toggle flipped.
 Retention bounds every activity-based panel to the last 180 days; cohort membership does not age out, because the first sign-in lives on the role record.
@@ -347,6 +390,8 @@ The `is_core` flag is populated at auth time from the JWT's `realm_access.roles`
 - **One write route belongs to the subsystem.** `usage.entryPointChosen` is an owner-scoped tRPC mutation: the actor is the session's Keycloak `sub`, never a client-supplied field, and the input carries the choice alone.
   A caller can therefore only write about itself.
   Repeats are bounded by a partial unique index — one `entry_point_chosen` row per actor — so a client that replays the call cannot inflate the entry-point views.
+- **The UI telemetry mutation writes only about the signed-in caller.** It takes the actor from the session, refuses an API key, and caps how many events one person may write per minute on each replica, dropping the rest.
+- **An API key reaches exactly one read endpoint.** A key carries no realm roles, so for the UI signals endpoint alone the api-server asks Keycloak whether the key's owner currently holds the inspector role, caching the answer for a minute; every other read route still needs the role on a signed-in session.
 - **Membership in a read-only group role gates the analytics surface.** The external consumer reads the `usage_src_*` passthroughs as a member of `usage_readers`, which holds SELECT on the passthroughs and nothing else — not the aggregate views, not the base tables — no HTTP path, no table or write grants, no credential of its own.
   Adding a member is an operator act the platform never sees; removing one is how access is withdrawn.
   The group role itself confers nothing until someone is added to it.

@@ -1,8 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
 import type { LibraryArtifact } from "api-server-api";
 
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { withFlowSteps } from "../../usage/lib/ui-telemetry.js";
 
 const invalidatesLibrary = [
   trpc.artifactLibrary.list.queryKey(),
@@ -20,7 +22,12 @@ const invalidatesLibraryAndContent = [
 
 export function useCreateArtifact() {
   return useMutation({
-    ...trpc.artifactLibrary.create.mutationOptions(),
+    mutationKey: trpc.artifactLibrary.create.mutationKey(),
+    mutationFn: withFlowSteps(
+      "publish_artifact",
+      (input: Parameters<typeof api.artifactLibrary.create.mutate>[0]) =>
+        api.artifactLibrary.create.mutate(input),
+    ),
     meta: {
       invalidates: invalidatesLibrary,
       errorToast: "Couldn't create artifact",

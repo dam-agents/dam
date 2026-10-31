@@ -47,6 +47,7 @@ import { useFeatures } from "../../features/api/queries.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
+import { useFlowOpened } from "../../usage/lib/ui-telemetry.js";
 import { useApplyStarterKit } from "../api/mutations.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
@@ -181,6 +182,7 @@ export function StarterKitDetailView() {
   const catalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
   const kit = useStarterKit(catalog, kitId);
+  useFlowOpened("starter_kit_agent");
   const setView = useStore((s) => s.setView);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const close = () => setView("home");

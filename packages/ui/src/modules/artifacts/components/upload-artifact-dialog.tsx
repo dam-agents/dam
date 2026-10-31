@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { getErrorMessage } from "@/lib/errors";
 
+import { useFlowOpened } from "../../usage/lib/ui-telemetry.js";
 import { useCreateArtifact } from "../api/mutations.js";
 import { folderDisplayNames } from "../lib/folders.js";
 import { uploadArtifactFile } from "../lib/transfer.js";
@@ -34,6 +35,7 @@ export function UploadArtifactDialog({ folders, onClose, onUploaded }: Props) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = useCreateArtifact();
+  useFlowOpened("publish_artifact");
 
   const submit = async () => {
     if (!file) return;

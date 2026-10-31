@@ -1367,6 +1367,13 @@ apiServer:
     # must remain stable. Provide your own (≥32 chars) for cross-cluster
     # consistency or compliance audit trails.
     hmacKey: ""
+    # -- UI telemetry: the web UI reports page views, clicks on controls,
+    # friction signals and journey steps into `ui_events` (kept 30 days) for
+    # the inspector-only `/api/usage/ui/signals` endpoint. Off by default;
+    # turn it on only where the people using the UI have been told (terms of
+    # use) — for now only the DEV environment. Needs activity tracking.
+    uiTelemetry:
+      enabled: false
   # -- Agent case-study editions (submitted by the agent-case-study skill).
   caseStudies:
     # -- Days an edition is kept past the end of the week it covers before

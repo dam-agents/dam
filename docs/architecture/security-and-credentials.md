@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-26
+Last verified: 2026-10-31
 
 ## Overview
 
@@ -115,6 +115,7 @@ Headless / CI use: the CLI accepts a long-lived **API key** in the same `Authori
 A key carries the owner's `sub`, a subset of permission scopes, and an optional agent allowlist; deleting an Agent drops it from every key, so a later same-named Agent is not covered.
 The bearer middleware dispatches by prefix and yields the same principal shape — sub, scopes, agent binding, optional key id.
 Keys cannot mint or revoke other keys: the management surface rejects any request authenticated via a key, so a leaked key cannot escalate.
+An API key carries no realm roles, so it reaches no role-gated route, with one exception: the UI telemetry read (`GET /api/usage/ui/signals`) admits a key whose owner holds the inspector role, which the api-server asks Keycloak for live and caches for a minute ([usage-tracking](usage-tracking.md#ui-telemetry)).
 
 A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once the key is revoked or expired.
 The re-check is a poll rather than a reaction to the revoke, because revoke can land on another replica; the poll interval is the bound on how long a revoked key keeps a stream.

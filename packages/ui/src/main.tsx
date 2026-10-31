@@ -18,6 +18,7 @@ import {
 } from "./modules/platform/lib/routes.js";
 import { applyTheme, readStoredTheme } from "./modules/platform/store/theme.js";
 import { StartupErrorView } from "./modules/platform/views/startup-error-view.js";
+import { startUiTelemetry } from "./modules/usage/lib/ui-telemetry.js";
 import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
 
@@ -53,6 +54,7 @@ async function main() {
 
   useStore.getState().hydrateRoute();
   startDraftSync(user.profile.sub);
+  void startUiTelemetry();
 
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(

@@ -335,6 +335,10 @@ spec:
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED
               value: "true"
+            {{- if .Values.apiServer.activityTracking.uiTelemetry.enabled }}
+            - name: UI_TELEMETRY_ENABLED
+              value: "true"
+            {{- end }}
             {{- end }}
             - name: CASE_STUDIES_RETENTION_DAYS
               value: {{ .Values.apiServer.caseStudies.retentionDays | quote }}

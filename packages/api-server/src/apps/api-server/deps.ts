@@ -27,6 +27,7 @@ import type {
   PresetSeeder,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { UiTelemetry } from "../../modules/usage/index.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import type { KeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import type { PublicAgentPageService } from "../../modules/agents/index.js";
@@ -120,6 +121,7 @@ export interface ApiServerDeps {
   schedulesBoot: SchedulesBoot;
   mountTelemetryRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
+  usageUiTelemetry: UiTelemetry;
   mountCaseStudiesRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
   /* UNIT_BOUNDARY_DESCRIPTION: `agents` keeps its owner pseudonymised, so a

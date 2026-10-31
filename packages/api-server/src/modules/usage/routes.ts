@@ -1,4 +1,5 @@
 import { Hono, type Context, type Next } from "hono";
+import { z } from "zod";
 import {
   isViewName,
   VIEW_NAMES,
@@ -9,6 +10,11 @@ import {
   renderAnalyticsPage,
 } from "./analytics-page.js";
 import type { AnalyticsService } from "./services/analytics-service.js";
+import {
+  buildUiSignalsReport,
+  type UiPeriod,
+  type UiSignalsFacts,
+} from "./domain/ui-signals-report.js";
 import { securityLog } from "../../core/security-log.js";
 import type { ApiVariables } from "../../core/http-context.js";
 
@@ -20,14 +26,39 @@ export type UsageRoutesDeps = {
   service: ReportService;
   analytics: AnalyticsService;
   inspectorRole: string;
+  uiSignalsFacts: ((period: UiPeriod) => Promise<UiSignalsFacts>) | null;
+  keyOwnerIsInspector: (sub: string) => Promise<boolean>;
 };
+
+export const UI_SIGNALS_PATH = "/api/usage/ui/signals";
+const UI_SIGNALS_MAX_SPAN_MS = 31 * 24 * 60 * 60 * 1000;
+
+const uiPeriodSchema = z
+  .object({
+    from: z.string().datetime({ offset: true }),
+    to: z.string().datetime({ offset: true }),
+  })
+  .transform(({ from, to }) => ({ from: new Date(from), to: new Date(to) }))
+  .refine(
+    ({ from, to }) =>
+      from < to && to.getTime() - from.getTime() <= UI_SIGNALS_MAX_SPAN_MS,
+  );
 
 export function createUsageRoutes(deps: UsageRoutesDeps) {
   const routes = new Hono<AppEnv>();
 
+  const isInspector = async (c: Context<AppEnv>) => {
+    if ((c.get("roles") ?? []).includes(deps.inspectorRole)) return true;
+    const user = c.get("user");
+    return (
+      user?.keyId !== undefined &&
+      c.req.path === UI_SIGNALS_PATH &&
+      (await deps.keyOwnerIsInspector(user.sub))
+    );
+  };
+
   const inspectorOnly = async (c: Context<AppEnv>, next: Next) => {
-    const roles = c.get("roles") ?? [];
-    if (!roles.includes(deps.inspectorRole)) {
+    if (!(await isInspector(c))) {
       securityLog("warn", "usage.inspect.deny", {
         category: "privileged",
         actor: c.get("user")?.sub ?? null,
@@ -77,6 +108,25 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
       );
     }
   });
+
+  const uiSignalsFacts = deps.uiSignalsFacts;
+  if (uiSignalsFacts) {
+    routes.get(UI_SIGNALS_PATH, async (c) => {
+      const period = uiPeriodSchema.safeParse(c.req.query());
+      if (!period.success) {
+        return c.json(
+          {
+            error:
+              "from and to must be ISO date-times, from before to, at most 31 days apart",
+          },
+          400,
+        );
+      }
+      return c.json(
+        buildUiSignalsReport(period.data, await uiSignalsFacts(period.data)),
+      );
+    });
+  }
 
   routes.get("/api/usage", async (c) => {
     const view = c.req.query("view");
