@@ -28,6 +28,18 @@
     "components": [
       "packages/ui/src/components/ui",
       "packages/ui/src/components"
+    ],
+    "mock_modules": [
+      "/api/",
+      "/hooks/",
+      "/store/",
+      "^packages/ui/src/(store|trpc|api|auth|query-client)\\.ts$"
+    ],
+    "render_wrappers": [
+      {
+        "src": "packages/ui/src/components/ui/tooltip.tsx",
+        "export": "TooltipProvider"
+      }
     ]
   },
   "boundary": {
@@ -85,7 +97,8 @@
     "glossary": "docs/ubiquitous-language.md",
     "architecture": [
       "docs/architecture.md",
-      "docs/architecture/"
+      "docs/architecture/",
+      "docs/strategy/"
     ],
     "decisions": [
       "the hidden author-decisions block at the end of a pull request body",
@@ -174,5 +187,57 @@
     "packages/ui/src/__tests__/**",
     "packages/e2e/**"
   ],
-  "contacts": "the pull request's author; the person who filed its linked issue"
+  "contacts": "the pull request's author; the person who filed its linked issue",
+  "catalog": {
+    "elements": [
+      {
+        "name": "Agent row",
+        "group": "Lists and rows",
+        "file": "packages/ui/src/modules/agents/components/agent-row.tsx",
+        "export": "AgentRow"
+      },
+      {
+        "name": "Sidebar agent row",
+        "group": "Navigation",
+        "file": "packages/ui/src/modules/agents/components/sidebar-agent-row.tsx",
+        "export": "SidebarAgentRow"
+      },
+      {
+        "name": "Agent avatar",
+        "group": "Identity",
+        "file": "packages/ui/src/modules/agents/components/avatar/agent-avatar.tsx",
+        "export": "AgentAvatar"
+      },
+      {
+        "name": "Status badge",
+        "group": "Status",
+        "file": "packages/ui/src/components/status-indicator.tsx",
+        "export": "StatusBadge"
+      },
+      {
+        "name": "Artifact row",
+        "group": "Lists and rows",
+        "file": "packages/ui/src/modules/artifacts/components/artifact-list-row.tsx",
+        "export": "ArtifactListRow"
+      },
+      {
+        "name": "Notice",
+        "group": "Feedback",
+        "file": "packages/ui/src/components/ui/notice.tsx",
+        "export": "Notice"
+      },
+      {
+        "name": "Empty state",
+        "group": "Feedback",
+        "file": "packages/ui/src/components/ui/empty-state.tsx",
+        "export": "EmptyState"
+      },
+      {
+        "name": "Confirm dialog",
+        "group": "Dialogs",
+        "file": "packages/ui/src/components/ui/confirm-dialog.tsx",
+        "export": "ConfirmDialog"
+      }
+    ]
+  }
 }
