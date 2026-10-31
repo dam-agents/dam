@@ -34,12 +34,13 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
   `suite/lib/sandbox.ts` → `connectSlackChannel` picks the sandbox channel in the *Connect Slack channels* dialog.
   That picker lists channels only for a DAM user who linked their Slack account, which a user does only with `/dam login` or `/dam bind` in Slack, and no Slack API sends a slash command.
   So the Slack journeys stay blocked until the QA install can link the owner's account to the test person at install; `SKILL.md` states the limit.
-- `operator_credentials` (quality-inspector 3.47.0 or later) — one value the inspector's operator fills once, not an account to create: `LITELLM_CURVE_BENDER_TOKEN`, a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com`, seeded empty as `E2E_LITELLM_CURVE_BENDER_TOKEN` and reported by `verify-onboarding.sh`.
+- `operator_credentials` (quality-inspector 3.47.0 or later) — values the inspector's operator fills once, not accounts to create: `LITELLM_CURVE_BENDER_TOKEN`, a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com`, seeded empty as `E2E_LITELLM_CURVE_BENDER_TOKEN` and reported by `verify-onboarding.sh`, and `DAM_USAGE_API_KEY` for `ux_signals` below.
   Optional: without it a criterion that needs a real model is `blocked` (`SKILL.md` → *What the nested install cannot do*).
   `egress` names `litellm.cb.ete.res.ibm.com` host-wide, so the nested agent's model calls with that key pass the inspector's gate.
-- `ux_signals` — where the inspector reads how real people use the web UI: `GET /api/usage/ui/signals?from=<ISO>&to=<ISO>` on the DEV install, never the nested QA install, which has no real users.
+- `ux_signals` (the inspector's ux-signals module) — where the inspector reads how real people use the web UI: `GET https://{profile.ux_signals_host}/api/usage/ui/signals?from=<ISO>&to=<ISO>`, where `ux_signals_host` is the DEV install, asked at onboarding, never the nested QA install, which has no real users.
   UI telemetry is off by default and on only in the DEV environment for now; an install with it off answers 404.
-  The bearer is an API key of a user in the inspector role, kept in `DAM_INSPECTOR_API_KEY`.
+  The bearer is an API key of a DAM user in the inspector role on that install, the operator credential `DAM_USAGE_API_KEY` (`E2E_DAM_USAGE_API_KEY`); any scope will do, since the endpoint checks the key owner's role and serves only aggregates.
+  `egress` names exactly that `GET` on that host.
   The answer holds feature use, friction signals per route and element with their rate against the route's views and the previous period's rate, the funnels of the journeys in `flows`, and the last steps before a friction signal.
   Every row describes at least `min_users` people; the inspector leaves friction under `min_rate` alone.
   `flows` are the journeys the web UI marks step by step: an agent created from a Starter Kit, a Slack channel bound, a schedule created, an artifact uploaded.
@@ -84,6 +85,7 @@ An older DAM without the tool keeps the manual path: the operator adds the rule 
 | `profile.mock_image`                                                                                           | `quay.io/dam-agents/mock:<sha>`            | mock harness image so nested agents answer |
 | `profile.istio_version`, `profile.cert_manager_version`, `profile.gateway_api_version`, `profile.helm_version` | see `profile.json`                         | nested prerequisites                       |
 | `profile.sandbox_github_repo`                                                                                  | empty (asked)                              | the sandbox repository, `<org>/<repo>`     |
+| `profile.ux_signals_host`                                                                                      | empty (asked)                              | the DEV install that collects UI usage     |
 
 ## Sandbox accounts
 
@@ -96,9 +98,10 @@ An older DAM without the tool keeps the manual path: the operator adds the rule 
 
 ## Operator credentials
 
-One value a person pastes, not an account to create (`operator_credentials` in `profile.json`): the inspector's `env.sh init` seeds it as an empty line and `verify-onboarding.sh` reports whether it is set.
-It is optional; `required: false`.
+Values a person pastes, not accounts to create (`operator_credentials` in `profile.json`): the inspector's `env.sh init` seeds each as an empty line and `verify-onboarding.sh` reports whether it is set.
+Both are optional; `required: false`.
 
-| Line in `work/env/credentials.env` | What the operator fills                                               | Without it                                       |
-| ---------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------ |
-| `E2E_LITELLM_CURVE_BENDER_TOKEN`   | a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com` | a criterion that needs a real model is `blocked` |
+| Line in `work/env/credentials.env` | What the operator fills                                                     | Without it                                       |
+| ---------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------ |
+| `E2E_LITELLM_CURVE_BENDER_TOKEN`   | a real CurveBender (LiteLLM) API key for `litellm.cb.ete.res.ibm.com`       | a criterion that needs a real model is `blocked` |
+| `E2E_DAM_USAGE_API_KEY`            | an API key of an inspector-role user on the DEV install (`ux_signals_host`) | the ux-signals module is off                     |
