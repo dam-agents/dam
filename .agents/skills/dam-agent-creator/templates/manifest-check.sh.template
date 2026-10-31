@@ -76,6 +76,24 @@ nodesc="$(each '[.triggers // {} | to_entries[] | select((.value.description // 
 [ -z "$nodesc" ] || fail trigger-description "triggers without description: $nodesc" "say in one or two sentences when to use it and what happens"
 noway="$(each '[.skills // {} | to_entries[] | select((.value.triggers // [] | length) == 0 and (.value.schedule // "") == "") | .key] | join(" ")')"
 [ -z "$noway" ] || fail skill-start "skills with neither triggers nor schedule: $noway" "add the trigger that starts it or its schedule"
+timers="$(each '[.triggers // {} | to_entries[] | select(.value.type == "schedule" or (.value.value // "" | test("^[-0-9*/,]+( +[-0-9*/,]+){4}$"))) | .key] | join(" ")')"
+[ -z "$timers" ] || fail timer-trigger "triggers that are timers: $timers" "a timer is not a trigger: remove it and write the skill's schedule in words (every hour at minute 7)"
+crons="$(each '[.skills // {} | to_entries[] | select(.value.schedule // "" | test("^[-0-9*/,]+( +[-0-9*/,]+){4}$")) | .key] | join(" ")')"
+[ -z "$crons" ] || fail schedule-words "skills with a cron expression as schedule: $crons" "say the schedule in words (Fridays at 07:00 UTC)"
+
+# Unknown keys inside the sections readers parse, without the full schema pass.
+nested="$(jq -r --slurpfile s "$SCHEMA" '
+  $s[0].properties as $p
+  | [ ((.triggers // {}) | to_entries[] | "triggers.\(.key)" as $w | .value | keys - ($p.triggers.additionalProperties.properties | keys) | .[] | "\($w).\(.)"),
+      ((.skills // {}) | to_entries[] | "skills.\(.key)" as $w | .value | keys - ($p.skills.additionalProperties.properties | keys) | .[] | "\($w).\(.)"),
+      ((.contracts // {}) | to_entries[] | "contracts.\(.key)" as $w | .value | keys - ($p.contracts.additionalProperties.properties | keys) | .[] | "\($w).\(.)"),
+      ((.surfaces // {}) | to_entries[] | "surfaces.\(.key)" as $w | .value
+        | (keys - ($p.surfaces.additionalProperties.properties | keys) | .[] | "\($w).\(.)"),
+          ((.channels // [])[] | keys - ($p.surfaces.additionalProperties.properties.channels.items.properties | keys) | .[] | "\($w).channels[].\(.)"),
+          ((.pages // [])[] | keys - ($p.surfaces.additionalProperties.properties.pages.items.properties | keys) | .[] | "\($w).pages[].\(.)")),
+      ((.runtime.providers // [])[] | keys - ($p.runtime.properties.providers.items.properties | keys) | .[] | "runtime.providers[].\(.)")
+    ] | unique | join(" ")' "$card" 2>/dev/null)"
+[ -z "$nested" ] || fail nested-keys "keys the schema does not know: $nested" "remove them; a value that belongs in the card has a field in docs/manifest.schema.json"
 
 rt="$(each '.runtime // {} | keys - ["harness", "providers", "listedAt"] | join(" ")')"
 [ -z "$rt" ] || fail runtime "runtime carries $rt" "keep only harness, providers and listedAt: the card says what the agent can use, never how it is used"
@@ -112,7 +130,8 @@ else
   out="$(python3 -I -c '
 import json, sys, jsonschema
 s = json.load(open(sys.argv[1])); c = json.load(open(sys.argv[2]))
-errs = list(jsonschema.Draft202012Validator(s).iter_errors(c))
+v = jsonschema.Draft202012Validator(s, format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER)
+errs = list(v.iter_errors(c))
 for e in errs: print("/".join(map(str, e.path)) or "(root)", "—", e.message)
 sys.exit(3 if errs else 0)' "$SCHEMA" "$card" 2>&1)"; rc=$?
   case "$rc" in
@@ -129,10 +148,17 @@ d="$(digest)"; v="$(each '.source.version // ""')"
        fail version "source.version is ${v:-empty}, content digest is $d: the card changed after it was stamped" "do not pin this copy; tell the operator and the peer's owner"
      else fail version "source.version is ${v:-empty}, content digest is $d" "run: bash scripts/manifest-check.sh stamp <card>"; fi
 
+size="$(wc -c < "$card")"
+if [ "$size" -le 32768 ]; then ok size "$size bytes"
+elif [ "$mode" = peer ]; then fail size "$size bytes" "do not pin a card over 32 KB; tell the operator"
+else warn size "$size bytes; keep the card under 32 KB"; fi
+
 [ "$mode" = peer ] && { [ "$fails" -eq 0 ] && echo PASS; exit $(( fails > 0 )); }
 
 # 4. Privacy: no private config value and no private shape in the card.
-if [ -r "$CONFIG" ]; then
+if [ ! -r "$CONFIG" ] && [ "$mode" = publish ]; then
+  fail privacy-config "$CONFIG not readable; the card cannot be published unscanned" "run from the agent's home, or set WORK_DIR to the directory that holds CONFIG.md"
+elif [ -r "$CONFIG" ]; then
   leaks=""
   while IFS= read -r line; do
     key="${line%%:*}"; key="${key#- }"; val="${line#*: }"; val="${val%%  #*}"; val="${val//\`/}"
@@ -159,7 +185,6 @@ if [ "$mode" = publish ]; then
   ph="$(grep -c 'TODO(manifest)' "$card")"
   [ "$ph" -eq 0 ] && ok placeholders "none" || fail placeholders "$ph unfilled TODO(manifest) values" "fill them from the runtime sources (docs/manifest.md → Sources) or remove the field"
 fi
-size="$(wc -c < "$card")"; [ "$size" -le 32768 ] && ok size "$size bytes" || warn size "$size bytes; keep the card under 32 KB"
 
 [ "$fails" -eq 0 ] && echo PASS
 exit $(( fails > 0 ))

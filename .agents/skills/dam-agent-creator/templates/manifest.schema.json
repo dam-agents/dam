@@ -68,6 +68,7 @@
         },
         "kit": {
           "type": "string",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+@[0-9]+\\.[0-9]+\\.[0-9]+$",
           "description": "Starter kit <catalog>/<kit>@<version> the agent was created from."
         }
       }
@@ -220,9 +221,9 @@
               "review-request",
               "message",
               "command",
-              "schedule",
               "reaction"
-            ]
+            ],
+            "description": "What a person or a system does to start the skill. A timer is not a trigger: it is the skill's schedule."
           },
           "value": {
             "type": "string"
@@ -283,7 +284,7 @@
           },
           "schedule": {
             "type": "string",
-            "description": "When the skill runs on its own. A skill needs triggers, a schedule, or both."
+            "description": "When the skill runs on its own, in words (`every hour at minute 7`, `Fridays at 07:00 UTC`), never a cron expression. A skill needs triggers, a schedule, or both."
           }
         },
         "anyOf": [
@@ -403,11 +404,7 @@
             "properties": {
               "alias": {
                 "type": "string",
-                "description": "Provider alias as the Model Router names it."
-              },
-              "name": {
-                "type": "string",
-                "description": "Display name, from list_harnesses."
+                "description": "Provider alias as the Model Router names it. The only name of the provider in the card: its display name is the operator's own text."
               },
               "models": {
                 "type": "array",

@@ -19,8 +19,10 @@ The agent-facing procedure is `templates/docs/manifest.md.template`; the shape i
 - **Ids are keys.** Triggers, skills and contracts are maps keyed by kebab-case ids; every list refers to them by key, and the check resolves every reference.
 - **Handoffs name roles, never agents.** `code-reviewer`, `implementer`, `qa-tester`, `quality-advisor`, `reporter`.
   A role list that grows is a schema change in this skill.
-- **Freshness has two clocks.** `source.version` is the digest of the interface and changes only when a reader must re-read; `runtime` (the harness, the providers and their models) changes more often and stays outside the digest.
-  It names what the agent can use, never how it is used: no spend, counts or models that ran.
+- **A timer is not a trigger.** A trigger is what a person or a system does; a skill that runs on its own carries a `schedule` in words, never a cron expression.
+  Two cards that model the same thing two ways cost every reader a second parser.
+- **Freshness has two clocks.** `source.version` is the digest of the interface and changes only when a reader must re-read; `runtime` (the harness, the provider aliases and their models) changes more often and stays outside the digest.
+  It names what the agent can use, never how it is used: no spend, counts or models that ran, and no provider display name, which is the operator's text and may say whose key it is.
 - **One name for every card.** The published artifact is always titled `Agent manifest: <agent.name>`, file `agent-manifest.json`, public, type `code`; the agent-facing procedure holds the exact call.
 - **Peers are local.** Each agent keeps its own `work/PEERS.md` with the manifest links the operator gives it; nothing new lives in DAM.
 

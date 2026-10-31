@@ -24,6 +24,9 @@ Yes → it goes in. No → it stays out.
 - People: names, logins of persons, e-mail addresses, Slack or Telegram ids, 1:1 DMs.
 - Private repositories, private pages, credentials, model prices, the operator's notes.
 - How the agent is used: spend, call or session counts, which models actually ran, the settings of single sessions or schedules.
+- Cron expressions and timer internals: a schedule is said in words, and a timer is never a trigger.
+- A provider's display name and whose key it runs on: the card names a provider by its Model Router alias only.
+- A page whose content would fail the test above (security findings, spend, people), whatever its visibility: the card gives every page it lists a wider audience, so such a page stays out of `surfaces.artifact.pages`.
 - Anything a config key marks private. `scripts/manifest-check.sh` scans for these; its `PUBLIC_KEYS` list is the only allowlist.
 
 ## Sections
@@ -42,10 +45,12 @@ Yes → it goes in. No → it stays out.
 | `packages` | Public skills or tools others can install: name, url, use. |
 | `flow` | Ordered steps for an agent that works with this one. |
 | `trust`, `notOffered`, `limits` | Short sentences. |
-| `runtime` | The harness and the providers with the models they offer: see **Sources**. Not part of `source.version`. |
+| `runtime` | The harness and the providers, by alias, with the models they offer: see **Sources**. Not part of `source.version`. |
 
 A trigger belongs to exactly one skill: the skill it `starts`.
 When a skill can start another skill, say so in its description.
+A trigger is something a person or a system does; a timer is not one.
+A skill that runs on its own has a `schedule`, in words (`every hour at minute 7`), and no trigger for it.
 
 ## Sources
 
@@ -57,7 +62,7 @@ Take the content from wherever it is true; the schema fixes only the shape.
   - `describe_channel` (`slack`, `telegram`) → the conversation names for `surfaces.<channel>.channels`. Names only, never ids; leave out 1:1 DMs.
   - The frame of each Slack or Telegram turn says whether the conversation is ambient and whether you are its default agent. Record both per conversation in `work/manifest-channels.json` when a turn arrives (`ambient`, `defaultAgent`, `seenAt`); copy `ambient` and `defaultAgent` into the card. `seenAt` stays in that file: a time in the card would change `source.version` on every turn. Unknown → `null`.
   - `PLATFORM_HARNESS` → `runtime.harness`.
-  - The Model Router's catalog → `runtime.providers`: `curl -fsS -H "X-Platform-Harness: $PLATFORM_HARNESS" "http://127.0.0.1:${PLATFORM_MODEL_ROUTER_PORT:-24180}/v1/models"` lists the models this harness can use as `<provider alias>/<model id>`; group them by alias. `list_harnesses` gives the provider's display name for `name`. A 503 means the catalog has not listed yet: keep the last card's list.
+  - The Model Router's catalog → `runtime.providers`: `curl -fsS -H "X-Platform-Harness: $PLATFORM_HARNESS" "http://127.0.0.1:${PLATFORM_MODEL_ROUTER_PORT:-24180}/v1/models"` lists the models this harness can use as `<provider alias>/<model id>`; group them by alias. The alias is the provider's only name in the card: its display name is the operator's text and may say whose key it is. A 503 means the catalog has not listed yet: keep the last card's list.
   - The share URLs of the public pages you publish → `surfaces.artifact.pages`.
 - **The operator**, in the direct session: the owner role, and anything the definition cannot know.
 
@@ -100,7 +105,7 @@ A failed publish is a `warn` in the audit; the old card stays in place.
 
 Do this when the operator adds a row (in onboarding or later), and when they adopt a new version:
 
-1. Fetch `manifest_url` (`curl -fsS`) into a temporary file.
+1. Fetch `manifest_url` (`curl -fsS --max-time 30 --max-filesize 1048576`) into a temporary file.
 2. `bash "$HOME/scripts/manifest-check.sh" peer <file>` until `PASS`. A `FAIL` on `version` means the card changed after its owner stamped it: do not pin it; tell the operator.
 3. Show the operator the ids in `uses` with their values from the new card, and every config key of yours that holds one of these values with its current value.
 4. On the operator's yes: move the file to `work/peers/<name>.json`, write its `source.version` into `pinned_version`, and change the config keys they named.
@@ -108,7 +113,7 @@ Do this when the operator adds a row (in onboarding or later), and when they ado
 
 ### Weekly audit, per row
 
-1. Fetch `manifest_url` (`curl -fsS`). Unreachable → `warn`.
+1. Fetch `manifest_url` (`curl -fsS --max-time 30 --max-filesize 1048576`). Unreachable → `warn`.
 2. `bash "$HOME/scripts/manifest-check.sh" peer <file>`. A `FAIL` → `warn` naming the peer; keep the pinned copy.
 3. Compare `source.version` with `pinned_version`.
    Same → `ok`.
