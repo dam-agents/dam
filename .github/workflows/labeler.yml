@@ -1,0 +1,31 @@
+name: Labeler
+
+# Labels a pull request by the files it changes, as .github/labeler.yml maps
+# them. The label is only ever added: one a person put on stays. A fork's run
+# gets a read-only token, and Mergify's queue PRs are drafts the Quality
+# Inspector never checks, so both are skipped.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: label by changed files
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      # A label that does not exist yet is created by the first pull request
+      # that gets it.
+      issues: write
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0

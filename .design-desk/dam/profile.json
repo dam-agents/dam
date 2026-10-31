@@ -1,0 +1,261 @@
+{
+  "schema": "design-desk-profile/v1",
+  "product": "DAM",
+  "ui": {
+    "paths": [
+      "packages/ui/**"
+    ]
+  },
+  "style": {
+    "repo": "dam-agents/dam",
+    "kind": "repo",
+    "framework": "react",
+    "ui_dir": "packages/ui",
+    "styling": "tailwind",
+    "tailwind_major": 4,
+    "css_entry": "packages/ui/src/App.css",
+    "icon_package": "@carbon/icons-react",
+    "class_merge": "tailwind-merge",
+    "fonts": [
+      "IBM Plex Sans",
+      "IBM Plex Mono"
+    ],
+    "dark_mode": "class",
+    "shell": [
+      "packages/ui/src/app.tsx",
+      "packages/ui/src/main.tsx"
+    ],
+    "components": [
+      "packages/ui/src/components/ui",
+      "packages/ui/src/components"
+    ],
+    "mock_modules": [
+      "/api/",
+      "/hooks/",
+      "/store/",
+      "^packages/ui/src/(store|trpc|api|auth|query-client)\\.ts$"
+    ],
+    "render_wrappers": [
+      {
+        "src": "packages/ui/src/components/ui/tooltip.tsx",
+        "export": "TooltipProvider"
+      }
+    ]
+  },
+  "boundary": {
+    "allow": [
+      "packages/ui/src/**/components/**",
+      "packages/ui/src/**/views/**",
+      "packages/ui/src/components/**",
+      "packages/ui/src/App.css",
+      "packages/ui/src/styles/**",
+      "packages/ui/public/**"
+    ],
+    "deny": [
+      "packages/ui/src/**/api/**",
+      "packages/ui/src/**/hooks/**",
+      "packages/ui/src/**/store/**",
+      "packages/ui/src/**/lib/**",
+      "packages/ui/src/**/utils/**",
+      "packages/ui/src/**/forms/**",
+      "packages/ui/src/__tests__/**",
+      "packages/ui/src/*.ts"
+    ],
+    "global_styles": [
+      "packages/ui/src/App.css",
+      "packages/ui/src/styles/**"
+    ],
+    "presentational_imports": [
+      "^@carbon/icons-react$",
+      "^@carbon/pictograms-react$",
+      "^@/components/ui/",
+      "^@/lib/utils$",
+      "^clsx$",
+      "^tailwind-merge$",
+      "^class-variance-authority$"
+    ],
+    "aliases": {
+      "@/": "packages/ui/src/"
+    },
+    "code": {
+      "class_helpers": [
+        "cn",
+        "clsx",
+        "cva",
+        "twMerge"
+      ],
+      "copy_helpers": []
+    },
+    "ignored_ok": [
+      "helm/charts/**",
+      "**/*.tsbuildinfo",
+      ".mise.local.toml",
+      "**/.vite/**"
+    ]
+  },
+  "docs": {
+    "glossary": "docs/ubiquitous-language.md",
+    "architecture": [
+      "docs/architecture.md",
+      "docs/architecture/",
+      "docs/strategy/"
+    ],
+    "decisions": [
+      "the hidden author-decisions block at the end of a pull request body",
+      "the pull request's Web UI proof screenshots and its linked issue"
+    ]
+  },
+  "screens": {
+    "Home": "packages/ui/src/modules/home/",
+    "Agent chat": "packages/ui/src/modules/sessions/",
+    "Agent configuration": "packages/ui/src/modules/sandboxes/",
+    "Artifacts": "packages/ui/src/modules/artifacts/",
+    "Starter kits": "packages/ui/src/modules/starter-kits/",
+    "Settings": "packages/ui/src/modules/settings/",
+    "App shell and sidebar": "packages/ui/src/modules/platform/"
+  },
+  "capture": {
+    "base_url": "",
+    "routes": {
+      "Home": "/",
+      "Artifacts": "/artifacts",
+      "Starter kits": "/starter-kits",
+      "Settings": "/settings",
+      "Providers": "/settings/providers",
+      "Connections": "/settings/connections",
+      "Usage": "/settings/usage"
+    },
+    "login": {
+      "path": "/",
+      "user_field": "#username",
+      "password_field": "#password",
+      "submit": "#kc-login"
+    }
+  },
+  "engine": {
+    "endpoints": [
+      {
+        "name": "app",
+        "port": 4400
+      },
+      {
+        "name": "keycloak",
+        "port": 4400
+      },
+      {
+        "name": "share",
+        "port": 4400
+      },
+      {
+        "name": "content",
+        "port": 4400
+      }
+    ],
+    "open_endpoint": "app",
+    "storage": "60Gi",
+    "egress": [
+      {
+        "host": "quay.io",
+        "why": "the platform's chart and images a prototype install pulls, and their tag listings"
+      },
+      {
+        "host": "*.quay.io",
+        "why": "the image layers quay.io redirects to"
+      },
+      {
+        "host": "mirror.gcr.io",
+        "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror)"
+      },
+      {
+        "host": "ghcr.io",
+        "why": "the KVM device plugin's image an install inside an Environment needs"
+      },
+      {
+        "host": "get.helm.sh",
+        "why": "the helm binary"
+      },
+      {
+        "host": "blob.istio.io",
+        "why": "Istio's charts, which cluster:install takes from version 1.31 on"
+      },
+      {
+        "host": "istio-release.r2.istio.io",
+        "why": "the bucket that blob.istio.io redirects its downloads to"
+      },
+      {
+        "host": "clickhouse.github.io",
+        "why": "the clickstack chart that helm dependency build fetches, with the feature off"
+      }
+    ]
+  },
+  "handoff": {
+    "labels": []
+  },
+  "tests": [
+    "packages/ui/src/__tests__/**",
+    "packages/e2e/**"
+  ],
+  "contacts": "the pull request's author; the person who filed its linked issue",
+  "catalog": {
+    "elements": [
+      {
+        "name": "Agent row",
+        "group": "Lists and rows",
+        "file": "packages/ui/src/modules/agents/components/agent-row.tsx",
+        "export": "AgentRow"
+      },
+      {
+        "name": "Sidebar agent row",
+        "group": "Navigation",
+        "file": "packages/ui/src/modules/agents/components/sidebar-agent-row.tsx",
+        "export": "SidebarAgentRow"
+      },
+      {
+        "name": "Agent avatar",
+        "group": "Identity",
+        "file": "packages/ui/src/modules/agents/components/avatar/agent-avatar.tsx",
+        "export": "AgentAvatar"
+      },
+      {
+        "name": "Status badge",
+        "group": "Status",
+        "file": "packages/ui/src/components/status-indicator.tsx",
+        "export": "StatusBadge"
+      },
+      {
+        "name": "Artifact row",
+        "group": "Lists and rows",
+        "file": "packages/ui/src/modules/artifacts/components/artifact-list-row.tsx",
+        "export": "ArtifactListRow"
+      },
+      {
+        "name": "Notice",
+        "group": "Feedback",
+        "file": "packages/ui/src/components/ui/notice.tsx",
+        "export": "Notice"
+      },
+      {
+        "name": "Empty state",
+        "group": "Feedback",
+        "file": "packages/ui/src/components/ui/empty-state.tsx",
+        "export": "EmptyState"
+      },
+      {
+        "name": "Confirm dialog",
+        "group": "Dialogs",
+        "file": "packages/ui/src/components/ui/confirm-dialog.tsx",
+        "export": "ConfirmDialog"
+      }
+    ]
+  },
+  "skills": {
+    "options": {
+      "skill": "dam-prototyper",
+      "source": "dam-agents/dam-prototyper"
+    },
+    "deliver": {
+      "skill": "file-issue",
+      "source": "dam-agents/dam"
+    }
+  }
+}
