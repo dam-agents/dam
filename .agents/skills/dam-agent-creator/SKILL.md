@@ -39,6 +39,7 @@ One operating architecture for every agent:
   The kit attaches it to each schedule as its **Precheck**, so an idle occurrence is declined before any model wakes.
 - **One fire, one pass**: the Precheck keeps the worklist in a file and the run reads it instead of recomputing it; when one tick finds several items, the run keeps the first and **fans the rest out** into one-time sessions of their own, each pinned to the configured model and titled by a script.
 - **A health monitor** between audits: a frequent gated tick over local files that alerts on model or integration outages, classifier refusals, a silent heartbeat, a failing backup and harness drift, with a claim-then-ack ledger so no alert is lost or repeated; optionally delivered by the script itself with no model in the loop.
+- **A public agent manifest**: one JSON card the agent writes about itself at runtime (triggers, skills, the blocks it reads and writes, channels, public pages, packages, trust rules), checked by a script and republished by the weekly audit; a peer list lets it follow the manifests of the agents it works with (`references/manifest.md`).
 - **Weekly self-audit**: deterministic health checks plus judgment checks, reported traffic-light style against a recorded trend history.
   Recommended for every agent, even purely reactive ones.
 - **A harness adapter** where the harness has hooks: logging hooks, the auto-mode classifier rules for the agent's documented writes, a deny list of unused tools (tool definitions dominate every request) and a lean subagent type, all installed per instance and checked for drift.
@@ -85,6 +86,7 @@ Present one proposal:
 - **Idempotency design**: how "already processed" is detected (markers, state rows), action-time re-checks, locks if runs can overlap (TTL + liveness gate + heartbeat), and **per effect, the record ordering**: write-before-send where a duplicate is worse, send-then-record where a silent drop is worse.
 - **Autonomy gates** (only when an effect a person normally takes may become automatic): the opt-in key, the human trigger, the gates and the server-side guard (`references/architecture.md` → Autonomous effects).
 - **Trust boundary exceptions**: the whitelist of channel requests that may trigger work (often empty).
+- **Public interface** (`references/manifest.md`): the roles the agent serves, its handoffs to other roles, the config keys whose values are public (`PUBLIC_KEYS`), and the packages it offers.
 - **Hard invariants**, domain-specific ones included.
 - **Cost estimate**: runs/day, expected idle ratio, script vs agent-turn split.
 
@@ -104,6 +106,9 @@ Copy each template and resolve every `{{PLACEHOLDER}}` and `TODO(creator)` block
 | `templates/CHANGELOG.md.template`              | `CHANGELOG.md`                 | Rules header + the `1.0.0` entry.                                                                                                                                                      |
 | `templates/docs/self-modification.md.template` | `docs/self-modification.md`    | Add the domain invariants to §10.                                                                                                                                                      |
 | `templates/docs/persistence.md.template`       | `docs/persistence.md`          | State backup + definition evolution + version check.                                                                                                                                   |
+| `templates/docs/manifest.md.template`          | `docs/manifest.md`             | Copied verbatim: how the agent writes, checks and publishes its manifest, and follows its peers.                                                                                       |
+| `templates/manifest.schema.json`               | `docs/manifest.schema.json`    | Copied verbatim; the shape of every DAM agent manifest.                                                                                                                                |
+| `templates/manifest-check.sh.template`         | `scripts/manifest-check.sh`    | Fill `PUBLIC_KEYS` from the design; nothing else changes.                                                                                                                              |
 | `templates/verify-onboarding.sh.template`      | `scripts/verify-onboarding.sh` | Structure verification by mode: `--config` mid-onboarding, bare at the end, `--live` for reachability; every `FAIL` carries its `fix:` (Phase 4).                                      |
 | `templates/preflight.sh.template`              | `scripts/preflight.sh`         | Only with scheduled runs (Phase 4).                                                                                                                                                    |
 | `templates/precheck.sh.template`               | `scripts/precheck.sh`          | With the pre-flight: the schedule gate — one pass per fire under a budget, the worklist in a file, the exit code. Copied verbatim; no domain logic. Runs `monitor.sh` for the monitor. |
@@ -134,6 +139,8 @@ Ask which **license** applies (default: the org's standard) and add `LICENSE`; w
   Titles from ids and work kinds alone (`references/architecture.md` → Fan-out).
 - `scripts/harness/<harness>/` (a harness with hooks) — `install.sh` (idempotent, `--check`), the hook scripts, `denied-tools.txt`, `agents/<lean-subagent>.md` (`references/architecture.md` → Harness adapters); the tests that keep the deny list honest and the allow rules complete.
 - `scripts/definition-issue.sh` (when the agent files issues on its definition repo) — `file <title> <body-file>` and `check <body-file>`: the switch, the scan against the instance's values, shapes and foreign terms, the title dedup, the create (`references/architecture.md` → Writes to the definition repo); plus the `PreToolUse` guard in the harness adapter.
+- `scripts/manifest-check.sh` — always; set `PUBLIC_KEYS` to the config keys whose values the design shows in public (labels, the target, the bot account).
+  Write a sample card for the design into `scripts/tests/fixtures/manifest.json` and add a test that `manifest-check.sh check` passes on it, so a definition change that breaks the card shape fails CI.
 - `scripts/verify-onboarding.sh` — always.
   One check per file, key and table ONBOARDING creates, one `--live` probe per integration, one read-only pre-flight per scheduled mode.
   Detect-never-repair; judges *shape*, never data; an unknown config bullet FAILs (the runtime can't see it); a probe that can't run is `warn`, never a silent pass.
@@ -188,6 +195,7 @@ Offer a test pass: walk one work item through the pipeline (mentally or against 
   Grep before committing.
   `kit.yaml` binds every deployment made from it: only values *every* instance shares go in its `env`.
 - **Safe defaults.** Anything that contacts people or publishes defaults to off, opt-in at onboarding.
+  The one exception is the agent manifest: public by default, because it repeats only what is already public (`references/manifest.md`).
 - **Slim always-loaded core.** CLAUDE.md holds contracts and invariants; procedures live in `docs/`, read only when their work fires.
   One home per concept; links, not restatements.
 - **Determinism into scripts.** Mechanical decisions go in versioned, auditable scripts; judgment and outward effects stay with the agent, with its own action-time re-checks.
