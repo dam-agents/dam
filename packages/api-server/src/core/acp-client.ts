@@ -121,15 +121,30 @@ function connectClient(
     .connect(stream);
 }
 
-function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
+function wsStream(
+  url: string,
+  agentId: string,
+): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     ws.on("open", () => {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
-          ws.on("message", (data) =>
-            controller.enqueue(JSON.parse(data.toString())),
-          );
+          ws.on("message", (data) => {
+            const text = data.toString();
+            let frame: AnyMessage;
+            try {
+              frame = JSON.parse(text) as AnyMessage;
+            } catch {
+              getLogger().warn(
+                { agentId, frameLength: text.length },
+                "acp frame is not JSON; closing the connection",
+              );
+              ws.close(1007, "invalid JSON frame");
+              return;
+            }
+            controller.enqueue(frame);
+          });
           ws.on("close", () => {
             try {
               controller.close();
@@ -315,7 +330,7 @@ async function withAcpConnection<T>(
   watch: ConnectionWatch,
   fn: (connection: ClientConnection, init: InitializeResponse) => Promise<T>,
 ): Promise<T> {
-  const { stream, ws } = await wsStream(url);
+  const { stream, ws } = await wsStream(url, agentId);
 
   const ac = new AbortController();
   let abortError: Error = new AcpTurnAbandonedError(
@@ -536,7 +551,7 @@ export function createAcpClient(opts: {
   const { instanceName: agentId, stallProbeMs } = opts;
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
-      const { stream, ws } = await wsStream(url);
+      const { stream, ws } = await wsStream(url, agentId);
 
       const connection = connectClient(stream, {
         async requestPermission() {
