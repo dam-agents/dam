@@ -8,6 +8,7 @@ export interface A2uiConversationState {
   conversation: A2uiConversation;
   sessionKey: string;
   liveMessageId: string | null;
+  openSurfaces: ReadonlySet<string>;
   withRendererMetadata: (text: string) => string;
   answeredCalls: ReadonlySet<string>;
   pendingResponses: readonly FunctionResponse[];

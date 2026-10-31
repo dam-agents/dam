@@ -1,6 +1,6 @@
 # Chat forms
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -74,7 +74,9 @@ The chat replays every block of the session in order, so a surface outlives the 
 - A surface identifier is unique within the session; creating one that exists is an integrity error.
 - A later reply may **update** a surface (replace components, change its data) or **delete** it.
   The surface re-renders where it was created; the later reply shows a one-line note instead.
-- **Only the surface the newest finished reply created or touched accepts input.** Older surfaces stay visible and locked, so the user cannot answer a question the agent has moved past.
+- **A surface accepts input until the user answers it, or answers a surface a later reply created or touched.** A later reply that asks nothing, such as a status message, leaves an unanswered surface open.
+  Answering a newer surface locks the older ones, so the user cannot answer a question the agent has moved past.
+  No surface accepts input while the agent's reply streams or the user's message is the newest.
 - The user's unsent edits are kept per session and surface version: they survive scrolling, re-renders and switching to another session and back, and are replaced when the agent updates that surface.
   The chat keys them by the surface identifier, how many times the session created it, and its version, because a reloaded transcript gives its messages new identifiers.
   They live in the browser tab's memory, so a reload of the page drops them.
@@ -108,7 +110,7 @@ The agent fixes the block and sends it again; the forwarded errors carry the ren
 A second button asks the agent for plain text instead and carries no capabilities.
 After a second failed block for the same question, the skill tells the agent to ask in plain text.
 
-Once the user can no longer change a surface — it is older than the newest reply, or it was sent — its inputs, callouts and badges show greyed out.
+Once the user can no longer change a surface — it was sent, or a newer surface was — its inputs, callouts and badges show greyed out.
 
 ## Functions and checks
 
