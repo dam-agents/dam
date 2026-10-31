@@ -27,7 +27,12 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
    **Keep the research out of the issue**: no file paths, function names, line numbers, data structures or architectural detail.
    A sentence that only makes sense to someone who has read the code gets rewritten.
 
-4. **Non-epic types: consider an epic.** List the board's epics:
+4. **Leave the acceptance criteria to the grilling.** Feature, bug, and task bodies whose template asks for criteria get `TBD (after grilling)` as the whole `## Done when` section, in place of `### AC-<k>` blocks, and the issue is filed with the `needs-ac` label (see [work-process.md](../../../docs/guidelines/work-process.md)).
+   Never invent criteria from the request: they would encode a guessed solution.
+   When criteria already exist — the requester supplied them, or a grilling wrote them — put them in **Done when**, reformatted to [acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md) without adding to them, and leave the label off.
+   `needs-ac` goes on only when no criteria are written yet.
+
+5. **Non-epic types: consider an epic.** List the board's epics:
 
    ```sh
    gh project item-list 1 --owner dam-agents --limit 3000 --format json \
@@ -38,8 +43,8 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
    Otherwise omit the line; triage can place it later.
    Epics have no parent.
 
-5. **Output mode, from the original prompt:**
-   - **Draft only**: present the full title + body inline, using the type's template.
+6. **Output mode, from the original prompt:**
+   - **Draft only**: present the full title + body inline, using the type's template, and say whether it gets `needs-ac`.
      Stop.
    - **File right away**: hand off to the `file-issue` skill (dedupe → approve → file on the same draft).
 
