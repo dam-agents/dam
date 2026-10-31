@@ -14,6 +14,7 @@ import { useGettingStarted } from "../../getting-started/api/queries.js";
 import { deriveChecklist } from "../../getting-started/lib/derive-checklist.js";
 import { useAttention, useFeed } from "../../home/api/queries.js";
 import { useDismissals } from "../../home/hooks/use-dismissals.js";
+import { useDocsUrl } from "../../links/api/queries.js";
 import { SECTIONS } from "../../sandboxes/components/sandbox-section-nav.js";
 import { useAgentSession } from "../../sessions/api/queries.js";
 import { useSettingsTabs } from "../../settings/hooks/use-settings-tabs.js";
@@ -68,6 +69,7 @@ export function usePaletteInput(): PaletteInput {
   const { items: feed } = useFeed();
   const { isDismissed } = useDismissals();
   const progress = useGettingStarted().data;
+  const docsUrl = useDocsUrl("home");
   const checklist = progress ? deriveChecklist(progress) : null;
 
   const freshSessions = useMemo(
@@ -151,5 +153,6 @@ export function usePaletteInput(): PaletteInput {
         ? pendingApprovals
         : NO_APPROVALS,
     brandShort: getBrand().short,
+    docsUrl,
   };
 }

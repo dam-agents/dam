@@ -1,13 +1,13 @@
 import { externalLinkProps } from "@/lib/external-link";
 
-import { COMPUTE_REQUEST_URL } from "../../../constants.js";
-import { useLinks } from "../../links/api/queries.js";
+import { useComputeRequestUrl } from "../../links/api/queries.js";
 
 export function RequestMoreLink() {
-  const { data: links } = useLinks();
+  const href = useComputeRequestUrl();
+  if (!href) return null;
   return (
     <a
-      href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
+      href={href}
       {...externalLinkProps}
       className="ml-auto shrink-0 text-muted-foreground/60 hover:underline"
     >

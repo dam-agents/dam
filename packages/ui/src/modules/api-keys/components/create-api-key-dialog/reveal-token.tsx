@@ -10,7 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
 } from "../../../../components/modal.js";
-import { CLI_REFERENCE_URL } from "../../../../constants.js";
+import { useDocsUrl } from "../../../links/api/queries.js";
 
 interface Props {
   plaintext: string;
@@ -19,6 +19,7 @@ interface Props {
 
 export function RevealToken({ plaintext, onClose }: Props) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
+  const cliReferenceUrl = useDocsUrl("cliReference");
 
   return (
     <>
@@ -44,16 +45,20 @@ export function RevealToken({ plaintext, onClose }: Props) {
           </p>
         )}
         <p className="text-xs text-muted-foreground mt-3">
-          The{" "}
-          <a
-            href={CLI_REFERENCE_URL}
-            {...externalLinkProps}
-            className="text-primary underline-offset-2 hover:underline"
-          >
-            CLI reference
-          </a>{" "}
-          shows how to sign in with it. Scripts can also send it as a bearer
-          token to the API.
+          {cliReferenceUrl && (
+            <>
+              The{" "}
+              <a
+                href={cliReferenceUrl}
+                {...externalLinkProps}
+                className="text-primary underline-offset-2 hover:underline"
+              >
+                CLI reference
+              </a>{" "}
+              shows how to sign in with it.{" "}
+            </>
+          )}
+          Scripts can also send it as a bearer token to the API.
         </p>
       </DialogBody>
       <DialogFooter>

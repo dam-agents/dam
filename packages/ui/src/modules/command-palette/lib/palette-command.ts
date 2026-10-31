@@ -57,11 +57,12 @@ export interface PaletteInput {
   checklist: "open" | "closed" | null;
   pendingApprovals: readonly ApprovalView[];
   brandShort: string;
+  docsUrl: string | null;
 }
 
 export interface PaletteActions {
   goTo: (view: "home" | "artifacts" | "starter-kits") => void;
-  openDocs: () => void;
+  openDocs: (url: string) => void;
   createAgent: () => void;
   browseKits: () => void;
   openKit: (catalog: string, id: string) => void;

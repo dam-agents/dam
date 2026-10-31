@@ -17,9 +17,10 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
     data: { availableChannels: { slack: true }, list: undefined },
   }),
 }));
-vi.mock("../../modules/links/api/queries.js", () => ({
-  useSlackInstallRequestUrl: () => undefined,
-}));
+vi.mock(
+  "../../modules/links/api/queries.js",
+  () => import("./support/fake-links.js"),
+);
 vi.mock("../../modules/sessions/components/terminal-harness-menu.js", () => ({
   TerminalHarnessMenu: ({ children }: { children: ReactElement }) => children,
 }));

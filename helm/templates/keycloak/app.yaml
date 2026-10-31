@@ -140,6 +140,8 @@ spec:
               value: {{ .Values.keycloak.shareClientId | quote }}
             - name: PLATFORM_BRAND_NAME_MEANINGS
               value: {{ .Values.brand.nameMeanings | default (list) | toJson | quote }}
+            - name: PLATFORM_DOCS_URL
+              value: {{ .Values.links.docs | quote }}
             {{- with .Values.keycloak.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

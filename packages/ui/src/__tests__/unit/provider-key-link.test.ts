@@ -1,7 +1,7 @@
 // TEST_OVERVIEW: every provider form that has a key page shows the same "Get your key" link to it, when connecting and when replacing a key. The Anthropic form shows it only for the API key mode; a subscription token has no key page.
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { AnthropicForm } from "../../modules/providers/components/anthropic/form.js";
@@ -9,6 +9,11 @@ import { BedrockForm } from "../../modules/providers/components/bedrock/form.js"
 import { BobForm } from "../../modules/providers/components/bob/form.js";
 import { LiteLlmProxyForm } from "../../modules/providers/components/litellm-proxy/form.js";
 import { OpenAIForm } from "../../modules/providers/components/openai/form.js";
+
+vi.mock(
+  "../../modules/links/api/queries.js",
+  () => import("./support/fake-links.js"),
+);
 
 const onSave = async () => {};
 

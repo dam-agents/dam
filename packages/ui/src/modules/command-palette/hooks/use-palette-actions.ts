@@ -4,7 +4,6 @@ import { useCopy } from "@/hooks/use-copy";
 import { emitToast } from "@/lib/toast";
 
 import { logout } from "../../../auth.js";
-import { DOCS_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import { useUpdateAgent } from "../../agents/api/mutations.js";
 import { resolveCharacter } from "../../agents/components/avatar/agent-avatar.js";
@@ -73,7 +72,7 @@ export function usePaletteActions({
 
   return {
     goTo: setView,
-    openDocs: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer"),
+    openDocs: (url) => window.open(url, "_blank", "noopener,noreferrer"),
     createAgent: () =>
       defaultAgent.ready
         ? void defaultAgent.create()
