@@ -71,6 +71,11 @@ The Quality Inspector tests DAM through the UI only, from [`.quality-inspector/q
 A change to a UI flow, a control label, a dialog or an API that a journey or a helper uses updates that profile in the same PR.
 The generic [`qi-test-sync`](https://github.com/dam-agents/quality-inspector/tree/main/skills/qi-test-sync) skill of the quality-inspector repository checks a PR against the profile and its journeys, and proposes the edits.
 
+## Design profile
+
+The Design Desk agent explains shipped UI changes to designers and builds design-only prototypes from [`.design-desk/dam/`](.design-desk/dam/): which paths a design change may touch (`profile.json` → `boundary`), the main screens, what a designer should know (`PROFILE.md`) and how a prototype installs into an Environment (`bin/env`).
+A change that moves a screen, gives a `packages/ui` folder another role, or changes how `cluster:install --environment` is called updates that profile in the same PR.
+
 ## Commit Conventions
 
 - **Conventional Commits**: `type(scope): short summary` — types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `revert`, `style`, `perf`, `ci`, `build`.
