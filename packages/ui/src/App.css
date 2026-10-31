@@ -104,13 +104,16 @@
   /* ── z-index ladder — the ordered source of truth for stacking.
      Use the matching z-* utilities below; never raw z numbers.
      The Sonner toaster manages its own (higher) z-index and sits above z-toast,
-     modals included: an error a dialog raises must stay readable over its backdrop. ── */
+     modals included: an error a dialog raises must stay readable over its backdrop.
+     A confirm (z-alert) sits above popovers, since a picker's popover stays open
+     under the confirm it asks; a modal stays below them, for the popovers it opens. ── */
   --z-content: 10;
   --z-raised: 20;
   --z-nav: 30;
   --z-overlay: 40;
   --z-banner: 50;
   --z-popover: 60;
+  --z-alert: 65;
   --z-tooltip: 70;
   --z-toast: 80;
 }
@@ -137,6 +140,9 @@
 }
 @utility z-popover {
   z-index: var(--z-popover);
+}
+@utility z-alert {
+  z-index: var(--z-alert);
 }
 @utility z-tooltip {
   z-index: var(--z-tooltip);
