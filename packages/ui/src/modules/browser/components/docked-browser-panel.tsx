@@ -54,12 +54,19 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     stream.connection === "live" && stream.browser.state === "starting";
   const starting = stream.connection === "connecting" || browserStarting;
   const [slowStart, setSlowStart] = useState(false);
+  const [restarts, setRestarts] = useState(0);
   useEffect(() => {
     setSlowStart(false);
     if (!browserStarting) return;
     const timer = setTimeout(() => setSlowStart(true), SLOW_START_MS);
     return () => clearTimeout(timer);
-  }, [browserStarting]);
+  }, [browserStarting, restarts]);
+  // A restart pressed while the browser is starting leaves its state as it
+  // is, so the slow-start notice is hidden and its wait starts again here.
+  function restartBrowser() {
+    setRestarts((n) => n + 1);
+    stream.restartBrowser();
+  }
 
   const shownUrl = stream.page.url === "about:blank" ? "" : stream.page.url;
   useEffect(() => {
@@ -177,7 +184,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <Add size={16} />
         </Button>
         <RowActionsMenu label="Browser actions">
-          <DropdownMenuItem onSelect={stream.restartBrowser}>
+          <DropdownMenuItem onSelect={restartBrowser}>
             Restart browser
           </DropdownMenuItem>
           <DropdownMenuItem tone="danger" onSelect={() => void clearData()}>
@@ -247,7 +254,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
                 <p>
                   The agent's machine is busy, so its browser is slow to start.
                 </p>
-                <Button variant="outline" onClick={stream.restartBrowser}>
+                <Button variant="outline" onClick={restartBrowser}>
                   Restart browser
                 </Button>
               </>
@@ -261,7 +268,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
               {stream.browser.message ?? "The agent's browser did not start."}{" "}
               Retrying…
             </p>
-            <Button variant="outline" onClick={stream.restartBrowser}>
+            <Button variant="outline" onClick={restartBrowser}>
               Restart browser
             </Button>
           </div>

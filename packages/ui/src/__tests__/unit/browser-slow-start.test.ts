@@ -115,6 +115,21 @@ describe("a slow browser start", () => {
     expect(state.restartBrowser).toHaveBeenCalledOnce();
   });
 
+  // TEST_SCENARIO: a restart pressed while the browser is still starting leaves it starting, so the panel hides the busy notice at once and counts another 20 seconds before it shows it again.
+  test("hides the busy notice after a restart and counts again", () => {
+    render();
+    act(() => vi.advanceTimersByTime(20_000));
+    act(() => restartButton()!.click());
+    expect(state.restartBrowser).toHaveBeenCalledOnce();
+    expect(container.textContent).not.toContain("machine is busy");
+    expect(restartButton()).toBeUndefined();
+
+    act(() => vi.advanceTimersByTime(19_000));
+    expect(restartButton()).toBeUndefined();
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(container.textContent).toContain("machine is busy");
+  });
+
   // TEST_SCENARIO: a browser that comes up in time never shows the busy notice; and once the browser starts again, its 20 seconds count from then.
   test("counts the 20 seconds from each start", () => {
     render();
