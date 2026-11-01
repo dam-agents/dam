@@ -61,8 +61,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     const timer = setTimeout(() => setSlowStart(true), SLOW_START_MS);
     return () => clearTimeout(timer);
   }, [browserStarting, restarts]);
-  // A restart pressed while the browser is starting leaves its state as it
-  // is, so the slow-start notice is hidden and its wait starts again here.
+  // UNIT_BOUNDARY_DESCRIPTION: a restart pressed while the browser is starting leaves its state as it is, so the slow-start notice is hidden and its wait starts again here.
   function restartBrowser() {
     setRestarts((n) => n + 1);
     stream.restartBrowser();
