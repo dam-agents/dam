@@ -153,6 +153,10 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       "command_args=infinity",
       "command_background=yes",
       `pidfile=/run/${probeService}.pid`,
+      // Started after user.root, so the shutdown stops it first: the shutdown's
+      // window is shared and best-effort, and user.root's stop, a whole openrc
+      // of the user's own, spent it on a loaded host before this one's turn.
+      "depend() { after user.root; }",
       `stop_post() { touch ${probeStopped}; }`,
       "EOF",
       `chmod 755 /etc/init.d/${probeService}`,
