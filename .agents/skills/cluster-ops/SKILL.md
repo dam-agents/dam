@@ -176,7 +176,7 @@ Iterate with `e2e:loop`; use `e2e` after helm/realm/infra changes.
 It is the command the agent kit's `verify_environment` names: `mise run e2e:loop -- --environment {environment}`.
 The Environment is one made as in [In an Environment](#in-an-environment), on an install whose agents nest, since every agent the suite creates is a machine.
 
-1. **Install what changed.** `e2e:install -- --environment <name>` runs through `cluster:install -- --environment <name> --backchannel`, with the lane's values (mock agents, the e2e control API, one vCPU and 1Gi a boot) and the default harness Template.
+1. **Install what changed.** `e2e:install -- --environment <name>` runs through `cluster:install -- --environment <name> --backchannel`, with the lane's values (mock agents, the e2e control API, four vCPUs and 1Gi a boot) and the default harness Template.
    An image the registry has for this checkout's source is pulled by the node; one it lacks is built here and streamed in, unless the node already holds that build.
    Only a deployment whose image changed is restarted, and only an agent image that changed is staged again, from the node's own copy, so a second run that changed nothing changes nothing.
    It still takes minutes, so `e2e:loop` skips it when the Environment's last lane install that passed its gate was of the checkout's commit from a clean tree, into the same cluster: `~/.cache/platform-cluster/env-<name>/e2e-installed` records that commit and the UID of the cluster's `kube-system` namespace, so an Environment made again under the same name installs, and `cluster:install` and `cluster:build` there clear it.
@@ -215,6 +215,8 @@ What differs from the local lane:
 - **`--rebuild`** does nothing there: the install already took every change of the checkout, or `--no-install` asked for none.
 - **`--no-install`** is for an Environment only: on the test cluster `e2e:loop` never reinstalls a warm cluster anyway, and refuses the flag.
 - **No spec is skipped there by design**: the specs that reach into the cluster or a runner (`19-agent-machine`, `22-harness-tools`, `27-vm-boot-matrix`, `28-runner-release`, `29-vm-storage-trim`) reach the Environment's own through its API.
+- **A slower host**: an Environment's 4 vCPUs carry k3s, the controller, the browser and every nested machine, so its load runs at 10–25 while the agent specs run, and a guest's boot, stop and wake take 12–20 s each.
+  A spec that waits on an agent sets a test timeout above the wait it makes (`waitForAgentRunning` waits up to 240 s), and a spec that reads what a stop did puts what it reads first in the stop, since openrc's shutdown window is shared and a loaded stop spends it.
   `28-runner-release` derives its second runner release from the registry's runner image the Environment pulled, or from the one built here, and streams it in.
 
 ## No mesh (local only)
