@@ -560,7 +560,8 @@ node_claim_class_config() {
   kubectl -n kube-system create configmap "$NODE_CLAIM_CLASS" --dry-run=client -o yaml \
     "--from-literal=config.json={\"nodePathMap\":[{\"node\":\"DEFAULT_PATH_FOR_NON_LISTED_NODES\",\"paths\":[\"$NODE_CLAIM_DIR\"]}]}" \
     "--from-literal=setup=set -eu
-mkdir -m 0777 -p \"\${VOL_DIR}\"" \
+mkdir -m 0777 -p \"\${VOL_DIR}\"
+chmod 700 \"\${VOL_DIR}/..\"" \
     "--from-literal=teardown=set -eu
 rm -rf \"\${VOL_DIR}\"" \
     "--from-literal=helperPod.yaml=$1"
