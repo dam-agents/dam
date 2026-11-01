@@ -605,7 +605,10 @@ export function createBrowserPreview(deps: {
 
   function addViewer(viewer: (snapshot: BrowserSnapshot) => void) {
     viewers.add(viewer);
-    if (viewers.size === 1) lastAnswerAt = Date.now();
+    if (viewers.size === 1) {
+      lastAnswerAt = Date.now();
+      launchBusySince = null;
+    }
     startTimers();
     schedule();
   }

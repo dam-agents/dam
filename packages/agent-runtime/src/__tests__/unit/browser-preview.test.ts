@@ -546,6 +546,32 @@ describe("recovery", () => {
     await until(() => panel.states().at(-1) === "ready");
   });
 
+  // TEST_SCENARIO: a launch that got no answer, then a panel closed for longer than the silence limit: the panel opened later starts a wait of its own, so its first unanswered launch is retried, not taken for a stuck browser and stopped.
+  it("counts a launch's silence from the panel that reopened", async () => {
+    const fake = fakeBrowser();
+    fake.browser.launchFailures = 2;
+    fake.browser.launchError = UNANSWERED;
+    let stops = 0;
+    const browser = preview(fake, {
+      unresponsiveRestartMs: 150,
+      retryDelaysMs: [1_000],
+      stopBrowser: async () => {
+        stops++;
+      },
+    });
+    closers.push(() => browser.close());
+    const first = watching(browser);
+    await until(() => fake.calls.filter(isLaunch).length === 1);
+    first.stop();
+    await until(() => browser.viewers() === 0);
+    await pause(200);
+    const second = watching(browser);
+    await until(() => fake.calls.filter(isLaunch).length === 2);
+    await pause(20);
+    expect(stops).toBe(0);
+    second.stop();
+  });
+
   // TEST_SCENARIO: the browser can die under an open panel — the agent closed it, Chrome crashed. Its CDP connection drops at once; the panel is told the browser is starting, and the supervisor launches it again.
   it("brings a dead browser back under an open panel", async () => {
     const fake = fakeBrowser();
