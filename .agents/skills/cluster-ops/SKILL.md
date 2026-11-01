@@ -215,9 +215,9 @@ What differs from the local lane:
 - **`--rebuild`** does nothing there: the install already took every change of the checkout, or `--no-install` asked for none.
 - **`--no-install`** is for an Environment only: on the test cluster `e2e:loop` never reinstalls a warm cluster anyway, and refuses the flag.
 - **No spec is skipped there by design**: the specs that reach into the cluster or a runner (`19-agent-machine`, `22-harness-tools`, `27-vm-boot-matrix`, `28-runner-release`, `29-vm-storage-trim`) reach the Environment's own through its API.
+  `28-runner-release` derives its second runner release from the registry's runner image the Environment pulled, or from the one built here, and streams it in.
 - **A slower host**: an Environment's 4 vCPUs carry k3s, the controller, the browser and every nested machine, so its load runs at 10–25 while the agent specs run, and a guest's boot, stop and wake take 12–20 s each.
   A spec that waits on an agent sets a test timeout above the wait it makes (`waitForAgentRunning` waits up to 240 s), and a spec that reads what a stop did puts what it reads first in the stop, since openrc's shutdown window is shared and a loaded stop spends it.
-  `28-runner-release` derives its second runner release from the registry's runner image the Environment pulled, or from the one built here, and streams it in.
 
 ## No mesh (local only)
 
