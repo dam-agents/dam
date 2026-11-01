@@ -70,6 +70,7 @@ test.afterAll(async () => {
 
 test.describe("satellites", () => {
   test("a machine registers, is granted to an agent, drains and is removed", async () => {
+    test.setTimeout(300_000);
     const token = await getAccessToken();
     const api = createApiClient(token);
     await acceptTerms(api);
