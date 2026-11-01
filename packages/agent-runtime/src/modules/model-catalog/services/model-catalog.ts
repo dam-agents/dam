@@ -171,6 +171,21 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     markListed = resolve;
   });
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: what a reader of the catalog sees, pending
+   * Connections included, because a listener recycles every idle harness: a
+   * first listing that fails changes a pending Connection into the same
+   * unavailable one with no models, and must not take the processes down.
+   */
+  const fingerprint = (): string =>
+    JSON.stringify(
+      withPending().map((p) => [
+        p.connectionId,
+        p.status,
+        p.entries.map((e) => e.name),
+      ]),
+    );
+
   const rebuild = async (): Promise<void> => {
     if (!deps.envReady()) return;
     const state = deps.envState();
@@ -178,23 +193,10 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     const next = await Promise.all(
       state.providers.map((layer) => listProvider(layer, known.get(layer.id))),
     );
-    const before = JSON.stringify(
-      providers.map((p) => [
-        p.connectionId,
-        p.status,
-        p.entries.map((e) => e.name),
-      ]),
-    );
+    const before = fingerprint();
     providers = next;
     markListed();
-    const after = JSON.stringify(
-      providers.map((p) => [
-        p.connectionId,
-        p.status,
-        p.entries.map((e) => e.name),
-      ]),
-    );
-    if (before !== after) for (const listener of listeners) listener();
+    if (before !== fingerprint()) for (const listener of listeners) listener();
     scheduleRetry();
   };
 

@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-23
+Last verified: 2026-10-30
 
 ## Overview
 
@@ -13,6 +13,7 @@ Model calls reach it through the agent-side [Model Router](harness-config.md#the
 
 The controller renders a per-Agent `Envoy bootstrap ConfigMap` and a cert-manager `Certificate` whose Secret holds the leaf TLS material the gateway uses to terminate agent egress TLS.
 The leaf is issued by a chart-managed MITM CA whose certificate is mounted into the agent — public half only, the key never leaves the gateway pod — so the agent's TLS clients trust Envoy's intercept cert.
+Envoy reads the leaf through an SDS file that watches its directory, as the owner gateway does, because cert-manager rewrites it whenever the intercepted hosts change — at create, when the grants land a moment after the Agent, and at every promotion — and a leaf named by plain filenames is read only when the pod starts.
 
 On the wire:
 
