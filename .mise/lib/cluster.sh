@@ -423,6 +423,150 @@ node_host_dirs() {
   done
 }
 
+# The VM runner's guard reads statvfs of its claim. A local-path claim is a
+# directory of the node's disk, so the guard counts the whole disk: in an
+# Environment that is the outer guest's disk, whose own storage guard
+# preallocates most of it, and the runner refused every new agent (#6128).
+# There the runners' claims live on a filesystem of their own: a sparse ext4
+# file, loop-mounted, which a second local-path provisioner hands out as
+# NODE_CLAIM_CLASS. Writes still come out of the outer disk, as before.
+NODE_CLAIM_CLASS=platform-runner-claims
+NODE_CLAIM_IMAGE="$NODE_HOME_SHARE/runner-claims.img"
+NODE_CLAIM_DIR="$NODE_HOME_SHARE/runner-claims"
+NODE_CLAIM_SERVICE=/etc/init.d/platform-runner-claims
+
+# node_runner_storage <values file>... -- <helm flag>...: the runners' claim
+# size in bytes, virtualization.runner.storage of the merged values and any
+# --set over it, as node_dir_roots reads its keys.
+node_runner_storage() {
+  local files=() flag size
+  while [ $# -gt 0 ] && [ "$1" != -- ]; do files+=("$1"); shift; done
+  [ $# = 0 ] || shift
+  size="$(yq eval-all '. as $l ireduce ({}; . * $l) | .virtualization.runner.storage // ""' "${files[@]}")"
+  for flag in "$@"; do
+    flag="${flag#--set=}"; flag="${flag#--set-string=}"
+    [ "${flag%%=*}" != virtualization.runner.storage ] || size="${flag#*=}"
+  done
+  numfmt --from=auto "$size"
+}
+
+# node_claim_fs <bytes>: the claims' filesystem, mounted at NODE_CLAIM_DIR, of
+# <bytes> or the home disk's free room when that is less. The file is made
+# once and only grows, as a claim does: a smaller size keeps the one it has.
+# A loop mount does not outlive the machine, so an openrc service in the
+# default runlevel mounts it again before k3s starts, and no runner ever
+# mounts the bare directory beneath it.
+node_claim_fs() {
+  local want room have
+  room="$(node_sh stat -f -c '%a %S' "$NODE_HOME_SHARE")" || return 1
+  room=$(( ${room% *} * ${room#* } ))
+  want="$1"
+  [ "$room" -ge "$want" ] || want="$room"
+  node_sh sh -c 'command -v mkfs.ext4 >/dev/null || {
+      apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends e2fsprogs
+    } >/dev/null' ||
+    { echo "FATAL: no mkfs.ext4 on the node, and e2fsprogs did not install" >&2; return 1; }
+  if ! node_sh test -e "$NODE_CLAIM_IMAGE"; then
+    echo "Making the runners' claim filesystem, $(numfmt --to=iec-i "$want")B, at $NODE_CLAIM_DIR..."
+    # No copy-on-write on a btrfs home: a loop file rewritten in place would
+    # fragment with every write.
+    node_sh sh -c 'touch "$1.new" && { chattr +C "$1.new" 2>/dev/null || true; } && truncate -s "$2" "$1.new" &&
+      mkfs.ext4 -q -m 0 -E lazy_itable_init=1,lazy_journal_init=1,nodiscard "$1.new" && mv "$1.new" "$1"' \
+      _ "$NODE_CLAIM_IMAGE" "$want" ||
+      { echo "FATAL: could not make the runners' claim filesystem" >&2; return 1; }
+  fi
+  printf '%s\n' '#!/sbin/openrc-run' \
+    "# The VM runners' claims, on a filesystem of their own (cluster:install)." \
+    'description="VM runner claim filesystem"' \
+    'depend() { before k3s; }' \
+    "start() { mkdir -p $NODE_CLAIM_DIR && { mountpoint -q $NODE_CLAIM_DIR || mount -o loop,discard $NODE_CLAIM_IMAGE $NODE_CLAIM_DIR; }; }" |
+    node_sh tee "$NODE_CLAIM_SERVICE" >/dev/null
+  node_sh chmod 755 "$NODE_CLAIM_SERVICE"
+  if node_sh test -x /sbin/openrc-run; then
+    node_sh rc-update add "$(basename "$NODE_CLAIM_SERVICE")" default >/dev/null 2>&1 || true
+    # A service openrc marks started while the mount has gone starts again.
+    node_sh "$NODE_CLAIM_SERVICE" start >/dev/null 2>&1 || true
+    node_sh mountpoint -q "$NODE_CLAIM_DIR" || node_sh "$NODE_CLAIM_SERVICE" restart >/dev/null 2>&1 || true
+  else
+    echo "WARNING: no OpenRC on the node, so nothing mounts the runners' claim filesystem after a reboot" >&2
+    node_sh sh -c 'mkdir -p "$1" && { mountpoint -q "$1" || mount -o loop,discard "$2" "$1"; }' _ "$NODE_CLAIM_DIR" "$NODE_CLAIM_IMAGE" || true
+  fi
+  node_sh mountpoint -q "$NODE_CLAIM_DIR" ||
+    { echo "FATAL: the runners' claim filesystem did not mount at $NODE_CLAIM_DIR" >&2; return 1; }
+  have="$(node_sh stat -c %s "$NODE_CLAIM_IMAGE")"
+  if [ "$have" -lt "$want" ]; then
+    echo "Growing the runners' claim filesystem to $(numfmt --to=iec-i "$want")B..."
+    node_sh sh -c 'truncate -s "$2" "$1" && losetup -c "$(losetup -j "$1" | cut -d: -f1 | head -n 1)" && resize2fs -f "$(losetup -j "$1" | cut -d: -f1 | head -n 1)" >/dev/null 2>&1' \
+      _ "$NODE_CLAIM_IMAGE" "$want" ||
+      echo "WARNING: the runners' claim filesystem could not grow; it keeps $(numfmt --to=iec-i "$have")B" >&2
+  fi
+}
+
+# node_claim_class_manifest <provisioner image>: the provisioner of
+# NODE_CLAIM_CLASS and the class. It is k3s's own local-path provisioner under
+# a name of its own, on k3s's service account, reading a ConfigMap of its own
+# (node_claim_class_config) that names NODE_CLAIM_DIR as its one path.
+node_claim_class_manifest() {
+  cat <<YAML
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: $NODE_CLAIM_CLASS-provisioner
+  namespace: kube-system
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: $NODE_CLAIM_CLASS-provisioner }
+  template:
+    metadata:
+      labels: { app: $NODE_CLAIM_CLASS-provisioner }
+    spec:
+      priorityClassName: system-node-critical
+      serviceAccountName: local-path-provisioner-service-account
+      tolerations:
+        - { key: CriticalAddonsOnly, operator: Exists }
+        - { key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }
+      containers:
+        - name: provisioner
+          image: $1
+          imagePullPolicy: IfNotPresent
+          command: [local-path-provisioner, start, --config, /etc/config/config.json,
+            --provisioner-name, platform.local/$NODE_CLAIM_CLASS, --configmap-name, $NODE_CLAIM_CLASS]
+          env:
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+          volumeMounts:
+            - { name: config, mountPath: /etc/config/ }
+      volumes:
+        - name: config
+          configMap: { name: $NODE_CLAIM_CLASS }
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: $NODE_CLAIM_CLASS
+  annotations:
+    defaultVolumeType: local
+provisioner: platform.local/$NODE_CLAIM_CLASS
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+YAML
+}
+
+# node_claim_class_config <helper pod yaml>: that provisioner's ConfigMap, with
+# k3s's own helper pod, so its helper runs the image k3s already holds.
+node_claim_class_config() {
+  kubectl -n kube-system create configmap "$NODE_CLAIM_CLASS" --dry-run=client -o yaml \
+    "--from-literal=config.json={\"nodePathMap\":[{\"node\":\"DEFAULT_PATH_FOR_NON_LISTED_NODES\",\"paths\":[\"$NODE_CLAIM_DIR\"]}]}" \
+    "--from-literal=setup=set -eu
+mkdir -m 0777 -p \"\${VOL_DIR}\"
+chmod 700 \"\${VOL_DIR}/..\"" \
+    "--from-literal=teardown=set -eu
+rm -rf \"\${VOL_DIR}\"" \
+    "--from-literal=helperPod.yaml=$1"
+}
+
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
 # names, and does nothing without it. CI's two lanes set it, and e2e:timings
 # turns the marks into the job's per-phase timing summary.

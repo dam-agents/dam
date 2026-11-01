@@ -301,6 +301,11 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   # An Environment runs the platform's agent image, whose root is an overlay,
   # as a sandbox's is.
   node_volumes_on_home
+  # The runners' claims on a filesystem of their own, before k3s starts, as the
+  # service that mounts it at every boot does (node_claim_fs).
+  CLAIM_BYTES="$(node_runner_storage helm/values.yaml helm/values-local.yaml ${HELM_VALUES:+"$HELM_VALUES"} -- ${HELM_EXTRA_ARGS[@]+"${HELM_EXTRA_ARGS[@]}"})" ||
+    { echo "FATAL: virtualization.runner.storage is no size" >&2; exit 1; }
+  node_claim_fs "$CLAIM_BYTES" || exit 1
   # The image's k3s service, in the default runlevel from now on, and the
   # tunnel to its API once k3s has written its kubeconfig.
   echo "Starting k3s on Environment $CLUSTER_ENVIRONMENT..."
@@ -872,6 +877,12 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   echo "Installing the host-name bridge on port $BRIDGE_PORT..."
   env_bridge_manifest "$(yq '.controller.envoyImage' helm/values.yaml)" \
     "$BRIDGE_PORT" "$APP_PORT" "$BRIDGE_SCHEME" "$BRIDGE_PUBLIC_PORT" | kubectl apply -f -
+  echo "Installing storage class $NODE_CLAIM_CLASS for the runners' claims..."
+  node_claim_class_config "$(kubectl -n kube-system get configmap local-path-config -o jsonpath='{.data.helperPod\.yaml}')" | kubectl apply -f -
+  node_claim_class_manifest "$(kubectl -n kube-system get deployment local-path-provisioner -o jsonpath='{.spec.template.spec.containers[0].image}')" | kubectl apply -f -
+  # A claim keeps its class: one an earlier install made on local-path stays
+  # on the node's disk until it is deleted, as e2e:reset deletes them.
+  HELM_EXTRA_ARGS+=("--set-string=virtualization.runner.storageClass=$NODE_CLAIM_CLASS")
 fi
 
 # 2. Install cert-manager, beside the Istio install below: neither needs the
