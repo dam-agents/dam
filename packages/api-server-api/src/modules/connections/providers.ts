@@ -199,8 +199,6 @@ export const PROVIDER_ALIASES: readonly ProviderAlias[] = [
   "bob",
 ];
 
-export const PROVIDER_ALIAS_RE = /^[a-z][a-z0-9-]*$/;
-
 export interface ProviderPreset {
   id: ProviderPresetType;
   alias: ProviderAlias;
