@@ -640,7 +640,7 @@
   }
 
   [data-artifact-print] {
-    display: block !important;
+    display: inline !important;
     position: static !important;
     opacity: 1 !important;
   }

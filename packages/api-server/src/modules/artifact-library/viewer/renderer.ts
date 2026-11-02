@@ -168,7 +168,6 @@ export function renderWrapper(input: WrapperInput): string {
     html, body { height: auto; }
     body { display: block; background: none; }
     .banner, .relay-status { display: none; }
-    iframe { display: block; }
   }
 </style>
 </head>
