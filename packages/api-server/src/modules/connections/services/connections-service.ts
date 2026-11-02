@@ -267,8 +267,11 @@ export function createConnectionsService(deps: {
   curveBenderDeploymentKey?: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
-  /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, in place of the default harness's provider order; null while that default names none the owner holds. */
-  newAgentProvider?: () => Promise<string | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
+  newAgentProvider?: () => Promise<{
+    connectionId: string;
+    harness: string;
+  } | null>;
 }): ConnectionsService & ManagedProviderConnections {
   let catalog: ProviderModelCatalog | undefined;
   const providerModelCatalog = () =>
@@ -335,13 +338,15 @@ export function createConnectionsService(deps: {
         );
         return null;
       });
-    /* UNIT_BOUNDARY_DESCRIPTION: a create grants the default's provider only when it holds an active provider the harness runs on, and none without one; the marker follows, so it never marks a provider a create would not grant. */
-    const harness = deps.harnesses.default;
+    /* UNIT_BOUNDARY_DESCRIPTION: a plain create boots on the default's harness, else the install's, and grants the default's provider only when the owner holds an active provider that harness runs on, and none without one; the marker follows the same steps, so it marks what that create grants. */
+    const harness = fromDefault?.harness ?? deps.harnesses.default;
     const granted = await firstProviderPerAlias((type, templateId) =>
       harnessFits(deps.harnesses, harness, type, templateId),
     );
     const first = orderByAlias(granted, harness)[0]?.id;
-    return first === undefined ? undefined : (fromDefault ?? first);
+    return first === undefined
+      ? undefined
+      : (fromDefault?.connectionId ?? first);
   }
 
   function toView(conn: Connection, preferredId?: string): ConnectionView {

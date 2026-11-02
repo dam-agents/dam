@@ -257,7 +257,10 @@ export function composeConnectionsForOwner(opts: {
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog: ProviderModelCatalog;
-  newAgentProvider?: () => Promise<string | null>;
+  newAgentProvider?: () => Promise<{
+    connectionId: string;
+    harness: string;
+  } | null>;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);

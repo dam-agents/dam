@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-29
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -212,6 +212,7 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
   **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
   `list` and `get` show a disabled agent's state as `disabled`.
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants one provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
+  The create then prints a `Provider:` line naming the one granted and what chose it (`defaultProvider` in `--json`), so a caller sees a provider it did not expect.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
 - **Providers, harnesses and defaults** are the agent's Providers section: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying, the Session Pair defaults and the profile the chat default names ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections, saves or clears a default and names a profile with `--profile`, through the same procedures the web app calls, so the server keeps every rule about which pair is valid; `--kind channel` and `--same-as-chat` still write the legacy channel pair that channels bound before profiles follow; `models` lists a harness's model catalog from the agent-runtime.

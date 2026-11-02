@@ -79,7 +79,10 @@ const oauthConnection = (
 function makeService(
   oldestFirst: Connection[],
   defaultHarness: HarnessView["name"] = "claude-code",
-  newAgentProvider?: () => Promise<string | null>,
+  newAgentProvider?: () => Promise<{
+    connectionId: string;
+    harness: string;
+  } | null>,
 ) {
   return createConnectionsService({
     ...(newAgentProvider && { newAgentProvider }),
@@ -214,7 +217,10 @@ describe("provider Connection Templates", () => {
         .map((c) => c.id);
     expect(
       await preferredOf(
-        makeService(rows, "claude-code", async () => "conn-ibm"),
+        makeService(rows, "claude-code", async () => ({
+          connectionId: "conn-ibm",
+          harness: "claude-code",
+        })),
       ),
     ).toEqual(["conn-ibm"]);
     expect(
@@ -229,10 +235,40 @@ describe("provider Connection Templates", () => {
     const svc = makeService(
       [oauthConnection("conn-pending", "anthropic-oauth", false)],
       "claude-code",
-      async () => "conn-pending",
+      async () => ({ connectionId: "conn-pending", harness: "claude-code" }),
     );
     expect(
       (await svc.listConnections()).filter((c) => c.provider?.preferred),
+    ).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: a default for new agents on another harness than the
+   * install's boots a plain create on its own harness, so the marker reads
+   * the provider order there: an OpenAI key that only Codex and Pi run on
+   * marks the default's provider on a Codex default, and an Anthropic OAuth
+   * token that Codex does not run marks none, as a create then grants none
+   * (#6142). */
+  it("reads the provider order on the default's harness", async () => {
+    const preferredOf = async (rows: Connection[], connectionId: string) =>
+      (
+        await makeService(rows, "claude-code", async () => ({
+          connectionId,
+          harness: "codex",
+        })).listConnections()
+      )
+        .filter((c) => c.provider?.preferred)
+        .map((c) => c.id);
+    expect(
+      await preferredOf(
+        [headerConnection("conn-openai", "openai")],
+        "conn-openai",
+      ),
+    ).toEqual(["conn-openai"]);
+    expect(
+      await preferredOf(
+        [oauthConnection("conn-oauth", "anthropic-oauth", true)],
+        "conn-oauth",
+      ),
     ).toEqual([]);
   });
 });
