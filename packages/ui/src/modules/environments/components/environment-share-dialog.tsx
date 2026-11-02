@@ -22,7 +22,9 @@ import { sharedThroughAgent } from "../lib/environment-list.js";
  * many people the agent's page names — and links there, and edits the
  * Environment's own members, who open this one Environment only. The list only
  * adds people: nobody here narrows the agent's. An Environment is never
- * public, so there is no link to copy beyond its addresses.
+ * public, so there is no link to copy beyond its addresses. It holds only
+ * the owner's edits over the members the list polls, so a member added
+ * elsewhere while it is open shows up, and a Save never drops them unseen.
  */
 export function EnvironmentShareDialog({
   environment,
@@ -34,9 +36,10 @@ export function EnvironmentShareDialog({
   const agent = useAgent(environment.owningAgentId);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const save = useSetEnvironmentMembers();
-  const [members, setMembers] = useState(environment.members);
+  const [edited, setEdited] = useState<string[] | null>(null);
   const [draft, setDraft] = useState("");
-  const dirty = !sameViewers(members, environment.members);
+  const members = edited ?? environment.members;
+  const dirty = edited !== null && !sameViewers(edited, environment.members);
   const pendingDraft = draft.trim().length > 0;
   const agentName = agent?.name ?? "its agent";
 
@@ -45,7 +48,7 @@ export function EnvironmentShareDialog({
       { id: environment.id, emails: members },
       {
         onSuccess: (saved) => {
-          setMembers(saved.members);
+          setEdited(null);
           emitToast({
             kind: "success",
             message: `Sharing updated — ${saved.members.length === 0 ? "nobody of its own may open" : `${saved.members.length} of its own may open`} ${environment.name}.`,
@@ -100,7 +103,7 @@ export function EnvironmentShareDialog({
             </p>
             <ViewerListEditor
               viewers={members}
-              onChange={setMembers}
+              onChange={setEdited}
               disabled={save.isPending}
               draft={draft}
               onDraftChange={setDraft}

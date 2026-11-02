@@ -20,10 +20,7 @@ import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import {
-  useAllEnvironments,
-  useEnvironmentsEnabled,
-} from "../../environments/api/queries.js";
+import { useListedEnvironments } from "../../environments/api/queries.js";
 import { EnvironmentsGroup } from "../../environments/components/environments-group.js";
 import { visibleEnvironments } from "../../environments/lib/environment-list.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
@@ -84,9 +81,6 @@ export function ChatArtifactsPanel({
   const foldersQuery = useArtifactFolders(open);
   const { data: artifacts = [] } = artifactsQuery;
   const { data: folders = [] } = foldersQuery;
-  const failed = artifactsQuery.isError || foldersQuery.isError;
-  const loading =
-    open && !failed && (artifactsQuery.isPending || foldersQuery.isPending);
   const [search, setSearch] = useState("");
   const term = search.trim().toLowerCase();
   const shown = useMemo(
@@ -101,15 +95,14 @@ export function ChatArtifactsPanel({
     [artifacts, term],
   );
   const shownBytes = shown.reduce((sum, a) => sum + a.sizeBytes, 0);
-  const environmentsEnabled = useEnvironmentsEnabled();
-  const environmentsQuery = useAllEnvironments(open && environmentsEnabled);
+  const listedEnvironments = useListedEnvironments(open);
   const environments = useMemo(
     () =>
-      visibleEnvironments(environmentsQuery.data ?? [], {
+      visibleEnvironments(listedEnvironments.data, {
         agentId: scopeAgentId,
         term,
       }),
-    [environmentsQuery.data, scopeAgentId, term],
+    [listedEnvironments.data, scopeAgentId, term],
   );
   const openArtifactId = useStore((s) =>
     s.dock?.kind === "artifact" ? s.dock.id : null,
@@ -156,6 +149,15 @@ export function ChatArtifactsPanel({
     });
     return term ? all.filter((g) => g.artifacts.length > 0) : all;
   }, [shown, folders, term, scopeAgentId, dragInProgress, keptFolders.ids]);
+  const libraryFailed = artifactsQuery.isError || foldersQuery.isError;
+  const failed =
+    libraryFailed || (listedEnvironments.failed && groups.length === 0);
+  const loading =
+    open &&
+    !failed &&
+    (artifactsQuery.isPending ||
+      foldersQuery.isPending ||
+      listedEnvironments.loading);
   const rootDrop = useFolderDropTarget(null, dropCallbacks);
   const folderNames = useMemo(() => folderDisplayNames(folders), [folders]);
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
@@ -256,6 +258,7 @@ export function ChatArtifactsPanel({
           onRetry={() => {
             void artifactsQuery.refetch();
             void foldersQuery.refetch();
+            listedEnvironments.refetch();
           }}
         />
       ) : loading || (groups.length === 0 && environments.length === 0) ? (

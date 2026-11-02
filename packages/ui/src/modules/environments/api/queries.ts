@@ -28,6 +28,26 @@ export function useAllEnvironments(enabled: boolean) {
   });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The owner's Environments as a list that shows
+ * them reads them: loading while the feature flags or an enabled query are
+ * pending, failed only when a failure left no list to show, and empty with
+ * the feature off, so a list never says "nothing" before it knows. A list
+ * fails on it only when it has nothing else to show, so loaded artifacts stay
+ * usable while the next poll retries.
+ */
+export function useListedEnvironments(open: boolean) {
+  const features = useFeatures();
+  const enabled = features.data?.environments ?? false;
+  const query = useAllEnvironments(open && enabled);
+  return {
+    data: enabled ? (query.data ?? []) : [],
+    loading: open && (features.isPending || (enabled && query.isPending)),
+    failed: enabled && query.isError && query.data === undefined,
+    refetch: () => void query.refetch(),
+  };
+}
+
 export function useAgentEnvironmentMembers(owningAgentId: string | null) {
   return useQuery({
     ...trpc.environments.agentMembers.queryOptions(

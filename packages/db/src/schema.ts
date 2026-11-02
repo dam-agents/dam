@@ -597,7 +597,10 @@ export const agentEnvironmentMembers = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.owningAgentId, table.email] })],
+  (table) => [
+    primaryKey({ columns: [table.owningAgentId, table.email] }),
+    index("agent_environment_members_email_idx").on(table.email),
+  ],
 );
 
 // UNIT_BOUNDARY_DESCRIPTION: the Environment Members of each Environment: one row per email its owner adds to that one Environment, on top of its Agent's members.
@@ -612,7 +615,10 @@ export const environmentMembers = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.environmentId, table.email] })],
+  (table) => [
+    primaryKey({ columns: [table.environmentId, table.email] }),
+    index("environment_members_email_idx").on(table.email),
+  ],
 );
 
 // UNIT_BOUNDARY_DESCRIPTION: no longer read or written; agent_environment_members holds the list. Kept for one release, with environments.access, so a rollback still finds them.
