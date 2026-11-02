@@ -351,9 +351,11 @@ dam connection templates
 dam connection list my-agent
 dam connection grant my-agent --connection github
 dam connection revoke my-agent --connection github
+dam connection default my-agent --connection github-work
 ```
 
 A connection belongs to the user; granting it lets one agent use it.
+An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as one of them by default: `dam connection list my-agent` marks it in the DEFAULT column (`default.active` in `--json`), and `dam connection default` picks another.
 Creating one, rotating its credential, and removing it are `dam connection connect`, `dam connection update` and `dam connection disconnect`; read [Secrets](#secrets) before the first two.
 `dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
 Without `--yes` it names the agents that would lose the connection.
