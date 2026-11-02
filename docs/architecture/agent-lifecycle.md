@@ -171,7 +171,7 @@ The schedule-driven poke is the exception: it doesn't wait, so there is no bound
 
 The UI holds a start to the same budget: past it, it offers Restart and the controller's not-ready message, timed from when it first saw the Agent starting.
 An Agent boots in seconds, so its chat stays usable during the start: the composer takes a prompt and holds it until the Agent is ready, and the sessions list shows a placeholder.
-A chat whose channel is lost stays readable in the same way: it shows the reconnect notice and badge, keeps the draft, and disables Stop until the channel returns, and every chat of that Agent shows the same, since the channel is the Agent's.
+A chat whose channel is not live stays readable in the same way: it reads reconnecting after a drop and connecting while an open is in flight, offers Retry for an open that failed, keeps the draft, and disables Stop until the channel returns.
 
 ### Schedule fire
 

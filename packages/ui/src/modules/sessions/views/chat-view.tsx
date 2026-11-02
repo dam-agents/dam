@@ -159,7 +159,6 @@ import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useChatScroll } from "../hooks/use-chat-scroll.js";
 import { useCurveBender } from "../hooks/use-curve-bender.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
-import { useLostChannel } from "../hooks/use-lost-channel.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -306,16 +305,14 @@ export function ChatView() {
     busy,
     loadingSession,
     connectionState,
-    plannedResets,
+    retryChannel,
   } = useAcpSession(selectedAgent, textareaRef);
   useReconciledPermissions(connectionState);
   const channelLive = connectionState === "live";
-  const channelLost = useLostChannel(
-    connectionState,
-    selectedAgent,
-    plannedResets,
-  );
-  const channelBlocked = !channelLive && !agentStarting && sessionId !== null;
+  const channelLost =
+    connectionState === "reconnecting" || connectionState === "reloading";
+  const channelBlocked =
+    !channelLive && !agentStarting && (sessionId !== null || !agentOperable);
   const channelBlock = channelBlocked
     ? channelLost
       ? ("lost" as const)
@@ -823,8 +820,12 @@ export function ChatView() {
 
   const notices = (
     <>
-      {channelBlock === "lost" && agentDisplay?.state === "running" && (
-        <AgentReconnectingNotice name={selectedAgentName ?? "the agent"} />
+      {channelBlock !== null && agentDisplay?.state === "running" && (
+        <AgentReconnectingNotice
+          name={selectedAgentName ?? "the agent"}
+          state={channelBlock}
+          onRetry={loadingSession ? undefined : retryChannel}
+        />
       )}
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
       <ContributionGapNotice agentId={selectedAgent} />

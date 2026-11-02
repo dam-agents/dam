@@ -115,7 +115,7 @@ interface UseAcpConnectionResult {
   runtimeIdle: (sid: string) => boolean;
   clearRuntimeIdle: (sid: string) => void;
   connectionRef: React.MutableRefObject<LiveConnection | null>;
-  plannedResets: number;
+  retry: () => void;
   reset: () => void;
 }
 
@@ -151,7 +151,6 @@ export function useAcpConnection(
   } | null>(null);
 
   const [state, setState] = useState<ConnectionState>("idle");
-  const [plannedResets, setPlannedResets] = useState(0);
 
   const operableRef = useRef(agentOperable);
   useEffect(() => {
@@ -678,7 +677,6 @@ export function useAcpConnection(
       reconnectTimerRef.current = null;
     }
     reconnectAttemptRef.current = 0;
-    setPlannedResets((n) => n + 1);
     setState("idle");
   }, [clearEngagement]);
 
@@ -699,9 +697,18 @@ export function useAcpConnection(
     idleSessionsRef.current.delete(sid);
   }, []);
 
+  const liveBlockedRef = useRef(liveBlocked);
+  liveBlockedRef.current = liveBlocked;
+
+  const retry = useCallback(() => {
+    if (liveBlockedRef.current || ensureInFlightRef.current) return;
+    reconnectAttemptRef.current = 0;
+    ensureLive().catch(() => {});
+  }, [ensureLive]);
+
   return {
     state,
-    plannedResets,
+    retry,
     ensureLive,
     beginSession,
     loadSessionHistory,

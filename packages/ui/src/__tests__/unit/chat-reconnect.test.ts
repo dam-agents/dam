@@ -9,7 +9,7 @@ const fake = vi.hoisted(() => ({
   operable: false,
   state: "running" as string,
   connectionState: "reconnecting" as string,
-  plannedResets: 0,
+  retryChannel: vi.fn(),
   busy: false,
   loadingSession: false,
   sendPrompt: vi.fn(async () => {}),
@@ -272,7 +272,7 @@ mockModule("../../modules/sessions/hooks/use-acp-session.js", {
     busy: fake.busy,
     loadingSession: fake.loadingSession,
     connectionState: fake.connectionState,
-    plannedResets: fake.plannedResets,
+    retryChannel: fake.retryChannel,
   }),
 });
 mockModule("../../modules/agents/hooks/use-agent-reachability.js", {
@@ -481,6 +481,12 @@ function allowButton(el: HTMLElement): HTMLButtonElement | undefined {
   );
 }
 
+function retryButton(el: HTMLElement): HTMLButtonElement | undefined {
+  return [...el.querySelectorAll("button")].find(
+    (b) => b.textContent === "Retry",
+  );
+}
+
 function transcriptWithToolCall(): void {
   useStore.setState({
     messages: [
@@ -521,7 +527,6 @@ afterEach(() => {
   fake.busy = false;
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
-  fake.plannedResets = 0;
   useStore.setState({ pendingPermissions: [] });
   vi.clearAllMocks();
 });
@@ -601,73 +606,7 @@ it("blocks the chat while the channel is not live", () => {
   expect(placeholder(el)).toContain("Reconnecting to this agent");
 });
 
-// TEST_SCENARIO: the channel drops while the Agent is also unreachable, so nothing schedules a reconnect and the connection state falls back to idle; the chat still reads as reconnecting, with the notice, the composer reason and the header badge, and its actions stay blocked.
-it("reads a dropped channel as reconnecting while the Agent is unreachable", () => {
-  fake.connectionState = "live";
-  const el = openChat("running", true);
-  act(() =>
-    useStore.setState({
-      drafts: { "a-1:s-1": { text: "hello", attachments: [] } },
-    }),
-  );
-  expect(notice(el)).toBeNull();
-
-  fake.connectionState = "idle";
-  fake.operable = false;
-  paint();
-
-  expect(notice(el)).not.toBeNull();
-  expect(placeholder(el)).toContain("Reconnecting to this agent");
-  expect(el.textContent).toContain("Reconnecting");
-  expect(button(el, "Send").disabled).toBe(true);
-});
-
-// TEST_SCENARIO: one channel serves every session of the Agent, so a lost channel stays lost when the user moves to another of its chats; the new chat reads as reconnecting too, rather than as a first connection.
-it("keeps the lost channel across a move to another chat", () => {
-  fake.connectionState = "live";
-  const el = openChat("running", true);
-  fake.connectionState = "idle";
-  fake.operable = false;
-  paint();
-  expect(notice(el)).not.toBeNull();
-
-  act(() => useStore.setState({ sessionId: "s-2" }));
-  paint();
-
-  expect(notice(el)).not.toBeNull();
-  expect(placeholder(el)).toContain("Reconnecting to this agent");
-  expect(el.textContent).toContain("Reconnecting");
-});
-
-// TEST_SCENARIO: a brand new chat on that Agent keeps the header's reconnect label, since the channel it would open is the same lost one.
-it("keeps the reconnect label on a new chat of that Agent", () => {
-  fake.connectionState = "live";
-  const el = openChat("running", true);
-  fake.connectionState = "idle";
-  fake.operable = false;
-  paint();
-
-  act(() => useStore.setState({ sessionId: null }));
-  paint();
-
-  expect(el.textContent).toContain("Reconnecting");
-});
-
-// TEST_SCENARIO: the chat itself resets its channel, as opening a terminal or moving to another session does; that is not a drop, so nothing reads as reconnecting.
-it("does not read a planned reset as a drop", () => {
-  fake.connectionState = "live";
-  const el = openChat("running", true);
-
-  fake.connectionState = "idle";
-  fake.plannedResets += 1;
-  paint();
-
-  expect(notice(el)).toBeNull();
-  expect(placeholder(el)).toContain("Connecting to this agent");
-  expect(el.textContent).not.toContain("Reconnecting");
-});
-
-// TEST_SCENARIO: a chat opening for the first time waits for its channel to open; that is not a drop, so the composer names the connection it waits for and no reconnect notice appears, while the actions that need the channel stay blocked.
+// TEST_SCENARIO: a chat opening for the first time waits for its channel to open; that is not a drop, so it reads as connecting, never as reconnecting, while the actions that need the channel stay blocked.
 it("waits for a first connection without a reconnect notice", () => {
   fake.connectionState = "idle";
   const el = openChat("running", true);
@@ -676,10 +615,57 @@ it("waits for a first connection without a reconnect notice", () => {
       drafts: { "a-1:s-1": { text: "hello", attachments: [] } },
     }),
   );
-  expect(notice(el)).toBeNull();
+  expect(notice(el)?.textContent).toContain("Connecting to Code Guardian");
+  expect(notice(el)?.textContent).not.toContain("Reconnecting");
   expect(button(el, "Send").disabled).toBe(true);
   expect(placeholder(el)).toContain("Connecting to this agent");
   expect(placeholder(el)).not.toContain("Reconnecting");
+});
+
+// TEST_SCENARIO: a channel that never opens would leave the chat blocked with nothing to do, so the notice offers a retry that reopens it.
+it("offers a retry when the channel does not open", () => {
+  fake.connectionState = "idle";
+  const el = openChat("running", true);
+  expect(retryButton(el)).toBeDefined();
+  act(() => retryButton(el)?.click());
+  expect(fake.retryChannel).toHaveBeenCalledTimes(1);
+});
+
+// TEST_SCENARIO: an open already in flight owns the channel, so a retry would start a second one; while it runs there is no retry to click.
+it("offers no retry while an open is in flight", () => {
+  fake.connectionState = "idle";
+  fake.loadingSession = true;
+  const el = openChat("running", true);
+  expect(notice(el)).not.toBeNull();
+  expect(retryButton(el)).toBeUndefined();
+});
+
+// TEST_SCENARIO: a recovery whose session reload fails leaves the chat on the reloading state with nothing running, so the retry must be there again.
+it("offers a retry after a failed reload", () => {
+  fake.connectionState = "reloading";
+  const el = openChat("running", true);
+  expect(retryButton(el)).toBeDefined();
+  act(() => retryButton(el)?.click());
+  expect(fake.retryChannel).toHaveBeenCalledTimes(1);
+});
+
+// TEST_SCENARIO: a new chat of an Agent that cannot be reached holds its prompt until the Agent answers, and a Stop could not cancel it; the chat waits instead, while a reachable Agent's new chat still opens its own channel.
+it("blocks a new chat whose Agent is unreachable", () => {
+  fake.connectionState = "idle";
+  fake.operable = false;
+  const el = openChat("running", false);
+  act(() => useStore.setState({ sessionId: null }));
+  act(() =>
+    useStore.setState({
+      drafts: { "a-1:~new": { text: "hello", attachments: [] } },
+    }),
+  );
+  paint();
+  expect(button(el, "Send").disabled).toBe(true);
+
+  fake.operable = true;
+  paint();
+  expect(button(el, "Send").disabled).toBe(false);
 });
 
 // TEST_SCENARIO: a permission answer during a reconnect cannot reach the Agent, so the buttons are disabled and the card says why instead of showing a verdict that did not arrive.
