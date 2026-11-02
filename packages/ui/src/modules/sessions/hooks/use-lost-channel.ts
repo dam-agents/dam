@@ -8,13 +8,16 @@ import type { ConnectionState } from "./use-acp-connection.js";
 export function useLostChannel(
   connectionState: ConnectionState,
   agentId: string | null,
+  plannedResets: number,
 ): boolean {
   const [lost, setLost] = useState(false);
   const liveBefore = useRef(false);
   const agent = useRef(agentId);
+  const resets = useRef(plannedResets);
   useEffect(() => {
-    if (agent.current !== agentId) {
+    if (agent.current !== agentId || resets.current !== plannedResets) {
       agent.current = agentId;
+      resets.current = plannedResets;
       liveBefore.current = false;
       setLost(false);
       return;
@@ -26,6 +29,6 @@ export function useLostChannel(
           connectionState === "reconnecting" ||
           connectionState === "reloading"),
     );
-  }, [connectionState, agentId]);
+  }, [connectionState, agentId, plannedResets]);
   return lost;
 }

@@ -9,6 +9,7 @@ const fake = vi.hoisted(() => ({
   operable: false,
   state: "running" as string,
   connectionState: "reconnecting" as string,
+  plannedResets: 0,
   busy: false,
   loadingSession: false,
   sendPrompt: vi.fn(async () => {}),
@@ -271,6 +272,7 @@ mockModule("../../modules/sessions/hooks/use-acp-session.js", {
     busy: fake.busy,
     loadingSession: fake.loadingSession,
     connectionState: fake.connectionState,
+    plannedResets: fake.plannedResets,
   }),
 });
 mockModule("../../modules/agents/hooks/use-agent-reachability.js", {
@@ -519,6 +521,7 @@ afterEach(() => {
   fake.busy = false;
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
+  fake.plannedResets = 0;
   useStore.setState({ pendingPermissions: [] });
   vi.clearAllMocks();
 });
@@ -648,6 +651,20 @@ it("keeps the reconnect label on a new chat of that Agent", () => {
   paint();
 
   expect(el.textContent).toContain("Reconnecting");
+});
+
+// TEST_SCENARIO: the chat itself resets its channel, as opening a terminal or moving to another session does; that is not a drop, so nothing reads as reconnecting.
+it("does not read a planned reset as a drop", () => {
+  fake.connectionState = "live";
+  const el = openChat("running", true);
+
+  fake.connectionState = "idle";
+  fake.plannedResets += 1;
+  paint();
+
+  expect(notice(el)).toBeNull();
+  expect(placeholder(el)).toContain("Connecting to this agent");
+  expect(el.textContent).not.toContain("Reconnecting");
 });
 
 // TEST_SCENARIO: a chat opening for the first time waits for its channel to open; that is not a drop, so the composer names the connection it waits for and no reconnect notice appears, while the actions that need the channel stay blocked.

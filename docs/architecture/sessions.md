@@ -215,6 +215,7 @@ It reports how every permission request it held ended, watched or not: the answe
 Dropping covers both the ten-minute wait and a session reset, so a row never outlives the question it describes.
 The api-server records it as a pending tool approval at once, so Home and the approvals bell show it with the time the agent asked, not first when someone opens the session; a verdict given there answers it, the session still unwatched ([home-feed](home-feed.md#what-home-reads)).
 A viewer's copy of a request follows the runtime's: while the viewer's own connection is gone it keeps the card on screen with its options disabled, and once the session is live again it drops every request whose channel is closed and takes the reissued one.
+A lost channel is the Agent's, not a session's, so every chat of that Agent reads as reconnecting: the chat stays on screen with its notice and badge, the composer keeps the draft, and Stop waits for the channel, since a cancel cannot reach the Agent.
 A cold re-attach, whichever verb the harness advertised for one, has a load budget, which a harness's image can lengthen when it spawns or loads slowly, as Bob's does.
 Past it the waiting clients get the timeout and the request's frames are suppressed, but the harness gets as long again to answer late: one that does stays up, with every call it still owes, such as a new chat on the same process.
 Until the late answer comes, a prompt or setting for that Session is refused, and an open of it waits and loads it once the harness is free.
