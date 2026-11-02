@@ -50,7 +50,7 @@ A phase is one pipeline step the agent runs on an item in production, replayed t
 The report must say "good enough for simple work, not for complex", so difficulty lives on two axes, both in `manifest.json` only:
 
 - **Task tier** — each fixture's `tier`: `simple` (absent = simple) or `complex`.
-  The set holds a minimum per tier (CG default: **≥ 5 simple and ≥ 3 complex**).
+  The set holds a minimum per tier (Code Guardian (CG) default: **≥ 5 simple and ≥ 3 complex**).
   Define both sizes for the domain at design time: a simple fixture is a small, single-concern item with ~10–14 seeded items, 2–3 of them hard; a complex one spans several parts with ~15–20 seeded items, ≥ 5 hard, and its v2 changes interact (one fix moves the precondition of another item).
 - **Item difficulty** — `"difficulty": "hard"` on a seeded item that needs reasoning across parts or steps (a lock released on one path only, an invariant broken two calls away, a unit mismatch between producer and consumer), never a surface pattern.
   Every other item is easy.
