@@ -771,6 +771,7 @@ describe("delivering a viewer's prompt", () => {
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]!.opts).toMatchObject({
       platformMeta: {
+        type: "artifact",
         threadTs: "artifact:a1:alice-sub",
         customTitle: "alice@example.com · Team dashboard",
       },

@@ -1,3 +1,4 @@
+import { SessionType } from "api-server-api";
 import {
   AcpSessionLoadError,
   type AcpClient,
@@ -40,6 +41,7 @@ async function runTurn(
   }
   await acp.sendPrompt(turn.prompt, {
     platformMeta: {
+      type: SessionType.Artifact,
       threadTs: turn.sessionKey,
       customTitle: turn.sessionTitle,
     },
@@ -50,7 +52,8 @@ async function runTurn(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: hands a viewer's prompt to their own Session on
  * the owner's Agent and answers as soon as the Agent is awake, without
- * waiting for the turn. The Session is found again by its key, so a viewer's
+ * waiting for the turn. The Session is typed `artifact`, and its key names
+ * the Artifact it came from; it is found again by that key, so a viewer's
  * later prompts continue it; prompts with the same key wait for the one
  * before to name its Session, so two quick clicks never open two Sessions.
  * The turn counts as a channel turn while it runs: nobody watches it, so a

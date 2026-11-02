@@ -29,6 +29,7 @@ In a docked chat with the publishing Agent the open chat stays the destination, 
 - The server checks the artifact on every prompt as it does for the owner's Artifact API calls: the owner's own interactive HTML page an Agent published, not public, the feature on, within an API key's agent binding.
 - The prompt reaches the Agent through the same delivery as a viewer's: woken first, not woken at a spend limit, run as an unattended channel turn, and found again by its key on the next click.
 - The Session is titled with the owner's verified email, else their subject, and the artifact's title; the prompt tells the Agent it came from the page outside a chat.
+- The Session, the owner's and a viewer's alike, is typed `artifact`, beside the chat, channel, schedule, CLI-run and invocation types, and its key names the artifact, so the UI can label and filter it.
 - Every prompt, allowed or refused, is in the security log under the owner, without the prompt text.
 - Historical versions still have no callback.
 

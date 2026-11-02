@@ -96,6 +96,7 @@ A page the owner makes private or plain, a viewer the owner removes, and turning
 
 - **A request** wakes the Agent and goes to its Artifact API server, with the same limits and failure reasons as the owner's, naming the viewer in the caller headers.
 - **A prompt** starts or continues the viewer's own Session on the Agent, one per viewer and artifact, titled with the viewer's email and the artifact's title, so the owner sees who asked for what.
+  It is typed `artifact`, as the owner's Session for the page is, so the session list files it with the channels and the Home feed can filter it on its own.
   The prompt names the viewer and the page, and tells the Agent the viewer sees only the page, not its reply.
   The viewer gets an answer once the Agent is awake, without waiting for the turn, and the page shows a short notice.
   The turn runs on the Agent's channel default and counts as a channel turn: nobody answers its permission prompts, so they are refused, and its credentialed requests are gated as a channel turn's are ([channel turns](channel-turns.md)).
