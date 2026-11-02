@@ -44,6 +44,8 @@ export function composeProfilesForOwner(deps: {
       const chosen = await newAgentDefault(owner);
       return (
         chosen && {
+          name: chosen.profile.name,
+          model: chosen.profile.model,
           harness: chosen.profile.harness,
           connectionId: chosen.connectionId,
           bind: (agentId: string) =>

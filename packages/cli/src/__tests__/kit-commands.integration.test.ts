@@ -129,6 +129,7 @@ describe("dam kit and dam agent create --kit (integration)", () => {
   let started: string[];
   let scopes: readonly string[];
   let inspected: Record<string, StarterKitView>;
+  let defaultProvider: Agent["defaultProvider"];
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "dam-kit-"));
@@ -138,6 +139,7 @@ describe("dam kit and dam agent create --kit (integration)", () => {
     started = [];
     scopes = ALL_SCOPES;
     inspected = {};
+    defaultProvider = undefined;
 
     const apiContext = {
       user: {
@@ -177,7 +179,11 @@ describe("dam kit and dam agent create --kit (integration)", () => {
             starterKit: `${input.catalog}/${input.kitId}@${KIT_COMMIT}`,
           });
           agents.push(created);
-          return { agent: created, skills: null, skillsError: null };
+          return {
+            agent: defaultProvider ? { ...created, defaultProvider } : created,
+            skills: null,
+            skillsError: null,
+          };
         },
         updates: async () => updates,
         updateChanges: async () => null,
@@ -387,6 +393,46 @@ describe("dam kit and dam agent create --kit (integration)", () => {
       "dam channel slack connect desk --channel-id <channel-id>",
     );
   });
+
+  /** TEST_SCENARIO: a kit create that names no provider is granted one by
+   * the platform, and the output names it and why — the default for new
+   * agents, or the kit's own providers list — in text and in --json, as a
+   * plain create's does (#6142). */
+  it.each([
+    [
+      {
+        connectionId: "conn-ibm",
+        source: "profile" as const,
+        profile: { name: "Default", model: "cb/some-model", harness: "pi" },
+      },
+      /Provider: IBM proxy \(conn-ibm\), from your default for new agents, profile "Default": cb\/some-model on pi\./,
+    ],
+    [
+      { connectionId: "conn-ibm", source: "kit" as const, profile: null },
+      /Provider: IBM proxy \(conn-ibm\), the first of the starter kit's providers you hold; your default for new agents does not apply to it\./,
+    ],
+  ])(
+    "names the provider the platform granted a kit create (%o)",
+    async (granted, line) => {
+      defaultProvider = granted;
+      const text = await dam("agent", "create", "desk", "--kit", "plain");
+      expect(text.exitCode, text.stderr).toBe(0);
+      expect(text.stdout).toMatch(line);
+      const json = await dam(
+        "agent",
+        "create",
+        "desk2",
+        "--kit",
+        "plain",
+        "--json",
+      );
+      expect(json.exitCode, json.stderr).toBe(0);
+      expect(
+        (JSON.parse(json.stdout) as { agent: { defaultProvider: unknown } })
+          .agent.defaultProvider,
+      ).toEqual(granted);
+    },
+  );
 
   /** TEST_SCENARIO: a schedule the kit does not have is refused before anything is created, so a typo cannot leave an agent behind with the wrong schedules. */
   it("refuses a schedule the kit does not have, creating nothing", async () => {

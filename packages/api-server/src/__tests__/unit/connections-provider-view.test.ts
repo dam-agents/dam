@@ -79,8 +79,13 @@ const oauthConnection = (
 function makeService(
   oldestFirst: Connection[],
   defaultHarness: HarnessView["name"] = "claude-code",
+  newAgentProvider?: () => Promise<{
+    connectionId: string;
+    harness: string;
+  } | null>,
 ) {
   return createConnectionsService({
+    ...(newAgentProvider && { newAgentProvider }),
     harnesses: { default: defaultHarness, harnesses: CATALOG },
     isOwnedAgent: async () => true,
     ownerId: "owner",
@@ -195,5 +200,75 @@ describe("provider Connection Templates", () => {
       alias: "anthropic",
       harnesses: ["claude-code"],
     });
+  });
+
+  /** TEST_SCENARIO: the owner's default for new agents decides which provider
+   * a plain create grants, so the listing marks that one preferred, a shared
+   * provider too, over the default harness's home provider; with no such
+   * default the harness's provider order marks it (#6142). */
+  it("marks the provider of the default for new agents", async () => {
+    const rows = [
+      headerConnection("conn-claude", "anthropic"),
+      headerConnection("conn-ibm", "ibm-litellm"),
+    ];
+    const preferredOf = async (svc: ReturnType<typeof makeService>) =>
+      (await svc.listConnections())
+        .filter((c) => c.provider?.preferred)
+        .map((c) => c.id);
+    expect(
+      await preferredOf(
+        makeService(rows, "claude-code", async () => ({
+          connectionId: "conn-ibm",
+          harness: "claude-code",
+        })),
+      ),
+    ).toEqual(["conn-ibm"]);
+    expect(
+      await preferredOf(makeService(rows, "claude-code", async () => null)),
+    ).toEqual(["conn-claude"]);
+  });
+
+  /** TEST_SCENARIO: an owner whose providers are none of them active gets no
+   * provider from a plain create, so the listing marks none preferred, the
+   * default's provider included (#6142). */
+  it("marks none while no provider is active", async () => {
+    const svc = makeService(
+      [oauthConnection("conn-pending", "anthropic-oauth", false)],
+      "claude-code",
+      async () => ({ connectionId: "conn-pending", harness: "claude-code" }),
+    );
+    expect(
+      (await svc.listConnections()).filter((c) => c.provider?.preferred),
+    ).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: a default for new agents on another harness than the
+   * install's boots a plain create on its own harness, so the marker reads
+   * the provider order there: an OpenAI key that only Codex and Pi run on
+   * marks the default's provider on a Codex default, and an Anthropic OAuth
+   * token that Codex does not run marks none, as a create then grants none
+   * (#6142). */
+  it("reads the provider order on the default's harness", async () => {
+    const preferredOf = async (rows: Connection[], connectionId: string) =>
+      (
+        await makeService(rows, "claude-code", async () => ({
+          connectionId,
+          harness: "codex",
+        })).listConnections()
+      )
+        .filter((c) => c.provider?.preferred)
+        .map((c) => c.id);
+    expect(
+      await preferredOf(
+        [headerConnection("conn-openai", "openai")],
+        "conn-openai",
+      ),
+    ).toEqual(["conn-openai"]);
+    expect(
+      await preferredOf(
+        [oauthConnection("conn-oauth", "anthropic-oauth", true)],
+        "conn-oauth",
+      ),
+    ).toEqual([]);
   });
 });

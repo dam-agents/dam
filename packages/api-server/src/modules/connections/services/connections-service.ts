@@ -158,6 +158,7 @@ import {
   type CredentialProbeOutcome,
 } from "../domain/credential-check.js";
 import { emit, EventType } from "../../../events.js";
+import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 
@@ -266,6 +267,11 @@ export function createConnectionsService(deps: {
   curveBenderDeploymentKey?: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
+  newAgentProvider?: () => Promise<{
+    connectionId: string;
+    harness: string;
+  } | null>;
 }): ConnectionsService & ManagedProviderConnections {
   let catalog: ProviderModelCatalog | undefined;
   const providerModelCatalog = () =>
@@ -323,11 +329,24 @@ export function createConnectionsService(deps: {
   }
 
   async function preferredProviderId(): Promise<string | undefined> {
-    const harness = deps.harnesses.default;
+    const fromDefault = await deps
+      .newAgentProvider?.()
+      .catch((err: unknown) => {
+        getLogger().warn(
+          { err },
+          "connections: the default for new agents could not be read; the harness's provider order marks the preferred provider",
+        );
+        return null;
+      });
+    /* UNIT_BOUNDARY_DESCRIPTION: a plain create boots on the default's harness, else the install's, and grants the default's provider only when the owner holds an active provider that harness runs on, and none without one; the marker follows the same steps, so it marks what that create grants. */
+    const harness = fromDefault?.harness ?? deps.harnesses.default;
     const granted = await firstProviderPerAlias((type, templateId) =>
       harnessFits(deps.harnesses, harness, type, templateId),
     );
-    return orderByAlias(granted, harness)[0]?.id;
+    const first = orderByAlias(granted, harness)[0]?.id;
+    return first === undefined
+      ? undefined
+      : (fromDefault?.connectionId ?? first);
   }
 
   function toView(conn: Connection, preferredId?: string): ConnectionView {
