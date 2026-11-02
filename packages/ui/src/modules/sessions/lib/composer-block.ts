@@ -6,7 +6,8 @@ export type ComposerBlock =
   | { kind: "connect"; reason: string }
   | { kind: "attach"; reason: string }
   | { kind: "form"; reason: string }
-  | { kind: "reconnect"; reason: string };
+  | { kind: "reconnect"; reason: string }
+  | { kind: "connecting"; reason: string };
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: why the composer holds a prompt, if it does. A
@@ -22,7 +23,7 @@ export function composerBlock(input: {
   noGrantedProvider: boolean;
   sharedCurveBender: boolean;
   formLocked: boolean;
-  reconnecting: boolean;
+  channel: "lost" | "connecting" | null;
 }): ComposerBlock | null {
   if (input.agentId && !input.providers.loaded)
     return input.providers.failed
@@ -40,11 +41,15 @@ export function composerBlock(input: {
           reason: "Attach an LLM provider to this agent to start.",
         };
   if (input.formLocked) return { kind: "form", reason: COMPOSER_LOCKED_REASON };
-  if (input.reconnecting)
+  if (input.channel === "lost")
     return {
       kind: "reconnect",
-      reason:
-        "Waiting for the agent's connection — your message stays in the draft.",
+      reason: "Reconnecting to this agent — your message stays in the draft.",
+    };
+  if (input.channel === "connecting")
+    return {
+      kind: "connecting",
+      reason: "Connecting to this agent — your message stays in the draft.",
     };
   return null;
 }

@@ -309,7 +309,14 @@ export function ChatView() {
   } = useAcpSession(selectedAgent, textareaRef);
   useReconciledPermissions(connectionState);
   const channelLive = connectionState === "live";
+  const channelLost =
+    connectionState === "reconnecting" || connectionState === "reloading";
   const channelBlocked = !channelLive && !agentStarting && sessionId !== null;
+  const channelBlock = channelBlocked
+    ? channelLost
+      ? ("lost" as const)
+      : ("connecting" as const)
+    : null;
 
   const promptGate = {
     agentId: selectedAgent,
@@ -528,7 +535,7 @@ export function ChatView() {
     noGrantedProvider,
     sharedCurveBender: !!shared,
     formLocked: formLocksComposer,
-    reconnecting: channelBlocked,
+    channel: channelBlock,
   });
   const sendWithA2uiData = useCallback(
     (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
@@ -812,7 +819,7 @@ export function ChatView() {
 
   const notices = (
     <>
-      {channelBlocked && agentDisplay?.state === "running" && (
+      {channelBlock === "lost" && agentDisplay?.state === "running" && (
         <AgentReconnectingNotice name={selectedAgentName ?? "the agent"} />
       )}
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
@@ -1110,7 +1117,7 @@ export function ChatView() {
             blockedReason={block?.reason ?? null}
             stopBlockedReason={
               channelBlocked
-                ? "Waiting for the agent's connection — Stop works once it is back."
+                ? "Waiting for the agent's connection — Stop works once it is up."
                 : null
             }
             channelLive={channelLive}

@@ -527,7 +527,7 @@ afterEach(() => {
 it("keeps a running Agent's chat while it reconnects", () => {
   const el = openChat("running", false);
   expect(notice(el)).not.toBeNull();
-  expect(placeholder(el)).toContain("Waiting for the agent's connection");
+  expect(placeholder(el)).toContain("Reconnecting to this agent");
   expect(el.textContent).not.toContain("Restart agent");
 });
 
@@ -595,7 +595,22 @@ it("blocks the chat while the channel is not live", () => {
   paint();
   expect(button(el, "Stop").disabled).toBe(true);
   expect(notice(el)).not.toBeNull();
-  expect(placeholder(el)).toContain("Waiting for the agent's connection");
+  expect(placeholder(el)).toContain("Reconnecting to this agent");
+});
+
+// TEST_SCENARIO: a chat opening for the first time waits for its channel to open; that is not a drop, so the composer names the connection it waits for and no reconnect notice appears, while the actions that need the channel stay blocked.
+it("waits for a first connection without a reconnect notice", () => {
+  fake.connectionState = "idle";
+  const el = openChat("running", true);
+  act(() =>
+    useStore.setState({
+      drafts: { "a-1:s-1": { text: "hello", attachments: [] } },
+    }),
+  );
+  expect(notice(el)).toBeNull();
+  expect(button(el, "Send").disabled).toBe(true);
+  expect(placeholder(el)).toContain("Connecting to this agent");
+  expect(placeholder(el)).not.toContain("Reconnecting");
 });
 
 // TEST_SCENARIO: a permission answer during a reconnect cannot reach the Agent, so the buttons are disabled and the card says why instead of showing a verdict that did not arrive.
