@@ -221,4 +221,18 @@ describe("provider Connection Templates", () => {
       await preferredOf(makeService(rows, "claude-code", async () => null)),
     ).toEqual(["conn-claude"]);
   });
+
+  /** TEST_SCENARIO: an owner whose providers are none of them active gets no
+   * provider from a plain create, so the listing marks none preferred, the
+   * default's provider included (#6142). */
+  it("marks none while no provider is active", async () => {
+    const svc = makeService(
+      [oauthConnection("conn-pending", "anthropic-oauth", false)],
+      "claude-code",
+      async () => "conn-pending",
+    );
+    expect(
+      (await svc.listConnections()).filter((c) => c.provider?.preferred),
+    ).toEqual([]);
+  });
 });

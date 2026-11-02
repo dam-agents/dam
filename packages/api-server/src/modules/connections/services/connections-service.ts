@@ -335,12 +335,13 @@ export function createConnectionsService(deps: {
         );
         return null;
       });
-    if (fromDefault) return fromDefault;
+    /* UNIT_BOUNDARY_DESCRIPTION: a create grants the default's provider only when it holds an active provider the harness runs on, and none without one; the marker follows, so it never marks a provider a create would not grant. */
     const harness = deps.harnesses.default;
     const granted = await firstProviderPerAlias((type, templateId) =>
       harnessFits(deps.harnesses, harness, type, templateId),
     );
-    return orderByAlias(granted, harness)[0]?.id;
+    const first = orderByAlias(granted, harness)[0]?.id;
+    return first === undefined ? undefined : (fromDefault ?? first);
   }
 
   function toView(conn: Connection, preferredId?: string): ConnectionView {
