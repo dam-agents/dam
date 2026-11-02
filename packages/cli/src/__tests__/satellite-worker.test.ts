@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WorkItem } from "api-server-api";
+import type { SatelliteManifest, WorkItem } from "api-server-api";
+import { createBackoff } from "../modules/satellite/domain/backoff.js";
 import { parseCommandSurface } from "../modules/satellite/domain/command-surface.js";
 import {
   createCommandBackend,
@@ -7,9 +8,11 @@ import {
 } from "../modules/satellite/services/command-backend.js";
 import {
   createWorker,
+  describeOffline,
   SatelliteRemovedError,
   type WorkerTransport,
 } from "../modules/satellite/services/worker.js";
+import { AuthRequiredAtTransportError } from "../modules/shared/trpc/trpc-client.js";
 
 /**
  * TEST_OVERVIEW: The satellite worker and the command-surface backend, which is
@@ -457,5 +460,263 @@ describe("the tool a command surface advertises", () => {
     expect(runTool(surface()).description).toContain(
       "/bin/echo (hello|goodbye)",
     );
+  });
+});
+describe("surviving a drop", () => {
+  const FAST = { baseMs: 2, capMs: 4 };
+
+  function workerWith(
+    transport: WorkerTransport,
+    backend?: Parameters<typeof createWorker>[0]["backend"],
+  ) {
+    const parsed = parseCommandSurface(PATTERNS, IDENTITY);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const lines: string[] = [];
+    return {
+      lines,
+      worker: createWorker({
+        name: parsed.value.pushed.name,
+        maxConcurrent: IDENTITY.maxConcurrent,
+        backend: backend ?? createCommandBackend(parsed.value),
+        transport,
+        log: { line: (text) => lines.push(text) },
+        host: "test-host",
+        retry: FAST,
+      }),
+    };
+  }
+
+  /**
+   * TEST_SCENARIO: The platform is unreachable when the worker starts, and
+   * answers again later. Neither ends the process: it waits, says so on each
+   * attempt, registers the same Satellite again under the same name with the
+   * same tools, and takes work as soon as the platform answers.
+   */
+  it("keeps trying, registers the same satellite again, and resumes claiming", async () => {
+    const connects: SatelliteManifest[] = [];
+    const reports: number[] = [];
+    const polls: {
+      resolve: (items: WorkItem[]) => void;
+      reject: (err: Error) => void;
+    }[] = [];
+    let down = false;
+    const transport: WorkerTransport = {
+      connect: async (manifest) => {
+        connects.push(manifest);
+        if (down) throw new Error("fetch failed");
+      },
+      claim: () =>
+        new Promise<WorkItem[]>((resolve, reject) => {
+          polls.push({ resolve, reject });
+        }),
+      heartbeat: async () => {},
+      drain: async () => {
+        for (const poll of polls.splice(0)) poll.resolve([]);
+      },
+      report: async (input) => {
+        reports.push(input.sequence);
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(polls).toHaveLength(1));
+    down = true;
+    polls[0]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() => expect(connects.length).toBeGreaterThanOrEqual(3));
+    down = false;
+    await vi.waitFor(() => expect(polls).toHaveLength(2));
+
+    polls[1]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() => expect(reports).toEqual([1]));
+    await worker.drain();
+    await running;
+
+    expect(
+      connects.map((manifest) => manifest.name),
+      "a reconnect registers the same Satellite, never a second one",
+    ).toEqual(connects.map(() => "test-box"));
+    expect(connects.at(-1)?.tools).toEqual(connects[0]?.tools);
+    expect(
+      lines.filter((line) => line.startsWith("connected as ")),
+      "the tools are announced once, not on every reconnect",
+    ).toHaveLength(1);
+    expect(
+      lines.filter((line) => line === 'reconnected as "test-box"'),
+      "saying so is what makes a service log readable",
+    ).toHaveLength(1);
+    expect(
+      lines.some((line) =>
+        line.startsWith("offline: Error: fetch failed — retrying in"),
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A call that finished just as the connection went away has an
+   * outcome nobody else can supply: the lease sweep reports the Job as unknown
+   * a minute later. The worker holds it and sends it once the platform is back,
+   * so a short drop costs no result.
+   */
+  it("sends an outcome that could not be reported once the platform is back", async () => {
+    const reports: number[] = [];
+    let reportCalls = 0;
+    let claimCalls = 0;
+    let drained: () => void = () => {};
+    let failedOnce: () => void = () => {};
+    const reportFailed = new Promise<void>((resolve) => {
+      failedOnce = resolve;
+    });
+    const transport: WorkerTransport = {
+      connect: async () => {},
+      claim: async () => {
+        claimCalls += 1;
+        if (claimCalls === 1) return [runItem(1, ["/bin/echo", "hello"])];
+        if (claimCalls === 2) {
+          await reportFailed;
+          throw new Error("fetch failed");
+        }
+        return new Promise<WorkItem[]>((resolve) => {
+          drained = () => resolve([]);
+        });
+      },
+      heartbeat: async () => {},
+      drain: async () => drained(),
+      report: async (input) => {
+        reportCalls += 1;
+        if (reportCalls === 1) {
+          failedOnce();
+          throw new Error("fetch failed");
+        }
+        reports.push(input.sequence);
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(reports).toEqual([1]));
+    await worker.drain();
+    await running;
+    expect(
+      lines.some((line) => line.startsWith("could not report test-box#1 yet")),
+      "the loss is said out loud rather than left to the lease",
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: Reconnecting must not restart the MCP server the machine
+   * serves, since that would kill whatever it was running. A server that exited
+   * must come back, and the tool list it comes back with must reach the
+   * platform, because a Snapshot is the server's claim about what it offers.
+   */
+  it("leaves a live MCP server alone and restarts one that exited", async () => {
+    const connects: SatelliteManifest[] = [];
+    const offered = [runTool(surface())];
+    let died = false;
+    let current = offered;
+    const polls: {
+      resolve: (items: WorkItem[]) => void;
+      reject: (err: Error) => void;
+    }[] = [];
+    const transport: WorkerTransport = {
+      connect: async (manifest) => {
+        connects.push(manifest);
+      },
+      claim: () =>
+        new Promise<WorkItem[]>((resolve, reject) => {
+          polls.push({ resolve, reject });
+        }),
+      heartbeat: async () => {},
+      drain: async () => {
+        for (const poll of polls.splice(0)) poll.resolve([]);
+      },
+      report: async () => {},
+    };
+    const backend = {
+      get tools() {
+        return current;
+      },
+      ensureReady: async () => {
+        if (!died) return { restarted: false };
+        died = false;
+        current = [];
+        return { restarted: true };
+      },
+      call: createCommandBackend(surface()).call,
+      describeCall: () => "run",
+      cancel: () => {},
+      killAll: () => {},
+      close: () => Promise.resolve(),
+    };
+    const { worker, lines } = workerWith(transport, backend);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(polls).toHaveLength(1));
+    polls[0]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() => expect(connects.length).toBe(2));
+    await vi.waitFor(() => expect(polls).toHaveLength(2));
+
+    died = true;
+    polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() => expect(connects.length).toBe(3));
+    await worker.drain();
+    await running;
+
+    expect(connects[0]?.tools, "a live server is not restarted").toEqual(
+      offered,
+    );
+    expect(
+      connects[1]?.tools,
+      "the second reconnect keeps the same server",
+    ).toEqual(offered);
+    expect(connects[2]?.tools, "the new tool list is registered").toEqual([]);
+    expect(
+      lines.filter((line) =>
+        line.startsWith("restarted what this machine serves"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that is not signed in retries like any other drop,
+   * but the line has to name the command that ends it. A service left running
+   * with a revoked key would otherwise repeat a class name nobody can act on.
+   */
+  it("says what ends a missing sign-in instead of naming an error class", () => {
+    expect(
+      describeOffline(new AuthRequiredAtTransportError("session expired")),
+    ).toContain("set DAM_TOKEN");
+    expect(describeOffline(new Error("fetch failed"))).toBe(
+      "offline: Error: fetch failed",
+    );
+  });
+});
+
+describe("the wait before trying again", () => {
+  it("doubles from the base to the cap and stays there", () => {
+    const backoff = createBackoff({
+      baseMs: 1_000,
+      capMs: 30_000,
+      random: () => 0.5,
+    });
+    expect(
+      Array.from({ length: 7 }, () => backoff.next()),
+      "a machine offline for a week still says so once every cap",
+    ).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
+  });
+
+  it("spreads machines that start again together, within a fifth of the wait", () => {
+    const lowest = createBackoff({ random: () => 0 });
+    const highest = createBackoff({ random: () => 1 });
+    expect(lowest.next()).toBe(800);
+    expect(highest.next()).toBe(1_200);
+  });
+
+  it("starts over from the base once the platform answers", () => {
+    const backoff = createBackoff({ random: () => 0.5 });
+    backoff.next();
+    backoff.next();
+    backoff.reset();
+    expect(backoff.next()).toBe(1_000);
   });
 });

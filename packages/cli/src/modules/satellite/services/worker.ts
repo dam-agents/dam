@@ -4,11 +4,18 @@ import type {
   SatelliteTool,
   WorkItem,
 } from "api-server-api";
+import { AuthRequiredAtTransportError } from "../../shared/trpc/trpc-client.js";
+import {
+  createBackoff,
+  type Backoff,
+  type BackoffOptions,
+} from "../domain/backoff.js";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
 
 const HEARTBEAT_MS = 20_000;
 const CLAIM_WAIT_MS = 25_000;
 const IDLE_MS = 1000;
+const PAUSE_STEP_MS = 250;
 
 export interface WorkerTransport {
   connect(manifest: SatelliteManifest, host: string): Promise<void>;
@@ -67,6 +74,18 @@ function firstLine(text: string): string {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: Why the worker is not connected, in the words of
+ * whoever has to fix it. A missing or expired sign-in keeps retrying like any
+ * other failure, because a service is fixed by minting the key, not by waiting,
+ * but it says what ends it instead of repeating a class name.
+ */
+export function describeOffline(err: unknown): string {
+  if (err instanceof AuthRequiredAtTransportError)
+    return `not signed in (${err.message}) — run \`dam login\`, or set DAM_TOKEN to a key with the satellites:serve scope`;
+  return `offline: ${String(err)}`;
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: The one line the worker's log says about how a
  * call ended. The log is the interface for whoever is at the machine, so each
  * way a call can end reads differently: a command that ran and exited, one
@@ -121,12 +140,19 @@ export function createWorker(deps: {
   log: WorkerLog;
   host: string;
   guide?: string[];
+  retry?: BackoffOptions;
 }) {
   const { name, backend, transport, log } = deps;
   const running = new Set<number>();
   const reporting = new Set<Promise<void>>();
+  const unsent = new Map<
+    number,
+    Parameters<WorkerTransport["report"]>[0]["outcome"]
+  >();
   let draining = false;
   let stopped = false;
+  let connected = false;
+  let everConnected = false;
   const slotWaiters = new Set<() => void>();
   let cancelPoll: Promise<void> | null = null;
 
@@ -134,8 +160,9 @@ export function createWorker(deps: {
     const sent = transport
       .report(input)
       .catch((err: unknown) => {
+        unsent.set(input.sequence, input.outcome);
         log.line(
-          `could not report ${name}#${input.sequence}, leaving it to the lease: ${String(err)}`,
+          `could not report ${name}#${input.sequence} yet, keeping it for the next connection: ${String(err)}`,
         );
       })
       .finally(() => reporting.delete(sent));
@@ -145,6 +172,99 @@ export function createWorker(deps: {
   const settleReports = async (): Promise<void> => {
     while (reporting.size > 0) await Promise.all([...reporting]);
   };
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Outcomes that never reached the platform, sent
+   * again once it is back. A Job's lease expires after a minute without a
+   * heartbeat, and the sweep then reports the outcome as unknown, so a drop
+   * shorter than that is a result the Agent would otherwise never see.
+   */
+  async function flushUnsent(): Promise<void> {
+    for (const [sequence, outcome] of [...unsent]) {
+      try {
+        await transport.report({ satellite: name, sequence, outcome });
+        unsent.delete(sequence);
+      } catch {
+        return;
+      }
+    }
+  }
+
+  async function ensureLocal(): Promise<void> {
+    const { restarted } = await backend.ensureReady();
+    if (restarted)
+      log.line(
+        "restarted what this machine serves — the MCP server had exited",
+      );
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Makes sure both ends are up: the MCP server
+   * behind this machine, and the platform's record of the Satellite. While
+   * connected it only pokes the local server, so a child that exited is started
+   * again at once rather than failing every call until the next reconnect.
+   */
+  async function ready(retry: Backoff): Promise<boolean> {
+    if (!connected) return connect(retry);
+    try {
+      await ensureLocal();
+      return true;
+    } catch (err) {
+      connected = false;
+      await backOff(err, retry);
+      return true;
+    }
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A wait that a shutdown cuts short. Draining with
+   * nothing running, or a stop, ends it at once: a service asked to stop does
+   * not sit out the last backoff step of a platform it cannot reach.
+   */
+  async function pause(ms: number): Promise<void> {
+    const until = Date.now() + ms;
+    while (Date.now() < until && !stopped && !(draining && running.size === 0))
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(PAUSE_STEP_MS, until - Date.now())),
+      );
+  }
+
+  async function backOff(err: unknown, retry: Backoff): Promise<void> {
+    const delay = retry.next();
+    log.line(`${describeOffline(err)} — retrying in ${seconds(delay)}`);
+    await pause(delay);
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Registers this machine again, retrying until it
+   * works. Re-registering is what the platform calls a connect: identity is the
+   * name, so the same name keeps the same Satellite, its Grants and its Job
+   * sequence, and only the tool list is replaced. The MCP server behind it is
+   * started again only if it died, not on every reconnect.
+   */
+  async function connect(retry: Backoff): Promise<boolean> {
+    for (;;) {
+      if (stopped || (draining && running.size === 0)) return false;
+      try {
+        await ensureLocal();
+        await transport.connect(manifest(backend.tools), deps.host);
+      } catch (err) {
+        connected = false;
+        await backOff(err, retry);
+        continue;
+      }
+      connected = true;
+      if (!everConnected) {
+        everConnected = true;
+        announce(`connected as "${name}"`);
+        for (const line of deps.guide ?? []) log.line(line);
+      } else {
+        log.line(`reconnected as "${name}"`);
+      }
+      await flushUnsent();
+      return true;
+    }
+  }
 
   const manifest = (tools: SatelliteTool[]): SatelliteManifest => ({
     name,
@@ -242,11 +362,10 @@ export function createWorker(deps: {
     announce,
 
     async start(): Promise<void> {
-      await transport.connect(manifest(backend.tools), deps.host);
-      announce(`connected as "${name}"`);
-      for (const line of deps.guide ?? []) log.line(line);
+      const retry = createBackoff(deps.retry);
 
       const heartbeat = setInterval(() => {
+        if (!connected) return;
         void transport
           .heartbeat({ satellite: name, running: [...running] })
           .catch((err: unknown) =>
@@ -256,9 +375,10 @@ export function createWorker(deps: {
 
       try {
         while (!stopped) {
+          if (!(await ready(retry))) break;
           if (draining) {
             if (running.size === 0) break;
-            await new Promise((r) => setTimeout(r, 500));
+            await pause(500);
             continue;
           }
           const capacity = deps.maxConcurrent - running.size;
@@ -268,8 +388,8 @@ export function createWorker(deps: {
               .then((items) => void handle(items))
               .catch(async (err: unknown) => {
                 if (stopClaiming(err)) return;
-                log.line(`claim failed, retrying: ${String(err)}`);
-                await new Promise((r) => setTimeout(r, 2000));
+                connected = false;
+                await backOff(err, retry);
               })
               .finally(() => {
                 cancelPoll = null;
@@ -283,18 +403,19 @@ export function createWorker(deps: {
               capacity,
               waitMs: CLAIM_WAIT_MS,
             });
+            retry.reset();
             const started = handle(items);
-            if (started === 0 && !stopped && !draining)
-              await new Promise((r) => setTimeout(r, IDLE_MS));
+            if (started === 0 && !stopped && !draining) await pause(IDLE_MS);
           } catch (err) {
             if (stopClaiming(err)) continue;
-            log.line(`claim failed, retrying: ${String(err)}`);
-            await new Promise((r) => setTimeout(r, 2000));
+            connected = false;
+            await backOff(err, retry);
           }
         }
       } finally {
         clearInterval(heartbeat);
         await settleReports();
+        if (connected) await flushUnsent();
         await backend.close().catch(() => {});
       }
     },

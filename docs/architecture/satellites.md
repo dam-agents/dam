@@ -181,6 +181,26 @@ An image that does pass leaves a marker of its own in the text, so a harness tha
 Audio and embedded resources stay placeholders: no harness hands either to its model.
 A turn the platform starts carries no images, so it says the picture exists and names the job tool that shows it.
 
+## Staying connected
+
+A worker is meant to run for weeks on a machine nobody watches: a laptop that sleeps, a network that drops, a platform that redeploys.
+Everything it does about that follows from the direction it is reached from: outward only.
+
+**It retries forever, and never in step with the other machines.** A failed connect or claim is retried after a wait that doubles from a second to half a minute and carries jitter, so the machines that come back when a platform returns spread out instead of arriving together.
+Nothing ends the loop; the process stops when it is told to stop.
+
+**A reconnect is a registration, not a second Satellite.** Identity is the name, so connecting again replaces the Snapshot of the Satellite the machine already serves and keeps its Grants, its Jobs and its Job sequence.
+An Agent sees the same tools before and after a drop, and never two of anything.
+An MCP server the worker started is **started again only when it exited**: reconnecting must not kill work that is in progress, and a server that is still up keeps serving.
+One that did exit is started again on the next pass, and the tool list it comes back with is registered, since a Snapshot is the machine's claim about what it offers now.
+
+**A result survives a short drop.** An outcome that could not be reported is kept and sent once the platform answers again, which covers any drop shorter than the Job's lease.
+Beyond that, the lease sweep settles the Job as interrupted and the Agent is told its outcome is unknown, so a call in flight during a drop ends in a sentence rather than a wait.
+A call made while the Satellite is offline never starts at all: admission refuses it and says since when the machine has been gone ([Admission](#admission)).
+
+**Credentials refresh themselves.** A worker signed in through the browser re-mints its access token before each call, and one started as a service holds a serve key in `DAM_TOKEN` instead, which needs no refresh.
+Either way, a worker that cannot authenticate retries like any other failure but says what ends it: signing in again, or a new key.
+
 ## Trust boundary
 
 **The machine decides what may run on it, and nothing else does.** The api-server checks that the Satellite offers the tool and has room; it never reads an argument, because a Satellite may be any MCP server and only that server knows what its arguments mean.
@@ -234,6 +254,7 @@ Every outcome is one line too, and each way a call ends reads differently: `DONE
 A parse error names the line it is on, since the text the user just typed is the whole allowlist.
 Shutdown drains on the first interrupt and forces on the second.
 There is no reload: neither form reads a file, so changing what a machine offers means restarting it.
+Keeping one worker running unattended is [running a satellite as a service](../notes/satellite-service.md), which holds the systemd unit and the launchd plist.
 
 `dam satellite` marks itself **experimental** in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 
