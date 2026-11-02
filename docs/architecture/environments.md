@@ -24,7 +24,7 @@ It is created with nothing that would let it act as its Owning Agent:
 - **The platform's default image**, with Docker, k3s and openrc; the software it runs goes inside, as containers or processes.
 
 A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints and its expiry.
-Who may open it is two lists of rows, one per person, at most 50 each: `agent_environment_members` per Owning Agent and `environment_members` per Environment, which go with it.
+Who may open it is two lists of rows, one per person, at most as many as an artifact's viewers each: `agent_environment_members` per Owning Agent and `environment_members` per Environment, which go with it.
 
 ## Lifecycle
 

@@ -214,6 +214,34 @@ describe("an Environment's Share dialog", () => {
     ).toContain("guest@example.com");
   });
 
+  // TEST_SCENARIO: a member added elsewhere while the dialog is open shows up in it at the next poll, and Save stays off, so a Save cannot drop that member unseen.
+  it("follows the members the list polls while it is open", () => {
+    const onClose = vi.fn();
+    const doc = mount(
+      createElement(EnvironmentShareDialog, { environment: demo, onClose }),
+    );
+    act(() =>
+      root!.render(
+        createElement(
+          TooltipProvider,
+          null,
+          createElement(EnvironmentShareDialog, {
+            environment: { ...demo, members: ["late@example.com"] },
+            onClose,
+          }),
+        ),
+      ),
+    );
+
+    expect(
+      doc.querySelector('[data-testid="viewer-list"]')?.textContent,
+    ).toContain("late@example.com");
+    const save = [...doc.querySelectorAll("button")].find(
+      (b) => b.textContent === "Save",
+    );
+    expect(save?.disabled).toBe(true);
+  });
+
   // TEST_SCENARIO: the summary names only the parts that open it, joined as a sentence.
   it("words the summary for each mix of editors and members", () => {
     const say = (editorCount: number, agentMemberCount: number) =>
@@ -238,7 +266,7 @@ describe("the agent's page", () => {
     expect(doc.querySelector('[data-testid="viewer-list"]')?.textContent).toBe(
       "reviewer@example.comqa@example.com",
     );
-    expect(doc.body.textContent).toContain("2 / 50 people on the list");
+    expect(doc.body.textContent).toContain("2 / 100 people on the list");
     expect(
       doc.querySelector('[data-testid="environments-in-artifacts"]')
         ?.textContent,
