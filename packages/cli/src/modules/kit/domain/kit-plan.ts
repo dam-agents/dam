@@ -199,10 +199,6 @@ function connectionName(c: OwnedConnection): string {
   return c.name ?? c.id;
 }
 
-/**
- * The note on a connection need several owned connections meet: no one of
- * them is right by order, since each may be scoped to another repository.
- */
 function choiceNote(matches: readonly OwnedConnection[]): string | undefined {
   if (matches.length < 2) return undefined;
   return `you have ${matches.length} connections this accepts (${matches.map(connectionName).join(", ")}): pick the one scoped to what the kit works on, such as its repository`;
