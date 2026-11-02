@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-27
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -25,6 +25,7 @@ Fires are idempotent per occurrence, so at-least-once delivery cannot run one tw
 The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window.
 Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time.
 Every RRULE counts its steps from one fixed start — midnight on 1 January 2001 in the schedule's timezone, a Monday and the first of a month — so its occurrences never depend on when they are computed and stay put across restarts and re-arms: an unanchored rule defaults to midnight, weekly to Monday, monthly to the 1st.
+A `FREQ=HOURLY` or `FREQ=MINUTELY` rule with `BYHOUR` is the exception: it starts at its first `BYHOUR` hour that day and steps in local wall-clock time, so a clock change does not move its steps off the hours it lists ([ADR-127](../adrs/127-sub-daily-byhour-steps-in-wall-clock-time.md)).
 `COUNT` is rejected, because counted from that start it would be spent, and so is `FREQ=SECONDLY`, because schedules fire at minute granularity.
 A rule with no future occurrence is rejected at save time; the occurrence search runs on the api-server's event loop, so every search is capped in the periods and candidate times it may examine, and a rule that can never fire answers at once instead of blocking it.
 An occurrence inside quiet hours resumes the search at the end of that window, and a rule still quiet after 64 windows counts as covered.
