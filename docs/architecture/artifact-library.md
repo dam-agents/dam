@@ -157,6 +157,14 @@ The browser's same-origin rule is the boundary: artifact code runs as the conten
 The sandbox blocks top-level navigation and forms, but permits scripts, same-origin access and unsandboxed popups: it does not provide an independent origin boundary.
 The content host agrees to be framed only by the share origin, and serves raw bytes under a sandbox directive so a document opened directly cannot run either.
 
+**Printing.** The browser's own print (Cmd/Ctrl+P or its menu) prints the whole artifact, not only the part in view.
+The frame is sandboxed without modals, so the artifact's document cannot print itself, and the browser prints the outer page even when the keyboard focus is inside the frame.
+Instead every document the frame renders reports its content height to the page around it, and on `beforeprint` that page stretches the frame to the reported height, so the browser breaks it across sheets.
+A frame wider than a sheet keeps its layout width and is scaled down to fit, so its right side is not clipped.
+A print stylesheet hides the banner and every other part of the page, and on `afterprint` the frame returns to its normal size.
+The page takes a height only from its own frame's document, and the reported height grants nothing but a size.
+The in-app preview prints the same way, without the app's navigation, chat or toolbar.
+
 The content host cannot see the share session, so a restricted frame carries a **render token**: minted by the share page for exactly one artifact and its current version after the viewer passed, with a short expiry, redeemed by the content host on the document and on its raw bytes.
 It is a short-lived, single-purpose bearer grant — not a session and not an identity; anyone holding it can replay it until expiry, after which a pasted frame address answers unauthorized.
 A public frame needs no token, and the source download on the share host never does: it is gated by the share session like the page itself.

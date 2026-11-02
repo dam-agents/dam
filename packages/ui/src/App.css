@@ -613,3 +613,35 @@
 .prose .hljs {
   background: var(--muted) !important;
 }
+
+@media print {
+  html:has([data-artifact-print]),
+  body:has([data-artifact-print]),
+  body :has([data-artifact-print]) {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: visible !important;
+    transform: none !important;
+    contain: none !important;
+    background: none !important;
+  }
+
+  body:has([data-artifact-print])
+    *:not(:has([data-artifact-print])):not([data-artifact-print]) {
+    display: none !important;
+  }
+
+  [data-artifact-print] {
+    display: block !important;
+    position: static !important;
+    opacity: 1 !important;
+  }
+}
