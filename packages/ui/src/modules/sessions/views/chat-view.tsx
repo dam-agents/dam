@@ -309,10 +309,7 @@ export function ChatView() {
   } = useAcpSession(selectedAgent, textareaRef);
   useReconciledPermissions(connectionState);
   const channelLive = connectionState === "live";
-  const channelLost = useLostChannel(
-    connectionState,
-    `${selectedAgent ?? ""}:${sessionId ?? ""}`,
-  );
+  const channelLost = useLostChannel(connectionState, selectedAgent);
   const channelBlocked = !channelLive && !agentStarting && sessionId !== null;
   const channelBlock = channelBlocked
     ? channelLost

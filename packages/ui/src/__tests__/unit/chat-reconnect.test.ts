@@ -619,6 +619,37 @@ it("reads a dropped channel as reconnecting while the Agent is unreachable", () 
   expect(button(el, "Send").disabled).toBe(true);
 });
 
+// TEST_SCENARIO: one channel serves every session of the Agent, so a lost channel stays lost when the user moves to another of its chats; the new chat reads as reconnecting too, rather than as a first connection.
+it("keeps the lost channel across a move to another chat", () => {
+  fake.connectionState = "live";
+  const el = openChat("running", true);
+  fake.connectionState = "idle";
+  fake.operable = false;
+  paint();
+  expect(notice(el)).not.toBeNull();
+
+  act(() => useStore.setState({ sessionId: "s-2" }));
+  paint();
+
+  expect(notice(el)).not.toBeNull();
+  expect(placeholder(el)).toContain("Reconnecting to this agent");
+  expect(el.textContent).toContain("Reconnecting");
+});
+
+// TEST_SCENARIO: a brand new chat on that Agent keeps the header's reconnect label, since the channel it would open is the same lost one.
+it("keeps the reconnect label on a new chat of that Agent", () => {
+  fake.connectionState = "live";
+  const el = openChat("running", true);
+  fake.connectionState = "idle";
+  fake.operable = false;
+  paint();
+
+  act(() => useStore.setState({ sessionId: null }));
+  paint();
+
+  expect(el.textContent).toContain("Reconnecting");
+});
+
 // TEST_SCENARIO: a chat opening for the first time waits for its channel to open; that is not a drop, so the composer names the connection it waits for and no reconnect notice appears, while the actions that need the channel stay blocked.
 it("waits for a first connection without a reconnect notice", () => {
   fake.connectionState = "idle";

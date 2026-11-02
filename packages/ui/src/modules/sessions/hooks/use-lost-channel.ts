@@ -3,18 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import type { ConnectionState } from "./use-acp-connection.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: whether the chat's channel is lost, which is what the reconnect notice, the composer's reason and the chat's header badge say. A channel that drops stays lost until it is live again, even while the connection state reads idle because the Agent is too far away to reconnect; a channel that has not opened yet in this chat is not lost, so a first connection never reads as a reconnect.
+ * UNIT_BOUNDARY_DESCRIPTION: whether the chat's channel is lost, which is what the reconnect notice, the composer's reason and the chat's header badge say. One channel serves every session of an Agent, so the memory belongs to the Agent: a channel that drops stays lost across a move to another of its sessions, and only a live channel releases it, even while the connection state reads idle because the Agent is too far away to reconnect. A channel that has not opened yet is not lost, so a first connection never reads as a reconnect.
  */
 export function useLostChannel(
   connectionState: ConnectionState,
-  chatKey: string,
+  agentId: string | null,
 ): boolean {
   const [lost, setLost] = useState(false);
   const liveBefore = useRef(false);
-  const key = useRef(chatKey);
+  const agent = useRef(agentId);
   useEffect(() => {
-    if (key.current !== chatKey) {
-      key.current = chatKey;
+    if (agent.current !== agentId) {
+      agent.current = agentId;
       liveBefore.current = false;
       setLost(false);
       return;
@@ -26,6 +26,6 @@ export function useLostChannel(
           connectionState === "reconnecting" ||
           connectionState === "reloading"),
     );
-  }, [connectionState, chatKey]);
+  }, [connectionState, agentId]);
   return lost;
 }
