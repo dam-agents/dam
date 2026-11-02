@@ -102,7 +102,12 @@ function setup(
   const applyGrants = vi.fn(async () => {});
   const writeEnv = vi.fn(async () => {});
   const runtimeBump = vi.fn(async () => 1);
-  const defaultProviders = vi.fn(async (): Promise<string[]> => []);
+  const defaultProviders = vi.fn(
+    async (): Promise<{
+      ids: string[];
+      source: "kit" | "template" | "harness";
+    }> => ({ ids: [], source: "harness" }),
+  );
   const bind = vi.fn(async (_agentId: string): Promise<string | null> => null);
   const defaultProfile = vi.fn(
     async (): Promise<{
@@ -309,13 +314,17 @@ describe("the default profile a new agent starts on", () => {
       templates,
     );
     defaultProfile.mockResolvedValue(onPi(bind));
-    defaultProviders.mockResolvedValue(["conn-first-in-order"]);
+    defaultProviders.mockResolvedValue({
+      ids: ["conn-first-in-order"],
+      source: "harness",
+    });
     const created = await caller.agents.create(byTemplate);
     expect(created.grantedConnectionIds).toEqual(["conn-profile"]);
     expect(persist.mock.calls[0]![0]).toMatchObject({ harness: "pi" });
     expect(bind).toHaveBeenCalledWith(created.id);
     expect(created.defaultProvider).toEqual({
       connectionId: "conn-profile",
+      source: "profile",
       profile: { name: "Default", model: "cb/some-model", harness: "pi" },
     });
   });
@@ -329,7 +338,10 @@ describe("the default profile a new agent starts on", () => {
       templates,
     );
     defaultProfile.mockResolvedValue(onPi(bind));
-    defaultProviders.mockResolvedValue(["conn-first-in-order"]);
+    defaultProviders.mockResolvedValue({
+      ids: ["conn-first-in-order"],
+      source: "harness",
+    });
     const created = await caller.agents.create({
       ...byTemplate,
       harness: "codex",
@@ -338,6 +350,7 @@ describe("the default profile a new agent starts on", () => {
     expect(bind).not.toHaveBeenCalled();
     expect(created.defaultProvider).toEqual({
       connectionId: "conn-first-in-order",
+      source: "harness",
       profile: null,
     });
   });
@@ -375,13 +388,15 @@ describe("the default profile a new agent starts on", () => {
 
   /** TEST_SCENARIO: A kit that lists its providers decides the agent's
    * provider as one that names its model does, so the default profile stays
-   * out and the provider order hears the kit's list. */
+   * out, the provider order hears the kit's list, and the answer says the
+   * kit's list chose, not the harness order (#6142). */
   it("leaves a kit that lists its providers to that list", async () => {
     const { agents, defaultProfile, defaultProviders } = setup(
       [provider],
       templates,
     );
-    await agents.create({
+    defaultProviders.mockResolvedValue({ ids: ["conn-ibm"], source: "kit" });
+    const created = await agents.create({
       ...byTemplate,
       starterKitProviders: ["ibm-litellm"],
     });
@@ -389,6 +404,11 @@ describe("the default profile a new agent starts on", () => {
     expect(defaultProviders).toHaveBeenCalledWith([], {
       harness: "claude-code",
       preferred: ["ibm-litellm"],
+    });
+    expect(created.defaultProvider).toEqual({
+      connectionId: "conn-ibm",
+      source: "kit",
+      profile: null,
     });
   });
 
@@ -556,7 +576,7 @@ describe("the harness and default provider a new agent gets", () => {
     );
     expect(
       await provisioner.defaultProviders([], { harness: "claude-code" }),
-    ).toEqual(["conn-provider"]);
+    ).toEqual({ ids: ["conn-provider"], source: "harness" });
   });
 
   /** TEST_SCENARIO: A starter kit whose engine needs one gateway lists it,
@@ -585,10 +605,10 @@ describe("the harness and default provider a new agent gets", () => {
     const kitWants = { harness: "claude-code", preferred: ["ibm-litellm"] };
     expect(
       await provisionerFor([ibm, provider]).defaultProviders([], kitWants),
-    ).toEqual(["conn-ibm"]);
+    ).toEqual({ ids: ["conn-ibm"], source: "kit" });
     expect(
       await provisionerFor([provider]).defaultProviders([], kitWants),
-    ).toEqual(["conn-provider"]);
+    ).toEqual({ ids: ["conn-provider"], source: "harness" });
   });
 });
 
@@ -611,9 +631,10 @@ describe("the default provider's fit", () => {
         ],
       },
     );
-    expect(await provisioner.defaultProviders([], { harness: "pi" })).toEqual([
-      "key",
-    ]);
+    expect(await provisioner.defaultProviders([], { harness: "pi" })).toEqual({
+      ids: ["key"],
+      source: "harness",
+    });
   });
 
   const openai = { ...provider, id: "conn-openai", templateId: "openai" };
@@ -639,7 +660,7 @@ describe("the default provider's fit", () => {
   it("follows the catalog for a harness it lists", async () => {
     expect(
       await provisioner().defaultProviders([], { harness: "codex" }),
-    ).toEqual(["conn-openai"]);
+    ).toEqual({ ids: ["conn-openai"], source: "harness" });
   });
 
   /** TEST_SCENARIO: A custom template's own harness, such as the e2e mock, is
@@ -648,13 +669,13 @@ describe("the default provider's fit", () => {
   it("follows the template for a harness the catalog does not list", async () => {
     expect(
       await provisioner().defaultProviders([], { harness: "mock" }),
-    ).toEqual(["conn-provider"]);
+    ).toEqual({ ids: ["conn-provider"], source: "harness" });
     expect(
       await provisioner().defaultProviders([], {
         harness: "mock",
         providers: ["openai"],
       }),
-    ).toEqual(["conn-openai"]);
+    ).toEqual({ ids: ["conn-openai"], source: "template" });
   });
 });
 

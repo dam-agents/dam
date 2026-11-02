@@ -6,6 +6,7 @@ import {
 import {
   isProtectedAgentEnvName,
   type Agent,
+  type AgentDefaultProvider,
   type AgentsService,
   type AgentWithAccess,
   type AgentCreateInput,
@@ -596,7 +597,10 @@ export function createAgentsService(deps: {
         providers?: readonly string[];
         preferred?: readonly string[];
       },
-    ): Promise<string[]>;
+    ): Promise<{
+      ids: string[];
+      source: Exclude<AgentDefaultProvider["source"], "profile">;
+    }>;
     applyAfterCreate(
       agentId: string,
       sel: { connectionIds: string[] },
@@ -1346,7 +1350,7 @@ export function createAgentsService(deps: {
       const providerConnectionId = input.providerConnectionId;
       const startsOnProfile =
         profileDefault?.harness === spec.harness ? profileDefault : null;
-      const orderedProviders =
+      const ordered =
         providerConnectionId === undefined &&
         templateId !== undefined &&
         !input.noDefaultProvider
@@ -1361,8 +1365,9 @@ export function createAgentsService(deps: {
                   preferred: input.starterKitProviders,
                 }),
               },
-            )) ?? [])
-          : [];
+            )) ?? null)
+          : null;
+      const orderedProviders = ordered?.ids ?? [];
       /* UNIT_BOUNDARY_DESCRIPTION: one provider either way (#5578): the default profile's in place of the first in harness order, so the chat default exists before the first hello and the onboarding turn has a model. */
       const defaultProviders =
         orderedProviders.length > 0 && startsOnProfile
@@ -1523,6 +1528,7 @@ export function createAgentsService(deps: {
       if (defaultProviders[0] !== undefined)
         agent.defaultProvider = {
           connectionId: defaultProviders[0],
+          source: startsOnProfile ? "profile" : (ordered?.source ?? "harness"),
           profile: startsOnProfile
             ? {
                 name: startsOnProfile.name,

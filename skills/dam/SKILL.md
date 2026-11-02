@@ -190,7 +190,7 @@ dam agent create my-agent --wait --json
 - `--provider <connection>` picks the model provider connection; without it the user's preferred one is used.
   `dam connection list --providers` lists the model providers: the PROVIDER column names each one's alias and the harnesses that run on it, and marks the preferred one (`provider.preferred` in `--json`).
   The preferred one is the provider of the user's default for new agents (a profile, set in Settings › Providers › Profiles), which may be a shared provider, and the agent starts on that profile's model and harness; with no such default it is the first provider the default harness runs on.
-  The create output names the provider it granted and why (`defaultProvider` in `--json`: its `connectionId`, and `profile` with its name, model and harness, or `null` when the harness's provider order chose); tell the user what it says rather than assuming.
+  The create output names the provider it granted and why (`defaultProvider` in `--json`: its `connectionId`; `source`, what chose it — `profile` for the default for new agents, `kit` for the starter kit's providers list, `template` for the template's, `harness` for the harness's provider order; and `profile` with its name, model and harness, or `null` unless `source` is `profile`); tell the user what it says rather than assuming.
   If it lists none, the user connects one first ([Secrets](#secrets)); `dam connection templates --providers` lists the kinds there are.
   To change the providers or the default model later, see [Models and harnesses](#models-and-harnesses).
 - `--wait` returns once the agent is running, and stops early on an error or when there is no room to start it.

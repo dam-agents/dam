@@ -395,32 +395,44 @@ describe("dam kit and dam agent create --kit (integration)", () => {
   });
 
   /** TEST_SCENARIO: a kit create that names no provider is granted one by
-   * the platform, and the output names it and why, in text and in --json, as
-   * a plain create's does (#6142). */
-  it("names the provider the platform granted a kit create", async () => {
-    defaultProvider = {
-      connectionId: "conn-ibm",
-      profile: { name: "Default", model: "cb/some-model", harness: "pi" },
-    };
-    const text = await dam("agent", "create", "desk", "--kit", "plain");
-    expect(text.exitCode, text.stderr).toBe(0);
-    expect(text.stdout).toMatch(
+   * the platform, and the output names it and why — the default for new
+   * agents, or the kit's own providers list — in text and in --json, as a
+   * plain create's does (#6142). */
+  it.each([
+    [
+      {
+        connectionId: "conn-ibm",
+        source: "profile" as const,
+        profile: { name: "Default", model: "cb/some-model", harness: "pi" },
+      },
       /Provider: IBM proxy \(conn-ibm\), from your default for new agents, profile "Default": cb\/some-model on pi\./,
-    );
-    const json = await dam(
-      "agent",
-      "create",
-      "desk2",
-      "--kit",
-      "plain",
-      "--json",
-    );
-    expect(json.exitCode, json.stderr).toBe(0);
-    expect(
-      (JSON.parse(json.stdout) as { agent: { defaultProvider: unknown } }).agent
-        .defaultProvider,
-    ).toEqual(defaultProvider);
-  });
+    ],
+    [
+      { connectionId: "conn-ibm", source: "kit" as const, profile: null },
+      /Provider: IBM proxy \(conn-ibm\), the first of the starter kit's providers you hold; your default for new agents does not apply to it\./,
+    ],
+  ])(
+    "names the provider the platform granted a kit create (%o)",
+    async (granted, line) => {
+      defaultProvider = granted;
+      const text = await dam("agent", "create", "desk", "--kit", "plain");
+      expect(text.exitCode, text.stderr).toBe(0);
+      expect(text.stdout).toMatch(line);
+      const json = await dam(
+        "agent",
+        "create",
+        "desk2",
+        "--kit",
+        "plain",
+        "--json",
+      );
+      expect(json.exitCode, json.stderr).toBe(0);
+      expect(
+        (JSON.parse(json.stdout) as { agent: { defaultProvider: unknown } })
+          .agent.defaultProvider,
+      ).toEqual(granted);
+    },
+  );
 
   /** TEST_SCENARIO: a schedule the kit does not have is refused before anything is created, so a typo cannot leave an agent behind with the wrong schedules. */
   it("refuses a schedule the kit does not have, creating nothing", async () => {

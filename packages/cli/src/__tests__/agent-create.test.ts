@@ -120,18 +120,30 @@ describe("dam agent create provider selection (#3786)", () => {
    * the docs sees a provider other than the one it expected (#6142). */
   it.each([
     [
+      "profile" as const,
       { name: "Default", model: "anthropic/claude-opus-5-5", harness: "pi" },
       'Provider: My provider (conn-provider), from your default for new agents, profile "Default": anthropic/claude-opus-5-5 on pi.',
     ],
     [
+      "harness" as const,
       null,
       "Provider: My provider (conn-provider), the first of yours its harness runs on",
     ],
+    [
+      "kit" as const,
+      null,
+      "Provider: My provider (conn-provider), the first of the starter kit's providers you hold",
+    ],
+    [
+      "template" as const,
+      null,
+      "Provider: My provider (conn-provider), the first of its template's providers you hold",
+    ],
   ])(
-    "names the provider granted without --provider (profile %o)",
-    async (profile, line) => {
+    "names the provider granted without --provider (source %s)",
+    async (source, profile, line) => {
       const { run, create } = setup();
-      const defaultProvider = { connectionId: provider.id, profile };
+      const defaultProvider = { connectionId: provider.id, source, profile };
       create.mockResolvedValue({ ...agent, defaultProvider });
       await run([], EXIT_SUCCESS);
       expect(process.stdout.write).toHaveBeenCalledWith(

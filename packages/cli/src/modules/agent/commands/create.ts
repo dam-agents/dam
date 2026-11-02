@@ -130,7 +130,7 @@ export function buildCreateCommand(deps: {
     )
     .option(
       "--json",
-      "emit raw Agent JSON instead of the default summary, with defaultProvider { connectionId, profile: { name, model, harness } | null } when no --provider was named; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }, done null when not checked",
+      "emit raw Agent JSON instead of the default summary, with defaultProvider { connectionId, source: profile|kit|template|harness, profile: { name, model, harness } | null } when no --provider was named; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }, done null when not checked",
     )
     .addHelpText(
       "after",
