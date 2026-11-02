@@ -74,6 +74,8 @@ export interface LeaseRouterDeps {
     settings: SessionSettings | undefined,
   ) => Record<string, string> | undefined;
   modelRequired: (harness: string) => boolean;
+  envReady?: () => boolean;
+  envWaitMs?: number;
   settingScope?: (harness: string, id: string) => "process" | "session" | null;
   settingsError?: (
     harness: string,
@@ -136,6 +138,7 @@ interface Attachment {
 
 const DEFAULT_IDLE_CHECK_MS = 30_000;
 const DEFAULT_LEASE_IDLE_MS = 10 * 60_000;
+const DEFAULT_ENV_WAIT_MS = 15_000;
 const SWALLOWED_ID_PREFIX = "platform-lease-";
 const ROUTED_ID = /^platform-lease-in-([0-9a-f]+)-(\d+)-(.+)$/s;
 const REWRITE_FROM_METHOD = "platform/rewriteFrom";
@@ -507,6 +510,39 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const missesModel = (choice: SessionChoice): boolean =>
     choice.model === null && deps.modelRequired(choice.harness);
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: before the platform's env reaches a booting
+   * agent, nothing says whether a harness reaches its models through the
+   * Model Router, so a session/new with no model is held until the env
+   * lands, or for a bound like the harness's own warm start, rather than
+   * refused as no-model on a guess the env would have overturned.
+   */
+  const heldForEnv: { real: ClientChannel; data: string }[] = [];
+  let envTimer: ReturnType<typeof setTimeout> | null = null;
+  let envWaitOver = false;
+
+  function holdForEnv(real: ClientChannel, data: string): boolean {
+    if (envWaitOver || !deps.envReady || deps.envReady()) return false;
+    heldForEnv.push({ real, data });
+    if (!envTimer) {
+      envTimer = setTimeout(() => {
+        envWaitOver = true;
+        releaseHeldForEnv();
+      }, deps.envWaitMs ?? DEFAULT_ENV_WAIT_MS);
+      envTimer.unref?.();
+    }
+    return true;
+  }
+
+  function releaseHeldForEnv(): void {
+    if (envTimer) {
+      clearTimeout(envTimer);
+      envTimer = null;
+    }
+    for (const held of heldForEnv.splice(0))
+      if (attachments.has(held.real)) route(held.real, held.data);
+  }
+
   function isSessionRunning(sessionId: string): boolean {
     return (
       leaseOfSession(sessionId)?.runtime.isSessionRunning(sessionId) ?? false
@@ -598,6 +634,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         return;
       }
       if (missesModel(choice)) {
+        if (holdForEnv(real, data)) return;
         refuse(real, frame.id, noModel());
         return;
       }
@@ -1049,6 +1086,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
           force: hits.some((hit) => hit.namesChanged),
         });
       }
+      if (deps.envReady?.()) releaseHeldForEnv();
     },
 
     recycleForConfig() {
@@ -1097,6 +1135,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     shutdown() {
       clearInterval(idleTimer);
+      if (envTimer) clearTimeout(envTimer);
       for (const lease of leases.values()) lease.runtime.shutdown("process");
       leases.clear();
     },
