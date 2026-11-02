@@ -30,15 +30,39 @@ interface Props {
   children?: ReactNode;
 }
 
-const ACTIONS_PADDING = {
-  3: { shown: "pr-[86px]", hover: "group-hover/agent:pr-[86px]" },
-  4: { shown: "pr-[112px]", hover: "group-hover/agent:pr-[112px]" },
+const ACTIONS_LAYOUT = {
+  3: {
+    padding: {
+      shown: "pr-[86px]",
+      revealed:
+        "group-hover/agent:pr-[86px] group-focus-within/agent:pr-[86px] group-has-[[data-state=open]]/agent:pr-[86px]",
+    },
+    filter: {
+      shown: "right-[56px]",
+      revealed:
+        "group-hover/agent:right-[56px] group-focus-within/agent:right-[56px] group-has-[[data-state=open]]/agent:right-[56px]",
+    },
+  },
+  4: {
+    padding: {
+      shown: "pr-[112px]",
+      revealed:
+        "group-hover/agent:pr-[112px] group-focus-within/agent:pr-[112px] group-has-[[data-state=open]]/agent:pr-[112px]",
+    },
+    filter: {
+      shown: "right-[82px]",
+      revealed:
+        "group-hover/agent:right-[82px] group-focus-within/agent:right-[82px] group-has-[[data-state=open]]/agent:right-[82px]",
+    },
+  },
 } as const;
 
 const HOVER_REVEAL =
   "transition-opacity group-hover/agent:opacity-100 group-focus-within/agent:opacity-100 group-has-[[data-state=open]]/agent:opacity-100";
 const HIDDEN_UNTIL_HOVER =
   "pointer-events-none opacity-0 group-hover/agent:pointer-events-auto group-focus-within/agent:pointer-events-auto group-has-[[data-state=open]]/agent:pointer-events-auto";
+const HIDDEN_WHEN_REVEALED =
+  "group-hover/agent:hidden group-focus-within/agent:hidden group-has-[[data-state=open]]/agent:hidden";
 
 export function SidebarAgentRow({
   agent,
@@ -59,6 +83,7 @@ export function SidebarAgentRow({
 }: Props) {
   useAutoWakeOnSidebarOpen(agent, open);
   const mood = avatarMood(agent.state, agent);
+  const layout = ACTIONS_LAYOUT[actionCount];
   const drag = useOrderDrag({
     scope: "agents",
     id: agent.id,
@@ -84,8 +109,8 @@ export function SidebarAgentRow({
           className={cn(
             "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
             selected
-              ? ACTIONS_PADDING[actionCount].shown
-              : [ACTIONS_PADDING[actionCount].hover, filtered && "pr-[34px]"],
+              ? layout.padding.shown
+              : [layout.padding.revealed, filtered && !unread && "pr-[34px]"],
             open
               ? "text-foreground"
               : mood !== "awake"
@@ -120,7 +145,7 @@ export function SidebarAgentRow({
                 aria-hidden
                 className={cn(
                   "flex size-4 shrink-0 items-center justify-center",
-                  !selected && "group-hover/agent:hidden",
+                  !selected && [HIDDEN_WHEN_REVEALED, filtered && "ml-6"],
                 )}
               >
                 <span className="size-2 rounded-full bg-accent" />
@@ -129,25 +154,29 @@ export function SidebarAgentRow({
             </>
           )}
         </div>
-        <div className="absolute right-1 flex items-center gap-0.5">
-          <div
-            className={cn(
-              "flex items-center",
-              HOVER_REVEAL,
-              selected || filtered ? "opacity-100" : HIDDEN_UNTIL_HOVER,
-            )}
-          >
-            {filter}
-          </div>
-          <div
-            className={cn(
-              "flex items-center gap-0.5",
-              HOVER_REVEAL,
-              selected ? "opacity-100" : HIDDEN_UNTIL_HOVER,
-            )}
-          >
-            {actions}
-          </div>
+        <div
+          className={cn(
+            "absolute flex items-center",
+            HOVER_REVEAL,
+            selected
+              ? [layout.filter.shown, "opacity-100"]
+              : [
+                  layout.filter.revealed,
+                  unread ? "right-6" : "right-1",
+                  filtered ? "opacity-100" : HIDDEN_UNTIL_HOVER,
+                ],
+          )}
+        >
+          {filter}
+        </div>
+        <div
+          className={cn(
+            "absolute right-1 flex items-center gap-0.5",
+            HOVER_REVEAL,
+            selected ? "opacity-100" : HIDDEN_UNTIL_HOVER,
+          )}
+        >
+          {actions}
         </div>
         <OrderDropIndicator at={drag.indicator} />
       </div>
