@@ -534,4 +534,21 @@ describe("dam agent get / update / models (integration)", () => {
       ["ibm/gpt-5.5"],
     );
   });
+
+  /**
+   * TEST_SCENARIO: with no --harness, the catalog is the one for the harness
+   * new runs start on, the saved chat default's, so a model picked from it
+   * is one that harness takes.
+   */
+  it("agent models lists the saved chat harness's catalog", async () => {
+    defaults = {
+      chat: { harness: "codex", provider: null, model: "ibm/gpt-5.5" },
+      channel: null,
+      scheduled: null,
+    };
+    const r = await dam("agent", "models", AGENT_ID, "--json");
+    expect(r.exitCode, r.stderr).toBe(0);
+    const catalog = JSON.parse(r.stdout) as HarnessCatalogView;
+    expect(catalog.harness).toBe("codex");
+  });
 });
