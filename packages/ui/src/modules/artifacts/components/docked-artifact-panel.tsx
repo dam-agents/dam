@@ -110,7 +110,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
     shownVersion,
   );
   const sessionPrompt = useArtifactSessionPrompt(
-    agentId === null && canStartArtifactSession(artifact, enabled, shownVersion)
+    !bridgeOpen && canStartArtifactSession(artifact, enabled, shownVersion)
       ? artifact?.id
       : undefined,
   );
