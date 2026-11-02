@@ -147,7 +147,7 @@ The [end-to-end suite](e2e.md#running-it) runs against such an install on its ba
 They act on the calling Agent's Environments alone, found by name.
 
 **The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
-In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
+In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 100, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
 The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address with its empty text, so a stale link still works.
 While the agent has none, the Manage card of its General section links to the section, because the list of people can be set before the first Environment exists and is the list that first Environment inherits.
 What an Environment runs, its Startup Items and their output, is not shown there yet.
