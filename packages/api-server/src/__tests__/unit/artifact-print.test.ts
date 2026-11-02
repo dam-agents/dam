@@ -87,7 +87,7 @@ describe("the share page prints the whole artifact", () => {
   });
 
   // TEST_SCENARIO: Any window can post to the share page. Only the artifact frame's own document may set the print height, and only with a sane positive number.
-  it.each([
+  it.each<[string, { source?: object; height: unknown }]>([
     ["another window", { source: {}, height: 9000 }],
     ["a zero height", { height: 0 }],
     ["a text height", { height: "9000" }],
