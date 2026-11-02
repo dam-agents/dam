@@ -598,6 +598,27 @@ it("blocks the chat while the channel is not live", () => {
   expect(placeholder(el)).toContain("Reconnecting to this agent");
 });
 
+// TEST_SCENARIO: the channel drops while the Agent is also unreachable, so nothing schedules a reconnect and the connection state falls back to idle; the chat still reads as reconnecting, with the notice, the composer reason and the header badge, and its actions stay blocked.
+it("reads a dropped channel as reconnecting while the Agent is unreachable", () => {
+  fake.connectionState = "live";
+  const el = openChat("running", true);
+  act(() =>
+    useStore.setState({
+      drafts: { "a-1:s-1": { text: "hello", attachments: [] } },
+    }),
+  );
+  expect(notice(el)).toBeNull();
+
+  fake.connectionState = "idle";
+  fake.operable = false;
+  paint();
+
+  expect(notice(el)).not.toBeNull();
+  expect(placeholder(el)).toContain("Reconnecting to this agent");
+  expect(el.textContent).toContain("Reconnecting");
+  expect(button(el, "Send").disabled).toBe(true);
+});
+
 // TEST_SCENARIO: a chat opening for the first time waits for its channel to open; that is not a drop, so the composer names the connection it waits for and no reconnect notice appears, while the actions that need the channel stay blocked.
 it("waits for a first connection without a reconnect notice", () => {
   fake.connectionState = "idle";

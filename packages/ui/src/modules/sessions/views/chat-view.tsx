@@ -152,7 +152,6 @@ import {
 } from "../components/side-panel-bar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThreadDivider } from "../components/thread-divider.js";
-import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
@@ -160,6 +159,7 @@ import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useChatScroll } from "../hooks/use-chat-scroll.js";
 import { useCurveBender } from "../hooks/use-curve-bender.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
+import { useLostChannel } from "../hooks/use-lost-channel.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -309,8 +309,10 @@ export function ChatView() {
   } = useAcpSession(selectedAgent, textareaRef);
   useReconciledPermissions(connectionState);
   const channelLive = connectionState === "live";
-  const channelLost =
-    connectionState === "reconnecting" || connectionState === "reloading";
+  const channelLost = useLostChannel(
+    connectionState,
+    `${selectedAgent ?? ""}:${sessionId ?? ""}`,
+  );
   const channelBlocked = !channelLive && !agentStarting && sessionId !== null;
   const channelBlock = channelBlocked
     ? channelLost
@@ -1302,7 +1304,7 @@ export function ChatView() {
               selectedAgent={selectedAgent}
               agent={agentView}
               busy={busy}
-              connectionState={connectionState}
+              channelLost={channelLost}
               sessionId={sessionId}
               processesEnabled={processesEnabled}
             />
@@ -1366,24 +1368,22 @@ function ChatHeaderStatus({
   selectedAgent,
   agent,
   busy,
-  connectionState,
+  channelLost,
   sessionId,
   processesEnabled,
 }: {
   selectedAgent: string | null;
   agent: AgentView | null;
   busy: boolean;
-  connectionState: ConnectionState;
+  channelLost: boolean;
   sessionId: string | null;
   processesEnabled: boolean;
 }) {
   const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
-  const reconnecting =
-    connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
       {!processesEnabled && <BackgroundWorkIndicator items={backgroundWork} />}
-      {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
+      {channelLost && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {agent && <GatewayFailureBadge agent={agent} />}
       {!busy && agent && (
