@@ -101,7 +101,8 @@ The entry carries `existing` (slugs on disk), the minimum per tier and `missing`
 
 ```json
 {"fixture": "<slug>", "created": "<ISO>", "tier": "simple",
- "items": [{"id": "D01", "location": "<domain anchor, e.g. file + line_v1/line_v2>",
+ "items": [{"id": "D01", "file": "<domain anchor, e.g. a path>",
+            "line_v1": 42, "line_v2": 42, "fix_line_v2": null,
             "class": "<domain class>", "severity": "<domain severity>",
             "summary": "<one line>", "fixed_in_v2": false, "in_prior_output": true,
             "difficulty": "hard"}]}
@@ -109,7 +110,8 @@ The entry carries `existing` (slugs on disk), the minimum per tier and `missing`
 
 - `tier` optional; when present `simple` \| `complex`, and the validator checks the complex size floor.
 - `difficulty` optional; when present exactly `"hard"`.
-- Kept in v2 → both anchors set, `fixed_in_v2: false`; fixed in v2 → v2 anchor null, `fixed_in_v2: true`, plus the anchor the fix landed on (the `churn` metric matches against it); introduced in v2 → v1 anchor null.
+- The anchor fields follow the matcher: `file` + `line_v1`/`line_v2` for a review, an item id or field name for another domain.
+- Kept in v2 → both anchors set, `fixed_in_v2: false`; fixed in v2 → `line_v2: null`, `fixed_in_v2: true`, plus `fix_line_v2`, the anchor the fix landed on (the `churn` metric matches against it); introduced in v2 → `line_v1: null`.
 
 ## Running the benchmark
 
@@ -151,7 +153,7 @@ It gets the definition at the production commit and one bundle of its task's inp
   It refuses a bundle holding a manifest, a result or a ground-truth summary, a definition history that tracks a benchmark path, and a public work repo.
 - `start --model <exact id> [--effort <e>]` snapshots memory and skills once per run, spawns every task and writes the expected provenance; `wait` polls; `collect` writes the raw outputs only when nothing failed or mismatched (other inputs than snapshotted, another model) and prints per task `seconds`, `tokens` and the run's model, harness version and effort.
   A failed task gets one retry; a second failure or any mismatch aborts the run.
-- The child side (`benchmark-child.sh`, a prompt template, an env flag like `<AGENT>_BENCHMARK_CHILD=1`) unpacks the bundle, installs the harness adapter, runs exactly one phase and reports the result from files; it never onboards, runs no pre-flight, takes no lock and runs no scoring.
+- The child side (`benchmark-child.sh`, the prompt template `scripts/templates/benchmark-child.md`, an env flag like `<AGENT>_BENCHMARK_CHILD=1`) unpacks the bundle, installs the harness adapter, runs exactly one phase and reports the result from files; it never onboards, runs no pre-flight, takes no lock and runs no scoring.
   The generated CLAUDE.md states that a benchmark child never onboards.
 
 **Isolation unavailable**: a scheduled run stops before any replay, records nothing and logs a `warn`; in the direct session the agent asks the operator, and only on an explicit yes for this run replays in its own machine, recording `isolation: "none"`, the reason and the approval.
