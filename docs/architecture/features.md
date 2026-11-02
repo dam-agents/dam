@@ -1,14 +1,15 @@
 # Experimental features
 
-Last verified: 2026-10-27
+Last verified: 2026-11-02
 
 ## Overview
 
 **Experimental features** are per-user toggles for pre-release surfaces.
 Every feature defaults **off**; a user opts in through a hidden "Experimental features" settings tab (revealed by five taps on the version string).
 The tab also carries a button that resets the user's [onboarding progress](getting-started.md#in-the-browser).
-The current features are advanced connection types, interactive artifacts, agent telemetry (a per-reply timeline in the conversation), [chat forms](chat-forms.md) (agents put forms and choices into their chat replies, and the chat tells them it can render them), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), Environments (sandboxes an agent creates for others to open; see [environments](environments.md)), and the Hermes harness (Nous Research's Hermes Agent offered beside the other harnesses an agent's image carries).
-Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs, [agent avatars](agent-avatars.md) and addressed credential injection graduated this way).
+The current features are advanced connection types, agent telemetry (a per-reply timeline in the conversation), [chat forms](chat-forms.md) (agents put forms and choices into their chat replies, and the chat tells them it can render them), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), Environments (sandboxes an agent creates for others to open; see [environments](environments.md)), and the Hermes harness (Nous Research's Hermes Agent offered beside the other harnesses an agent's image carries).
+Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs, [agent avatars](agent-avatars.md), addressed credential injection and [interactive artifacts](artifact-library.md#interactive-pages) graduated this way).
+A graduation may also add a migration that deletes the dropped id's rows, so no stored choice outlives the feature; interactive artifacts did.
 
 An operator can take a feature out of users' hands: the chart's `features` value gives each feature a mode, `experimental` leaving the per-user switch, `on` or `off` deciding for every user whatever they stored.
 A feature `features` does not name takes the chart's `featureDefault` mode, `experimental` unless set.

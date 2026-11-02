@@ -369,7 +369,6 @@ import { oauthCallbackUrl } from "./modules/connections/domain/oauth-callback-ur
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
-import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -1744,15 +1743,6 @@ export async function bootstrap() {
     });
 
   const agentApiClient = createAgentApiClient(config.namespace);
-  const interactiveArtifactsOn = async (owner: string) =>
-    (
-      await composeFeaturesForOwner({
-        db,
-        owner,
-        surface: "system",
-        modes: config.featureModes,
-      }).features.flags()
-    )["interactive-artifacts"];
   const artifactPrompts = composeArtifactPromptDelivery({
     makeAcpClient,
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
@@ -1760,7 +1750,6 @@ export async function bootstrap() {
     attendance: turnAttendance,
   });
   const shareBridge = composeShareBridge({
-    featureOn: interactiveArtifactsOn,
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     agentApi: agentApiClient,
     prompts: artifactPrompts,
@@ -2157,7 +2146,6 @@ export async function bootstrap() {
       scope: opts?.scope,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
-      featureOn: interactiveArtifactsOn,
       prompts: artifactPrompts,
     }).artifactLibrary;
   const environments = composeEnvironments({

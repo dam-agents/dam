@@ -428,8 +428,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       sessionPair: chatSessionPair,
       runtimeMutator,
       wakeAgent,
-      interactiveReports: async () =>
-        (await features.flags())["interactive-artifacts"],
     });
     const attention = composeAttentionService({
       db,

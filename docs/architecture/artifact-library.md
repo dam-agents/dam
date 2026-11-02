@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-04
+Last verified: 2026-11-06
 
 ## Overview
 
@@ -37,7 +37,7 @@ The design is a port of a proven external tool (the "slop" artifact vault) onto 
 ## Interactive pages
 
 An HTML artifact can be declared **interactive** at creation; it can be private or restricted, never public.
-With the interactive-artifacts feature enabled, a button in its latest version can send a prompt into an existing open chat with its publishing Agent.
+For every user, a button in its latest version can send a prompt into an existing open chat with its publishing Agent.
 The app checks the sending frame and the preview's agent before submitting through the normal chat path.
 If the Agent is unavailable, the conversation is missing or loading, the Session is a terminal, or the user has switched conversations, the app refuses the prompt and shows a notification explaining how to try again.
 Accepted prompts use the normal chat reporting for replies, queued turns and delivery errors; the page receives no separate answer.
@@ -48,7 +48,7 @@ The state lives with the Agent, so both the page and the Agent read and change i
 Unlike a prompt, this is request and response.
 One request travels four hops: the page posts it to the host app; the app checks the frame and the same gate as for prompts, then calls the api-server with the owner's own session; the api-server checks the artifact and wakes its Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake)); agent-runtime relays it over loopback to the Agent's server, and the answer comes back the same way.
 The call names an artifact, never an Agent: the api-server reads the publishing Agent from the artifact, so a page can only reach the Agent that published it, and uploaded artifacts (no publishing Agent) get no access.
-It serves only artifacts that are owned by the caller, HTML, interactive and not public, whatever the feature flag says.
+It serves only artifacts that are owned by the caller, HTML, interactive and not public.
 Any HTTP status the server returns is a normal answer; a typed failure reason reports only what the platform could not deliver, such as nothing listening on the port, a timeout, a body over the size cap or too many requests in flight from one frame.
 The bridge also rejects any request the host has not answered within three minutes, longer than a wake plus the relay timeout, so every call settles even when the host drops it.
 Bodies are text only and capped both ways, and only the content type crosses in either direction, plus the caller headers below.
@@ -71,10 +71,10 @@ Callbacks are available in the docked preview inside the publishing Agent's chat
 There is no permanent Session binding: the currently open conversation is the destination.
 The same preview on a page outside that chat sends no requests, and refuses a plain prompt with a notice that the button works in the Agent's chat.
 A prompt there that asks for a session of its own (`sendPrompt(text, { newSession: true })`) starts or continues the owner's own Session for that page on the publishing Agent, one per owner and artifact, as a viewer's prompt does below.
-The server checks the artifact again, as for a request, and that the owner has the feature on; it hands the prompt to the same delivery as a viewer's, so the Agent is woken, not at a spend limit, and the turn runs unattended as a channel turn, on the Agent's channel [pair](harness-config.md).
+The server checks the artifact again, as for a request; it hands the prompt to the same delivery as a viewer's, so the Agent is woken, not at a spend limit, and the turn runs unattended as a channel turn, on the Agent's channel [pair](harness-config.md).
 The Session is titled with the artifact's title alone, and the owner gets a notice that names the Agent, says nobody answers the turn's permission prompts, and opens the Session once the Agent has named it; every such prompt is in the security log under the owner, without its text.
 In the publishing Agent's chat the open chat stays the destination, with or without the option.
-Historical versions cannot send prompts or requests, and disabling the feature disconnects both.
+Historical versions cannot send prompts or requests.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
 The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
 The dialog warns the owner there that viewers can read and change the Agent's data and send it prompts, under the owner's Agent, and that the Agent sees their email.
@@ -92,8 +92,8 @@ A call without the token, or with one minted for another viewer, sign-in, artifa
 The token lives as long as a share sign-in, so a page left open keeps working; a reload mints a fresh one, and signing out or a new version makes the old one useless.
 The routes also accept a call only from the share origin, as a second layer.
 A page that relies on its own browser storage loses it there, as in the in-app preview.
-Each call is checked again from the start: the viewer's share session and the viewer list, then that the artifact is still restricted, interactive and published by an Agent, and that its owner has the interactive-artifacts feature on.
-A page the owner makes private or plain, a viewer the owner removes, and turning the feature off all stop the next call.
+Each call is checked again from the start: the viewer's share session and the viewer list, then that the artifact is still restricted, interactive and published by an Agent.
+A page the owner makes private or plain and a viewer the owner removes both stop the next call.
 
 - **A request** wakes the Agent and goes to its Artifact API server, with the same limits and failure reasons as the owner's, naming the viewer in the caller headers.
 - **A prompt** starts or continues the viewer's own Session on the Agent, one per viewer and artifact, titled with the viewer's email and the artifact's title, so the owner sees who asked for what.
