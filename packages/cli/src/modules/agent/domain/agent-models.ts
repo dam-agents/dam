@@ -41,6 +41,18 @@ export function modelProviders(
   });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the harness new runs start on. That is the
+ * saved chat default's harness. The runtime's own default is the fallback
+ * when no chat default is saved or the saved defaults cannot be read.
+ */
+export function defaultHarnessOf(
+  chat: SessionPair | null | undefined,
+  runtimeDefault: string | null | undefined,
+): string | null {
+  return chat?.harness ?? runtimeDefault ?? null;
+}
+
 const unreadable = (reason: string): string => `<could not read: ${reason}>`;
 
 function renderProviders(view: AgentModelsView): string {

@@ -14,6 +14,7 @@ import type {
 } from "../../shared/trpc/trpc-client.js";
 import type { AuthRequiredError, TransportError } from "../domain/errors.js";
 import {
+  defaultHarnessOf,
   modelProviders,
   type AgentModelsView,
 } from "../domain/agent-models.js";
@@ -104,6 +105,8 @@ export function createAgentModelsService(deps: {
  * providers for an API key without credentials:read, is null with its
  * reason under `unreadable`, so the rest of the view still shows and a
  * failed read never looks like a default that is not set.
+ * `defaultHarness` is the saved chat default's harness. The runtime's own
+ * default is the fallback when none is saved or the defaults cannot be read.
  */
 export async function readAgentModels(
   svc: AgentModelsService,
@@ -128,7 +131,10 @@ export async function readAgentModels(
     harnesses: status.ok
       ? (status.value.harnesses?.map((h) => h.name) ?? null)
       : null,
-    defaultHarness: status.ok ? status.value.defaultHarness : null,
+    defaultHarness: defaultHarnessOf(
+      defaults.ok ? defaults.value.chat : null,
+      status.ok ? status.value.defaultHarness : null,
+    ),
     defaults: defaults.ok ? defaults.value : null,
     unreadable: {
       ...(providersFailed && { providers: providersFailed.reason }),
