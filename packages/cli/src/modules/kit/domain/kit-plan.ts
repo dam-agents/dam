@@ -176,16 +176,39 @@ function connectTemplate(
 function connectionCommand(
   requirement: StarterKitConnectionRequirement,
   templates: TemplateIndex,
-  owned: readonly OwnedConnection[],
+  matches: readonly OwnedConnection[],
   agent: string | null,
 ): string {
   const grant = (word: string) =>
     agent === null
       ? `${NEW_AGENT} --connection ${word}`
       : `dam connection grant ${shellWord(agent)} --connection ${word}`;
-  const match = ownedMatches(requirement, owned, templates)[0];
-  if (match) return grant(shellWord(match.name ?? match.id));
-  return `dam connection connect ${shellWord(connectTemplate(requirement, templates))}, then ${grant("<connection>")}`;
+  const template = connectTemplate(requirement, templates);
+  if (matches.length === 1)
+    return grant(shellWord(connectionName(matches[0]!)));
+  if (matches.length > 1)
+    return grant(
+      /^[a-z0-9-]+$/.test(template) ? `<${template}-connection>` : "<connection>",
+    );
+  return `dam connection connect ${shellWord(template)}, then ${grant("<connection>")}`;
+}
+
+function connectionName(c: OwnedConnection): string {
+  return c.name ?? c.id;
+}
+
+/**
+ * The note on a connection need several owned connections meet: no one of
+ * them is right by order, since each may be scoped to another repository.
+ */
+function choiceNote(matches: readonly OwnedConnection[]): string | undefined {
+  if (matches.length < 2) return undefined;
+  return `you have ${matches.length} connections this accepts (${matches.map(connectionName).join(", ")}): pick the one scoped to what the kit works on, such as its repository`;
+}
+
+function joinNotes(...notes: (string | undefined)[]): string | undefined {
+  const present = notes.filter((n): n is string => !!n);
+  return present.length > 0 ? present.join("; ") : undefined;
 }
 
 function channelCommand(
@@ -214,13 +237,17 @@ export function kitNeeds(
   owned: readonly OwnedConnection[],
 ): KitNeed[] {
   return [
-    ...kit.connections.map((r) => ({
-      kind: "connection" as const,
-      required: r.required,
-      what: describeAccepts(r.accepts, templates),
-      ...(r.note && { note: r.note }),
-      command: connectionCommand(r, templates, owned, null),
-    })),
+    ...kit.connections.map((r) => {
+      const matches = ownedMatches(r, owned, templates);
+      const note = joinNotes(r.note, choiceNote(matches));
+      return {
+        kind: "connection" as const,
+        required: r.required,
+        what: describeAccepts(r.accepts, templates),
+        ...(note && { note }),
+        command: connectionCommand(r, templates, matches, null),
+      };
+    }),
     ...kit.channels.map((c) => ({
       kind: "channel" as const,
       required: false,
@@ -280,17 +307,19 @@ export function remainingSteps(
   templates: TemplateIndex,
 ): KitStep[] {
   const steps: KitStep[] = kit.connections.map((r) => {
-    const note = connectionNote(r.note, granted === null);
+    const met = granted === null ? [] : ownedMatches(r, granted, templates);
+    const matches = met.length > 0 ? met : ownedMatches(r, owned, templates);
+    const note = connectionNote(
+      met.length > 0 ? r.note : joinNotes(r.note, choiceNote(matches)),
+      granted === null,
+    );
     return {
       kind: "connection",
       required: r.required,
       what: describeAccepts(r.accepts, templates),
       ...(note && { note }),
-      command: connectionCommand(r, templates, owned, agent.name),
-      done:
-        granted === null
-          ? null
-          : ownedMatches(r, granted, templates).length > 0,
+      command: connectionCommand(r, templates, matches, agent.name),
+      done: granted === null ? null : met.length > 0,
     };
   });
   for (const channel of kit.channels)

@@ -215,6 +215,7 @@ dam agent create my-desk --kit research --connection github --json
   Pass the full commit `dam kit show` printed as `--commit <sha>`; create refuses when the repository has moved on since, so run `dam kit show` again and check what changed.
 - A required connection the user does not have yet is made first ([Secrets](#secrets)), then passed with `--connection`.
   When the user has exactly one connection a required need accepts, `dam agent create --kit` grants it without being told, as the web app does.
+  When they have several it accepts, such as GitHub connections each scoped to another repository, `dam kit show` names none of them: pick, with the user, the one scoped to the repository the kit will work on, or make one that is, and pass it with `--connection`.
 - `--slack-channel <channel-id>` binds a Slack channel at create, `--skip-schedule <name>` leaves out one of the kit's schedules, and `--template <id>` picks the template for a kit that brings no image.
 - `--json` returns `steps`: what is left to set up, each with `done` and the `command` that does it.
   `done: null` means not checked: without `credentials:read` the CLI cannot read which connections meet a need, so ask the user before setting up another one.
