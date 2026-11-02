@@ -306,6 +306,12 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   CLAIM_BYTES="$(node_runner_storage helm/values.yaml helm/values-local.yaml ${HELM_VALUES:+"$HELM_VALUES"} -- ${HELM_EXTRA_ARGS[@]+"${HELM_EXTRA_ARGS[@]}"})" ||
     { echo "FATAL: virtualization.runner.storage is no size" >&2; exit 1; }
   node_claim_fs "$CLAIM_BYTES" || exit 1
+  # Every image the install puts in stays (NODE_IMAGE_GC_DROPIN); a k3s that
+  # already runs takes it at a restart.
+  if node_image_gc_off && node_k3s_running; then
+    echo "Restarting k3s, so its kubelet keeps every image..."
+    env_k3s restart || { echo "FATAL: k3s did not restart, so its kubelet may still delete images" >&2; exit 1; }
+  fi
   # The image's k3s service, in the default runlevel from now on, and the
   # tunnel to its API once k3s has written its kubeconfig.
   echo "Starting k3s on Environment $CLUSTER_ENVIRONMENT..."

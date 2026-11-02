@@ -145,9 +145,12 @@ What it installs beside the chart:
 - **Traefik's app entrypoint trusts forwarded headers**, so `X-Forwarded-Proto: https` reaches Keycloak and its cookies are `Secure`.
   Only the node's loopback reaches that entrypoint.
 - **A claim filesystem for the VM runners**: a sparse ext4 file, `~/.local/share/runner-claims.img`, loop-mounted at `~/.local/share/runner-claims` by the `platform-runner-claims` openrc service before k3s at every boot, and the storage class `platform-runner-claims` on it, which the install sets as `virtualization.runner.storageClass`.
-  It is `virtualization.runner.storage` in size, or the disk's free room when that is less, and only grows.
+  It is `virtualization.runner.storage` in size, never the disk's free room, which the outer guard's grant hides, and it only grows.
+  It has no journal and mounts with `errors=continue`: when the Environment's disk runs out before the filesystem does, a write into a claim fails with an I/O error rather than "no space left", the guard still reads room, and the next write after the outer grant grows succeeds; a journal would leave it read-only until a remount.
   The runner's storage guard reads `statvfs` of its claim; on k3s's own `local-path` that is the whole Environment disk, which the Environment's own storage guard mostly preallocates, so the runner refused every new agent at its 90% level (#6128).
   A runner claim made on `local-path` by an older install keeps that class: `e2e:reset`, or deleting the claim, moves it.
+- **No image garbage collection in k3s** (`60-image-gc-off.yaml`, `image-gc-high-threshold=100`): the kubelet deletes images past 85% of its disk, which the outer grant makes look used, and it deleted the agent image a minute after the import (#6128).
+  Nothing in an Environment pulls an image back, since the install puts every one in itself; one the install no longer needs stays until a person removes it.
 
 **Signing in from the agent's own browser** needs the backchannel addresses (`backchannel.*` in the values): `cluster:install -- --environment <name> --backchannel` turns them on at `http://localhost:4444`, and `mise run cluster:open -- --environment <name>`, started in the background, forwards that port to this agent.
 `--backchannel-port <port>` moves them; `cluster:open` then needs the same `--port <port>`, as the command the install prints at its end has.

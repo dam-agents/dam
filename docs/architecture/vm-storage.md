@@ -1,6 +1,6 @@
 # VM storage
 
-Last verified: 2026-10-30
+Last verified: 2026-11-02
 
 A machine keeps one disk on its owner's [VM runner](vm-runner.md) rather than a volume per mounted path, and an owner's disks all sit on one claim.
 This page owns what that disk holds, what survives a stop, and how the runner keeps the claim from filling.
@@ -74,6 +74,8 @@ A refused growth is reported and reconciliation continues: the runner still serv
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
 So the runner measures the claim itself, as the blocks its own directories hold — the machine disks and the bookkeeping — against those plus what the filesystem still gives an unprivileged writer; so a claim that is a directory of a shared disk, as k3s's local-path provisioner hands out, counts only the owner's files and not every other writer of that disk, and a mount inside the claim, such as a pod's image cache, counts nothing.
+In an Environment the claim is not a directory of the node's disk but a filesystem of its own, a sparse ext4 file the install loop-mounts, because there the node's disk is the outer guest's, whose own guard preallocates most of it and so leaves an unprivileged writer almost nothing ([environments](environments.md)).
+Its blocks still come from that disk, and the outer guard grants them as the disk fills, so a write into the claim can fail with an I/O error while the claim reports room; the file has no journal, so the claim stays writable, and the guest's next write after the outer grant grows succeeds.
 Past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full has not every guest delete its scratch again every minute.
 A guest a grant holds is judged by the room its guard leaves it, not by the disk's share.

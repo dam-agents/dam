@@ -451,17 +451,24 @@ node_runner_storage() {
 }
 
 # node_claim_fs <bytes>: the claims' filesystem, mounted at NODE_CLAIM_DIR, of
-# <bytes> or the home disk's free room when that is less. The file is made
+# <bytes>. The file is sparse, so its size costs nothing until written; the
+# home disk's free room is no cap, since in an Environment the outer guard's
+# grant counts as used there and grows as the disk fills. The file is made
 # once and only grows, as a claim does: a smaller size keeps the one it has.
 # A loop mount does not outlive the machine, so an openrc service in the
-# default runlevel mounts it again before k3s starts, and no runner ever
-# mounts the bare directory beneath it.
+# default runlevel mounts it again before k3s starts, and the bare directory
+# beneath it is immutable, so a runner never writes there unmounted.
+#
+# The room behind the file can run out while the filesystem still has some:
+# a write into the claim then fails with an I/O error, not "no space left",
+# and the guard still reads room. ext4 with a journal aborts it on that error
+# and stays read-only until a remount, so the filesystem has no journal and
+# mounts with errors=continue: the failed write fails, the next one after the
+# grant grows succeeds, and the boot service runs e2fsck -p before it mounts.
 node_claim_fs() {
-  local want room have
-  room="$(node_sh stat -f -c '%a %S' "$NODE_HOME_SHARE")" || return 1
-  room=$(( ${room% *} * ${room#* } ))
-  want="$1"
-  [ "$room" -ge "$want" ] || want="$room"
+  local want="$1" have mount
+  mount="mountpoint -q $NODE_CLAIM_DIR || { mkdir -p $NODE_CLAIM_DIR && { chattr +i $NODE_CLAIM_DIR 2>/dev/null || true; } &&
+    { e2fsck -p $NODE_CLAIM_IMAGE >/dev/null; [ \$? -lt 4 ]; } && mount -o loop,discard,errors=continue $NODE_CLAIM_IMAGE $NODE_CLAIM_DIR; }"
   node_sh sh -c 'command -v mkfs.ext4 >/dev/null || {
       apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends e2fsprogs
     } >/dev/null' ||
@@ -471,7 +478,7 @@ node_claim_fs() {
     # No copy-on-write on a btrfs home: a loop file rewritten in place would
     # fragment with every write.
     node_sh sh -c 'touch "$1.new" && { chattr +C "$1.new" 2>/dev/null || true; } && truncate -s "$2" "$1.new" &&
-      mkfs.ext4 -q -m 0 -E lazy_itable_init=1,lazy_journal_init=1,nodiscard "$1.new" && mv "$1.new" "$1"' \
+      mkfs.ext4 -q -m 0 -O ^has_journal -E lazy_itable_init=1,nodiscard "$1.new" && mv "$1.new" "$1"' \
       _ "$NODE_CLAIM_IMAGE" "$want" ||
       { echo "FATAL: could not make the runners' claim filesystem" >&2; return 1; }
   fi
@@ -479,7 +486,7 @@ node_claim_fs() {
     "# The VM runners' claims, on a filesystem of their own (cluster:install)." \
     'description="VM runner claim filesystem"' \
     'depend() { before k3s; }' \
-    "start() { mkdir -p $NODE_CLAIM_DIR && { mountpoint -q $NODE_CLAIM_DIR || mount -o loop,discard $NODE_CLAIM_IMAGE $NODE_CLAIM_DIR; }; }" |
+    "start() { $mount; }" |
     node_sh tee "$NODE_CLAIM_SERVICE" >/dev/null
   node_sh chmod 755 "$NODE_CLAIM_SERVICE"
   if node_sh test -x /sbin/openrc-run; then
@@ -489,17 +496,42 @@ node_claim_fs() {
     node_sh mountpoint -q "$NODE_CLAIM_DIR" || node_sh "$NODE_CLAIM_SERVICE" restart >/dev/null 2>&1 || true
   else
     echo "WARNING: no OpenRC on the node, so nothing mounts the runners' claim filesystem after a reboot" >&2
-    node_sh sh -c 'mkdir -p "$1" && { mountpoint -q "$1" || mount -o loop,discard "$2" "$1"; }' _ "$NODE_CLAIM_DIR" "$NODE_CLAIM_IMAGE" || true
+    node_sh sh -c "$mount" || true
   fi
   node_sh mountpoint -q "$NODE_CLAIM_DIR" ||
     { echo "FATAL: the runners' claim filesystem did not mount at $NODE_CLAIM_DIR" >&2; return 1; }
+  # A filesystem made with a journal, by an install before this one, mounts
+  # without errors=continue's effect; it keeps working until a write fails.
+  ! node_sh dumpe2fs -h "$NODE_CLAIM_IMAGE" 2>/dev/null | grep -q '^Filesystem features:.*has_journal' ||
+    echo "WARNING: the runners' claim filesystem has a journal, so an I/O error leaves it read-only; e2e:reset and delete $NODE_CLAIM_IMAGE to make it again" >&2
   have="$(node_sh stat -c %s "$NODE_CLAIM_IMAGE")"
-  if [ "$have" -lt "$want" ]; then
-    echo "Growing the runners' claim filesystem to $(numfmt --to=iec-i "$want")B..."
-    node_sh sh -c 'truncate -s "$2" "$1" && losetup -c "$(losetup -j "$1" | cut -d: -f1 | head -n 1)" && resize2fs -f "$(losetup -j "$1" | cut -d: -f1 | head -n 1)" >/dev/null 2>&1' \
-      _ "$NODE_CLAIM_IMAGE" "$want" ||
-      echo "WARNING: the runners' claim filesystem could not grow; it keeps $(numfmt --to=iec-i "$have")B" >&2
-  fi
+  [ "$have" -ge "$want" ] || echo "Growing the runners' claim filesystem to $(numfmt --to=iec-i "$want")B..."
+  # The filesystem is grown to the file every time, so a grow that failed
+  # after the file grew is tried again; at its size, resize2fs does nothing.
+  node_sh sh -c '{ [ "$(stat -c %s "$1")" -ge "$2" ] || truncate -s "$2" "$1"; } &&
+    dev="$(losetup -j "$1" | cut -d: -f1 | head -n 1)" && losetup -c "$dev" && resize2fs "$dev" >/dev/null 2>&1' \
+    _ "$NODE_CLAIM_IMAGE" "$want" ||
+    echo "WARNING: the runners' claim filesystem could not grow to its file; it keeps its size" >&2
+}
+
+# NODE_IMAGE_GC_DROPIN: no image garbage collection in an Environment's k3s.
+# The kubelet deletes images past 85% of its disk used, and there the outer
+# guard's grant counts as used, so it deleted the agent image a minute after
+# the install imported it (#6128). Nothing in an Environment pulls an image
+# back: the install puts every one in itself. After
+# 50-container-log-rotation.yaml, whose plain `kubelet-arg:` replaces every
+# append in a drop-in that sorts before it.
+NODE_IMAGE_GC_DROPIN=/etc/rancher/k3s/config.yaml.d/60-image-gc-off.yaml
+
+# node_image_gc_off: writes NODE_IMAGE_GC_DROPIN, and succeeds only when it
+# changed, so the caller knows a running k3s must restart to take it.
+node_image_gc_off() {
+  local want
+  want="$(printf '%s\n' "# An Environment's k3s keeps every image the install put in (cluster:install)." \
+    "kubelet-arg+:" '  - "image-gc-high-threshold=100"' '  - "image-gc-low-threshold=99"')"
+  [ "$(node_sh cat "$NODE_IMAGE_GC_DROPIN" 2>/dev/null)" != "$want" ] || return 1
+  node_sh mkdir -p "$(dirname "$NODE_IMAGE_GC_DROPIN")"
+  printf '%s\n' "$want" | node_sh tee "$NODE_IMAGE_GC_DROPIN" >/dev/null
 }
 
 # node_claim_class_manifest <provisioner image>: the provisioner of
