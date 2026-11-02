@@ -855,6 +855,27 @@
       "when": 1793102652509,
       "tag": "0121_binding_slots",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1793111608928,
+      "tag": "0122_environment_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1793111634831,
+      "tag": "0123_copy_environment_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1793618112347,
+      "tag": "0124_environment_members_email_idx",
+      "breakpoints": true
     }
   ]
 }

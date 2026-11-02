@@ -21,7 +21,7 @@ import {
   useEnvironments,
   useEnvironmentsEnabled,
 } from "../../environments/api/queries.js";
-import { EnvironmentsSection } from "../../environments/components/environments-section.js";
+import { AgentEnvironmentsSection } from "../../environments/components/agent-environment-members.js";
 import { environmentsShown } from "../../environments/lib/environments-tab.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
@@ -92,7 +92,6 @@ function AgentHome({ agent }: { agent: AgentView }) {
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
     environmentsEnabled && agent ? agent.id : null,
-    { poll: false },
   );
   const agentHasEnvironments = environmentsShown({
     enabled: environmentsEnabled,
@@ -166,7 +165,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
               }
             />
           ) : section === "environments" ? (
-            <EnvironmentsSection agentId={agent.id} header={header} />
+            <AgentEnvironmentsSection agentId={agent.id} header={header} />
           ) : section === "usage" ? (
             <SandboxUsageSection agentId={agent.id} />
           ) : (

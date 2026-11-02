@@ -8,10 +8,11 @@ import {
   requireWildcardBinding,
 } from "../../auth-procedures.js";
 import {
-  environmentAccessListInputSchema,
+  environmentAgentMembersInputSchema,
   environmentExtendInputSchema,
   environmentIdInputSchema,
   environmentListInputSchema,
+  environmentMembersInputSchema,
 } from "./schemas.js";
 import type { AgentTarget } from "../agents/permissions.js";
 
@@ -28,17 +29,21 @@ export const environmentsRouter = t.router({
       return ctx.environments.list(input.owningAgentId);
     }),
 
-  accessList: readAgentProcedure
+  listAll: readAgentProcedure
+    .use(requireWildcardBinding)
+    .query(({ ctx }) => ctx.environments.listAll()),
+
+  agentMembers: readAgentProcedure
     .use(requireWildcardBinding)
     .input(environmentListInputSchema)
     .use(agentPermission("view", (input) => agentTarget(input.owningAgentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.owningAgentId);
-      return ctx.environments.accessList(input.owningAgentId);
+      return ctx.environments.agentMembers(input.owningAgentId);
     }),
 
-  setAccessList: manageAgentsProcedure
-    .input(environmentAccessListInputSchema)
+  setAgentMembers: manageAgentsProcedure
+    .input(environmentAgentMembersInputSchema)
     .use(
       agentPermission("environments", (input) =>
         agentTarget(input.owningAgentId),
@@ -46,8 +51,20 @@ export const environmentsRouter = t.router({
     )
     .mutation(({ ctx, input }) => {
       checkAgentBinding(ctx, input.owningAgentId);
-      return ctx.environments.setAccessList(input.owningAgentId, input.emails);
+      return ctx.environments.setAgentMembers(
+        input.owningAgentId,
+        input.emails,
+      );
     }),
+
+  setMembers: manageAgentsProcedure
+    .input(environmentMembersInputSchema)
+    .use(
+      agentPermission("environments", (input) => environmentTarget(input.id)),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.environments.setMembers(input.id, input.emails),
+    ),
 
   extend: manageAgentsProcedure
     .input(environmentExtendInputSchema)
