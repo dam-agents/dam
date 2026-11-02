@@ -8,12 +8,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 
-const state = vi.hoisted(() => ({ agentMembers: [] as string[] }));
+const state = vi.hoisted(() => ({
+  agentMembers: [] as string[],
+  role: "owner" as "owner" | "editor",
+  saveMembers: [] as unknown[],
+}));
 
 vi.mock("../../modules/environments/api/mutations.js", () => ({
   useDeleteEnvironment: () => ({ mutate: vi.fn(), isPending: false }),
   useExtendEnvironment: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetEnvironmentMembers: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetEnvironmentMembers: () => ({
+    mutate: (input: unknown) => state.saveMembers.push(input),
+    isPending: false,
+  }),
   useSetAgentEnvironmentMembers: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("../../modules/environments/api/queries.js", () => ({
@@ -27,7 +34,13 @@ vi.mock("../../modules/agents/api/queries.js", () => {
     {
       id: "agent-dev",
       name: "dev",
-      access: { role: "owner", editors: ["ed@example.com"], permissions: [] },
+      get access() {
+        return {
+          role: state.role,
+          editors: ["ed@example.com"],
+          permissions: [],
+        };
+      },
     },
     {
       id: "agent-qa",
@@ -242,6 +255,44 @@ describe("an Environment's Share dialog", () => {
     expect(save?.disabled).toBe(true);
   });
 
+  // TEST_SCENARIO: the owner removes a member while someone else adds another; Save sends the polled list with the removal applied, so the person added elsewhere stays.
+  it("keeps a member added elsewhere through the owner's Save", () => {
+    state.saveMembers = [];
+    const onClose = vi.fn();
+    const render = (members: string[]) =>
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(EnvironmentShareDialog, {
+          environment: { ...demo, members },
+          onClose,
+        }),
+      );
+    const doc = mount(
+      createElement(EnvironmentShareDialog, {
+        environment: { ...demo, members: ["old@example.com"] },
+        onClose,
+      }),
+    );
+    act(() =>
+      (
+        doc.querySelector(
+          '[aria-label="Remove old@example.com"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    act(() => root!.render(render(["old@example.com", "late@example.com"])));
+    act(() =>
+      [...doc.querySelectorAll("button")]
+        .find((b) => b.textContent === "Save")!
+        .click(),
+    );
+
+    expect(state.saveMembers).toEqual([
+      { id: demo.id, emails: ["late@example.com"] },
+    ]);
+  });
+
   // TEST_SCENARIO: the summary names only the parts that open it, joined as a sentence.
   it("words the summary for each mix of editors and members", () => {
     const say = (editorCount: number, agentMemberCount: number) =>
@@ -272,5 +323,24 @@ describe("the agent's page", () => {
         ?.textContent,
     ).toContain("Artifacts");
     expect(doc.querySelector('[data-testid="environment-row"]')).toBeNull();
+  });
+
+  // TEST_SCENARIO: an editor has no Artifacts list of the owner's, so the section says the owner manages each Environment instead of linking to an empty list.
+  it("tells an editor who manages the Environments", () => {
+    state.role = "editor";
+    const doc = html(
+      createElement(AgentEnvironmentsSection, {
+        agentId: "agent-dev",
+        header: () => null,
+      }),
+    );
+    state.role = "owner";
+
+    expect(
+      doc.querySelector('[data-testid="environments-in-artifacts"]'),
+    ).toBeNull();
+    expect(
+      doc.querySelector('[data-testid="environments-with-owner"]')?.textContent,
+    ).toContain("owner");
   });
 });

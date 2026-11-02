@@ -22,9 +22,10 @@ import { sharedThroughAgent } from "../lib/environment-list.js";
  * many people the agent's page names — and links there, and edits the
  * Environment's own members, who open this one Environment only. The list only
  * adds people: nobody here narrows the agent's. An Environment is never
- * public, so there is no link to copy beyond its addresses. It holds only
- * the owner's edits over the members the list polls, so a member added
- * elsewhere while it is open shows up, and a Save never drops them unseen.
+ * public, so there is no link to copy beyond its addresses. It holds the
+ * owner's edits as people added and removed, applied to the members the list
+ * polls, so a member added elsewhere while it is open shows up and stays
+ * through a Save.
  */
 export function EnvironmentShareDialog({
   environment,
@@ -36,10 +37,10 @@ export function EnvironmentShareDialog({
   const agent = useAgent(environment.owningAgentId);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const save = useSetEnvironmentMembers();
-  const [edited, setEdited] = useState<string[] | null>(null);
+  const [edits, setEdits] = useState<MemberEdits>(NO_EDITS);
   const [draft, setDraft] = useState("");
-  const members = edited ?? environment.members;
-  const dirty = edited !== null && !sameViewers(edited, environment.members);
+  const members = applyEdits(environment.members, edits);
+  const dirty = !sameViewers(members, environment.members);
   const pendingDraft = draft.trim().length > 0;
   const agentName = agent?.name ?? "its agent";
 
@@ -48,7 +49,7 @@ export function EnvironmentShareDialog({
       { id: environment.id, emails: members },
       {
         onSuccess: (saved) => {
-          setEdited(null);
+          setEdits(NO_EDITS);
           emitToast({
             kind: "success",
             message: `Sharing updated — ${saved.members.length === 0 ? "nobody of its own may open" : `${saved.members.length} of its own may open`} ${environment.name}.`,
@@ -103,7 +104,9 @@ export function EnvironmentShareDialog({
             </p>
             <ViewerListEditor
               viewers={members}
-              onChange={setEdited}
+              onChange={(next) =>
+                setEdits(editsBetween(environment.members, next))
+              }
               disabled={save.isPending}
               draft={draft}
               onDraftChange={setDraft}
@@ -133,4 +136,30 @@ export function EnvironmentShareDialog({
       />
     </Modal>
   );
+}
+
+interface MemberEdits {
+  added: readonly string[];
+  removed: readonly string[];
+}
+
+const NO_EDITS: MemberEdits = { added: [], removed: [] };
+
+// UNIT_BOUNDARY_DESCRIPTION: the edits that turn the members as polled into the list the owner now sees.
+function editsBetween(
+  live: readonly string[],
+  next: readonly string[],
+): MemberEdits {
+  return {
+    added: next.filter((e) => !live.includes(e)),
+    removed: live.filter((e) => !next.includes(e)),
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the members as polled, with the owner's edits applied, so a later poll keeps a person someone else added.
+function applyEdits(live: readonly string[], edits: MemberEdits): string[] {
+  return [
+    ...live.filter((e) => !edits.removed.includes(e)),
+    ...edits.added.filter((e) => !live.includes(e)),
+  ];
 }

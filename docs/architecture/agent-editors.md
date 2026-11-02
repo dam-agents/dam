@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-10-27
+Last verified: 2026-11-02
 
 ## Overview
 

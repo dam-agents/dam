@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
+import { useAgent } from "../../agents/api/queries.js";
 import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.js";
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
 import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
@@ -14,7 +15,9 @@ import { useAgentEnvironmentMembers } from "../api/queries.js";
  * UNIT_BOUNDARY_DESCRIPTION: The Environments section of an agent's page: the
  * agent's Environment Members, who open every Environment it creates, read at
  * each request, and a link to the Artifacts list, where its owner finds,
- * shares, extends and deletes each Environment. The agent sets none of it.
+ * shares, extends and deletes each Environment. An editor has no Artifacts
+ * list of the owner's, so the section tells them who holds the Environments
+ * instead of sending them to an empty list. The agent sets none of it.
  */
 export function AgentEnvironmentsSection({
   agentId,
@@ -24,24 +27,36 @@ export function AgentEnvironmentsSection({
   header: SectionHeaderSlot;
 }) {
   const setView = useStore((s) => s.setView);
+  const owner = useAgent(agentId)?.access.role !== "editor";
   return (
     <>
       {header()}
       <AgentEnvironmentMembers key={agentId} agentId={agentId} />
-      <p
-        className="text-sm text-muted-foreground"
-        data-testid="environments-in-artifacts"
-      >
-        The agent&apos;s Environments are in{" "}
-        <button
-          type="button"
-          className="text-accent hover:underline"
-          onClick={() => setView("artifacts")}
+      {owner ? (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="environments-in-artifacts"
         >
-          Artifacts
-        </button>
-        , where you open, share, extend and delete each one.
-      </p>
+          The agent&apos;s Environments are in{" "}
+          <button
+            type="button"
+            className="text-accent hover:underline"
+            onClick={() => setView("artifacts")}
+          >
+            Artifacts
+          </button>
+          , where you open, share, extend and delete each one.
+        </p>
+      ) : (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="environments-with-owner"
+        >
+          The agent&apos;s owner opens, shares, extends and deletes each of its
+          Environments in their Artifacts list. You open every one as a member
+          of this list does.
+        </p>
+      )}
     </>
   );
 }

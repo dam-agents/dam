@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-27
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -159,7 +159,7 @@ In the app, behind the feature:
   A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, its agent, and a link per address that opens a new tab.
   Its menu has the artifact's delete-after control for the expiry, which cannot be turned off, and Delete.
 - **The Share dialog** of an Environment says who opens it through its agent — the owner, the agent's editors, and how many people the agent's page names, counted, never listed — links to that page, and edits the Environment's own members.
-- **An agent's page** has an **Environments** section with the agent's Environment Members, edited once the list has loaded, and a link to the Artifacts list.
+- **An agent's page** has an **Environments** section with the agent's Environment Members, edited once the list has loaded, and a link to the Artifacts list; an editor, who has no Artifacts list of the owner's, reads there that the owner manages each Environment.
   The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address, so a stale link still works.
   While the agent has none, the Manage card of its General section links to the section, because the members can be named before the first Environment exists.
 
