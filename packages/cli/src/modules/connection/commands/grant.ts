@@ -1,27 +1,21 @@
 import { Command } from "commander";
 import type { ConnectionView } from "api-server-api";
-import type { AgentService } from "../../agent/index.js";
-import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
-import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
-import { resolveActiveHost } from "../../shared/preflight.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import {
   childrenOf,
   connectFromHint,
   parentLabel,
 } from "../domain/github-parent.js";
-import type { ConnectionService } from "../services/connection-service.js";
+import {
+  resolveAgentConnections,
+  type ConnectionCommandDeps,
+} from "./resolve-agent-connections.js";
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
 
-export function buildGrantCommand(deps: {
-  compatService: CompatService;
-  configService: ConfigService;
-  createAgentService: (host: string) => AgentService;
-  createConnectionService: (host: string) => ConnectionService;
-}): Command {
+export function buildGrantCommand(deps: ConnectionCommandDeps): Command {
   return new Command("grant")
     .description("Grant one or more connections to an Agent")
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
@@ -57,23 +51,16 @@ export function buildGrantCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        const host = await resolveActiveHost(deps, opts.server);
-
-        const agent = await resolveAgentOrExit(
-          deps.createAgentService(host),
+        const { host, agent, svc, connections } = await resolveAgentConnections(
+          deps,
           ref,
-          host,
+          opts.server,
         );
-
-        const svc = deps.createConnectionService(host);
-
-        const allRes = await svc.list();
-        exitOnServiceError(allRes, host);
         const connectionIds: string[] = [];
         const unknown: string[] = [];
         const parents: ConnectionView[] = [];
         for (const r of requested) {
-          const match = resolveConnectionRef(allRes.value, r);
+          const match = resolveConnectionRef(connections, r);
           if (match?.isParent) parents.push(match);
           else if (match) connectionIds.push(match.id);
           else unknown.push(r);
@@ -88,7 +75,7 @@ export function buildGrantCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
         for (const parent of parents) {
-          const children = childrenOf(allRes.value, parent.id);
+          const children = childrenOf(connections, parent.id);
           process.stderr.write(
             `error: ${parent.name} (${parent.id}) is a ${parentLabel(parent)}, which is never granted to an agent\n` +
               (children.length > 0

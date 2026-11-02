@@ -1,29 +1,19 @@
 import { isCancel, text } from "@clack/prompts";
 import { Command } from "commander";
-import type { AgentService } from "../../agent/index.js";
-import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import {
-  printServiceError,
-  exitOnServiceError,
-} from "../../shared/trpc/print.js";
-import type { CompatService, ConfigService } from "../../cli/index.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import {
   EXIT_AGENT_NOT_REACHABLE,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
-import { resolveActiveHost } from "../../shared/preflight.js";
 import { exitCancelled } from "../../shared/prompt.js";
-import { resolveSourceRef } from "../domain/source-ref.js";
-import type { SkillsService } from "../services/skills-service.js";
+import {
+  resolveSkillTarget,
+  type SkillCommandDeps,
+} from "./resolve-skill-target.js";
 
-export function buildPublishCommand(deps: {
-  compatService: CompatService;
-  configService: ConfigService;
-  createAgentService: (host: string) => AgentService;
-  createSkillsService: (host: string) => SkillsService;
-}): Command {
+export function buildPublishCommand(deps: SkillCommandDeps): Command {
   return new Command("publish")
     .description(
       "Open a GitHub pull request for a standalone (locally-authored) skill",
@@ -74,29 +64,12 @@ export function buildPublishCommand(deps: {
         }
         const name = opts.name;
 
-        const host = await resolveActiveHost(deps, opts.server);
-
-        const agent = await resolveAgentOrExit(
-          deps.createAgentService(host),
+        const { host, agentId, svc, source } = await resolveSkillTarget(
+          deps,
           ref,
-          host,
+          opts.source,
+          opts.server,
         );
-        const agentId = agent.id;
-
-        const svc = deps.createSkillsService(host);
-
-        const sourcesRes = await svc.listSources(agentId);
-        exitOnServiceError(sourcesRes, host);
-        const source = resolveSourceRef(sourcesRes.value, opts.source);
-        if (!source) {
-          process.stderr.write(
-            `error: no registered skill source with id or url '${opts.source}'\n`,
-          );
-          process.stderr.write(
-            "hint: run `dam skill source list` to see registered sources\n",
-          );
-          process.exit(EXIT_INVALID_INPUT);
-        }
 
         if (source.canPublish !== true) {
           process.stderr.write(
