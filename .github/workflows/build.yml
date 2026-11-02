@@ -173,7 +173,7 @@ jobs:
       # it did not build (see rust-release, and e2e's jobs).
       - id: mbx
         if: steps.rust-needed.outputs.needed == 'true'
-        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+        uses: jdx/mr-boxington-action@88acf2bb50552c7c508cbac13e5f8c576b95b1de # v1.7.3
         with:
           github-cache-mode: objects
           working-directory: packages/vm-runner
