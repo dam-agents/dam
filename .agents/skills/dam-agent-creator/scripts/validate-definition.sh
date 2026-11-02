@@ -268,6 +268,29 @@ if [ -f scripts/preflight.sh ] || [ -f scripts/verify-onboarding.sh ]; then
     || fail "missing scripts/lib/config.sh — the single home of the CONFIG.md readers"
 fi
 
+# ----------------------------------------------------------------- benchmark ----
+# A benchmark documented without its gates still scores: a leaked fixture or a
+# drifted results file renders plausible numbers forever (append-only history).
+if [ -f docs/benchmark.md ]; then
+  for f in validate phase score judge provenance isolate child report; do
+    f="scripts/benchmark-$f.sh"
+    if [ -f "$f" ]; then pass "benchmark script: $f"; else fail "docs/benchmark.md without $f"; fi
+  done
+  for f in scripts/lib/sufficiency.sh scripts/templates/judge-brief.md scripts/templates/benchmark-child.md; do
+    if [ -f "$f" ]; then pass "benchmark file: $f"; else fail "docs/benchmark.md without $f"; fi
+  done
+  ls scripts/tests/test_benchmark_*.sh >/dev/null 2>&1 \
+    && pass "benchmark tests present" \
+    || fail "docs/benchmark.md without scripts/tests/test_benchmark_*.sh"
+  if [ ! -f scripts/preflight.sh ]; then
+    fail "docs/benchmark.md without scripts/preflight.sh — the monthly schedule has no gate"
+  elif grep -q 'benchmark' scripts/preflight.sh; then
+    pass "scripts/preflight.sh has a benchmark mode"
+  else
+    fail "scripts/preflight.sh has no benchmark mode — the monthly schedule has no gate"
+  fi
+fi
+
 # ------------------------------------------------------- dead relative links ----
 dead=0
 while IFS= read -r f; do
