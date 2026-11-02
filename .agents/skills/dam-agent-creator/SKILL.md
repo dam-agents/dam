@@ -42,6 +42,7 @@ One operating architecture for every agent:
 - **A public agent manifest**: one JSON card the agent writes about itself at runtime (triggers, skills, the blocks it reads and writes, channels, public pages, packages, trust rules), checked by a script and republished by the weekly audit; a peer list lets it follow the manifests of the agents it works with (`references/manifest.md`).
 - **Weekly self-audit**: deterministic health checks plus judgment checks, reported traffic-light style against a recorded trend history.
   Recommended for every agent, even purely reactive ones.
+- **An optional quality benchmark** where output quality is a judgment call: a monthly replay of synthetic items with seeded ground truth through the production pipeline in isolated sessions, scored by a deterministic matcher (plus a pinned judge model beside it), with time, tokens and a verdict per task tier accumulated into one report (`references/benchmark.md`).
 - **A harness adapter** where the harness has hooks: logging hooks, the auto-mode classifier rules for the agent's documented writes, a deny list of unused tools (tool definitions dominate every request) and a lean subagent type, all installed per instance and checked for drift.
 - **Anonymous writes to the definition repo**: a tracking issue there is opt-in, filed only through a script that scans the draft for instance data, and refused on every other path.
 - **Versioned definition**: semver `VERSION` + `CHANGELOG.md` of idempotent upgrade steps (migration instructions, not a change log), so instances detect drift and migrate deliberately; offline tests + CI check every definition PR.
@@ -68,7 +69,7 @@ End with a short confirmed **design brief**.
 
 ### Phase 2 — Architecture proposal (approval gate)
 
-Read `references/architecture.md` and `references/audit.md` (every agent gets an audit), plus `references/preflight.md` if any run is scheduled and `references/communication.md` if the agent talks to people or listens on channels.
+Read `references/architecture.md` and `references/audit.md` (every agent gets an audit), plus `references/preflight.md` if any run is scheduled, `references/communication.md` if the agent talks to people or listens on channels, and `references/benchmark.md` if the brief includes the benchmark.
 Present one proposal:
 
 - **Run types**: schedule, entry command, what each does.
@@ -88,6 +89,7 @@ Present one proposal:
 - **Trust boundary exceptions**: the whitelist of channel requests that may trigger work (often empty).
 - **Public interface** (`references/manifest.md`): the roles the agent serves, its handoffs to other roles, the config keys whose values are public (`PUBLIC_KEYS`), and the packages it offers.
 - **Hard invariants**, domain-specific ones included.
+- **Benchmark** (when the brief includes it): the fixture shapes, the tier sizes and minimums, the phases, the matcher and the output's machine-readable part, the index components and weights, the judge rubric's dimensions, the config keys and the monthly schedule (`references/benchmark.md`).
 - **Cost estimate**: runs/day, expected idle ratio, script vs agent-turn split.
 
 ### Phase 3 — Scaffold the definition repo
@@ -149,6 +151,7 @@ Ask which **license** applies (default: the org's standard) and add `LICENSE`; w
   The verifier judges the file the pre-flight reads, so both must parse identically: one reader both source, not two copies kept in step.
   The validator asserts the lib exists, both scripts source it, and neither defines its own reader.
 - `scripts/lib/toolpath.sh` — when a script execs `jq`/`gh` in a loop; source it before the first call and before any `command -v` guard (`references/platform-dam.md`).
+- Benchmark (when designed) — `docs/benchmark.md` in the agent's own terms, the `benchmark` pre-flight mode, `scripts/benchmark-{validate,phase,score,judge,provenance,isolate,child,report}.sh`, `scripts/lib/sufficiency.sh`, the judge rubric and the child prompt under `scripts/templates/`, and their offline tests (`references/benchmark.md` → Scripts, Wiring into the definition).
 - `scripts/tests/` — `run.sh` plus one offline `test_<mode>.sh` per pre-flight mode: stubbed CLIs on `PATH`, sandboxed `WORK_DIR`, assertions on the emitted JSON (happy path, `nothing_to_do`, dedup/skip decisions, lock takeover, error fallback).
 
 Validate: `bash -n` everything, run the tests, then a read-only dry run of each pre-flight mode if the integration is reachable from here; otherwise tell the operator it must happen in the machine after onboarding.
