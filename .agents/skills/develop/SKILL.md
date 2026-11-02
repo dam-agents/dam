@@ -110,6 +110,10 @@ Without it, run this short version:
 - After each answer, append the question, your recommendation and the decision to a decision log in a temporary file outside the repository, and build the wrap-up from that file.
 - Wrap up with the decision log and a list of open questions.
 
+**Acceptance criteria come out of the grilling** ([work-process.md](../../../docs/guidelines/work-process.md)), as observable outcomes, never the implementation.
+When the issue carries `needs-ac`, the grilling ends with criteria in its **Done when** and the label removed; `grill-me` does it in its wrap-up, and the short version does it the same way, after the user approves the exact text.
+For a free-text request without an issue, take the criteria from the grilling, not from the request's own wording.
+
 ### 2a. Record the outcome
 
 Every change ends this step with an issue that carries it and the decision log.
@@ -135,6 +139,8 @@ When it is done, run the documentation check of step 4 and the report of step 5 
 Without them, agree with the user on an ordered list of smaller changes, file each as its own issue, and take each through steps 3 to 7.
 
 ## 3. Implement
+
+Do not start while the issue still carries `needs-ac`: stop, say so, and ask the user to finish the criteria first (step 2).
 
 ### 3a. Branch
 
