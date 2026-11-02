@@ -143,6 +143,17 @@ adds the next finding.
   where it was verified, not where it ends: run the finding's `check` (or the
   `git grep` for its key term) before you edit, and fix every hit the rule
   covers, unlisted ones included.
+- **A predicate is fixed from its grammar, not from the shapes listed.** When
+  the finding is an incomplete predicate, allowlist, parser or sanitizer over
+  a format — a block that passes as pure, a line kind the mapping drops — the
+  shapes in the review are examples. Write down every line or token kind the
+  format has (for Gherkin: `Feature`, `Rule`, `Background`, `Scenario`,
+  `Scenario Outline`, steps, `Examples`, a table row, a tag, a comment, a
+  `# language:` line, a docstring, a blank line). Accept only the kinds the
+  mapping really reads, each at the fields it reads; count everything else as
+  free text. Then add **one test that walks every kind** and asserts that no
+  text outside the mapping passes. A fix for the listed shapes alone returns
+  as the next shape in the next round.
 - **A statement is code.** A finding on a document, a comment, a glossary
   entry, a diagram, a UI string or the PR body is fixed by making the
   statement true, in the same commit as the code it describes. State the rule
@@ -186,6 +197,18 @@ Then read your whole diff once — `git diff <review.commit_id>` — with the
 seven questions of pr-open → **Self-review**: your hunks are the next round's
 candidates. Fix what you find. In a fix round, the conventions of question 6
 include every `rules` entry, and the task of question 7 is the blocking set.
+
+Two more questions for a fix round:
+
+- **Attack your own fix.** For each fix, name one input or state the fix does
+  not handle: an empty value, a second item, a retry, a failure of the new
+  step, a kind the new predicate does not list. Find none → write the test
+  that shows it. Find one → fix it now. A fix with its own defect is the next
+  round's 🆕.
+- **Release numbers against the live base.** When the pull request carries a
+  `VERSION`, a changelog entry or a migration number, fetch the base branch and
+  compare. A number the base already released, or one that the base overtook,
+  moves above the base in this push.
 
 ## 4. Run the checks
 
@@ -275,8 +298,11 @@ the caller asks.
 - Every location of every fixed finding changed, `also` and the unlisted hits
   of its rule included; its check is clean, or the answer says why not.
 - Every `rules` entry holds for every file you touched.
-- Your diff passed the self-review; the repository's build and test commands
-  pass.
+- Your diff passed the self-review, every fix was attacked once, and the
+  release number sits above the live base; the repository's build and test
+  commands pass.
+- Every predicate fix accepts only the kinds its mapping reads, and one test
+  walks every kind of its grammar.
 - The `author-decisions` block holds the caller's decisions from this
   conversation that a reviewer could read as a defect.
 - One push, at most one body edit and one comment carry the work; the caller

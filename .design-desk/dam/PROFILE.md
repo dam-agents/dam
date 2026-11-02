@@ -80,7 +80,6 @@ Render these with `<ui-component>`:
 | The brand mark             | `components/brand-logo.tsx`                         | `BrandLogo`                                                                                                                                  |
 | Harness and provider marks | `components/brand-icons.tsx`                        | `ClaudeIcon`, `CodexIcon`, `PiIcon`, `BobFilledIcon`, … (tile colors in `components/harness-icons.tsx`)                                      |
 | Icons                      | `@carbon/icons-react`                               | `<ui-icon name="…">` with the name the code imports                                                                                          |
-| Pictograms                 | `@carbon/pictograms-react`                          | `<ui-pictogram>` for page headers and empty states                                                                                           |
 
 For a new action with no icon yet, use the icon the app already uses for the closest action, and say so.
 Menus are portalled to the page body by the review bar; dialogs reuse `confirm-dialog.tsx`'s markup.
