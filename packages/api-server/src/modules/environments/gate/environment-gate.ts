@@ -67,7 +67,8 @@ export interface EnvironmentGateDeps {
   ) => string;
   signOutUrl: (address: string) => string;
   repo: Pick<EnvironmentsRepository, "getByHost">;
-  ownerList: (owningAgentId: string) => Promise<string[]>;
+  agentMembers: (owningAgentId: string) => Promise<string[]>;
+  environmentMembers: (environmentId: string) => Promise<string[]>;
   editorsOf: (owningAgentId: string) => Promise<string[]>;
   signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "signOut">;
   platform: PlatformCredentials;
@@ -395,8 +396,8 @@ export function createEnvironmentGate(
     const access = decideAccess(
       record,
       effectiveAccess(
-        await deps.ownerList(record.owningAgentId),
-        record.access,
+        await deps.agentMembers(record.owningAgentId),
+        await deps.environmentMembers(record.agentId),
         await deps.editorsOf(record.owningAgentId),
       ),
       visitor,
@@ -512,8 +513,8 @@ export function createEnvironmentGate(
       const access = decideAccess(
         resolved.record,
         effectiveAccess(
-          await deps.ownerList(resolved.record.owningAgentId),
-          resolved.record.access,
+          await deps.agentMembers(resolved.record.owningAgentId),
+          await deps.environmentMembers(resolved.record.agentId),
           await deps.editorsOf(resolved.record.owningAgentId),
         ),
         visitor,

@@ -257,6 +257,10 @@ export function composeConnectionsForOwner(opts: {
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog: ProviderModelCatalog;
+  newAgentProvider?: () => Promise<{
+    connectionId: string;
+    harness: string;
+  } | null>;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -310,6 +314,7 @@ export function composeConnectionsForOwner(opts: {
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey,
     harnesses: opts.harnesses,
     providerModelCatalog: opts.providerModelCatalog,
+    newAgentProvider: opts.newAgentProvider,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),

@@ -45,6 +45,7 @@ const (
 	connectionEgressPathSegment = "__platform_conn"
 	envoyImageCABundle          = "/etc/ssl/certs/ca-certificates.crt"
 	envoyUpstreamCAKey          = "upstream-ca.pem"
+	envoyLeafSDSKey             = "leaf-sds.yaml"
 )
 
 const (
@@ -891,6 +892,9 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *confi
 		data[envoyUpstreamCAKey] = cfg.GatewayUpstreamTrustBundle
 	}
 	data[machineDNSCorefileKey] = machineDNSCorefile
+	if data[envoyLeafSDSKey], err = renderLeafSDS(""); err != nil {
+		return nil, err
+	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            EnvoyBootstrapName(instanceName),
@@ -936,7 +940,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v27-gateway-otlp-path"
+const envoyBootstrapTemplateRev = "v28-gateway-leaf-sds"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}

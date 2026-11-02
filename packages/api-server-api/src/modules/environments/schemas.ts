@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { VIEWER_ALLOWLIST_MAX } from "../artifact-library/schemas.js";
+import {
+  VIEWER_ALLOWLIST_MAX,
+  viewerEmailSchema,
+} from "../artifact-library/schemas.js";
 
 export const ENVIRONMENT_EXPIRY_MAX_DAYS = 30;
 export const ENVIRONMENT_EXPIRY_DEFAULT_DAYS = 7;
@@ -34,8 +37,8 @@ export const environmentEndpointsSchema = z
   );
 
 // UNIT_BOUNDARY_DESCRIPTION: a list of people by email, at most as many as an artifact's viewers, whose editor the app reuses for it.
-export const environmentAccessSchema = z
-  .array(z.email().transform((e) => e.trim().toLowerCase()))
+export const environmentMembersSchema = z
+  .array(viewerEmailSchema)
   .max(VIEWER_ALLOWLIST_MAX);
 
 export const environmentEndpointViewSchema = environmentEndpointSchema.extend({
@@ -47,11 +50,17 @@ export const environmentViewSchema = z.object({
   owningAgentId: z.string(),
   name: z.string(),
   endpoints: z.array(environmentEndpointViewSchema),
-  access: z.array(z.string()).nullable(),
+  members: z.array(z.string()),
+  agentMemberCount: z.number().int(),
   expiresAt: z.string(),
   createdAt: z.string(),
   state: z.string(),
 });
+
+// UNIT_BOUNDARY_DESCRIPTION: an Environment as its owning agent reads it: how many people may open it besides its owner, never who.
+export const agentEnvironmentViewSchema = environmentViewSchema
+  .omit({ members: true, agentMemberCount: true })
+  .extend({ peopleWhoMayOpen: z.number().int() });
 
 export const environmentIdInputSchema = z.object({ id: z.string().min(1) });
 
@@ -59,9 +68,14 @@ export const environmentListInputSchema = z.object({
   owningAgentId: z.string().min(1),
 });
 
-export const environmentAccessListInputSchema = z.object({
+export const environmentAgentMembersInputSchema = z.object({
   owningAgentId: z.string().min(1),
-  emails: environmentAccessSchema,
+  emails: environmentMembersSchema,
+});
+
+export const environmentMembersInputSchema = z.object({
+  id: z.string().min(1),
+  emails: environmentMembersSchema,
 });
 
 export const environmentExtendInputSchema = z.object({

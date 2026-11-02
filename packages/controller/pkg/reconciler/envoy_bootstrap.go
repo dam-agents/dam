@@ -114,6 +114,7 @@ func newBootstrapParams(instanceID, attributionID string, cfg *config.Config, ch
 		CredentialsRoot:        envoyCredentialsRoot,
 		CredentialSDSName:      envoyCredentialSDSName,
 		LeafTLSDir:             envoyLeafTLSMount,
+		LeafSDSPath:            envoyBootstrapMount + "/" + envoyLeafSDSKey,
 		HarnessAuthority:       harnessAuthority,
 		HarnessHost:            cfg.HarnessHost(),
 		HarnessPort:            cfg.HarnessServerPort,

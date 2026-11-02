@@ -392,6 +392,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
       ]);
     },
     modelRequired: opts.modelRequired,
+    envReady: () => opts.envReader.ready(),
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
       sessionListAnswer(sessionMetadata, isRunning, terminalSessionPins?.()),

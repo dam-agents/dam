@@ -28,7 +28,6 @@ function record(
     name: agentId,
     host: `${agentId}-abcdef`,
     endpoints: [],
-    access: null,
     expiresAt,
     createdAt: NOW,
   };
@@ -46,6 +45,7 @@ function world(
     get: async (id) => rows.find((r) => r.agentId === id) ?? null,
     getByHost: async (host) => rows.find((r) => r.host === host) ?? null,
     listByOwningAgent: async (id) => rows.filter((r) => r.owningAgentId === id),
+    listByOwner: async (owner) => rows.filter((r) => r.owner === owner),
     listExpired: async (now) => rows.filter((r) => r.expiresAt < now),
     listAgentIds: async () => rows.map((r) => r.agentId),
     listOwningAgentIds: async () => [
@@ -99,11 +99,15 @@ function world(
         expiryMaxDays: 30,
       },
       listAgents: async () => cluster,
+      editorsOf: async () => [],
     },
     {
-      get: async () => [],
-      set: async () => {},
-      delete: async () => {},
+      ofAgent: async () => [],
+      setOfAgent: async () => {},
+      deleteOfAgent: async () => {},
+      ofEnvironment: async () => [],
+      ofEnvironments: async (ids) => new Map(ids.map((id) => [id, []])),
+      setOfEnvironment: async () => {},
     },
   );
   return { rows, deletedAgents, events, composition };

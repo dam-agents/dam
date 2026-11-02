@@ -2101,6 +2101,7 @@ export async function bootstrap() {
           : [],
       ),
     runtimeMutator: runtimeDelivery.runtimeMutator,
+    editorsOf: composeAgentEditors(db).editorsOf,
     config: {
       urlTemplate: config.environmentsUrl,
       maxPerAgent: config.environmentsMaxPerAgent,
