@@ -109,6 +109,8 @@ export function createAgentModelsService(deps: {
  * providers for an API key without credentials:read, is null with its
  * reason under `unreadable`, so the rest of the view still shows and a
  * failed read never looks like a default that is not set.
+ * `defaultHarness` is the saved chat default's harness, and the runtime's
+ * own default only when no chat default is saved.
  */
 export async function readAgentModels(
   svc: AgentModelsService,
@@ -133,7 +135,11 @@ export async function readAgentModels(
     harnesses: status.ok
       ? (status.value.harnesses?.map((h) => h.name) ?? null)
       : null,
-    defaultHarness: status.ok ? status.value.defaultHarness : null,
+    // New runs start on the saved chat default's harness; the runtime's
+    // own default only stands in while no chat default is saved.
+    defaultHarness:
+      (defaults.ok ? defaults.value.chat?.harness : undefined) ??
+      (status.ok ? status.value.defaultHarness : null),
     defaults: defaults.ok ? defaults.value : null,
     unreadable: {
       ...(providersFailed && { providers: providersFailed.reason }),
