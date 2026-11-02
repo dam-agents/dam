@@ -25,6 +25,7 @@ pack=.mise/tasks/image/pack
 agents=packages/agents
 workloads=" $($resolve list-workloads) "
 root="$PWD"
+. "$root/$agents/.mise/lib/agents-md.sh"
 lock="${usage_lock:-false}" warm="${usage_warm:-false}"
 reuse=true; [ "${usage_build:-}" != true ] || reuse=false
 write_tar=true; [ "${usage_no_tar:-}" != true ] || write_tar=false
@@ -429,6 +430,9 @@ build_thin() (
   b="$stage/build"
   mkdir -p "$b"
   cp -a "$stage/$agent/rootfs/." "$b/"
+  # Its layer would shadow the platform's /etc/AGENTS.md whole, so a workload's
+  # file extends the platform's instead.
+  compose_workload_agents_md "$stage" "$b"
   cd "$stage"
   mise -E "$envs" install
   f="mise/conf.d/harness.$agent.toml" layers=()

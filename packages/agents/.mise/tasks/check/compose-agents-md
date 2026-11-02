@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#MISE description="A workload's /etc/AGENTS.md extends the platform's, and build_thin composes it before packing"
+#MISE sources=["base/rootfs/etc/AGENTS.md", "*/rootfs/etc/AGENTS.md", ".mise/lib/agents-md.sh", ".mise/tasks/oci", ".mise/tasks/check/compose-agents-md"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# A workload image packs its own rootfs as a layer over the default image, so a
+# file at the same path shadows the platform's /etc/AGENTS.md whole. The check
+# runs the preparation build_thin runs, on a disposable tree, and asserts the
+# result is the platform's whole file plus the workload's.
+set -euo pipefail
+cd "$(dirname "$0")/../../.."
+. .mise/lib/agents-md.sh
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+fail() { echo "compose-agents-md: $*" >&2; exit 1; }
+
+# The disposable tree build_thin hands the preparation: the stage's base tree
+# and the copied workload tree.
+mkdir -p "$tmp/stage/base/rootfs/etc" "$tmp/build/etc"
+cp base/rootfs/etc/AGENTS.md "$tmp/stage/base/rootfs/etc/AGENTS.md"
+cp gepa/rootfs/etc/AGENTS.md "$tmp/build/etc/AGENTS.md"
+
+# No workload file may repeat a line of the platform's, or the composed file
+# says it twice.
+grep -v '^[[:space:]]*$' base/rootfs/etc/AGENTS.md > "$tmp/base-lines"
+for f in */rootfs/etc/AGENTS.md; do
+  case "$f" in base/*) continue ;; esac
+  repeated="$(grep -Fxf "$tmp/base-lines" "$f" || true)"
+  [ -z "$repeated" ] || fail "$f repeats the platform's line(s): $repeated"
+done
+
+compose_workload_agents_md "$tmp/stage" "$tmp/build"
+
+# The composed file is the platform's whole text, one blank line, the whole
+# workload text, byte for byte, with no temporary file left behind.
+cat "$tmp/stage/base/rootfs/etc/AGENTS.md" > "$tmp/want"
+printf '\n' >> "$tmp/want"
+cat gepa/rootfs/etc/AGENTS.md >> "$tmp/want"
+cmp -s "$tmp/want" "$tmp/build/etc/AGENTS.md" ||
+  fail "the composed file is not the platform's text, one blank line, then the workload's"
+[ ! -e "$tmp/build/etc/AGENTS.md.composed" ] ||
+  fail "the composed temporary file was left in the packed tree"
+
+# build_thin calls that preparation, as a command, before it packs.
+build_thin="$(sed -n '/^build_thin() (/,/^)$/p' .mise/tasks/oci)"
+[ -n "$build_thin" ] || fail "no build_thin function in .mise/tasks/oci"
+call_line="$(awk '/^[[:space:]]*compose_workload_agents_md[[:space:]]/ { print NR; exit }' <<< "$build_thin")"
+[ -n "$call_line" ] ||
+  fail "build_thin does not call compose_workload_agents_md (a comment or a mention does not count)"
+pack_line="$(awk '/pack_image/ { print NR; exit }' <<< "$build_thin")"
+[ -n "$pack_line" ] || fail "build_thin does not pack the tree"
+[ "$call_line" -lt "$pack_line" ] || fail "build_thin packs the tree before composing its /etc/AGENTS.md"
+
+echo "compose-agents-md: ok"
