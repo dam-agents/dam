@@ -31,7 +31,6 @@ export function composeCostReviewsForOwner(deps: {
   sessionPair: (agentId: string) => Promise<SessionPair | null | undefined>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   wakeAgent: (agentId: string) => Promise<void>;
-  interactiveReports: () => Promise<boolean>;
 }): CostReviews {
   const floors: CostReviewFloors = {
     paidUsdMicros: deps.floors.minWeeklyUsd * MICROS,
@@ -48,7 +47,6 @@ export function composeCostReviewsForOwner(deps: {
     sessionPair: deps.sessionPair,
     runtimeMutator: deps.runtimeMutator,
     wakeAgent: deps.wakeAgent,
-    interactiveReports: deps.interactiveReports,
   });
 }
 

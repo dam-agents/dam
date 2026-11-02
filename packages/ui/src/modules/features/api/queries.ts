@@ -2,10 +2,9 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
-export function useFeatures(enabled = true) {
+export function useFeatures() {
   return useQuery({
     ...trpc.features.flags.queryOptions(),
-    enabled,
     staleTime: 5 * 60_000,
     meta: { errorToast: "Couldn't load feature flags" },
   });

@@ -23,12 +23,6 @@ interface FeatureRow {
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
-    id: "interactive-artifacts",
-    label: "Interactive artifacts",
-    description:
-      "Let buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
-  },
-  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:

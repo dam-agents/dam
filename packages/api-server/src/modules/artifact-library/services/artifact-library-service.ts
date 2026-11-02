@@ -117,7 +117,6 @@ export interface ArtifactLibraryDeps {
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  featureOn: () => Promise<boolean>;
   prompts: ViewerPromptDelivery;
   promptChoices?: ArtifactPromptChoices;
   validateChoice?: (
@@ -864,11 +863,7 @@ export function createArtifactLibraryService(
     ): Promise<ArtifactSendPromptResult> {
       const row = await findArtifact(artifactId);
       const access = agentApiAccess(row, agentIds);
-      const denial = !access.allowed
-        ? access.denial
-        : (await deps.featureOn())
-          ? null
-          : "feature-off";
+      const denial = access.allowed ? null : access.denial;
       securityLog(denial === null ? "info" : "warn", "artifact.owner_prompt", {
         category: "authz",
         actor: owner,
@@ -879,8 +874,7 @@ export function createArtifactLibraryService(
         ...(row?.agentId ? { agentId: row.agentId } : {}),
         ...(denial === null ? {} : { reason: denial }),
       });
-      if (!row || !access.allowed || denial !== null)
-        return { ok: false, reason: "not-allowed" };
+      if (!row || !access.allowed) return { ok: false, reason: "not-allowed" };
       const outcome = await deps.prompts.deliver({
         agentId: access.agentId,
         artifactId: row.id,
