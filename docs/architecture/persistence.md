@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-31
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -154,7 +154,7 @@ The api-server is the sole writer for all of it, and for the per-Agent record be
   The definition's generation advances on exactly the columns the controller renders, and a host or grant change still advances it, as both were spec fields.
   Grants are the boundary: the controller's login writes only its own observation tables, the two reclaim columns of the signals row, and the two progress columns of the store row — the holder and the moment every anchor existed, which the switch's barrier reads.
   It reads the definition columns it renders, the signals row, the L7 hosts, the budgets, the connection-grant projection and the store row's progress columns — and no column it does not render, no other schema, and no other install's database.
-  A change feed carries every write that matters, and after the switch it is what both components' caches of the fleet read instead of watching the API server; a component that has not heard from it lately makes no hibernation, reclaim or collection decision.
+  A change feed carries every write that matters, and an observation write that changes nothing writes no row, since every row it writes wakes the controller to reconcile that Agent again; after the switch it is what both components' caches of the fleet read instead of watching the API server; a component that has not heard from it lately makes no hibernation, reclaim or collection decision.
   The controller opens the store before it campaigns for the Lease and exits when it cannot, and its liveness probe restarts a leader whose store has not answered for two minutes ([platform-topology](platform-topology.md#controller)).
 
 The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup, serialized across replicas on a Postgres advisory lock so concurrent boots queue behind one migrator instead of racing the same DDL — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated (workflow in [`packages/db/README.md`](../../packages/db/README.md)).
