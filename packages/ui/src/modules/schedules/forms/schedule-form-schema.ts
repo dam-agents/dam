@@ -1,5 +1,4 @@
 import { isPlatformSubagentSetting } from "agent-runtime-api";
-import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
 import type { SessionChoiceSlots, SessionPair } from "api-server-api";
 import {
   ALL_DAYS,
@@ -8,36 +7,18 @@ import {
   detectTimezone,
   type FrequencyPreset,
   hasVisibleOccurrence,
-  PRECHECK_MAX_LENGTH,
   rruleNextFire,
   rruleToText,
 } from "api-server-api";
 import { z } from "zod";
 
 import type { Schedule } from "../../../types.js";
+import { scheduleWorkFields } from "./schedule-work-fields.js";
 
 export const scheduleFormSchema = z
   .object({
-    name: z.string().trim().min(1, "Required"),
-    task: z.string().trim().min(1, "Required"),
-    precheck: z
-      .string()
-      .trim()
-      .max(PRECHECK_MAX_LENGTH, `Max ${PRECHECK_MAX_LENGTH} characters`),
-    harness: z.string(),
-    model: z.string(),
-    settings: z.record(z.string(), z.string()),
-    profile: z.string(),
-    platformSubagentProfile: z.string(),
-    sessionTitle: z
-      .string()
-      .trim()
-      .max(
-        SESSION_TITLE_MAX_LENGTH,
-        `Max ${SESSION_TITLE_MAX_LENGTH} characters`,
-      ),
+    ...scheduleWorkFields,
     timezone: z.string().trim().min(1, "Required"),
-    sessionMode: z.enum(["fresh", "continuous"]),
     kind: z.enum(["daily", "hourly", "minutely", "custom"]),
     interval: z.string(),
     time: z.string(),
