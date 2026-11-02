@@ -278,7 +278,7 @@ export function PermissionPrompt({
                 tooltip={
                   channelLive
                     ? `${opt.name} — press ${i + 1}`
-                    : "Reconnecting — your answer sends when the agent is back."
+                    : "Waiting for the agent's connection — answer again once it is back."
                 }
               >
                 <span className="truncate">{optionLabel(opt)}</span>
@@ -287,7 +287,7 @@ export function PermissionPrompt({
           </div>
           {!channelLive && (
             <p className="text-2xs text-muted-foreground">
-              Reconnecting — your answer sends when the agent is back.
+              Waiting for the agent's connection — answer again once it is back.
             </p>
           )}
           {pending.length > 1 && (

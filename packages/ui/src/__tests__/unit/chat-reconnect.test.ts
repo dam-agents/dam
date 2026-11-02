@@ -527,12 +527,13 @@ afterEach(() => {
 it("keeps a running Agent's chat while it reconnects", () => {
   const el = openChat("running", false);
   expect(notice(el)).not.toBeNull();
-  expect(placeholder(el)).toContain("Reconnecting");
+  expect(placeholder(el)).toContain("Waiting for the agent's connection");
   expect(el.textContent).not.toContain("Restart agent");
 });
 
 // TEST_SCENARIO: the Agent answers again; the notice and the send gate are gone.
 it("drops the notice when the Agent answers", () => {
+  fake.connectionState = "live";
   const el = openChat("running", true);
   expect(notice(el)).toBeNull();
   expect(placeholder(el)).toBe("Message…");
@@ -563,6 +564,7 @@ it("refuses a send while the Agent reconnects", () => {
 
 // TEST_SCENARIO: the control case, the same chat while the Agent answers, sends the message.
 it("sends when the Agent answers", () => {
+  fake.connectionState = "live";
   const el = openChat("running", true);
   act(() =>
     useStore.setState({
@@ -580,6 +582,22 @@ it("refuses a stop while the Agent reconnects", () => {
   expect(button(el, "Stop").disabled).toBe(true);
 });
 
+// TEST_SCENARIO: the Agent answers but its channel is not live yet, so the chat refuses the actions that need that channel; the gates follow the channel, not whether the Agent is reachable.
+it("blocks the chat while the channel is not live", () => {
+  const el = openChat("running", true);
+  act(() =>
+    useStore.setState({
+      drafts: { "a-1:s-1": { text: "hello", attachments: [] } },
+    }),
+  );
+  expect(button(el, "Send").disabled).toBe(true);
+  fake.busy = true;
+  paint();
+  expect(button(el, "Stop").disabled).toBe(true);
+  expect(notice(el)).not.toBeNull();
+  expect(placeholder(el)).toContain("Waiting for the agent's connection");
+});
+
 // TEST_SCENARIO: a permission answer during a reconnect cannot reach the Agent, so the buttons are disabled and the card says why instead of showing a verdict that did not arrive.
 it("refuses a permission answer while the Agent reconnects", () => {
   const resolve = vi.fn(() => true);
@@ -591,7 +609,7 @@ it("refuses a permission answer while the Agent reconnects", () => {
   expect(allow?.disabled).toBe(true);
   act(() => allow?.click());
   expect(resolve).not.toHaveBeenCalled();
-  expect(el.textContent).toContain("your answer sends when the agent is back");
+  expect(el.textContent).toContain("answer again once it is back");
 });
 
 // TEST_SCENARIO: the channel reloads its session before the runtime reissues the request, so an answer waits for a live channel; the request from the closed channel is dropped when the channel is live, and the reissued one answers.

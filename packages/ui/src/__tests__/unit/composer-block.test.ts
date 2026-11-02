@@ -92,7 +92,7 @@ describe("the composer block", () => {
     expect(composerBlock({ ...settled, reconnecting: true })).toEqual({
       kind: "reconnect",
       reason:
-        "Reconnecting to this agent — your message sends when it answers.",
+        "Waiting for the agent's connection — your message stays in the draft.",
     });
   });
 

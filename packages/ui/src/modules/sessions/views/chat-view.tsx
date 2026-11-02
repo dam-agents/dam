@@ -235,7 +235,6 @@ export function ChatView() {
     ? resolveAgentDisplay(agentView, restartingIds, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
-  const reconnecting = agentDisplay?.state === "running" && !agentOperable;
   const agentStarting =
     agentDisplay?.state === "starting" ||
     agentDisplay?.state === "preparing_workspace";
@@ -309,6 +308,8 @@ export function ChatView() {
     connectionState,
   } = useAcpSession(selectedAgent, textareaRef);
   useReconciledPermissions(connectionState);
+  const channelLive = connectionState === "live";
+  const channelBlocked = !channelLive && !agentStarting && sessionId !== null;
 
   const promptGate = {
     agentId: selectedAgent,
@@ -527,7 +528,7 @@ export function ChatView() {
     noGrantedProvider,
     sharedCurveBender: !!shared,
     formLocked: formLocksComposer,
-    reconnecting,
+    reconnecting: channelBlocked,
   });
   const sendWithA2uiData = useCallback(
     (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
@@ -811,7 +812,7 @@ export function ChatView() {
 
   const notices = (
     <>
-      {reconnecting && (
+      {channelBlocked && agentDisplay?.state === "running" && (
         <AgentReconnectingNotice name={selectedAgentName ?? "the agent"} />
       )}
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
@@ -1108,9 +1109,11 @@ export function ChatView() {
             onTakeBack={takeBack}
             blockedReason={block?.reason ?? null}
             stopBlockedReason={
-              reconnecting ? "Reconnecting — Stop waits for the agent." : null
+              channelBlocked
+                ? "Waiting for the agent's connection — Stop works once it is back."
+                : null
             }
-            channelLive={connectionState === "live"}
+            channelLive={channelLive}
             harness={sendHarness ?? null}
             onBlockedClick={
               block?.kind === "connect"

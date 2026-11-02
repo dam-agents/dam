@@ -44,7 +44,7 @@ export function composerBlock(input: {
     return {
       kind: "reconnect",
       reason:
-        "Reconnecting to this agent — your message sends when it answers.",
+        "Waiting for the agent's connection — your message stays in the draft.",
     };
   return null;
 }
