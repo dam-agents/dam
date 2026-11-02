@@ -1,4 +1,7 @@
-import { ARTIFACT_PRINT_MAX_WIDTH, artifactSizeMessageSchema } from "api-server-api";
+import {
+  ARTIFACT_PRINT_MAX_WIDTH,
+  artifactSizeMessageSchema,
+} from "api-server-api";
 
 export const ARTIFACT_PRINT_ATTRIBUTE = "data-artifact-print";
 
@@ -11,7 +14,10 @@ export function readArtifactSize(
   return parsed.success ? parsed.data.height : null;
 }
 
-export function stretchForPrint(frame: HTMLIFrameElement, height: number): void {
+export function stretchForPrint(
+  frame: HTMLIFrameElement,
+  height: number,
+): void {
   const width = frame.getBoundingClientRect().width;
   const scale = Math.min(1, ARTIFACT_PRINT_MAX_WIDTH / width);
   frame.setAttribute(ARTIFACT_PRINT_ATTRIBUTE, "");

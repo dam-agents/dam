@@ -125,7 +125,11 @@ describe("the artifact reports its content height", () => {
     const observed: unknown[] = [];
     let resize = () => {};
     const window = { ...events(), parent: { postMessage } };
-    const document = { ...events(), documentElement: { scrollHeight }, body: { scrollHeight } };
+    const document = {
+      ...events(),
+      documentElement: { scrollHeight },
+      body: { scrollHeight },
+    };
     runInNewContext(ARTIFACT_SIZE_REPORTER_BODY, {
       window,
       document,
