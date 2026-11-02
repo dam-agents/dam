@@ -17,6 +17,7 @@ export const sandboxSectionSchema = z.enum([
   "providers",
   "connections",
   "network",
+  "browser",
   "environment",
   "channels",
   "chat-forms",

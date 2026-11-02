@@ -36,7 +36,7 @@ interface MockTab {
 const ONE_TAB: MockTab[] = [
   {
     id: "tab-1",
-    url: "http://localhost:3000/dashboard",
+    url: "http://localhost:5173/reports",
     title: "Dashboard — My App",
     loading: false,
   },
@@ -45,7 +45,7 @@ const ONE_TAB: MockTab[] = [
 const THREE_TABS: MockTab[] = [
   {
     id: "tab-1",
-    url: "http://localhost:3000/dashboard",
+    url: "http://localhost:5173/reports",
     title: "Dashboard — My App",
     loading: false,
   },
@@ -368,7 +368,7 @@ export function MockBrowserPanel({
         >
           <span className="flex-1">
             Sign-ins made here are stored in this agent, and the agent can use
-            them. Clear them any time from the browser menu.
+            them. Clear them any time in the agent's settings.
           </span>
           <Button variant="ghost" size="sm" onClick={() => setNoticeSeen(true)}>
             Got it

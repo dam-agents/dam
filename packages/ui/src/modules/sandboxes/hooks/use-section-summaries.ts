@@ -169,6 +169,7 @@ export function useSectionSummaries(agent: AgentView | null): {
       providers: "1 attached",
       connections,
       network: "Trusted defaults",
+      browser: "3 sign-ins",
       environment: "3 variables",
       channels: channelsSummary,
       "chat-forms": "On — whenever they help",

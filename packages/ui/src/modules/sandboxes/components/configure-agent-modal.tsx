@@ -18,6 +18,7 @@ import { AgentManagementActions } from "./agent-management-actions.js";
 import { AgentUsageActions } from "./agent-usage-actions.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { PeopleSection } from "./people-section.js";
+import { SandboxBrowserSection } from "./sandbox-browser-section.js";
 import { SandboxChannelsSection } from "./sandbox-channels-section.js";
 import { SandboxChatFormsSection } from "./sandbox-chat-forms-section.js";
 import { SandboxEnvSection } from "./sandbox-env-section.js";
@@ -51,6 +52,7 @@ const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
   "providers",
   "connections",
   "network",
+  "browser",
   "environment",
   "schedules",
   "environments",
@@ -166,6 +168,8 @@ export function ConfigureAgentModal({
             <SandboxProvidersSection agentId={agentId} header={header} />
           ) : section === "network" ? (
             <SandboxNetworkSection agentId={agentId} header={header} />
+          ) : section === "browser" ? (
+            <SandboxBrowserSection agentId={agentId} header={header} />
           ) : section === "environment" ? (
             <SandboxEnvSection agentId={agentId} header={header} />
           ) : section === "channels" ? (

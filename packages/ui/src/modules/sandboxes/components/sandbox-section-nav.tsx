@@ -44,6 +44,12 @@ export const SECTIONS: SectionEntry[] = [
       "Rules decide which outbound HTTP requests this agent can make. The most-specific rule wins. Without a matching rule, the request needs your approval on Home.",
   },
   {
+    section: "browser",
+    title: "Browser",
+    description:
+      "Sites this agent is signed in to, and controls to clear or restart its browser.",
+  },
+  {
     section: "environment",
     title: "Environment vars",
     description:
