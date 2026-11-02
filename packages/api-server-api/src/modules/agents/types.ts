@@ -185,6 +185,13 @@ export interface Agent {
   kitUpdateSkipped?: string;
   onboardingSteps?: OnboardingStep[];
   features: RuntimeFeatures;
+  defaultProvider?: AgentDefaultProvider;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the provider a create that named none was granted, and why: the owner's default for new agents when the agent starts on that profile, else (profile null) the first the harness runs on in its provider order. Only the create's own answer carries it. */
+export interface AgentDefaultProvider {
+  connectionId: string;
+  profile: { name: string; model: string; harness: string } | null;
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;

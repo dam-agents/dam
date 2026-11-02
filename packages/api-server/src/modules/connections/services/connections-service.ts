@@ -158,6 +158,7 @@ import {
   type CredentialProbeOutcome,
 } from "../domain/credential-check.js";
 import { emit, EventType } from "../../../events.js";
+import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 
@@ -266,6 +267,8 @@ export function createConnectionsService(deps: {
   curveBenderDeploymentKey?: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, in place of the default harness's provider order; null while that default names none the owner holds. */
+  newAgentProvider?: () => Promise<string | null>;
 }): ConnectionsService & ManagedProviderConnections {
   let catalog: ProviderModelCatalog | undefined;
   const providerModelCatalog = () =>
@@ -323,6 +326,16 @@ export function createConnectionsService(deps: {
   }
 
   async function preferredProviderId(): Promise<string | undefined> {
+    const fromDefault = await deps
+      .newAgentProvider?.()
+      .catch((err: unknown) => {
+        getLogger().warn(
+          { err },
+          "connections: the default for new agents could not be read; the harness's provider order marks the preferred provider",
+        );
+        return null;
+      });
+    if (fromDefault) return fromDefault;
     const harness = deps.harnesses.default;
     const granted = await firstProviderPerAlias((type, templateId) =>
       harnessFits(deps.harnesses, harness, type, templateId),

@@ -115,6 +115,35 @@ describe("dam agent create provider selection (#3786)", () => {
     });
   });
 
+  /** TEST_SCENARIO: Without --provider the output names the provider the
+   * platform granted and why, in text and in --json, so a caller that trusts
+   * the docs sees a provider other than the one it expected (#6142). */
+  it.each([
+    [
+      { name: "Default", model: "anthropic/claude-opus-5-5", harness: "pi" },
+      'Provider: My provider (conn-provider), from your default for new agents, profile "Default": anthropic/claude-opus-5-5 on pi.',
+    ],
+    [
+      null,
+      "Provider: My provider (conn-provider), the first of yours its harness runs on",
+    ],
+  ])(
+    "names the provider granted without --provider (profile %o)",
+    async (profile, line) => {
+      const { run, create } = setup();
+      const defaultProvider = { connectionId: provider.id, profile };
+      create.mockResolvedValue({ ...agent, defaultProvider });
+      await run([], EXIT_SUCCESS);
+      expect(process.stdout.write).toHaveBeenCalledWith(
+        expect.stringContaining(line),
+      );
+      await run(["--json"], EXIT_SUCCESS);
+      expect(process.stdout.write).toHaveBeenCalledWith(
+        `${JSON.stringify({ ...agent, defaultProvider })}\n`,
+      );
+    },
+  );
+
   it.each([provider.id, provider.name])(
     "grants the provider selected by %s in the creation request and preserves JSON output",
     async (ref) => {

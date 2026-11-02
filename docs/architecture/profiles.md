@@ -1,6 +1,6 @@
 # Profiles
 
-Last verified: 2026-10-29
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -29,3 +29,4 @@ An owner who already has profiles gets no "Default"; their oldest becomes the de
 A new agent on the default template takes the default's harness unless its create names one, and then, on that harness, is granted the default's provider alone in place of the harness's provider order, and its chat default is the profile.
 The default exists before the agent's first `hello`, so a starter kit's onboarding turn has a model to run on; a kit that names its own model, an Environment and an agent on another harness keep the provider order and the first-hello conversion, and a kit that lists its providers takes the first of them the owner holds, else the provider order.
 A create that cannot start the agent on the default logs why, and the agent falls back to that conversion.
+A create that names no provider answers which one it granted and why: the default's name, model and harness, or none when the harness's provider order chose; the CLI prints it, so a caller sees a provider it did not expect.

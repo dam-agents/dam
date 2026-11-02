@@ -79,8 +79,10 @@ const oauthConnection = (
 function makeService(
   oldestFirst: Connection[],
   defaultHarness: HarnessView["name"] = "claude-code",
+  newAgentProvider?: () => Promise<string | null>,
 ) {
   return createConnectionsService({
+    ...(newAgentProvider && { newAgentProvider }),
     harnesses: { default: defaultHarness, harnesses: CATALOG },
     isOwnedAgent: async () => true,
     ownerId: "owner",
@@ -195,5 +197,28 @@ describe("provider Connection Templates", () => {
       alias: "anthropic",
       harnesses: ["claude-code"],
     });
+  });
+
+  /** TEST_SCENARIO: the owner's default for new agents decides which provider
+   * a plain create grants, so the listing marks that one preferred, a shared
+   * provider too, over the default harness's home provider; with no such
+   * default the harness's provider order marks it (#6142). */
+  it("marks the provider of the default for new agents", async () => {
+    const rows = [
+      headerConnection("conn-claude", "anthropic"),
+      headerConnection("conn-ibm", "ibm-litellm"),
+    ];
+    const preferredOf = async (svc: ReturnType<typeof makeService>) =>
+      (await svc.listConnections())
+        .filter((c) => c.provider?.preferred)
+        .map((c) => c.id);
+    expect(
+      await preferredOf(
+        makeService(rows, "claude-code", async () => "conn-ibm"),
+      ),
+    ).toEqual(["conn-ibm"]);
+    expect(
+      await preferredOf(makeService(rows, "claude-code", async () => null)),
+    ).toEqual(["conn-claude"]);
   });
 });

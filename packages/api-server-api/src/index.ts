@@ -153,6 +153,7 @@ export type {
   AgentState,
   AgentsService,
   AgentCreateInput,
+  AgentDefaultProvider,
   AgentUpdateInput,
   AgentBackgroundWork,
   BackgroundWorkItemView,

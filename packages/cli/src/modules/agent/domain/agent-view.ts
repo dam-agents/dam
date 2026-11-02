@@ -1,4 +1,9 @@
-import type { ChannelConfig, EnvVar, AgentState } from "api-server-api";
+import type {
+  AgentDefaultProvider,
+  AgentState,
+  ChannelConfig,
+  EnvVar,
+} from "api-server-api";
 
 export interface AgentView {
   id: string;
@@ -16,6 +21,7 @@ export interface AgentView {
   podTerminationCode?: string;
   channels: ChannelConfig[];
   starterKit?: string | null;
+  defaultProvider?: AgentDefaultProvider;
 }
 
 export function displayState(agent: AgentView): string {

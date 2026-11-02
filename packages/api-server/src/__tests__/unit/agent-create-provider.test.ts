@@ -106,6 +106,8 @@ function setup(
   const bind = vi.fn(async (_agentId: string): Promise<string | null> => null);
   const defaultProfile = vi.fn(
     async (): Promise<{
+      name: string;
+      model: string;
       harness: string;
       connectionId: string;
       bind: typeof bind;
@@ -290,6 +292,8 @@ describe("the default profile a new agent starts on", () => {
   const templates = { default: { image: "platform/default:latest" } };
   const byTemplate = { name: "test-agent", templateId: "default" };
   const onPi = (bind: ReturnType<typeof setup>["bind"]) => ({
+    name: "Default",
+    model: "cb/some-model",
     harness: "pi",
     connectionId: "conn-profile",
     bind,
@@ -310,6 +314,10 @@ describe("the default profile a new agent starts on", () => {
     expect(created.grantedConnectionIds).toEqual(["conn-profile"]);
     expect(persist.mock.calls[0]![0]).toMatchObject({ harness: "pi" });
     expect(bind).toHaveBeenCalledWith(created.id);
+    expect(created.defaultProvider).toEqual({
+      connectionId: "conn-profile",
+      profile: { name: "Default", model: "cb/some-model", harness: "pi" },
+    });
   });
 
   /** TEST_SCENARIO: A create that names its harness keeps it; a default
@@ -328,6 +336,23 @@ describe("the default profile a new agent starts on", () => {
     });
     expect(created.grantedConnectionIds).toEqual(["conn-first-in-order"]);
     expect(bind).not.toHaveBeenCalled();
+    expect(created.defaultProvider).toEqual({
+      connectionId: "conn-first-in-order",
+      profile: null,
+    });
+  });
+
+  /** TEST_SCENARIO: A create that names its provider chose it, so the answer
+   * carries no default provider to explain (#6142). */
+  it("says nothing of a default when the create names its provider", async () => {
+    const { caller, defaultProfile, bind } = setup([provider], templates);
+    defaultProfile.mockResolvedValue(onPi(bind));
+    const created = await caller.agents.create({
+      ...byTemplate,
+      providerConnectionId: provider.id,
+    });
+    expect(created.grantedConnectionIds).toEqual([provider.id]);
+    expect(created).not.toHaveProperty("defaultProvider");
   });
 
   /** TEST_SCENARIO: A kit that names the model its agent needs decides the

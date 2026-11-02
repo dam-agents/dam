@@ -1,5 +1,9 @@
 import { Command } from "commander";
-import { agentCreateInputSchema, PROVIDER_TEMPLATE_IDS } from "api-server-api";
+import {
+  agentCreateInputSchema,
+  PROVIDER_TEMPLATE_IDS,
+  type AgentDefaultProvider,
+} from "api-server-api";
 import { CONNECTION_ID_PREFIX } from "../../connection/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentView } from "../domain/agent-view.js";
@@ -112,7 +116,7 @@ export function buildCreateCommand(deps: {
   return addAvatarOptions(cmd, "start with")
     .option(
       "--provider <id-or-name>",
-      "model-provider connection id or unique name (default: your preferred provider; see `dam connection list`)",
+      "model-provider connection id or unique name (default: your preferred provider, the one `dam connection list --providers` marks: your default for new agents' provider, else the first your harness runs on; the output names the one granted)",
     )
     .option(
       "--env <KEY=VAL>",
@@ -130,7 +134,7 @@ export function buildCreateCommand(deps: {
     )
     .option(
       "--json",
-      "emit raw Agent JSON instead of the default summary; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }, done null when not checked",
+      "emit raw Agent JSON instead of the default summary, with defaultProvider { connectionId, profile: { name, model, harness } | null } when no --provider was named; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }, done null when not checked",
     )
     .addHelpText(
       "after",
@@ -151,6 +155,26 @@ export function buildCreateCommand(deps: {
 }
 
 type CreateDeps = Parameters<typeof buildCreateCommand>[0];
+
+async function connectionName(
+  trpc: TrpcClient,
+  connectionId: string,
+): Promise<string | undefined> {
+  const connections = await trpcCall(() => trpc.connections.list.query());
+  return connections.ok
+    ? connections.value.find((c) => c.id === connectionId)?.name
+    : undefined;
+}
+
+export function defaultProviderLine(
+  { connectionId, profile }: AgentDefaultProvider,
+  name: string | undefined,
+): string {
+  const provider = name ? `${name} (${connectionId})` : connectionId;
+  return profile
+    ? `  Provider: ${provider}, from your default for new agents, profile "${profile.name}": ${profile.model} on ${profile.harness}. Change that default in Settings › Providers › Profiles, or pass --provider.`
+    : `  Provider: ${provider}, the first of yours its harness runs on; your default for new agents does not apply to it.`;
+}
 
 async function runCreate(
   name: string,
@@ -325,13 +349,23 @@ async function runCreate(
         refreshContext: "after wait timeout",
       })
     : agent;
+  const created = agent.defaultProvider
+    ? { ...finalAgent, defaultProvider: agent.defaultProvider }
+    : finalAgent;
 
   if (opts.json) {
-    process.stdout.write(`${JSON.stringify(finalAgent)}\n`);
+    process.stdout.write(`${JSON.stringify(created)}\n`);
   } else {
     process.stdout.write(
-      `✓ Created agent "${finalAgent.name}" (${finalAgent.id}). State: ${finalAgent.state}.\n`,
+      `✓ Created agent "${created.name}" (${created.id}). State: ${created.state}.\n`,
     );
+    if (created.defaultProvider)
+      process.stdout.write(
+        `${defaultProviderLine(
+          created.defaultProvider,
+          await connectionName(trpc, created.defaultProvider.connectionId),
+        )}\n`,
+      );
   }
   process.exit(EXIT_SUCCESS);
 }
