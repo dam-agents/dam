@@ -44,6 +44,7 @@ export interface ChatInputProps {
   onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
   onBlockedClick?: () => void;
+  stopBlockedReason?: string | null;
   harness?: string | null;
 }
 
@@ -56,6 +57,7 @@ export function ChatInput({
   onTakeBack,
   blockedReason,
   onBlockedClick,
+  stopBlockedReason,
   harness = null,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
@@ -236,7 +238,12 @@ export function ChatInput({
       e.preventDefault();
       return;
     }
-    if (e.key === "Escape" && showStop && !e.nativeEvent.isComposing) {
+    if (
+      e.key === "Escape" &&
+      showStop &&
+      !stopBlockedReason &&
+      !e.nativeEvent.isComposing
+    ) {
       e.preventDefault();
       if (onTakeBack && !hasContent) onTakeBack();
       else onStop();
@@ -322,8 +329,9 @@ export function ChatInput({
                 size="icon"
                 className="shrink-0 mb-[9px]"
                 onClick={onStop}
+                disabled={!!stopBlockedReason}
                 aria-label="Stop"
-                tooltip="Stop (Esc)"
+                tooltip={stopBlockedReason ?? "Stop (Esc)"}
               >
                 <StopFilledAlt size={16} />
               </Button>

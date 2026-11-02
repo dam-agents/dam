@@ -91,10 +91,12 @@ const asExtParams = {
 
 function awaitPermission(
   params: RequestPermissionRequest,
+  ws: WebSocket,
 ): Promise<PermissionOutcome> {
   if (params.sessionId.startsWith(SYNTH_EGRESS_PREFIX)) {
     return new Promise<PermissionOutcome>(() => {});
   }
+  const isOpen = () => ws.readyState === WebSocket.OPEN;
   return new Promise((resolve) => {
     const toolCallId = params.toolCall?.toolCallId ?? crypto.randomUUID();
     useStore.getState().addPendingPermission({
@@ -102,7 +104,12 @@ function awaitPermission(
       sessionId: params.sessionId,
       toolCall: params.toolCall,
       options: params.options,
-      resolve,
+      isOpen,
+      resolve: (outcome) => {
+        if (!isOpen()) return false;
+        resolve(outcome);
+        return true;
+      },
     });
   });
 }
@@ -171,7 +178,7 @@ export async function openConnection(
   );
   const app = client()
     .onRequest("session/request_permission", (ctx) =>
-      awaitPermission(ctx.params),
+      awaitPermission(ctx.params, ws),
     )
     .onNotification("session/update", ({ params }) => {
       onUpdate(params.update, params.sessionId, frameMetaOf(params._meta));

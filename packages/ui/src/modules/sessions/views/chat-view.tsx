@@ -47,11 +47,15 @@ import {
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
+import { AgentReconnectingNotice } from "../../agents/components/agent-reconnecting-notice.js";
 import {
   AgentStartNotice,
   hasStartNotice,
 } from "../../agents/components/agent-start-notice.js";
-import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
+import {
+  AgentUnavailableOverlay,
+  takesOverChat,
+} from "../../agents/components/agent-unavailable-overlay.js";
 import {
   AgentAvatar,
   avatarMood,
@@ -73,7 +77,6 @@ import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fall
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
-import { startsInChat } from "../../agents/lib/agent-start.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
@@ -160,6 +163,7 @@ import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import { useReconciledPermissions } from "../hooks/use-reconciled-permissions.js";
 import { useSenderNames } from "../hooks/use-sender-names.js";
 import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
 import {
@@ -231,6 +235,7 @@ export function ChatView() {
     ? resolveAgentDisplay(agentView, restartingIds, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
+  const reconnecting = agentDisplay?.state === "running" && !agentOperable;
   const agentStarting =
     agentDisplay?.state === "starting" ||
     agentDisplay?.state === "preparing_workspace";
@@ -303,6 +308,7 @@ export function ChatView() {
     loadingSession,
     connectionState,
   } = useAcpSession(selectedAgent, textareaRef);
+  useReconciledPermissions(connectionState);
 
   const promptGate = {
     agentId: selectedAgent,
@@ -521,6 +527,7 @@ export function ChatView() {
     noGrantedProvider,
     sharedCurveBender: !!shared,
     formLocked: formLocksComposer,
+    reconnecting,
   });
   const sendWithA2uiData = useCallback(
     (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
@@ -804,6 +811,9 @@ export function ChatView() {
 
   const notices = (
     <>
+      {reconnecting && (
+        <AgentReconnectingNotice name={selectedAgentName ?? "the agent"} />
+      )}
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
       <ContributionGapNotice agentId={selectedAgent} />
       <WorkspaceFailureNotice agentId={selectedAgent} />
@@ -1097,6 +1107,10 @@ export function ChatView() {
             onStop={stopAgent}
             onTakeBack={takeBack}
             blockedReason={block?.reason ?? null}
+            stopBlockedReason={
+              reconnecting ? "Reconnecting — Stop waits for the agent." : null
+            }
+            channelLive={connectionState === "live"}
             harness={sendHarness ?? null}
             onBlockedClick={
               block?.kind === "connect"
@@ -1326,7 +1340,7 @@ export function ChatView() {
       ) : selectedAgent &&
         !agentInaccessible &&
         !agentOperable &&
-        !(agentView && agentDisplay && startsInChat(agentDisplay.state)) ? (
+        takesOverChat(agentDisplay?.state ?? null) ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

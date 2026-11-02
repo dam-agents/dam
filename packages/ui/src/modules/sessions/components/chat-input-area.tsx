@@ -14,7 +14,9 @@ function ownsToolCall(m: Message, toolCallId: string): boolean {
   return m.parts.some((p) => p.kind === "tool" && p.toolCallId === toolCallId);
 }
 
-export function ChatInputArea(props: ChatInputProps) {
+export function ChatInputArea(
+  props: ChatInputProps & { channelLive: boolean },
+) {
   const hasPending = useHasPendingPermission();
   const setMessages = useStore((s) => s.setMessages);
 
@@ -41,7 +43,13 @@ export function ChatInputArea(props: ChatInputProps) {
     [setMessages],
   );
 
-  if (hasPending) return <PermissionPrompt onResolved={appendVerdict} />;
+  if (hasPending)
+    return (
+      <PermissionPrompt
+        channelLive={props.channelLive}
+        onResolved={appendVerdict}
+      />
+    );
   return (
     <>
       <EgressApprovalPrompt />
