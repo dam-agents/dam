@@ -188,7 +188,9 @@ function connectionCommand(
     return grant(shellWord(connectionName(matches[0]!)));
   if (matches.length > 1)
     return grant(
-      /^[a-z0-9-]+$/.test(template) ? `<${template}-connection>` : "<connection>",
+      /^[a-z0-9-]+$/.test(template)
+        ? `<${template}-connection>`
+        : "<connection>",
     );
   return `dam connection connect ${shellWord(template)}, then ${grant("<connection>")}`;
 }
