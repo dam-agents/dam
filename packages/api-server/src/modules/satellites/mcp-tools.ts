@@ -12,6 +12,7 @@ import {
   json,
   run,
   type ToolContent,
+  type ToolContentBlock,
 } from "../../core/mcp-tool-result.js";
 import { isTerminal } from "./domain/types.js";
 import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
@@ -44,6 +45,10 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  * The default wait deadline sits under Node's own 300s request timeout, which
  * the harness server does not override. A wait running the full 300s would have
  * its socket torn down instead of answering "still running".
+ *
+ * An outcome is JSON in a text block, except for its images, which travel as the
+ * image blocks the tool returned: the Agent's harness then hands them to the
+ * model as pictures rather than as base64 text.
  */
 export const DEFAULT_SATELLITE_WAIT_MS = 240_000;
 
@@ -54,9 +59,14 @@ function failedJson(value: unknown): ToolContent {
 }
 
 function outcomeContent(outcome: JobOutcome): ToolContent {
+  const { images, ...rest } = outcome;
+  const content: ToolContentBlock[] = [
+    { type: "text", text: JSON.stringify(rest, null, 2) },
+    ...images,
+  ];
   return outcome.isError || outcome.status === "interrupted"
-    ? failedJson(outcome)
-    : json(outcome);
+    ? { content, isError: true }
+    : { content };
 }
 
 export function scopedName(satellite: string, tool: string): string {

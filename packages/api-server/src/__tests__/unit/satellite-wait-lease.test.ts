@@ -32,6 +32,7 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     isError: false,
     exitCode: null,
     output: null,
+    images: [],
     truncated: false,
     reason: null,
     cancelRequested: false,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SatelliteImage } from "./types.js";
 
 export const DEFAULT_MAX_CONCURRENT = 16;
 export const INLINE_OUTPUT_LIMIT = 4096;
@@ -80,6 +81,115 @@ export const heartbeatInputSchema = z.object({
 export const MAX_JOB_OUTPUT_BYTES = 1024 * 1024;
 const MAX_TOOL_ARGS_BYTES = 64 * 1024;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One image a Satellite's tool returned, forwarded
+ * to the Agent as the MCP content block it was. The machine is untrusted, so
+ * this is where an image is checked: `data` must be base64 and the media type
+ * one a harness can show, which is what makes a character count a byte count
+ * and keeps anything but a raster picture off the Agent's screen. The platform
+ * never decodes `data`, and base64 is as far as it goes: it does not prove the
+ * bytes are a picture, nor bound the width or height a harness will see.
+ */
+export const SATELLITE_IMAGE_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+] as const;
+
+const BASE64 =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$/;
+
+export function isBase64(data: string): boolean {
+  return data.length > 0 && BASE64.test(data);
+}
+
+const satelliteImageDataSchema = z
+  .string()
+  .max(MAX_JOB_OUTPUT_BYTES)
+  .refine(isBase64, "data must be base64");
+
+const satelliteImageMimeSchema = z.enum(SATELLITE_IMAGE_MIME_TYPES);
+
+export const satelliteImageSchema = z.object({
+  type: z.literal("image"),
+  data: satelliteImageDataSchema,
+  mimeType: satelliteImageMimeSchema,
+});
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One block an MCP server returned, as an image the
+ * platform will accept, or null when it is one it will not: not base64, not a
+ * media type a harness shows, or longer than a Job may carry. The worker asks
+ * this of every block before it keeps one, so a block the platform would refuse
+ * costs the Job its image rather than its whole report.
+ */
+export function satelliteImageOf(block: {
+  data?: unknown;
+  mimeType?: unknown;
+}): SatelliteImage | null {
+  const parsed = z
+    .object({
+      data: satelliteImageDataSchema,
+      mimeType: satelliteImageMimeSchema,
+    })
+    .safeParse({ data: block.data, mimeType: block.mimeType });
+  return parsed.success ? { type: "image", ...parsed.data } : null;
+}
+
+export const MAX_JOB_IMAGES = 8;
+
+export const satelliteImagesSchema = z
+  .array(satelliteImageSchema)
+  .max(MAX_JOB_IMAGES)
+  .refine(
+    (images) => imageBytes(images) <= MAX_JOB_OUTPUT_BYTES,
+    `images must fit in ${MAX_JOB_OUTPUT_BYTES} bytes between them`,
+  );
+
+function imageBytes(images: readonly { data: string }[]): number {
+  return images.reduce((bytes, image) => bytes + image.data.length, 0);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a finished Job's payload weighs as the JSON
+ * the platform stores and hands back — the text escaped, the images as sent,
+ * and the envelope around them. Escaping is what a raw byte count misses: a
+ * character the JSON has to escape grows sixfold, so a payload counted before
+ * it is written reaches an Agent several times the size it measured. A report
+ * with no images keeps the character cap it has always had, since a worker of
+ * an older version sends one and must not start being refused.
+ */
+export function storedPayloadBytes(payload: {
+  output: string;
+  images: readonly { data: string }[];
+}): number {
+  const stored = JSON.stringify({
+    output: payload.output,
+    images: payload.images,
+  });
+  return new TextEncoder().encode(stored).length + PAYLOAD_ENVELOPE_BYTES;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Room kept for what the ceiling does not count — the
+ * rest of a Job's outcome, and the indentation a tool result adds around it — so
+ * a payload at the ceiling still arrives at an Agent within it.
+ */
+export const PAYLOAD_ENVELOPE_BYTES = 4096;
+
+export function escapedTextBytes(text: string): number {
+  return new TextEncoder().encode(JSON.stringify(text)).length - 2;
+}
+
+function payloadFitsCeiling(outcome: {
+  output: string;
+  images: readonly { data: string }[];
+}): boolean {
+  if (outcome.images.length === 0) return true;
+  return storedPayloadBytes(outcome) <= MAX_JOB_OUTPUT_BYTES;
+}
+
 export const toolArgsSchema = z
   .record(z.string(), z.unknown())
   .refine(
@@ -91,13 +201,19 @@ export const reportInputSchema = z.object({
   satellite: satelliteNameSchema,
   sequence: z.number().int().positive(),
   outcome: z.discriminatedUnion("status", [
-    z.object({
-      status: z.literal("done"),
-      isError: z.boolean().default(false),
-      exitCode: z.number().int().nullable().default(null),
-      output: z.string().max(MAX_JOB_OUTPUT_BYTES),
-      truncated: z.boolean().default(false),
-    }),
+    z
+      .object({
+        status: z.literal("done"),
+        isError: z.boolean().default(false),
+        exitCode: z.number().int().nullable().default(null),
+        output: z.string().max(MAX_JOB_OUTPUT_BYTES),
+        truncated: z.boolean().default(false),
+        images: satelliteImagesSchema.default([]),
+      })
+      .refine(
+        payloadFitsCeiling,
+        `the text and images of one job must fit in ${MAX_JOB_OUTPUT_BYTES} bytes between them, the result envelope aside`,
+      ),
     z.object({
       status: z.literal("cancelled"),
       output: z.string().max(MAX_JOB_OUTPUT_BYTES).default(""),

@@ -1,4 +1,4 @@
-import type { SatelliteTool } from "api-server-api";
+import type { SatelliteImage, SatelliteTool } from "api-server-api";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What the worker runs work against. Both ways of
@@ -25,6 +25,7 @@ export type CallOutcome =
       isError: boolean;
       exitCode: number | null;
       output: string;
+      images?: SatelliteImage[];
       truncated: boolean;
       blocked?: true;
     }

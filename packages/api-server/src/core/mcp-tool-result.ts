@@ -1,18 +1,26 @@
+export type ToolContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
+
 export interface ToolContent {
-  content: { type: "text"; text: string }[];
+  content: ToolContentBlock[];
   isError?: boolean;
   [key: string]: unknown;
 }
 
-export function textResult(text: string): ToolContent {
+export interface TextContent extends ToolContent {
+  content: { type: "text"; text: string }[];
+}
+
+export function textResult(text: string): TextContent {
   return { content: [{ type: "text", text }] };
 }
 
-export function json(value: unknown): ToolContent {
+export function json(value: unknown): TextContent {
   return textResult(JSON.stringify(value, null, 2));
 }
 
-export function errorResult(text: string): ToolContent {
+export function errorResult(text: string): TextContent {
   return { content: [{ type: "text", text }], isError: true };
 }
 
