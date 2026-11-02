@@ -181,8 +181,6 @@ function occurrenceSearch(
     );
     return (after, inclusive) => rule.next(after, inclusive);
   }
-  // A sub-daily rule with BYHOUR steps in wall-clock time from its first hour,
-  // so a clock change does not move its steps off the hours it lists (ADR-127).
   const rule = boundedRule(
     withUtcUntil(withWallUntil(rruleBody, timezone), "UTC"),
     anchoredAt("UTC").with({ hour: firstHour }),
