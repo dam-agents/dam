@@ -125,7 +125,7 @@ stuck=$(grep -l '^State:.*(disk sleep)' /proc/[0-9]*/status 2>/dev/null)
 for s in $stuck; do grep -qs '^State:.*(disk sleep)' $s && echo "stuck $(grep '^Name:' $s | cut -f2)"; done
 if dmesg | grep -qE 'Bad page map|Bad rss-counter|cut here'; then echo '--- guest kernel log ---'; dmesg; fi`;
 
-// TEST_SCENARIO: the guest kernel passes the DAX checks that Linux 6.18 failed until smol-machines/libkrunfw#31, so a smolvm release whose kernel lacks the fix fails here. A throwaway smolvm machine in the agent's runner boots the staged default image with its own tools mounted again where the image reads them, a mount of their own, and asks for DAX itself, so the checks hold whatever the runner sets for its own machines. The runner sets it for its own machines too, and platform-init maps every mount with it but the image tree, which holds the tools: that one it copies through a 4 MiB read-ahead, since a DAX-mapped one reads too slowly for a cold start of Chrome or the Claude binary. First check: node runs from the tools while other processes open its binary. On 6.18 each open drops DAX pages that node still maps: the kernel logs a WARN and Bad page map, and in a guest of 6 GiB or more node dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). Second check: three processes map 3 GiB of the tools, more than the mount's 2 GiB DAX window, and touch every 2 MiB range, so the guest must reclaim ranges that processes still map. On 6.18 that reclaim waits forever: the processes stay in D state and the guest stalls. A 2 GiB guest shows only the WARN, so the guest is 6 GiB, and the checks time out inside the guest, since smolvm prints the guest's output only when it exits. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
+// TEST_SCENARIO: the guest kernel passes the DAX checks that Linux 6.18 failed until smol-machines/libkrunfw#31, so a smolvm release whose kernel lacks the fix fails here. A throwaway smolvm machine in the agent's runner boots the staged default image with its own tools mounted again where the image reads them, a mount of their own, and asks for DAX itself, so the checks hold whatever the runner sets for its own machines. The runner sets it for its own machines too, and platform-init maps every mount with it but the image tree, which holds the tools: that one it copies through a 4 MiB read-ahead, since a DAX-mapped one reads too slowly for a cold start of Chrome or the Claude binary. First check: node runs from the tools while other processes open its binary. On 6.18 each open drops DAX pages that node still maps: the kernel logs a WARN and Bad page map, and in a guest of 6 GiB or more node dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). Second check: three processes map 3 GiB of the tools, more than the mount's 2 GiB DAX window, and touch every 2 MiB range, so the guest must reclaim ranges that processes still map. On 6.18 that reclaim waits forever: the processes stay in D state and the guest stalls. A 2 GiB guest shows only the WARN, so the guest is 6 GiB, and the checks time out inside the guest, since smolvm prints the guest's output only when it exits. smolvm gives the throwaway machine's boot 30 s without progress, and the runner, which retries its own starts, gives this one none: a boot that a loaded host could not get through in that window is tried once more, since it says nothing about DAX. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
 test("a 6 GiB guest passes the DAX checks on the image's tools, and the runner maps its machines' mounts but the tools with DAX", async () => {
   test.setTimeout(300_000);
   const owner = kubectl(
@@ -164,30 +164,38 @@ test("a 6 GiB guest passes the DAX checks on the image's tools, and the runner m
     .split("\n")
     .sort()
     .map((path) => path.replace(tools, "/usr/share/mise"));
-  const guest = inRunner(
-    "env",
-    "HOME=/tmp/e2e-dax-guard",
-    "SMOLVM_MOUNT_DAX=1",
-    "timeout",
-    "240",
-    "/opt/smolvm/smolvm",
-    "machine",
-    "run",
-    "--mem",
-    "6144",
-    "--cpus",
-    "2",
-    "--image",
-    `/var/lib/platform/images/${image}/rootfs`,
-    "-v",
-    `${tools}:/usr/share/mise:ro`,
-    "-e",
-    `FILES=${bigTools.join(" ")}`,
-    "--",
-    "sh",
-    "-c",
-    DAX_CHECKS,
-  );
+  const run = () =>
+    inRunner(
+      "env",
+      "HOME=/tmp/e2e-dax-guard",
+      "SMOLVM_MOUNT_DAX=1",
+      "timeout",
+      "240",
+      "/opt/smolvm/smolvm",
+      "machine",
+      "run",
+      "--mem",
+      "6144",
+      "--cpus",
+      "2",
+      "--image",
+      `/var/lib/platform/images/${image}/rootfs`,
+      "-v",
+      `${tools}:/usr/share/mise:ro`,
+      "-e",
+      `FILES=${bigTools.join(" ")}`,
+      "--",
+      "sh",
+      "-c",
+      DAX_CHECKS,
+    );
+  let guest: string;
+  try {
+    guest = run();
+  } catch (e) {
+    if (!String(e).includes("no boot progress for")) throw e;
+    guest = run();
+  }
   expect(guest).toMatch(/ \/usr\/share\/mise virtiofs \S*dax=always/);
   expect(guest).toMatch(/^reproducer rc=0$/m);
   expect(guest.match(/^reclaim rc=\d+$/gm)).toEqual([
