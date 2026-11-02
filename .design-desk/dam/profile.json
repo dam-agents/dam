@@ -67,7 +67,6 @@
     ],
     "presentational_imports": [
       "^@carbon/icons-react$",
-      "^@carbon/pictograms-react$",
       "^@/components/ui/",
       "^@/lib/utils$",
       "^clsx$",
