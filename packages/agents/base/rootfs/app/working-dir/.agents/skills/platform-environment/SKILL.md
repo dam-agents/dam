@@ -43,7 +43,7 @@ Four more, one line each:
 
 - A private address goes around the gateway (see above); only the gateway's own address is admitted.
   A public name that resolves to a private address is decided by the gate first, and only then may the gateway's egress policy refuse the connection.
-- A bare public IP address is refused: TLS to an address carries no name for the gateway to match.
+- A bare IP address is matched as the literal host text, and held like any other unmatched host; an HTTPS client that sends no SNI is refused for a missing host.
 - A turn driven from a chat channel is refused at once instead of held, when no interactive session is attached to answer for it.
 - An approval that is not once writes a rule on the agent whose rules decided the request — this one, or the agent that started you as a sub-agent.
   "Allow once" writes nothing.
