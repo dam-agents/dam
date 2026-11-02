@@ -67,9 +67,9 @@ gh = "latest"
 go = "1.27"
 gum = "latest"
 helm = "latest"
-# 2.3.0 (2026-10-21) is under the 7-day floor until 2026-10-28; 2.2.0 is the
+# 2.4.0 (2026-10-29) is under the 7-day floor until 2026-11-05; 2.3.0 is the
 # newest release past it. The check is check:actions.
-jactionlint = "2.2.0"
+jactionlint = "2.3.0"
 java = "temurin-25"
 jq = "latest"
 kubeconform = "latest"
