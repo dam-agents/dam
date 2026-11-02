@@ -6,7 +6,7 @@ The alerts that cannot wait a week (an outage, a silent heartbeat, a failing bac
 
 Default: weekly (e.g. Friday morning), gated by a config key (`audit_report: enabled` default).
 **Read-only toward external systems and repair-free**: it reports; routine findings heal on their pipeline's next run, everything else goes to the operator.
-Its only local write beyond its log line is memory consolidation (when the agent has memory).
+Its only local write beyond its log line is memory consolidation (when the agent has memory); its only external writes are the tracking issue, the trend artifact and the agent manifest.
 
 ## Division of labor
 
@@ -74,6 +74,8 @@ Include what applies; add domain checks from the design's effects list.
 - **Outcome shifts against the recorded baseline** (Trend history below): a share that moved 20 pp or more against the four recorded weeks, or a rate that halved or doubled, which a z-test (\|z\| ≥ 2) does not explain as noise → warn naming the **definition versions on both sides** (every output row records the `def` that wrote it) and, after reading two or three outputs of the moved side, whether the agent changed or the inputs did.
 - **A human overruled the agent's verdict** (a change request after the agent's approve, a reverted item it passed): each is a defect the agent let through; read it, name the missed class, record the lesson, list the items under *Action needed*.
 - Config validity: required keys present and parseable; roster integrity when one exists.
+- **Agent manifest** (`references/manifest.md`): rewrite the card from its sources, `manifest-check.sh stamp` then `publish`, and publish on change under `agent_manifest: dam`; a `FAIL` keeps the old card and is a `fail` here.
+  Then each peer in `work/PEERS.md`: fetch, `manifest-check.sh peer`, compare with the pinned version; a changed id the definition `uses` is **Action needed** (the operator adopts the new version through **Pin a peer**); a config value that differs from the pinned copy is a `warn`, and the config wins.
 
 ## Trend history
 
