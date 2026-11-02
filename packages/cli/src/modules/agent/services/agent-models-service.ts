@@ -135,8 +135,6 @@ export async function readAgentModels(
     harnesses: status.ok
       ? (status.value.harnesses?.map((h) => h.name) ?? null)
       : null,
-    // New runs start on the saved chat default's harness; the runtime's
-    // own default only stands in while no chat default is saved.
     defaultHarness:
       (defaults.ok ? defaults.value.chat?.harness : undefined) ??
       (status.ok ? status.value.defaultHarness : null),
