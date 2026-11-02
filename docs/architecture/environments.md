@@ -136,13 +136,11 @@ Nothing in the create asks for nesting: the Environment's machine nests through 
 An install that turns either off gives its Environments no `/dev/kvm`.
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
-Beside the chart it installs two pieces the gate needs, and two the Environment's disk needs:
+Beside the chart it installs two pieces the gate needs, and one the Environment's disk needs:
 
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
-- **A claim filesystem for the VM runners**: the Environment's own storage guard preallocates most of its disk, which every reader of that disk counts as used, so a runner claim on k3s's `local-path` read nearly full and the runner refused every agent.
-  The runners' claims are on a sparse ext4 file of `virtualization.runner.storage` instead, loop-mounted before k3s at every boot and served as their own storage class ([vm-storage](vm-storage.md#the-owners-claim)).
-- **No image garbage collection** in its k3s, which would read the same disk as nearly full and delete the images the install just put in; nothing there pulls one back.
+- **No image garbage collection** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full and delete the images the install just put in; nothing there pulls one back.
 
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
 
