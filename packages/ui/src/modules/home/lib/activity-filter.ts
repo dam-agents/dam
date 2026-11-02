@@ -1,12 +1,7 @@
 import { type AttentionItem, SessionMode, SessionType } from "api-server-api";
 
 export type ChannelType =
-  | "chat"
-  | "slack"
-  | "telegram"
-  | "artifact"
-  | "schedule"
-  | "terminal";
+  "chat" | "slack" | "telegram" | "artifact" | "schedule" | "terminal";
 
 export const CHANNEL_TYPES: readonly ChannelType[] = [
   "chat",
