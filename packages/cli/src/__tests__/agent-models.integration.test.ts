@@ -292,6 +292,29 @@ describe("dam agent get / update / models (integration)", () => {
   });
 
   /**
+   * TEST_SCENARIO: new runs start on the saved chat default's harness, so
+   * the (default) mark and `defaultHarness` follow it, not the harness the
+   * runtime reports as its own default.
+   */
+  it("agent get marks the saved chat harness as the default", async () => {
+    defaults = {
+      chat: { harness: "codex", provider: null, model: "ibm/gpt-5.5" },
+      channel: null,
+      scheduled: null,
+    };
+    const r = await dam("agent", "get", AGENT_ID);
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/^HARNESSES:\s+claude-code, codex \(default\)$/m);
+    const json = await dam("agent", "get", AGENT_ID, "--json");
+    expect(json.exitCode, json.stderr).toBe(0);
+    const parsed = JSON.parse(json.stdout) as {
+      models: { defaultHarness: string; defaults: SessionDefaults };
+    };
+    expect(parsed.models.defaultHarness).toBe("codex");
+    expect(parsed.models.defaults.chat?.harness).toBe("codex");
+  });
+
+  /**
    * TEST_SCENARIO: a default whose model's provider is no longer granted
    * fails every run, so the table says so instead of looking set.
    */
@@ -360,6 +383,7 @@ describe("dam agent get / update / models (integration)", () => {
       provider: null,
       model: "ibm/gpt-5.5",
     });
+    expect(r.stdout).toMatch(/^HARNESSES:\s+claude-code, codex \(default\)$/m);
   });
 
   /**
@@ -509,5 +533,22 @@ describe("dam agent get / update / models (integration)", () => {
     expect(codex.providers.flatMap((p) => p.models.map((m) => m.name))).toEqual(
       ["ibm/gpt-5.5"],
     );
+  });
+
+  /**
+   * TEST_SCENARIO: with no --harness, the catalog is the one for the harness
+   * new runs start on, the saved chat default's, so a model picked from it
+   * is one that harness takes.
+   */
+  it("agent models lists the saved chat harness's catalog", async () => {
+    defaults = {
+      chat: { harness: "codex", provider: null, model: "ibm/gpt-5.5" },
+      channel: null,
+      scheduled: null,
+    };
+    const r = await dam("agent", "models", AGENT_ID, "--json");
+    expect(r.exitCode, r.stderr).toBe(0);
+    const catalog = JSON.parse(r.stdout) as HarnessCatalogView;
+    expect(catalog.harness).toBe("codex");
   });
 });
