@@ -1,12 +1,8 @@
 import { Command } from "commander";
-import {
-  agentCreateInputSchema,
-  PROVIDER_TEMPLATE_IDS,
-  type AgentDefaultProvider,
-} from "api-server-api";
+import { agentCreateInputSchema, PROVIDER_TEMPLATE_IDS } from "api-server-api";
 import { CONNECTION_ID_PREFIX } from "../../connection/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import type { AgentView } from "../domain/agent-view.js";
+import { defaultProviderLine, type AgentView } from "../domain/agent-view.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
@@ -164,16 +160,6 @@ async function connectionName(
   return connections.ok
     ? connections.value.find((c) => c.id === connectionId)?.name
     : undefined;
-}
-
-export function defaultProviderLine(
-  { connectionId, profile }: AgentDefaultProvider,
-  name: string | undefined,
-): string {
-  const provider = name ? `${name} (${connectionId})` : connectionId;
-  return profile
-    ? `  Provider: ${provider}, from your default for new agents, profile "${profile.name}": ${profile.model} on ${profile.harness}. Change that default in Settings › Providers › Profiles, or pass --provider.`
-    : `  Provider: ${provider}, the first of yours its harness runs on; your default for new agents does not apply to it.`;
 }
 
 async function runCreate(

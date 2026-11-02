@@ -129,6 +129,7 @@ describe("dam kit and dam agent create --kit (integration)", () => {
   let started: string[];
   let scopes: readonly string[];
   let inspected: Record<string, StarterKitView>;
+  let defaultProvider: Agent["defaultProvider"];
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "dam-kit-"));
@@ -138,6 +139,7 @@ describe("dam kit and dam agent create --kit (integration)", () => {
     started = [];
     scopes = ALL_SCOPES;
     inspected = {};
+    defaultProvider = undefined;
 
     const apiContext = {
       user: {
@@ -177,7 +179,11 @@ describe("dam kit and dam agent create --kit (integration)", () => {
             starterKit: `${input.catalog}/${input.kitId}@${KIT_COMMIT}`,
           });
           agents.push(created);
-          return { agent: created, skills: null, skillsError: null };
+          return {
+            agent: defaultProvider ? { ...created, defaultProvider } : created,
+            skills: null,
+            skillsError: null,
+          };
         },
         updates: async () => updates,
         updateChanges: async () => null,
@@ -386,6 +392,34 @@ describe("dam kit and dam agent create --kit (integration)", () => {
     expect(out.steps[2]!.command).toBe(
       "dam channel slack connect desk --channel-id <channel-id>",
     );
+  });
+
+  /** TEST_SCENARIO: a kit create that names no provider is granted one by
+   * the platform, and the output names it and why, in text and in --json, as
+   * a plain create's does (#6142). */
+  it("names the provider the platform granted a kit create", async () => {
+    defaultProvider = {
+      connectionId: "conn-ibm",
+      profile: { name: "Default", model: "cb/some-model", harness: "pi" },
+    };
+    const text = await dam("agent", "create", "desk", "--kit", "plain");
+    expect(text.exitCode, text.stderr).toBe(0);
+    expect(text.stdout).toMatch(
+      /Provider: IBM proxy \(conn-ibm\), from your default for new agents, profile "Default": cb\/some-model on pi\./,
+    );
+    const json = await dam(
+      "agent",
+      "create",
+      "desk2",
+      "--kit",
+      "plain",
+      "--json",
+    );
+    expect(json.exitCode, json.stderr).toBe(0);
+    expect(
+      (JSON.parse(json.stdout) as { agent: { defaultProvider: unknown } }).agent
+        .defaultProvider,
+    ).toEqual(defaultProvider);
   });
 
   /** TEST_SCENARIO: a schedule the kit does not have is refused before anything is created, so a typo cannot leave an agent behind with the wrong schedules. */

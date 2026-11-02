@@ -25,7 +25,7 @@ import {
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
-import type { AgentView } from "../domain/agent-view.js";
+import { defaultProviderLine, type AgentView } from "../domain/agent-view.js";
 import type { AgentService } from "../services/agent-service.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import type { AvatarUploader } from "../infrastructure/avatar-upload-client.js";
@@ -172,6 +172,9 @@ export async function runCreateFromKit(
         refreshContext: "after wait timeout",
       })
     : await fetchOrFallback(agents, agent, "after create");
+  const createdAgent = agent.defaultProvider
+    ? { ...finalAgent, defaultProvider: agent.defaultProvider }
+    : finalAgent;
 
   const granted =
     owned?.filter((c) => input.connectionIds.includes(c.id)) ?? null;
@@ -186,13 +189,20 @@ export async function runCreateFromKit(
 
   if (opts.json) {
     process.stdout.write(
-      `${JSON.stringify({ agent: finalAgent, kit: kitRef, skills, skillsError, steps })}\n`,
+      `${JSON.stringify({ agent: createdAgent, kit: kitRef, skills, skillsError, steps })}\n`,
     );
     return process.exit(EXIT_SUCCESS);
   }
   process.stdout.write(
     `✓ Created agent "${finalAgent.name}" (${finalAgent.id}) from the starter kit ${printable(kit.name)} (${kitRef}). State: ${finalAgent.state}.\n`,
   );
+  if (agent.defaultProvider)
+    process.stdout.write(
+      `${defaultProviderLine(
+        agent.defaultProvider,
+        owned?.find((c) => c.id === agent.defaultProvider!.connectionId)?.name,
+      )}\n`,
+    );
   if (skillsError)
     process.stderr.write(
       `warning: the kit's external skills could not be installed: ${printable(skillsError)}\n`,
