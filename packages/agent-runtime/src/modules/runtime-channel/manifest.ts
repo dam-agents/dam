@@ -5,6 +5,7 @@ import {
   harnessConfigCatalog,
   type DriverBinding,
 } from "agent-runtime-api";
+import { sessionSteeringSchema } from "api-server-api";
 import { loadYamlDocument } from "../../core/yaml-document.js";
 import {
   modelDialect,
@@ -157,6 +158,8 @@ export const runtimeManifestSchema = z.object({
   initializeCapabilities: initializeCapabilities.optional(),
 
   harnessState: z.enum(["claude-code"]).optional(),
+
+  steering: sessionSteeringSchema.optional(),
 
   drivers: z.record(z.string(), driverEntry).default({}),
 

@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-27
+Last verified: 2026-10-30
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -33,6 +33,7 @@ The harness is chosen per session ([sessions](sessions.md#session-inside-the-mac
 The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir.
 The build installs them there with the image's own installer, run in the image's root under chroot with the image's env, so every path an install records is the one the image runs it from, and packs that directory as one root-owned layer, rebuilt only when the tool config or the installer changes.
 CI exports `MISE_GITHUB_TOKEN` for those installs, which mise reads; the task hands it to the chroot's mise in a root-only file that the install removes, so no layer holds it.
+A host that reaches the internet only through a proxy hands its proxy variables (`HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, either case) in the same file, since the image's env names none and a proxy address may carry a password; no image carries them.
 mise's user config and data directories keep their defaults, in the home, so what `mise use -g` pins and installs persists with the home.
 A node holds the tools as it holds any image: the kubelet's image collection and the [vm image cache](vm-image-cache.md)'s eviction drop the versions no agent runs.
 
@@ -107,6 +108,7 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   Selkies is installed into the base image from hash-pinned wheels, and streams only royalty-free codecs ([browser-panel](browser-panel.md)).
 - docker and k3s are baked in but not started.
   On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
+  k3s listens on 16443, the port of `cluster:install`'s own k3s in a sandbox and in the lima dev VM, so a cluster one of them made runs under the service with its kubeconfigs unchanged; a data dir made on another port keeps that one, since k3s exits when its stored kubeconfigs name another.
   A service gets only `PATH`, the gateway's proxy and CA variables, `PLATFORM_ENVIRONMENT_OF`, `XDG_RUNTIME_DIR` and `MISE_SYSTEM_DATA_DIR` of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
 - The agent's own services, its [Startup Items](agent-processes.md#startup-items), are openrc user services of root in `~/.config/rc`, started at every boot, a new image included, by openrc's stock `user` service as `user.root`, one of the image's two services in the `default` runlevel, beside `platform-env`, which serves the Environment Link only on an Environment; OpenRC comes from Debian testing through an apt pin for them.
 - aube stands in for pnpm; npm stays for tools that call it.

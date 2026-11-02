@@ -1,12 +1,5 @@
-# A self-contained tarball outside the npm registry; dist/bob.js needs no
-# dependencies.
-[tools."http:bob"]
-version = "2.0.6"
-url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-{{version}}.tgz"
-checksum = "sha256:b3e75ad93f2b5236a4b60f1d008c3d6c12bd2748e81e210b80be302a3db0b5bd"
-strip_components = 1
-bin_path = "dist"
-rename_exe = "bob"
+[tools]
+"npm:@ibm/bob" = "2.0.8"
 
 [oci.env]
 PLATFORM_HARNESS = "bob"

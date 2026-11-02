@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -86,7 +86,7 @@ The record of an approval names the person who answered it, owner or editor, and
 ### Who did what
 
 The owner and the editors work in the same Sessions, so a Session records who did what in it.
-The chat relay writes the person signed in on the socket into every prompt, queue edit and rewrite as its **Sender**, and into every answer to a tool call approval as who answered; an answer given on Home carries who gave it the same way.
+The chat relay writes the person signed in on the socket into every prompt, steer, queue edit and rewrite as its **Sender**, and into every answer to a tool call approval as who answered; an answer given on Home carries who gave it the same way.
 It replaces whatever the client wrote there, because only the relay knows who is signed in.
 The runtime keeps, in the Session's metadata, each Sender with the time its prompt started and its prompt id, the **Session Starter**, and each tool call's verdict with who gave it, keyed by the harness's own tool call id (see [sessions](sessions.md)).
 A Sender is the user id, which decides "You", and the email at the time, which is what the UI shows, so a person removed later is still named.

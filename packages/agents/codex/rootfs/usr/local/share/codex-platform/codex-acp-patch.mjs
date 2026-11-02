@@ -6,7 +6,8 @@ const UPSTREAM_GAPS =
   "agentclientprotocol/codex-acp#663 is closed: codex-acp skips title generation on a provider " +
   "other than OpenAI's own (#595), names the session from session/new (#338) or carries a switch; " +
   "and codex-acp fails a turn whose model request failed, with the error in data.details " +
-  "and no error text in the reply (https://github.com/agentclientprotocol/codex-acp/issues/647)";
+  "and no error text in the reply (https://github.com/agentclientprotocol/codex-acp/issues/647); " +
+  "and a _session/steering request that asks for promptRequired starts no turn when none runs";
 
 function dropOwnImport() {
   const rest = (process.env.NODE_OPTIONS ?? "")
@@ -30,7 +31,10 @@ function dropOwnImport() {
  * not. The second edit fails such a turn instead, with the error in
  * data.details, the only field the chat reads, and no reply text, so the
  * chat shows its failed-message card with Retry and a channel turn posts its
- * failure reply.
+ * failure reply. A steer that finds no running turn starts a hidden turn of
+ * its own, although the runtime asks for promptRequired and then queues the
+ * same message again, so the agent would read it two times. The third edit
+ * answers promptRequired instead.
  */
 const edits = [
   {
@@ -54,6 +58,11 @@ const edits = [
       "      details: `Model request failed: ${readableServiceErrorMessage(params.error.message)}`\n" +
       "    });\n" +
       "    return null;\n",
+    count: 1,
+  },
+  {
+    find: "    return await this.startNewTurnFromSteering(params);\n",
+    replace: '    return { outcome: "promptRequired", reason: "noRunningTurn" };\n',
     count: 1,
   },
 ];

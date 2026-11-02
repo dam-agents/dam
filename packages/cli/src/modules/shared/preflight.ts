@@ -27,7 +27,7 @@ export async function resolveActiveHost(
   }
   if (compat.value.kind === "behind-current") {
     process.stderr.write(
-      `warning: CLI ${compat.value.localCli} is behind the server's recommended CLI ${compat.value.serverRecommendedClient}; consider upgrading\n`,
+      `warning: CLI ${compat.value.localCli} is behind the server's recommended CLI ${compat.value.serverRecommendedClient}; run \`dam update\`\n`,
     );
   }
 

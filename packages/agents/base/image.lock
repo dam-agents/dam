@@ -90,23 +90,6 @@ checksum = "sha256:40343e21ca777173e69cff5dbafeb37c6f81f3b0d57d9e597f036e95eb63e
 url = "https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64"
 url_api = "https://api.github.com/repos/docker/compose/releases/assets/605922749"
 
-[[tools."http:bob"]]
-version = "2.0.6"
-backend = "http:bob"
-specifiers = ["2.0.6"]
-
-[tools."http:bob".options]
-rename_exe = "bob"
-strip_components = "1"
-
-[tools."http:bob"."platforms.linux-arm64"]
-checksum = "sha256:b3e75ad93f2b5236a4b60f1d008c3d6c12bd2748e81e210b80be302a3db0b5bd"
-url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.6.tgz"
-
-[tools."http:bob"."platforms.linux-x64"]
-checksum = "sha256:b3e75ad93f2b5236a4b60f1d008c3d6c12bd2748e81e210b80be302a3db0b5bd"
-url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-2.0.6.tgz"
-
 [[tools."http:docker"]]
 version = "29.9.1"
 backend = "http:docker"
@@ -237,6 +220,12 @@ version = "1.0.96"
 aube = { path = ".mise/locks/npm-github-copilot/1.0.96", digest = "sha256:fd1d7f241b68a58e936150897a39b7de590e71b804b3d111c8a94d188849bc05" }
 backend = "npm:@github/copilot"
 specifiers = ["1.0.96"]
+
+[[tools."npm:@ibm/bob"]]
+version = "2.0.8"
+aube = { path = ".mise/locks/npm-ibm-bob/2.0.8", digest = "sha256:7a97cfc9c20140ffc4f059162cc01a322849c6be27d4fbb5771940b5c57fdd62" }
+backend = "npm:@ibm/bob"
+specifiers = ["2.0.8"]
 
 [[tools."npm:@zhafron/pi-memory"]]
 version = "1.0.2"

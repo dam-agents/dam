@@ -25,6 +25,12 @@ initializeCapabilities:
   authMethods: [{"id": "sso", "name": "Log in with SSO", "description": "Opens your browser to authenticate with IBM SSO"}]
   agentInfo: {"name": "bob-shell", "title": "Bob"}
 
+# Bob's ACP server refuses a second prompt during a turn, and it keeps the
+# finished tool calls and their results through a cancel, so the runtime
+# steers it by interrupt and continue: it cancels Bob's turn at a steer point
+# and sends the waiting messages as a new prompt, as one turn for every client.
+steering: interrupt
+
 # Bob mints its own task id for a terminal session's conversation. A pin here,
 # named by the platform session id and holding the task id, lists that
 # conversation once, under the terminal session.

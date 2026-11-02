@@ -128,7 +128,7 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
-// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again. The item records PLATFORM_GH_TOKEN_AVAILABLE, which the runtime sets and openrc's env filter drops, so only the runtime's ~/.config/rc/profile.env can give it to the item, at a start from the shell and at the boot.
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services, and platform-env, which serves the Environment Link only on an Environment. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, after user.root, so that openrc's shutdown stops it first: the shutdown's window is shared and best-effort, and on a loaded host user.root's stop, a whole openrc of the user's own, spent it before the probe's turn; and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again. The item records PLATFORM_GH_TOKEN_AVAILABLE, which the runtime sets and openrc's env filter drops, so only the runtime's ~/.config/rc/profile.env can give it to the item, at a start from the shell and at the boot.
 test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
   const guest = inGuest(
     agentId,
@@ -138,9 +138,12 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
   const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
   expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
   expect(
-    inGuest(agentId, "find /etc/runlevels -mindepth 2 -printf '%P\\n'").trim(),
-    "a fresh machine starts only the agent's own services",
-  ).toBe("default/user.root");
+    inGuest(
+      agentId,
+      "find /etc/runlevels -mindepth 2 -printf '%P\\n' | sort",
+    ).trim(),
+    "a fresh machine starts only the agent's own services and the Environment Link",
+  ).toBe("default/platform-env\ndefault/user.root");
   inGuest(
     agentId,
     [
@@ -150,12 +153,13 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       "command_args=infinity",
       "command_background=yes",
       `pidfile=/run/${probeService}.pid`,
+      "depend() { after user.root; }",
       `stop_post() { touch ${probeStopped}; }`,
       "EOF",
       `chmod 755 /etc/init.d/${probeService}`,
       `rm -f ${probeStopped}`,
-      `/sbin/rc-update add ${probeService} default >/dev/null`,
-      `/sbin/rc-service ${probeService} start >/dev/null`,
+      `rc-update add ${probeService} default >/dev/null`,
+      `rc-service ${probeService} start >/dev/null`,
       `rm -f ${startupItemRuns}`,
       "mkdir -p /home/agent/.config/rc/init.d /home/agent/.config/rc/runlevels/default",
       `cat > /home/agent/.config/rc/init.d/${startupItem} <<'EOF'`,
@@ -187,7 +191,7 @@ test("starts docker as an openrc service with only the gateway of the agent's en
     agentId,
     [
       "agent=$(head -1 /sys/fs/cgroup/entrypoint/cgroup.procs)",
-      "xargs -0 sh -c 'exec env -i \"$@\" /sbin/rc-service docker start' _ < /proc/$agent/environ >/dev/null",
+      "xargs -0 sh -c 'exec env -i \"$@\" rc-service docker start' _ < /proc/$agent/environ >/dev/null",
       "docker=$(dirname $(readlink /proc/$(cat /run/dockerd.pid)/exe))/docker",
       "for i in $(seq 60); do $docker info >/dev/null 2>&1 && break; sleep 1; done",
       "echo info $($docker info --format '{{.DockerRootDir}}')",
@@ -195,7 +199,7 @@ test("starts docker as an openrc service with only the gateway of the agent's en
       'echo "$env" | grep -q ^HTTPS_PROXY= && echo proxy',
       'echo "$env" | grep -q ^PLATFORM_AGENT_ID= && echo agent-id',
       'echo "$env" | grep -q ^PATH=/run/platform/bin: && echo runc-first',
-      "/sbin/rc-service docker stop >/dev/null; echo stopped $(/sbin/rc-service docker status 2>&1 | grep -c stopped)",
+      "rc-service docker stop >/dev/null; echo stopped $(rc-service docker status 2>&1 | grep -c stopped)",
     ].join("\n"),
   );
   expect(guest).toMatch(/^info \/home\/agent\/\.local\/share\/docker$/m);
@@ -277,7 +281,7 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
   await expectHomeFile(token, agentId, markerPath, marker);
   const guest = inGuest(
     agentId,
-    `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; echo item-runs $(grep -c '^run$' ${startupItemRuns}); echo item-env $(grep -cE '^env (true|false)$' ${startupItemRuns}); true`,
+    `test -e ${probeStopped} && echo stopped; rc-service ${probeService} status 2>&1; echo item-runs $(grep -c '^run$' ${startupItemRuns}); echo item-env $(grep -cE '^env (true|false)$' ${startupItemRuns}); true`,
   );
   expect(guest, "openrc ran the service's stop_post on the stop").toMatch(
     /^stopped$/m,
@@ -296,7 +300,7 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
   inGuest(
     agentId,
     [
-      `/sbin/rc-update del ${probeService} default >/dev/null`,
+      `rc-update del ${probeService} default >/dev/null`,
       `HOME=/home/agent XDG_RUNTIME_DIR=/tmp/platform-display rc-service --user ${startupItem} stop >/dev/null`,
       `rm -f /home/agent/.config/rc/runlevels/default/${startupItem} /home/agent/.config/rc/init.d/${startupItem}`,
     ].join("\n"),

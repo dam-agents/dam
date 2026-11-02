@@ -22,6 +22,8 @@ function fakeStore(): SessionMetadataStore {
     sendersOf: () => [],
     recordVerdict: () => {},
     verdictsOf: () => [],
+    recordCutToolCalls: () => {},
+    cutToolCallsOf: () => [],
     copyAttribution: () => {},
     markUnstored: () => {},
     markStored: () => {},

@@ -589,7 +589,11 @@ export function createAgentsService(deps: {
     }): Promise<{ grantedConnectionIds: string[] }>;
     defaultProviders(
       connectionIds: string[],
-      template: { harness?: string; providers?: readonly string[] },
+      template: {
+        harness?: string;
+        providers?: readonly string[];
+        preferred?: readonly string[];
+      },
     ): Promise<string[]>;
     applyAfterCreate(
       agentId: string,
@@ -1255,10 +1259,11 @@ export function createAgentsService(deps: {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;
-      /* UNIT_BOUNDARY_DESCRIPTION: a kit that names its model and an Environment decide their own default, so the owner's default profile stays out of them. */
+      /* UNIT_BOUNDARY_DESCRIPTION: a kit that names its model or its providers and an Environment decide their own default, so the owner's default profile stays out of them. */
       const profileDefault =
         deps.defaultProfile &&
         input.starterKitDefaultModel === undefined &&
+        input.starterKitProviders === undefined &&
         input.environmentOf === undefined
           ? await deps.defaultProfile().catch((err: unknown) => {
               getLogger().warn(
@@ -1350,6 +1355,9 @@ export function createAgentsService(deps: {
                   harness: spec.harness,
                 }),
                 ...(templateProviders && { providers: templateProviders }),
+                ...(input.starterKitProviders && {
+                  preferred: input.starterKitProviders,
+                }),
               },
             )) ?? [])
           : [];

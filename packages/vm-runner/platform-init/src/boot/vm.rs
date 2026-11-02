@@ -16,7 +16,7 @@ pub fn stage0() -> ! {
         fatal!("the VMM names no share at {}", guest::SHARE_PATH);
     };
     let at = Path::new(guest::STAGE0_SHARE);
-    if let Err(e) = mount_virtiofs(&share.tag, at, true) {
+    if let Err(e) = mount_virtiofs(&share.tag, at, true, ShareRead::Dax) {
         fatal!("mounting the share {} at {}: {e}", share.tag, at.display());
     }
     let init = at.join("init");
@@ -53,19 +53,56 @@ pub fn boot_mounts() -> Vec<BootMount> {
         .collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts a virtiofs share, with DAX where the VMM gave the share a window, so a large binary run from it is mapped from the host's page cache rather than copied into the guest. A share without a window refuses the option, and is mounted without it. Each mount is a console line, `virtiofs mount active: <tag> at <target>, dax=<bool>`, which is how a host tells whether its machines' mounts are DAX-mapped.
-fn mount_virtiofs(tag: &str, target: &Path, read_only: bool) -> io::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: how a virtiofs share is read. A share is mapped with DAX where the VMM gave it a window, so a large binary run from it is mapped from the host's page cache rather than copied into the guest. The image tree is copied instead, through a large read-ahead: it holds the image's tools, and a DAX-mapped one reads at about 10 MB/s whatever its read-ahead, so Chrome (400 MB) and the Claude binary (290 MB) took 30–40 s to start the first time and the browser panel gave up on Chrome. Copied with a 4 MiB read-ahead the same reads run at about 70 MB/s; the cost is the guest's RAM, as each machine keeps its own page cache of the tools it read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ShareRead {
+    Dax,
+    Copied { read_ahead_kib: u32 },
+}
+
+const IMAGE_TREE_READ: ShareRead = ShareRead::Copied {
+    read_ahead_kib: 4096,
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: mounts a virtiofs share read as `read` says. A share without a DAX window refuses the option, and is mounted without it; a read-ahead the guest cannot set is a warning, since the share still reads, only slower. Each mount is a console line, `virtiofs mount active: <tag> at <target>, dax=<bool>`, with the read-ahead after it when one was set, which is how a host tells how its machines' mounts are read.
+fn mount_virtiofs(tag: &str, target: &Path, read_only: bool, read: ShareRead) -> io::Result<()> {
     mkdir_all(target)?;
     let flags = if read_only { libc::MS_RDONLY } else { 0 };
-    let dax = mount_typed(tag, target, "virtiofs", flags, "dax").is_ok();
+    let dax = read == ShareRead::Dax && mount_typed(tag, target, "virtiofs", flags, "dax").is_ok();
     if !dax {
         mount_typed(tag, target, "virtiofs", flags, "")?;
     }
-    announce(&format!(
+    let mut line = format!(
         "virtiofs mount active: {tag} at {}, dax={dax}",
         target.display()
-    ));
+    );
+    if let ShareRead::Copied { read_ahead_kib } = read {
+        match set_read_ahead(target, read_ahead_kib) {
+            Ok(()) => line.push_str(&format!(", read_ahead={read_ahead_kib}KiB")),
+            Err(e) => logf!(
+                "WARNING: setting a {read_ahead_kib} KiB read-ahead on {}: {e}",
+                target.display()
+            ),
+        }
+    }
+    announce(&line);
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a FUSE mount's read-ahead is its backing device's, which sysfs names by the mount's anonymous device number.
+fn set_read_ahead(target: &Path, kib: u32) -> io::Result<()> {
+    fs::write(
+        read_ahead_path(fs::metadata(target)?.dev()),
+        format!("{kib}\n"),
+    )
+}
+
+fn read_ahead_path(dev: u64) -> PathBuf {
+    PathBuf::from(format!(
+        "/sys/class/bdi/{}:{}/read_ahead_kb",
+        libc::major(dev),
+        libc::minor(dev)
+    ))
 }
 
 pub fn mount_typed(
@@ -135,7 +172,7 @@ pub fn prepare() -> Machine {
         fatal!("the VMM shares no image tree (SMOLVM_PACKED_LAYERS)");
     };
     let image = Path::new(STAGE).join("image");
-    if let Err(e) = mount_virtiofs(&tag, &image, true) {
+    if let Err(e) = mount_virtiofs(&tag, &image, true, IMAGE_TREE_READ) {
         fatal!("mounting the image tree {tag}: {e}");
     }
     let mut shares = vec![(
@@ -147,7 +184,7 @@ pub fn prepare() -> Machine {
             continue;
         }
         let staged = Path::new(STAGE).join("shares").join(&share.tag);
-        if let Err(e) = mount_virtiofs(&share.tag, &staged, share.read_only) {
+        if let Err(e) = mount_virtiofs(&share.tag, &staged, share.read_only, ShareRead::Dax) {
             fatal!(
                 "mounting the share {} for {}: {e}",
                 share.tag,
@@ -397,8 +434,9 @@ pub(super) fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
     btrfs_ioctl(parent, 14, name)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the guest agent protocol of smolvm's host side, as much of it as the runner's machines use: a liveness ping that names what this init can do, the quiesced stop, and onlining RAM the VMM plugged in. Each request is a big-endian u32 length and a JSON body on vsock port 6000, answered the same way, and a connection may carry several. Once it listens, the init rings the host's readiness doorbell, which is what a start waits for; it starts only once the image's root is in place, since the host grows the machine's RAM the moment it is ready, and onlining reads /sys, which moves into that root. A request this init does not serve is answered with an error, never with silence, so the host does not wait out its timeout.
-pub fn serve() {
+// UNIT_BOUNDARY_DESCRIPTION: the guest agent protocol of smolvm's host side, as much of it as the runner's machines use: a liveness ping that names what this init can do, the quiesced stop, onlining RAM the VMM plugged in, and an operator's command, which runs in `env`, the launch record's. Each request is a big-endian u32 length and a JSON body on vsock port 6000, answered the same way, and a connection may carry several. Once it listens, the init rings the host's readiness doorbell, which is what a start waits for; it starts only once the image's root is in place, since the host grows the machine's RAM the moment it is ready, and onlining reads /sys, which moves into that root. A request this init does not serve is answered with an error, never with silence, so the host does not wait out its timeout.
+pub fn serve(env: Vec<(String, String)>) {
+    let env: std::sync::Arc<[(String, String)]> = env.into();
     let listener = match vsock_listener(smolvm_protocol::ports::AGENT_CONTROL) {
         Ok(listener) => listener,
         Err(e) => fatal!("listening for the host on vsock: {e}"),
@@ -418,7 +456,8 @@ pub fn serve() {
         }
         // SAFETY: accept4 returned a descriptor nothing else owns.
         let conn = unsafe { File::from_raw_fd(fd) };
-        std::thread::spawn(move || answer(conn));
+        let env = env.clone();
+        std::thread::spawn(move || answer(conn, &env));
     });
     ring_doorbell();
 }
@@ -490,10 +529,10 @@ fn send(conn: &mut File, response: &AgentResponse) -> io::Result<()> {
     conn.write_all(&frame)
 }
 
-fn answer(mut conn: File) {
+fn answer(mut conn: File, env: &[(String, String)]) {
     while let Some(body) = read_frame(&mut conn) {
         let response = match serde_json::from_slice::<Envelope<AgentRequest>>(&body) {
-            Ok(request) => respond(request.body, &mut conn),
+            Ok(request) => respond(request.body, &mut conn, env),
             Err(e) => AgentResponse::error(
                 format!("unreadable request: {e}"),
                 error_codes::INVALID_REQUEST,
@@ -505,7 +544,11 @@ fn answer(mut conn: File) {
     }
 }
 
-fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
+fn respond(
+    request: AgentRequest,
+    conn: &mut File,
+    launch_env: &[(String, String)],
+) -> AgentResponse {
     match request {
         AgentRequest::Ping => AgentResponse::Pong {
             version: smolvm_protocol::PROTOCOL_VERSION,
@@ -540,6 +583,7 @@ fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
             stdin_data,
         } => exec(
             &command,
+            launch_env,
             &env,
             workdir.as_deref(),
             timeout_ms.map_or(EXEC_TIMEOUT, Duration::from_millis),
@@ -584,9 +628,11 @@ pub fn claim_exit(pid: libc::pid_t, status: libc::c_int) -> bool {
 const EXEC_TIMEOUT: Duration = Duration::from_secs(300);
 const EXEC_OUTPUT_MAX: usize = 8 << 20;
 
-// UNIT_BOUNDARY_DESCRIPTION: runs one command for the host, as root in the image's root, with the env it names on top of a default PATH and nothing of the init's own, and answers with its exit code and output once it ends, or once `timeout` has passed and it was killed. Only a non-interactive command is run: operators reach a guest this way (`vm-runner exec`), and nothing in the platform needs a shell into it.
+// UNIT_BOUNDARY_DESCRIPTION: runs one command for the host, as root in the image's root, with the env it names on top of the launch record's and nothing of the init's own, and answers with its exit code and output once it ends, or once `timeout` has passed and it was killed. Only a non-interactive command is run: operators reach a guest this way (`vm-runner exec`), and nothing in the platform needs a shell into it.
+// UNIT_BOUNDARY_DESCRIPTION: the launch record's env is the one the image's entrypoint got, as a container's exec gets its container's: the image's PATH, which finds the tools it installs, and the variables that point them at the agent's own browser, display and trust store. A record without PATH gets the default one, as the entrypoint does.
 fn exec(
     command: &[String],
+    launch_env: &[(String, String)],
     env: &[(String, String)],
     workdir: Option<&str>,
     timeout: Duration,
@@ -598,10 +644,13 @@ fn exec(
     };
     let (lock, cvar) = &EXECS;
     let mut execs = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let spawned = super::unblocked(&mut std::process::Command::new(program))
-        .args(args)
-        .env_clear()
-        .env("PATH", DEFAULT_PATH)
+    let mut spawn = std::process::Command::new(program);
+    spawn.args(args).env_clear();
+    if !launch_env.iter().any(|(key, _)| key == "PATH") {
+        spawn.env("PATH", DEFAULT_PATH);
+    }
+    let spawned = super::unblocked(&mut spawn)
+        .envs(launch_env.iter().map(|(key, value)| (key, value)))
         .envs(env.iter().map(|(key, value)| (key, value)))
         .current_dir(workdir.unwrap_or("/"))
         .process_group(0)
@@ -935,6 +984,21 @@ mod tests {
         assert!(STORAGE_DISK_OPTIONS.contains("compress=zstd:1"));
     }
 
+    // TEST_SCENARIO: the image tree, which holds the image's tools, is copied through a 4 MiB read-ahead rather than DAX-mapped, and that read-ahead is set on the backing device sysfs names by the mount's device number.
+    #[test]
+    fn the_image_tree_is_read_through_a_large_read_ahead() {
+        assert_eq!(
+            IMAGE_TREE_READ,
+            ShareRead::Copied {
+                read_ahead_kib: 4096
+            }
+        );
+        assert_eq!(
+            read_ahead_path(libc::makedev(0, 42)),
+            Path::new("/sys/class/bdi/0:42/read_ahead_kb")
+        );
+    }
+
     // TEST_SCENARIO: the shares reach the guest as smolvm's launcher names them, `tag:target:mode`. A target is any absolute path, a colon included, and anything but `rw` is read-only, so a share is never writable by a misread.
     #[test]
     fn boot_mounts_are_read_as_the_launcher_writes_them() {
@@ -981,11 +1045,11 @@ mod tests {
     // TEST_SCENARIO: an operator's command runs to its end and answers with its exit code and both streams, with the env it was given and none of the init's; one that outlives its limit is killed and says so, rather than holding the protocol thread.
     #[test]
     fn an_exec_answers_with_what_the_command_did() {
-        let run = |script: &str, timeout_ms: u64| {
+        let run = |command: Vec<String>, launch_env: &[(String, String)], timeout_ms: u64| {
             let mut conn = File::open("/dev/null").unwrap();
             respond(
                 AgentRequest::VmExec {
-                    command: vec!["/bin/sh".into(), "-c".into(), script.into()],
+                    command,
                     env: vec![("GIVEN".into(), "yes".into())],
                     workdir: Some("/".into()),
                     timeout_ms: Some(timeout_ms),
@@ -995,14 +1059,17 @@ mod tests {
                     stdin_data: None,
                 },
                 &mut conn,
+                launch_env,
             )
         };
+        let sh = |script: &str| vec!["/bin/sh".into(), "-c".into(), script.into()];
         let AgentResponse::Completed {
             exit_code,
             stdout,
             stderr,
         } = run(
-            "echo \"$GIVEN ${CARGO:-clean} $(pwd)\"; echo err >&2; exit 3",
+            sh("echo \"$GIVEN ${CARGO:-clean} $(pwd) $PATH\"; echo err >&2; exit 3"),
+            &[],
             10_000,
         )
         else {
@@ -1010,19 +1077,97 @@ mod tests {
         };
         assert_eq!(
             (exit_code, stdout, stderr),
-            (3, b"yes clean /\n".to_vec(), b"err\n".to_vec())
+            (
+                3,
+                format!("yes clean / {DEFAULT_PATH}\n").into_bytes(),
+                b"err\n".to_vec()
+            )
         );
-        let AgentResponse::Completed { exit_code, .. } = run("sleep 10", 100) else {
+        let AgentResponse::Completed { exit_code, .. } = run(sh("sleep 10"), &[], 100) else {
             panic!("no completion");
         };
         assert_eq!(exit_code, 128 + libc::SIGKILL);
+    }
+
+    // TEST_SCENARIO: an operator's command runs in the env the image's entrypoint got, as a container's exec does: a tool the image installs off the default PATH is found by name, and its variables are set, with the request's own env over them. What failed without it was `vm-runner exec <machine> -- sh -c 'agent-browser ...'`, which found no agent-browser.
+    #[test]
+    fn an_exec_runs_in_the_launch_records_env() {
+        let dir =
+            std::env::temp_dir().join(format!("platform-init-exec-env-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // UNIT_BOUNDARY_DESCRIPTION: the tool is created by a `cp` child, so this process never holds a descriptor on the inode that is executed: Linux fails an exec with ETXTBSY while any process holds the file open for writing, and a fork on another test thread copies such a descriptor into a child that keeps it until it execs.
+        let staged = dir.join(".image-tool");
+        let tool = dir.join("image-tool");
+        fs::write(
+            &staged,
+            "#!/bin/sh\necho \"tool $IMAGE_SETTING $GIVEN $*\"\n",
+        )
+        .unwrap();
+        let copied = std::process::Command::new("cp")
+            .arg(&staged)
+            .arg(&tool)
+            .status()
+            .unwrap();
+        assert!(copied.success(), "cp {staged:?} into {tool:?}: {copied}");
+        fs::set_permissions(&tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        fs::remove_file(&staged).unwrap();
+        let launch_env = [
+            (
+                "PATH".to_string(),
+                format!("{}:/usr/bin:/bin", dir.display()),
+            ),
+            ("IMAGE_SETTING".to_string(), "image".to_string()),
+            ("GIVEN".to_string(), "image".to_string()),
+        ];
+        for (command, said) in [
+            (
+                vec!["image-tool".to_string(), "direct".to_string()],
+                "direct",
+            ),
+            (
+                vec!["sh".into(), "-c".into(), "image-tool shell".into()],
+                "shell",
+            ),
+        ] {
+            let mut conn = File::open("/dev/null").unwrap();
+            let response = respond(
+                AgentRequest::VmExec {
+                    command: command.clone(),
+                    env: vec![("GIVEN".into(), "yes".into())],
+                    workdir: None,
+                    timeout_ms: Some(10_000),
+                    interactive: false,
+                    tty: false,
+                    background: false,
+                    stdin_data: None,
+                },
+                &mut conn,
+                &launch_env,
+            );
+            let AgentResponse::Completed {
+                exit_code,
+                stdout,
+                stderr,
+            } = response
+            else {
+                panic!("{command:?}: {response:?}");
+            };
+            assert_eq!(
+                (exit_code, String::from_utf8_lossy(&stdout).into_owned()),
+                (0, format!("tool image yes {said}\n")),
+                "{command:?}: {}",
+                String::from_utf8_lossy(&stderr)
+            );
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 
     // TEST_SCENARIO: the host checks a ping's capabilities before it asks for a quiesced stop or for RAM to be onlined; without them it refuses the stop and leaves the VMM running, or never grows the machine.
     #[test]
     fn a_ping_names_what_the_host_needs() {
         let mut conn = File::open("/dev/null").unwrap();
-        let response = respond(AgentRequest::Ping, &mut conn);
+        let response = respond(AgentRequest::Ping, &mut conn, &[]);
         let AgentResponse::Pong { capabilities, .. } = response else {
             panic!("{response:?}");
         };

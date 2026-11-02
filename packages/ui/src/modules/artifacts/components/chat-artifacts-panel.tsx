@@ -2,7 +2,9 @@ import { FolderAdd, Upload } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import {
   type CSSProperties,
+  Fragment,
   type Ref,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -21,7 +23,10 @@ import { useStore } from "../../../store.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
-import { useFolderDropTarget } from "../hooks/use-artifact-row-drag.js";
+import {
+  type FolderDropCallbacks,
+  useFolderDropTarget,
+} from "../hooks/use-artifact-row-drag.js";
 import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
 import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 import { folderDisplayNames } from "../lib/folders.js";
@@ -101,12 +106,39 @@ export function ChatArtifactsPanel({
     (s) => s.artifactFolderCollapse[collapseScope],
   );
   const setFolderCollapsed = useStore((s) => s.setArtifactFolderCollapsed);
-  const { dropCallbacks, hotFolderId, dragInProgress } =
-    useFolderDragOrchestration(artifacts);
+  const [keptFolders, setKeptFolders] = useState<{
+    agentId: string | null;
+    ids: ReadonlySet<string>;
+  }>({ agentId, ids: new Set() });
+  if (keptFolders.agentId !== agentId)
+    setKeptFolders({ agentId, ids: new Set() });
+  const keepFolder = useCallback(
+    (folderId: string) =>
+      setKeptFolders((kept) => ({
+        ...kept,
+        ids: new Set(kept.ids).add(folderId),
+      })),
+    [],
+  );
+  const orchestration = useFolderDragOrchestration(artifacts);
+  const { hotFolderId, dragInProgress } = orchestration;
+  const dropCallbacks = useMemo<FolderDropCallbacks>(
+    () => ({
+      ...orchestration.dropCallbacks,
+      onDrop: (folderId, artifactId) => {
+        if (folderId) keepFolder(folderId);
+        orchestration.dropCallbacks.onDrop(folderId, artifactId);
+      },
+    }),
+    [orchestration.dropCallbacks, keepFolder],
+  );
   const groups = useMemo(() => {
-    const all = groupArtifactsByFolder(shown, folders);
+    const all = groupArtifactsByFolder(shown, folders, {
+      omitEmptyFolders: scopeAgentId !== null && !dragInProgress,
+      keepFolderIds: keptFolders.ids,
+    });
     return term ? all.filter((g) => g.artifacts.length > 0) : all;
-  }, [shown, folders, term]);
+  }, [shown, folders, term, scopeAgentId, dragInProgress, keptFolders.ids]);
   const rootDrop = useFolderDropTarget(null, dropCallbacks);
   const folderNames = useMemo(() => folderDisplayNames(folders), [folders]);
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
@@ -229,7 +261,11 @@ export function ChatArtifactsPanel({
         >
           {groups.map((group) => {
             if (!group.folder)
-              return group.artifacts.map((a) => renderRow(a, 0));
+              return (
+                <Fragment key={group.key}>
+                  {group.artifacts.map((a) => renderRow(a, 0))}
+                </Fragment>
+              );
             const collapsed =
               folderCollapse?.[group.key] ?? group.artifacts.length === 0;
             return (
@@ -293,7 +329,11 @@ export function ChatArtifactsPanel({
         />
       )}
       {creatingFolder && (
-        <FolderDialog folder={null} onClose={() => setCreatingFolder(false)} />
+        <FolderDialog
+          folder={null}
+          onClose={() => setCreatingFolder(false)}
+          onCreated={(folder) => keepFolder(folder.id)}
+        />
       )}
       {editFolder && (
         <FolderDialog folder={editFolder} onClose={() => setEditFolder(null)} />

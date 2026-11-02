@@ -20,7 +20,7 @@ import {
   filterGroupsByAccepts,
 } from "../lib/catalog-providers.js";
 import type { ConnectionAudience } from "../lib/connection-audience.js";
-import { childrenOf } from "../lib/connection-hierarchy.js";
+import { childrenOf, parentAddedMessage } from "../lib/connection-hierarchy.js";
 import type { NamedConnection } from "../lib/connection-label.js";
 import {
   grantBlockedReason,
@@ -46,7 +46,7 @@ type Pane =
   | { kind: "browse" }
   | { kind: "create"; providerId: string }
   | { kind: "create-mcp" }
-  | { kind: "create-child"; parent: ConnectionView };
+  | { kind: "create-child"; parent: ConnectionView; first?: boolean };
 
 export interface ConnectionSharing {
   notice: ConnectionAudience | null;
@@ -225,6 +225,10 @@ export function ConnectionCatalogModal({
     onClose();
   };
   const onCreated = (id: string) => void grantCreated(id);
+  const backWithParent = (parent: Pick<ConnectionView, "authKind">) => {
+    setPane({ kind: "browse" });
+    emitToast({ kind: "success", message: parentAddedMessage(parent) });
+  };
 
   const groupById = (providerId: string) =>
     (narrowed ?? allGroups).find((g) => g.provider.id === providerId);
@@ -245,7 +249,10 @@ export function ConnectionCatalogModal({
           initialTemplateId={initialTemplateId}
           onBack={() => setPane({ kind: "browse" })}
           onCreated={onCreated}
-          onSignedIn={(parent) => setPane({ kind: "create-child", parent })}
+          onAddedAlone={() => backWithParent({ authKind: "github-app" })}
+          onSignedIn={(parent) =>
+            setPane({ kind: "create-child", parent, first: true })
+          }
         />
       ) : null
     ) : pane.kind === "create-child" ? (
@@ -253,6 +260,7 @@ export function ConnectionCatalogModal({
         parent={pane.parent}
         onBack={() => setPane({ kind: "browse" })}
         onCreated={onCreated}
+        onLater={pane.first ? () => backWithParent(pane.parent) : undefined}
       />
     ) : pane.kind === "create-mcp" ? (
       <McpCreatePane

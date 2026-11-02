@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TelegramUser } from "@chat-adapter/telegram";
+import { AcpModelRefusedError } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import { telegramWorkerHarness } from "../helpers/telegram-worker.js";
 
@@ -120,6 +121,26 @@ describe("telegram worker turns", () => {
   });
 
   /**
+   * TEST_SCENARIO: A turn the model refused ends before the agent can send
+   * anything. The chat gets the refusal and what to do, without the Slack
+   * advice to open a new thread: a Telegram chat has one session.
+   */
+  it("tells the chat the model refused the message", async () => {
+    const h = await started(
+      telegramWorkerHarness({
+        turn: () => Promise.reject(new AcpModelRefusedError("s-chat")),
+      }),
+    );
+
+    h.sendDirect(JANE, "a question");
+
+    await vi.waitFor(() =>
+      expect(h.posts.join("\n")).toContain("The model refused this message"),
+    );
+    expect(h.posts.join("\n")).not.toContain("new thread");
+  });
+
+  /**
    * TEST_SCENARIO: A follow-up in the same chat while its turn runs is steered
    * into that turn, so the agent reads it before it answers and the chat gets
    * one answer, as the shared conversation queue intends.
@@ -138,6 +159,7 @@ describe("telegram worker turns", () => {
         expect(steer).toHaveBeenCalledWith(
           "s-1",
           expect.stringContaining("oh, and also this"),
+          expect.objectContaining({ targetPromptId: "p-1" }),
         ),
       );
       expect(h.prompts).toHaveLength(1);

@@ -344,9 +344,14 @@ install_tools() {
   # the install, and no image carries the host's CA.
   [ ! -r "${SSL_CERT_FILE:-}" ] || ${sudo[@]+"${sudo[@]}"} sh -c 'cat "$1" >> "$2"' _ "$SSL_CERT_FILE" "$r/run/platform/ca-certificates.crt"
   mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" | grep -E '^[A-Z_][A-Z0-9_]*=')
-  # The GitHub token stays out of every command line, where any user on the
-  # host reads it: sudo keeps it in the environment, and it crosses env -i in a
-  # root-only file the chroot's shell reads into the installer's environment.
+  # A host that reaches the internet only through a proxy, and resolves no
+  # public name itself, hands the installer its proxy: the image's env names
+  # none, and env -i would leave the downloads with no route at all. A proxy's
+  # address may carry a user and a password, so it travels as the GitHub token
+  # does. Both stay out of every command line, where any user on the host reads
+  # them: sudo keeps them in the environment, and they cross env -i in a
+  # root-only file, one NAME=value a line, that the chroot's shell exports into
+  # the installer's environment.
   ${sudo[@]+"${sudo[@]}"} unshare --mount --propagation private sh -euc '
     r=$1 tools=$2
     shift 2
@@ -356,10 +361,20 @@ install_tools() {
     mkdir -p "$r/usr/share/mise" "$r/home/agent"
     mount --bind "$tools" "$r/usr/share/mise"
     cp -L /etc/resolv.conf "$r/etc/resolv.conf"
-    (umask 077 && printf %s "${MISE_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}" > "$r/run/mise-github-token")
+    (
+      umask 077
+      t=${MISE_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}
+      {
+        [ -z "$t" ] || printf "MISE_GITHUB_TOKEN=%s\n" "$t"
+        for v in HTTPS_PROXY https_proxy HTTP_PROXY http_proxy NO_PROXY no_proxy; do
+          eval "x=\${$v:-}"
+          [ -z "$x" ] || printf "%s=%s\n" "$v" "$x"
+        done
+      } > "$r/run/install-host-env"
+    )
     chroot "$r" env -i "$@" sh -euc '\''
-      MISE_GITHUB_TOKEN=$(cat /run/mise-github-token) && rm /run/mise-github-token
-      [ -z "$MISE_GITHUB_TOKEN" ] || export MISE_GITHUB_TOKEN
+      while IFS= read -r kv; do export "$kv"; done < /run/install-host-env
+      rm /run/install-host-env
       exec install-harness-tools
     '\'' </dev/null
   ' _ "$r" "$tools/usr/share/mise" "${envv[@]}"

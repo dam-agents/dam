@@ -65,8 +65,12 @@ describe("artifact prompt buttons", () => {
     },
   );
 
-  it("exposes only the prompt and request functions", () => {
-    expect(Object.keys(page().platform)).toEqual(["sendPrompt", "request"]);
+  it("exposes only the prompt, request and whoami functions", () => {
+    expect(Object.keys(page().platform)).toEqual([
+      "sendPrompt",
+      "request",
+      "whoami",
+    ]);
   });
 });
 
@@ -264,6 +268,7 @@ describe("artifact bridge on a public interactive page", () => {
     expect(Object.keys(sharedPage().platform)).toEqual([
       "sendPrompt",
       "request",
+      "whoami",
     ]);
   });
 });

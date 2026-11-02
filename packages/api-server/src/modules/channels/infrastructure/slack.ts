@@ -71,6 +71,7 @@ import type {
 } from "../services/worker-contract.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
+  AcpModelRefusedError,
   AcpSessionLoadError,
   pairFields,
   AcpTurnAbandonedError,
@@ -1153,10 +1154,38 @@ function mayLeaveHarnessRunning(
   );
 }
 
+export interface UnansweredFollowUp {
+  eventTs: string;
+  speaker?: string;
+  text?: string;
+}
+
+function followUpNudge(
+  threadTs: string,
+  followUps: readonly UnansweredFollowUp[],
+): string {
+  return [
+    "<turn-undelivered>",
+    "You replied in this Slack conversation, but these messages arrived while you were working and got no answer:",
+    ...followUps.map(
+      (m) => `[ts ${m.eventTs}] ${m.speaker ?? "someone"}: ${m.text ?? ""}`,
+    ),
+    `Answer only these messages now with the reply tool (threadTs="${threadTs}"); do not repeat what you already posted.`,
+    "If they need no answer, call no_reply_needed instead.",
+    "</turn-undelivered>",
+  ].join("\n");
+}
+
 export function undeliveredNudge(
   threadTs: string,
-  opts: { sawFailure: boolean; outOfMemory?: boolean },
+  opts: {
+    sawFailure: boolean;
+    outOfMemory?: boolean;
+    followUps?: readonly UnansweredFollowUp[];
+  },
 ): string {
+  if (opts.followUps !== undefined && opts.followUps.length > 0)
+    return followUpNudge(threadTs, opts.followUps);
   return [
     "<turn-undelivered>",
     opts.sawFailure
@@ -1514,6 +1543,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     hasThread?: boolean;
     hadAttachments?: boolean;
     whisper?: SlackTurnWhisper;
+    steered?: boolean;
+    speaker?: string;
   };
 
   type AddressedMessage = {
@@ -1644,12 +1675,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channel: string,
     sessionKey: string,
     carries: () => readonly string[],
+    claim?: (ts: string) => void,
   ): SupersedableTurn & { end: () => void } {
     const cancelled = new AbortController();
     const turn = threadSupersede.hold(instanceName, {
       channel,
       sessionKey,
       carries,
+      ...(claim && { claim }),
       cancel: () => cancelled.abort(),
     });
     return { turn, signal: cancelled.signal, end: () => turn.end() };
@@ -1843,7 +1876,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     match: (ref: TurnRef) => boolean,
     opts: { messaged?: boolean; replyText?: string } = {},
   ) {
-    const engaged = findTurnRef(instanceName, match);
+    noteEngaged(findTurnRef(instanceName, match), opts);
+  }
+
+  function noteEngaged(
+    engaged: TurnRef | undefined,
+    opts: { messaged?: boolean; replyText?: string } = {},
+  ) {
     if (!engaged) return;
     engaged.posted = true;
     if (opts.messaged) engaged.messaged = true;
@@ -2332,13 +2371,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     attachment: ChannelAttachment | undefined,
     threadTs: string | undefined,
     persona: Pick<SlackPostMessage, "username" | "iconUrl">,
-    post: (fileIds: string[]) => Promise<unknown>,
+    post: (fileIds: string[]) => Promise<{ ts: string } | null>,
     fileBlocks: SlackBlock[] | null,
-  ): Promise<string | null> {
-    if (!attachment) {
-      await post([]);
-      return null;
-    }
+  ): Promise<{ uploadError: string | null; ts?: string }> {
+    const posted = async (fileIds: string[]) => {
+      const message = await post(fileIds);
+      return message ? { ts: message.ts } : {};
+    };
+    if (!attachment) return { uploadError: null, ...(await posted([])) };
     const share = (fileId: string, blocks?: SlackBlock[]) =>
       gw.shareFile({
         fileId,
@@ -2360,25 +2400,23 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               () => null,
               (err: unknown) => formatError(err),
             )));
-      if (failure === null) return null;
+      if (failure === null) return { uploadError: null };
       getLogger().warn(
         { channelId: target.id, err: failure },
         "slack.file_post.failed: posting the text and the file apart",
       );
     }
     const staged = await stageFile(gw, target.teamId, attachment);
-    if ("error" in staged) {
-      await post([]);
-      return staged.error;
-    }
-    await post([staged.reserved.fileId]);
-    const uploadError = await staged.bytesSent;
-    if (uploadError !== null) return uploadError;
+    if ("error" in staged)
+      return { uploadError: staged.error, ...(await posted([])) };
+    const message = await posted([staged.reserved.fileId]);
+    const bytesError = await staged.bytesSent;
+    if (bytesError !== null) return { uploadError: bytesError, ...message };
     try {
       await share(staged.reserved.fileId);
-      return null;
+      return { uploadError: null, ...message };
     } catch (err) {
-      return formatError(err);
+      return { uploadError: formatError(err), ...message };
     }
   }
 
@@ -2658,6 +2696,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }),
     ]);
     const footer = { ...base, emoji };
+    const engaged = findTurnRef(
+      instanceName,
+      (ref) => ref.channel === turn.channel && ref.threadTs === turn.threadTs,
+    );
     try {
       await gw.postEphemeral({
         channel: turn.channel,
@@ -2670,11 +2712,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch (err) {
       return { error: formatError(err) };
     }
-    noteEngagedTurn(
-      instanceName,
-      (ref) => ref.channel === turn.channel && ref.threadTs === turn.threadTs,
-      { messaged: true, replyText: args.text },
-    );
+    noteEngaged(engaged, { messaged: true, replyText: args.text });
     return { ok: true as const };
   }
 
@@ -2779,6 +2817,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     sawFailure: boolean;
     restartsAtStart?: PodRestartState;
     externalActorId?: string;
+    followUps?: readonly UnansweredFollowUp[];
   }): Promise<void> {
     const { instanceName, sessionId, threadKey, threadTs } = args;
     const disposition = () =>
@@ -2809,6 +2848,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             undeliveredNudge(threadTs, {
               sawFailure: args.sawFailure,
               outOfMemory,
+              ...(args.followUps && { followUps: args.followUps }),
             }),
             { resumeSessionId: sessionId },
           );
@@ -2840,10 +2880,44 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
   }
 
-  function deliveredBy(refs: TurnRef[], end: WatchedTurnEnd): boolean {
+  function answeredRef(ref: TurnRef, end: WatchedTurnEnd): boolean {
     return end === "interrupted"
-      ? refs.some((ref) => ref.declined || ref.handedOff)
-      : refs.some((ref) => ref.posted || ref.declined || ref.handedOff);
+      ? ref.declined === true || ref.handedOff === true
+      : ref.posted === true || ref.declined === true || ref.handedOff === true;
+  }
+
+  function newestSteeredPerTarget(refs: TurnRef[]): TurnRef[] {
+    const newest = new Map<string, TurnRef>();
+    for (const ref of refs) if (ref.steered) newest.set(ref.threadTs, ref);
+    return [...newest.values()];
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a turn is answered when its agent replied,
+   * declined, handed off or reacted. A message steered into the turn joins it
+   * after the agent may already have replied, so a turn carrying steered
+   * messages is answered only when, for each reply target, its newest steered
+   * message got its own reply, decline, hand-off or reaction.
+   */
+  function deliveredBy(refs: TurnRef[], end: WatchedTurnEnd): boolean {
+    const steered = newestSteeredPerTarget(refs);
+    return steered.length === 0
+      ? refs.some((ref) => answeredRef(ref, end))
+      : steered.every((ref) => answeredRef(ref, end));
+  }
+
+  function unansweredFollowUps(refs: TurnRef[]): TurnRef[] {
+    const open = new Set(
+      newestSteeredPerTarget(refs)
+        .filter((ref) => !answeredRef(ref, "clean"))
+        .map((ref) => ref.threadTs),
+    );
+    return refs.filter(
+      (ref) =>
+        ref.steered === true &&
+        open.has(ref.threadTs) &&
+        !answeredRef(ref, "clean"),
+    );
   }
 
   function watchUndeliveredTurn(turn: {
@@ -2857,6 +2931,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     restartsAtStart?: PodRestartState;
     externalActorId?: string;
     endedAs?: WatchedTurnEnd;
+    followUps?: readonly UnansweredFollowUp[];
   }): void {
     const { instanceName, sessionId, refs, endedAs, ...nudge } = turn;
     if (!serving) {
@@ -2898,7 +2973,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     onReady?: () => void;
     onImagesDropped?: () => void;
     onUpdate?: (update: PromptUpdate) => void;
-    onSession?: (sessionId: string) => void;
+    onSession?: (sessionId: string, promptId?: string) => void;
     onGhostTurn?: () => void;
     legacyThreadKey?: string;
     signal?: AbortSignal;
@@ -2936,9 +3011,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         opts: Parameters<typeof acp.sendPrompt>[1],
       ) => {
         args.signal?.throwIfAborted();
-        const answer = await acp.sendPrompt(built.prompt, opts);
-        built.commit();
-        return answer;
+        try {
+          const answer = await acp.sendPrompt(built.prompt, opts);
+          built.commit();
+          return answer;
+        } catch (err) {
+          if (err instanceof AcpModelRefusedError) built.commit();
+          throw err;
+        }
       };
       if (existing) {
         const resume = await args.buildResumePrompt();
@@ -2990,7 +3070,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     forwardedFrom?: string;
     whisper?: SlackTurnWhisper;
     siblingRefs?: () => TurnRef[];
-    onSession?: (sessionId: string) => void;
+    onSession?: (sessionId: string, promptId?: string) => void;
+    steersSettled?: () => Promise<void>;
     held?: SupersedableTurn;
   }) {
     if (!gateway) return;
@@ -3047,15 +3128,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       sawFailure: boolean,
       ending:
         { endedAs: WatchedTurnEnd } | { restartsAtStart?: PodRestartState },
+      followUps: TurnRef[] = [],
     ) =>
       watchUndeliveredTurn({
         instanceName,
         sessionId,
         threadKey,
-        threadTs: replyThreadTs,
+        threadTs: followUps.at(-1)?.threadTs ?? replyThreadTs,
         refs,
-        anchorRef: turnRefs.at(-1)!,
+        anchorRef: followUps.at(-1) ?? turnRefs.at(-1)!,
         sawFailure,
+        ...(followUps.length > 0 && { followUps }),
         ...(ctx.externalActorId
           ? { externalActorId: ctx.externalActorId }
           : {}),
@@ -3223,10 +3306,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           presenter.onUpdate(update);
           if (update.kind === "tool") ctx.held?.turn.noteTool(update.title);
         },
-        onSession: (sessionId) => {
+        onSession: (sessionId, promptId) => {
           seenSessionIds.add(sessionId);
           for (const ref of turnRefs) ref.sessionId = sessionId;
-          ctx.onSession?.(sessionId);
+          ctx.onSession?.(sessionId, promptId);
         },
         onGhostTurn: () => {
           ghostTurn = true;
@@ -3260,7 +3343,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return;
       const copy = match(failure)
         .with({ kind: "plain" }, ({ copy }) =>
-          copy({ uiBaseUrl, agentId: instanceName }),
+          copy({ uiBaseUrl, agentId: instanceName, threads: true }),
+        )
+        .with({ kind: "spend" }, ({ block }) =>
+          spendHoldUserCopy(
+            block,
+            "This agent",
+            brand.name,
+            slackResetTime(new Date()),
+          ),
         )
         .with({ kind: "provider-unavailable" }, () =>
           slackProviderOutageCopy(outage, brand.name),
@@ -3290,15 +3381,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ctx.held?.signal.addEventListener("abort", onSuperseded, { once: true });
     try {
       for (const ref of turnRefs) beginTurn(instanceName, ref);
-      await runWhileAgentStarts(runTurn, {
-        ...wakeWait,
-        onStillStarting: async () => {
-          await postNotice(
-            "The agent is still starting — this can take a few more " +
-              "minutes. It'll answer as soon as it's up.",
-          );
-        },
-      });
+      try {
+        await runWhileAgentStarts(runTurn, {
+          ...wakeWait,
+          onStillStarting: async () => {
+            await postNotice(
+              "The agent is still starting — this can take a few more " +
+                "minutes. It'll answer as soon as it's up.",
+            );
+          },
+        });
+      } finally {
+        await ctx.steersSettled?.();
+      }
       outcome = "success";
     } catch (err) {
       if (superseded)
@@ -3343,18 +3438,30 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         !stopped() &&
         !deliveredBy(settledRefs, "clean")
       ) {
+        const followUps = settledRefs.some((ref) => ref.posted)
+          ? unansweredFollowUps(settledRefs)
+          : [];
         getLogger().warn(
           {
             agentId: instanceName,
             channelId: ctx.channel,
             threadTs: replyThreadTs,
             eventTs,
+            unansweredFollowUps: followUps.length,
           },
-          "slack.turn.unanswered: the agent finished an addressed turn without " +
-            "posting a reply or a reaction",
+          followUps.length > 0
+            ? "slack.turn.unanswered: the agent replied, but messages steered into the turn after it got no answer"
+            : "slack.turn.unanswered: the agent finished an addressed turn without " +
+                "posting a reply or a reaction",
         );
         if (nudgeSessionId !== undefined)
-          watchTurn(nudgeSessionId, settledRefs, false, { endedAs: "clean" });
+          watchTurn(
+            nudgeSessionId,
+            settledRefs,
+            false,
+            { endedAs: "clean" },
+            followUps,
+          );
       }
       await presenter.clearStatus();
       annotateSpan({
@@ -5193,9 +5300,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     batch: PendingMessage[],
   ): string {
     const one = batch.length === 1;
+    const them = one ? "it" : "them";
     return [
       "<new-messages>",
-      `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Answer everything in one reply rather than replying more than once.`,
+      `${one ? "Another message" : `${batch.length} more messages`} arrived in this same Slack conversation while you were working.`,
+      "If you have not posted a reply yet, answer everything in one reply.",
+      conversation.oneThread
+        ? `If you already posted a reply that does not cover ${them}, post one more reply that answers only ${them}, with the reply tool and threadTs="${conversation.threadTs}".`
+        : `If you already posted a reply that does not cover ${them}, post one more reply that answers only ${them}, with the reply tool.`,
+      `If ${one ? "it needs" : "they need"} no answer, call no_reply_needed for ${them}.`,
       ...(conversation.oneThread
         ? []
         : [
@@ -5211,148 +5324,163 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     conversation: AddressedConversation,
   ): ConversationQueue<AddressedPending> {
     const steeredRefs: TurnRef[] = [];
-    return createConversationQueue<AddressedPending>({
-      settleMs,
-      canSteer: (msg) => !carriesAttachments(msg),
-      runTurn: async (queued, onSession) => {
-        const threadKey = slackThreadKey(
-          conversation.channelId,
-          conversation.threadTs,
-        );
-        const isCarriedByThread = (m: AddressedPending) =>
-          !conversation.oneThread &&
-          threadSupersede.isSuperseded(
-            conversation.instanceName,
+    const queue: ConversationQueue<AddressedPending> =
+      createConversationQueue<AddressedPending>({
+        settleMs,
+        canSteer: (msg) => !carriesAttachments(msg),
+        runTurn: async (queued, onSession, steersSettled) => {
+          const threadKey = slackThreadKey(
             conversation.channelId,
-            m.eventTs,
+            conversation.threadTs,
           );
-        noteCarriedByThread(
-          conversation.instanceName,
-          threadKey,
-          queued.filter(isCarriedByThread).map((m) => m.eventTs),
-        );
-        const batch = queued.filter((m) => !isCarriedByThread(m));
-        const latest = batch.at(-1);
-        if (!latest) return;
-        const { kept, dropped } = batchFiles(batch);
-        const held = conversation.oneThread
-          ? null
-          : holdSupersedable(
+          const isCarriedByThread = (m: AddressedPending) =>
+            !conversation.oneThread &&
+            threadSupersede.isSuperseded(
               conversation.instanceName,
               conversation.channelId,
-              threadKey,
-              () => [
-                ...batch.map((m) => m.eventTs),
-                ...steeredRefs.map((ref) => ref.eventTs),
-              ],
+              m.eventTs,
             );
-        await relaySharedTurn({
-          channel: conversation.channelId,
-          teamId: conversation.teamId,
-          threadTs: conversation.threadTs,
-          messages: batch.map(
-            ({ text, eventTs, slackUserId, speaker, sender, inThread }) => ({
-              text,
-              eventTs,
-              slackUserId,
-              speaker,
-              sender,
-              inThread,
-            }),
-          ),
-          slackUserId: latest.slackUserId,
-          instanceName: conversation.instanceName,
-          owner: latest.turn.owner,
-          ...(latest.turn.teamId ? { teamId: latest.turn.teamId } : {}),
-          images: batch.flatMap((m) => m.images),
-          files: kept,
-          droppedFiles: dropped.map((f) => f.name),
-          speakerLabel: conversation.speakerLabel,
-          ambient: latest.turn.ambient,
-          roster: latest.turn.roster,
-          ambiguousName: latest.turn.ambiguousName,
-          ...(conversation.whisper ? { whisper: conversation.whisper } : {}),
-          siblingRefs: () => steeredRefs,
-          onSession,
-          ...(held ? { held } : {}),
-        }).finally(() => held?.end());
-        if (conversation.whisper)
-          await noticeWhispersTurnedOff(conversation.instanceName, {
+          noteCarriedByThread(
+            conversation.instanceName,
+            threadKey,
+            queued.filter(isCarriedByThread).map((m) => m.eventTs),
+          );
+          const batch = queued.filter((m) => !isCarriedByThread(m));
+          const latest = batch.at(-1);
+          if (!latest) return;
+          const { kept, dropped } = batchFiles(batch);
+          const held = conversation.oneThread
+            ? null
+            : holdSupersedable(
+                conversation.instanceName,
+                conversation.channelId,
+                threadKey,
+                () => [
+                  ...batch.map((m) => m.eventTs),
+                  ...steeredRefs.map((ref) => ref.eventTs),
+                  ...queue.heldSteer().map((m) => m.eventTs),
+                ],
+                (ts) => {
+                  if (queue.heldSteer().some((m) => m.eventTs === ts))
+                    queue.abortSteer();
+                },
+              );
+          await relaySharedTurn({
             channel: conversation.channelId,
             teamId: conversation.teamId,
-            whisperer: conversation.whisper.whisperer,
-            origin: conversation.whisper.origin,
             threadTs: conversation.threadTs,
-          });
-      },
-      steer: (sessionId, batch) =>
-        steerChannelTurn(
-          makeAcpClient(conversation.instanceName),
-          sessionId,
-          steerFrame(conversation, batch),
-          {
-            surface: "slack",
-            fields: {
-              agentId: conversation.instanceName,
-              channelId: conversation.channelId,
-            },
-          },
-        ),
-      onSteered: (batch) => {
-        for (const msg of batch) {
-          const ref: TurnRef = {
-            channel: conversation.channelId,
-            teamId: conversation.teamId,
-            threadTs: msg.inThread ? conversation.threadTs : msg.eventTs,
-            eventTs: msg.eventTs,
-            text: msg.text,
-            slackUserId: msg.slackUserId,
-            hasThread: msg.inThread,
-            hadAttachments: false,
+            messages: batch.map(
+              ({ text, eventTs, slackUserId, speaker, sender, inThread }) => ({
+                text,
+                eventTs,
+                slackUserId,
+                speaker,
+                sender,
+                inThread,
+              }),
+            ),
+            slackUserId: latest.slackUserId,
+            instanceName: conversation.instanceName,
+            owner: latest.turn.owner,
+            ...(latest.turn.teamId ? { teamId: latest.turn.teamId } : {}),
+            images: batch.flatMap((m) => m.images),
+            files: kept,
+            droppedFiles: dropped.map((f) => f.name),
+            speakerLabel: conversation.speakerLabel,
+            ambient: latest.turn.ambient,
+            roster: latest.turn.roster,
+            ambiguousName: latest.turn.ambiguousName,
             ...(conversation.whisper ? { whisper: conversation.whisper } : {}),
-          };
-          beginTurn(conversation.instanceName, ref);
-          steeredRefs.push(ref);
-          securityLog("info", "channel.authz", {
-            category: "channel",
-            actor: null,
-            actorKind: "external",
-            surface: "slack",
-            agentId: conversation.instanceName,
-            decision: "allow",
-            detail: {
-              basis: "place",
-              trigger: "steer",
-              slackUserId: msg.slackUserId,
-              channelId: conversation.whisper?.origin ?? conversation.channelId,
-              ...(conversation.whisper
-                ? { whisperChannelId: conversation.channelId }
-                : {}),
+            siblingRefs: () => steeredRefs,
+            onSession,
+            steersSettled,
+            ...(held ? { held } : {}),
+          }).finally(() => held?.end());
+          if (conversation.whisper)
+            await noticeWhispersTurnedOff(conversation.instanceName, {
+              channel: conversation.channelId,
+              teamId: conversation.teamId,
+              whisperer: conversation.whisper.whisperer,
+              origin: conversation.whisper.origin,
+              threadTs: conversation.threadTs,
+            });
+        },
+        steer: (sessionId, batch, request) =>
+          steerChannelTurn(
+            makeAcpClient(conversation.instanceName),
+            sessionId,
+            steerFrame(conversation, batch),
+            request,
+            {
+              surface: "slack",
+              fields: {
+                agentId: conversation.instanceName,
+                channelId: conversation.channelId,
+              },
             },
-          });
-          msg.release();
-        }
-      },
-      onTurnSettled: (batch) => {
-        for (const ref of steeredRefs) {
-          endTurn(conversation.instanceName, ref);
-        }
-        steeredRefs.length = 0;
-        for (const msg of batch) msg.release();
-      },
-      onEmpty: () => {
-        addressedQueues.delete(key);
-      },
-      onError: (err) => {
-        getLogger().warn(
-          {
-            channelId: conversation.channelId,
-            error: formatError(err),
-          },
-          "slack.addressed_drain.failed",
-        );
-      },
-    });
+          ),
+        onSteered: (batch) => {
+          for (const msg of batch) {
+            const ref: TurnRef = {
+              channel: conversation.channelId,
+              teamId: conversation.teamId,
+              threadTs: msg.inThread ? conversation.threadTs : msg.eventTs,
+              eventTs: msg.eventTs,
+              text: msg.text,
+              slackUserId: msg.slackUserId,
+              hasThread: msg.inThread,
+              hadAttachments: false,
+              ...(conversation.whisper
+                ? { whisper: conversation.whisper }
+                : {}),
+              steered: true,
+              speaker: msg.speaker,
+            };
+            beginTurn(conversation.instanceName, ref);
+            steeredRefs.push(ref);
+            securityLog("info", "channel.authz", {
+              category: "channel",
+              actor: null,
+              actorKind: "external",
+              surface: "slack",
+              agentId: conversation.instanceName,
+              decision: "allow",
+              detail: {
+                basis: "place",
+                trigger: "steer",
+                slackUserId: msg.slackUserId,
+                ...senderDetail(msg.sender),
+                channelId:
+                  conversation.whisper?.origin ?? conversation.channelId,
+                ...(conversation.whisper
+                  ? { whisperChannelId: conversation.channelId }
+                  : {}),
+              },
+            });
+            msg.release();
+          }
+        },
+        onTurnSettled: (batch) => {
+          for (const ref of steeredRefs) {
+            endTurn(conversation.instanceName, ref);
+          }
+          steeredRefs.length = 0;
+          for (const msg of batch) msg.release();
+        },
+        onEmpty: () => {
+          addressedQueues.delete(key);
+        },
+        onError: (err) => {
+          getLogger().warn(
+            {
+              channelId: conversation.channelId,
+              error: formatError(err),
+            },
+            "slack.addressed_drain.failed",
+          );
+        },
+      });
+    return queue;
   }
 
   function enqueueAddressed(
@@ -5392,7 +5520,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     forwardedFrom?: string;
     whisper?: SlackTurnWhisper;
     siblingRefs?: () => TurnRef[];
-    onSession?: (sessionId: string) => void;
+    onSession?: (sessionId: string, promptId?: string) => void;
+    steersSettled?: () => Promise<void>;
     held?: SupersedableTurn;
   }) {
     if (!gateway) return;
@@ -5435,7 +5564,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
 
-    const held = await spendHold?.(args.instanceName);
+    const held = await spendHold?.(args.instanceName, {
+      kind: "mention",
+      channel: "slack",
+    });
     if (held) {
       const text = spendHoldUserCopy(
         held,
@@ -5486,6 +5618,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ...(args.whisper ? { whisper: args.whisper } : {}),
       ...(args.siblingRefs ? { siblingRefs: args.siblingRefs } : {}),
       ...(args.onSession ? { onSession: args.onSession } : {}),
+      ...(args.steersSettled ? { steersSettled: args.steersSettled } : {}),
       ...(args.held ? { held: args.held } : {}),
     });
   }
@@ -5831,7 +5964,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             );
             continue;
           }
-          const held = await spendHold?.(entry.instanceName);
+          const held = await spendHold?.(entry.instanceName, {
+            kind: "ambient",
+            channel: "slack",
+          });
           if (held) {
             getLogger().debug(
               { agentId: entry.instanceName, channelId, reason: held },
@@ -6294,11 +6430,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ]);
       const footer = { ...base, emoji };
       const contextBlock = agentContextBlock(footer);
+      const engaged = findTurnRef(
+        instanceName,
+        (ref) => ref.channel === target.id,
+      );
 
       try {
         let attachmentError: string | null = null;
+        let ts: string | undefined;
         if (text) {
-          attachmentError = await postWithAttachment(
+          ({ uploadError: attachmentError, ts } = await postWithAttachment(
             gw,
             target,
             attachment,
@@ -6318,7 +6459,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             unfurlLinks === false || unfurlMedia === false
               ? null
               : fileShareBlocks(sign(text, "**"), contextBlock),
-          );
+          ));
         } else if (attachment) {
           try {
             await gw.uploadFile({
@@ -6333,13 +6474,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             return { error: formatError(err) };
           }
         }
-        noteEngagedTurn(instanceName, (ref) => ref.channel === target.id, {
+        noteEngaged(engaged, {
           messaged: true,
           ...(text ? { replyText: text } : {}),
         });
-        return attachmentError
-          ? { ok: true as const, attachmentError }
-          : { ok: true as const };
+        return {
+          ok: true as const,
+          conversationId: target.id,
+          ...(ts !== undefined ? { ts } : {}),
+          ...(attachmentError ? { attachmentError } : {}),
+        };
       } catch (err) {
         return { error: formatError(err) };
       }
@@ -6423,7 +6567,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             "must accept the Terms of Use first. Answer it yourself, or say " +
             "you can't.",
         };
-      const held = await spendHold?.(target.instanceName);
+      const held = await spendHold?.(target.instanceName, {
+        kind: "mention",
+        channel: "slack",
+      });
       if (held)
         return {
           error:
@@ -6609,6 +6756,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         agentPersona(gw, instanceName, target),
       ]);
       const footer = { ...base, emoji };
+      const engaged = findTurnRef(
+        instanceName,
+        (ref) => ref.threadTs === threadTs && ref.channel === target.id,
+      );
       if (attachmentOnly) {
         try {
           await gw.uploadFile({
@@ -6623,15 +6774,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         } catch (err) {
           return { error: formatError(err) };
         }
-        noteEngagedTurn(
-          instanceName,
-          (ref) => ref.threadTs === threadTs && ref.channel === target.id,
-          { messaged: true },
-        );
-        return { ok: true as const };
+        noteEngaged(engaged, { messaged: true });
+        return { ok: true as const, conversationId: target.id };
       }
       try {
-        const uploadError = await postWithAttachment(
+        const { uploadError, ts } = await postWithAttachment(
           gw,
           target,
           args.attachment,
@@ -6660,14 +6807,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             ? null
             : fileShareBlocks(sign(args.text, "**"), agentContextBlock(footer)),
         );
-        noteEngagedTurn(
-          instanceName,
-          (ref) => ref.threadTs === threadTs && ref.channel === target.id,
-          { messaged: true, replyText: args.text },
-        );
-        return uploadError
-          ? { ok: true as const, attachmentError: uploadError }
-          : { ok: true as const };
+        noteEngaged(engaged, { messaged: true, replyText: args.text });
+        return {
+          ok: true as const,
+          conversationId: target.id,
+          ...(ts !== undefined ? { ts } : {}),
+          ...(uploadError ? { attachmentError: uploadError } : {}),
+        };
       } catch (err) {
         return { error: formatError(err) };
       }

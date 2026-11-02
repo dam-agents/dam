@@ -46,12 +46,14 @@ const sessionMetaEntrySchema = z.object({
   senders: z.array(platformSenderEntrySchema).optional().catch(undefined),
   starter: senderSchema.optional().catch(undefined),
   verdicts: z.array(platformVerdictSchema).optional().catch(undefined),
+  cutToolCalls: z.array(z.string()).optional().catch(undefined),
   continuedScheduleIds: z.array(z.string()).optional().catch(undefined),
 });
 
 const RUN_STARTS_CAP = 500;
 const SENDERS_CAP = 500;
 const VERDICTS_CAP = 500;
+const CUT_TOOL_CALLS_CAP = 500;
 const CONTINUED_SCHEDULES_CAP = 500;
 
 const sessionMetadataStateSchema = z
@@ -84,6 +86,8 @@ export interface SessionMetadataStore {
   sendersOf(sessionId: string): PlatformSenderEntry[];
   recordVerdict(sessionId: string, verdict: PlatformVerdict): void;
   verdictsOf(sessionId: string): PlatformVerdict[];
+  recordCutToolCalls(sessionId: string, toolCallIds: string[]): void;
+  cutToolCallsOf(sessionId: string): string[];
   recordContinuation(sessionId: string, scheduleId: string): void;
   copyAttribution(
     sessionId: string,
@@ -310,6 +314,29 @@ export function createSessionMetadataStore(
     verdictsOf(sessionId) {
       return [...(store.read().sessions[sessionId]?.verdicts ?? [])];
     },
+    recordCutToolCalls(sessionId, toolCallIds) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing || toolCallIds.length === 0) return;
+      const others = (existing.cutToolCalls ?? []).filter(
+        (id) => !toolCallIds.includes(id),
+      );
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            ...existing,
+            cutToolCalls: [...others, ...toolCallIds].slice(
+              -CUT_TOOL_CALLS_CAP,
+            ),
+          },
+        },
+      });
+    },
+    cutToolCallsOf(sessionId) {
+      return [...(store.read().sessions[sessionId]?.cutToolCalls ?? [])];
+    },
     copyAttribution(sessionId, fromSessionId, opts) {
       const { sessions, tombstones } = store.read();
       const existing = sessions[sessionId];
@@ -326,6 +353,9 @@ export function createSessionMetadataStore(
             ...existing,
             ...(from.senders !== undefined && { senders: from.senders }),
             ...(from.verdicts !== undefined && { verdicts: from.verdicts }),
+            ...(from.cutToolCalls !== undefined && {
+              cutToolCalls: from.cutToolCalls,
+            }),
             ...(starter !== undefined && { starter }),
           },
         },

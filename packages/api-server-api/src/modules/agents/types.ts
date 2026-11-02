@@ -193,6 +193,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   starterKit?: string;
   starterKitSeed?: SeedStamp;
   starterKitDefaultModel?: string;
+  starterKitProviders?: readonly string[];
   id?: string;
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;

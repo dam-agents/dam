@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-26
+Last verified: 2026-10-30
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -116,7 +116,8 @@ A few observations the diagram glosses over:
   A capped read says so, and the Agent is told to act only on what is still open.
   Excluded: Telegram.
 - **A conversation answers a burst once, one turn at a time.** People write a thought over several messages, so messages for one conversation gather behind a short quiet period and one turn carries them all.
-  A message arriving while a turn runs is **steered** into it where the harness advertises support for that, so the Agent reads it before calling its reply tool; otherwise it becomes the next turn, never a second turn racing the first.
+  A message arriving while a turn runs is **steered** into it where the harness can take one, so the Agent reads it before calling its reply tool; otherwise it becomes the next turn, never a second turn racing the first.
+  The agent-runtime decides each steer at a steer point, into the conversation's own running turn ([sessions](sessions.md#prompt-delivery)); a message it took is never run again, and a steer whose answer was lost is asked again under its own id.
   Both the batch and the wait are capped.
   A message carrying attachments is never steered — they reach the Agent through their own turn — and it holds back what follows, so nothing is reordered.
   Both messengers share the queue, and so does read-along traffic — but a read-along batch is never steered, since it fans out to one turn per reading Agent and there is no single turn to steer into.
@@ -165,7 +166,7 @@ A few observations the diagram glosses over:
   On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, a refusal by the model, `spend-limit` or `spend-ceiling`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
   A failure because the provider is down also names the Connection template that the turn ran on.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.
@@ -177,21 +178,31 @@ A relayed turn has **no time limit** — like a session driven from the UI, it r
 While the relay's connection is up it watches for *life*, not length: transport pings guard the socket, and once frames have been silent for the stall-probe window the relay asks agent-runtime whether the session still has a turn running — alive means keep waiting, however long the work takes.
 The probe window is floor-bounded by the egress-approval hold at config load (raising a lower setting with a startup warning), so a turn silently waiting on an approval is never probed early.
 The relay abandons a turn on exactly two verdicts — the connection is lost, or the runtime reports the turn gone — and abandoning the relay never touches the work: the harness keeps running detached, and its late reply still lands through the lingering turn record.
+A steer held for a running turn has no time limit either; the turn is judged only once its steers have their answers.
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
 A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.
+A turn the model refused ends with ACP's `refusal` stop reason rather than an error, and the relay counts it as failed with the `model-refused` reason.
+The reply says the model refused the message and links the agent's Providers section, where the owner can switch models.
+On Slack it also advises a new thread: the refused message stays in the thread's session, so asking there again is refused too.
+For the same reason the refused message counts as delivered, and the next turn's catch-up does not hand it to the agent again.
+A turn that a spend limit or the ceiling stops partway fails with the harness's report of the gate's refusal, and the relay counts it as failed with the `spend-limit` or `spend-ceiling` reason.
+Its reply is the notice that a turn the limit holds before it starts gets, with the time the agent answers again ([spend-limits](spend-limits.md#unattended-work)).
 The failure reason still rides the turn event either way.
 
 An abandoned turn is handed to the **recovery watch**, which polls the session's run status for as long as the runtime reports it alive.
 The work counts as over only on a positive signal: the runtime says the turn ended or that its own boot recovery gave the turn up, or the platform reports the machine gone — which under a running turn means the turn is over, because the idle checker never hibernates a machine holding one.
 A failed status read is unknown and simply polled again; only a session that never shows life runs out the watch's rolling window.
 Once the work is over, delivery is judged by **how it ended, never by timing**: a turn that ended in-process made its full disposition and is nudged only when it posted and declined nothing — the same verdict a never-abandoned turn gets — while an interrupted turn never completed, so any interim post was a partial and it is nudged unless its silence was deliberate.
-The nudge resumes the session with an undelivered-turn notice and the agent posts its own late answer, or declines — which keeps the invariant that the platform never authors assistant text; the nudge, boot recovery's interruption resume ([agent-lifecycle](agent-lifecycle.md)), the notice that an owner deleted one of the agent's posts ([the Agent Footer](#the-agent-footer)) and a one-time schedule's continuation or reported result ([schedules](schedules.md#one-time-schedules)) are the only platform-authored prompts an agent ever sees — each carries the agent's own words or task, never the platform's.
+The nudge resumes the session with an undelivered-turn notice and the agent posts its own late answer, or declines — which keeps the invariant that the platform never authors assistant text; the nudge, boot recovery's interruption resume ([agent-lifecycle](agent-lifecycle.md)), the notice that an owner deleted one of the agent's posts ([the Agent Footer](#the-agent-footer)), the turn-continued notice of a steer by interrupt ([sessions](sessions.md#prompt-delivery)) and a one-time schedule's continuation or reported result ([schedules](schedules.md#one-time-schedules)) are the only platform-authored prompts an agent ever sees — each carries the agent's own words or task, never the platform's.
 A later turn answering on the same session dismisses the watch, so a person who re-asked never gets two answers.
 The watch runs on Slack's addressed turns only: an ambient turn is never nudged — nobody summoned the agent — and a Telegram addressed turn gets the failure copy alone.
 
 What counts as answered spans everything the turn gathered, not the batch it opened with: a message steered into a running turn takes its own place in that turn, and the agent's one reply may land against it rather than the message that started things.
 Judging on the opening batch alone reads an answered turn as silent — and then repairs it, which is how a person ends up sent the same answer twice.
+A steered message can arrive after the agent already replied, so a turn carrying one is answered only when, for each reply target, its newest steered message got a reply, decline, hand-off or reaction of its own; a reply counts for the message that was newest when the agent called the tool.
+A turn that replied but left such messages unanswered gets a nudge that names them, and only them.
+Telegram has no nudge: such a turn leaves a warning in the log.
 
 A turn that never lost its relay needs no watch, and is judged the moment it ends.
 An addressed Slack turn that finishes having posted nothing, declined nothing and handed nothing on has left its answer undelivered — the agent wrote it as ordinary text, and the relay discards that — so it goes to the same watch with its ending already known: no poll, the verdict runs at once, and the recovery is the one the watch would have reached anyway.
@@ -224,6 +235,7 @@ What the agent sees:
 - **Cross-channel tools.** `describe_channel` reports the chats an Agent can reach; `send_channel_message` makes a **new top-level post** — for proactive or cross-channel messages, and on Slack never a turn reply, which `reply` owns.
   A post into a channel still counts as answering the newest turn in flight there, whichever thread that turn is in, so that turn is not nudged.
   Telegram has no thread to reply into, so there it is also how a turn is answered.
+  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; a post Slack makes by sharing its file, or a file sent alone, names no `ts`.
   Where a target is ambiguous the worker refuses and names the candidates rather than picking one.
 - **The agent meets people as ids, and resolves them itself.** A messenger names a person only by their user id — in speaker labels, injected history, and mentions inside message text — so `describe_channel_users` turns ids into people, as far as the workspace discloses.
   An id means something only inside one workspace, so the lookup asks the workspace of the conversation it is named or called from, and an Agent in several workspaces that settles neither is refused rather than answered from a guess.
@@ -255,6 +267,7 @@ What the agent sees:
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
   A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can.
+  Like `send_channel_message`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one, and neither does a private reply to a whisper, which only its sender sees.
   A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
   Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
   Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.

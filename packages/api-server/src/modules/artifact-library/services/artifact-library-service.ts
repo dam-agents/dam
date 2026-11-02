@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { match } from "ts-pattern";
 import { artifactSharingInputSchema } from "api-server-api";
+import { artifactApiCallerEmail } from "agent-runtime-api";
 import { TRPCError } from "@trpc/server";
 import type {
   ArtifactCallAgentApiResult,
@@ -723,7 +724,7 @@ export function createArtifactLibraryService(
 
     async callAgentApi(
       { artifactId, ...request },
-      { agentIds },
+      { agentIds, email },
     ): Promise<ArtifactCallAgentApiResult> {
       const row = await repo.getArtifact(artifactId, owner);
       const access = agentApiAccess(row, agentIds);
@@ -745,7 +746,14 @@ export function createArtifactLibraryService(
       } catch {
         return { ok: false, reason: "agent-unreachable" };
       }
-      return deps.agentApi.request(access.agentId, request);
+      return deps.agentApi.request(access.agentId, {
+        ...request,
+        caller: {
+          role: "owner",
+          email: artifactApiCallerEmail(email),
+          sub: owner,
+        },
+      });
     },
 
     async recordTouch({ agentId, sessionId, artifactId, version }) {

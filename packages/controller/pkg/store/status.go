@@ -62,7 +62,10 @@ func (s *Store) UpdateStatus(ctx context.Context, name string, mutate func(*apiv
 	}
 	desired := *current.DeepCopy()
 	mutate(&desired)
-	if apiequality.Semantic.DeepEqual(current, desired) {
+	// UNIT_BOUNDARY_DESCRIPTION: both sides are values: a pointer is never equal to a value, and a write of
+	// UNIT_BOUNDARY_DESCRIPTION: the status the row already holds fires the change feed, which reconciles the
+	// UNIT_BOUNDARY_DESCRIPTION: Agent again and writes it again, without end.
+	if apiequality.Semantic.DeepEqual(*current, desired) {
 		return nil
 	}
 	if err := writeStatus(ctx, tx, name, signalsVersion, row, desired); err != nil {

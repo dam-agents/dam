@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-27
+Last verified: 2026-10-30
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -252,7 +252,7 @@ The differences are transport, identity model, and where the bot token comes fro
   An unlinked person is refused and pointed at `/platform login`, or at the in-chat bind, whose run inside the conversation is the proof and so needs no check.
   Only a new binding is checked; a re-connect of an existing one, which changes ambient mode or custom emoji, is not.
   The UI therefore picks channels by name from the same rule rather than taking an id: the channel choices are the bot's channels that the person's linked identities also share, across every connected workspace and listed once per conversation id, and a pasted id is matched against that list.
-- **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert or an outage alert, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
+- **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert, an outage alert or a spend stop, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
   A link made before links recorded their workspace reaches the one active install, and nothing when several are active, until the user logs in again.
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.
   A notice that reaches nobody in Slack goes to Telegram instead (below), so a person gets one copy.

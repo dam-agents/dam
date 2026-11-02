@@ -12,7 +12,7 @@ import {
 
 const NOTHING_HELD = {};
 
-// UNIT_BOUNDARY_DESCRIPTION: the step that makes a connection from a GitHub sign-in or a GitHub App installation, which no agent can hold itself. It reads what the sign-in or installation can reach with its own credential and creates the connection once a reach is chosen; the caller lays the fields and the buttons out as a dialog or a catalog pane.
+// UNIT_BOUNDARY_DESCRIPTION: the step that makes a connection from a GitHub sign-in or a GitHub App installation, which no agent can hold itself. It reads what the sign-in or installation can reach with its own credential and creates the connection once a reach is chosen, or, when the caller gives onLater for a first connection, lets the user put it off; the caller lays the fields and the buttons out as a dialog or a catalog pane.
 export function ConnectionCreateChildForm(props: CreateChildFormProps) {
   return match(githubCredentialKind(props.parent))
     .with("installation", () => <InstallationChildForm {...props} />)

@@ -4,6 +4,7 @@ import type { ArtifactCallAgentApiResult } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import type { ShareSession } from "../domain/share-session.js";
 import {
+  shareCaller,
   viewerBridgeAccess,
   viewerPromptText,
   viewerSessionKey,
@@ -108,7 +109,10 @@ export function createShareBridgeService(deps: {
       } catch {
         return { ok: false, reason: "agent-unreachable" };
       }
-      return deps.agentApi.request(agentId, input);
+      return deps.agentApi.request(agentId, {
+        ...input,
+        caller: shareCaller(artifact, viewer),
+      });
     },
 
     async prompt(artifact, viewer, prompt) {

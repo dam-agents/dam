@@ -24,6 +24,8 @@ import {
   validateAgentName,
 } from "./create-helpers.js";
 import { waitForRunningOrExit } from "./wait-or-exit.js";
+import { runCreateFromKit } from "./create-from-kit.js";
+import { KIT_REF_HELP, type KitService } from "../../kit/index.js";
 import type { AvatarUploader } from "../infrastructure/avatar-upload-client.js";
 import {
   addAvatarOptions,
@@ -40,6 +42,11 @@ const DEFAULT_TIMEOUT_SECONDS = 120;
 
 interface CreateOpts extends AvatarOpts {
   server?: string;
+  kit?: string;
+  commit?: string;
+  connection: string[];
+  slackChannel: string[];
+  skipSchedule: string[];
   template?: string;
   provider?: string;
   description?: string;
@@ -56,9 +63,13 @@ export function buildCreateCommand(deps: {
   createTemplateService: (host: string) => TemplateService;
   createTrpcClient: (host: string) => TrpcClient;
   createAvatarUploader: (host: string) => AvatarUploader;
+  createKitService: (host: string) => KitService;
 }): Command {
+  const collect = (val: string, prev: string[]) => [...prev, val];
   const cmd = new Command("create")
-    .description("Create a new Agent from a template on the active host")
+    .description(
+      "Create a new Agent on the active host, from a template or from a starter kit",
+    )
     .argument(
       "<name>",
       "Agent name (1+ chars; not `agent-` plus 16 hex characters, the shape of an ID)",
@@ -70,6 +81,32 @@ export function buildCreateCommand(deps: {
     .option(
       "--template <id>",
       "template id (default: the install's default template; see `dam template list`)",
+    )
+    .option(
+      "--kit <kit>",
+      `create the agent from a starter kit, as the web app does (see \`dam kit list\`); ${KIT_REF_HELP}`,
+    )
+    .option(
+      "--commit <sha>",
+      "with a --kit from a GitHub repository: the full commit `dam kit show` printed; refused when the repository has moved on",
+    )
+    .option(
+      "--connection <id-or-name>",
+      "with --kit: a connection to grant for what the kit needs, repeatable (see `dam kit show <kit>`)",
+      collect,
+      [] as string[],
+    )
+    .option(
+      "--slack-channel <channel-id>",
+      "with --kit: a Slack channel to bind, one you and the bot are both in, repeatable",
+      collect,
+      [] as string[],
+    )
+    .option(
+      "--skip-schedule <name>",
+      "with --kit: leave out one of the kit's schedules, repeatable",
+      collect,
+      [] as string[],
     )
     .option("--description <text>", "free-form description");
   return addAvatarOptions(cmd, "start with")
@@ -91,7 +128,10 @@ export function buildCreateCommand(deps: {
       "--timeout <seconds>",
       `--wait timeout in seconds (default ${DEFAULT_TIMEOUT_SECONDS})`,
     )
-    .option("--json", "emit raw Agent JSON instead of the default summary")
+    .option(
+      "--json",
+      "emit raw Agent JSON instead of the default summary; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }, done null when not checked",
+    )
     .addHelpText(
       "after",
       [
@@ -101,6 +141,7 @@ export function buildCreateCommand(deps: {
         '  dam agent create my-agent --provider "My provider" --wait',
         '  dam agent create my-agent --template default --provider conn-123 --description "Coding helper"',
         "  dam agent create my-agent --avatar spark",
+        "  dam agent create researcher --kit spotlights --connection github --json",
         "",
       ].join("\n"),
     )
@@ -129,6 +170,29 @@ async function runCreate(
   }
 
   const template = opts.template;
+  const kitOnly = [
+    opts.commit !== undefined && "--commit",
+    opts.connection.length > 0 && "--connection",
+    opts.slackChannel.length > 0 && "--slack-channel",
+    opts.skipSchedule.length > 0 && "--skip-schedule",
+  ].filter((f): f is string => f !== false);
+  if (opts.kit === undefined && kitOnly.length > 0) {
+    process.stderr.write(`error: ${kitOnly.join(", ")} only go with --kit\n`);
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  if (opts.kit !== undefined) {
+    const notWithKit = [
+      opts.provider !== undefined && "--provider",
+      opts.description !== undefined && "--description",
+      (opts.env ?? []).length > 0 && "--env",
+    ].filter((f): f is string => f !== false);
+    if (notWithKit.length > 0) {
+      process.stderr.write(
+        `error: ${notWithKit.join(", ")} cannot go with --kit: the kit decides those; change them with \`dam agent update\` once it is created\n`,
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
+  }
 
   const envResult = parseEnvFlag(opts.env ?? []);
   if (!envResult.ok) {
@@ -159,6 +223,14 @@ async function runCreate(
   }
 
   const host = await resolveActiveHost(deps, opts.server);
+
+  if (opts.kit !== undefined)
+    return runCreateFromKit(
+      name,
+      { ...opts, kit: opts.kit },
+      { host, timeoutSeconds },
+      deps,
+    );
 
   const tmplResult = await deps.createTemplateService(host).list();
   exitOnServiceError(tmplResult, host);

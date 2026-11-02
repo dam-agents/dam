@@ -1,6 +1,6 @@
 # VM storage
 
-Last verified: 2026-10-23
+Last verified: 2026-10-30
 
 A machine keeps one disk on its owner's [VM runner](vm-runner.md) rather than a volume per mounted path, and an owner's disks all sit on one claim.
 This page owns what that disk holds, what survives a stop, and how the runner keeps the claim from filling.
@@ -73,7 +73,8 @@ It grows in place when the pool rises and is never shrunk, so a lowered pool onl
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
-So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
+So the runner measures the claim itself, as the blocks its own directories hold — the machine disks and the bookkeeping — against those plus what the filesystem still gives an unprivileged writer; so a claim that is a directory of a shared disk, as k3s's local-path provisioner hands out, counts only the owner's files and not every other writer of that disk, and a mount inside the claim, such as a pod's image cache, counts nothing.
+Past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full has not every guest delete its scratch again every minute.
 A guest a grant holds is judged by the room its guard leaves it, not by the disk's share.
 A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init preallocates unnamed files on the disk so the guest can write only what is left of its grant.

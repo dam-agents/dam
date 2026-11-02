@@ -23,6 +23,19 @@ function permissionRequestParamsOf(
   }
 }
 
+function toolCallIdIn(params: Record<string, unknown>): string | null {
+  const toolCall = params.toolCall;
+  const toolCallId = isNonNullObject(toolCall) ? toolCall.toolCallId : null;
+  return typeof toolCallId === "string" && toolCallId !== ""
+    ? toolCallId
+    : null;
+}
+
+export function approvalToolCallIdOf(requestLine: string): string | null {
+  const params = permissionRequestParamsOf(requestLine);
+  return params === null ? null : toolCallIdIn(params);
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what a person's answer to a tool call approval
  * decided, keyed by the harness's own tool call id so it still finds its tool
@@ -37,9 +50,8 @@ export function verdictOf(
 ): PlatformVerdict | null {
   const params = permissionRequestParamsOf(requestLine);
   if (params === null) return null;
-  const toolCall = params.toolCall;
-  const toolCallId = isNonNullObject(toolCall) ? toolCall.toolCallId : null;
-  if (typeof toolCallId !== "string" || toolCallId === "") return null;
+  const toolCallId = toolCallIdIn(params);
+  if (toolCallId === null) return null;
   const outcome = isNonNullObject(result) ? result.outcome : null;
   if (!isNonNullObject(outcome) || outcome.outcome !== "selected") return null;
   if (typeof outcome.optionId !== "string") return null;

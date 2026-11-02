@@ -1,0 +1,64 @@
+# The KVM device plugin of the nested install: a copy of helm/extra/kvm-device-plugin.yaml,
+# which cluster:install applies for a local cluster and the inspector cannot read (it reads
+# only this directory). It advertises the VM's /dev/kvm as `squat.ai/kvm`, which
+# profile.json names in `virtualization.runner.devices`; the engine opens the device to all
+# and keeps the runner's volumes off the VM's overlay root (`kvm`, `host_dirs`). Keep its
+# image digest in step with that file.
+#
+# 16 grants per node is the cap on runners, i.e. owners, per node. /dev/kvm is not consumed
+# by opening it, so it is an accounting number the device-plugin API requires.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kvm-device-plugin
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kvm-device-plugin
+  namespace: kvm-device-plugin
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kvm-device-plugin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kvm-device-plugin
+        istio.io/dataplane-mode: none
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      priorityClassName: system-node-critical
+      containers:
+        - name: generic-device-plugin
+          # Upstream's newest build (commit a11f990, 2026-10-19): it carries the
+          # fixed google.golang.org/grpc and golang.org/x/text. It is under the
+          # 7-day floor, so the exception can go 2026-10-26. Go stdlib 1.26.8
+          # and golang.org/x/net 0.59.0 are still short of their fixes; they
+          # wait for an upstream build on Go 1.26.9 or later.
+          image: ghcr.io/squat/generic-device-plugin@sha256:5c48f7a16cfb37c4e07731bfa384b9dba6e12d2b0fb4350d8a321d49f12ac494
+          imagePullPolicy: IfNotPresent
+          args:
+            - --domain=squat.ai
+            - --device={"name":"kvm","groups":[{"count":16,"paths":[{"path":"/dev/kvm"}]}]}
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+      volumes:
+        - name: device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev

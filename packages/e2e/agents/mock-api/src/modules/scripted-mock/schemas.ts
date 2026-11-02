@@ -48,6 +48,7 @@ export const performFetchInputSchema = z
   .object({
     url: z.string().url(),
     headers: z.record(z.string(), z.string()).optional(),
+    timeoutMs: z.number().int().positive().max(40_000).optional(),
   })
   .strict();
 

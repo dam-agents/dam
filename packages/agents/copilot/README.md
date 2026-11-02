@@ -51,6 +51,25 @@ The Config panel stores the agent's default under `platform.mode` in `~/.copilot
 A session can also pick the reasoning effort.
 Copilot takes it as the `reasoning_effort` config option, which it does not list in `session/new`, and sends the value to the provider as it is; with none picked, it sends `medium`.
 
+## Mid-turn messages
+
+Copilot's ACP server is native code with no steering method, and a second prompt during a turn cancels the running turn.
+So the agent-runtime steers Copilot by [interrupt and continue](../../../docs/architecture/sessions.md#prompt-delivery) (`steering: interrupt` in the [manifest](rootfs/app/runtime-manifest.yaml)): at a steer point it cancels Copilot's turn and sends the waiting messages as a new prompt.
+The checks below ran on 2026-10-29 against this image's pin.
+
+- **Continuation.** Copilot took the new prompt in every run.
+  A client cannot see whether Copilot first refused it; the runtime asks again up to three times when it does.
+- **Late cancel.** The cancel never landed on the new prompt: each continued turn ended with `end_turn`.
+- **Kept work.** After "Also tell me today's date" during the first command, the reply had ALPHA, BRAVO, CHARLIE and the date.
+  A cancel at a steer point keeps the finished tool calls and their results.
+- **Cut command.** **Send now** during `sleep 120` put the message in at once, and the command shows as stopped.
+  Unlike Bob, Copilot stops the command with the processes it started: two minutes later the command had written nothing and no `sleep` was left.
+- **Partial text.** **Send now** while Copilot wrote a long reply made it write the whole reply again, from a different start, until the runtime quoted the cut reply in the `<turn-continued>` notice.
+  With the quote, Copilot goes on from the cut.
+- **Compaction.** Copilot sizes a BYOK model's context at 128,000 tokens and compacts in the background near that size.
+  Over ACP the compaction shows only as a drop of `used` in `usage_update`, with no text; `/compact` as a prompt answers "Compacted conversation history…".
+  A steer that cancelled the turn as a background compaction ended kept the whole history: `used` went back up, Copilot compacted again later, and the agent still knew its task and an earlier command's output.
+
 ## Files the platform writes
 
 - **MCP servers.** The runtime writes `~/.copilot/mcp-config.json`.

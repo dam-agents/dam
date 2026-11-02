@@ -91,11 +91,27 @@ It rejects only when the platform cannot deliver the request, with an `Error` wh
   When you change it, the page sees it on its next read, so give the page a way to reload (on focus or with a button).
   If lost updates matter, reject a write based on an old version (for example with a version number in the state and a `409` answer).
 
+### Who is using the page
+
+Every request carries headers that the platform sets and the page cannot:
+
+- `x-platform-caller-role`: `owner` for the artifact's owner, `viewer` for a person it is shared with.
+- `x-platform-caller-sub`: that person's stable account id; it stays the same when their email changes.
+- `x-platform-caller-email`: that person's verified email, lowercased; absent when the platform has no verified email for them or it is not plain ASCII.
+
+Use them to give each person their own data: key what you store by `sub`, and use the email to show who it is or to match a list of people the owner gave you.
+Everyone still acts under the owner's authority; the headers say who is calling, not what they may do, so the rules are yours to enforce.
+A request without the role header did not come through the platform, for example your own `curl`.
+
+`platform.whoami()` resolves with `{ role, email, sub }` for the same person, for showing "Signed in as …" in the page.
+It works where `request` works and fails the same way elsewhere.
+Never send it back to your server as proof of identity: read the headers instead.
+
 ### Limits
 
 Text bodies only, no binary and no streaming.
 At most 1 MiB each way.
-Only `content-type` passes through: the platform drops every other request and response header, so do not rely on cookies, auth headers or custom headers.
+Only `content-type` and the caller headers above pass through: the platform drops every other request and response header, so do not rely on cookies, auth headers or custom headers.
 
 ### Where it works
 

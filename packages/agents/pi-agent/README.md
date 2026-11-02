@@ -63,7 +63,7 @@ A pi that serves no chat session, as in the terminal, starts on the image's blan
 ### The Model Router
 
 On the platform every model call Pi makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the machine's loopback.
-When `PLATFORM_MODEL_ROUTER_URL` is set, [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) registers one provider, `platform`, from the router's `/v1/models`: every granted provider's models under qualified names (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`), each on the API it speaks best among its provider's dialects (Responses for OpenAI-family ids, Messages for Claude ids, chat completions otherwise), with limits, reasoning, cache marks and thinking format from the catalog's metadata and prices as Pi's per-million costs.
+When `PLATFORM_MODEL_ROUTER_URL` is set, [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) registers one provider, `platform`, from the router's `/v1/models`: every granted provider's models under qualified names (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`), each on the API it speaks best among its provider's dialects (Responses for OpenAI-family ids, Messages for Claude ids, chat completions otherwise), with limits, reasoning, cache marks and thinking format from the catalog's metadata, and no prices (see "Session cost").
 The router owns the credential, so the provider's key is a placeholder for pi-acp's auth gate, and Pi's built-in `openai` and `anthropic` providers are turned off.
 `pi-platform` starts Pi on `--provider platform --model <session model>` with one shared config directory; a session switching among a GPT, a GLM and a Claude model sends each call on its own API to the router.
 The sections below describe Pi's native providers, which a routed runtime does not use (Bedrock included).
@@ -246,9 +246,14 @@ Stop did not help: pi-acp had already forgotten the session.
 pi-acp also ends every turn with `end_turn`, even when the reply stopped at the output limit, and the replay of a reopened chat carries no stop reason, so the chat cannot mark a cut reply.
 It ends a turn whose model request failed the same way, and writes each of Pi's retries into the reply ([Provider errors in the chat](#provider-errors-in-the-chat)).
 
+Pi 1.3.0 takes a message into its running work with its `steer` RPC: it reads the message after the current tool calls and before the next model call.
+pi-acp 0.0.34 does not expose it, so a message sent while Pi worked waited for the whole turn.
+Upstream [svkozak/pi-acp#115](https://github.com/svkozak/pi-acp/pull/115) adds `_session/steering`, but it answers `injected` as soon as Pi queued the message.
+Pi queues a steer even after its run has ended, so such a message waits for some later prompt, or is lost when pi exits.
+
 Until upstream fixes these, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads.
 `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it.
-It patches ten things:
+It patches eleven things:
 
 - `session/new` and `session/load` no longer close other sessions.
 - pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
@@ -262,23 +267,35 @@ It patches ten things:
 - pi-acp writes no `Retrying (attempt n/3, …)` or `Retry finished, resuming.` text into the reply.
 - Each session's pi starts with `PLATFORM_SESSION_REF` set to the session ref of its `session/new` or `session/load` (see [MCP servers](#mcp-servers)).
   pi-acp advertises no MCP capabilities, so without this a Pi session calls the platform tools anonymously.
+- pi-acp advertises steering in its `initialize` answer and serves `_session/steering` with Pi's `steer` RPC.
+  It answers `injected` only when Pi starts the message as a user message of the running run, matched by its text as Pi matches it.
+  When the run settles first, it clears Pi's queue with `clear_queue` and answers `promptRequired`, so the agent-runtime sends the message as the next prompt.
+  A steer with no running turn, or with an image, which Pi's steer path does not resize, answers `promptRequired` and reaches no Pi.
 
 The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly.
 Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the machine's log.
-**To remove it** once a pi-acp release fixes #152, #72 and #135, reports `max_tokens`, writes no retry lines and hands pi the session ref (or takes HTTP MCP servers): bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
-A release that fixes only some of the six lets you drop just their edits.
+**To remove it** once a pi-acp release fixes #152, #72 and #135, reports `max_tokens`, writes no retry lines, hands pi the session ref (or takes HTTP MCP servers) and serves `_session/steering` with an answer that waits until Pi takes the message (#115 alone does not): bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
+A release that fixes only some of the seven lets you drop just their edits.
 A release that fixes #135 but still writes retry lines keeps the edit that drops them.
 That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
 
 ## Session cost
 
-Pi prices every model call itself, at the per-token rates of the model it registered.
+On the Model Router, a Pi session's cost is the platform's measured spend, the figure the Usage page shows.
+Pi prices no router model itself: `pi-dynamic-providers` registers them at zero rates.
+The router returns each call's id in `x-platform-call`; the extension writes it into the session as a pending note (a `platform_cost_pending` custom entry) and asks the router's `/platform/call-costs` for its cost every `PI_CALL_COST_POLL_MS` (2 s).
+Once the api-server's ledger has priced the call, its cost joins the session as a Pi `usage` entry (`platform_cost`) with no tokens and the call id as its note, which `/session` and the status line add up.
+A turn never waits for its cost, so a call the ledger has not priced yet counts a moment later.
+The Pi process that made the call need not live to see it: the platform closes an unwatched chat 3 s after its turn, and the next time the session is opened, the extension asks again for every pending note that has no `usage` entry yet.
+A call on a free provider (Curve Bender) or one the platform does not price (OpenAI) adds nothing, as on the Usage page, and neither does one the ledger has no price for `PI_CALL_COST_WAIT_MS` (2 min) after it; each still gets a `usage` entry of no cost, so it is not asked about again.
+
+Without the router, Pi prices every model call itself, at the per-token rates of the model it registered.
 A model behind an OpenAI-compatible proxy (`openai-proxy`, `rits`) comes with no rates, so `pi-dynamic-providers` gives it the list price of the same model at its vendor in Pi's built-in catalog, matched by the id without its routing prefix (`aws/claude-opus-4-8` costs what `anthropic`'s `claude-opus-4-8` costs).
 Only vendors count (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI), not resellers such as Bedrock that list the same model at a markup; a model no vendor lists stays free.
 
 Pi has no OpenTelemetry exporter, so the `pi-platform-telemetry` extension posts one OTLP/HTTP JSON log record per model call (`pi.api_request`, with the token counters, `cost_usd_micros`, `session.id` and `prompt.id`) and one per prompt (`pi.user_prompt`) to `$OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs`.
 It stays off unless `OTEL_LOGS_EXPORTER=otlp`, which the harness catalog's `pi` telemetry rail sets when the telemetry backend is on.
-The platform reads those records like Claude Code's, so the session list and Usage show a Pi session's cost (see [observability](../../../docs/architecture/observability.md#agent-export)).
+On the router their `cost_usd_micros` is 0, and the platform takes the cost of each call from its own ledger instead (see [observability](../../../docs/architecture/observability.md#agent-export)).
 No prompt text or reply leaves the agent.
 
 ## Memory scopes

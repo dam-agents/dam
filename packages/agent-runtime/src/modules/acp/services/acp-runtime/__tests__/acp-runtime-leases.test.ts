@@ -295,7 +295,7 @@ describe("acp-runtime: one harness process per harness", () => {
       protocolVersion: 1,
       agentCapabilities: { loadSession: true },
       authMethods: [],
-      _meta: { platform: { runEnded: true } },
+      _meta: { platform: { runEnded: true, servesSteering: true } },
     });
     expect(world.harnessCount("claude-code")).toBe(0);
     client.send(newSessionOn(2, { harness: "codex" }));

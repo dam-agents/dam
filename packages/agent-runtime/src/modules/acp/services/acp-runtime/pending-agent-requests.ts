@@ -1,4 +1,5 @@
 import type { JsonRpcId, JsonRpcResponse } from "api-server-api";
+import { approvalToolCallIdOf } from "../../domain/attribution.js";
 import { rewriteAuthError } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
@@ -13,6 +14,7 @@ export interface PendingAgentRequests {
   answer(frame: JsonRpcResponse): AnsweredRequest | null;
   onEngaged(channel: ClientChannel, sessionId: string): void;
   reassess(sessionId: string): void;
+  cancelApprovals(sessionId: string): string[];
   hasFor(sessionId: string): boolean;
   any(): boolean;
   size(): number;
@@ -63,6 +65,8 @@ export interface AgentRequestObserver {
  * session — and of how each request ended, answered or dropped. The end
  * matters even for a request a client mirrored itself: the platform settles
  * its record on the answer the runtime accepted, whoever wrote the record.
+ * When the runtime cancels a turn itself, no client cancels the session's
+ * open tool call approvals, so the runtime answers them as cancelled.
  */
 export function createPendingAgentRequests(
   deps: PendingAgentRequestsDeps,
@@ -175,6 +179,22 @@ export function createPendingAgentRequests(
 
     reassess(sessionId) {
       updateExpiryTimer(sessionId);
+    },
+
+    cancelApprovals(sessionId) {
+      const toolCallIds: string[] = [];
+      for (const [id, req] of [...pending]) {
+        if (req.sessionId !== sessionId) continue;
+        const toolCallId = approvalToolCallIdOf(req.line);
+        if (toolCallId === null) continue;
+        pending.delete(id);
+        const result = { outcome: { outcome: "cancelled" } };
+        deps.sendToAgent({ jsonrpc: "2.0", id, result });
+        deps.observer.answered(id, sessionId, result);
+        toolCallIds.push(toolCallId);
+      }
+      updateExpiryTimer(sessionId);
+      return toolCallIds;
     },
 
     hasFor,

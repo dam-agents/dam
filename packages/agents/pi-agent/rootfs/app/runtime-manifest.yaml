@@ -14,11 +14,17 @@ modelRouter:
 sessionEnvVar: PI_SESSION_ID
 
 # Declared so the runtime answers initialize before any harness process runs.
-# Re-captured from the image pin by test:harness-initialize-capabilities.
+# Re-captured from the image pin, loaded through pi-acp-patch.mjs as
+# harness-chat loads it, by test:harness-initialize-capabilities.
 initializeCapabilities:
-  agentCapabilities: {"loadSession": true, "mcpCapabilities": {"http": false, "sse": false}, "promptCapabilities": {"image": true, "audio": false, "embeddedContext": false}, "sessionCapabilities": {"list": {}, "delete": {}}}
+  agentCapabilities: {"loadSession": true, "mcpCapabilities": {"http": false, "sse": false}, "promptCapabilities": {"image": true, "audio": false, "embeddedContext": false}, "sessionCapabilities": {"list": {}, "delete": {}, "close": {}}}
   authMethods: [{"id": "pi_terminal_login", "name": "Launch pi in the terminal", "description": "Start pi in an interactive terminal to configure API keys or login", "type": "terminal", "args": ["--terminal-login"], "env": {}}]
   agentInfo: {"name": "pi-acp", "title": "pi ACP adapter"}
+
+# pi-acp-patch.mjs serves _session/steering through Pi's steer RPC.
+# Declared so a session result says so before any harness process runs;
+# checked against the live initialize by test:harness-initialize-capabilities.
+steering: native
 
 drivers:
   # Pi reads MCP servers only from its own ~/.pi/agent/mcp.json, never from the

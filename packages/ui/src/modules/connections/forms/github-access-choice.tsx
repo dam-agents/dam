@@ -3,30 +3,36 @@ import type { ReactNode } from "react";
 
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
 
-import { FULL_ACCESS_LABEL, type GithubAccess } from "../lib/github-access.js";
+import {
+  type FirstConnectionAccess,
+  FULL_ACCESS_LABEL,
+  LATER_LABEL,
+} from "../lib/github-access.js";
 
-interface Props {
-  value: GithubAccess;
-  onChange: (value: GithubAccess) => void;
+interface Props<A extends FirstConnectionAccess> {
+  value: A;
+  onChange: (value: A) => void;
   narrowedLabel: string;
   fullAccessReach: string;
+  laterDescription?: string;
   testIdPrefix: string;
   children: ReactNode;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one place a GitHub connection's reach is chosen. Narrowing is the default and holds the caller's account, repository and permission fields; full access is its own card in the danger tone, so nothing ticked never means everything.
-export function GithubAccessChoice({
+// UNIT_BOUNDARY_DESCRIPTION: the one place a GitHub connection's reach is chosen. Narrowing is the default and holds the caller's account, repository and permission fields; full access is its own card in the danger tone, so nothing ticked never means everything. The first connection of a new sign-in or installation may also be put off, with a card of its own, when the caller gives laterDescription.
+export function GithubAccessChoice<A extends FirstConnectionAccess>({
   value,
   onChange,
   narrowedLabel,
   fullAccessReach,
+  laterDescription,
   testIdPrefix,
   children,
-}: Props) {
+}: Props<A>) {
   return (
     <RadioGroup
       value={value}
-      onValueChange={(next) => onChange(next as GithubAccess)}
+      onValueChange={(next) => onChange(next as A)}
       aria-label="What this connection reaches"
       className="gap-3"
     >
@@ -55,6 +61,14 @@ export function GithubAccessChoice({
           </p>
         ) : null}
       </RadioGroupCard>
+      {laterDescription !== undefined && (
+        <RadioGroupCard
+          value="later"
+          label={LATER_LABEL}
+          description={laterDescription}
+          testId={`${testIdPrefix}-later`}
+        />
+      )}
     </RadioGroup>
   );
 }

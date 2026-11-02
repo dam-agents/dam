@@ -3,8 +3,8 @@
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 #USAGE flag "--environment <name>" help="Wipe the lane's data in this agent's Environment of that name"
 # Drops and recreates the platform DB, deletes the anchors (and what they own:
-# StatefulSets, pods, PVCs) and the store marker, and clears stored Playwright
-# auth; the cluster keeps running.
+# StatefulSets, pods, PVCs), the VM runners and the store marker, and clears
+# stored Playwright auth; the cluster keeps running.
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
@@ -20,7 +20,17 @@ kubectl -n platform-agents delete configmap -l agent-platform.ai/agent --ignore-
 kubectl -n platform-agents delete configmap -l 'agent-platform.ai/type in (agent-schedule,channel-secret)' --ignore-not-found
 kubectl -n platform-agents delete configmap platform-agent-store --ignore-not-found
 kubectl -n platform-agents delete statefulset --all --ignore-not-found --wait=true --timeout=60s
+# A VM runner is a Deployment that holds its owner's claim: a pod deleted alone
+# comes back at once and mounts the claim again, so the claim never goes. The
+# runners go with their pods, as a fresh install has none, and the controller
+# goes down first (step 2 brings it back): until then it would build an owner's
+# runner again for the agents the database still holds. It builds it, and a
+# new claim, for the owner's first agent of the next run.
+kubectl scale deployment platform-controller --replicas=0
+kubectl wait --for=delete pod -l app.kubernetes.io/component=controller --timeout=60s 2>/dev/null || true
+kubectl -n platform-agents delete deployment -l app.kubernetes.io/component=vm-runner --ignore-not-found --cascade=foreground --wait=false
 kubectl -n platform-agents delete pod --all --ignore-not-found --force --grace-period=0 2>/dev/null || true
+kubectl -n platform-agents delete deployment -l app.kubernetes.io/component=vm-runner --ignore-not-found --wait=true --timeout=60s
 kubectl -n platform-agents delete pvc --all --ignore-not-found --wait=true --timeout=60s
 
 # 2. Drop + recreate the platform DB. apiserver must be disconnected first

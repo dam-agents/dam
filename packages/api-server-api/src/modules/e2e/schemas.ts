@@ -67,11 +67,24 @@ export const e2eGetEnvInputSchema = z
   })
   .strict();
 
+// UNIT_BOUNDARY_DESCRIPTION: how long the api-server waits for one control call to a mock agent. An env change recycles the harness, and a control frame in flight at that moment is dropped without a reply while the socket stays open; without a bound the call waits forever. It is above the mock's longest call, a 30 s harness spawn.
+export const E2E_CONTROL_CALL_TIMEOUT_MS = 45_000;
+
+// UNIT_BOUNDARY_DESCRIPTION: the longest a performFetch may wait for its answer. It stays below the control call's bound, so the fetch ends, with its own status, before the control call around it gives up.
+export const E2E_PERFORM_FETCH_MAX_TIMEOUT_MS =
+  E2E_CONTROL_CALL_TIMEOUT_MS - 5_000;
+
 export const e2ePerformFetchInputSchema = z
   .object({
     agentId: z.string().min(1),
     url: z.string().url(),
     headers: z.record(z.string(), z.string()).optional(),
+    timeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .max(E2E_PERFORM_FETCH_MAX_TIMEOUT_MS)
+      .optional(),
   })
   .strict();
 

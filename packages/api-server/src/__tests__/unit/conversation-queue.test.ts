@@ -39,7 +39,7 @@ function spyQueue(opts: {
     ...(opts.canSteer ? { canSteer: opts.canSteer } : {}),
     runTurn: async (batch, onSession) => {
       turns.push(batch.map((m) => m.id));
-      onSession("sess-1");
+      onSession("sess-1", "prompt-1");
       if (opts.hold) await new Promise<void>((r) => gates.push(r));
     },
     steer: async (_sessionId, batch) => {
@@ -290,9 +290,10 @@ describe("createConversationQueue", () => {
   });
 
   /**
-   * TEST_SCENARIO: A turn can end while a steer is still in flight. The message
-   * must be delivered once — the queue may not both inject it into the turn
-   * that just ended and run it again as the next turn.
+   * TEST_SCENARIO: A turn can end while a steer is still in flight. The
+   * runtime answers injected only when the message joined a turn, so the
+   * message is delivered once — the queue may not run it again as the next
+   * turn, however late the answer comes.
    */
   it("delivers once when the turn ends during a steer", async () => {
     const h = spyQueue({
@@ -312,10 +313,10 @@ describe("createConversationQueue", () => {
     expect(h.turns).toEqual([["a"]]);
 
     h.releaseSteers();
-    await h.waitFor(() => h.turns.length === 2);
+    await h.waitFor(() => h.steered.length === 1);
 
-    expect(h.steered).toEqual([]);
-    expect(h.turns).toEqual([["a"], ["b"]]);
+    expect(h.steered).toEqual([["b"]]);
+    expect(h.turns).toEqual([["a"]]);
   });
 
   /**

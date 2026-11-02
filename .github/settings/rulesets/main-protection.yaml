@@ -5,6 +5,12 @@ bypass_actors:
   - actor_id: 5
     actor_type: RepositoryRole
     bypass_mode: always
+  # Mergify's GitHub App. `exempt` is the one mode that covers its queue
+  # branches and its merges; it still enforces this ruleset's approval and
+  # required checks as queue conditions.
+  - actor_id: 10562
+    actor_type: Integration
+    bypass_mode: exempt
 conditions:
   ref_name:
     exclude: []
@@ -42,16 +48,4 @@ rules:
           integration_id: 15368
       strict_required_status_checks_policy: false
     type: required_status_checks
-  - parameters:
-      check_response_timeout_minutes: 100
-      # HEADGREEN: a batch passes when its last entry's group does, so a
-      # failed group does not eject a PR a later passing group contains.
-      # Fewer rebuilds after ejections; main is green at each batch's end.
-      grouping_strategy: HEADGREEN
-      max_entries_to_build: 5
-      max_entries_to_merge: 5
-      merge_method: SQUASH
-      min_entries_to_merge: 1
-      min_entries_to_merge_wait_minutes: 5
-    type: merge_queue
 target: branch

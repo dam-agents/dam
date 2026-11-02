@@ -1,6 +1,12 @@
 import { ARTIFACT_PROMPT_MAX_LENGTH } from "api-server-api";
-import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
+import {
+  artifactApiCallerEmail,
+  SESSION_TITLE_MAX_LENGTH,
+  type ArtifactApiCaller,
+} from "agent-runtime-api";
 import { z } from "zod";
+
+import type { ShareSession } from "./share-session.js";
 
 export type ViewerBridgeDenial =
   | "not-a-viewer"
@@ -51,6 +57,21 @@ export function viewerBridgeAccess(
     return { allowed: false, denial: "not-agent-published" };
   if (!featureOn) return { allowed: false, denial: "feature-off" };
   return { allowed: true, agentId: row.agentId };
+}
+
+export function shareCaller(
+  artifact: { owner: string },
+  session: ShareSession,
+): ArtifactApiCaller {
+  return {
+    role: session.sub === artifact.owner ? "owner" : "viewer",
+    email: artifactApiCallerEmail(
+      session.emailVerified && session.email !== null
+        ? session.email.trim().toLowerCase()
+        : null,
+    ),
+    sub: session.sub,
+  };
 }
 
 export function viewerSessionKey(artifactId: string, viewerSub: string) {

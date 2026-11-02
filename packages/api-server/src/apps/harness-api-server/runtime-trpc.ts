@@ -7,6 +7,7 @@ import type {
   KbPublishGate,
   RuntimeDeliveryService,
   SessionDirectoryService,
+  SpendCallCostReader,
   ToolApprovalReports,
 } from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
@@ -26,6 +27,7 @@ export interface RuntimeTrpcDeps {
   kbPublish: KbPublishGate;
   toolApprovalsFor: (owner: string) => ToolApprovalReports;
   invocationScripts: InvocationScriptReports;
+  spendCalls: SpendCallCostReader;
 }
 
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
@@ -63,6 +65,7 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
         kbPublish: deps.kbPublish,
         toolApprovals: deps.toolApprovalsFor(verified.owner),
         invocationScripts: deps.invocationScripts,
+        spendCalls: deps.spendCalls,
       }),
     });
   });

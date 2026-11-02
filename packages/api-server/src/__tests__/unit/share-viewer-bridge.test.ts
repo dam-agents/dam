@@ -97,6 +97,7 @@ interface World {
   agentAwake: boolean;
   wakeFails: boolean;
   appRequests: { agentId: string; method: string; path: string }[];
+  appCallers: unknown[];
   delivered: Parameters<ViewerPromptDelivery["deliver"]>[0][];
   deliverOutcome: "accepted" | "spend-limit" | "agent-unreachable";
 }
@@ -109,6 +110,7 @@ function world(overrides: Partial<World> = {}) {
     agentAwake: false,
     wakeFails: false,
     appRequests: [],
+    appCallers: [],
     delivered: [],
     deliverOutcome: "accepted",
     ...overrides,
@@ -147,6 +149,7 @@ function world(overrides: Partial<World> = {}) {
     agentApi: {
       request: (agentId, input) => {
         w.appRequests.push({ agentId, method: input.method, path: input.path });
+        w.appCallers.push(input.caller);
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -253,6 +256,23 @@ describe("a viewer's request on a shared interactive page", () => {
       { agentId: "agent-1", method: "GET", path: "/state" },
     ]);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  /**
+   * TEST_SCENARIO: A shared survey keeps each teammate's answers apart. The
+   * Agent's app learns which viewer asks from the share session, never from
+   * the page, so a viewer cannot read another's answers by claiming their
+   * email.
+   */
+  it("tells the agent's app which viewer is asking", async () => {
+    const { w, app } = world();
+    await call(app, "/a/slug-a/request", {
+      ...getState,
+      caller: { role: "owner", email: "bob@example.com", sub: "bob-sub" },
+    });
+    expect(w.appCallers).toEqual([
+      { role: "viewer", email: "alice@example.com", sub: "alice-sub" },
+    ]);
   });
 
   it("passes every method through", async () => {
@@ -618,7 +638,18 @@ describe("the share page relay", () => {
       slug: "slug-a",
       version: 1,
       downloadName: "dashboard.html",
-      ...(relay ? { relayToken: "relay-token-1234567890" } : {}),
+      ...(relay
+        ? {
+            relay: {
+              token: "relay-token-1234567890",
+              caller: {
+                role: "viewer" as const,
+                email: "alice@example.com",
+                sub: "alice-sub",
+              },
+            },
+          }
+        : {}),
     });
 
   it("relays only for a page that has one, to its own routes", () => {

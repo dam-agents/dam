@@ -145,9 +145,12 @@ When a model request still fails after Codex's retry, codex-acp writes the error
 A client that speaks JetBrains' AIR extension gets the failure in `_meta`, but AIR also changes how codex-acp renders tool calls, permissions, modes and plans, so the platform does not speak it.
 So the chat showed the error as a reply, with no failed-message card and no Retry, and a Slack or Telegram turn got no reply.
 
+codex-acp 2.1.1 takes a `_session/steering` request into the running turn, but when no turn runs it starts a hidden turn from the steer, and ignores `idleBehavior: "promptRequired"`.
+The agent-runtime then queues the same message again, so the agent read it two times, and a Slack thread could get two replies.
+
 Until upstream fixes these, [`codex-acp-patch.mjs`](rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs) edits codex-acp's bundle in memory as it loads.
 `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so Codex and its tools do not inherit it.
-It patches two things:
+It patches three things:
 
 - Every title generator is born with a title already, so no ephemeral thread starts.
   The session's title is what it was before the generator would have run: the platform derives one from the first prompt, and Codex's thread preview reaches it through the session listing.
@@ -155,11 +158,13 @@ It patches two things:
 - A final error of the current turn fails the turn with JSON-RPC `-32603`, whose `data` holds codex-acp's own fields and `details: "Model request failed: <error>"`, and writes no reply text.
   The chat reads only `data.details`, and offers Retry only for a reply with no text.
   An error that Codex retries reaches the chat as a `session_info_update`, never as text, so it does not change; the terminal does not go through codex-acp.
+- A steer that finds no running turn answers `{ outcome: "promptRequired", reason: "noRunningTurn" }` and starts no turn.
+  Only the agent-runtime and the api-server send `_session/steering`, and both ask for `promptRequired`, so the edit needs no condition.
 
 The hook patches only codex-acp 2.1.1 and only when every edit matches the bundle exactly.
 Otherwise it loads codex-acp unchanged and prints `codex-acp-patch: not applied …` to the machine's log.
-**To remove it** once a codex-acp release closes #663, by #595, #338 or a switch of its own, and fails a turn whose model request failed with the error in `data.details` and no reply text: bump `npm:@agentclientprotocol/codex-acp` in [`image.toml`](image.toml), delete `codex-acp-patch.mjs` and its check ([`check/codex-acp-patch`](../.mise/tasks/check/codex-acp-patch)), drop the `NODE_OPTIONS` line from `harness-chat`, and with #338 send the session's title on `session/new`.
-A release that fixes only one of the two lets you drop just its edit.
+**To remove it** once a codex-acp release closes #663, by #595, #338 or a switch of its own, fails a turn whose model request failed with the error in `data.details` and no reply text, and starts no turn from a steer that asks for `promptRequired`: bump `npm:@agentclientprotocol/codex-acp` in [`image.toml`](image.toml), delete `codex-acp-patch.mjs` and its check ([`check/codex-acp-patch`](../.mise/tasks/check/codex-acp-patch)), drop the `NODE_OPTIONS` line from `harness-chat`, and with #338 send the session's title on `session/new`.
+A release that fixes only some of the three lets you drop just their edits.
 #647 as proposed keeps the error text in the reply and puts the error in `data.message`, so a release with only that fix keeps the second edit.
 
 ## Usage

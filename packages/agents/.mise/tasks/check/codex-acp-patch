@@ -24,6 +24,7 @@ if (pinnedVersion !== patched) {
       "If that release closes agentclientprotocol/codex-acp#663 (skips title generation on a provider other than OpenAI's own, #595, " +
       "names the session from session/new, #338, or carries a switch), " +
       "or fails a turn whose model request failed with the error in data.details and no error text in the reply (#647), " +
+      "or starts no turn from a _session/steering request that asks for promptRequired, " +
       "drop the edits it makes unnecessary (packages/agents/codex/README.md, \"codex-acp patch\"); " +
       "otherwise confirm its edits still apply and update PATCHED_VERSION.",
   );

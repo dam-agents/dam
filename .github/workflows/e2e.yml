@@ -4,8 +4,8 @@ name: E2E
 # gateway and one gateway pod per owner — and the docs-only check that skips
 # both. Both install the same thing: every agent is a machine on its owner's VM
 # runner.
-# cd.yml calls it on every run but a push; the github context is the calling
-# run's. Its jobs report as `e2e / <name>`.
+# cd.yml calls it on every run but a tag push; the github context is the
+# calling run's. Its jobs report as `e2e / <name>`.
 #
 # Local actions are `./` and cache keys YAML anchors, for the reasons cd.yml
 # gives. An anchor cannot reach another file, so the keys of the caches
@@ -19,6 +19,12 @@ on:
       verify:
         description: >-
           A PR or a merge group: build the images here, and save nothing.
+        type: boolean
+        required: true
+      queue:
+        description: >-
+          A merge queue run, a merge_group event or a Mergify queue PR: reuse
+          an earlier queue run's images, as build.yml's `queue` input says.
         type: boolean
         required: true
       fresh:
@@ -87,9 +93,8 @@ jobs:
     # gateway pod, which hibernation scales to zero. e2e-owner-gateway runs the
     # same suite on the same backend with one gateway pod per owner, so a
     # regression in either path fails on its own job.
-    # cd.yml calls neither on a push to main: the merge group before it ran
-    # them on the same tree. The nightly run still runs them on main, and
-    # saves their caches there.
+    # A push to main runs both, as no merge queue runs them before the merge.
+    # The nightly run runs them on main too, and both save their caches there.
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
     # a PR or a merge group, or waits for this run's build jobs, in the
@@ -231,7 +236,7 @@ jobs:
         id: vm-runner-build
         if: inputs.verify
         env: &e2e-resolve-env
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ inputs.queue && 'merge_group' || github.event_name }}
         run: |
           decision="$(.mise/tasks/image/resolve resolve vm-runner)" || decision=BUILD
           [ "$decision" != BUILD ] || echo "build=true" >> "$GITHUB_OUTPUT"
@@ -300,7 +305,7 @@ jobs:
           # images stale. EVENT lets a merge group reuse an earlier group's
           # build; see image:resolve.
           RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ inputs.queue && 'merge_group' || github.event_name }}
           CI_BUILD_READY_DIR: ${{ runner.temp }}/ci-images.status.ready
         run: CI_IMAGES_FAMILY=platform nohup .mise/tasks/e2e/ci-images "$RUNNER_TEMP/ci-images-platform.status" > "$RUNNER_TEMP/ci-images.log" 2>&1 &
       # A run that builds the mock or the default image builds it here, the
@@ -500,7 +505,7 @@ jobs:
     # 13-minute runner per push and buys a failure reported a few minutes
     # earlier. The merge queue and the nightly run keep it.
     needs: [docs-only]
-    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && !inputs.pr-scope }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:

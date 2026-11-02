@@ -15,7 +15,7 @@ function describeRule(rule: WrittenRule): string {
 export interface OutcomeWording {
   pastTense: string;
   onceLine: string;
-  spendLimitLine: string;
+  spendLimitLine?: string;
   expiredEffect: string;
 }
 
@@ -34,7 +34,7 @@ export function printOutcomeAndExit(
   }
   switch (outcome.outcome) {
     case "applied":
-      if (outcome.type === "spend_limit") {
+      if (outcome.type === "spend_limit" && wording.spendLimitLine) {
         process.stdout.write(`${wording.spendLimitLine}\n`);
       } else if (outcome.rule) {
         process.stdout.write(

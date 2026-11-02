@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { E2E_PERFORM_FETCH_MAX_TIMEOUT_MS } from "api-server-api";
 
 import { openAgentChat, waitForAgentRunning } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
@@ -11,13 +12,18 @@ const uncoveredUrl = `https://${host}/get`;
 const stillGatedUrl = `https://${host}/headers`;
 const chatAnsweredPath = "/ip";
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a request held for an approval that the test answers in the chat waits for its answer: the longest a performFetch may wait. The hold spans opening the conversation and the click, which take tens of seconds on a loaded cluster; the mock's own 15 s bound would end the request first and read as no answer. Every wait of the test while the request is held shares this one deadline, so no wait outlives the request.
+const HELD_FETCH_MS = E2E_PERFORM_FETCH_MAX_TIMEOUT_MS;
+
 async function fetchStatus(
   api: ApiClient,
   agentId: string,
   url: string,
+  timeoutMs?: number,
 ): Promise<number> {
   try {
-    return (await api.e2e.performFetch.mutate({ agentId, url })).status;
+    return (await api.e2e.performFetch.mutate({ agentId, url, timeoutMs }))
+      .status;
   } catch {
     return 0;
   }
@@ -159,25 +165,31 @@ test("a waiting network approval shows in the open conversation, retries include
       await api.approvals.dismiss.mutate({ id: earlier.id });
   }
 
-  const first = fetchStatus(api, agentId, url);
+  const heldUntil = Date.now() + HELD_FETCH_MS;
+  const heldLeft = () => Math.max(1, heldUntil - Date.now());
+  const first = fetchStatus(api, agentId, url, HELD_FETCH_MS);
   await expect
     .poll(async () => (await waitingFor(chatAnsweredPath)).length, {
-      timeout: 60_000,
+      timeout: heldLeft(),
       message: "the request was not held for approval",
     })
     .toBe(1);
-  const retry = fetchStatus(api, agentId, url);
+  const retry = fetchStatus(api, agentId, url, HELD_FETCH_MS);
 
   await test.step("a conversation opened after the hold shows the prompt", async () => {
-    await openAgentChat(page, agentName, agentId);
+    await openAgentChat(page, agentName, agentId, {
+      cardTimeoutMs: heldLeft(),
+    });
     const prompt = page
       .getByTestId("chat-egress-approval")
       .filter({ hasText: `GET ${host}${chatAnsweredPath}` });
-    await expect(prompt).toBeVisible({ timeout: 30_000 });
+    await expect(prompt).toBeVisible({ timeout: heldLeft() });
     expect(await waitingFor(chatAnsweredPath)).toHaveLength(1);
 
-    await prompt.getByRole("button", { name: "Allow once" }).click();
-    await expect(prompt).toBeHidden({ timeout: 30_000 });
+    await prompt
+      .getByRole("button", { name: "Allow once" })
+      .click({ timeout: heldLeft() });
+    await expect(prompt).toBeHidden({ timeout: heldLeft() });
   });
 
   await test.step("answering in the chat releases the waiting requests", async () => {

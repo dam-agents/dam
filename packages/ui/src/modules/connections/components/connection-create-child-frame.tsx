@@ -13,9 +13,11 @@ import {
   defaultChildName,
 } from "../lib/connection-hierarchy.js";
 import {
+  type FirstConnectionAccess,
   type FullAccessChoice,
   fullAccessReach,
   type GithubAccess,
+  laterDescription,
 } from "../lib/github-access.js";
 import type { AppScopeChoice } from "../lib/github-app-scope-fields.js";
 import type { UserTokenScopeChoice } from "../lib/github-user-token-scope.js";
@@ -27,6 +29,7 @@ export interface CreateChildFormProps {
   parent: ConnectionView;
   onCreated: (id: string) => void;
   onCancel: () => void;
+  onLater?: () => void;
   layout: (fields: ReactNode, footer: ReactNode) => ReactNode;
 }
 
@@ -42,6 +45,7 @@ export function ConnectionCreateChildFrame({
   parent,
   onCreated,
   onCancel,
+  onLater,
   layout,
   access,
   onAccessChange,
@@ -52,6 +56,8 @@ export function ConnectionCreateChildFrame({
   const connections = useAppConnections().data ?? NO_CONNECTIONS;
   const create = useCreateConnectionFromParent();
   const [editedName, setEditedName] = useState<string | null>(null);
+  const [later, setLater] = useState(false);
+  const putOff = later && onLater !== undefined;
   const name = (editedName ?? defaultChildName(parent, connections)).trim();
   const nameError = childNameError(name, connections);
   const saveError = mutationMessage(
@@ -60,6 +66,10 @@ export function ConnectionCreateChildFrame({
   );
 
   const submit = async () => {
+    if (putOff) {
+      onLater();
+      return;
+    }
     if (!choice || nameError) return;
     try {
       const { id } = await create.mutateAsync({
@@ -73,18 +83,24 @@ export function ConnectionCreateChildFrame({
 
   const fields = (
     <div className="flex flex-col gap-4">
-      <LabeledInput
-        label="Name"
-        testId="create-child-name"
-        value={editedName ?? name}
-        onChange={setEditedName}
-        error={editedName === null ? undefined : (nameError ?? undefined)}
-      />
-      <GithubAccessChoice
-        value={access}
-        onChange={onAccessChange}
+      {!putOff && (
+        <LabeledInput
+          label="Name"
+          testId="create-child-name"
+          value={editedName ?? name}
+          onChange={setEditedName}
+          error={editedName === null ? undefined : (nameError ?? undefined)}
+        />
+      )}
+      <GithubAccessChoice<FirstConnectionAccess>
+        value={putOff ? "later" : access}
+        onChange={(next) => {
+          setLater(next === "later");
+          if (next !== "later") onAccessChange(next);
+        }}
         narrowedLabel={narrowedLabel}
         fullAccessReach={fullAccessReach(parent)}
+        laterDescription={onLater && laterDescription(parent)}
         testIdPrefix="create-child"
       >
         {children}
@@ -104,10 +120,12 @@ export function ConnectionCreateChildFrame({
       </Button>
       <Button
         onClick={() => void submit()}
-        disabled={!choice || nameError !== null || create.isPending}
+        disabled={
+          !putOff && (!choice || nameError !== null || create.isPending)
+        }
         data-testid="create-child-submit"
       >
-        {create.isPending ? "Creating…" : "Create connection"}
+        {putOff ? "Done" : create.isPending ? "Creating…" : "Create connection"}
       </Button>
     </>
   );

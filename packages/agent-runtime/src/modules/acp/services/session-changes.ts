@@ -79,6 +79,7 @@ export function notifyingSessionMetadataStore(
     runStartsOf: (sessionId) => store.runStartsOf(sessionId),
     sendersOf: (sessionId) => store.sendersOf(sessionId),
     verdictsOf: (sessionId) => store.verdictsOf(sessionId),
+    cutToolCallsOf: (sessionId) => store.cutToolCallsOf(sessionId),
     markUnstored: (sessionId) => store.markUnstored(sessionId),
     markStored: (sessionId) => store.markStored(sessionId),
 
@@ -118,6 +119,9 @@ export function notifyingSessionMetadataStore(
     },
     recordVerdict(sessionId, verdict) {
       store.recordVerdict(sessionId, verdict);
+    },
+    recordCutToolCalls(sessionId, toolCallIds) {
+      store.recordCutToolCalls(sessionId, toolCallIds);
     },
     copyAttribution(sessionId, fromSessionId, opts) {
       store.copyAttribution(sessionId, fromSessionId, opts);

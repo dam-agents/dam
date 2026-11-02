@@ -7,11 +7,17 @@ const UPSTREAM_GAPS =
   "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72), " +
   "reports a reply cut at the output limit as max_tokens, " +
   "fails a turn whose model request failed (https://github.com/svkozak/pi-acp/issues/135), " +
-  "writes no retry notice into the reply " +
-  "and hands each pi the session ref its session/new or session/load carries";
+  "writes no retry notice into the reply, " +
+  "hands each pi the session ref its session/new or session/load carries " +
+  "and serves _session/steering, answering promptRequired for a steer that reaches pi after its run settled " +
+  "(https://github.com/svkozak/pi-acp/pull/115 does not)";
 const HELPERS = `globalThis[Symbol.for("platform.pi-acp-patch")]`;
 const SESSION_REF_HEADER = "x-platform-session-ref";
+const STEER_METHOD = "_session/steering";
+const INJECTED = { outcome: "injected" };
+const NO_RUNNING_TURN = { outcome: "promptRequired", reason: "noRunningTurn" };
 const endings = new WeakMap();
+const settledRuns = new WeakSet();
 const sessionRefs = new Map();
 const lastRepliesOfTurns = new WeakMap();
 
@@ -47,6 +53,99 @@ function settleTurnsOnExit(session) {
       }
     });
   });
+}
+
+function trackRun(session) {
+  session.proc.onEvent((ev) => {
+    if (ev?.type === "agent_settled") settledRuns.add(session);
+  });
+}
+
+function runStarted(session) {
+  settledRuns.delete(session);
+}
+
+function userText(message) {
+  const content = message?.content;
+  if (typeof content === "string") return content;
+  return Array.isArray(content)
+    ? content
+        .filter((block) => block?.type === "text")
+        .map((block) => block.text)
+        .join("")
+    : "";
+}
+
+function steerIntoRun(session, message) {
+  return new Promise((resolve) => {
+    let queued = message;
+    let rpcAnswered = false;
+    let taken = false;
+    let settled = false;
+    let done = false;
+    const finish = (answer) => {
+      if (done) return;
+      done = true;
+      stopEvents();
+      session.proc.child.off("exit", onExit);
+      resolve(answer);
+    };
+    const withdraw = () => {
+      session.proc
+        .request({ type: "clear_queue" })
+        .catch(() => undefined)
+        .finally(() => finish(NO_RUNNING_TURN));
+    };
+    const onExit = () => finish(NO_RUNNING_TURN);
+    const stopEvents = session.proc.onEvent((ev) => {
+      if (
+        ev?.type === "queue_update" &&
+        !rpcAnswered &&
+        Array.isArray(ev.steering) &&
+        ev.steering.length > 0
+      ) {
+        queued = ev.steering[ev.steering.length - 1];
+      } else if (
+        ev?.type === "message_start" &&
+        ev.message?.role === "user" &&
+        userText(ev.message) === queued
+      ) {
+        taken = true;
+        if (rpcAnswered) finish(INJECTED);
+      } else if (ev?.type === "agent_settled") {
+        settled = true;
+        if (rpcAnswered && !taken) withdraw();
+      }
+    });
+    if (exited(session.proc)) {
+      finish(NO_RUNNING_TURN);
+      return;
+    }
+    session.proc.child.once("exit", onExit);
+    session.proc.request({ type: "steer", message, images: [] }).then(
+      (res) => {
+        rpcAnswered = true;
+        if (taken || res?.data?.disposition === "handled") finish(INJECTED);
+        else if (!res?.success) finish(NO_RUNNING_TURN);
+        else if (settled) withdraw();
+      },
+      () => {
+        rpcAnswered = true;
+        finish(taken ? INJECTED : NO_RUNNING_TURN);
+      },
+    );
+  });
+}
+
+async function extMethod(agent, method, params, bundle) {
+  if (method !== STEER_METHOD) throw bundle.RequestError.methodNotFound(method);
+  const session = agent.sessions.maybeGet(params?.sessionId);
+  if (!session?.pendingTurn || settledRuns.has(session)) return NO_RUNNING_TURN;
+  const { message, images } = bundle.promptToPiMessage(
+    Array.isArray(params?.prompt) ? params.prompt : [],
+  );
+  if (images.length > 0) return { outcome: "promptRequired" };
+  return steerIntoRun(session, message);
 }
 
 function cutAtOutputLimit(piStopReason) {
@@ -160,7 +259,8 @@ const edits = [
     find: "    this.proc.onEvent((ev) => this.handlePiEvent(ev));\n",
     replace:
       "    this.proc.onEvent((ev) => this.handlePiEvent(ev));\n" +
-      `    ${HELPERS}.settleTurnsOnExit(this);\n`,
+      `    ${HELPERS}.settleTurnsOnExit(this);\n` +
+      `    ${HELPERS}.trackRun(this);\n`,
     count: 1,
   },
   {
@@ -192,7 +292,8 @@ const edits = [
     replace:
       "  startTurn(t) {\n" +
       "    this.cancelRequested = false;\n" +
-      `    ${HELPERS}.recordEnding(this, undefined);\n`,
+      `    ${HELPERS}.recordEnding(this, undefined);\n` +
+      `    ${HELPERS}.runStarted(this);\n`,
     count: 1,
   },
   {
@@ -260,6 +361,25 @@ const edits = [
     count: 1,
   },
   {
+    find: "  async initialize(params) {\n",
+    replace:
+      "  async extMethod(method, params) {\n" +
+      `    return ${HELPERS}.extMethod(this, method, params, { RequestError, promptToPiMessage });\n` +
+      "  }\n" +
+      "  async initialize(params) {\n",
+    count: 1,
+  },
+  {
+    find:
+      "    return {\n" +
+      "      protocolVersion: requested === supportedVersion ? requested : supportedVersion,\n",
+    replace:
+      "    return {\n" +
+      "      _meta: { steering: { supported: true } },\n" +
+      "      protocolVersion: requested === supportedVersion ? requested : supportedVersion,\n",
+    count: 1,
+  },
+  {
     find: "    this.mcpServers = opts.mcpServers;\n",
     replace:
       "    this.mcpServers = opts.mcpServers;\n" +
@@ -294,6 +414,9 @@ globalThis[Symbol.for("platform.pi-acp-patch")] = {
   replayMeta,
   piEnv,
   rememberSessionRef,
+  trackRun,
+  runStarted,
+  extMethod,
 };
 
 registerHooks({

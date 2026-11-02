@@ -174,6 +174,7 @@ export function useAcpSession(
     resetConnection();
     setSessionId(null);
     useStore.getState().setHarnessForks(false);
+    useStore.getState().setSessionSteering(null);
     setMessages(
       selectedAgent === null
         ? []
@@ -195,6 +196,7 @@ export function useAcpSession(
       setMessages([]);
       useStore.getState().setRewriting(null);
       useStore.getState().setHarnessForks(false);
+      useStore.getState().setSessionSteering(null);
       useStore.getState().setRunStarts([]);
       useStore.getState().setLastOutputAt(null);
       useStore.getState().setAttribution(NO_ATTRIBUTION);

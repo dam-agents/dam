@@ -72,6 +72,11 @@ initializeCapabilities:
 # ends, and its session closes, only once Claude Code is idle.
 harnessState: claude-code
 
+# claude-agent-acp takes a message into the running turn (_session/steering).
+# Declared so a session result says so before any harness process runs;
+# checked against the live initialize by test:harness-initialize-capabilities.
+steering: native
+
 # Cold session/load fills the runtime's transcript from Claude Code's on-disk
 # session store without spawning the claude subprocess; the harness itself is
 # loaded lazily on the first prompt. The module is hosted in a persistent

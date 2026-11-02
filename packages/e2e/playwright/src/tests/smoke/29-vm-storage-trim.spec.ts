@@ -79,6 +79,7 @@ function readRoom(id: string = probeId): {
   id: string;
   grantMiB: number;
   availMiB: number;
+  diskMiB: number;
   stable: boolean;
 } {
   const [before, avail, after] = inGuest(
@@ -93,14 +94,29 @@ function readRoom(id: string = probeId): {
   const [beforeId = "", bytes = ""] = (before ?? "").trim().split(/\s+/);
   const [afterId = ""] = (after ?? "").trim().split(/\s+/);
   const mib = Number(bytes) / 1048576;
+  const df = (avail ?? "").split(/\s+/);
   return {
     id: beforeId,
     grantMiB: bytes && Number.isFinite(mib) ? Math.round(mib) : Number.NaN,
-    availMiB: Math.round(
-      Number((avail ?? "").split(/\s+/)[3] ?? Number.NaN) / 1024,
-    ),
+    availMiB: Math.round(Number(df[3] ?? Number.NaN) / 1024),
+    diskMiB: Math.round(Number(df[1] ?? Number.NaN) / 1024),
     stable: beforeId === afterId,
   };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the probe's own disk can still give its guest, in MiB: the disk's size less what the guest holds on it, which is the blocks it wrote — what its disk file took on the claim — and the room a case marked, which takes nothing on the claim. A guard can hold a guest back and never give it more than its disk, and the disk is sized at the owner's pool while the runner grants from the claim's own filesystem, which on an install whose claim is a directory of the node's disk holds far more than the pool. So a renewed grant can pass the disk once the guest has marked a grant's worth of it — on the CI lane a 40 GiB disk, a 22 GiB grant and a fill of 22 GiB left the guest 17.8 GiB, every block its disk had (#6043) — and the room a guard owes the guest is the grant or this, whichever is less. A disk file that still holds blocks the guest freed and its trim has not yet returned reads the guest as holding more, which only lowers the bound.
+function diskLeftMiB(markedMiB: number): number {
+  return readRoom().diskMiB - (machineDisks().get(probeDisk) ?? 0) - markedMiB;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the bounds a settled room meets, as one pair: no less than the grant, or the room its disk has left when that is less (diskLeftMiB), and no more than the grant plus the one floor every guest keeps. The slack is what the case's own measurements and the guard's step can account for.
+function heldToShare(
+  leftMiB: number,
+): (room: { grantMiB: number; availMiB: number }) => boolean {
+  return (room) =>
+    room.availMiB >=
+      Math.min(room.grantMiB, leftMiB) - SLACK_MIB - GUARD_STEP_MIB &&
+    room.availMiB <= room.grantMiB + GUARD_FLOOR_MIB + SLACK_MIB;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: waits for a sample the guard has settled on and returns it: a grant published after `after`, the id the case saw once its own write had landed, and one whose guest room meets both of the caller's bounds at once. Three things make that a settled sample rather than a passing figure. The id differs from `after`, so the renewal the runner publishes over the case's own writes is exercised and not skipped when the room happens to read well. The bounds are one pair, both applied to the same sample, so a room the guard has not yet shrunk cannot pass as a healthy one, and a room it has not yet grown cannot fail as a wedged one. And the two grant lines around the room agree, so the free space belongs to one grant version. The window is `WAIT_MS`, well past the runner's 30 s look and the guard's 30 s backoff; a claim with no grant is no claim measured and fails at once rather than looping on a figure no bound can satisfy.
@@ -360,12 +376,11 @@ test("a writing agent stops at its share, and writes again when its share grows"
       "the runner published no grant for the probe's claim, so the guest's room cannot be compared with it",
     ).toBe(true);
     // UNIT_BOUNDARY_DESCRIPTION: and neither below nor above the renewed grant: the guest may still write the whole grant the runner published over its own writes, and no more than that grant plus the one floor every guest keeps. A guest held to a fraction of its grant is the defect a user reports — an agent refused at three quarters of its storage with the claim a third empty — and a guard that released its whole hold, or moved before the runner could renew, would leave the guest the disk instead. Both bounds are one sample's, waited for together: a room the guard has not finished shrinking yet must not pass the upper bound, and a room it has not finished growing yet must not fail the lower one. The slack is what the case's own measurements and the guard's step can account for, and a guest that never reaches either bound fails inside the same window a wedged one would.
+    const writtenLeft = diskLeftMiB(0);
     const afterWrite = await settledRoom(
       written.id,
-      (room) =>
-        room.availMiB >= room.grantMiB - SLACK_MIB - GUARD_STEP_MIB &&
-        room.availMiB <= room.grantMiB + GUARD_FLOOR_MIB + SLACK_MIB,
-      "the guest's room never came to the grant the runner published over its own writes",
+      heldToShare(writtenLeft),
+      `the guest's room never came to the grant the runner published over its own writes, with ${writtenLeft} MiB left on its disk`,
     );
     // UNIT_BOUNDARY_DESCRIPTION: the wedge this case is for is a guest that stops writing and stays stopped, so the renewal is answered with a real write of its own, synced and read back: a machine that keeps the answer to a shortage after the claim has room again fails here, and no arithmetic about its free space can stand in for that.
     expect(
@@ -408,13 +423,16 @@ test("a writing agent stops at its share, and writes again when its share grows"
       Number.isFinite(marked.grantMiB),
       "the runner published no grant for the probe's claim at its refusal, so the renewal cannot be measured from one",
     ).toBe(true);
+    // UNIT_BOUNDARY_DESCRIPTION: the fill holds the room it marked on the guest's disk, so what the disk has left for a renewal is read with it: `du` counts the blocks a preallocated file holds, and the fill is the only thing in its directory once the real bytes are gone.
+    const markedMiB = Math.round(
+      Number(inGuest(probeId, "du -sk /tmp/e2e-fill | cut -f1").trim()) / 1024,
+    );
+    const markedLeft = diskLeftMiB(markedMiB);
     await new Promise((resolve) => setTimeout(resolve, RENEWAL_MS));
     const resettled = await settledRoom(
       marked.id,
-      (room) =>
-        room.availMiB >= room.grantMiB - SLACK_MIB - GUARD_STEP_MIB &&
-        room.availMiB <= room.grantMiB + GUARD_FLOOR_MIB + SLACK_MIB,
-      "the guest never got its share back after marking its own room, which no renewal gave it either: an agent that cannot write its share is the wedge this case is for",
+      heldToShare(markedLeft),
+      `the guest never got its share back after marking ${markedMiB} MiB of its own room, with ${markedLeft} MiB left on its disk, which no renewal gave it either: an agent that cannot write its share is the wedge this case is for`,
     );
     // UNIT_BOUNDARY_DESCRIPTION: the room the renewal gave back is room a real write lands in: a machine that kept the answer to its last refusal, however much room the claim gave it, fails here, and no arithmetic about its free space can stand in for the write. No refusal is asked of the guest here, deliberately: the renewal gave it its share back, so it is meant to write, and whether btrfs also allocates the few MiB past its own `df` estimate — its reserve, not the guard — is no property of this fix.
     expect(
@@ -459,14 +477,20 @@ test("a writing agent stops at its share, and writes again when its share grows"
         `machine ${machine + 1} of the owner's was granted ${grant.grantMiB} MiB of the ${roomMiB} MiB left below the claim's ceiling: a running machine with room on the claim is granted a part of it, not nothing`,
       ).toBeGreaterThan(0);
     }
-    // UNIT_BOUNDARY_DESCRIPTION: the agent refused at its share must write again once its share grows, which a wedged one does not: it keeps the answer to its last refusal however much room the owner frees. Its share grows when a sibling stops, and the room has to be room a real write lands in.
+    // UNIT_BOUNDARY_DESCRIPTION: the agent refused at its share must write again once its share grows, which a wedged one does not: it keeps the answer to its last refusal however much room the owner frees. Its share grows when a sibling stops, and the room has to be room a real write lands in. A guest its disk holds rather than its grant (diskLeftMiB) has no room a larger share can add, so the room it must reach is its share's growth or what its disk has left, whichever is less, and the write after it is what shows it writes again either way.
     const beforeRenew = guestAvailMiB();
+    const renewLeft = diskLeftMiB(markedMiB);
     await api.agents.delete.mutate({ id: siblingId });
     siblingId = "";
     await waitFor(
       guestAvailMiB,
-      (mib) => mib >= beforeRenew + MOVE_MIB,
-      "the refused guest never got its room back when a machine stopped",
+      (mib) =>
+        mib >=
+        Math.min(
+          beforeRenew + MOVE_MIB,
+          renewLeft - SLACK_MIB - GUARD_STEP_MIB,
+        ),
+      `the refused guest never got its room back when a machine stopped, with ${renewLeft} MiB left on its disk`,
     );
     expect(
       inGuest(

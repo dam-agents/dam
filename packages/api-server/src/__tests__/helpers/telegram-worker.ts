@@ -82,10 +82,12 @@ export function telegramWorkerHarness(
     listSessions: async () => [...sessions],
     sendPrompt: async (prompt, sendOpts) => {
       prompts.push({ prompt, opts: sendOpts });
-      if (!("resumeSessionId" in sendOpts)) {
+      if ("resumeSessionId" in sendOpts) {
+        sendOpts.onSession?.(sendOpts.resumeSessionId, `p-${prompts.length}`);
+      } else {
         const sessionId = `s-${sessions.length + 1}`;
         sessions.push({ sessionId, platform: sendOpts.platformMeta ?? null });
-        sendOpts.onSession?.(sessionId);
+        sendOpts.onSession?.(sessionId, `p-${prompts.length}`);
       }
       await opts.turn?.();
       return "the answer";

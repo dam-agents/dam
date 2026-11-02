@@ -12,7 +12,7 @@ What a Connection is and which rail each Contribution kind takes is [connections
 The subsystem cuts across two bounded contexts:
 
 - **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` and `runtime.reportArtifactTouch` callbacks from agents.
-  The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), the tool-approval report to [home-feed](home-feed.md#what-home-reads), and the event report below is generic to the channel.
+  The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), the tool-approval report to [home-feed](home-feed.md#what-home-reads), the call-cost read to the [ledger](spend-limits.md#ledger), and the event report below is generic to the channel.
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
 The runtime channel is six routes between api-server and agent-runtime — `applyState` inward, `hello`, the artifact-touch report, the session-directory report, the tool-approval report and the event report outward:

@@ -14,12 +14,14 @@ interface Props {
   parent: ConnectionView;
   onCreated: (id: string) => void;
   onClose: () => void;
+  onLater?: () => void;
 }
 
 export function ConnectionCreateChildDialog({
   parent,
   onCreated,
   onClose,
+  onLater,
 }: Props) {
   const heading = createChildHeading(parent);
   return (
@@ -34,6 +36,7 @@ export function ConnectionCreateChildDialog({
         parent={parent}
         onCreated={onCreated}
         onCancel={onClose}
+        onLater={onLater}
         layout={(fields, footer) => (
           <>
             <DialogBody>{fields}</DialogBody>

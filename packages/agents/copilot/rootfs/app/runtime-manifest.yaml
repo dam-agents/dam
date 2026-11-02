@@ -24,6 +24,13 @@ initializeCapabilities:
   authMethods: []
   agentInfo: {"name": "Copilot", "title": "Copilot"}
 
+# Copilot's ACP server has no steering method, and a second prompt cancels its
+# running turn. A cancel keeps the finished tool calls and their results, so
+# the runtime steers it by interrupt and continue: it cancels Copilot's turn at
+# a steer point and sends the waiting messages as a new prompt, as one turn for
+# every client.
+steering: interrupt
+
 drivers:
   # Copilot reads MCP servers from ~/.copilot/mcp-config.json; the default
   # `type` / `url` / `headers` entry shape is Copilot's own, and an entry with

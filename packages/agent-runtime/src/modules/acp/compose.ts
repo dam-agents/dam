@@ -1,4 +1,4 @@
-import { parseQualifiedModel } from "api-server-api";
+import { parseQualifiedModel, type SessionSteering } from "api-server-api";
 import { config } from "../config.js";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { ArtifactTouch } from "./infrastructure/tool-call-outcome.js";
@@ -24,6 +24,7 @@ import {
   type SessionCutProvider,
 } from "./infrastructure/session-cut-provider.js";
 import { createRunResultStore } from "./infrastructure/run-result-store.js";
+import { createServedSteers } from "./services/acp-runtime/served-steers.js";
 import {
   createPlatformMcpEntryStore,
   type PlatformMcpEntryStore,
@@ -146,6 +147,7 @@ export interface HarnessRuntime extends SessionHarness {
   sessionModel: boolean;
   initialize?: Record<string, unknown>;
   harnessState?: HarnessStateDialect;
+  steering?: SessionSteering;
   loadTimeoutMs?: number;
   nonClaudeModelEnv?: Record<string, string>;
 }
@@ -369,7 +371,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
       }
     : undefined;
   const runResults = createRunResultStore(opts.stateBackend);
+  const servedSteers = createServedSteers();
   const runtime = createLeaseRouter({
+    servedSteers,
     sessionDefaults: createSessionDefaultsStore(opts.stateBackend),
     defaultHarness: opts.defaultHarness,
     harnessKnown: (harness) => Object.hasOwn(opts.harnesses, harness),
@@ -457,6 +461,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         continuedFrom,
         activeTurns,
         runResults,
+        servedSteers,
         ...(opts.beforeSpawn && { beforeSpawn: opts.beforeSpawn }),
         sessionMcpServers: (ref) => platformMcpEntry.sessionServers(ref),
         onReportableTurnEnded: (report) => reportTurn(report),
@@ -505,6 +510,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         ...(harness?.harnessState && {
           harnessState: HARNESS_STATE_PORTS[harness.harnessState],
         }),
+        ...(harness?.steering && { steering: harness.steering }),
         ...(harness?.loadTimeoutMs && {
           harnessLoadTimeoutMs: harness.loadTimeoutMs,
         }),

@@ -185,7 +185,7 @@ describe("dam version (integration)", () => {
     expect(text.stderr).toContain(
       `warning: CLI ${LOCAL} is behind 99.0.0, the latest on npm`,
     );
-    expect(text.stderr).toContain("npm install -g @dam-agents/cli@latest");
+    expect(text.stderr).toContain("dam update");
 
     const json = await runDam(["version", "--json"], env());
     expect(json.exitCode).toBe(0);

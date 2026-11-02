@@ -32,6 +32,7 @@ const NO_CONNECTIONS: ConnectionView[] = [];
 interface TemplateCreateFormProps {
   template: ConnectionTemplateView;
   onCreated: (id: string) => void;
+  onAddedAlone: (id: string) => void;
   onSignedIn?: (parent: ConnectionView) => void;
   onCancel: () => void;
   oauthReturnView?: string;
@@ -44,6 +45,7 @@ interface TemplateCreateFormProps {
 export function TemplateCreateFormBody({
   template,
   onCreated,
+  onAddedAlone,
   onSignedIn,
   onCancel,
   oauthReturnView,
@@ -77,6 +79,9 @@ export function TemplateCreateFormBody({
       ...(initialName !== undefined ? { name: initialName } : {}),
     },
   });
+  const isGithubApp = template.authKind === "github-app";
+  const [access, fields] = useWatch({ control, name: ["access", "fields"] });
+  const alone = isGithubApp && access === "later";
 
   const {
     submit,
@@ -90,7 +95,7 @@ export function TemplateCreateFormBody({
     template,
     popupOAuth,
     oauthReturnView,
-    onCreated,
+    onCreated: alone ? onAddedAlone : onCreated,
     onSignedIn,
   });
 
@@ -115,10 +120,8 @@ export function TemplateCreateFormBody({
   });
 
   const submitCopy = templateSubmitLabel(template.id);
-  const isGithubApp = template.authKind === "github-app";
-  const [access, fields] = useWatch({ control, name: ["access", "fields"] });
   const reachUnchosen =
-    isGithubApp && access !== "full" && !appScopeFieldsChosen(fields ?? {});
+    isGithubApp && access === "narrowed" && !appScopeFieldsChosen(fields ?? {});
   const scopeInputNames = new Set(
     isGithubApp ? ["repositories", "repositoryIds", "permissions"] : [],
   );

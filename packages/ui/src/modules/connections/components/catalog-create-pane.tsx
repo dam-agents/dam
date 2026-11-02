@@ -18,6 +18,7 @@ interface Props {
   initialTemplateId?: string;
   onBack: () => void;
   onCreated: (id: string) => void;
+  onAddedAlone: (id: string) => void;
   onSignedIn: (parent: ConnectionView) => void;
 }
 
@@ -27,6 +28,7 @@ export function CatalogCreatePane({
   initialTemplateId,
   onBack,
   onCreated,
+  onAddedAlone,
   onSignedIn,
 }: Props) {
   const templates = group.templates;
@@ -106,6 +108,7 @@ export function CatalogCreatePane({
         popupOAuth
         oauthReturnView={oauthReturnView}
         onCreated={onCreated}
+        onAddedAlone={onAddedAlone}
         onSignedIn={onSignedIn}
         onCancel={onBack}
         initialName={editedName}

@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
-const pinned = read("bob/image.toml").match(/^\[tools\."http:bob"\]\nversion = "([^"]+)"$/m)?.[1];
+const pinned = read("bob/image.toml").match(/^"npm:@ibm\/bob" = "([^"]+)"$/m)?.[1];
 const targeted = read("bob/rootfs/usr/local/lib/bob-acp-patch.mjs").match(/^const BOB_VERSION = "([^"]+)";$/m)?.[1];
 
 if (pinned === undefined || pinned !== targeted) {
@@ -16,7 +16,10 @@ if (pinned === undefined || pinned !== targeted) {
       "If its control scenario fails, Bob now starts the servers of mcp.json in the background in `bob acp`: delete " +
       "bob/rootfs/usr/local/lib/bob-acp-patch.mjs, its line in bob/rootfs/usr/local/bin/harness-chat, " +
       "test:bob-mcp-startup and this check (packages/agents/bob/README.md, \"MCP startup\"). " +
-      "Otherwise confirm its other scenario passes and update BOB_VERSION.",
+      "Otherwise confirm its other scenario passes. " +
+      "If the new Bob starts no automatic compaction in a cancelled loop and keeps the history when a compaction " +
+      "is cancelled or returns an empty summary, drop the two compaction edits (packages/agents/bob/README.md, " +
+      "\"Compaction and cancel\"); otherwise confirm they still match. Then update BOB_VERSION.",
   );
   process.exit(1);
 }

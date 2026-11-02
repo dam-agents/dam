@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-26
+Last verified: 2026-10-30
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -14,7 +14,7 @@ In an Agent's chat the bell sits in the chat's top bar and opens that same drawe
 Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices) and [outage alerts](#outage-alerts) are read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
-A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
+A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
 A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and shows in the Agent's chat beside its held network requests.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
 Its card offers only the choices the harness offered for that request: a verdict reaches the harness as the option of its kind, and one with no such option would cancel the tool call, so a request with no "always" option, such as Bob's writes to its own settings, offers no "Always allow" or "Always deny".

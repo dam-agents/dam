@@ -3,8 +3,10 @@ import {
   ARTIFACT_REQUEST_MAX_IN_FLIGHT,
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
+  ARTIFACT_WHOAMI_TYPE,
   type ArtifactKind,
 } from "api-server-api";
+import type { ArtifactApiCaller } from "agent-runtime-api";
 import { extensionOf } from "../domain/artifact-kind.js";
 import {
   ARTIFACT_BRIDGE_SHIM,
@@ -43,7 +45,7 @@ function chromePage(title: string, body: string): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="robots" content="noindex"/>
+<meta name="robots" content="noindex, nofollow"/>
 <title>${escapeHtml(title)}</title>
 <style>${CHROME_CSS}</style>
 </head>
@@ -58,7 +60,7 @@ export interface WrapperInput {
   slug: string;
   version: number;
   downloadName: string;
-  relayToken?: string;
+  relay?: { token: string; caller: ArtifactApiCaller };
 }
 
 const FRAME_SANDBOX =
@@ -75,12 +77,17 @@ export const VIEWER_PROMPT_NOTICES = {
   "invalid-request": "The page sent a prompt the agent cannot take.",
 } as const;
 
-function renderViewerRelay(slug: string, relayToken: string): string {
+function renderViewerRelay(
+  slug: string,
+  relayToken: string,
+  caller: ArtifactApiCaller,
+): string {
   const base = `/a/${encodeURIComponent(slug)}`;
   return `<script>
 (() => {
   const frame = document.querySelector("iframe");
   const notices = ${JSON.stringify(VIEWER_PROMPT_NOTICES).replaceAll("<", "\\u003c")};
+  const caller = ${JSON.stringify(caller).replaceAll("<", "\\u003c")};
   const status = document.getElementById("relay-status");
   let inFlight = 0;
   let hideTimer;
@@ -111,11 +118,16 @@ function renderViewerRelay(slug: string, relayToken: string): string {
       });
       return;
     }
-    if (data.type !== ${JSON.stringify(ARTIFACT_REQUEST_TYPE)} || typeof data.id !== "string") return;
+    if (typeof data.id !== "string") return;
     const reply = (result) => {
       if (frame.contentWindow !== page) return;
       page.postMessage(Object.assign({ type: ${JSON.stringify(ARTIFACT_RESPONSE_TYPE)}, id: data.id }, result), "*");
     };
+    if (data.type === ${JSON.stringify(ARTIFACT_WHOAMI_TYPE)}) {
+      reply(Object.assign({ ok: true }, caller));
+      return;
+    }
+    if (data.type !== ${JSON.stringify(ARTIFACT_REQUEST_TYPE)}) return;
     if (inFlight >= ${ARTIFACT_REQUEST_MAX_IN_FLIGHT}) {
       reply({ ok: false, reason: "too-many-requests" });
       return;
@@ -131,13 +143,13 @@ function renderViewerRelay(slug: string, relayToken: string): string {
 }
 
 export function renderWrapper(input: WrapperInput): string {
-  const { slug, version, relayToken } = input;
+  const { slug, version, relay } = input;
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="robots" content="noindex"/>
+<meta name="robots" content="noindex, nofollow"/>
 <title>${escapeHtml(input.title)}</title>
 <style>
   :root { color-scheme: light dark; }
@@ -160,8 +172,8 @@ export function renderWrapper(input: WrapperInput): string {
   <span class="spacer"></span>
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="${relayToken ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
-${relayToken ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug, relayToken)}` : ""}
+<iframe sandbox="${relay ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+${relay ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug, relay.token, relay.caller)}` : ""}
 </body>
 </html>`;
 }

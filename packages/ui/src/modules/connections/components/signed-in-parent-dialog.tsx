@@ -1,4 +1,7 @@
+import { emitToast } from "@/lib/toast";
+
 import { useSignedInParent } from "../hooks/use-signed-in-parent.js";
+import { parentAddedMessage } from "../lib/connection-hierarchy.js";
 import { ConnectionCreateChildDialog } from "./connection-create-child-dialog.js";
 
 interface Props {
@@ -19,6 +22,10 @@ export function SignedInParentDialog({
       parent={parent}
       onCreated={onCreated}
       onClose={onClose}
+      onLater={() => {
+        onClose();
+        emitToast({ kind: "success", message: parentAddedMessage(parent) });
+      }}
     />
   );
 }

@@ -280,6 +280,12 @@ export {
   spendTurnWindows,
   type SpendTurnWindow,
 } from "./modules/spend/turn-windows.js";
+export {
+  HARNESS_CALL_COSTS_MAX,
+  harnessCallCostsInputSchema,
+  type HarnessCallCostsInput,
+  type SpendCallCostReader,
+} from "./modules/spend/harness.js";
 export type {
   AgentSpend,
   AgentSpendQuery,
@@ -436,7 +442,10 @@ export {
   ARTIFACT_REQUEST_TIMEOUT_MS,
   artifactRequestEnvelopeSchema,
   artifactRequestMessageSchema,
+  ARTIFACT_WHOAMI_TYPE,
+  artifactWhoamiMessageSchema,
   type ArtifactResponseMessage,
+  type ArtifactWhoamiResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
   artifactKindSchema,
@@ -876,6 +885,8 @@ export {
   platformRunEndedParamsSchema,
   buildPlatformRunEndedNotification,
   RUN_ENDED_CAPABILITY,
+  SERVES_STEERING_CAPABILITY,
+  servesSteeringSupported,
   runEndedSupported,
   jsonRpcErrorDetails,
   platformPromptAcceptedParamsSchema,
@@ -929,7 +940,9 @@ export {
   platformRewriteFromParamsSchema,
   STEER_METHOD,
   steerResponseSchema,
+  steerRequestParamsSchema,
   steeringSupported,
+  sessionSteeringSchema,
   isNonNullObject,
   isRequest,
   isResponse,
@@ -965,6 +978,8 @@ export type {
   PlatformSessionResetParams,
   PlatformUpdateQueuedParams,
   PlatformRewriteFromParams,
+  SessionSteering,
+  SteerRequestParams,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";
@@ -1009,6 +1024,10 @@ export type {
   SlackFireMessageInput,
   SlackOutboundRecord,
 } from "./modules/e2e/types.js";
+export {
+  E2E_CONTROL_CALL_TIMEOUT_MS,
+  E2E_PERFORM_FETCH_MAX_TIMEOUT_MS,
+} from "./modules/e2e/schemas.js";
 
 export type { SecretRef } from "./modules/secret-store/types.js";
 

@@ -3,10 +3,11 @@ import { useEffect, useState } from "react";
 
 import { useProbeGitHubUserToken } from "../api/mutations.js";
 import type { GithubAccess } from "../lib/github-access.js";
+import { splitUnlistedRepos } from "../lib/github-app-scope-fields.js";
 import { userTokenScopeChoice } from "../lib/github-user-token-scope.js";
 import { useGithubScopeSelection } from "./use-github-scope-selection.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: what a GitHub sign-in connection is about to reach, while a dialog edits it: full access, or one account with its repositories and permissions read from the sign-in's app installations. The probe takes a sign-in or a connection made from it, since the server reads both with the sign-in's token. The choice is null until it is complete, so Save stays off.
+// UNIT_BOUNDARY_DESCRIPTION: what a GitHub sign-in connection is about to reach, while a dialog edits it: full access, or one account with its repositories and permissions read from the sign-in's app installations. The probe takes a sign-in or a connection made from it, since the server reads both with the sign-in's token. The choice is null until it is complete, and while dropping the repositories the account no longer lists would leave none, since that reaches the whole account, so Save stays off.
 export function useGithubUserTokenScopeDraft(
   connectionId: string,
   current: { scope?: GitHubUserTokenScope; fullAccess?: boolean },
@@ -29,11 +30,8 @@ export function useGithubUserTokenScopeDraft(
   const chosen = installations.find((i) => i.targetId === targetId);
   const chosenMissing =
     probe.data !== undefined && targetId !== null && !chosen;
-  const unlistedRepoCount = chosen
-    ? [...scope.repoIds].filter(
-        (id) => !chosen.repositories.some((r) => r.id === id),
-      ).length
-    : 0;
+  const unlisted = splitUnlistedRepos(scope.repoIds, chosen);
+  const widensOnDrop = access !== "full" && unlisted.droppedAll;
 
   const chooseAccount = (next: number) => {
     if (next === targetId) return;
@@ -41,19 +39,23 @@ export function useGithubUserTokenScopeDraft(
     setTargetId(next);
   };
 
-  const choice = userTokenScopeChoice({
-    access,
-    targetId: chosen ? targetId : null,
-    repositoryIds: scope.repoIds,
-    permissions: scope.permissions,
-  });
+  const choice = widensOnDrop
+    ? null
+    : userTokenScopeChoice({
+        access,
+        targetId: chosen ? targetId : null,
+        repositoryIds: new Set(unlisted.saved),
+        permissions: scope.permissions,
+      });
 
   return {
     probe,
     installations,
     chosen,
     chosenMissing,
-    unlistedRepoCount,
+    unlistedRepoCount: unlisted.kept,
+    droppedRepoCount: unlisted.dropped,
+    widensOnDrop,
     targetId,
     targetLogin: current.scope?.targetLogin,
     chooseAccount,

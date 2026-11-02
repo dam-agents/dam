@@ -11,7 +11,7 @@
  * reads the file and cannot hide the entry, since the symptom would otherwise
  * be only the anonymous calls it exists to prevent, and it leaves
  * NODE_OPTIONS alone until the process reads the file, so a parent that only
- * starts the real Bob still hands the preload down. Bob 2.0.6 reads and
+ * starts the real Bob still hands the preload down. Bob 2.0.8 reads and
  * writes the file through node:fs by that path; check:bob-mcp-file ties
  * BOB_VERSION to the image pin so a bump runs test:bob-session-ref again. */
 import fs from "node:fs";
@@ -19,7 +19,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { dropOwnImport, pathOf, wrapMoves } from "./bob-preload-lib.mjs";
 
-const BOB_VERSION = "2.0.6";
+const BOB_VERSION = "2.0.8";
 const PLATFORM_ENTRY = "platform-outbound";
 const target = join(process.env.HOME ?? "", ".bob", "settings", "mcp.json");
 const isTarget = (p) => pathOf(p) === target;

@@ -359,6 +359,8 @@ const modelRouter = composeModelRouter({
     const at = sessionMetadata.get(sessionId)?.runStartedAt;
     return at === undefined ? null : Date.parse(at);
   },
+  callCosts: (routerCallIds) =>
+    harnessClient.spend.v1.callCosts.mutate({ routerCallIds }),
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(
@@ -581,6 +583,7 @@ const {
           ...(manifest.harnessState && {
             harnessState: manifest.harnessState,
           }),
+          ...(manifest.steering && { steering: manifest.steering }),
           ...(manifest.sessionLoadTimeoutSeconds && {
             loadTimeoutMs: manifest.sessionLoadTimeoutSeconds * 1000,
           }),

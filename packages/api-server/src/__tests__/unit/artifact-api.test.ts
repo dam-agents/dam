@@ -40,6 +40,27 @@ describe("Artifact API — asking the publishing agent", () => {
   });
 
   /**
+   * TEST_SCENARIO: The agent's app keeps each person's data apart, so it must
+   * know who asks. The owner's call reaches it as the owner, with the email
+   * their sign-in verified.
+   */
+  it("should tell the agent's app that the owner is asking", async () => {
+    const world = createArtifactApiWorld();
+    const seen: unknown[] = [];
+    world.agent("agent-a").serve((request) => {
+      seen.push(request.caller);
+      return pong;
+    });
+    const dashboard = world.publish({ by: "agent-a" });
+
+    await world.call(dashboard, ping, { email: "alice@example.com" });
+
+    expect(seen).toEqual([
+      { role: "owner", email: "alice@example.com", sub: "alice" },
+    ]);
+  });
+
+  /**
    * TEST_SCENARIO: The app answers 404. The page still gets the status and
    * body, like fetch does. Only platform failures are errors, so the page
    * author can handle their own app's errors.

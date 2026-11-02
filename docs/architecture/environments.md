@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-26
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -127,7 +127,8 @@ An Environment holds one install, so it is always the default install: a `--name
 The public URLs are the Environment's `app`, `keycloak`, `share` and `content` endpoints, all on one port; the install stops, naming what to create, when one is missing.
 It runs no mesh, which the Environment's kernel cannot.
 Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`.
-Nothing in the create asks for nesting, so the Environment's machine nests only when the install that owns it sets `controller.agent.harnessTemplateDefaults.nestedVirtualization` and lets its runners nest, on a node whose KVM allows it.
+Nothing in the create asks for nesting: the Environment's machine nests through the install's `controller.agent.harnessTemplateDefaults.nestedVirtualization` and `virtualization.runner.nestedVirtualization`, both on by default, on a node whose KVM allows it.
+An install that turns either off gives its Environments no `/dev/kvm`.
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
 Beside the chart it installs two pieces the gate needs:
@@ -138,7 +139,7 @@ Beside the chart it installs two pieces the gate needs:
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
 
 A second install of the same checkout changes nothing: an image the node already holds is not sent again, only a deployment whose image changed is restarted, and an agent image is staged again only when the node's copy changed.
-The [end-to-end suite](e2e.md#running-it) runs against such an install on its backchannel: `e2e:loop -- --environment <name>` installs the lane's values there, then runs the suite over the link.
+The [end-to-end suite](e2e.md#running-it) runs against such an install on its backchannel: `e2e:loop -- --environment <name>` installs the lane's values there, unless the Environment already runs that install of the checkout's commit or `--no-install` asks, then runs the suite over the link.
 
 ## Surfaces
 
@@ -146,7 +147,7 @@ The [end-to-end suite](e2e.md#running-it) runs against such an install on its ba
 They act on the calling Agent's Environments alone, found by name.
 
 **The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
-In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
+In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 100, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
 The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address with its empty text, so a stale link still works.
 While the agent has none, the Manage card of its General section links to the section, because the list of people can be set before the first Environment exists and is the list that first Environment inherits.
 What an Environment runs, its Startup Items and their output, is not shown there yet.

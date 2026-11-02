@@ -9,7 +9,10 @@ import type {
   ShareSessionCookie,
 } from "../domain/share-session.js";
 import type { RelayCaller } from "../domain/relay-grant.js";
-import { viewerPromptInputSchema } from "../domain/viewer-bridge.js";
+import {
+  shareCaller,
+  viewerPromptInputSchema,
+} from "../domain/viewer-bridge.js";
 import type {
   ShareBridgeService,
   ViewerCallKind,
@@ -30,6 +33,7 @@ import {
   type Authorized,
 } from "./authorize.js";
 import { createRawHandler, RAW_ROUTE } from "./raw-handler.js";
+import { robotsTxt, ROBOTS_TXT_ROUTE, X_ROBOTS_TAG } from "./robots.js";
 import {
   renderExpired,
   renderFolderPage,
@@ -85,6 +89,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     await next();
     c.header("X-Content-Type-Options", "nosniff");
     c.header("Referrer-Policy", "no-referrer");
+    c.header("X-Robots-Tag", X_ROBOTS_TAG);
     c.header(
       "Content-Security-Policy",
       c.req.path.endsWith("/raw")
@@ -237,9 +242,14 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
       );
     }
 
-    const relayToken =
+    const relay =
       artifact.interactive && isRestricted(artifact) && authorized.signIn
-        ? await relayTokens.mint(relayCaller(artifact, authorized.signIn))
+        ? {
+            token: await relayTokens.mint(
+              relayCaller(artifact, authorized.signIn),
+            ),
+            caller: shareCaller(artifact, authorized.signIn.session),
+          }
         : undefined;
 
     viewer.recordView(artifact);
@@ -251,10 +261,12 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
         slug,
         version,
         downloadName: artifact.fileName,
-        ...(relayToken ? { relayToken } : {}),
+        ...(relay ? { relay } : {}),
       }),
     );
   });
+
+  app.get(ROBOTS_TXT_ROUTE, robotsTxt);
 
   app.get(RAW_ROUTE, createRawHandler(viewer, authorize("raw")));
 

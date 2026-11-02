@@ -27,10 +27,10 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
    **Keep the research out of the issue**: no file paths, function names, line numbers, data structures or architectural detail.
    A sentence that only makes sense to someone who has read the code gets rewritten.
 
-4. **Feature, bug, or a task a user sees: write the acceptance criteria** in **Done when**, in the format of [docs/guidelines/acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md).
-   A tester checks them through the web UI, Slack or GitHub without the code, so each one is one outcome a user can see, with a start a user can reach and a time limit where time matters.
-   When the ask does not say what a user should see once it is done, ask before drafting.
-   If a criterion walks a journey every release must keep, say so: it may also belong in the [smoke regression suite](../../../docs/guidelines/smoke-regression-suite.md).
+4. **Leave the acceptance criteria to the grilling.** Feature, bug, and task bodies whose template asks for criteria get `TBD (after grilling)` as the whole `## Done when` section, in place of `### AC-<k>` blocks, and the issue is filed with the `needs-ac` label (see [work-process.md](../../../docs/guidelines/work-process.md)).
+   Never invent criteria from the request: they would encode a guessed solution.
+   When criteria already exist — the requester supplied them, or a grilling wrote them — put them in **Done when**, reformatted to [acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md) without adding to them, and leave the label off.
+   `needs-ac` goes on only when no criteria are written yet.
 
 5. **Non-epic types: consider an epic.** List the board's epics:
 
@@ -44,7 +44,7 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
    Epics have no parent.
 
 6. **Output mode, from the original prompt:**
-   - **Draft only**: present the full title + body inline, using the type's template.
+   - **Draft only**: present the full title + body inline, using the type's template, and say whether it gets `needs-ac`.
      Stop.
    - **File right away**: hand off to the `file-issue` skill (dedupe → approve → file on the same draft).
 

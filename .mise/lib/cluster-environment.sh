@@ -44,21 +44,24 @@ env_master() {
 
 # env_tunnel: forwards a local port to the Environment's k3s API and writes
 # the kubeconfig for it. Returns 1, saying nothing, while k3s has written no
-# kubeconfig yet.
+# kubeconfig yet. The API's port is the one that kubeconfig names: 16443, or
+# 6443 on an Environment whose cluster was made before the image's k3s moved.
 env_tunnel() {
   local config port
   env_master || return 1
   config="$(env_ssh 'cat /etc/rancher/k3s/k3s.yaml 2>/dev/null')" || return 1
   [ -n "$config" ] || return 1
+  ENV_API_PORT="$(printf '%s\n' "$config" | sed -n 's#^ *server: https://127.0.0.1:\([0-9]*\)$#\1#p' | head -n 1)"
+  [ -n "$ENV_API_PORT" ] || return 1
   port="$(cat "$ENV_DIR/port" 2>/dev/null || true)"
   # A forward the master already holds is accepted again, so the port and the
   # kubeconfig stay the ones an earlier task wrote.
-  if [ -z "$port" ] || ! ssh -o ControlPath="$ENV_SOCK" -O forward -L "127.0.0.1:$port:127.0.0.1:6443" "$ENV_HOST" 2>/dev/null; then
+  if [ -z "$port" ] || ! ssh -o ControlPath="$ENV_SOCK" -O forward -L "127.0.0.1:$port:127.0.0.1:$ENV_API_PORT" "$ENV_HOST" 2>/dev/null; then
     port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-    ssh -o ControlPath="$ENV_SOCK" -O forward -L "127.0.0.1:$port:127.0.0.1:6443" "$ENV_HOST" || return 1
+    ssh -o ControlPath="$ENV_SOCK" -O forward -L "127.0.0.1:$port:127.0.0.1:$ENV_API_PORT" "$ENV_HOST" || return 1
     echo "$port" > "$ENV_DIR/port"
   fi
-  (umask 077 && printf '%s\n' "$config" | sed "s#https://127.0.0.1:6443#https://127.0.0.1:$port#" > "$KUBECONFIG")
+  (umask 077 && printf '%s\n' "$config" | sed "s#https://127.0.0.1:$ENV_API_PORT#https://127.0.0.1:$port#" > "$KUBECONFIG")
 }
 
 # env_k3s start|stop|status|restart: the Environment's k3s service. start also
@@ -286,20 +289,32 @@ env_e2e_port() {
   cat "$ENV_DIR/e2e-port"
 }
 
+# The commit the e2e lane's install in this Environment is of, and the cluster
+# it went into, beside its port: e2e:install writes them once its gate passed, and cluster:install clears it as
+# it starts there, so an install that failed or was not the lane's is never
+# taken for this checkout's (e2e_install_current).
+ENV_E2E_INSTALLED="$ENV_DIR/e2e-installed"
+export ENV_E2E_INSTALLED
+
 # env_e2e_forward <port>: forwards the lane's backchannel port, and a port of
-# its own to the k3s API, to this agent's loopback, and writes the suite's
-# kubeconfig for that API port. An SSH link of its own, not the control
-# master's, which closes after ten idle minutes while a suite can wait longer
-# than that between two calls to the API. It runs until
+# its own to the k3s API env_tunnel found, to this agent's loopback, and writes
+# the suite's kubeconfig for that API port. An SSH link of its own, not the
+# control master's, which closes after ten idle minutes while a suite can wait
+# longer than that between two calls to the API. It runs until
 # env_e2e_forward_close stops it.
 ENV_E2E_KUBECONFIG="$ENV_DIR/e2e-kubeconfig.yaml"
 export ENV_E2E_KUBECONFIG
 env_e2e_forward() {
   local port="$1" api
+  # The task found the API when it started, and a task that started before
+  # k3s did, as e2e:loop's first run in a new Environment does, found none
+  # then: it looks again now that the install has started it.
+  [ -n "${ENV_API_PORT:-}" ] || env_tunnel || true
+  [ -n "${ENV_API_PORT:-}" ] || { echo "FATAL: no tunnel to the k3s API of Environment $CLUSTER_ENVIRONMENT, so no port to forward it from" >&2; return 1; }
   api="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
   (umask 077 && sed "s#https://127.0.0.1:[0-9]*#https://127.0.0.1:$api#" "$KUBECONFIG" > "$ENV_E2E_KUBECONFIG")
   ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
-    -L "127.0.0.1:$port:127.0.0.1:$port" -L "127.0.0.1:$api:127.0.0.1:6443" "$ENV_HOST" </dev/null &
+    -L "127.0.0.1:$port:127.0.0.1:$port" -L "127.0.0.1:$api:127.0.0.1:$ENV_API_PORT" "$ENV_HOST" </dev/null &
   ENV_E2E_FORWARD_PID=$!
   for _ in $(seq 1 90); do
     (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && (exec 3<>"/dev/tcp/127.0.0.1/$api") 2>/dev/null && return 0
@@ -313,8 +328,77 @@ env_e2e_forward() {
   return 1
 }
 env_e2e_forward_close() {
+  env_e2e_browser_close
   [ -n "${ENV_E2E_FORWARD_PID:-}" ] || return 0
   kill "$ENV_E2E_FORWARD_PID" 2>/dev/null || true
   wait "$ENV_E2E_FORWARD_PID" 2>/dev/null || true
   ENV_E2E_FORWARD_PID=""
+}
+
+# env_e2e_browser: the browser the suite drives, run in the Environment beside
+# the install rather than here, where it shares this agent's CPUs with every
+# other slot's builds and tests: on a busy agent a login roundtrip outlasted
+# the specs' timeouts while the Environment sat idle (#6072). It is
+# Playwright's own browser server, from this checkout's playwright-core, on a
+# port of the Environment's loopback that only this link reaches, forwarded to
+# a free port here; the specs stay here and connect to it through
+# PW_TEST_CONNECT_WS_ENDPOINT, and their traces and videos come back over the
+# connection. --unsafe lets the config's launch arguments through, which map
+# the lane's host names to the Environment's own loopback, where the
+# backchannel answers. The browser is the one the image ships when it is this
+# Playwright's revision, else one installed into the Environment's home once.
+# It runs until env_e2e_forward_close stops it.
+env_e2e_browser() {
+  local core version revision dir remote local_port
+  core="$(cd "$MISE_CONFIG_ROOT/packages/e2e/playwright" && node -e '
+    const { createRequire } = require("node:module");
+    const test = createRequire(require.resolve("@playwright/test/package.json"));
+    const pw = createRequire(test.resolve("playwright/package.json"));
+    console.log(require("node:path").dirname(pw.resolve("playwright-core/package.json")));
+  ')" || { echo "FATAL: no playwright-core in this checkout; run pnpm install" >&2; return 1; }
+  version="$(jq -r .version "$core/package.json")"
+  revision="$(jq -r '.browsers[] | select(.name == "chromium-headless-shell") | .revision' "$core/browsers.json")"
+  dir=".cache/e2e-browser/$version"
+  if ! env_ssh "test -f $dir/playwright-core/cli.js"; then
+    echo "Copying playwright-core $version into Environment $CLUSTER_ENVIRONMENT..."
+    tar -C "${core%/*}" -cz playwright-core | env_ssh "rm -rf $dir.new && mkdir -p $dir.new && tar -xzf - -C $dir.new && rm -rf $dir && mv $dir.new $dir" || return 1
+  fi
+  remote=$((E2E_PORT + 1000))
+  local_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+  # The pid file ends a server an earlier run left behind on the port.
+  ssh -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L "127.0.0.1:$local_port:127.0.0.1:$remote" "$ENV_HOST" "
+    cd $dir || exit 1
+    [ ! -s server.pid ] || kill \$(cat server.pid) 2>/dev/null
+    browsers=/opt/ms-playwright
+    if [ ! -d \$browsers/chromium_headless_shell-$revision ]; then
+      browsers=\$HOME/.cache/ms-playwright
+      PLAYWRIGHT_BROWSERS_PATH=\$browsers node playwright-core/cli.js install chromium-headless-shell >&2 || exit 1
+    fi
+    echo \$\$ > server.pid
+    PLAYWRIGHT_BROWSERS_PATH=\$browsers exec node playwright-core/cli.js run-server --host 127.0.0.1 --port $remote --unsafe
+  " </dev/null >/dev/null &
+  ENV_E2E_BROWSER_PID=$!
+  ENV_E2E_BROWSER_DIR="$dir"
+  # The local end listens as soon as SSH is up, so readiness is the server's
+  # own answer on the Environment.
+  for _ in $(seq 1 300); do
+    env_ssh "curl -s -o /dev/null --max-time 2 http://127.0.0.1:$remote/" && {
+      export PW_TEST_CONNECT_WS_ENDPOINT="ws://127.0.0.1:$local_port/"
+      return 0
+    }
+    kill -0 "$ENV_E2E_BROWSER_PID" 2>/dev/null || {
+      echo "FATAL: the browser server did not start in Environment $CLUSTER_ENVIRONMENT, or port $remote is taken there" >&2
+      return 1
+    }
+    sleep 1
+  done
+  echo "FATAL: the browser server in Environment $CLUSTER_ENVIRONMENT did not answer in 300s" >&2
+  return 1
+}
+env_e2e_browser_close() {
+  [ -n "${ENV_E2E_BROWSER_PID:-}" ] || return 0
+  kill "$ENV_E2E_BROWSER_PID" 2>/dev/null || true
+  wait "$ENV_E2E_BROWSER_PID" 2>/dev/null || true
+  env_ssh "cd $ENV_E2E_BROWSER_DIR && [ -s server.pid ] && kill \$(cat server.pid) 2>/dev/null; rm -f server.pid" 2>/dev/null || true
+  ENV_E2E_BROWSER_PID=""
 }

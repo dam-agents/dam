@@ -1,11 +1,16 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { OpenAICompletionsCompat, Provider } from "@earendil-works/pi-ai";
+import type {
+  OpenAICompletionsCompat,
+  Provider,
+  Usage,
+} from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ProviderConfig,
   ProviderModelConfig,
+  SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
 declare const process: { env: Record<string, string | undefined> };
@@ -76,6 +81,11 @@ const ROUTER_PROVIDER = "platform";
 const ROUTER_BUILTINS_OFF = ["openai", "anthropic"];
 const HARNESS_HEADER = "x-platform-harness";
 const SESSION_HEADER = "x-platform-session";
+const CALL_HEADER = "x-platform-call";
+const CALL_COSTS_PATH = "/platform/call-costs";
+const CALL_COSTS_BATCH = 100;
+const COST_KIND = "platform_cost";
+const PENDING_KIND = "platform_cost_pending";
 
 type RouterModel = {
   id: string;
@@ -89,14 +99,19 @@ type RouterModel = {
     vision?: boolean | null;
     cacheControl?: string | null;
     thinkingFormat?: string | null;
-    prices?: {
-      inputPerToken: number;
-      outputPerToken: number;
-      cacheReadPerToken: number | null;
-      cacheWritePerToken: number | null;
-    } | null;
   };
 };
+
+type SessionLedger = Pick<
+  SessionManager,
+  "getSessionId" | "getEntries" | "appendUsage" | "appendCustomEntry"
+>;
+
+type CostedCall = { model: string; since: number };
+
+type PendingCall = { id: string; model: string };
+
+type CallCost = { id: string; unit: string; costMicros: number };
 
 export default async function register(pi: ExtensionAPI): Promise<void> {
   const state = loadState();
@@ -107,6 +122,7 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
 
   const router = env("PLATFORM_MODEL_ROUTER_URL")?.replace(/\/+$/, "");
   if (router) {
+    bookCallCosts(pi, router);
     stampSession(pi);
     const activated = await activateRouter(pi, router, state);
     if (activated) {
@@ -135,6 +151,164 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
   } else if (clearedBedrock) {
     writeJson(state.paths.models, state.models);
     writeJson(state.paths.settings, state.settings);
+  }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: on the Model Router Pi prices no call itself, so its Session cost is the platform's measured spend, the figure the Usage page shows. The router returns each call's id in x-platform-call, read from every HTTP reply of the process, because Pi sends a Messages or Responses call through its own API code and not through the provider's streamSimple, which serves only the provider's declared API. The id is written into the Session as a pending note, and once the ledger has priced the call its cost joins the Session as a usage entry with no tokens and the call id as its note, which /session and the status line add up. A call is never held for its cost, and the process that made it need not live to see it: loading the Session asks again for every note with no usage entry, so a Session closed before the ledger priced its last call has that cost when it is next opened. A call priced in no dollars (a free or unpriced provider), or one the ledger still has no price for PI_CALL_COST_WAIT_MS after it, gets a usage entry of no cost, so it is not asked about again.
+function bookCallCosts(pi: ExtensionAPI, router: string): void {
+  const book = callBook(router);
+  pi.on("session_start", (_event, ctx) => {
+    book.open(ctx.sessionManager as SessionManager);
+  });
+}
+
+type CallBook = { open(session: SessionLedger): void };
+
+const CALL_BOOK = Symbol.for("pi-platform.call-book");
+
+// UNIT_BOUNDARY_DESCRIPTION: one book of call costs per process, whatever the number of times Pi loads the extension. Pi loads it again on /new, /resume, /fork and /reload, and a second fetch hook would note a call twice or into a Session that is no longer open; so the hook is installed once, and each load only tells the book which Session is open now.
+function callBook(router: string): CallBook {
+  const scope = globalThis as { [CALL_BOOK]?: CallBook };
+  const existing = scope[CALL_BOOK];
+  if (existing) return existing;
+
+  const pollMs = intEnv("PI_CALL_COST_POLL_MS", 2_000);
+  const waitMs = intEnv("PI_CALL_COST_WAIT_MS", 120_000);
+  const pending = new Map<string, CostedCall>();
+  let session: SessionLedger | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const settle = (
+    ledger: SessionLedger,
+    id: string,
+    call: CostedCall,
+    dollars: number,
+  ) => {
+    pending.delete(id);
+    const usage: Usage = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: dollars },
+    };
+    try {
+      ledger.appendUsage(COST_KIND, ROUTER_PROVIDER, call.model, usage, id);
+    } catch (err) {
+      console.warn(
+        `[pi-dynamic-providers] the cost of call ${id} was not saved: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  const poll = async (): Promise<void> => {
+    timer = undefined;
+    const ledger = session;
+    const ids = [...pending.keys()].slice(0, CALL_COSTS_BATCH);
+    const costs = ids.length > 0 ? await fetchCallCosts(router, ids) : [];
+    if (costs && ledger === session && ledger) {
+      for (const cost of costs) {
+        const call = pending.get(cost.id);
+        if (!call) continue;
+        const priced = cost.unit === "usd" && cost.costMicros > 0;
+        settle(ledger, cost.id, call, priced ? cost.costMicros / 1e6 : 0);
+      }
+      const now = Date.now();
+      for (const id of ids) {
+        const call = pending.get(id);
+        if (call && now - call.since > waitMs) settle(ledger, id, call, 0);
+      }
+    }
+    schedule();
+  };
+
+  const schedule = () => {
+    if (timer || pending.size === 0) return;
+    timer = setTimeout(() => void poll(), pollMs);
+    (timer as { unref?: () => void }).unref?.();
+  };
+
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const res = await inner(input, init);
+    const id = res.headers.get(CALL_HEADER);
+    if (res.ok && id && session) {
+      const model = modelOf(init?.body);
+      try {
+        session.appendCustomEntry(PENDING_KIND, { id, model } satisfies PendingCall);
+      } catch (err) {
+        console.warn(
+          `[pi-dynamic-providers] call ${id} was not noted for its cost: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      pending.set(id, { model, since: Date.now() });
+      schedule();
+    }
+    return res;
+  };
+
+  const book: CallBook = {
+    open(next) {
+      session = next;
+      pending.clear();
+      for (const [id, call] of unsettledCalls(next)) pending.set(id, call);
+      schedule();
+    },
+  };
+  scope[CALL_BOOK] = book;
+  return book;
+}
+
+function unsettledCalls(session: SessionLedger): Map<string, CostedCall> {
+  const calls = new Map<string, CostedCall>();
+  const settled = new Set<string>();
+  for (const entry of session.getEntries()) {
+    if (entry.type === "usage" && entry.kind === COST_KIND && entry.note)
+      settled.add(entry.note);
+    if (entry.type !== "custom" || entry.customType !== PENDING_KIND) continue;
+    const data = entry.data as Partial<PendingCall> | undefined;
+    if (typeof data?.id !== "string") continue;
+    calls.set(data.id, {
+      model: typeof data.model === "string" ? data.model : "",
+      since: Date.parse(entry.timestamp),
+    });
+  }
+  for (const id of settled) calls.delete(id);
+  return calls;
+}
+
+function modelOf(body: unknown): string {
+  if (typeof body !== "string") return "";
+  return /"model"\s*:\s*"([^"]+)"/.exec(body.slice(0, 4096))?.[1] ?? "";
+}
+
+async function fetchCallCosts(
+  router: string,
+  ids: string[],
+): Promise<CallCost[] | undefined> {
+  const query = ids.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+  const url = `${router}${CALL_COSTS_PATH}?${query}`;
+  try {
+    const res = await fetch(url, {
+      headers: { [HARNESS_HEADER]: "pi" },
+      signal: AbortSignal.timeout(
+        intEnv("PI_PROVIDER_DISCOVERY_TIMEOUT_MS", 5000),
+      ),
+    });
+    if (!res.ok) return undefined;
+    const json = (await res.json()) as { data?: unknown };
+    return Array.isArray(json?.data)
+      ? json.data.filter(
+          (c): c is CallCost =>
+            !!c &&
+            typeof (c as CallCost).id === "string" &&
+            typeof (c as CallCost).unit === "string" &&
+            typeof (c as CallCost).costMicros === "number",
+        )
+      : [];
+  } catch {
+    return undefined;
   }
 }
 
@@ -232,8 +406,6 @@ function routerModelConfig(model: RouterModel): ProviderModelConfig {
             : "openai-responses";
   const contextWindow = meta.contextWindow ?? 128000;
   const maxTokens = Math.min(meta.maxOutputTokens ?? 16384, contextWindow);
-  const perMillion = (v: number | null | undefined) =>
-    typeof v === "number" ? v * 1_000_000 : 0;
   return {
     id: model.id,
     name: model.id,
@@ -245,12 +417,7 @@ function routerModelConfig(model: RouterModel): ProviderModelConfig {
     reasoning: meta.reasoning ?? RESPONSES_FAMILY.test(upstreamId),
     contextWindow,
     maxTokens,
-    cost: {
-      input: perMillion(meta.prices?.inputPerToken),
-      output: perMillion(meta.prices?.outputPerToken),
-      cacheRead: perMillion(meta.prices?.cacheReadPerToken),
-      cacheWrite: perMillion(meta.prices?.cacheWritePerToken),
-    },
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     compat: {
       supportsDeveloperRole: false,
       supportsReasoningEffort: true,

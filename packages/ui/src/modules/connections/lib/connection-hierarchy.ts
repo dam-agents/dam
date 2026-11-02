@@ -58,6 +58,16 @@ export function parentNoun(
     .exhaustive();
 }
 
+export function parentAddedMessage(
+  parent: Pick<ConnectionView, "authKind">,
+): string {
+  const done = match(githubCredentialKind(parent))
+    .with("installation", () => "GitHub App installation added.")
+    .with("sign-in", () => "Signed in to GitHub.")
+    .exhaustive();
+  return `${done} Pick New connection on it when an agent needs one.`;
+}
+
 const NAME_MAX = 63;
 
 function numberedName(base: string, taken: ReadonlySet<string>): string {
