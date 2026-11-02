@@ -9,6 +9,8 @@ import {
   FRAME_PRINT_BODY,
 } from "../../modules/artifact-library/viewer/print-size.js";
 import {
+  renderDownloadInner,
+  renderImageInner,
   renderTextKindInner,
   renderWrapper,
 } from "../../modules/artifact-library/viewer/renderer.js";
@@ -180,4 +182,18 @@ describe("the artifact reports its content height", () => {
       expect(html).toContain(ARTIFACT_SIZE_REPORTER);
     },
   );
+  // TEST_SCENARIO: The image document and the download card, which is also served for a text artifact too large to render, carry the reporter too.
+  it("is in the image document and the download card", () => {
+    expect(renderImageInner("/a/x/raw?v=1", "Chart")).toContain(
+      ARTIFACT_SIZE_REPORTER,
+    );
+    expect(
+      renderDownloadInner({
+        title: "Archive",
+        fileName: "archive.zip",
+        sizeBytes: 2048,
+        rawUrl: "/a/x/raw?v=1&download=1",
+      }),
+    ).toContain(ARTIFACT_SIZE_REPORTER);
+  });
 });

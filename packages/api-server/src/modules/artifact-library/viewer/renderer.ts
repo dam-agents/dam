@@ -395,6 +395,7 @@ export function renderImageInner(rawUrl: string, title: string): string {
 <html lang="en">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${escapeHtml(title)}</title>
 <style>:root{color-scheme:light dark;} body { margin: 0; min-height: 100dvh; display: flex; align-items: center; justify-content: center; background: light-dark(#fafaf9, #0c0a09); } img { max-width: 100%; max-height: 100dvh; }</style>
+${ARTIFACT_SIZE_REPORTER}
 </head>
 <body><img src="${escapeHtml(rawUrl)}" alt="${escapeHtml(title)}"/></body>
 </html>`;
@@ -414,6 +415,7 @@ export function renderDownloadInner(input: {
 <html lang="en">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${escapeHtml(input.title)}</title>
 <style>${CHROME_CSS}</style>
+${ARTIFACT_SIZE_REPORTER}
 </head>
 <body>
 <div class="center-card"><div class="card">
