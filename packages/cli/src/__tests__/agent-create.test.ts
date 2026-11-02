@@ -156,6 +156,33 @@ describe("dam agent create provider selection (#3786)", () => {
     },
   );
 
+  /** TEST_SCENARIO: A server older than `source` answers without it; the
+   * line still names the default when a profile came back, and the harness
+   * order otherwise, never "undefined". */
+  it.each([
+    [
+      { name: "Default", model: "anthropic/claude-opus-5-5", harness: "pi" },
+      'from your default for new agents, profile "Default"',
+    ],
+    [null, "the first of yours its harness runs on;"],
+  ])(
+    "names the reason from an answer without source (profile %o)",
+    async (profile, line) => {
+      const { run, create } = setup();
+      create.mockResolvedValue({
+        ...agent,
+        defaultProvider: { connectionId: provider.id, profile },
+      });
+      await run([], EXIT_SUCCESS);
+      expect(process.stdout.write).toHaveBeenCalledWith(
+        expect.stringContaining(line),
+      );
+      expect(process.stdout.write).not.toHaveBeenCalledWith(
+        expect.stringContaining("undefined"),
+      );
+    },
+  );
+
   it.each([provider.id, provider.name])(
     "grants the provider selected by %s in the creation request and preserves JSON output",
     async (ref) => {

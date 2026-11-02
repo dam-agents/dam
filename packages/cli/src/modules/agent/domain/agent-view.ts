@@ -28,18 +28,21 @@ export function displayState(agent: AgentView): string {
   return agent.disabled ? "disabled" : agent.state;
 }
 
+const PROVIDER_REASON: Partial<Record<AgentDefaultProvider["source"], string>> =
+  {
+    kit: "the first of the starter kit's providers you hold",
+    template: "the first of its template's providers you hold",
+  };
+
+/* UNIT_BOUNDARY_DESCRIPTION: a server older than `source` answers without it; its profile, when present, still says the default chose, and anything else reads as the harness order, as it did before. */
 export function defaultProviderLine(
   { connectionId, source, profile }: AgentDefaultProvider,
   name: string | undefined,
 ): string {
   const provider = name ? `${name} (${connectionId})` : connectionId;
-  if (source === "profile" && profile)
+  if (profile)
     return `  Provider: ${provider}, from your default for new agents, profile "${profile.name}": ${profile.model} on ${profile.harness}. Change that default in Settings › Providers › Profiles, or pass --provider.`;
-  const why = {
-    kit: "the first of the starter kit's providers you hold",
-    template: "the first of its template's providers you hold",
-    harness: "the first of yours its harness runs on",
-    profile: "the first of yours its harness runs on",
-  }[source];
+  const why =
+    PROVIDER_REASON[source] ?? "the first of yours its harness runs on";
   return `  Provider: ${provider}, ${why}; your default for new agents does not apply to it.`;
 }

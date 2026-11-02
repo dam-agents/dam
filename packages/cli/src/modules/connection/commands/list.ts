@@ -149,8 +149,8 @@ export function buildListCommand(deps: {
         "or installation reaches; limit it with `dam connection scope`.\n" +
         "\nEXPIRES is when the credential expires, as its last check found it.\n" +
         "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
-        "`preferred` on the one a new agent's sessions use when `dam agent create`\n" +
-        "names no --provider.\n" +
+        "`preferred` on the one a plain `dam agent create` (no --provider, --harness,\n" +
+        "--template or --kit) grants; the create's output names the one it granted.\n" +
         "\nExamples:\n" +
         "  dam connection list\n" +
         "  dam connection list --providers\n" +
