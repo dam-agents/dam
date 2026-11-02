@@ -117,8 +117,9 @@ import_path() { if grep -qx "$1" "$OCI_OUT/load" 2>/dev/null; then echo "$OCI_OU
 own_paths() {
   if is_workload "$1"; then echo "$MISE_IMAGE_PATHS packages/agents/$1"; return; fi
   case "$1" in
-    # The mock's harness bundles the mock control API client.
-    mock) echo "packages/e2e/agents/mock packages/e2e/agents/mock-api" ;;
+    # The mock's harness bundles the mock control API client and the e2e
+    # contract's schemas, which the api-server drives it by.
+    mock) echo "packages/e2e/agents/mock packages/e2e/agents/mock-api packages/api-server-api" ;;
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
     # script that fetches it, image.toml and the task that builds the image
@@ -267,6 +268,7 @@ self_check() {
   case "$(third_party | grep -vE '^[^[:space:]]+[:@][^[:space:]]+$' || true)" in ?*) echo "FAIL: third_party lists a line that is no image ref" >&2; f=1 ;; esac
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api
+  has "$(effective_paths mock)" packages/api-server-api
   has "$(effective_paths k-search)" packages/agents/claude-code
   has "$(effective_paths nous)" packages/agents/claude-code
   has "$(effective_paths nous)" packages/agents/nous
