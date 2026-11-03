@@ -20,8 +20,7 @@ const h = vi.hoisted(() => {
     messages: [] as Message[],
     queuedPrompts: [] as unknown[],
     setMessages: (next: Message[] | ((prev: Message[]) => Message[])) => {
-      state.messages =
-        typeof next === "function" ? next(state.messages) : next;
+      state.messages = typeof next === "function" ? next(state.messages) : next;
     },
   };
   return { state };

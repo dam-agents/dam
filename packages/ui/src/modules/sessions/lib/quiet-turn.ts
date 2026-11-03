@@ -65,7 +65,7 @@ function runningTurnOf(
       turn?.role !== "assistant" ||
       !turn.streaming ||
       turn.queued ||
-      turn.unconfirmed !== undefined
+      (turn.unconfirmed !== undefined && turn.parts.length === 0)
     )
       continue;
     const opening = messages

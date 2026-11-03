@@ -1,9 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import {
-  createSessionMetadata,
-  createWorld,
-  frames,
-} from "./acp-world.js";
+import { createSessionMetadata, createWorld, frames } from "./acp-world.js";
 import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
 import { createUndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
 

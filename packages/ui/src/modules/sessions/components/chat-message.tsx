@@ -119,10 +119,7 @@ function LoadOlderMarker({
   );
 }
 
-const UNCONFIRMED_LABEL: Record<
-  NonNullable<Message["unconfirmed"]>,
-  string
-> = {
+const UNCONFIRMED_LABEL: Record<NonNullable<Message["unconfirmed"]>, string> = {
   sending: "Sending…",
   waking: "Waking the agent…",
 };
@@ -276,28 +273,30 @@ export const ChatMessage = memo(function ChatMessage({
               {UNCONFIRMED_LABEL[unconfirmed]}
             </span>
           )}
-          {isAssistant && (streaming || isLast) && unconfirmed === undefined && (
-            <span
-              role={working ? "status" : undefined}
-              aria-hidden={!working}
-              className={cn(
-                "inline-flex items-center py-1",
-                !working && "invisible",
-              )}
-            >
-              <WorkingDots size="md" className="text-accent" />
-              {working && workingFor !== undefined ? (
-                <span
-                  data-testid="working-for"
-                  className="ml-2 text-xs text-muted-foreground"
-                >
-                  Working for {workingFor}
-                </span>
-              ) : (
-                working && <span className="sr-only">Working</span>
-              )}
-            </span>
-          )}
+          {isAssistant &&
+            (streaming || isLast) &&
+            unconfirmed === undefined && (
+              <span
+                role={working ? "status" : undefined}
+                aria-hidden={!working}
+                className={cn(
+                  "inline-flex items-center py-1",
+                  !working && "invisible",
+                )}
+              >
+                <WorkingDots size="md" className="text-accent" />
+                {working && workingFor !== undefined ? (
+                  <span
+                    data-testid="working-for"
+                    className="ml-2 text-xs text-muted-foreground"
+                  >
+                    Working for {workingFor}
+                  </span>
+                ) : (
+                  working && <span className="sr-only">Working</span>
+                )}
+              </span>
+            )}
           {isAssistant && streaming && parts.length === 0 && pendingNotice}
           {undelivered && !providerFailure && (
             <UndeliveredNotice
