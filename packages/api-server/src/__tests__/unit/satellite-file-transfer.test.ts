@@ -481,7 +481,13 @@ describe("a file the machine asks the agent's workspace for", () => {
     expect(harness.read).toHaveLength(0);
   });
 
-  it("maps the workspace's own refusals", async () => {
+  /**
+   * TEST_SCENARIO: Opening the workspace file is the last refusal that can be
+   * known in advance — it is missing, special, outside the workspace, or over
+   * the cap. A transfer refused for one of those must not cost the Job the one
+   * token it has, so the file is opened before the token is spent.
+   */
+  it("maps the workspace's own refusals without spending the token", async () => {
     for (const [reason, status] of [
       ["not-found", 404],
       ["too-large", 413],
@@ -495,10 +501,25 @@ describe("a file the machine asks the agent's workspace for", () => {
         }),
         readFail: reason,
       });
-      expect(
-        (await transferRequest(harness.app, { method: "GET" })).status,
-      ).toBe(status);
+      const res = await transferRequest(harness.app, { method: "GET" });
+      expect(res.status).toBe(status);
+      expect(harness.state.spent).toBe(0);
+      expect(harness.state.hash).not.toBeNull();
     }
+  });
+
+  it("refuses a workspace path it will not resolve without spending the token", async () => {
+    const harness = setup({
+      job: job({
+        tool: "upload",
+        transferDirection: "upload",
+        args: { path: "x", workspacePath: "../outside/secret" },
+      }),
+    });
+    const res = await transferRequest(harness.app, { method: "GET" });
+    expect(res.status).toBe(400);
+    expect(harness.state.spent).toBe(0);
+    expect(harness.read).toHaveLength(0);
   });
 
   /**

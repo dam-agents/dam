@@ -259,8 +259,6 @@ export function createSatelliteFileRoutes(deps: {
       if (path === null) return c.json({ error: "bad_workspace_path" }, 400);
 
       const owner = c.get("user").sub;
-      if (!(await spend(owner, job, token, "upload")))
-        return c.json({ error: "no_running_job" }, 409);
 
       /**
        * UNIT_BOUNDARY_DESCRIPTION: The Job this stream belongs to, as it was at
@@ -345,15 +343,33 @@ export function createSatelliteFileRoutes(deps: {
               : 409,
         );
       }
-      if (!(await stillOurs()) || announced) {
-        finished("aborted");
-        read.stream.destroy();
-        return c.json({ error: "no_running_job" }, 409);
-      }
       if (read.size > cap) {
         finished("aborted");
         read.stream.destroy();
         return c.json({ error: "transfer_too_large" }, 413);
+      }
+      if (announced || !(await stillOurs())) {
+        finished("aborted");
+        read.stream.destroy();
+        return c.json({ error: "no_running_job" }, 409);
+      }
+
+      if (!(await spend(owner, job, token, "upload"))) {
+        finished("aborted");
+        read.stream.destroy();
+        return c.json({ error: "no_running_job" }, 409);
+      }
+
+      /**
+       * UNIT_BOUNDARY_DESCRIPTION: The last check before the first byte. The
+       * token is spent, so a Job that ended inside that statement, or a tick
+       * that revoked while this check was in flight, must still stop the stream
+       * — the revocation is read after the await for exactly that reason.
+       */
+      if (!(await stillOurs()) || announced) {
+        finished("aborted");
+        read.stream.destroy();
+        return c.json({ error: "no_running_job" }, 409);
       }
 
       stream = read.stream;
