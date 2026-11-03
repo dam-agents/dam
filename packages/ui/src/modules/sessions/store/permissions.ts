@@ -18,7 +18,8 @@ export interface PendingPermission {
   sessionId: string;
   toolCall: unknown;
   options: PermissionOption[];
-  resolve: (outcome: PermissionOutcome) => void;
+  isOpen: () => boolean;
+  resolve: (outcome: PermissionOutcome) => boolean;
 }
 
 export interface PermissionsSlice {
@@ -27,8 +28,9 @@ export interface PermissionsSlice {
   resolvePendingPermission: (
     toolCallId: string,
     outcome: PermissionOutcome,
-  ) => void;
+  ) => boolean;
   dismissPendingPermission: (toolCallId: string) => void;
+  dropPermissionsFromClosedChannels: () => void;
 }
 
 export const createPermissionsSlice: StateCreator<
@@ -50,13 +52,13 @@ export const createPermissionsSlice: StateCreator<
     const entry = get().pendingPermissions.find(
       (p) => p.toolCallId === toolCallId,
     );
-    if (!entry) return;
-    entry.resolve(outcome);
+    if (!entry || !entry.resolve(outcome)) return false;
     set((s) => ({
       pendingPermissions: s.pendingPermissions.filter(
         (p) => p.toolCallId !== toolCallId,
       ),
     }));
+    return true;
   },
   dismissPendingPermission: (toolCallId) => {
     set((s) => ({
@@ -65,4 +67,10 @@ export const createPermissionsSlice: StateCreator<
       ),
     }));
   },
+  dropPermissionsFromClosedChannels: () =>
+    set((s) => {
+      const open = s.pendingPermissions.filter((p) => p.isOpen());
+      if (open.length === s.pendingPermissions.length) return {};
+      return { pendingPermissions: open };
+    }),
 });

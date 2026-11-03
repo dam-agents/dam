@@ -144,6 +144,7 @@ export function useAcpSession(
     clearRuntimeIdle,
     connectionRef,
     state: connectionState,
+    retry: retryChannel,
     reset: resetConnection,
   } = useAcpConnection({
     selectedAgent,
@@ -480,6 +481,7 @@ export function useAcpSession(
     busy,
     loadingSession,
     connectionState,
+    retryChannel,
   };
 }
 

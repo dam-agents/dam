@@ -115,6 +115,7 @@ interface UseAcpConnectionResult {
   runtimeIdle: (sid: string) => boolean;
   clearRuntimeIdle: (sid: string) => void;
   connectionRef: React.MutableRefObject<LiveConnection | null>;
+  retry: () => void;
   reset: () => void;
 }
 
@@ -696,8 +697,18 @@ export function useAcpConnection(
     idleSessionsRef.current.delete(sid);
   }, []);
 
+  const liveBlockedRef = useRef(liveBlocked);
+  liveBlockedRef.current = liveBlocked;
+
+  const retry = useCallback(() => {
+    if (liveBlockedRef.current || ensureInFlightRef.current) return;
+    reconnectAttemptRef.current = 0;
+    ensureLive().catch(() => {});
+  }, [ensureLive]);
+
   return {
     state,
+    retry,
     ensureLive,
     beginSession,
     loadSessionHistory,
