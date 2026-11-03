@@ -101,4 +101,49 @@ same "an overlay directory is mounted from the home disk, an existing mount is l
 same "what the overlay directory held is kept behind the mount" staged \
   "$(cat "$NODE_HOME_SHARE/host-vm-images/default/image" 2>/dev/null)"
 
+# --- the mounts come back at every boot (#6017) ----------------------------
+NODE_HOST_DIRS_SERVICE="$work/init.d/platform-host-dirs"
+mkdir -p "$work/init.d"
+node_sh() {
+  case "$1" in
+    mount|rc-update) echo "$*" >> "$work/root.log" ;;
+    mountpoint) case " $MOUNTED " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
+    test) [ "$2 $3" = "-x /sbin/openrc-run" ] && return 0; "$@" ;;
+    *) "$@" ;;
+  esac
+}
+: > "$work/root.log"
+OVERLAY="$work/var/vm-images $work/var/releases" MOUNTED="$work/var/releases"
+mkdir -p "$NODE_HOME_SHARE/host-releases"
+node_host_dirs "$work/var/vm-images" "$work/var/releases"
+node_host_dirs_at_boot
+same "the boot service names the mount made now and one an earlier install made" \
+  "2" "$(grep -c 'mount --bind' "$NODE_HOST_DIRS_SERVICE" 2>/dev/null)"
+grep -qF "mount --bind $NODE_HOME_SHARE/host-vm-images $work/var/vm-images" "$NODE_HOST_DIRS_SERVICE" &&
+  grep -qF "mount --bind $NODE_HOME_SHARE/host-releases $work/var/releases" "$NODE_HOST_DIRS_SERVICE" ||
+  { echo "FAIL: the boot service does not bind-mount both node directories from the home disk" >&2; fail=1; }
+grep -q 'before k3s' "$NODE_HOST_DIRS_SERVICE" ||
+  { echo "FAIL: the boot service does not start before k3s" >&2; fail=1; }
+grep -qF "rc-update add $(basename "$NODE_HOST_DIRS_SERVICE") default" "$work/root.log" ||
+  { echo "FAIL: the boot service is not added to the default runlevel" >&2; fail=1; }
+sh -n "$NODE_HOST_DIRS_SERVICE" || { echo "FAIL: the boot service is not valid shell" >&2; fail=1; }
+# The start() body, run as the boot would run it, mounts each directory once:
+# a directory already mounted is left, so a restart of the service is a no-op.
+sed -n '/^start() {$/,/^}$/p' "$NODE_HOST_DIRS_SERVICE" > "$work/start.sh"
+: > "$work/root.log"
+( mountpoint() { case " $MOUNTED " in *" $2 "*) return 0 ;; *) return 1 ;; esac; }
+  mount() { echo "mount $*" >> "$work/root.log"; }
+  . "$work/start.sh"; MOUNTED="$work/var/releases" start )
+same "a boot mounts what is not mounted yet, and leaves what is" \
+  "mount --bind $NODE_HOME_SHARE/host-vm-images $work/var/vm-images" "$(cat "$work/root.log")"
+: > "$work/root.log"
+OVERLAY="" MOUNTED=""
+rm -rf "$NODE_HOME_SHARE/host-releases" "$NODE_HOME_SHARE/host-vm-images"
+node_host_dirs "$work/var/vm-images" "$work/var/releases"
+node_host_dirs_at_boot
+[ ! -e "$NODE_HOST_DIRS_SERVICE" ] ||
+  { echo "FAIL: a node whose directories need no mount keeps a boot service" >&2; fail=1; }
+grep -qF "rc-update del $(basename "$NODE_HOST_DIRS_SERVICE") default" "$work/root.log" ||
+  { echo "FAIL: a boot service no install needs is left in the default runlevel" >&2; fail=1; }
+
 exit "$fail"
