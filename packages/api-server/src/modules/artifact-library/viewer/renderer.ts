@@ -143,6 +143,15 @@ function renderViewerRelay(
 </script>`;
 }
 
+const FRAME_FRAGMENT_BODY = `
+(() => {
+  const frame = document.querySelector("iframe");
+  const src = frame.dataset.src;
+  frame.src = src + location.hash;
+  window.addEventListener("hashchange", () => frame.contentWindow.location.replace(src + location.hash));
+})();
+`;
+
 export function renderWrapper(input: WrapperInput): string {
   const { slug, version, relay } = input;
   return `<!doctype html>
@@ -178,7 +187,8 @@ export function renderWrapper(input: WrapperInput): string {
   <span class="spacer"></span>
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="${relay ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+<iframe sandbox="${relay ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" data-src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+<script>${FRAME_FRAGMENT_BODY}</script>
 <script>${FRAME_PRINT_BODY}</script>
 ${relay ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug, relay.token, relay.caller)}` : ""}
 </body>
@@ -502,6 +512,13 @@ export function renderFolderPage(input: {
       <p class="sub">${input.artifacts.length} shared artifact${input.artifacts.length === 1 ? "" : "s"} · via ${escapeHtml(input.brandName)}</p>
       ${rows}
     </div>`,
+  );
+}
+
+export function renderSignInRedirect(loginUrl: string): string {
+  return chromePage(
+    "Signing in",
+    `<script>location.replace(${jsStringLiteral(loginUrl)} + encodeURIComponent(location.hash));</script>`,
   );
 }
 
