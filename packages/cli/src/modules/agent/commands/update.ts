@@ -307,7 +307,7 @@ export function buildUpdateCommand(deps: {
         exitOnServiceError(remembered, host);
       }
 
-      const set = new Set<DefaultKind>(
+      const setHere = new Set<DefaultKind>(
         opts.profile !== undefined
           ? ["chat"]
           : opts.sameAsChat || pairGiven
@@ -319,7 +319,7 @@ export function buildUpdateCommand(deps: {
             before: revoked.before,
             revoked: revoked.ids,
             connections: revoked.connections,
-            skip: set,
+            skip: setHere,
           })
         : [];
       for (const move of defaultMoves)
