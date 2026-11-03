@@ -261,9 +261,27 @@ func (c envoyHostChain) ContestedAt(scope string) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a request naming no Connection on this scope is refused at the gateway. A contested scope is refused, since serving it from whichever credential sorted first acts as the wrong account; on an Agent requiring addresses every rival skips such a request, so it goes upstream with no credential of the Agent's and nothing is ambiguous.
+// UNIT_BOUNDARY_DESCRIPTION: whether a request naming no Connection on this scope is refused at the gateway. A contested scope is refused, since serving it from whichever credential sorted first acts as the wrong account; on an Agent requiring addresses every Connection's injector skips such a request, so it goes upstream with no credential of the Agent's, unless a credential with no Connection, which no address gates, contests a header there.
 func (c envoyHostChain) RefusesUnaddressedAt(scope string) bool {
-	return !c.RequireAddress && c.ContestedAt(scope)
+	if !c.ContestedAt(scope) {
+		return false
+	}
+	if !c.RequireAddress {
+		return true
+	}
+	owners := map[string]map[string]bool{}
+	for _, cred := range c.credentialsAt(scope) {
+		if owners[cred.HeaderName] == nil {
+			owners[cred.HeaderName] = map[string]bool{}
+		}
+		owners[cred.HeaderName][cred.ConnectionID] = true
+	}
+	for _, ids := range owners {
+		if len(ids) > 1 && ids[""] {
+			return true
+		}
+	}
+	return false
 }
 
 func (c envoyHostChain) ScopesOf(connectionID string) []string {
@@ -945,7 +963,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v28-gateway-leaf-sds"
+const envoyBootstrapTemplateRev = "v29-gateway-unaddressed"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}

@@ -582,6 +582,16 @@ func TestRenderEnvoyBootstrap_RequireAddressRefusesNoContestedPathScope(t *testi
 	assert.Contains(t, got, "local CONTESTED = {}")
 }
 
+func TestRefusesUnaddressedAt_RequireAddressStillRefusesBesideACredentialWithNoConnection(t *testing.T) {
+	chains := requiringAddress(connectionChain("github.com",
+		connectionCredential("", "legacy-secret", "Authorization", "github.com"),
+		connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "github.com"),
+	))
+
+	assert.True(t, chains[0].RefusesUnaddressedAt("/"),
+		"no address gates a credential with no connection, so an unaddressed request would still carry it")
+}
+
 func TestRenderEnvoyBootstrap_RequireAddressGatesTheQueryParamStep(t *testing.T) {
 	cred := connectionCredential("conn-q", "platform-conn-q", "X-Key", "api.example.com")
 	cred.QueryParamName = "key"
