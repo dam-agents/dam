@@ -7,6 +7,7 @@ import { Input } from "../../components/input.js";
 import { Label } from "../../components/label.js";
 import { cn } from "../../lib/cn.js";
 import { HeroBgShapes } from "../components/hero-bg-shapes.js";
+import { ScaledStage } from "../components/scaled-stage.js";
 import { AccessSection } from "../components/sections/access.js";
 import { CapabilitiesSection } from "../components/sections/capabilities.js";
 import { ChannelsSection } from "../components/sections/channels.js";
@@ -288,12 +289,12 @@ function ScrollPage({
       <section className="relative min-h-dvh snap-start overflow-hidden">
         <div className="absolute inset-y-0 right-0 z-10 hidden w-1/2 items-center md:flex">
           <div className="-ml-[8%] w-[140%] max-w-[860px] pr-10">
-            <div className="relative @container">
+            <ScaledStage width={820} height={520}>
               <HeroBgShapes />
-              <div className="relative">
+              <div className="relative h-full">
                 <SlackDmIllustration brand={brand} />
               </div>
-            </div>
+            </ScaledStage>
           </div>
         </div>
 

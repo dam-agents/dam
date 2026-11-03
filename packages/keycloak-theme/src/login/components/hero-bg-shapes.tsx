@@ -37,9 +37,6 @@ const RUST = "#CA6040";
 const GREEN = "#3F6C45";
 const PINK = "#E89DA8";
 
-const DESIGN_WIDTH = 820;
-const DESIGN_HEIGHT = 520;
-
 interface ShapeConfig {
   piece: keyof typeof PIECES;
   color: string;
@@ -60,8 +57,6 @@ const SHAPES: ShapeConfig[] = [
   { piece: "halfDisc", color: GOLD, x: 473, y: 411, size: 460 },
 ];
 
-const cqw = (px: number) => `${(px / DESIGN_WIDTH) * 100}cqw`;
-
 function Shape({ piece, color, x, y, size, flip = false }: ShapeConfig) {
   const p = PIECES[piece]!;
   const [, , vw, vh] = p.viewBox.split(" ").map(Number) as [
@@ -78,10 +73,10 @@ function Shape({ piece, color, x, y, size, flip = false }: ShapeConfig) {
     <div
       className="absolute"
       style={{
-        left: cqw(x),
-        top: `calc(50% + ${cqw(y - DESIGN_HEIGHT / 2)})`,
-        width: cqw(width),
-        height: cqw(height),
+        left: x,
+        top: y,
+        width,
+        height,
         transform: flip ? "scaleX(-1)" : undefined,
       }}
       aria-hidden="true"
@@ -98,13 +93,10 @@ function Shape({ piece, color, x, y, size, flip = false }: ShapeConfig) {
 }
 
 /* UNIT_BOUNDARY_DESCRIPTION: The coloured shapes behind the Slack
- * illustration on the login page's first screen. The design places them around
- * the illustration at its full size (DESIGN_WIDTH x DESIGN_HEIGHT px). Each
- * shape keeps that place relative to the illustration and scales with its
- * width in container query units, anchored on its vertical middle because the
- * illustration keeps a fixed height. So the shapes frame the illustration at
- * every page width and never spread over the sign-in form. Render it inside the
- * illustration's box, which must be an inline-size container. */
+ * illustration on the login page's first screen, placed in design pixels
+ * around the illustration's 820 x 520 px window as the design draws them.
+ * Render it on the same ScaledStage as the illustration, so both scale as one
+ * and the frame keeps its exact look at every page width. */
 export function HeroBgShapes() {
   return (
     <div className="pointer-events-none absolute inset-0" aria-hidden="true">

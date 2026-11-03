@@ -411,6 +411,7 @@ export function SlackDmIllustration({ brand }: { brand: string }) {
     <BrandProvider value={brand}>
       <div
         ref={containerRef}
+        className="h-full w-full"
         role="img"
         aria-label={`Illustration: a user asks their ${brand} agent to create a recurring schedule in Slack DMs.`}
       >
