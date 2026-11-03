@@ -42,17 +42,22 @@ What the prototype gets wrong, and this feature does differently:
   Two forms on the page is accepted for now (production offers only the identity-provider button).
 - **No testimonial photos.** The prototype imports five photos that were never committed.
   They are dropped: a testimonial shows its initials avatar (the prototype already has `initials` and `color`).
-- **IBM-specific content is set per deployment** (sub-issue 03): the docs link, the community Slack link and the testimonials.
+- **IBM-specific content is set per deployment**: the docs link and the community Slack link through Helm values (03), the testimonials in the platform's database, edited by operators without a redeploy (04, 05).
 - **No unused code.** The prototype carries about ten character variants, a "playground", the removed integrations band and scene components no band renders.
   Only what the page renders is copied.
 
 ## Sub-issues
 
-| #   | Title                                         | Scope                                                                                                                                                                             | Depends on |
-| --- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | ✅ First screen and preview tool              | Preview page; first screen with background shapes, Slack illustration, the shared form, "Learn more"; top form ids kept; shared-artifact sign-in unchanged; dark mode kept        | —          |
-| 02  | ✅ Content sections and bottom sign-in        | Capabilities, channels, testimonials, sandbox, DevOps and access sections with the one character widget; trimmed; initials avatars; dark styles; content from one defaults module | 01         |
-| 03  | ✅ Deployment settings for the page's content | Env vars from new `keycloak.login.*` Helm values for the docs URL, the community link and the testimonials; empty hides                                                           | 02         |
+| #   | Title                                         | Scope                                                                                                                                                                               | Depends on |
+| --- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | ✅ First screen and preview tool              | Preview page; first screen with background shapes, Slack illustration, the shared form, "Learn more"; top form ids kept; shared-artifact sign-in unchanged; dark mode kept          | —          |
+| 02  | ✅ Content sections and bottom sign-in        | Capabilities, channels, testimonials, sandbox, DevOps and access sections with the one character widget; trimmed; initials avatars; dark styles; content from one defaults module   | 01         |
+| 03  | ✅ Deployment settings for the page's content | Env vars from new `keycloak.login.*` Helm values for the docs URL, the community link and the testimonials; empty hides                                                             | 02         |
+| 04  | Testimonials in the database                  | `login_testimonials` table; operator tRPC to list, save and reorder; public read endpoint the login page fetches; photos in the avatar image store; Helm testimonials value removed | 03         |
+| 05  | Editing testimonials                          | "Login page" card on Settings → Operator with photo upload; `dam login-testimonials` CLI with import and export; architecture pages                                                 | 04         |
+
+Sub-issues 04 and 05 were added after 01–03 shipped on the branch: operators want to change the testimonials, photos included, without a chart upgrade.
+The docs link and community link stay Helm values; only the testimonials move to the database.
 
 ## Conventions & glossary
 
@@ -65,6 +70,9 @@ What the prototype gets wrong, and this feature does differently:
 - Imports in the theme use the `.js` suffix (as the prototype and `Template.tsx` do); keep `Login.tsx` consistent.
 - Apply `/react-ui-engineering` for every component change.
   Split large files by section (one file per section under `src/login/components/sections/` is fine) rather than copying one 1,300-line file.
+- **Testimonial** — one quote on the login page: name, role, quote (which may name the product as `{brand}`) and an optional photo.
+- **Operator** — a user with the `keycloak.operatorRole` realm role; only an operator changes testimonials ([`security-and-credentials.md`](../../architecture/security-and-credentials.md#identity)).
+- Apply `/typescript-engineering` for the api-server, api-server-api and CLI changes in 04 and 05.
 - Tests are not written for this feature; verification is the build (`tsc` + `vite build` + `keycloakify build`), `mise run check`, the preview page and the e2e login.
 
 ## Whole-feature smoke test
@@ -76,6 +84,9 @@ What the prototype gets wrong, and this feature does differently:
 4. Install the branch into the local cluster (`cluster:install`) with the settings of 03 set in a values file: the docs link, community link and testimonials show those values; with them empty, those items are gone.
    The e2e login (`e2e:loop`, or one spec) signs in.
 5. Open a shared artifact while signed out: its sign-in page looks as on `main`.
+6. As an operator, add a testimonial with a photo on Settings → Operator, reorder it to the top, and reload the login page: it shows first, with the photo, without any redeploy.
+   Remove it: it is gone on the next load.
+   `dam login-testimonials import` of a JSON file replaces the list the same way.
 
 ## Delivery
 
