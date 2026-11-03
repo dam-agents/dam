@@ -205,7 +205,12 @@ import type {
   SlackIgnoredApps,
 } from "./slack-ignored-apps-repository.js";
 import type { SlackLoopGuardDropsRepository } from "./slack-loop-guard-drops-repository.js";
-import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
+import {
+  BOT_POST_COOLDOWN_MS,
+  BOT_POST_TURNS_PER_WINDOW,
+  BOT_POST_WINDOW_MS,
+  createBotPostRateLimit,
+} from "../domain/bot-post-rate-limit.js";
 import {
   createThreadSupersede,
   type HeldTurn,
@@ -1556,7 +1561,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     inThread: boolean;
   };
 
-  const botPosts = createBotPostLoopBound();
+  const botPosts = createBotPostRateLimit();
 
   const BOT_MENTION_SEEN_TTL_MS = 10 * 60 * 1000;
   const botMentionsSeen = createTtlMap<string, true>({
@@ -1623,20 +1628,52 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return true;
   }
 
-  function admitBotPost(
+  async function admitBotPost(
     sender: SlackSender,
-    channelId: string,
-    threadTs: string | undefined,
-  ): boolean {
+    event: { channel: string; threadTs?: string; teamId: SlackWorkspace },
+  ): Promise<boolean> {
     if (sender.kind === "person") return true;
-    if (botPosts.admitBotPost(botPostConversation(channelId, threadTs)))
-      return true;
-    getLogger().info(
-      { channelId, sender: sender.kind },
-      "slack.bot_post.loop_bound",
+    const admission = botPosts.admitBotPost(
+      botPostConversation(event.channel, event.threadTs),
     );
-    void recordLoopGuardDrop(sender, channelId, !!threadTs);
+    if (admission === "admitted") return true;
+    getLogger().info(
+      { channelId: event.channel, sender: sender.kind, admission },
+      "slack.bot_post.rate_limited",
+    );
+    void recordLoopGuardDrop(sender, event.channel, !!event.threadTs);
+    if (admission === "tripped") await noticeBotPostsPaused(event);
     return false;
+  }
+
+  function minutesLabel(ms: number): string {
+    const minutes = Math.round(ms / 60_000);
+    return minutes === 1 ? "a minute" : `${minutes} minutes`;
+  }
+
+  async function noticeBotPostsPaused(event: {
+    channel: string;
+    threadTs?: string;
+    teamId: SlackWorkspace;
+  }): Promise<void> {
+    const where = event.threadTs ? "this thread" : "this channel";
+    const text =
+      `:pause_button: Agents and apps posted in ${where} more than ${BOT_POST_TURNS_PER_WINDOW} times in ${minutesLabel(BOT_POST_WINDOW_MS)}, ` +
+      `so their posts here start no agent turns for ${minutesLabel(BOT_POST_COOLDOWN_MS)}. ` +
+      "This stops agents from waking each other in a loop. A person's message still reaches the agents.";
+    try {
+      await gateway?.postMessage({
+        channel: event.channel,
+        teamId: event.teamId,
+        threadTs: event.threadTs,
+        text,
+      });
+    } catch (err) {
+      getLogger().warn(
+        { channelId: event.channel, error: formatError(err) },
+        "slack.bot_post.pause_unposted",
+      );
+    }
   }
 
   async function recordLoopGuardDrop(
@@ -5161,8 +5198,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     if (await isIgnoredApp(sender, event.channel)) return;
     const slackUserId = sender.kind === "person" ? sender.user : "";
-    const conversation = botPostConversation(event.channel, event.threadTs);
-    if (sender.kind === "person") botPosts.notePersonPost(conversation);
 
     const threadTs = event.threadTs ?? event.ts;
     if (opts.directMessage && event.threadTs) {
@@ -5215,7 +5250,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const binding = routed.target;
     if (!senderReaches(sender, binding)) return;
-    if (!admitBotPost(sender, event.channel, event.threadTs)) return;
+    if (!(await admitBotPost(sender, event))) return;
 
     const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
@@ -6142,8 +6177,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
     const slackUserId = sender.kind === "person" ? sender.user : "";
-    const conversation = botPostConversation(event.channel, event.threadTs);
-    if (sender.kind === "person") botPosts.notePersonPost(conversation);
 
     if (sender.kind === "agent" && sender.ambientRound) {
       getLogger().debug(
@@ -6163,7 +6196,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         await noticeUntaggedReply(event, sender.user, event.threadTs, bindings);
       return;
     }
-    if (!admitBotPost(sender, event.channel, event.threadTs)) return;
+    if (!(await admitBotPost(sender, event))) return;
 
     const { images, files, failures, release } = await fetchSlackAttachments(
       gateway,
