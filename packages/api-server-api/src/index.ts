@@ -1115,11 +1115,14 @@ export {
   reportFencedInputSchema,
   MAX_JOB_OUTPUT_BYTES,
   PAYLOAD_ENVELOPE_BYTES,
+  SATELLITE_FILE_MAX_BYTES,
   SATELLITE_IMAGE_MIME_TYPES,
   escapedTextBytes,
   formatJobRef,
   isBase64,
   reportInputSchema,
+  satelliteFileNameSchema,
+  satelliteFileWrittenSchema,
   satelliteImageOf,
   satelliteConnectInputSchema,
   satelliteImageSchema,
@@ -1131,6 +1134,7 @@ export {
   satelliteToolSchema,
   toolArgsSchema,
 } from "./modules/satellites/schemas.js";
+export type { SatelliteFileWritten } from "./modules/satellites/schemas.js";
 export type {
   ClaimInput,
   HeartbeatInput,

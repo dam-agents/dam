@@ -11,7 +11,7 @@ The machine polls; nothing is pushed to it.
 The worker runs beside the tools, claims work over ordinary outbound HTTPS, calls them and reports back.
 The Agent sees each granted Satellite's tools on the platform MCP server it already has, scoped by Satellite name.
 
-Two verbs start a worker, and **nothing above it can tell them apart**:
+Three verbs start a worker, and **nothing above it can tell them apart**:
 
 - `dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` — any MCP server, whose tools are offered as they come, bar a name the contract refuses.
   The worker either starts it over stdio or, with `--url localhost:8080`, reaches one already listening and forwards each call to it: Streamable HTTP first, then SSE, with any `--header` the server wants.
@@ -20,8 +20,10 @@ Two verbs start a worker, and **nothing above it can tell them apart**:
   Without `--name` it is named after the server it starts — the first word past a package runner such as `npx` or `uvx`, less scope, version and path — or the host it forwards to.
 - `dam satellite shell "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
   Without `--name` it is named after the one command every pattern permits, or called `user@hostname` when they differ; either is folded into the name contract.
+- `dam satellite files --root <dir>` — one directory on the machine, offered as a `download` tool, and with `--upload` an `upload` tool beside it (see [Files](#files-between-the-machine-and-the-agent)).
+  Without `--name` it is named after the directory.
 
-Two verbs rather than one flag because the two are different things to set up, not two ways of saying one thing, and an explicit verb cannot be misread the way a selector flag can.
+Separate verbs rather than one flag because each is a different thing to set up, not another way of saying the same thing, and an explicit verb cannot be misread the way a selector flag can.
 
 Making the Command Surface a degenerate MCP server rather than a parallel concept is what keeps the platform out of the business of understanding commands.
 It forwards a tool call and stores an outcome; the machine alone reads the arguments.
@@ -216,6 +218,34 @@ A call made while the Satellite is offline never starts at all: admission refuse
 
 **Credentials refresh themselves.** A worker signed in through the browser re-mints its access token before each call, and one started as a service holds a serve key in `DAM_TOKEN` instead, which needs no refresh.
 Either way, a worker that cannot authenticate retries like any other failure but says what ends it: signing in again, or a new key.
+||||||| parent of d3272c8ee (feat(satellite): download and upload one file between a machine and an agent)
+## Files between the machine and the Agent
+
+A Job's result carries one string of at most 1 MiB beside a handful of images, which is the wrong channel for a file: a tool that returned contents would spend the Agent's context on bytes, and a large file would not fit at all.
+So a file travels on **its own request, in the direction the queue cannot go** — the machine makes it, over the same outbound HTTPS the worker already uses, and never through a Job's arguments or its result.
+
+`dam satellite files --root <dir>` exposes one directory on the machine as a **transfer surface**:
+
+- `download` copies one file **into the Agent's workspace**, and the Agent is told only the path the file landed at, its size and its sha256.
+  It reads the file with its own tools, never through the model's context.
+- `upload`, offered only when the worker was started with `--upload`, copies one file **from the Agent's workspace onto the machine**.
+  It is the same request in reverse, and it never replaces a file that is already there unless the call says to.
+
+A transfer is authorised by a **Job that is running at that moment**: the machine names the Job it is serving, and the platform reads that Job's own Agent.
+The serve key therefore buys nothing new — a machine can only write into the workspace of an Agent whose call it is serving right now, and only where the platform puts it.
+The platform chooses the destination, one directory per Job inside the Agent's workspace, so a machine never names a path in someone else's file tree; the machine only names the file.
+Upload asks for a workspace path instead, and the runtime's own workspace rules decide what that means.
+
+The directory is the whole allowlist, and it is decided on the machine:
+
+- The root is resolved once at startup, and `/` and the home directory are refused as roots — the boundary is the directory, and a deny-list of credential paths inside the home would be false comfort.
+- Every call resolves its path with `realpath` and refuses anything that ends outside the root: a `..` segment, an absolute path, and a symlink that leads out are all refused, as is anything that is not a regular file.
+- Read-only unless the user passed `--upload`.
+  An upload creates a missing directory on the way, and refuses a symlinked one, so the write cannot be steered out of the root.
+
+**One transfer carries at most 50 MB**, the Agent runtime's own per-file limit, so a transfer can never carry a file the workspace would refuse to hold.
+A transfer is held whole in one api-server replica for the length of the request; the streaming alternative is the same path an import takes into the runtime, and is worth building only when that memory cost is real.
+The path, the size and the direction are the whole of what is recorded — on the Job row for the machine's side, and in the workspace for the Agent's — and file contents never enter a log.
 
 ## Trust boundary
 
@@ -227,6 +257,10 @@ The command — or the MCP server — inherits the **worker's own environment**,
 
 This is a narrower promise than matching in both places, and deliberately so: a check the platform cannot perform for every Satellite is a check it should not appear to perform for any.
 What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
+
+A **file transfer crosses in the other direction**, so the platform is the side that writes what it is given.
+It trusts none of it: the name the machine sends is one path segment and becomes a path only inside a directory the platform chose for that Job, the size is bounded before the body is read, and the body lands in the Agent's workspace only while the Job that authorised it is still running.
+What the machine reads is bounded on the machine, by its root.
 
 Anything an Agent can call is callable by a **prompt-injected** Agent.
 That is the whole exposure surface, and it is why a tool call is bounded before it is stored — arguments are capped, and the concurrency limit is enforced in the same transaction that inserts.
@@ -261,7 +295,7 @@ Its **+ New** catalog lists them under MCP servers, which is where a grant is gi
 A Satellite is an MCP server to the agent, so the catalog has no tab of its own for it; the form that adds a remote MCP server points at `dam satellite` for one that runs on the user's own machine.
 The Connections page and the catalog poll while open, so a machine that has just connected, or just gone offline, shows without a reload.
 
-For deployment operations, the CLI is at parity plus `dam satellite mcp` and `dam satellite shell`, whose **log is the interface**.
+For deployment operations, the CLI is at parity plus `dam satellite mcp`, `dam satellite shell` and `dam satellite files`, whose **log is the interface**.
 The parsed Command Patterns print at startup.
 Right after connecting, the worker prints where in the UI to add the machine to an Agent, since until someone does, no Agent can reach it.
 Every request is one line naming the Agent that sent it and what it asked for.
