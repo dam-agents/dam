@@ -88,6 +88,10 @@ mise run e2e:gate
 # first UI specs otherwise time out on the login roundtrip's blank page while
 # the app still loads (#6034). CI's `e2e` keeps the defaults.
 export E2E_TIMEOUT_SCALE="${E2E_TIMEOUT_SCALE:-3}"
+# An Environment has 4 vCPUs. Two workers each boot 4-vCPU agent machines and
+# a browser there, and the whole Environment stalls: every probe times out at
+# once, and agent machines miss their 30 s boot window (#6199). One worker fits.
+[ "$CLUSTER_TARGET" != environment ] || export E2E_WORKERS="${E2E_WORKERS:-1}"
 
 # 4. Run the specs against the warm cluster. No teardown — the cluster stays up
 # for the next loop. The arguments ride after `--` so mise appends them to the
