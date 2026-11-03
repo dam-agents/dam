@@ -236,7 +236,7 @@ A Satellite replaces its tool list every time it connects, so the direction cann
 A Job whose tool moved no file, or moves them the other way, authorises nothing.
 
 **A transfer belongs to the claim that is running the Job.** Claiming a Job issues that worker a transfer token, stored on the Job row as a hash, and a file request must present it; the token is spent by the transfer it authorises, in the same statement that checks the Job is still running.
-So a transfer happens once, for one Job, and only while that Job runs: bytes that arrive after it settled land nowhere, and a second transfer on the same Job is refused.
+So a transfer happens once, for one Job, and only while that Job runs: bytes that arrive after it settled land nothing, a second transfer on the same Job is refused, and an upload's stream stops within one re-check interval of the Job ending.
 This is the one thing the serve key does *not* buy: two keys of one owner are indistinguishable to the queue, and the token is what tells the claimant from any other worker of that owner.
 
 **The platform takes the direction and both paths from the Job itself** — the direction frozen at admission and the arguments the Agent's call carried — so a machine cannot ask for a file its Agent did not ask for, and cannot choose where a received file lands.
@@ -276,7 +276,8 @@ This is a narrower promise than matching in both places, and deliberately so: a 
 What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
 
 A **file transfer crosses in the other direction**, so the platform is the side that writes what it is given.
-It trusts none of it: the machine names no path at all, the direction and both paths come from the Job's own arguments, the claim's token is spent atomically so nothing lands or leaves after the Job ended, and the workspace end walks every component without following a link.
+It trusts none of it: the machine names no path at all, the direction is the one frozen on the Job when the call was admitted and both paths come from the Job's own arguments, and the workspace end walks every component without following a link.
+The claim's token is spent atomically, which is what stops a transfer after the Job ended: a download cannot land once it is spent, and an upload's stream stops within one re-check interval of the Job ending — the resolution at which the platform re-proves the Job while bytes leave, not the instant they stop.
 What the machine reads is bounded on the machine, by its root.
 
 Anything an Agent can call is callable by a **prompt-injected** Agent.

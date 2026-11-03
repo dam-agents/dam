@@ -31,11 +31,19 @@ import { join } from "node:path";
  * A received file is staged under a random name in the directory it will be
  * published into, and published by one synchronous step taken *inside* that
  * directory: the process moves into the directory's inode, proves it is still
- * the one that was checked, and names both files relatively. Renaming a path on
- * top of that cannot redirect the step — the guarantee `linkat`/`renameat` give,
- * which Node does not expose. The staged file and the published entry are both
- * proved to be the same inode before the transfer counts as written, and the
- * bytes on disk are read back and compared with what was hashed before it is.
+ * the one that was checked, and names both files relatively. No other
+ * JavaScript can run between the proof and the step, so renaming a path on top
+ * of it cannot redirect the step — the guarantee `linkat`/`renameat` give, which
+ * Node does not expose. The staged file and the published entry are both proved
+ * to be the same inode before the transfer counts as written, and the bytes on
+ * disk are read back and compared with what was hashed before it is.
+ *
+ * The ceilings, stated: the working directory is process-wide while the step
+ * runs, so another thread using a relative path would see it, and nothing in
+ * this service does; and the Agent runs as the same user as this process, so it
+ * can still swap the staged name between the proof and the link, which is
+ * detected afterwards and leaves nothing published. The upgrade path for both is
+ * a native `linkat`/`renameat`/`openat2`.
  */
 
 export const MAX_TRANSFER_BYTES = 50 * 1024 * 1024;
@@ -420,7 +428,7 @@ export async function sweepStaging(
     if (info === null || !info.isDirectory() || info.isSymbolicLink()) continue;
     const proved = { dev: info.dev, ino: info.ino };
     insideDirectory(dir, proved, () => {
-      for (const entry of readdirSync(dir)) {
+      for (const entry of readdirSync(".")) {
         if (!entry.startsWith(STAGING_PREFIX)) continue;
         if (!STAGING_ID.test(entry.slice(STAGING_PREFIX.length))) continue;
         const staged = lstatSync(entry, { throwIfNoEntry: false });

@@ -25,11 +25,17 @@ import { basename, isAbsolute, join, sep } from "node:path";
  * A write is staged under a random name beside its destination and published by
  * one step taken *inside* the verified destination directory: the process moves
  * into that directory's inode, proves it is still the one that was checked, and
- * then names the file relatively. Nothing else runs between the proof and the
- * step, so renaming a path on top of it cannot redirect the step — the same
- * guarantee `linkat`/`renameat` give, which Node does not expose. The staged
- * file is proved to be ours, and the published entry proved to be that same
- * inode, before the transfer is called successful.
+ * then names the file relatively. No other JavaScript can run between the proof
+ * and the step, so renaming a path on top of it cannot redirect the step — the
+ * guarantee `linkat`/`renameat` give, which Node does not expose.
+ *
+ * The ceilings, stated: the working directory is process-wide while the step
+ * runs, so code on another thread using a relative path would see it (this
+ * package has none); a process of the same user can still swap the staged name
+ * between the proof and the link, which is detected afterwards and leaves
+ * nothing published; and if the directory this worker was started in is deleted,
+ * restoring the working directory fails and that upload fails after staging.
+ * The upgrade path for all three is a native `linkat`/`renameat`/`openat2`.
  */
 
 export const MAX_TRANSFER_BYTES = 50 * 1024 * 1024;
@@ -314,6 +320,10 @@ export async function stagedDigest(staged: Staged): Promise<{
  * its own content and a device or a FIFO is never written through. Both the
  * staged file and the published entry are proved to be the inode that was
  * staged, inside the directory that was proved when it was created.
+ *
+ * The staging name goes on every path: a rename consumes it, and a link leaves it
+ * as a second name for the published file, so a leftover staging name would give
+ * that file two links and the next transfer would refuse to touch it.
  */
 export async function publishInRoot(
   root: string,
@@ -367,9 +377,10 @@ export async function publishInRoot(
       published.ino !== opened.ino
     ) {
       rmSync(to, { force: true });
+      rmSync(from, { force: true });
       return "changed" as const;
     }
-    if (!overwrite) rmSync(from, { force: true });
+    rmSync(from, { force: true });
     return "published" as const;
   });
 

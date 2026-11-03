@@ -366,6 +366,51 @@ describe("an upload from the agent's workspace onto the machine", () => {
     });
   });
 
+  /**
+   * TEST_SCENARIO: An Agent that does not know whether a file exists passes
+   * `overwrite: true`. On a name that does not exist yet, the publish takes the
+   * link branch, and the staging name has to go with it: a leftover second name
+   * would leave the file just written with two links, and the next transfer
+   * would refuse to read or replace it.
+   */
+  it("leaves no staging name behind when overwrite publishes a new file", async () => {
+    const transfer = fakeTransfer({ receives: Buffer.from("FRESH") });
+    const backend = createFilesBackend({ root, allowUpload: true, transfer });
+
+    resultOf(
+      await backend.call({
+        sequence: 7,
+        tool: UPLOAD_TOOL,
+        args: {
+          path: "fresh.txt",
+          workspacePath: "work/fresh.txt",
+          overwrite: true,
+        },
+        transferToken: TOKEN,
+      }),
+    );
+
+    expect(
+      (await readdir(root)).filter((name) => name.includes(".incoming-")),
+    ).toEqual([]);
+    const published = await lstat(join(root, "fresh.txt"));
+    expect(published.nlink).toBe(1);
+
+    const downloads = createFilesBackend({
+      root,
+      allowUpload: false,
+      transfer: fakeTransfer(),
+    });
+    resultOf(
+      await downloads.call({
+        sequence: 8,
+        tool: DOWNLOAD_TOOL,
+        args: { path: "fresh.txt" },
+        transferToken: TOKEN,
+      }),
+    );
+  });
+
   it("refuses to replace a file unless asked to", async () => {
     const transfer = fakeTransfer({ receives: Buffer.from("second\n") });
     const backend = createFilesBackend({ root, allowUpload: true, transfer });

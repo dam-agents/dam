@@ -53,13 +53,14 @@ function workspacePathOf(args: Record<string, unknown>): string | null {
  * direction, carried by its own request rather than by a Job's result.
  *
  * A request authorises nothing by itself. It names a Job, presents the token
- * that Job's claim was issued, and the platform reads the direction and the
- * paths from the Job's own arguments — the Agent's call, not the machine's
- * word. A `download` therefore lands the file the Agent asked for, at a path
- * the platform chose, and an `upload` reads the workspace file the Agent named
- * and no other. The token is consumed by one atomic statement, which is also
- * the check that the Job is still running: nothing lands or leaves after the
- * Job ended, and one Job moves one file each way.
+ * that Job's claim was issued, and the platform reads the direction frozen on
+ * that Job when its call was admitted, and both paths from the Job's own
+ * arguments — the Agent's call, not the machine's word. A `download` therefore
+ * lands the file the Agent asked for, at a path the platform chose, and an
+ * `upload` reads the workspace file the Agent named and no other. The token is
+ * consumed by one atomic statement, which is also the check that the Job is
+ * still running: one Job moves one file each way, a download cannot land after
+ * it ended, and an upload's stream is cut within one re-check interval.
  *
  * A transfer is streamed end to end, so the cap is counted while the bytes
  * move and a body over it is cut off, not received and then refused.
@@ -317,11 +318,6 @@ export function createSatelliteFileRoutes(deps: {
         .transferFor(job.agentId)
         .read(path)
         .catch(() => ({ ok: false as const, reason: "refused" as const }));
-      if (announced) return c.json({ error: "no_running_job" }, 409);
-      if (!(await stillOurs())) {
-        revoke();
-        return c.json({ error: "no_running_job" }, 409);
-      }
       if (!read.ok) {
         finished("aborted");
         return c.json(
@@ -339,6 +335,11 @@ export function createSatelliteFileRoutes(deps: {
               ? 413
               : 409,
         );
+      }
+      if (announced || !(await stillOurs())) {
+        finished("aborted");
+        read.stream.destroy();
+        return c.json({ error: "no_running_job" }, 409);
       }
       if (read.size > cap) {
         finished("aborted");
