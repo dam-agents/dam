@@ -44,16 +44,18 @@ vi.mock("../../modules/connections/api/queries.js", () => ({
 }));
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
   useProviderItems: () => ({
-    itemByType: new Map([
+    itemsByType: new Map([
       [
         "openai",
-        {
-          id: "c1",
-          conn: { id: "c1", name: "My OpenAI", templateId: "openai" },
-        },
+        [
+          {
+            id: "c1",
+            conn: { id: "c1", name: "My OpenAI", templateId: "openai" },
+          },
+        ],
       ],
     ]),
-    itemByTemplateId: new Map(),
+    itemsByTemplateId: new Map(),
     isPending: false,
   }),
 }));
