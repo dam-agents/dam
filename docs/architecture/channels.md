@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-30
+Last verified: 2026-11-03
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -95,8 +95,11 @@ An unignore command takes the app back by name or by link.
 The list belongs to the **conversation**, not a binding, so anyone who connected an Agent there or owns one connected there may change it; every change is security-logged.
 Other Agents' posts are never ignored.
 
-Bot posts can answer each other — two readers, or an Agent and a webhook — so a conversation admits at most **three bot posts since a person last posted there**; later ones start nothing until a person posts.
-The count is per thread (and per channel top level) and lives in the leader's memory, so a restart only allows a new run of the same size.
+Bot posts can answer each other — two readers, or an Agent and a webhook — and a routing or prompt bug can make them wake each other without end.
+Such an echo loop runs far faster than a real discussion, so a conversation admits at most **ten bot posts in any one minute**; the first one over the limit **pauses bot posts there for five minutes**, and later ones start nothing until the pause ends.
+When the pause starts, the platform posts one footer-less notice into the conversation saying why the Agents went quiet; it starts nothing.
+A person's post neither counts nor lifts the pause, and still starts turns as usual.
+The limit is per thread (and per channel top level) and lives in the leader's memory, so a restart only allows one more minute of the same size.
 A dropped post leaves a record for its channel in Postgres — how many were dropped, the time of the last one, and the newest few with their sender — and every connected Agent's Channels page shows it until a day passes without a drop; the record is only a view of the guard, which never reads it.
 A bot sender gets no private notices, since a notice needs a person, and a bot post in a 1:1 DM starts nothing — that conversation is with one person.
 A tag of an Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) starts no turn; whoever tagged it gets the reason instead — a person privately, a bot in one footer-less notice in the thread, which starts nothing.

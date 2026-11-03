@@ -3,10 +3,10 @@
  * Agents post through the one bot, so an Agent's post is told apart by its
  * Agent Footer, and it never starts a turn for the Agent that wrote it. Posts
  * by other apps and incoming webhooks reach the Agents too, unless the channel
- * ignores that app with `/dam ignore <link to one of its posts>`. A run of bot
- * posts in one conversation
- * starts turns only up to a limit, until a person posts there again. Bot
- * senders get no private notices, because a notice needs a person.
+ * ignores that app with `/dam ignore <link to one of its posts>`. Bot posts in
+ * one conversation start turns only up to a rate limit; past it they start
+ * none for a while, and the conversation is told once. Bot senders get no
+ * private notices, because a notice needs a person.
  */
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -216,8 +216,14 @@ function harness(
       return gw.fireCommand({ text, userId: "U-OWNER", channelId: "C1" });
     },
     ephemerals: () => gw.readOutbound().filter((r) => r.kind === "ephemeral"),
-    loopBoundHits: () =>
-      logLines.filter((l) => l.includes("slack.bot_post.loop_bound")).length,
+    rateLimitHits: () =>
+      logLines.filter((l) => l.includes("slack.bot_post.rate_limited")).length,
+    pauseNotices: () =>
+      gw
+        .readOutbound()
+        .filter(
+          (r) => r.kind === "message" && r.text.startsWith(":pause_button:"),
+        ),
   };
 }
 
@@ -401,16 +407,23 @@ describe("a post by another app or webhook", () => {
   });
 });
 
-describe("the loop bound", () => {
-  /** TEST_SCENARIO: Bot posts keep arriving in one thread with no person
-   *  posting. The first three are admitted, the fourth is dropped and recorded
-   *  for the channel, naming the app and the thread. A person's post resets
-   *  the count, so the next bot post is admitted again. */
-  it("stops bot posts after the limit until a person posts", async () => {
+describe("the bot-post rate limit", () => {
+  const burst = (from: number, count: number) =>
+    Array.from({ length: count }, (_, i) => `9.${from + i}`);
+
+  /** TEST_SCENARIO: Bot posts arrive in one thread faster than ten a minute.
+   *  The first ten are admitted. The eleventh is dropped, recorded for the
+   *  channel with the app and the thread, and a notice in the thread says
+   *  why the agents went quiet. A later bot post in the pause is dropped
+   *  without a second notice. */
+  it("pauses bot posts past the limit and says so in the thread", async () => {
     const h = harness({ a: { ambient: true } });
-    for (const ts of ["9.1", "9.2", "9.3", "9.4"])
+    for (const ts of burst(10, 10))
       await h.message(fromFlux, "status", { ts, threadTs: "9.0" });
-    expect(h.loopBoundHits()).toBe(1);
+    expect(h.rateLimitHits()).toBe(0);
+
+    await h.message(fromFlux, "status", { ts: "9.20", threadTs: "9.0" });
+    expect(h.rateLimitHits()).toBe(1);
     expect(h.loopGuardDrops).toEqual([
       {
         channelId: "C1",
@@ -421,23 +434,47 @@ describe("the loop bound", () => {
         }),
       },
     ]);
+    expect(h.pauseNotices()).toEqual([
+      expect.objectContaining({
+        channel: "C1",
+        threadTs: "9.0",
+        text: expect.stringContaining("more than 10 times in a minute"),
+      }),
+    ]);
 
-    await h.message({ kind: "person", user: "U1" }, "thanks", {
-      ts: "9.5",
-      threadTs: "9.0",
-    });
-    await h.message(fromFlux, "status", { ts: "9.6", threadTs: "9.0" });
-    expect(h.loopBoundHits()).toBe(1);
+    await h.message(fromFlux, "status", { ts: "9.21", threadTs: "9.0" });
+    expect(h.rateLimitHits()).toBe(2);
+    expect(h.pauseNotices()).toHaveLength(1);
   });
 
-  /** TEST_SCENARIO: The count is per conversation. Bot posts filling one
+  /** TEST_SCENARIO: A person's post neither counts nor resets the limit. It
+   *  starts a turn during the pause, and the next bot post is still
+   *  dropped. */
+  it("lets a person through during the pause without lifting it", async () => {
+    const h = harness({ a: { ambient: true } });
+    for (const ts of burst(10, 11))
+      await h.message(fromFlux, "status", { ts, threadTs: "9.0" });
+    const before = h.prompts["agent-a"]!.length;
+
+    await h.message({ kind: "person", user: "U1" }, "what happened?", {
+      ts: "9.30",
+      threadTs: "9.0",
+    });
+    expect(h.prompts["agent-a"]!.length).toBeGreaterThan(before);
+    expect(h.rateLimitHits()).toBe(1);
+
+    await h.message(fromFlux, "status", { ts: "9.31", threadTs: "9.0" });
+    expect(h.rateLimitHits()).toBe(2);
+  });
+
+  /** TEST_SCENARIO: The limit is per conversation. Bot posts filling one
    *  thread do not stop bot posts in another. */
   it("counts each thread on its own", async () => {
     const h = harness({ a: { ambient: true } });
-    for (const ts of ["9.1", "9.2", "9.3"])
+    for (const ts of burst(10, 10))
       await h.message(fromFlux, "status", { ts, threadTs: "9.0" });
     await h.message(fromFlux, "status", { ts: "8.1", threadTs: "8.0" });
-    expect(h.loopBoundHits()).toBe(0);
+    expect(h.rateLimitHits()).toBe(0);
   });
 });
 
