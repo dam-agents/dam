@@ -45,6 +45,9 @@ describe("the preferred model matcher", () => {
     expect(matches("gpt-5.5", "gpt")).toBe(false);
     expect(matches("gpt-6.1-nano", "gpt")).toBe(false);
     expect(matches("gpt-6.1-mini", "gpt")).toBe(false);
+    expect(matches("aws/claude-sonnet-5", "sonnet")).toBe(true);
+    expect(matches("aws/claude-sonnet-5-5", "sonnet")).toBe(false);
+    expect(matches("aws/claude-sonnet-5.5", "sonnet")).toBe(false);
     expect(matches("nis/nvidia/NVIDIA-Nemotron-3-Ultra-550B", "nemotron")).toBe(
       true,
     );
@@ -58,7 +61,9 @@ describe("the preferred model matcher", () => {
   it("reads the version that belongs to the family, not one inside it", () => {
     expect(matches("gpt-5-6-1", "gpt")).toBe(false);
     expect(matches("claude-opus-4-5-5", "opus")).toBe(false);
-    expect(matches("aws/claude-sonnet-5-5-20260101", "sonnet")).toBe(true);
+    expect(matches("aws/claude-opus-5-5-20260101", "opus")).toBe(true);
+    expect(matches("aws/claude-sonnet-5-20260101", "sonnet")).toBe(true);
+    expect(matches("aws/claude-sonnet-5-5-20260101", "sonnet")).toBe(false);
     expect(matches("aws/claude-opus-5-5-fast", "opus")).toBe(false);
     expect(matches("aws/claude-sonnet-4-6", "sonnet")).toBe(false);
   });
@@ -75,7 +80,12 @@ describe("preferredModelOf", () => {
   };
   const anthropic = {
     alias: "anthropic",
-    listed: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"],
+    listed: [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-sonnet-5",
+      "claude-haiku-4-5",
+    ],
   };
 
   // TEST_SCENARIO: the list's order beats the provider order, so an agent holding both Anthropic and CurveBender starts on DeepSeek; within one entry the providers' own order decides, and a provider that lists neither is passed over.
@@ -104,7 +114,7 @@ describe("preferredModelOf", () => {
     });
     expect(preferredModelOf("classifier", [anthropic])).toEqual({
       alias: "anthropic",
-      upstreamId: "claude-sonnet-5-5",
+      upstreamId: "claude-sonnet-5",
     });
     expect(
       preferredModelOf("classifier", [{ alias: "x", listed: ["qwen-9"] }]),
@@ -124,5 +134,24 @@ describe("preferredModelOf", () => {
       upstreamId: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
     });
     expect(preferredModelOf("work", [])).toBeNull();
+  });
+
+  // TEST_SCENARIO: Claude Code's classifier runs on Sonnet 5, so a provider listing 5.5 beside it still answers 5 in either order, and a provider listing 5.5 alone answers nothing rather than a newer model.
+  it("never lets Sonnet 5.5 stand in for Sonnet 5", () => {
+    for (const listed of [
+      ["claude-sonnet-5-5", "claude-sonnet-5"],
+      ["claude-sonnet-5", "claude-sonnet-5-5"],
+    ])
+      expect(
+        preferredModelOf("classifier", [{ alias: "anthropic", listed }]),
+      ).toEqual({ alias: "anthropic", upstreamId: "claude-sonnet-5" });
+    for (const listed of [
+      ["claude-sonnet-5-5"],
+      ["aws/claude-sonnet-5.5"],
+      ["aws/claude-sonnet-5-5-20260101"],
+    ])
+      expect(
+        preferredModelOf("classifier", [{ alias: "ibm", listed }]),
+      ).toBeNull();
   });
 });
