@@ -27,6 +27,7 @@ type Target = {
 const state = vi.hoisted(() => ({
   target: null as Target | null,
   row: false,
+  close: null as (() => void) | null,
   saved: undefined as Record<string, unknown> | undefined,
   owned: true,
   remember: vi.fn(),
@@ -35,9 +36,14 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("../../modules/sessions/components/session-pair-picker.js", () => ({
-  SessionPairPicker: (props: { target: Target; row?: boolean }) => {
+  SessionPairPicker: (props: {
+    target: Target;
+    row?: boolean;
+    onOpenChange?: (open: boolean) => void;
+  }) => {
     state.target = props.target;
     state.row = props.row ?? false;
+    state.close = props.onOpenChange ? () => props.onOpenChange?.(false) : null;
     return null;
   },
 }));
@@ -131,6 +137,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   state.target = null;
+  state.close = null;
   vi.clearAllMocks();
 });
 
@@ -186,6 +193,21 @@ describe("a channel's and a schedule's model", () => {
       );
     },
   );
+
+  /** TEST_SCENARIO: a harness picked before its model waits in the open picker alone, so closing the picker leaves the page's card on the pick that was saved. */
+  it("drops an unsaved harness when the picker closes", () => {
+    mount("scheduled");
+    act(() =>
+      state.target!.onChoose(
+        { harness: "codex", provider: null, model: null },
+        {},
+      ),
+    );
+    expect(state.target!.slots.pair?.harness).toBe("codex");
+    act(() => state.close!());
+    expect(state.target!.slots.pair).toBeNull();
+    expect(state.remember).not.toHaveBeenCalled();
+  });
 
   /** TEST_SCENARIO: a harness picked before its model waits in the picker, since a routed runtime keeps no default without a model. */
   it("waits for a model before it stores a new harness", () => {

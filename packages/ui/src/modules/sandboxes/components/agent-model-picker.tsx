@@ -29,7 +29,7 @@ const COPY: Record<
 > = {
   chat: {
     label: "Default model",
-    hint: "New chats start on this model, and channels and schedules follow it unless they pick their own.",
+    hint: "New chats start on this model. A channel or schedule with no pick of its own follows its page's model, which is this one until that page sets it.",
     placeholder: "Choose a model",
   },
   channel: {
@@ -122,6 +122,10 @@ export function AgentModelPicker({
           defaultHarness={status?.defaultHarness ?? ""}
           routed={status?.modelRouter ?? false}
           row
+          onOpenChange={(open) => {
+            /* UNIT_BOUNDARY_DESCRIPTION: a harness picked without a model waits in the open picker alone, so closing it drops the draft rather than leaving the page's card on a pick nothing saved. */
+            if (!open && draft?.pair?.model === null) setDraft(null);
+          }}
           onConnectProviders={() => navigateToSandboxHome(agentId, "providers")}
           target={{
             slots,
