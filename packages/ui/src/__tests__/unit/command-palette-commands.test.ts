@@ -90,6 +90,7 @@ function input(over: Partial<PaletteInput> = {}): PaletteInput {
     checklist: null,
     pendingApprovals: [],
     brandShort: "dam",
+    docsUrl: "https://docs.example.com/",
     ...over,
   };
 }
@@ -269,6 +270,18 @@ describe("global commands", () => {
     expect(close.label).toBe("close checklist");
     if (close.perform.kind === "run") close.perform.run();
     expect(act.setChecklistOpen).toHaveBeenLastCalledWith(false);
+  });
+
+  // TEST_SCENARIO: open documentation opens the install's documentation site, the chart's links.docs value; an install that sets it empty gets no such command, rather than one that opens nothing.
+  it("opens the install's documentation, and only when it has one", () => {
+    const act = actions();
+    const docs = buildCommands(input(), act).find((c) => c.id === "go:docs")!;
+    expect(docs.label).toBe("open documentation");
+    if (docs.perform.kind === "run") docs.perform.run();
+    expect(act.openDocs).toHaveBeenCalledWith("https://docs.example.com/");
+    expect(titles(input({ docsUrl: null }))).not.toContain(
+      "open documentation",
+    );
   });
 
   // TEST_SCENARIO: an artifact carries its agent, so the artifacts of the open agent rank closer.

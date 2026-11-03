@@ -16,12 +16,14 @@ import { CopyableCommand } from "@/components/copyable-command";
 import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
-import { CLI_REFERENCE_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
-import { useSlackInstallRequestUrl } from "../../links/api/queries.js";
+import {
+  useDocsUrl,
+  useSlackInstallRequestUrl,
+} from "../../links/api/queries.js";
 import { TerminalHarnessMenu } from "../../sessions/components/terminal-harness-menu.js";
 import { SlackInstallRequest } from "../../slack/components/slack-install-request.js";
 import { cliAgentRef } from "../lib/cli-agent-ref.js";
@@ -61,6 +63,7 @@ export function AgentUsageActions({
   const available = agentsData?.availableChannels ?? {};
   const ref = cliAgentRef(agent, agentsData?.list ?? [agent]);
   const slackInstallUrl = useSlackInstallRequestUrl();
+  const cliReferenceUrl = useDocsUrl("cliReference");
   const brand = getBrand();
   const terminal = holds(agent.access, "terminal");
   const channels = holds(agent.access, "channels");
@@ -115,9 +118,15 @@ export function AgentUsageActions({
       content: (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
-            Follow the{" "}
-            <DocLink href={CLI_REFERENCE_URL}>CLI quickstart</DocLink> to
-            install the {brand.name} CLI and log in.
+            {cliReferenceUrl ? (
+              <>
+                Follow the{" "}
+                <DocLink href={cliReferenceUrl}>CLI quickstart</DocLink> to
+                install the {brand.name} CLI and log in.
+              </>
+            ) : (
+              <>Install the {brand.name} CLI and log in.</>
+            )}
           </p>
           <p className="mt-1">Open the agent TUI in your terminal:</p>
           <CopyableCommand command={`${brand.short} chat ${ref}`} />
@@ -134,10 +143,16 @@ export function AgentUsageActions({
       content: (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
-            With the {brand.name} CLI installed (see the{" "}
-            <DocLink href={CLI_REFERENCE_URL}>CLI quickstart</DocLink>), open a
-            remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink> (or{" "}
-            <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
+            With the {brand.name} CLI installed
+            {cliReferenceUrl && (
+              <>
+                {" "}
+                (see the{" "}
+                <DocLink href={cliReferenceUrl}>CLI quickstart</DocLink>)
+              </>
+            )}
+            , open a remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink>{" "}
+            (or <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
             <code className="font-mono">-x zed</code>) session and work directly
             in the agent's workspace:
           </p>

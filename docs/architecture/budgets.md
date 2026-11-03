@@ -95,6 +95,7 @@ Creates are refused only for storage, once the owner's claim passes its critical
 This also means the whole enforcement path is invisible on the happy path: users with room never touch it.
 
 The home dashboard's resource card shows the pools: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage logs and system — as the last.
+Its header carries the operator's budget-request link, or no link when the install names none.
 Once storage reaches the warning level, or an agent reports its own disk full, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, and what is left.
 An agent whose own disk is full says so on its row — its writes are failing while it keeps running — so the owner sees which agent to open where they go to free space.
 CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
