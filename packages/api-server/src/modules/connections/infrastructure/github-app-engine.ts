@@ -4,6 +4,7 @@ import type {
   GitHubUserTokenProbe,
 } from "api-server-api";
 import { OAuthTokenEndpointError } from "./oauth-engine.js";
+import { stripControlChars } from "./github-identity.js";
 
 export interface GitHubAppTokenSet {
   accessToken: string;
@@ -27,6 +28,22 @@ export interface ReadInstallationOpts {
   installationId: string;
   privateKeyPem: string;
   apiBaseUrl: string;
+}
+
+export interface DescribeInstallationTokenOpts extends ReadInstallationOpts {
+  accessToken: string;
+}
+
+export interface GitHubAppTokenOwner {
+  appSlug?: string;
+  accountLogin?: string;
+  repositories?: string[];
+  repositoriesTruncated?: boolean;
+}
+
+export interface RevokeInstallationTokenOpts {
+  apiBaseUrl: string;
+  accessToken: string;
 }
 
 export interface GitHubAppInstallationInfo {
@@ -68,6 +85,10 @@ export interface GitHubAppEngine {
   readInstallation(
     opts: ReadInstallationOpts,
   ): Promise<GitHubAppInstallationInfo>;
+  describeInstallationToken(
+    opts: DescribeInstallationTokenOpts,
+  ): Promise<GitHubAppTokenOwner>;
+  revokeInstallationToken(opts: RevokeInstallationTokenOpts): Promise<void>;
   scopeUserToken(opts: ScopeUserTokenOpts): Promise<GitHubUserTokenSet>;
   readUserInstallations(
     opts: ReadUserInstallationsOpts,
@@ -91,12 +112,14 @@ interface InstallationTokenResponse {
 }
 
 interface InstallationResponse {
+  app_slug?: string;
   permissions?: Record<string, string>;
   repository_selection?: string;
   account?: { login?: string };
 }
 
 interface InstallationRepositoriesResponse {
+  total_count?: number;
   repositories?: { id?: number; name?: string }[];
 }
 
@@ -118,6 +141,21 @@ interface UserInstallationsResponse {
 
 const REPOS_PER_PAGE = 100;
 const MAX_REPO_PAGES = 5;
+const DETAIL_MAX_CHARS = 100;
+const DETAIL_REPOSITORY_CAP = 100;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one name from a GitHub (or custom Enterprise)
+ * answer, as the check stores and prints it. The host chooses these bytes, so
+ * control characters are dropped — an ESC in an app slug or a repository name
+ * would otherwise reach a terminal as an escape sequence — and the length is
+ * capped, since a name is a label on a page or a terminal.
+ */
+function detailString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const clean = stripControlChars(value).trim().slice(0, DETAIL_MAX_CHARS);
+  return clean.length > 0 ? clean : undefined;
+}
 const MAX_INSTALLATION_PAGES = 3;
 
 async function reachGitHub(
@@ -339,6 +377,78 @@ export function createGitHubAppEngine(
     }
   }
 
+  async function readJson<T>(
+    url: string,
+    authorization: string,
+  ): Promise<T | undefined> {
+    try {
+      const res = await fetchImpl(url, {
+        headers: githubHeaders(authorization),
+      });
+      if (!res.ok) {
+        await res.body?.cancel();
+        return undefined;
+      }
+      return (await res.json()) as T;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function describeInstallationToken({
+    id,
+    appId,
+    installationId,
+    privateKeyPem,
+    apiBaseUrl,
+    accessToken,
+  }: DescribeInstallationTokenOpts): Promise<GitHubAppTokenOwner> {
+    const base = apiBaseUrl.replace(/\/+$/, "");
+    const [installation, listed] = await Promise.all([
+      readJson<InstallationResponse>(
+        `${base}/app/installations/${encodeURIComponent(installationId)}`,
+        `Bearer ${signAppJwt(id, appId, privateKeyPem)}`,
+      ),
+      readJson<InstallationRepositoriesResponse>(
+        `${base}/installation/repositories?per_page=${REPOS_PER_PAGE}`,
+        `Bearer ${accessToken}`,
+      ),
+    ]);
+    const named = listed?.repositories?.flatMap((repo) => {
+      const name = detailString(repo?.name);
+      return name === undefined ? [] : [name];
+    });
+    const repositories = named?.slice(0, DETAIL_REPOSITORY_CAP);
+    const appSlug = detailString(installation?.app_slug);
+    const accountLogin = detailString(installation?.account?.login);
+    const longerThanKept =
+      named !== undefined && named.length > DETAIL_REPOSITORY_CAP;
+    return {
+      ...(appSlug ? { appSlug } : {}),
+      ...(accountLogin ? { accountLogin } : {}),
+      ...(repositories && repositories.length > 0 ? { repositories } : {}),
+      ...(repositories &&
+      (longerThanKept ||
+        (typeof listed?.total_count === "number" &&
+          listed.total_count > repositories.length))
+        ? { repositoriesTruncated: true }
+        : {}),
+    };
+  }
+
+  async function revokeInstallationToken({
+    apiBaseUrl,
+    accessToken,
+  }: RevokeInstallationTokenOpts): Promise<void> {
+    try {
+      const res = await fetchImpl(
+        `${apiBaseUrl.replace(/\/+$/, "")}/installation/token`,
+        { method: "DELETE", headers: githubHeaders(`Bearer ${accessToken}`) },
+      );
+      await res.body?.cancel();
+    } catch {}
+  }
+
   function githubHeaders(authorization: string): Record<string, string> {
     return {
       Authorization: authorization,
@@ -504,6 +614,8 @@ export function createGitHubAppEngine(
 
   return {
     mintInstallationToken,
+    describeInstallationToken,
+    revokeInstallationToken,
     scopeUserToken,
     readUserInstallations,
 

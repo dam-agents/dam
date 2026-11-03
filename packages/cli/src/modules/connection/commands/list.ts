@@ -109,7 +109,7 @@ export function buildListCommand(deps: {
     .option(
       "--json",
       "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, account?, repositories?, repositoryIds?, permissions? }, " +
-        "and a checked credential its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, reason?, at }",
+        "and a checked credential its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }",
     )
     .addHelpText(
       "after",

@@ -33,6 +33,7 @@ import { useAgentsList } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
+import { KitUpdateSessionTag } from "../../starter-kits/components/kit-update-session-tag.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
@@ -157,10 +158,12 @@ export function SessionRow({
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
-          {onboarding && (
+          {onboarding ? (
             <Badge variant={onboarding.variant} size="sm" className="shrink-0">
               {onboarding.label}
             </Badge>
+          ) : (
+            s.initialization === true && <KitUpdateSessionTag session={s} />
           )}
           <SessionIndicators
             scheduled={scheduled}

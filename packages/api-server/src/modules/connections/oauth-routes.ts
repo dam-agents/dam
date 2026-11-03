@@ -10,7 +10,14 @@ import {
 } from "./services/oauth-flow.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
 import { createXactLock } from "../../core/xact-lock.js";
-import { sanitizeReturnTo } from "./domain/oauth-callback-url.js";
+import {
+  oauthCallbackUrl,
+  sanitizeReturnTo,
+} from "./domain/oauth-callback-url.js";
+import {
+  CLIENT_ID_METADATA_FILE,
+  clientIdMetadataDocument,
+} from "./domain/client-id-metadata.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export interface OAuthCallbackDeps {
@@ -21,12 +28,22 @@ export interface OAuthCallbackDeps {
   templates: ConnectionTemplateRegistry;
   runtimeMutator: RuntimeMutator;
   uiBaseUrl: string;
+  brandName: string;
 }
 
 export function createOAuthRoutes(deps: OAuthCallbackDeps) {
   const oauth = new Hono();
 
   const targetOrigin = new URL(deps.uiBaseUrl).origin;
+  const clientMetadata = clientIdMetadataDocument({
+    callbackUrl: oauthCallbackUrl(deps.uiBaseUrl),
+    brandName: deps.brandName,
+  });
+
+  oauth.get(`/${CLIENT_ID_METADATA_FILE}`, (c) => {
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.json(clientMetadata);
+  });
 
   oauth.get("/callback", async (c) => {
     const code = c.req.query("code");

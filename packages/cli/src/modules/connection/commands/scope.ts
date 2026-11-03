@@ -12,6 +12,7 @@ import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
+import { credentialCheckSummary } from "../domain/credential-check.js";
 import {
   formatScope,
   hasScopeFlags,
@@ -66,7 +67,8 @@ export function buildScopeCommand(deps: {
     )
     .option(
       "--json",
-      "emit { id, name, kind, scope, available? } as JSON; available lists what can be chosen",
+      "emit { id, name, kind, scope, available?, check? } as JSON; available lists what can be chosen, " +
+        "check is a GitHub App's credential check of the new scope, as in `dam connection test`",
     )
     .addHelpText(
       "after",
@@ -79,7 +81,8 @@ export function buildScopeCommand(deps: {
         "\nA flag you leave out keeps that part of the current scope.\n" +
         "A GitHub sign-in reaches one account once it is narrowed;\n" +
         "with the app installed on one account only, --account may be left out.\n" +
-        "The token never does more than the person who signed in can.\n",
+        "The token never does more than the person who signed in can.\n" +
+        "A GitHub App is checked again with a token minted for the new scope.\n",
     )
     .action(async (ref: string, opts: ScopeOpts) => {
       const json = opts.json ?? false;
@@ -161,14 +164,17 @@ export function buildScopeCommand(deps: {
 
       const after = await svc.getConnection(match.id);
       const scope = after.ok && after.value ? scopeOf(after.value) : undefined;
+      const check =
+        kind === "github-app" && after.ok ? after.value?.check : undefined;
       if (json) {
         return writeStdoutAndExit(
-          `${JSON.stringify({ ok: true, id: match.id, name: match.name, kind, scope })}\n`,
+          `${JSON.stringify({ ok: true, id: match.id, name: match.name, kind, scope, ...(check ? { check } : {}) })}\n`,
           EXIT_SUCCESS,
         );
       }
       return writeStdoutAndExit(
-        `✓ Scoped ${match.name} (${match.id})${scope ? `: ${formatScope(scope)}` : ""}\n`,
+        `✓ Scoped ${match.name} (${match.id})${scope ? `: ${formatScope(scope)}` : ""}\n` +
+          (check ? `  check: ${credentialCheckSummary(check)}\n` : ""),
         EXIT_SUCCESS,
       );
     });

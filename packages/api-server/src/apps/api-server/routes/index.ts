@@ -88,6 +88,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
       templates: boot.connectionsBoot.templates,
       runtimeMutator: boot.runtimeMutator,
       uiBaseUrl: config.uiBaseUrl,
+      brandName: config.brand.name,
     }),
   );
 

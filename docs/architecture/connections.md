@@ -99,6 +99,8 @@ The check passes, naming the account, the expiry and, for a classic token, the s
 The Kubernetes template names one too: the api-server posts a SelfSubjectReview to the cluster's API server with the token, trusting the Connection's stored CA when it has one and the public roots otherwise, as the gateway does.
 Any authenticated identity may create a SelfSubjectReview, so the check needs no permission beyond the token.
 It passes naming the user the token acts as (`system:serviceaccount:<namespace>:<name>`) and the expiry from the token's `exp` claim; fails on a 401, saying the token expired when its claim is past, on a certificate the CA or the public roots do not trust, and on any other TLS error; and stays unchecked on a cluster older than Kubernetes 1.28, another answer, or no answer.
+A **GitHub App** connection is checked with the installation token it mints, which the save already requires, so a saved one passes naming its bot, the account the app is installed on and the repositories the token reaches.
+A key rotation, a scope change and a check on demand mint again; a refusal fails, naming the input at fault.
 The page holds a token that does not pass, and one that passes but expires within a day, so the user can fix it on the same link, and saves it on a confirmed "save anyway": the user is warned, never blocked.
 Saved through any path, the token keeps the result and its time on the Connection, which every listing carries, so a token saved after a failed check does not read like a healthy one; the owner can check one stored credential again, which replaces the result, and a provider key is checked again with its provider check.
 The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
@@ -248,6 +250,10 @@ That is an accepted limit rather than a guarded one — the reply is a refusal t
 
 An MCP endpoint contributes an `egress-allow` for its host and an `mcp-entry` carrying the server URL.
 OAuth adds a placeholder Authorization header on the `mcp-entry`; a static-header credential instead adds an `egress-inject` (as Custom Header does), keeping the secret gateway-side.
+The OAuth client is found at create time, in the order the MCP authorization spec gives: a client ID the user entered, else the platform's **Client ID Metadata Document** when the authorization server says it accepts one, else Dynamic Client Registration.
+The document is one per deployment, served without sign-in beside the OAuth callback, which is its only redirect URI; its URL is the client ID, so no client is registered per server and there is no client secret to keep.
+An authorization server fetches only an HTTPS client ID, so a deployment served over plain HTTP registers instead.
+One rule in the [connections module](../../packages/api-server/src/modules/connections/) picks the client, for the create path and for the discovery that tells the UI and CLI a server takes OAuth.
 
 ### Shared knowledge base
 

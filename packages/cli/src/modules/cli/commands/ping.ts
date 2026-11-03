@@ -11,6 +11,7 @@ import {
   EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
 } from "../../shared/exit-codes.js";
+import { upgradeAdvice } from "../../shared/upgrade-advice.js";
 
 export function buildPingCommand(deps: {
   service: CompatService;
@@ -45,7 +46,7 @@ export function buildPingCommand(deps: {
           return;
         case "behind-current":
           process.stderr.write(
-            `warning: CLI ${verdict.localCli} is behind the server's recommended CLI ${verdict.serverRecommendedClient}; consider upgrading\n`,
+            `warning: CLI ${verdict.localCli} is behind the server's recommended CLI ${verdict.serverRecommendedClient}; ${upgradeAdvice(verdict.serverRecommendedClient)}\n`,
           );
           process.stdout.write(`ok — server ${verdict.serverVersion}\n`);
           return;

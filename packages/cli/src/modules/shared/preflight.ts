@@ -7,6 +7,7 @@ import type {
 } from "../cli/index.js";
 import { SERVER_ENV_VAR } from "../cli/index.js";
 import { EXIT_BELOW_FLOOR, EXIT_RUNTIME_FAILURE } from "./exit-codes.js";
+import { upgradeAdvice } from "./upgrade-advice.js";
 
 export async function resolveActiveHost(
   deps: { compatService: CompatService; configService: ConfigService },
@@ -27,7 +28,7 @@ export async function resolveActiveHost(
   }
   if (compat.value.kind === "behind-current") {
     process.stderr.write(
-      `warning: CLI ${compat.value.localCli} is behind the server's recommended CLI ${compat.value.serverRecommendedClient}; consider upgrading\n`,
+      `warning: CLI ${compat.value.localCli} is behind the server's recommended CLI ${compat.value.serverRecommendedClient}; ${upgradeAdvice(compat.value.serverRecommendedClient)}\n`,
     );
   }
 

@@ -336,6 +336,37 @@ describe("dam connection scope", () => {
     });
   });
 
+  /** TEST_SCENARIO: a GitHub App is checked again with a token minted for the new scope, and the command reports that check, so an agent sees a scope the installation cannot satisfy without running `dam connection test`. */
+  it("reports the check of a GitHub App's new scope", async () => {
+    const check = {
+      status: "passed" as const,
+      account: "dam-bot[bot]",
+      installedOn: "acme",
+      repositories: ["api"],
+      at: "2026-10-24T08:00:00.000Z",
+    };
+    const after = { ...app, check };
+    const deps = scope({
+      list: async () => ok([app]),
+      updateGitHubAppScope: async () => ok(undefined),
+      getConnection: async () => ok(after),
+    });
+    const out = await run(deps, ["my-app", "--repositories", "api"]);
+    expect(out).toContain(
+      "check: passed (as dam-bot[bot]; installed on acme; repositories api)",
+    );
+
+    const json = await run(
+      scope({
+        list: async () => ok([app]),
+        updateGitHubAppScope: async () => ok(undefined),
+        getConnection: async () => ok(after),
+      }),
+      ["my-app", "--repositories", "api", "--json"],
+    );
+    expect(JSON.parse(json)).toMatchObject({ kind: "github-app", check });
+  });
+
   /** TEST_SCENARIO: only GitHub sign-ins and GitHub App connections can be limited; any other is refused. */
   it("refuses a connection that can't be limited", async () => {
     await run(

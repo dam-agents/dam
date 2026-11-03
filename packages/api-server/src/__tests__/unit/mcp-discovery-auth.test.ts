@@ -69,4 +69,29 @@ describe("discoverMcpAuth", () => {
 
     expect(meta?.tokenEndpoint).toBe(`${AS}/token`);
   });
+
+  // TEST_SCENARIO: an authorization server that accepts a Client ID Metadata Document says so in its metadata, often with no registration endpoint at all. Discovery must carry the flag, or the platform cannot tell such a server from one it cannot connect to.
+  it("reports client ID metadata document support", async () => {
+    const { impl } = fetchStub({
+      "https://mcp.example.com/.well-known/oauth-protected-resource/mcp": {
+        authorization_servers: [AS],
+      },
+      [`${AS}/.well-known/oauth-authorization-server`]: {
+        authorization_endpoint: `${AS}/authorize`,
+        token_endpoint: `${AS}/token`,
+        client_id_metadata_document_supported: true,
+      },
+    });
+
+    const meta = await discoverMcpAuth(
+      new URL("https://mcp.example.com/mcp"),
+      impl,
+    );
+
+    expect(meta).toEqual({
+      authorizationEndpoint: `${AS}/authorize`,
+      tokenEndpoint: `${AS}/token`,
+      clientIdMetadataDocumentSupported: true,
+    });
+  });
 });

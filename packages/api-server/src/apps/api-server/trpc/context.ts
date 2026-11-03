@@ -46,6 +46,7 @@ import {
   composeConnectionsForOwner,
   composeSecretRequestsForOwner,
 } from "../../../modules/connections/compose.js";
+import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
@@ -137,7 +138,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       agentsRepo,
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
-      oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+      oauthCallbackUrl: oauthCallbackUrl(config.uiBaseUrl),
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,

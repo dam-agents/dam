@@ -6,24 +6,27 @@ Last verified: 2026-11-03
 
 The `dam` CLI is a TypeScript Node package, distributed via npm, that users install on their own machine and point at a configured Platform deployment.
 It never runs inside the cluster.
-It reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
+For deployment operations, it reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
 Command groups are singular (`agent`, `connection`, `channel`, …) to match `gh`, `git`, and `docker`.
 
-The CLI is at parity with the web UI: every action a user can take in the browser has a verb.
-It owns no domain logic of its own — each command group is a thin surface over the api-server procedures the corresponding subsystem already exposes, so the concepts live on their owning architecture pages (see [Command surface](#command-surface)).
+The CLI is at parity with the web UI for deployment operations: every action a user can take in the browser has a verb.
+Its local client-management commands configure the CLI, inspect its version and update its npm installation without a web counterpart.
+It owns no deployment domain logic of its own — each deployment-facing command group is a thin surface over the api-server procedures the corresponding subsystem already exposes, so the concepts live on their owning architecture pages (see [Command surface](#command-surface)).
 
 ## Trust boundary
 
 The CLI runs on the user's machine.
-It reads and writes only under the XDG config and state directories and makes outbound network calls only to the configured server.
+It reads and writes its own state only under the XDG config and state directories and makes deployment calls only to the configured server.
+Its version and update commands may query the npm registry, and update invokes npm to replace the global package.
 There is no telemetry and no anonymous reporting — the platform collects nothing, and the CLI does not break that posture.
 
 One deliberate exception is `dam ssh`'s editor modes: dam's own SSH host entries live in `$XDG_CONFIG_HOME/dam/ssh_config`, and a single `Include` line is added to `~/.ssh/config` so an external editor's SSH client can resolve the agent host.
 dam never touches the user's own `~/.ssh` keys (see [SSH access](#ssh-access)).
 
-The other exception is `dam version`: it also asks the npm registry for the `latest` dist-tag of `@dam-agents/cli`, so it can tell an out-of-date CLI even when the server cannot.
+The other exception is CLI version management: `dam version` and `dam update` ask the npm registry for the `latest` dist-tag of `@dam-agents/cli`, so they can find an out-of-date CLI even when the server cannot.
 It asks `registry.npmjs.org`, or the registry in `npm_config_registry` when that variable is set.
-It sends nothing about the user, and no other verb makes the call.
+`dam update` then runs npm to replace a global CLI installation with that exact stable version; it never invokes `sudo`, changes CLI state or contacts a Platform deployment.
+These commands send nothing about the user, and no other verb makes the registry call.
 
 ## Config
 
@@ -110,10 +113,12 @@ The `agent` module gives users a human-friendly way to name an Agent and exports
 
 ## Command surface
 
-The CLI is at parity with the web UI across these groups.
+The deployment-facing groups are at parity with the web UI.
+Local commands such as `config`, `version` and `update` manage or inspect the client itself and have no browser counterpart.
 Each concept's depth lives on its owning architecture page; per-verb flags, exit-code numbers, and tRPC procedure names live in the code, not here.
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
+- **`update`** (`upgrade` alias) — update the documented global npm installation to the latest stable CLI release, or report that it is current.
 - **`agent`** — list, get, create, interactive create, update, models, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns with the Metered Spend of each ([Spend limits](spend-limits.md#ledger)), and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
@@ -130,7 +135,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md).
-  `mcp` and `shell` are the two verbs with no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.
+  Within the deployment-facing groups, `mcp` and `shell` have no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.
   The group marks itself experimental in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 - **`schedule`** — time-triggered tasks on an agent: recurrences, including the Precheck that decides each occurrence, and one-time schedules at a local moment or now, owned by [schedules.md](schedules.md).
 - **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit; for a platform operator, also listing, setting and removing each user's Spend Ceiling by the user's email; owned by [spend-limits.md](spend-limits.md).
@@ -140,7 +145,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 
 ## Shared conventions
 
-Every command group is a thin client over the procedures its subsystem already exposes, holding no service state beyond a per-host client.
+Every deployment-facing command group is a thin client over the procedures its subsystem already exposes, holding no service state beyond a per-host client.
 The recurring patterns, stated once:
 
 - **Thin surface, server-authoritative.** The CLI does not re-validate domain rules it doesn't own; it sends the request and classifies the server's typed error, surfacing the server's reason for bad input, conflicts, and authorization failures.
@@ -183,6 +188,7 @@ Sign-in stays the device flow the user approves in a browser, and the agent neve
 A connection's credential, new or rotated, the agent never sees: it runs `connect` or `update` without the secret, the CLI opens the [secret-entry page](connections.md#connection) where the user types it, and waits for the outcome, as it waits for an OAuth sign-in.
 Since the agent cannot check that secret itself, the outcome carries the server's [credential check](connections.md#connection) where the template has one, and `dam connection test` runs it again on the stored credential, so the agent can tell a broken token from a working one.
 The CLI warns when a checked token expires within a day, and `dam connection list` shows each checked credential's expiry.
+A GitHub App connection's check names the bot it acts as and the repositories it reaches, and `dam connection scope` reports the check of the new scope.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 
@@ -227,7 +233,12 @@ Session strategy is resolved **client-side**: sessions are agent-owned, so the C
 There is no server-side session endpoint.
 A `--reset` flag tells the relay to kill the PTY and spawn a fresh one, which also clears the agent-side session.
 The CLI sends no keepalive of its own: it answers the relay's 30-second ping ([sessions](sessions.md)), which keeps an attach open while the harness sits quiet.
-On disconnect or exit the CLI prints a ready-to-paste resume command and the leave hint again; it does not reconnect by itself.
+Once pings have arrived, a connection that gets none for about two and a half intervals counts as lost, because a dead network path can leave the socket open with no error.
+After a drop the CLI reconnects to the same session by itself, under the terminal reconnect rules ([sessions](sessions.md)).
+While it reconnects, it resets the terminal's modes, shows a reconnecting notice with the reason and the attempt, and keeps stdin raw without sending it, so Ctrl+C stops the attempts.
+Every attempt reads the token again, so an access token that expired during a long attach is refreshed, and a refresh that fails on the network is tried again with the next attempt.
+The attempt targets the session the harness last moved its PTY to, and the screen is cleared just before the replay.
+On exit, on a drop that does not reconnect, and when it gives up or the user stops it, the CLI prints a ready-to-paste resume command and the leave hint again.
 `dam session list` reads the same agent-owned session list.
 
 ## Headless runs

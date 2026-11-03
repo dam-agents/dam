@@ -35,6 +35,10 @@ export function credentialCheckSummary(check: CredentialCheck): string {
   }
   const details = [
     check.account ? `as ${check.account}` : null,
+    check.installedOn ? `installed on ${check.installedOn}` : null,
+    check.repositories
+      ? `repositories ${check.repositories.join(",") || "none"}${check.repositoriesTruncated ? ",…" : ""}`
+      : null,
     check.expiresAt ? `expires ${check.expiresAt.slice(0, 10)}` : null,
     check.scopes ? `scopes ${check.scopes.join(",") || "none"}` : null,
   ].filter((d): d is string => d !== null);

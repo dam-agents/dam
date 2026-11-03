@@ -46,7 +46,7 @@ npm install -g @dam-agents/cli
 ```
 
 `pnpm add -g @dam-agents/cli` and `yarn global add @dam-agents/cli` work too.
-To update, install `@dam-agents/cli@latest` the same way, then match this skill to it again.
+To update a global npm installation, run `dam update`, then match this skill to it again.
 
 ### Match this skill to the CLI
 
@@ -116,7 +116,9 @@ For `dam connection connect` and `dam connection update`, the user types the sec
 3. The command ends when the user saves (exit `0`; `--json` gives the connection's ID), cancels, or lets the link expire after ten minutes (exit `1`).
    Run it again for a new link.
 4. Read the `check` in the `--json` output before you tell the user the connection is ready.
-   A GitHub or Kubernetes token is checked when it is saved: `"status": "passed"` names the `account`, so tell the user which account it is.
+   These connections are checked when they are saved: a GitHub token (`github-pat`, `github-enterprise-pat`), a GitHub App (`github-app`, `github-enterprise-app`), a Kubernetes token, and a model provider key.
+   `"status": "passed"` names the `account`, so tell the user which account it is.
+   A GitHub App's `account` is its bot (`<app>[bot]`), `installedOn` the user or organization it is installed on, and `repositories` the repositories it reaches (`repositoriesTruncated` when there are more): tell the user these.
    When `expiresAt` is set, tell the user when the token expires; the CLI warns when that is within a day.
    A Kubernetes token's `account` is the user it acts as, such as `system:serviceaccount:<namespace>:<name>`.
    `"failed"` or `"unchecked"` means the user saved it anyway after a warning: tell them the `reason` and that agents using it may be refused, and offer `dam connection update` to replace it.
@@ -298,6 +300,7 @@ dam connection scope github --clear
 A flag you leave out keeps that part of the scope; `--clear` removes the limit.
 A narrowed sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.
 `dam connection list --json` shows each GitHub connection's `scope`: `{ "restricted": false }` means it reaches everything the sign-in or installation can.
+A GitHub App is checked again with a token minted for the new scope: after a change with `--repositories` or `--permissions`, read the `check` in the `--json` output.
 
 When a DAM agent's calls with a connection fail, for example GitHub answers `401 Bad credentials`, check the stored credential before you look elsewhere:
 
