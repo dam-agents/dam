@@ -1,7 +1,7 @@
 import {
+  type AgentHarnessView,
   aliasForProviderType,
   harnessFits,
-  type AgentHarnessView,
   parseQualifiedModel,
   type ProviderPresetType,
   providerTypeForTemplateId,

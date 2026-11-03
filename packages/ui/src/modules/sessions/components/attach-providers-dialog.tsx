@@ -9,7 +9,10 @@ import {
 import { Card } from "@/components/ui/card";
 
 import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
-import { useAgentHarnessCatalog, useGrantProvider } from "../api/session-pair.js";
+import {
+  useAgentHarnessCatalog,
+  useGrantProvider,
+} from "../api/session-pair.js";
 import { attachableProviders } from "../lib/catalog-groups.js";
 import {
   type ProviderConnectionRef,

@@ -77,9 +77,19 @@ describe("image harnesses", () => {
    */
   it("adds only routed harnesses the catalog does not list", () => {
     const views = withImageHarnesses(catalog, [
-      { name: "codex", harnessConfig: true, sessionModel: true, dialects: ["openai-responses"] },
+      {
+        name: "codex",
+        harnessConfig: true,
+        sessionModel: true,
+        dialects: ["openai-responses"],
+      },
       { name: "unrouted", harnessConfig: false, sessionModel: false },
-      { name: "future", harnessConfig: false, sessionModel: false, dialects: ["gemini"] },
+      {
+        name: "future",
+        harnessConfig: false,
+        sessionModel: false,
+        dialects: ["gemini"],
+      },
       imageHarness,
     ]);
     expect(views.map((h) => h.name)).toEqual([

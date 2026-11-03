@@ -98,7 +98,12 @@ describe("session pair options", () => {
       { name: "image-agent", displayName: "Image Agent" },
     ]);
     expect(
-      providerOptions("image-agent", views, [lite, claude], [lite, claude, oai]),
+      providerOptions(
+        "image-agent",
+        views,
+        [lite, claude],
+        [lite, claude, oai],
+      ),
     ).toEqual({ granted: [lite], addable: [oai] });
   });
 

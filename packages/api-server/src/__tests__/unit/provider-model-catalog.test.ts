@@ -272,7 +272,10 @@ describe("the owner's provider model catalog", () => {
   // TEST_SCENARIO: an agent's catalog covers the image harness its runtime reports, both from its granted providers and, while the picker offers unattached ones, from every provider its owner holds; the owner-level catalog, which names no agent, never does.
   it("adds the agent's reported image harness to its catalog alone", async () => {
     const store = newConnectionsStore();
-    store.rows.set("conn-1", connection({ id: "conn-1", templateId: "openai" }));
+    store.rows.set(
+      "conn-1",
+      connection({ id: "conn-1", templateId: "openai" }),
+    );
     store.grants.add("conn-1|agent-1");
     const seen: { names: string[]; image: string[] }[] = [];
     const { svc } = serviceHarness({
@@ -332,7 +335,13 @@ describe("the owner's provider model catalog", () => {
         default: harnesses.default,
         harnesses: [
           ...harnesses.harnesses,
-          { name: "image-agent", displayName: "Image Agent", providers: ["openai"], tags: [], experimental: false },
+          {
+            name: "image-agent",
+            displayName: "Image Agent",
+            providers: ["openai"],
+            tags: [],
+            experimental: false,
+          },
         ],
       },
       [image],

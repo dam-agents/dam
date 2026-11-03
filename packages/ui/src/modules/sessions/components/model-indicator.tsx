@@ -26,8 +26,8 @@ import {
   useSaveAsProfile,
 } from "../../profiles/components/save-as-profile.js";
 import {
-  useGrantProvider,
   useAgentHarnessCatalog,
+  useGrantProvider,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,

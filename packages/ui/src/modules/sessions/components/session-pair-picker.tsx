@@ -33,8 +33,8 @@ import {
 } from "../../profiles/components/save-as-profile.js";
 import {
   rememberSessionPair,
-  useGrantProvider,
   useAgentHarnessCatalog,
+  useGrantProvider,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,

@@ -162,9 +162,7 @@ export function createSessionChoicesValidator(deps: {
         (p) => aliasForProviderType(p.type) === alias,
       );
       if (!provider) return `this agent holds no ${alias} provider`;
-      if (
-        !harnessFits(offered, harness, provider.type, provider.templateId)
-      )
+      if (!harnessFits(offered, harness, provider.type, provider.templateId))
         return `the ${harness} harness cannot run on ${alias}`;
       const listed = (await deps.snapshotRepo.read(agentId, harness))
         ?.availableModels;

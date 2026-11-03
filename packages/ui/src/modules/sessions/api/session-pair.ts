@@ -16,9 +16,9 @@ import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { trpc } from "../../../trpc.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import {
   useAgentConnections,
   useIsAgentAnswerableSoon,
