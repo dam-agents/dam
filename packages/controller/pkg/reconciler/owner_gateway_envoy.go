@@ -139,6 +139,9 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation, epoch
 
 func ownerAgentResources(p bootstrapParams) (listeners, clusters []any) {
 	listeners = []any{buildOuterListener(p), buildInternalListener(p), harnessGuardListener(p)}
+	if c := p.agentKeyChain(); c != nil {
+		listeners = append(listeners, agentKeyHTTPListener(p, *c))
+	}
 	clusters = []any{internalListenerCluster(p.named("tls_inspect_internal")), internalListenerCluster(p.named("harness_guard")), extAuthzCluster(p)}
 	for _, c := range p.Chains {
 		if c.Credentialed() {

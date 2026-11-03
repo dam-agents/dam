@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -158,6 +159,9 @@ func chainsWithoutHost(instanceID string, chains []envoyHostChain, host string) 
 
 func buildEnvoyBootstrap(p bootstrapParams) ev {
 	listeners := []any{buildOuterListener(p), buildInternalListener(p)}
+	if c := p.agentKeyChain(); c != nil {
+		listeners = append(listeners, agentKeyHTTPListener(p, *c))
+	}
 	doc := ev{
 		"node": ev{
 			"id":      "platform-credential-injector",
@@ -313,6 +317,16 @@ func buildOuterRoutes(p bootstrapParams) []any {
 		"route":                   genericRoute,
 		"typed_per_filter_config": extAuthzDisabledPerRoute(),
 	})
+	if c := p.agentKeyChain(); c != nil {
+		routes = append(routes, ev{
+			"match": ev{
+				"prefix":  "/",
+				"headers": []any{ev{"name": ":authority", "string_match": ev{"safe_regex": ev{"regex": agentKeyAuthorityRegex(c.Host)}}}},
+			},
+			"route":                   ev{"cluster": p.named("agent_key_http"), "timeout": "0s", "idle_timeout": "14400s"},
+			"typed_per_filter_config": extAuthzDisabledPerRoute(),
+		})
+	}
 	routes = append(routes, ev{
 		"match": ev{
 			"prefix":  "/",
@@ -873,17 +887,18 @@ func buildCollectorChain(p bootstrapParams) ev {
 }
 
 func agentKeyClusters(p bootstrapParams) []any {
-	var out []any
-	for _, c := range p.Chains {
-		if c.AgentKey != nil {
-			out = append(out, pinnedTCPCluster(c.UpstreamCluster, p.APIServerHost, p.APIServerPort))
-		}
+	c := p.agentKeyChain()
+	if c == nil {
+		return nil
 	}
-	return out
+	return []any{
+		pinnedTCPCluster(c.UpstreamCluster, p.APIServerHost, p.APIServerPort),
+		internalListenerCluster(p.named("agent_key_http")),
+	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the chain that carries an Agent's key to the Environment gate. It terminates TLS for the environments domain with the gateway's leaf, still asks ext_authz like every chain, so the owner's rule for the domain is what lets it through, and sends the request to the api-server's public port inside the cluster. The key is the only proof of who calls: the injector overwrites whatever the agent sent in its header. Only a Host under the domain is relayed, and anything else is refused here, so the key reaches the gate and no other route of the api-server; the client address headers the agent could have set are removed, as the ingress would.
-func buildAgentKeyChain(p bootstrapParams, c envoyHostChain) ev {
+// UNIT_BOUNDARY_DESCRIPTION: what carries an Agent's key to the Environment gate, over TLS or plain HTTP alike. It still asks ext_authz like every chain, so the owner's rule for the domain is what lets it through, and sends the request to the api-server's public port inside the cluster. The key is the only proof of who calls: the injector overwrites whatever the agent sent in its header. Only a Host under the domain is relayed, and anything else is refused here, so the key reaches the gate and no other route of the api-server; the client address headers the agent could have set are removed, as the ingress would.
+func agentKeyHCM(p bootstrapParams, c envoyHostChain, statPrefix string) ev {
 	suffix := strings.TrimPrefix(c.Host, "*")
 	sdsFile, sdsDir := p.credentialFile(c.AgentKey.VolumeName, c.AgentKey.SDSFileKey)
 	injector := ev{
@@ -909,7 +924,7 @@ func buildAgentKeyChain(p bootstrapParams, c envoyHostChain) ev {
 	}
 	hcm := ev{
 		"@type":           "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
-		"stat_prefix":     "terminate_" + c.ChainID,
+		"stat_prefix":     statPrefix,
 		"upgrade_configs": []any{ev{"upgrade_type": "websocket"}},
 		"http_filters":    []any{extAuthzHTTPFilter(p), injector, routerHTTPFilter()},
 		"route_config": ev{
@@ -937,8 +952,12 @@ func buildAgentKeyChain(p bootstrapParams, c envoyHostChain) ev {
 		},
 	}
 	if p.OTel.AccessLogs {
-		hcm["access_log"] = hcmAccessLog(p, "terminate_"+c.ChainID, "terminate_"+c.ChainID, "chains")
+		hcm["access_log"] = hcmAccessLog(p, statPrefix, statPrefix, "chains")
 	}
+	return hcm
+}
+
+func buildAgentKeyChain(p bootstrapParams, c envoyHostChain) ev {
 	return ev{
 		"name":               "terminate_" + c.ChainID,
 		"filter_chain_match": ev{"server_names": []any{c.Host}},
@@ -949,8 +968,34 @@ func buildAgentKeyChain(p bootstrapParams, c envoyHostChain) ev {
 				"common_tls_context": leafTLSContext(p),
 			},
 		},
-		"filters": []any{ev{"name": "envoy.filters.network.http_connection_manager", "typed_config": hcm}},
+		"filters": []any{ev{"name": "envoy.filters.network.http_connection_manager", "typed_config": agentKeyHCM(p, c, "terminate_"+c.ChainID)}},
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the same, for an install whose Environment addresses are plain HTTP, as the local cluster's are: the proxy's own listener hands a request for the domain to this internal listener, which runs the chain's filters on it.
+func agentKeyHTTPListener(p bootstrapParams, c envoyHostChain) ev {
+	return ev{
+		"name":              p.named("agent_key_http"),
+		"internal_listener": ev{},
+		"filter_chains": []any{ev{"filters": []any{ev{
+			"name":         "envoy.filters.network.http_connection_manager",
+			"typed_config": agentKeyHCM(p, c, p.named("agent_key_http")),
+		}}}},
+	}
+}
+
+func (p bootstrapParams) agentKeyChain() *envoyHostChain {
+	for i := range p.Chains {
+		if p.Chains[i].AgentKey != nil {
+			return &p.Chains[i]
+		}
+	}
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the authority of a plain-HTTP request for an Environment address: one DNS label under the domain, with or without a port.
+func agentKeyAuthorityRegex(host string) string {
+	return `^[a-z0-9-]+` + regexp.QuoteMeta(strings.TrimPrefix(host, "*")) + `(:[0-9]+)?$`
 }
 
 func buildL4CatchAllChain(p bootstrapParams) ev {

@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -109,6 +110,26 @@ func TestAgentKeyChain_RelaysOnlyTheDomainAndDropsClientAddresses(t *testing.T) 
 	assert.Equal(t, []any{ev{"upgrade_type": "websocket"}}, toEv(hcm["upgrade_configs"]), "an Environment's WebSocket reaches the gate too")
 }
 
+// TEST_SCENARIO: on the local cluster Environment addresses are plain HTTP, so an agent's request for one reaches the proxy listener with no TLS. The proxy hands an authority of one label under the domain, with any port, to an internal listener that runs the same filters, key injection included; another authority does not take that route.
+func TestAgentKeyChain_TakesPlainHTTPAddressesToo(t *testing.T) {
+	got, doc := agentKeyBootstrap(t, []corev1.Secret{agentKeySecret("agent-key-a", "agent-a")})
+	assert.Contains(t, got, "name: agent_key_http")
+	re := regexp.MustCompile(agentKeyAuthorityRegex(testEnvironmentsDomain))
+	assert.True(t, re.MatchString("app-pr-1-abc.env.example.com:4444"))
+	assert.True(t, re.MatchString("app-pr-1-abc.env.example.com"))
+	assert.False(t, re.MatchString("a.b.env.example.com"))
+	assert.False(t, re.MatchString("env.example.com.evil.test"))
+	routes, _ := outerRouteConfig(t, doc)["virtual_hosts"].([]any)[0].(map[string]any)["routes"].([]any)
+	var toKey int
+	for _, r := range routes {
+		if route, ok := r.(map[string]any)["route"].(map[string]any); ok && route["cluster"] == "agent_key_http" {
+			toKey++
+		}
+	}
+	assert.Equal(t, 1, toKey)
+	require.NotNil(t, clusterNamed(t, doc, "agent_key_http"))
+}
+
 // TEST_SCENARIO: a connection the owner granted also claims the environments domain. The Agent Key chain takes the domain, so a connection's credential never reaches the gate and the key never reaches the connection's upstream.
 func TestAgentKeyChain_TakesTheDomainOverAnyOtherChain(t *testing.T) {
 	conn := credSecret("platform-conn-x", testEnvironmentsDomain)
@@ -154,7 +175,9 @@ func TestRenderOwnerGateway_TheAgentKeyIsPerAgent(t *testing.T) {
 	got, err := renderOwnerGateway(agents, &cfg, nil)
 	require.NoError(t, err)
 	assert.Contains(t, got.LDS, "path: "+ownerGatewayCredentialRoot+"/agent-key-a."+envoyCredentialKeySDS)
-	assert.Equal(t, 1, strings.Count(got.LDS, "agent_key_injector"))
+	assert.Equal(t, 2, strings.Count(got.LDS, "agent_key_injector"), "one for TLS addresses, one for plain HTTP ones")
+	assert.Contains(t, got.LDS, "name: agent_key_http_agent-a")
+	assert.NotContains(t, got.LDS, "agent_key_http_agent-b")
 	assert.Contains(t, got.CDS, "name: environments_gate_agent-a")
 	assert.NotContains(t, got.CDS, "environments_gate_agent-b")
 }

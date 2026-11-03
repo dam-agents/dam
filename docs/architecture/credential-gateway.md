@@ -123,6 +123,7 @@ An Agent opens an [Environment](environments.md#agents-at-the-gate) as itself be
   The domain joins the leaf's SANs as any chain's host does.
   Its filters are ext_authz, the injector — header `x-platform-agent-key`, overwriting whatever the agent sent — and the router.
   ext_authz still decides, so the owner's rule for the domain is what lets the request through.
+  An install whose addresses are plain HTTP, as the local cluster's are, reaches the same filters: the proxy listener sends an authority of one label under the domain, any port, to an internal listener that runs them.
 - **Where it goes.** The route sends every request to the api-server's public Service inside the cluster, plain HTTP, Host kept, WebSocket upgrades included, and never to an address the name resolves to: that works on a cluster whose environments domain resolves only from outside, and behind a proxy.
   A Host outside the domain is answered 421 at the gateway, before ext_authz, so the key reaches the gate and no other route of the api-server; `X-Forwarded-For` and `X-Real-IP` are removed, as the ingress would.
 - **The port.** The gateway's egress policy admits the api-server's public port only on an install that serves Environments; every route there authenticates its caller, as the ingress already sends the whole internet to it, and only the gateway reaches it, never the machine behind it.
