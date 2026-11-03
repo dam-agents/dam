@@ -440,31 +440,32 @@ NODE_HOST_DIRS_SERVICE=/etc/init.d/platform-host-dirs
 # a service an earlier install wrote is removed. A node with no OpenRC keeps
 # the mounts until it restarts, and a new install makes them again.
 node_host_dirs_at_boot() {
-  local pair mounts=""
+  local pair mounts="" name
+  name="$(basename "$NODE_HOST_DIRS_SERVICE")"
   for pair in ${NODE_HOST_MOUNTS[@]+"${NODE_HOST_MOUNTS[@]}"}; do
     mounts+="    mountpoint -q ${pair#* } || { mkdir -p ${pair#* } && mount --bind $pair; } || return 1"$'\n'
   done
   if [ -z "$mounts" ]; then
-    if node_sh test -e "$NODE_HOST_DIRS_SERVICE"; then
-      node_sh rc-update del "$(basename "$NODE_HOST_DIRS_SERVICE")" default >/dev/null 2>&1 || true
+    if node_sh test -x /sbin/openrc-run && node_sh test -e "$NODE_HOST_DIRS_SERVICE"; then
+      node_sh rc-update del "$name" default >/dev/null 2>&1 || true
       node_sh rm -f "$NODE_HOST_DIRS_SERVICE"
     fi
     return 0
   fi
-  if ! node_sh test -x /sbin/openrc-run; then
+  if node_sh test -x /sbin/openrc-run; then
+    printf '%s\n' '#!/sbin/openrc-run' \
+      "# The VM runner's node directories, bind-mounted from the home disk over the" \
+      "# overlay root, where runc cannot idmap them (cluster:install, #6017)." \
+      'description="VM runner node directories on the home disk"' \
+      'depend() { before k3s; }' \
+      'start() {' "${mounts%$'\n'}" '}' |
+      node_sh tee "$NODE_HOST_DIRS_SERVICE" >/dev/null
+    node_sh chmod 755 "$NODE_HOST_DIRS_SERVICE"
+    node_sh rc-update add "$name" default >/dev/null 2>&1 ||
+      echo "WARNING: $name is not in the default runlevel, so a restart loses the runner's node directories' mounts" >&2
+  else
     echo "WARNING: no OpenRC on the node, so nothing makes the runner's node directories' mounts again after a restart; run cluster:install again then" >&2
-    return 0
   fi
-  printf '%s\n' '#!/sbin/openrc-run' \
-    "# The VM runner's node directories, bind-mounted from the home disk over the" \
-    "# overlay root, where runc cannot idmap them (cluster:install, #6017)." \
-    'description="VM runner node directories on the home disk"' \
-    'depend() { before k3s; }' \
-    'start() {' "${mounts%$'\n'}" '}' |
-    node_sh tee "$NODE_HOST_DIRS_SERVICE" >/dev/null
-  node_sh chmod 755 "$NODE_HOST_DIRS_SERVICE"
-  node_sh rc-update add "$(basename "$NODE_HOST_DIRS_SERVICE")" default >/dev/null 2>&1 ||
-    echo "WARNING: $(basename "$NODE_HOST_DIRS_SERVICE") is not in the default runlevel, so a restart loses the runner's node directories' mounts" >&2
 }
 
 # NODE_IMAGE_GC_DROPIN: no image garbage collection in an Environment's k3s.
