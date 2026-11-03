@@ -581,6 +581,28 @@ describe("dam agent get / update / models (integration)", () => {
   });
 
   /**
+   * TEST_SCENARIO: the server keeps the rules about which pair is valid, so
+   * a move it refuses leaves the default without a provider, and the
+   * warning carries the server's reason.
+   */
+  it("agent update warns with the server's reason when a move is refused", async () => {
+    rememberRefusal = "the codex harness cannot run on that provider";
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "conn-ibm2",
+      "--remove-provider",
+      "conn-ibm",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stderr).toContain(
+      "warning: the scheduled default (ibm/gpt-5.5) ran on IBM proxy, which the agent no longer holds, and it has no provider now: the codex harness cannot run on that provider",
+    );
+  });
+
+  /**
    * TEST_SCENARIO: a default the same update sets with --model is the
    * caller's pick, so it is saved as asked and never moved after it.
    */

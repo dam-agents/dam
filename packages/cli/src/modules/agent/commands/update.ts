@@ -258,6 +258,10 @@ export function buildUpdateCommand(deps: {
           revoke,
         });
         exitOnServiceError(updated, host);
+        if (before && !before.ok)
+          process.stderr.write(
+            `warning: could not read the agent's defaults (${before.error.reason}), so a default on a removed provider was not moved\nhint: check them with \`dam agent get ${agent.name}\`\n`,
+          );
         if (before?.ok)
           revoked = {
             before: before.value,

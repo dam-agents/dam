@@ -90,10 +90,14 @@ export async function moveDefaultsOffRevoked(
       aliasForTemplateId(
         input.connections.find((c) => c.id === from)?.templateId ?? "",
       ) ?? parseQualifiedModel(pair.model, { claudePrefix: true })?.alias;
-    const to = alias
+    const found = alias
       ? await replacementFor(svc, agentId, pair, alias, granted.value)
-      : null;
-    if (to === null) continue;
+      : { to: null };
+    if (found.to === null) {
+      if (found.reason) refused.set(kind, found.reason);
+      continue;
+    }
+    const to = found.to;
     const saved = await svc.rememberDefault(agentId, kind, {
       ...pair,
       provider: to,
@@ -125,19 +129,24 @@ async function replacementFor(
   pair: SessionPair,
   alias: string,
   granted: readonly string[],
-): Promise<string | null> {
+): Promise<{ to: string | null; reason?: string }> {
   const catalog = await svc.catalog(agentId, pair.harness);
-  if (!catalog.ok) return null;
+  if (!catalog.ok)
+    return {
+      to: null,
+      reason: `could not read the agent's models: ${catalog.error.reason}`,
+    };
   const model = pair.model;
-  return (
-    catalog.value.providers.find(
-      (p) =>
-        granted.includes(p.connectionId) &&
-        p.alias === alias &&
-        p.status !== "unsupported" &&
-        (model === null ||
-          p.status !== "listed" ||
-          p.models.some((m) => sameModel(m.name, model))),
-    )?.connectionId ?? null
-  );
+  return {
+    to:
+      catalog.value.providers.find(
+        (p) =>
+          granted.includes(p.connectionId) &&
+          p.alias === alias &&
+          p.status !== "unsupported" &&
+          (model === null ||
+            p.status !== "listed" ||
+            p.models.some((m) => sameModel(m.name, model))),
+      )?.connectionId ?? null,
+  };
 }
