@@ -4,11 +4,13 @@ import type {
   heartbeatInputSchema,
   jobStatusSchema,
   reportInputSchema,
+  satelliteImageSchema,
   satelliteManifestSchema,
   satelliteToolSchema,
 } from "./schemas.js";
 
 export type SatelliteTool = z.infer<typeof satelliteToolSchema>;
+export type SatelliteImage = z.infer<typeof satelliteImageSchema>;
 export type SatelliteManifest = z.infer<typeof satelliteManifestSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type ClaimInput = z.infer<typeof claimInputSchema>;
@@ -58,6 +60,7 @@ export interface JobOutcome {
   outputPath: string | null;
   truncated: boolean;
   reason: string | null;
+  images: SatelliteImage[];
 }
 
 export interface WorkItem {

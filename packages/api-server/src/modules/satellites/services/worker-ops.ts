@@ -126,6 +126,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
               isError: input.outcome.isError,
               exitCode: input.outcome.exitCode,
               ...written,
+              images: input.outcome.images,
             }
           : input.outcome.status === "cancelled"
             ? { status: "cancelled" as const, reason: "cancelled", ...written }

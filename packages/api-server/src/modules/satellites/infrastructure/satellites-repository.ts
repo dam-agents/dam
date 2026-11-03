@@ -13,8 +13,10 @@ import {
   satelliteJobs,
   satellites,
 } from "db";
+import { formatJobRef } from "api-server-api";
 import type {
   JobStatus,
+  SatelliteImage,
   SatelliteManifest,
   SatelliteTool,
 } from "api-server-api";
@@ -34,6 +36,17 @@ function toSatellite(r: typeof satellites.$inferSelect): SatelliteRow {
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A failed write, as the log may see it. The driver
+ * puts every bound parameter into its error's message, and a settlement binds
+ * the images of a Job — so the cause is dropped and only the driver's code, which
+ * classifies the failure without carrying it, travels on.
+ */
+function settlementFailure(message: string, err: unknown): Error {
+  const code = (err as { cause?: { code?: unknown } }).cause?.code;
+  return new Error(typeof code === "string" ? `${message} (${code})` : message);
+}
+
 function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
   return {
     owner: r.owner,
@@ -46,6 +59,7 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
     isError: r.isError,
     exitCode: r.exitCode,
     output: r.output,
+    images: (r.images as SatelliteImage[] | null) ?? [],
     truncated: r.truncated,
     reason: r.reason,
     cancelRequested: r.cancelRequested,
@@ -415,6 +429,7 @@ export function createSatellitesRepository(db: Db) {
         isError?: boolean;
         exitCode?: number | null;
         output?: string | null;
+        images?: SatelliteImage[];
         truncated?: boolean;
         reason?: string | null;
       },
@@ -436,7 +451,13 @@ export function createSatellitesRepository(db: Db) {
             ...(expect ? [eq(satelliteJobs.status, expect)] : []),
           ),
         )
-        .returning();
+        .returning()
+        .catch((err: unknown) => {
+          throw settlementFailure(
+            `${formatJobRef(satellite, sequence)} could not be settled`,
+            err,
+          );
+        });
       return rows[0] ? toJob(rows[0]) : null;
     },
 

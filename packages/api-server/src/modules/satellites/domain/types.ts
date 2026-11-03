@@ -1,4 +1,4 @@
-import type { JobStatus, SatelliteTool } from "api-server-api";
+import type { JobStatus, SatelliteImage, SatelliteTool } from "api-server-api";
 
 export interface SatelliteRow {
   owner: string;
@@ -22,6 +22,7 @@ export interface JobRow {
   isError: boolean;
   exitCode: number | null;
   output: string | null;
+  images: SatelliteImage[];
   truncated: boolean;
   reason: string | null;
   cancelRequested: boolean;

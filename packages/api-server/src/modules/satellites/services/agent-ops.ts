@@ -88,6 +88,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       outputPath,
       truncated: job.truncated,
       reason: job.reason,
+      images: job.images,
     };
   }
 
