@@ -7,7 +7,7 @@ import { ProviderHead } from "./provider-row.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one provider for an agent, wherever an agent's
  * providers are listed (its Providers page and panel, the attach dialog): a
- * single line of a small icon, its name, the spend badge that opens its limit
+ * row of a small icon, its name over the harnesses it runs, the spend badge that opens its limit
  * and the switch that decides whether this agent uses it.
  */
 export function ProviderSpendRow({

@@ -8,6 +8,9 @@ import { ProviderSection } from "../../modules/providers/components/provider-sec
 
 const state = vi.hoisted(() => ({
   pending: false,
+  status: undefined as
+    | { damSide: { since: string } | null; outages: { templateId: string }[] }
+    | undefined,
   flags: {} as Record<string, boolean>,
   items: new Map<
     string,
@@ -70,7 +73,7 @@ vi.mock(
   }),
 );
 vi.mock("../../modules/provider-status/api/queries.js", () => ({
-  useProviderStatus: () => ({ data: undefined }),
+  useProviderStatus: () => ({ data: state.status }),
 }));
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
   useProviderItems: () => ({
@@ -98,6 +101,7 @@ const CHECKED_AT = "2026-10-20T09:15:00.000Z";
 describe("provider key recheck", () => {
   beforeEach(() => {
     state.pending = false;
+    state.status = undefined;
     state.flags = {};
     state.items = new Map();
     state.itemsByTemplate = new Map();
@@ -216,5 +220,33 @@ describe("provider key recheck", () => {
     expect(row).toContain("Checking…");
     expect(row).not.toContain(">Key rejected<");
     expect(row).not.toContain(">Connected<");
+  });
+
+  // TEST_SCENARIO: a working key reads Outage while its template has an outage or the fault is on the platform's side; a rejected key still reads rejected, a running check still reads Checking…, and a provider the owner does not hold still reads Not connected.
+  it.each([
+    { damSide: null, outages: [{ templateId: "anthropic" }] },
+    { damSide: { since: CHECKED_AT }, outages: [] },
+  ])("says Outage over a working key (%j)", (status) => {
+    state.status = status;
+    const anthropic = (result: ProviderKeyCheck["result"]) =>
+      new Map([
+        [
+          "anthropic",
+          {
+            id: "c1",
+            conn: {
+              templateId: "anthropic",
+              keyCheck: { result, detail: "HTTP 401", checkedAt: CHECKED_AT },
+            },
+          },
+        ],
+      ]);
+    state.items = anthropic("ok");
+    expect(rowOf(render(), "Edit Anthropic")).toContain(">Outage<");
+    expect(rowOf(render(), "Connect OpenAI")).toContain(">Not connected<");
+    state.items = anthropic("refused");
+    expect(rowOf(render(), "Edit Anthropic")).toContain(">Key rejected<");
+    state.pending = true;
+    expect(rowOf(render(), "Edit Anthropic")).toContain("Checking…");
   });
 });

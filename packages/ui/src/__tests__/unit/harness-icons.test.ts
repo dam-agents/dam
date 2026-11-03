@@ -252,7 +252,7 @@ describe("harness icons on provider and preset cards", () => {
           onOpen() {},
         }),
       );
-      expect(html).not.toMatch(/harnesses|Claude|>Pi/);
+      expect(html).not.toMatch(/>All harnesses<|Claude|>Pi/);
     },
   );
 });

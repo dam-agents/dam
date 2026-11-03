@@ -1,5 +1,6 @@
 import type { HarnessFamily, ProviderKeyCheck } from "api-server-api";
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
+import { match, P } from "ts-pattern";
 
 import { HARNESS_ICONS, HARNESS_ORDER } from "@/components/harness-icons";
 import { InlineList } from "@/components/inline-list";
@@ -46,8 +47,11 @@ export function ProviderRow({
   connectedAction = "Edit",
 }: Props) {
   const name = givenName ?? providerName(type);
+  const id = useId();
   const problem =
-    connected && keyCheck && keyCheck.result !== "ok" ? keyCheck : null;
+    connected && !checking && keyCheck && keyCheck.result !== "ok"
+      ? keyCheck
+      : null;
   const problemText = problem
     ? `${
         problem.result === "refused"
@@ -71,6 +75,7 @@ export function ProviderRow({
           type="button"
           onClick={onOpen}
           aria-label={label}
+          aria-describedby={`${id}-harnesses ${id}-status`}
           className="absolute inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         />
       )}
@@ -79,6 +84,7 @@ export function ProviderRow({
         templateId={templateId}
         name={name}
         harnesses={harnesses}
+        id={id}
       />
       {balance && (
         <span onClick={onOpen} className="relative min-w-0" data-layer="raised">
@@ -92,6 +98,8 @@ export function ProviderRow({
       )}
       <span onClick={onOpen} className="relative flex" data-layer="raised">
         <ConnectionBadge
+          id={`${id}-status`}
+          name={name}
           connected={connected}
           degraded={degraded}
           keyCheck={keyCheck}
@@ -113,11 +121,13 @@ export function ProviderHead({
   templateId,
   name,
   harnesses,
+  id,
 }: {
   type: ProviderPresetType;
   templateId?: string | undefined;
   name: string;
   harnesses: readonly string[] | undefined;
+  id?: string;
 }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -127,7 +137,10 @@ export function ProviderHead({
           {name}
         </span>
         {!!harnesses?.length && (
-          <span className="truncate text-xs text-muted-foreground">
+          <span
+            id={id && `${id}-harnesses`}
+            className="text-xs text-muted-foreground"
+          >
             {HARNESS_ORDER.every((h) => harnesses.includes(h)) ? (
               "All harnesses"
             ) : harnesses.length === 1 ? (
@@ -150,34 +163,50 @@ function harnessLabel(name: string): string {
  * UNIT_BOUNDARY_DESCRIPTION: the words that say where a provider row stands:
  * not connected, the key being checked, connected, or connected and in trouble
  * (rejected, unverified, or its template having an outage), with the reason in
- * its title. Colour only repeats what the words say.
+ * its title. Colour only repeats what the words say, and a screen reader hears
+ * the result of a check as it lands, with the provider's name.
  */
 function ConnectionBadge({
+  id,
+  name,
   connected,
   degraded,
   keyCheck,
   checking,
   reason,
 }: {
+  id: string;
+  name: string;
   connected: boolean;
   degraded: boolean;
   keyCheck: ProviderKeyCheck | null | undefined;
   checking: boolean;
   reason: string | null;
 }) {
-  const [state, tone] = !connected
-    ? (["Not connected", "text-muted-foreground"] as const)
-    : checking
-      ? (["Checking…", "text-muted-foreground"] as const)
-      : keyCheck?.result === "refused"
-        ? (["Key rejected", "text-danger"] as const)
-        : degraded
-          ? (["Outage", "text-danger"] as const)
-          : keyCheck?.result === "unverified"
-            ? (["Could not verify", "text-danger"] as const)
-            : (["Connected", "text-green-700 dark:text-success"] as const);
+  const [state, tone] = match({ connected, checking, degraded, keyCheck })
+    .with({ connected: false }, () => [
+      "Not connected",
+      "text-muted-foreground",
+    ])
+    .with({ checking: true }, () => ["Checking…", "text-muted-foreground"])
+    .with({ keyCheck: { result: "refused" } }, () => [
+      "Key rejected",
+      "text-danger",
+    ])
+    .with({ degraded: true }, () => ["Outage", "text-danger"])
+    .with({ keyCheck: { result: "unverified" } }, () => [
+      "Could not verify",
+      "text-danger",
+    ])
+    .with({ keyCheck: P.union({ result: "ok" }, P.nullish) }, () => [
+      "Connected",
+      "text-green-700 dark:text-success",
+    ])
+    .exhaustive();
   return (
     <span
+      id={id}
+      role="status"
       title={reason ?? undefined}
       data-testid={
         degraded && connected && !checking
@@ -190,6 +219,7 @@ function ConnectionBadge({
       )}
     >
       {checking && connected && <Spinner size={12} />}
+      <span className="sr-only">{name}: </span>
       {state}
     </span>
   );
