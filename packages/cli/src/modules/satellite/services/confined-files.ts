@@ -11,7 +11,7 @@ import {
 import type { FileHandle } from "node:fs/promises";
 import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A file on the user's machine read or written
@@ -127,6 +127,24 @@ async function realDirectory(path: string): Promise<boolean> {
   return (await realpath(path).catch(() => null)) === path;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Joins validated segments under a root and refuses
+ * the result unless it stays inside it. The segment check already makes an
+ * escape impossible, and the walk holds each directory to its own checks as
+ * well; this is the boundary written out on the value itself, so a reader — and
+ * a scanner — can see where it is drawn without following the walk.
+ */
+export function resolveInside(
+  root: string,
+  segments: readonly string[],
+): string | null {
+  const resolved = resolve(root, ...segments);
+  const fromRoot = relative(root, resolved);
+  if (fromRoot !== "" && (fromRoot.startsWith("..") || isAbsolute(fromRoot)))
+    return null;
+  return resolved;
+}
+
 async function walk(
   root: string,
   segments: readonly string[],
@@ -135,7 +153,8 @@ async function walk(
   if ((await realpath(root).catch(() => null)) !== root) return null;
   let current = root;
   for (const segment of segments) {
-    const next = join(current, segment);
+    const next = resolveInside(current, [segment]);
+    if (next === null) return null;
     if ((await lstat(next).catch(() => null)) === null) {
       if (
         !create ||
@@ -188,7 +207,8 @@ export async function openInRoot(
   const name = segments.at(-1);
   if (parent === null || name === undefined)
     return { ok: false, reason: "outside" };
-  const path = join(parent, name);
+  const path = resolveInside(parent, [name]);
+  if (path === null) return { ok: false, reason: "outside" };
   let handle: FileHandle;
   try {
     handle = await open(

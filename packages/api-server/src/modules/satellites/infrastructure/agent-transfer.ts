@@ -1,6 +1,7 @@
 import { request as httpRequest } from "node:http";
 import type { IncomingMessage } from "node:http";
 import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { agentServiceAddress } from "../../agents/infrastructure/k8s.js";
 
 /**
@@ -80,7 +81,17 @@ export function createAgentTransfer(
       req.on("error", fail);
       if (payload === undefined) req.end();
       else if (typeof payload === "string") req.end(payload);
-      else payload.pipe(req);
+      else
+        /**
+         * UNIT_BOUNDARY_DESCRIPTION: The body is piped with `pipeline`, so a
+         * source that fails mid-stream tears the request down instead of
+         * leaving a half-sent body the runtime would keep reading. The failure
+         * rejects this promise, which the caller turns into its own refusal.
+         */
+        void pipeline(payload, req).catch((err: Error) => {
+          req.destroy(err);
+          fail(err);
+        });
     });
 
   return {

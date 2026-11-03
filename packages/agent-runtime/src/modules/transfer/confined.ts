@@ -17,7 +17,7 @@ import {
   realpath,
   unlink,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A file the platform moves through an Agent's
@@ -66,6 +66,24 @@ export type ConfinedFile =
   | { ok: false; reason: Refusal };
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: Joins validated segments under a root and refuses
+ * the result unless it stays inside it. The segment check above already makes an
+ * escape impossible, and the walk below holds each directory to its descriptor
+ * as well; this is the boundary written out on the value itself, so a reader —
+ * and a scanner — can see where it is drawn without following the walk.
+ */
+export function resolveInside(
+  root: string,
+  segments: readonly string[],
+): string | null {
+  const resolved = resolve(root, ...segments);
+  const fromRoot = relative(root, resolved);
+  if (fromRoot !== "" && (fromRoot.startsWith("..") || isAbsolute(fromRoot)))
+    return null;
+  return resolved;
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: A workspace path as segments, or null when it
  * cannot name anything the transfer may touch: empty, absolute, longer than the
  * cap, carrying a NUL or a `..`, or holding a segment this workspace reserves.
@@ -108,7 +126,8 @@ async function walk(
   if ((await realpath(root).catch(() => null)) !== root) return null;
   let current = root;
   for (const segment of segments) {
-    const next = join(current, segment);
+    const next = resolveInside(current, [segment]);
+    if (next === null) return null;
     const exists = await lstat(next).catch(() => null);
     if (exists === null) {
       if (
@@ -179,7 +198,8 @@ export async function openConfined(
   const name = segments.at(-1);
   if (parent === null || name === undefined)
     return { ok: false, reason: "refused" };
-  const path = join(parent, name);
+  const path = resolveInside(parent, [name]);
+  if (path === null) return { ok: false, reason: "refused" };
   const attempt = await openOrCode(
     path,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -230,10 +250,13 @@ export async function createStaged(
   const info = await lstat(dir).catch(() => null);
   if (info === null || !info.isDirectory() || info.isSymbolicLink())
     return { ok: false, reason: "refused" };
+  const target = resolveInside(dir, [name]);
+  if (target === null) return { ok: false, reason: "refused" };
 
   const id = randomBytes(16).toString("hex");
   const stagedName = `${STAGING_PREFIX}${id}`;
-  const path = join(dir, stagedName);
+  const path = resolveInside(dir, [stagedName]);
+  if (path === null) return { ok: false, reason: "refused" };
   const attempt = await openOrCode(
     path,
     constants.O_RDWR |
@@ -261,7 +284,7 @@ export async function createStaged(
       name: stagedName,
       dir,
       proved: { dev: info.dev, ino: info.ino },
-      destination: join(dir, name),
+      destination: target,
     },
   };
 }
@@ -285,7 +308,8 @@ export async function openStaged(
     return null;
 
   const stagedName = `${STAGING_PREFIX}${id}`;
-  const path = join(dir, stagedName);
+  const path = resolveInside(dir, [stagedName]);
+  if (path === null) return null;
   const attempt = await openOrCode(
     path,
     constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -295,13 +319,18 @@ export async function openStaged(
     await attempt.handle.close().catch(() => {});
     return null;
   }
+  const target = resolveInside(dir, [name]);
+  if (target === null) {
+    await attempt.handle.close().catch(() => {});
+    return null;
+  }
   return {
     id,
     handle: attempt.handle,
     name: stagedName,
     dir,
     proved: { dev: info.dev, ino: info.ino },
-    destination: join(dir, name),
+    destination: target,
   };
 }
 
@@ -396,13 +425,15 @@ export async function publishStaged(
     ? anchored.value
     : "refused";
   if (outcome === "published") return { ok: true, path: staged.destination };
-  await unlink(join(staged.dir, staged.name)).catch(() => {});
+  const stagedPath = resolveInside(staged.dir, [staged.name]);
+  if (stagedPath !== null) await unlink(stagedPath).catch(() => {});
   return { ok: false, reason: outcome };
 }
 
 export async function discardStaged(staged: Staged): Promise<void> {
   await staged.handle.close().catch(() => {});
-  await unlink(join(staged.dir, staged.name)).catch(() => {});
+  const stagedPath = resolveInside(staged.dir, [staged.name]);
+  if (stagedPath !== null) await unlink(stagedPath).catch(() => {});
 }
 
 /**
@@ -423,7 +454,8 @@ export async function sweepStaging(
   const claimDirs = await readdir(transferRoot).catch(() => []);
   const cutoff = Date.now() - olderThanMs;
   for (const claimDir of claimDirs) {
-    const dir = join(transferRoot, claimDir);
+    const dir = resolveInside(transferRoot, [claimDir]);
+    if (dir === null) continue;
     const info = await lstat(dir).catch(() => null);
     if (info === null || !info.isDirectory() || info.isSymbolicLink()) continue;
     const proved = { dev: info.dev, ino: info.ino };

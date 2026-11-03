@@ -173,22 +173,31 @@ export function createSatelliteFileRoutes(deps: {
 
       let received = 0;
       const hash = createHash("sha256");
-      const body = Readable.fromWeb(
+      const counter = new Transform({
+        transform(chunk: Buffer, _encoding, done) {
+          received += chunk.length;
+          if (received > cap) {
+            done(new Error("transfer_too_large"));
+            return;
+          }
+          hash.update(chunk);
+          done(null, chunk);
+        },
+      });
+      /**
+       * UNIT_BOUNDARY_DESCRIPTION: The satellite's body is counted and hashed on
+       * its way to the workspace. Both ends of that pipe carry an error handler,
+       * so a body or a counter that fails mid-stream fails the transfer and
+       * tears the other down, instead of leaving the runtime reading a body that
+       * never ends.
+       */
+      const incomingStream = Readable.fromWeb(
         incoming as Parameters<typeof Readable.fromWeb>[0],
-      ).pipe(
-        new Transform({
-          transform(chunk: Buffer, _encoding, done) {
-            received += chunk.length;
-            if (received > cap) {
-              done(new Error("transfer_too_large"));
-              return;
-            }
-            hash.update(chunk);
-            done(null, chunk);
-          },
-        }),
       );
-      body.on("error", () => {});
+      incomingStream.on("error", (err: Error) => counter.destroy(err));
+      counter.on("error", () => incomingStream.destroy());
+      incomingStream.pipe(counter);
+      const body = counter;
 
       const destination = destinationOf(job, token.slice(0, 8), name.data);
       const agent = deps.transferFor(job.agentId);

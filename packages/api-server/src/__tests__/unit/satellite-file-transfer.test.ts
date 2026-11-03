@@ -374,6 +374,35 @@ describe("a file the machine sends into the agent's workspace", () => {
     expect(lines.join("\n")).not.toContain(SECRET_MARKER);
   });
 
+  /**
+   * TEST_SCENARIO: The body comes from the network, and it can fail in the
+   * middle. The transfer must fail as a whole: nothing is published, no staging
+   * answer is trusted, and the counter that carried the bytes is torn down with
+   * the source rather than left open for the runtime to keep reading.
+   */
+  it("fails the transfer when the body errors mid-stream", async () => {
+    const harness = setup();
+    const failing = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(Buffer.from("half")));
+        controller.error(new Error("the machine hung up"));
+      },
+    });
+    const res = await harness.app.request(
+      "/api/satellites/laptop/jobs/7/file",
+      {
+        method: "POST",
+        headers: { [SATELLITE_TRANSFER_CLAIM_HEADER]: TOKEN },
+        body: failing,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" },
+    );
+
+    expect(res.status).toBe(409);
+    expect(harness.published).toHaveLength(0);
+    expect(harness.state.spent).toBe(0);
+  });
+
   it("refuses a source path with no usable file name", async () => {
     const harness = setup({ job: job({ args: { path: "" } }) });
     expect((await transferRequest(harness.app)).status).toBe(400);

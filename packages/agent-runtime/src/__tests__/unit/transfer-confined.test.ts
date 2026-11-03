@@ -5,6 +5,7 @@ import {
   link,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -356,6 +357,41 @@ describe("the transfer route the api-server calls", () => {
     );
     expect(read.status).toBe(200);
     expect(await read.text()).toBe("body bytes");
+  });
+
+  /**
+   * TEST_SCENARIO: A body that fails after some bytes must leave nothing behind:
+   * the staged file is discarded, so an abandoned transfer does not hold disk and
+   * a later stage for the same name is not refused as already there.
+   */
+  it("discards the stage when the body errors mid-stream", async () => {
+    const failing = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(Buffer.from("half")));
+        controller.error(new Error("the platform hung up"));
+      },
+    });
+    const directory = join(
+      root,
+      ".dam",
+      "satellite-files",
+      "laptop-9-aaaaaaaa",
+    );
+    await fetch(`${base}/api/transfer/stage`, {
+      method: "POST",
+      headers: {
+        "x-dam-path": ".dam/satellite-files/laptop-9-aaaaaaaa/broken.bin",
+      },
+      body: failing,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" }).catch(() => null);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const left = await readdir(directory).catch(() => []);
+    expect(left.filter((name) => name.startsWith(STAGING_PREFIX))).toEqual([]);
+    await expect(
+      readFile(join(directory, "broken.bin"), "utf8"),
+    ).rejects.toThrow();
   });
 
   it("refuses a body over the cap and publishes nothing", async () => {
