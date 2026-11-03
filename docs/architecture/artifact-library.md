@@ -157,6 +157,7 @@ Every restricted response is marked private and uncacheable so no shared cache r
 The outer page, on the share host, is platform chrome (title banner and source download); the inner document is the user content, loaded from the content host in an iframe.
 The browser's same-origin rule is the boundary: artifact code runs as the content origin, so it can neither read the share session cookie nor call the share host as the signed-in viewer.
 The sandbox blocks top-level navigation and forms, but permits scripts, same-origin access and unsandboxed popups: it does not provide an independent origin boundary.
+A popup the artifact opens is a normal top-level tab, including one on the app's own origin, and the artifact's opaque origin keeps it from reading that tab.
 The content host agrees to be framed only by the share origin, and serves raw bytes under a sandbox directive so a document opened directly cannot run either.
 
 **Fragment links.** A page can open an item named in the URL fragment (`/a/<slug>#C-35`), and only the share page's own address carries the fragment of a shared link: the server never sees it.
