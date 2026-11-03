@@ -9,6 +9,8 @@ export const egressRulesKeys = {
     [...egressRulesKeys.all, "agent", agentId] as const,
   currentPreset: (agentId: string | null) =>
     [...egressRulesKeys.all, "agent", agentId, "preset"] as const,
+  platformRule: (agentId: string | null) =>
+    [...egressRulesKeys.all, "agent", agentId, "platform"] as const,
 };
 
 const RULES_ERROR_TOAST = "Couldn't load egress rules";
@@ -38,6 +40,16 @@ export function useCurrentPreset(agentId: string | null) {
     queryKey: egressRulesKeys.currentPreset(agentId),
     queryFn: agentId
       ? () => api.egressRules.currentPreset.query({ agentId })
+      : skipToken,
+  });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the agent carries the platform's Environments rule, or its owner removed it, which offers it back.
+export function usePlatformRule(agentId: string | null) {
+  return useQuery({
+    queryKey: egressRulesKeys.platformRule(agentId),
+    queryFn: agentId
+      ? () => api.egressRules.platformRule.query({ agentId })
       : skipToken,
   });
 }

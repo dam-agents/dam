@@ -10,6 +10,12 @@ import { TooltipProvider } from "../../components/ui/tooltip.js";
 
 const state = vi.hoisted(() => ({
   agentMembers: [] as string[],
+  agentMemberAgents: [] as {
+    agentId: string;
+    name: string;
+    ownerName: string | null;
+    lastOpenedAt: string | null;
+  }[],
   role: "owner" as "owner" | "editor",
   saveMembers: [] as unknown[],
 }));
@@ -25,7 +31,7 @@ vi.mock("../../modules/environments/api/mutations.js", () => ({
 }));
 vi.mock("../../modules/environments/api/queries.js", () => ({
   useAgentEnvironmentMembers: () => ({
-    data: state.agentMembers,
+    data: { emails: state.agentMembers, agents: state.agentMemberAgents },
     isError: false,
   }),
 }));
@@ -89,6 +95,7 @@ function environment(
       { name: "auth", port: 8080, url: `https://auth-${name}.env.example.com` },
     ],
     members: [],
+    memberAgents: [],
     agentMemberCount: 0,
     expiresAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
     createdAt: new Date().toISOString(),
@@ -340,8 +347,38 @@ describe("an Environment's Share dialog", () => {
     );
 
     expect(state.saveMembers).toEqual([
-      { id: demo.id, emails: ["late@example.com"] },
+      { id: demo.id, emails: ["late@example.com"], agentIds: [] },
     ]);
+  });
+
+  // TEST_SCENARIO: an agent the owner added by id is listed by name, with whose agent it is and when it last opened the Environment, marked as an agent; Save sends its id beside the people.
+  it("lists the agents that may open it, and saves their ids", () => {
+    state.saveMembers = [];
+    const opened = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    const doc = mount(
+      createElement(EnvironmentShareDialog, {
+        environment: {
+          ...demo,
+          memberAgents: [
+            { agentId: "agent-qa1", name: "qa", ownerName: "Bob", lastOpenedAt: opened },
+          ],
+        },
+        onClose: vi.fn(),
+      }),
+    );
+    const list = doc.querySelector('[data-testid="agent-member-list"]')?.textContent;
+    expect(list).toContain("Agent");
+    expect(list).toContain("qa · Bob");
+    expect(list).toContain("Last opened 2h");
+    act(() =>
+      (doc.querySelector('[aria-label="Remove qa"]') as HTMLButtonElement).click(),
+    );
+    act(() =>
+      [...doc.querySelectorAll("button")]
+        .find((b) => b.textContent === "Save")!
+        .click(),
+    );
+    expect(state.saveMembers).toEqual([{ id: demo.id, emails: [], agentIds: [] }]);
   });
 
   // TEST_SCENARIO: the summary names only the parts that open it, joined as a sentence.

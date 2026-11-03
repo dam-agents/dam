@@ -1,14 +1,19 @@
-import { EGRESS_HOST, type EgressRuleView } from "api-server-api";
+import {
+  EGRESS_HOST,
+  PLATFORM_ENVIRONMENTS_SOURCE,
+  type EgressRuleView,
+} from "api-server-api";
 
 import { splitHostPort } from "./host-port.js";
 
-export type RuleGroupKey = "own" | "kit" | "connection" | "preset";
+export type RuleGroupKey = "own" | "kit" | "connection" | "preset" | "platform";
 
 export const RULE_GROUP_TITLE: Record<RuleGroupKey, string> = {
   own: "Your rules",
   kit: "From the starter kit",
   connection: "From connections",
   preset: "From the preset",
+  platform: "Added by the platform",
 };
 
 const GROUP_ORDER: readonly RuleGroupKey[] = [
@@ -16,9 +21,11 @@ const GROUP_ORDER: readonly RuleGroupKey[] = [
   "kit",
   "connection",
   "preset",
+  "platform",
 ];
 
 export function ruleGroupOf(source: EgressRuleView["source"]): RuleGroupKey {
+  if (source === PLATFORM_ENVIRONMENTS_SOURCE) return "platform";
   if (source === "kit") return "kit";
   if (source.startsWith("preset:")) return "preset";
   if (source.startsWith("connection:")) return "connection";

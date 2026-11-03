@@ -24,7 +24,9 @@ It is created with nothing that would let it act as its Owning Agent:
 - **The platform's default image**, with Docker, k3s and openrc; the software it runs goes inside, as containers or processes.
 
 A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints and its expiry.
-Who may open it is two lists of rows, one per person, at most as many as an artifact's viewers each: `agent_environment_members` per Owning Agent and `environment_members` per Environment, which go with it.
+Who may open it is two lists of rows, at most as many as an artifact's viewers each: per Owning Agent, `agent_environment_members` for people and `agent_environment_agent_members` for Agents; per Environment, `environment_members` and `environment_agent_members`, which go with it.
+People and Agents sit in tables of their own, so an email never matches an Agent.
+`environment_agent_visits` holds when each Agent last opened each Environment.
 
 ## Lifecycle
 
@@ -63,6 +65,28 @@ An Environment runs the app its agent built, which reaches registries, mirrors a
 - **Connections.** An Environment holds none: granting the owner's connections on one (for example a model for a nested platform) is not built yet, because a granted connection's rules would be written under the Environment while its egress is decided under the Owning Agent.
   A grant on an Environment is refused for every caller, so the Owning Agent cannot pass its own connections on, and a newly connected provider is never given to one.
 
+## Agents at the gate
+
+An Agent opens an Environment as itself, from its sandbox, with whatever tool it uses — `curl`, a test suite, its browser — and nothing to set up.
+
+- **The Agent Key.** Every ordinary Agent, of any owner, on an install with an environments domain holds an opaque key, `ak_` and 32 random bytes, created with it; an Environment never holds one, since an Environment is never a visitor.
+  The database keeps only its HMAC, under the install's API key pepper, in `agent_keys`; the plaintext is in an `agent-key` Secret labelled with its Agent, which only that Agent's gateway mounts, paired or [owner gateway](credential-gateway.md#owner-gateway) alike.
+  The Agent never holds the key.
+- **The gateway sends it.** A chain for `*.<environments domain>` terminates TLS with the gateway's leaf, still asks ext_authz, injects the key in `x-platform-agent-key` over any value the agent sent, and sends the request to the api-server's public port inside the cluster, Host kept, WebSocket upgrades included ([credential gateway](credential-gateway.md#the-agent-key-chain)).
+  A Host outside the domain is answered 421 there, and the client address headers the agent could set are removed.
+- **The key decides.** A request that carries it is the Agent's, whatever cookie it carries, so a person's sign-in in the Agent's browser panel never opens more than the Agent's own lists do.
+  The Owning Agent is always let in, as its owner is; any other Agent, the owner's own included, only when the Environment's list or its Owning Agent's list names it.
+  Being of the same owner, or the agent of someone on a list, counts for nothing.
+  A key gets no session and no sign-in: the reserved paths refuse it, and a refusal is a page, not a redirect to the front door.
+  The cross-origin check holds for keyed requests too, so another site's page in the Agent's browser cannot use the key.
+- **The key reaches only the gate.** The relay strips it before the app; a request that carries it to any other host of the api-server is refused before any route reads it.
+- **A visible rule.** The key is sent only while the Agent carries the platform's Environments egress rule: an allow for the environments domain, `source: platform:environments`, added with the key and listed in its own group on the agent's egress rules, labelled as the platform's.
+  It cannot be edited.
+  Its owner can remove it, which revokes the row, deletes the key and its Secret, and so stops the gateway sending it; the agent's requests to the domain then need approval like any other host.
+  The platform never adds a removed rule back; the owner restores it from the same list, which issues a new key, so the old one opens nothing.
+  An Agent created before this, or while the api-server was down, gets the rule and its key from a pass every half hour, unless it ever held the rule.
+- **Deleting an Agent** deletes its key and Secret, takes it off every list that names it, and removes its visits, so a later Agent can never inherit an entry.
+
 ## Addresses
 
 Each endpoint an Environment declares (`app` → 4444) gets an address of its own: `<endpoint>-<host>` under the install's environments domain (`environments.domain`), so each is its own origin and no Environment can read another's cookies or storage.
@@ -78,7 +102,7 @@ The local cluster serves `*.env.localhost` over plain HTTP.
 **The gate.** The api-server reads the Environment and endpoint from the host name, before any other route, and relays HTTP and WebSocket to the Environment's runtime, which forwards to that endpoint's port on the Environment's own loopback and nowhere else.
 The api-server names the declared ports on every request, so a port the Environment did not declare is refused, and so are the runtime's own ports.
 
-- **Who may open it.** Its owner, the Owning Agent's [Agent Editors](agent-editors.md), the agent's **Agent Environment Members** and the Environment's own **Environment Members**.
+- **Who may open it.** Its owner, the Owning Agent's [Agent Editors](agent-editors.md), the agent's **Agent Environment Members** and the Environment's own **Environment Members** — people by email, and Agents of any owner by id, who come in by their key ([Agents at the gate](#agents-at-the-gate)).
   The agent's members open every Environment of that agent, read at each request, so a change reaches every one of them at once and nothing is copied into each; an Environment's members add people to that one only.
   Each list only adds people: nobody narrows an Environment below its agent's list.
   Only people set the lists: the owner and the agent's editors set the agent's on its page, and the owner sets one Environment's in its Share dialog.
@@ -161,6 +185,8 @@ The [end-to-end suite](e2e.md#running-it) runs against such an install on its ba
 
 **The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to an Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
+`list_environments` also lists, after them, the Environments other Agents' lists share with the caller, each marked `sharedWithYou: true`, with its name, whose Agent it is, its addresses, its expiry and whether it runs — never who else may open it — from the same lists the gate reads; none of the other tools reaches one, and `platform-env` keeps to the Agent's own.
+An Agent whose owner does not have the feature gets `list_environments` alone, listing only what is shared with it, on an install that serves Environments, since a person needs no feature to open one either.
 
 **The owner** lists their Environments, extends, shares or deletes one, and reads and sets an agent's Environment Members through the `environments` tRPC router, under the same scopes as the agent's own management; listing every Environment and setting the agent's members refuse a key bound to one Agent, which the agent itself may hold.
 In the app, behind the feature:
@@ -169,8 +195,10 @@ In the app, behind the feature:
   In an Agent's chat it starts on that Agent's Environments; anywhere else it lists every one, each naming its agent; a search finds them by name.
   A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, its agent, and a link per address that opens a new tab.
   Its menu has the artifact's delete-after control for the expiry, which cannot be turned off, and Delete.
-- **The Share dialog** of an Environment says who opens it through its agent — the owner, the agent's editors, and how many people the agent's page names, counted, never listed — links to that page, and edits the Environment's own members.
-- **An agent's page** has an **Environments** section with the agent's Environment Members, edited once the list has loaded, and a link to the Artifacts list; an editor, who has no Artifacts list of the owner's, reads there that the owner manages each Environment.
+- **The Share dialog** of an Environment says who opens it through its agent — the owner, the agent's editors, and how many the agent's page names, counted, never listed — links to that page, and edits the Environment's own members: people by email, and Agents by id.
+  An id is looked up before it is added (`lookupAgent`), so the row shows the Agent's name and its owner's display name, marked as an agent, and an id that names no Agent, or names an Environment, is refused; saving checks every id again.
+  Each Agent row says when it last opened the Environment, which the gate records at most once a minute.
+- **An agent's page** has an **Environments** section with the agent's Environment Members, people and Agents as in the Share dialog, edited once the list has loaded, and a link to the Artifacts list; an editor, who has no Artifacts list of the owner's, reads there that the owner manages each Environment.
   The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address, so a stale link still works.
   While the agent has none, the Manage card of its General section links to the section, because the members can be named before the first Environment exists.
 
@@ -178,4 +206,4 @@ What an Environment runs, its Startup Items and their output, is not shown yet.
 The owner creates none there; the agent does.
 Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the lists that decide whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up, and the Artifacts list polls while it shows them, because the agent's own changes to an Environment raise no hint.
 
-The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's or an Environment's members, each new session with the person's email, and each refusal.
+The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's or an Environment's members with the Agents on it, each new session with the person's email, an Agent's admitted access at most once a minute per Agent and Environment, and each refusal, a person's or an Agent's.
