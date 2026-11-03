@@ -7,7 +7,11 @@
 import { describe, expect, it } from "vitest";
 import { createBotPostRateLimit } from "../../modules/channels/domain/bot-post-rate-limit.js";
 
-function clocked(opts: { limit: number; windowMs: number; cooldownMs: number }) {
+function clocked(opts: {
+  limit: number;
+  windowMs: number;
+  cooldownMs: number;
+}) {
   let now = 0;
   const limit = createBotPostRateLimit({ ...opts, now: () => now });
   return {
