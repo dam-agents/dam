@@ -308,11 +308,16 @@ export function ChatView() {
     retryChannel,
   } = useAcpSession(selectedAgent, textareaRef);
   useReconciledPermissions(connectionState);
+  const channelChat = sessionMode !== SessionMode.Terminal;
   const channelLive = connectionState === "live";
   const channelLost =
-    connectionState === "reconnecting" || connectionState === "reloading";
+    channelChat &&
+    (connectionState === "reconnecting" || connectionState === "reloading");
   const channelBlocked =
-    !channelLive && !agentStarting && (sessionId !== null || !agentOperable);
+    channelChat &&
+    !channelLive &&
+    !agentStarting &&
+    (sessionId !== null || !agentOperable);
   const channelBlock = channelBlocked
     ? channelLost
       ? ("lost" as const)

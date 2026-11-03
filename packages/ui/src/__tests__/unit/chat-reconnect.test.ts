@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // TEST_OVERVIEW: A running Agent whose connection dropped keeps its chat on screen: the takeover overlay is only for an Agent with no chat to keep, the chat shows a one-line reconnecting notice, and the chat refuses the two actions that need the live channel (a send and a permission answer) until the Agent answers again.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SessionMode } from "api-server-api";
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -439,6 +440,7 @@ function openChat(agentState: string, operable: boolean): HTMLElement {
   useStore.setState({
     selectedAgent: "a-1",
     sessionId: "s-1",
+    sessionMode: SessionMode.Chat,
     messages: [],
     drafts: {},
   });
@@ -666,6 +668,17 @@ it("blocks a new chat whose Agent is unreachable", () => {
   fake.operable = true;
   paint();
   expect(button(el, "Send").disabled).toBe(false);
+});
+
+// TEST_SCENARIO: a terminal session does not ride the chat's ACP channel, so a terminal of a running Agent is not blocked and reads no connection state.
+it("leaves a terminal session out of the channel gate", () => {
+  fake.connectionState = "idle";
+  const el = openChat("running", true);
+  act(() => useStore.setState({ sessionMode: SessionMode.Terminal }));
+  paint();
+  expect(notice(el)).toBeNull();
+  expect(el.textContent).not.toContain("Connecting to");
+  expect(el.textContent).not.toContain("Reconnecting to");
 });
 
 // TEST_SCENARIO: a permission answer during a reconnect cannot reach the Agent, so the buttons are disabled and the card says why instead of showing a verdict that did not arrive.
