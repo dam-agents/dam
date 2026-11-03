@@ -10,6 +10,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
+import { createBackoff, type BackoffOptions } from "../domain/backoff.js";
 import type { SatelliteBackend } from "../services/backend.js";
 import type { McpServerSpec } from "../services/mcp-backend.js";
 import {
@@ -17,6 +18,10 @@ import {
   SatelliteRemovedError,
   type WorkerTransport,
 } from "../services/worker.js";
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 export interface ConnectDeps {
   compatService: CompatService;
@@ -169,23 +174,68 @@ export async function activeHost(
   return resolveActiveHost(deps, opts.server);
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: NOT_FOUND is the platform saying this Satellite is
+ * not there, which is a removal or a name another machine registered, and the
+ * worker stops on it. Every other failure is a drop, which the worker retries.
+ */
+function throwIfRemoved(err: unknown, satellite: string): never {
+  if (
+    err instanceof TRPCClientError &&
+    (err.data as { code?: string } | undefined)?.code === "NOT_FOUND"
+  )
+    throw new SatelliteRemovedError(satellite);
+  throw err;
+}
+
 function transportFor(trpc: TrpcClient): WorkerTransport {
   return {
-    connect: (manifest, host) =>
-      trpc.satellites.connect.mutate({ manifest, host }),
+    connect: ({ manifest, host, resume }) =>
+      trpc.satellites.connect
+        .mutate({
+          manifest,
+          host,
+          ...(resume === undefined ? {} : { resume }),
+        })
+        .catch((err: unknown) => throwIfRemoved(err, manifest.name)),
     claim: (input) =>
-      trpc.satellites.claim.mutate(input).catch((err: unknown) => {
-        if (
-          err instanceof TRPCClientError &&
-          (err.data as { code?: string } | undefined)?.code === "NOT_FOUND"
-        )
-          throw new SatelliteRemovedError(input.satellite);
-        throw err;
-      }),
+      trpc.satellites.claim
+        .mutate(input)
+        .catch((err: unknown) => throwIfRemoved(err, input.satellite)),
     heartbeat: (input) => trpc.satellites.heartbeat.mutate(input),
     report: (input) => trpc.satellites.report.mutate(input),
     drain: (satellite) => trpc.satellites.drain.mutate(satellite),
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Waits until the platform answers its version
+ * probe. A worker is started as a service, often before the network is up, so an
+ * unreachable server is the ordinary case rather than an error: it is retried
+ * with backoff, while a missing or malformed configuration, a server that
+ * answers and an incompatible version all end the process as they do for every
+ * other command. The wait is bounded per attempt by the probe's own timeout.
+ */
+export async function waitForServer(
+  deps: { compatService: CompatService },
+  opts: CommonConnectOpts,
+  backoff: BackoffOptions = {},
+): Promise<void> {
+  const retry = createBackoff(backoff);
+  for (;;) {
+    const compat = await deps.compatService.check({
+      ...(opts.server === undefined ? {} : { flag: { server: opts.server } }),
+    });
+    if (compat.ok) return;
+    if (compat.error.kind !== "probe-error") return;
+    if (compat.error.code !== "network" && compat.error.code !== "timeout")
+      return;
+    const delay = retry.next();
+    log.line(
+      `offline: cannot reach the server (${compat.error.message}) — retrying in ${seconds(delay)}`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
 }
 
 /**
@@ -214,6 +264,7 @@ export async function serve(
   identity: { name: string; description?: string; maxConcurrent: number },
   startupLines: string[] = [],
 ): Promise<never> {
+  await waitForServer(deps, opts);
   const host = await activeHost(deps, opts);
   let interrupted = false;
   const worker = createWorker({

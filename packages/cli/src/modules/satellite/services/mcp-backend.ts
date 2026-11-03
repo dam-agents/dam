@@ -175,6 +175,7 @@ export async function createMcpBackend(
   spec: McpServerSpec,
 ): Promise<SatelliteBackend> {
   let dead = false;
+  let openedAt = Date.now();
   let client = await open();
   let tools = await listTools(client);
 
@@ -183,6 +184,7 @@ export async function createMcpBackend(
     started.onclose = () => {
       dead = true;
     };
+    openedAt = Date.now();
     return started;
   }
 
@@ -218,12 +220,28 @@ export async function createMcpBackend(
       return tools;
     },
 
-    async ensureReady(): Promise<{ restarted: boolean }> {
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: A replacement server is opened, listed and
+     * only then published: a child whose tool list cannot be read is closed
+     * rather than left running with no way to reach it, which would leak one
+     * process per attempt. `livedMs` is how long the server that just exited
+     * had been up, which is what tells a crash loop from a server that ran.
+     */
+    async ensureReady(): Promise<{ restarted: boolean; livedMs?: number }> {
       if (!dead) return { restarted: false };
-      client = await open();
-      tools = await listTools(client);
+      const livedMs = Date.now() - openedAt;
+      const candidate = await open();
+      let offered: SatelliteTool[];
+      try {
+        offered = await listTools(candidate);
+      } catch (err) {
+        await candidate.close().catch(() => {});
+        throw err;
+      }
+      client = candidate;
+      tools = offered;
       dead = false;
-      return { restarted: true };
+      return { restarted: true, livedMs };
     },
     describeCall(tool, args) {
       const text = `${tool} ${JSON.stringify(args)}`;

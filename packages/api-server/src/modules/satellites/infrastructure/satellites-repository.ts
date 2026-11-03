@@ -20,8 +20,12 @@ import type {
   SatelliteManifest,
   SatelliteTool,
 } from "api-server-api";
-import type { JobRow, SatelliteRow } from "../domain/types.js";
-import { TERMINAL_STATUSES } from "../domain/types.js";
+import {
+  incarnationOf,
+  TERMINAL_STATUSES,
+  type JobRow,
+  type SatelliteRow,
+} from "../domain/types.js";
 
 function toSatellite(r: typeof satellites.$inferSelect): SatelliteRow {
   return {
@@ -33,6 +37,7 @@ function toSatellite(r: typeof satellites.$inferSelect): SatelliteRow {
     tools: r.tools as SatelliteTool[],
     draining: r.draining,
     lastSeenAt: r.lastSeenAt,
+    createdAt: r.createdAt,
   };
 }
 
@@ -75,14 +80,20 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
 
 export function createSatellitesRepository(db: Db) {
   return {
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Registers a Satellite, or replaces what an
+     * existing one offers, and says which registration the row now is. What a
+     * worker that has served the name before may do is decided above this, in
+     * the worker operations, because it needs the row that is there now.
+     */
     async upsertFromManifest(
       owner: string,
       manifest: SatelliteManifest,
       host: string | null,
       ceiling: number,
-    ): Promise<void> {
+    ): Promise<{ incarnation: string }> {
       const maxConcurrent = Math.min(manifest.maxConcurrent, ceiling);
-      await db
+      const [row] = await db
         .insert(satellites)
         .values({
           owner,
@@ -103,7 +114,9 @@ export function createSatellitesRepository(db: Db) {
             tools: manifest.tools,
             lastSeenAt: new Date(),
           },
-        });
+        })
+        .returning({ createdAt: satellites.createdAt });
+      return { incarnation: incarnationOf(row!) };
     },
 
     async get(owner: string, name: string): Promise<SatelliteRow | null> {

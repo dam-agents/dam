@@ -7,7 +7,7 @@ import {
   type SatelliteManifest,
   type WorkItem,
 } from "api-server-api";
-import type { JobRow } from "../domain/types.js";
+import { incarnationOf, type JobRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
 export const LEASE_MS = 60_000;
@@ -37,12 +37,35 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
   const now = deps.now ?? (() => new Date());
 
   return {
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Registers a Satellite, or replaces what an
+     * existing one offers. A worker that has served this name before says which
+     * registration it served: if that row is gone, or now holds a different
+     * registration of the same name, the answer is that there is no such
+     * Satellite. Registering anyway would undo a removal, or take a name over
+     * from the machine that holds it, and both are the owner's decisions. A
+     * worker registering for the first time says nothing and takes the name.
+     */
     async connect(
       owner: string,
       manifest: SatelliteManifest,
       host?: string,
-    ): Promise<void> {
-      await deps.repo.upsertFromManifest(
+      resume?: string,
+    ): Promise<{ incarnation: string }> {
+      if (resume !== undefined) {
+        const existing = await deps.repo.get(owner, manifest.name);
+        if (existing === null)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `${manifest.name} is no longer registered on the platform`,
+          });
+        if (incarnationOf(existing) !== resume)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `${manifest.name} was registered again by another machine`,
+          });
+      }
+      return deps.repo.upsertFromManifest(
         owner,
         manifest,
         host ?? null,
@@ -114,7 +137,22 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       );
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Records what a Job came to. A worker names the
+     * registration it claimed the Job under, and a report that names another
+     * one is dropped: removing a Satellite deletes its Jobs and restarts the
+     * sequence, so the old machine's #1 and the new machine's #1 are different
+     * Jobs, and settling one with the other's outcome would be a lie.
+     */
     async report(owner: string, input: ReportInput): Promise<void> {
+      if (input.incarnation !== undefined) {
+        const satellite = await deps.repo.get(owner, input.satellite);
+        if (
+          satellite === null ||
+          incarnationOf(satellite) !== input.incarnation
+        )
+          return;
+      }
       const written = {
         output: input.outcome.output,
         truncated: input.outcome.truncated,

@@ -46,6 +46,7 @@ function satellite(patch: Partial<SatelliteRow> = {}): SatelliteRow {
     tools: TOOLS,
     draining: false,
     lastSeenAt: new Date(NOW.getTime() - 1000),
+    createdAt: new Date(NOW.getTime() - 3_600_000),
     ...patch,
   };
 }

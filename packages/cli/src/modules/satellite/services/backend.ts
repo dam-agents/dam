@@ -14,7 +14,7 @@ export interface SatelliteBackend {
    * left alone: restarting it on every reconnect would kill whatever it was
    * running and change the tool list for no reason.
    */
-  ensureReady(): Promise<{ restarted: boolean }>;
+  ensureReady(): Promise<{ restarted: boolean; livedMs?: number }>;
   call(input: {
     sequence: number;
     tool: string;

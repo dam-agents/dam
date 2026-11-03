@@ -65,6 +65,7 @@ export const jobStatusSchema = z.enum([
 export const satelliteConnectInputSchema = z.object({
   manifest: satelliteManifestSchema,
   host: z.string().max(253).optional(),
+  resume: z.string().max(64).optional(),
 });
 
 export const claimInputSchema = z.object({
@@ -200,6 +201,7 @@ export const toolArgsSchema = z
 export const reportInputSchema = z.object({
   satellite: satelliteNameSchema,
   sequence: z.number().int().positive(),
+  incarnation: z.string().max(64).optional(),
   outcome: z.discriminatedUnion("status", [
     z
       .object({

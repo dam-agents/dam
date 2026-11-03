@@ -85,7 +85,8 @@ export interface SatelliteWorkerOps {
     owner: string,
     manifest: SatelliteManifest,
     host?: string,
-  ): Promise<void>;
+    resume?: string,
+  ): Promise<{ incarnation: string }>;
   claim(owner: string, input: ClaimInput): Promise<WorkItem[]>;
   heartbeat(owner: string, input: HeartbeatInput): Promise<void>;
   report(owner: string, input: ReportInput): Promise<void>;

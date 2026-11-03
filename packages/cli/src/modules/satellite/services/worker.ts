@@ -16,9 +16,34 @@ const HEARTBEAT_MS = 20_000;
 const CLAIM_WAIT_MS = 25_000;
 const IDLE_MS = 1000;
 const PAUSE_STEP_MS = 250;
+const MAX_UNSENT = 16;
+const CRASH_LOOP_MS = 10_000;
+const DRAIN_GRACE_MS = 15_000;
+const FORCE_REPORT_MS = 2_000;
+
+type ReportOutcome =
+  | {
+      status: "done";
+      isError: boolean;
+      exitCode: number | null;
+      output: string;
+      images: SatelliteImage[];
+      truncated: boolean;
+    }
+  | { status: "cancelled"; output?: string; truncated?: boolean }
+  | {
+      status: "interrupted";
+      reason: string;
+      output?: string;
+      truncated?: boolean;
+    };
 
 export interface WorkerTransport {
-  connect(manifest: SatelliteManifest, host: string): Promise<void>;
+  connect(input: {
+    manifest: SatelliteManifest;
+    host: string;
+    resume?: string;
+  }): Promise<{ incarnation: string } | undefined>;
   claim(input: {
     satellite: string;
     capacity: number;
@@ -28,22 +53,8 @@ export interface WorkerTransport {
   report(input: {
     satellite: string;
     sequence: number;
-    outcome:
-      | {
-          status: "done";
-          isError: boolean;
-          exitCode: number | null;
-          output: string;
-          images: SatelliteImage[];
-          truncated: boolean;
-        }
-      | { status: "cancelled"; output?: string; truncated?: boolean }
-      | {
-          status: "interrupted";
-          reason: string;
-          output?: string;
-          truncated?: boolean;
-        };
+    incarnation?: string;
+    outcome: ReportOutcome;
   }): Promise<void>;
   drain(satellite: string): Promise<void>;
 }
@@ -52,6 +63,13 @@ export class SatelliteRemovedError extends Error {
   constructor(satellite: string) {
     super(`${satellite} is no longer registered on the platform`);
     this.name = "SatelliteRemovedError";
+  }
+}
+
+class SatelliteStoppedError extends Error {
+  constructor() {
+    super("the satellite is stopping");
+    this.name = "SatelliteStoppedError";
   }
 }
 
@@ -77,11 +95,14 @@ function firstLine(text: string): string {
  * UNIT_BOUNDARY_DESCRIPTION: Why the worker is not connected, in the words of
  * whoever has to fix it. A missing or expired sign-in keeps retrying like any
  * other failure, because a service is fixed by minting the key, not by waiting,
- * but it says what ends it instead of repeating a class name.
+ * but it says what ends it instead of repeating a class name. The transport
+ * wraps its own errors in the tRPC client's, so the cause chain is read.
  */
 export function describeOffline(err: unknown): string {
-  if (err instanceof AuthRequiredAtTransportError)
-    return `not signed in (${err.message}) — run \`dam login\`, or set DAM_TOKEN to a key with the satellites:serve scope`;
+  for (let at: unknown = err; at instanceof Error; at = at.cause) {
+    if (at instanceof AuthRequiredAtTransportError)
+      return `not signed in (${at.message}) — run \`dam login\`, or set DAM_TOKEN to a key with the satellites:serve scope`;
+  }
   return `offline: ${String(err)}`;
 }
 
@@ -112,9 +133,7 @@ export function describeOutcome(
   }
 }
 
-function reportable(
-  outcome: CallOutcome,
-): Parameters<WorkerTransport["report"]>[0]["outcome"] {
+function reportable(outcome: CallOutcome): ReportOutcome {
   if (outcome.status !== "done") return outcome;
   return {
     status: "done",
@@ -125,6 +144,8 @@ function reportable(
     truncated: outcome.truncated,
   };
 }
+
+type Unsent = { outcome: ReportOutcome; incarnation: string | undefined };
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The loop between the platform queue and whatever
@@ -145,24 +166,59 @@ export function createWorker(deps: {
   const { name, backend, transport, log } = deps;
   const running = new Set<number>();
   const reporting = new Set<Promise<void>>();
-  const unsent = new Map<
-    number,
-    Parameters<WorkerTransport["report"]>[0]["outcome"]
-  >();
+  const unsent = new Map<number, Unsent>();
   let draining = false;
   let stopped = false;
   let connected = false;
   let everConnected = false;
+  let incarnation: string | undefined;
   const slotWaiters = new Set<() => void>();
   let cancelPoll: Promise<void> | null = null;
+  let abandon: () => void = () => {};
+  const abandoned = new Promise<void>((resolve) => {
+    abandon = resolve;
+  });
 
-  const report = (input: Parameters<WorkerTransport["report"]>[0]): void => {
-    const sent = transport
-      .report(input)
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A call the shutdown stops waiting for. A worker
+   * asked to stop cannot sit on a request that never answers — the supervisor
+   * kills it instead of getting a clean stop — so every platform call, and the
+   * MCP server's own readiness, is raced against the stop. What is still open
+   * is closed by the process exit.
+   */
+  async function guarded<T>(work: Promise<T>): Promise<T> {
+    work.catch(() => {});
+    return Promise.race([
+      work,
+      abandoned.then(() => {
+        throw new SatelliteStoppedError();
+      }),
+    ]);
+  }
+
+  const report = (input: {
+    sequence: number;
+    outcome: ReportOutcome;
+    at: string | undefined;
+  }): void => {
+    const sent = guarded(
+      transport.report({
+        satellite: name,
+        sequence: input.sequence,
+        ...(input.at === undefined ? {} : { incarnation: input.at }),
+        outcome: input.outcome,
+      }),
+    )
       .catch((err: unknown) => {
-        unsent.set(input.sequence, input.outcome);
+        if (stopped || err instanceof SatelliteStoppedError) return;
+        if (unsent.size >= MAX_UNSENT)
+          unsent.delete(unsent.keys().next().value as number);
+        unsent.set(input.sequence, {
+          outcome: input.outcome,
+          incarnation: input.at,
+        });
         log.line(
-          `could not report ${name}#${input.sequence} yet, keeping it for the next connection: ${String(err)}`,
+          `could not report ${name}#${input.sequence} yet, keeping it for the next attempt: ${String(err)}`,
         );
       })
       .finally(() => reporting.delete(sent));
@@ -175,44 +231,126 @@ export function createWorker(deps: {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: Outcomes that never reached the platform, sent
-   * again once it is back. A Job's lease expires after a minute without a
-   * heartbeat, and the sweep then reports the outcome as unknown, so a drop
-   * shorter than that is a result the Agent would otherwise never see.
+   * again before more work is taken. A Job's lease runs out a minute after its
+   * last heartbeat and the sweep then reports the outcome as unknown, so an
+   * outage shorter than that is a result the Agent would otherwise never see.
+   * An outcome is replayed only to the registration it was claimed under: a
+   * name can be registered again from another machine, whose Job sequence
+   * starts over, and settling its #1 with this machine's #1 would be wrong.
    */
   async function flushUnsent(): Promise<void> {
-    for (const [sequence, outcome] of [...unsent]) {
-      try {
-        await transport.report({ satellite: name, sequence, outcome });
+    for (const [sequence, entry] of [...unsent]) {
+      if (entry.incarnation !== incarnation) {
         unsent.delete(sequence);
-      } catch {
-        return;
+        log.line(
+          `dropping the outcome of ${name}#${sequence}: the platform holds a different registration of ${name}`,
+        );
+        continue;
+      }
+      try {
+        await guarded(
+          transport.report({
+            satellite: name,
+            sequence,
+            ...(incarnation === undefined ? {} : { incarnation }),
+            outcome: entry.outcome,
+          }),
+        );
+        unsent.delete(sequence);
+      } catch (err) {
+        if (err instanceof SatelliteStoppedError) return;
       }
     }
   }
 
-  async function ensureLocal(): Promise<void> {
-    const { restarted } = await backend.ensureReady();
-    if (restarted)
-      log.line(
-        "restarted what this machine serves — the MCP server had exited",
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Makes sure the MCP server behind this machine is
+   * running, and says whether it had to be started again. A server that keeps
+   * exiting soon after it starts is waited out on its own backoff, so a crash
+   * loop does not restart it on every pass.
+   */
+  async function ensureLocal(
+    crashRetry: Backoff,
+  ): Promise<{ restarted: boolean }> {
+    const { restarted, livedMs } = await guarded(backend.ensureReady());
+    if (!restarted) return { restarted: false };
+    log.line("restarted what this machine serves — the MCP server had exited");
+    if (livedMs !== undefined && livedMs < CRASH_LOOP_MS && !stopped)
+      await backOff(
+        `the MCP server exited ${seconds(livedMs)} after it started`,
+        crashRetry,
       );
+    else crashRetry.reset();
+    return { restarted: true };
   }
 
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: Makes sure both ends are up: the MCP server
-   * behind this machine, and the platform's record of the Satellite. While
-   * connected it only pokes the local server, so a child that exited is started
-   * again at once rather than failing every call until the next reconnect.
+   * UNIT_BOUNDARY_DESCRIPTION: Registers this machine again, retrying until it
+   * works. Re-registering is what the platform calls a connect: identity is the
+   * name, so the same name keeps the same Satellite, its Grants and its Job
+   * sequence, and only the tool list is replaced. The registration this worker
+   * already served is named, so a Satellite that was removed, or registered
+   * again from another machine, is not taken over by a worker still holding the
+   * old one.
    */
-  async function ready(retry: Backoff): Promise<boolean> {
-    if (!connected) return connect(retry);
-    try {
-      await ensureLocal();
+  async function connect(
+    retry: Backoff,
+    crashRetry: Backoff,
+  ): Promise<boolean> {
+    for (;;) {
+      if (stopped || (draining && running.size === 0)) return false;
+      try {
+        await ensureLocal(crashRetry);
+        const registered = await guarded(
+          transport.connect({
+            manifest: manifest(backend.tools),
+            host: deps.host,
+            ...(incarnation === undefined ? {} : { resume: incarnation }),
+          }),
+        );
+        incarnation = registered?.incarnation;
+      } catch (err) {
+        if (stopped || err instanceof SatelliteStoppedError) return false;
+        if (err instanceof SatelliteRemovedError) return stopClaiming(err);
+        connected = false;
+        await backOff(describeOffline(err), retry);
+        continue;
+      }
+      connected = true;
+      if (!everConnected) {
+        everConnected = true;
+        announce(`connected as "${name}"`);
+        for (const line of deps.guide ?? []) log.line(line);
+      } else {
+        log.line(`reconnected as "${name}"`);
+      }
+      await flushUnsent();
       return true;
-    } catch (err) {
+    }
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Whether this machine may take work: its own MCP
+   * server is running, and the platform holds the tool list it offers right
+   * now. A server that had to be started again is registered before any claim,
+   * since the platform's Snapshot would otherwise describe tools this machine
+   * no longer offers, and a readiness failure retries registration rather than
+   * falling through to a claim.
+   */
+  async function ready(retry: Backoff, crashRetry: Backoff): Promise<boolean> {
+    for (;;) {
+      if (stopped || (draining && running.size === 0)) return false;
+      if (!connected) return connect(retry, crashRetry);
+      try {
+        if (!(await ensureLocal(crashRetry)).restarted) return true;
+      } catch (err) {
+        if (err instanceof SatelliteStoppedError) return false;
+        connected = false;
+        await backOff(describeOffline(err), retry);
+        continue;
+      }
       connected = false;
-      await backOff(err, retry);
-      return true;
+      return connect(retry, crashRetry);
     }
   }
 
@@ -229,41 +367,10 @@ export function createWorker(deps: {
       );
   }
 
-  async function backOff(err: unknown, retry: Backoff): Promise<void> {
+  async function backOff(reason: string, retry: Backoff): Promise<void> {
     const delay = retry.next();
-    log.line(`${describeOffline(err)} — retrying in ${seconds(delay)}`);
+    if (!stopped) log.line(`${reason} — retrying in ${seconds(delay)}`);
     await pause(delay);
-  }
-
-  /**
-   * UNIT_BOUNDARY_DESCRIPTION: Registers this machine again, retrying until it
-   * works. Re-registering is what the platform calls a connect: identity is the
-   * name, so the same name keeps the same Satellite, its Grants and its Job
-   * sequence, and only the tool list is replaced. The MCP server behind it is
-   * started again only if it died, not on every reconnect.
-   */
-  async function connect(retry: Backoff): Promise<boolean> {
-    for (;;) {
-      if (stopped || (draining && running.size === 0)) return false;
-      try {
-        await ensureLocal();
-        await transport.connect(manifest(backend.tools), deps.host);
-      } catch (err) {
-        connected = false;
-        await backOff(err, retry);
-        continue;
-      }
-      connected = true;
-      if (!everConnected) {
-        everConnected = true;
-        announce(`connected as "${name}"`);
-        for (const line of deps.guide ?? []) log.line(line);
-      } else {
-        log.line(`reconnected as "${name}"`);
-      }
-      await flushUnsent();
-      return true;
-    }
   }
 
   const manifest = (tools: SatelliteTool[]): SatelliteManifest => ({
@@ -278,6 +385,7 @@ export function createWorker(deps: {
   function startJob(item: WorkItem): void {
     running.add(item.sequence);
     const startedAt = Date.now();
+    const at = incarnation;
     log.line(
       `REQUEST #${item.sequence} from ${agentLabel(item.agent)}: ${backend.describeCall(item.tool, item.args)}`,
     );
@@ -290,9 +398,9 @@ export function createWorker(deps: {
       .then((outcome) => {
         log.line(describeOutcome(item.sequence, outcome, startedAt));
         report({
-          satellite: name,
           sequence: item.sequence,
           outcome: reportable(outcome),
+          at,
         });
       })
       .catch((err: unknown) => {
@@ -305,9 +413,9 @@ export function createWorker(deps: {
           ),
         );
         report({
-          satellite: name,
           sequence: item.sequence,
           outcome: { status: "interrupted", reason },
+          at,
         });
       })
       .finally(() => {
@@ -337,13 +445,20 @@ export function createWorker(deps: {
     return started;
   }
 
-  function stopClaiming(err: unknown): boolean {
-    if (!(err instanceof SatelliteRemovedError)) return false;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A Satellite that is gone stops this worker
+   * rather than being registered again. Registering it would undo a removal,
+   * and a machine that keeps asking for a name it no longer serves fills the
+   * log with an error that never resolves. What is running finishes and the
+   * process exits; a supervisor that starts it again gets a fresh registration.
+   */
+  function stopClaiming(err: SatelliteRemovedError): false {
     log.line(
       `${name} was removed on the platform — no longer claiming work; start it again to register it anew`,
     );
+    log.line(String(err));
     draining = true;
-    return true;
+    return false;
   }
 
   function announce(prefix: string): void {
@@ -363,33 +478,45 @@ export function createWorker(deps: {
 
     async start(): Promise<void> {
       const retry = createBackoff(deps.retry);
+      const crashRetry = createBackoff(deps.retry);
 
       const heartbeat = setInterval(() => {
-        if (!connected) return;
-        void transport
-          .heartbeat({ satellite: name, running: [...running] })
-          .catch((err: unknown) =>
-            log.line(`heartbeat failed: ${String(err)}`),
-          );
+        if (!connected || stopped) return;
+        void guarded(
+          transport.heartbeat({ satellite: name, running: [...running] }),
+        ).catch((err: unknown) => {
+          if (!stopped && !(err instanceof SatelliteStoppedError))
+            log.line(`heartbeat failed: ${String(err)}`);
+        });
       }, HEARTBEAT_MS);
 
       try {
         while (!stopped) {
-          if (!(await ready(retry))) break;
           if (draining) {
             if (running.size === 0) break;
             await pause(500);
             continue;
           }
+          if (!(await ready(retry, crashRetry))) break;
+          if (unsent.size > 0) await flushUnsent();
           const capacity = deps.maxConcurrent - running.size;
           if (capacity <= 0) {
-            cancelPoll ??= transport
-              .claim({ satellite: name, capacity: 0, waitMs: CLAIM_WAIT_MS })
+            cancelPoll ??= guarded(
+              transport.claim({
+                satellite: name,
+                capacity: 0,
+                waitMs: CLAIM_WAIT_MS,
+              }),
+            )
               .then((items) => void handle(items))
               .catch(async (err: unknown) => {
-                if (stopClaiming(err)) return;
+                if (stopped || err instanceof SatelliteStoppedError) return;
+                if (err instanceof SatelliteRemovedError) {
+                  stopClaiming(err);
+                  return;
+                }
                 connected = false;
-                await backOff(err, retry);
+                await backOff(describeOffline(err), retry);
               })
               .finally(() => {
                 cancelPoll = null;
@@ -398,54 +525,84 @@ export function createWorker(deps: {
             continue;
           }
           try {
-            const items = await transport.claim({
-              satellite: name,
-              capacity,
-              waitMs: CLAIM_WAIT_MS,
-            });
+            const items = await guarded(
+              transport.claim({
+                satellite: name,
+                capacity,
+                waitMs: CLAIM_WAIT_MS,
+              }),
+            );
             retry.reset();
             const started = handle(items);
             if (started === 0 && !stopped && !draining) await pause(IDLE_MS);
           } catch (err) {
-            if (stopClaiming(err)) continue;
+            if (stopped || err instanceof SatelliteStoppedError) break;
+            if (err instanceof SatelliteRemovedError) {
+              stopClaiming(err);
+              continue;
+            }
             connected = false;
-            await backOff(err, retry);
+            await backOff(describeOffline(err), retry);
           }
         }
       } finally {
         clearInterval(heartbeat);
+        const grace = setTimeout(abandon, DRAIN_GRACE_MS);
+        grace.unref?.();
         await settleReports();
-        if (connected) await flushUnsent();
-        await backend.close().catch(() => {});
+        clearTimeout(grace);
+        if (connected && !stopped) await flushUnsent().catch(() => {});
+        await guarded(backend.close()).catch(() => {});
       }
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Asks to stop: claim nothing more, let what is
+     * running finish and report, and stop waiting on the platform after a
+     * bounded grace, which leaves room inside the supervisor's stop timeout for
+     * the exit. A job longer than that is the supervisor's to bound, and the
+     * platform settles it as interrupted.
+     */
     async drain(): Promise<void> {
       draining = true;
-      await transport.drain(name).catch(() => {});
       log.line(
         running.size === 0
           ? "draining — nothing running, exiting"
           : `draining — waiting for ${running.size} job(s); interrupt again to kill them`,
       );
+      const grace = setTimeout(() => {
+        log.line(
+          `draining — no longer waiting on the platform; a job still running is settled as interrupted`,
+        );
+        abandon();
+      }, DRAIN_GRACE_MS);
+      grace.unref?.();
+      if (running.size === 0) abandon();
+      await guarded(transport.drain(name)).catch(() => {});
     },
 
     async forceStop(): Promise<void> {
       stopped = true;
       backend.killAll();
-      for (const sequence of running)
-        await transport
+      const reports = [...running].map((sequence) =>
+        transport
           .report({
             satellite: name,
             sequence,
+            ...(incarnation === undefined ? {} : { incarnation }),
             outcome: {
               status: "interrupted",
               reason: "the satellite was stopped while this job was running",
             },
           })
-          .catch(() => {});
+          .catch(() => {}),
+      );
+      await Promise.race([
+        Promise.all(reports),
+        new Promise((resolve) => setTimeout(resolve, FORCE_REPORT_MS)),
+      ]);
       running.clear();
-      await settleReports();
+      abandon();
       await backend.close().catch(() => {});
     },
   };

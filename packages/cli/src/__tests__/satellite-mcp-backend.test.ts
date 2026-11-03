@@ -1,5 +1,9 @@
+import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
@@ -9,7 +13,7 @@ import {
   satelliteNameSchema,
   storedPayloadBytes,
 } from "api-server-api";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseServerUrl } from "../modules/satellite/commands/mcp.js";
 import {
@@ -411,3 +415,52 @@ describe("the guide printed once connected", () => {
     );
   });
 });
+
+describe("a server that dies and comes back", () => {
+  /**
+   * TEST_SCENARIO: A replacement server whose tool list cannot be read is not
+   * reachable by anything, so keeping it open leaks one child process per
+   * attempt. The candidate is closed instead, and the failure is what the
+   * worker retries on its backoff.
+   */
+  it("closes a replacement whose tool list cannot be read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dam-satellite-child-"));
+    const fixture = fileURLToPath(
+      new URL("./fixtures/mcp-child.mjs", import.meta.url),
+    );
+    const backend = await createMcpBackend({
+      kind: "stdio",
+      command: process.execPath,
+      args: [fixture, dir],
+    });
+    expect(backend.tools.map((tool) => tool.name)).toEqual(["greet"]);
+
+    await vi.waitFor(
+      async () => await expect(backend.ensureReady()).rejects.toThrow(),
+      { timeout: 10_000 },
+    );
+
+    const pids = readFileSync(join(dir, "pids"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => Number.parseInt(line, 10));
+    expect(pids.length, "the failed replacement was started").toBeGreaterThan(
+      1,
+    );
+    const orphan = pids[1] as number;
+    await vi.waitFor(
+      () => expect(isRunning(orphan), "the orphaned child is gone").toBe(false),
+      { timeout: 10_000 },
+    );
+    await backend.close();
+  }, 20_000);
+});
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
