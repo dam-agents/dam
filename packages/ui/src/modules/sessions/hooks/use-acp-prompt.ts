@@ -197,8 +197,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         reported = true;
         refreshProviderStatus();
         recordUndeliveredLocally(message);
+        const { unconfirmed: _sent, ...sent } = uMsg;
         const failed: Message = {
-          ...uMsg,
+          ...sent,
           error: { message, retryWith: retryPayload },
         };
         setMessages((p) =>
@@ -227,11 +228,21 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       };
       const finalizeBubble = () =>
         setMessages((p) =>
-          p.map((m) =>
-            m.id === aId || (m.role === "assistant" && m.promptId === promptId)
-              ? { ...m, streaming: false, queued: false }
-              : m,
-          ),
+          p.map((m) => {
+            if (m.id === uId && m.unconfirmed !== undefined) {
+              const { unconfirmed: _sent, ...sent } = m;
+              return sent;
+            }
+            return m.id === aId ||
+              (m.role === "assistant" && m.promptId === promptId)
+              ? {
+                  ...m,
+                  streaming: false,
+                  queued: false,
+                  unconfirmed: undefined,
+                }
+              : m;
+          }),
         );
       let delivered = false;
 
@@ -241,6 +252,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       );
       const hold = untilAgentOperable(selectedAgent);
       const waking = !hold && agentRunState !== "running";
+      const unconfirmed = hold || waking ? "waking" : "sending";
       const uMsg: Message = {
         id: uId,
         role: "user",
@@ -248,6 +260,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         streaming: false,
         at: new Date().toISOString(),
         sentHere: true,
+        unconfirmed,
         ...(waits && { queued: true }),
       };
       const aMsg: Message = {
@@ -256,7 +269,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
-        unconfirmed: hold || waking ? "waking" : "sending",
+        unconfirmed,
         ...(waits && { queued: true }),
         ...(hidden ? {} : { retryWith: retryPayload }),
       };

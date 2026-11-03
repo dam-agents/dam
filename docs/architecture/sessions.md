@@ -177,7 +177,7 @@ A client fails a prompt on evidence instead:
 
 - **No acceptance within a bounded wait** — the true delivery check, normally a matter of milliseconds.
   Unacknowledged this long means it never arrived, and the failure carries the socket's stated cause when it gave one.
-  Until the acceptance arrives the chat says the message is **sending**, or that the agent is **waking** when the send woke it, and never that the agent is working.
+  Until the acceptance arrives the person's own message says it is **sending**, or that the agent is **waking** when the send woke it, after a second so a fast send shows nothing; the reply, the working indicator and the session's row in the sidebar wait for the acceptance, so none says the agent is working on a message it does not have.
   A send whose chat moves to another session before it went out goes over a connection of its own, engaged to its session, so the move cannot strand it.
 - **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs.
   The user is told it is waiting, which is true.

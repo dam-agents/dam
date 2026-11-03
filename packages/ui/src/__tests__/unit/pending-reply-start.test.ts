@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: an agent opens straight on a new session, and a message sent while the agent starts waits in the chat like any reply: it says the agent is waking until the agent has the message. What the starting bar used to say about a slow or crashing start shows next to that line, and only when there is something to say.
+// TEST_OVERVIEW: an agent opens straight on a new session, and a message sent while the agent starts waits in the chat like any reply: the person's message says the agent is waking until the agent has it. What the starting bar used to say about a slow or crashing start shows in the reply's place, and only when there is something to say.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
@@ -52,10 +52,9 @@ function renderReply(message: Message, pendingNotice?: string) {
 }
 
 describe("pending reply while the agent starts", () => {
-  // TEST_SCENARIO: the reply to a message sent during the start says the agent is waking, with the start notice beside it. The agent does not have the message yet, so no working dots show.
-  test("says the agent is waking, with the notice beside it", () => {
+  // TEST_SCENARIO: the reply to a message sent during the start shows the start notice in its place. The agent does not have the message yet, so no working dots show; the person's own message says the agent is waking.
+  test("shows the start notice, with no working dots", () => {
     const html = renderReply(pendingReply, "slow start");
-    expect(html).toContain("Waking the agent…");
     expect(html).not.toContain('data-testid="working-dots"');
     expect(html).toContain("slow start");
     expect(html).not.toContain("Sends when the agent is ready");

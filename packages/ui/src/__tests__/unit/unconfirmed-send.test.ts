@@ -1,14 +1,21 @@
-// TEST_OVERVIEW: a sent message's reply says the message is on its way, not that the agent is working, until the runtime confirms it has the message. The runtime confirms with platform/promptAccepted or platform/promptStarted. Until then the reply shows "Sending…", or "Waking the agent…" when the send woke the agent, and no working dots and no quiet-turn line.
+// TEST_OVERVIEW: until the runtime confirms it has a sent message (platform/promptAccepted or platform/promptStarted), the chat says the message is on its way, never that the agent is working. The words sit under the person's own message: "Sending…", or "Waking the agent…" when the send woke the agent, shown only after a second so a fast send goes straight to the working dots. The agent's slot, the session's row in the sidebar and the quiet-turn line show nothing of the agent's until then.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 
-import { applyUpdate } from "../../modules/acp/session-projection.js";
+import {
+  applyUpdate,
+  hasWorkingReply,
+} from "../../modules/acp/session-projection.js";
 import { ChatMessage } from "../../modules/sessions/components/chat-message.js";
 import { quietTurnOf } from "../../modules/sessions/lib/quiet-turn.js";
 import type { Message } from "../../types.js";
 
 vi.hoisted(() => vi.stubGlobal("window", new EventTarget()));
+
+vi.mock("../../modules/sessions/hooks/use-spend-refusal-viewer.js", () => ({
+  useSpendRefusalViewer: () => ({ role: "owner" }),
+}));
 
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
@@ -47,27 +54,48 @@ function render(message: Message): string {
   );
 }
 
-describe("a reply the runtime has not confirmed", () => {
-  // TEST_SCENARIO: the agent is running and the message is on the wire. The chat must not claim the agent works on it yet, so it says "Sending…" and shows no working dots.
-  test("says Sending, not that the agent is working", () => {
-    const html = render(pendingReply("sending"));
-    expect(html).toContain('data-testid="reply-unconfirmed"');
+describe("a send the runtime has not confirmed", () => {
+  // TEST_SCENARIO: the agent is running and the message is on the wire. The words belong to the person's send, so "Sending…" sits under their own message, and the agent's slot shows nothing yet: no name, no working dots.
+  test("says Sending under the person's message, not in the agent's slot", () => {
+    const html = render({ ...sent, unconfirmed: "sending" });
+    expect(html).toContain('data-testid="send-unconfirmed"');
     expect(html).toContain("Sending…");
+    expect(render(pendingReply("sending"))).toBe("");
+  });
+
+  // TEST_SCENARIO: a fast send is confirmed in milliseconds. The line fades in only after a second, so a fast send never flashes "Sending…" before the working dots.
+  test("shows the words only after a delay", () => {
+    const html = render({ ...sent, unconfirmed: "sending" });
+    expect(html).toContain("anim-in-late");
+  });
+
+  // TEST_SCENARIO: the send woke a sleeping agent, which takes up to a couple of minutes. The person's message says the agent is waking, which is what they wait for.
+  test("says Waking the agent when the send woke it", () => {
+    const html = render({ ...sent, unconfirmed: "waking" });
+    expect(html).toContain("Waking the agent…");
     expect(html).not.toContain('data-testid="working-dots"');
   });
 
-  // TEST_SCENARIO: the send woke a sleeping agent, which takes up to a couple of minutes. The chat says the agent is waking, which is what the person is waiting for.
-  test("says Waking the agent when the send woke it", () => {
-    const html = render(pendingReply("waking"));
-    expect(html).toContain("Waking the agent…");
-    expect(html).not.toContain('data-testid="working-dots"');
+  // TEST_SCENARIO: a message marked Not delivered says why; it is no longer on its way.
+  test("a failed send says nothing about sending", () => {
+    const html = render({
+      ...sent,
+      unconfirmed: "sending",
+      error: { message: "Not delivered — no answer" },
+    });
+    expect(html).not.toContain('data-testid="send-unconfirmed"');
   });
 
   // TEST_SCENARIO: a confirmed reply is the agent's own work, so it shows the working dots as before.
   test("shows the working dots once confirmed", () => {
     const html = render(pendingReply());
-    expect(html).not.toContain('data-testid="reply-unconfirmed"');
     expect(html).toContain('data-testid="working-dots"');
+  });
+
+  // TEST_SCENARIO: the session row in the sidebar and the chat read one fact. Before the runtime accepts the message the session is not working, so its row shows no working dots; once accepted, it does.
+  test("the session does not count as working until confirmed", () => {
+    expect(hasWorkingReply([sent, pendingReply("sending")])).toBe(false);
+    expect(hasWorkingReply([sent, pendingReply()])).toBe(true);
   });
 
   // TEST_SCENARIO: the quiet-turn line reads the time since the prompt as the agent's silence. A message the agent does not have yet is not a silent turn, so the line stays away.
@@ -101,6 +129,20 @@ describe("the runtime's confirmation", () => {
     });
     expect(out[1]?.unconfirmed).toBeUndefined();
     expect(out[1]?.streaming).toBe(true);
+  });
+
+  // TEST_SCENARIO: the person's message carries the same mark under its prompt id, and the confirmation clears it there too.
+  test("the person's message is confirmed with its reply", () => {
+    const out = applyUpdate(
+      [{ ...sent, id: "p1", unconfirmed: "sending" }, pendingReply("sending")],
+      {
+        sessionUpdate: "platform_prompt_accepted",
+        sessionId: "s1",
+        promptId: "p1",
+        queued: false,
+      },
+    );
+    expect(out.map((m) => m.unconfirmed)).toEqual([undefined, undefined]);
   });
 
   // TEST_SCENARIO: a prompt queued behind a running turn is still one the runtime has; it reads as queued, not as still sending.

@@ -195,10 +195,18 @@ export const ChatMessage = memo(function ChatMessage({
     hasAgentContent(message) &&
     !errorOnly;
   if (isAssistant && streaming && queued && parts.length === 0) return null;
-  const waiting = isAssistant && streaming && !queued && !hasPendingPermission;
-  const unconfirmed =
-    waiting && parts.length === 0 ? message.unconfirmed : undefined;
-  const working = waiting && unconfirmed === undefined;
+  const unconfirmedReply =
+    isAssistant &&
+    streaming &&
+    parts.length === 0 &&
+    message.unconfirmed !== undefined;
+  if (unconfirmedReply)
+    return pendingNotice ? (
+      <div className="flex flex-col items-start">{pendingNotice}</div>
+    ) : null;
+  const unconfirmedSend =
+    !isAssistant && error === undefined ? message.unconfirmed : undefined;
+  const working = isAssistant && streaming && !queued && !hasPendingPermission;
   const speaker = isAssistant ? (
     <AgentSpeaker agent={avatarAgent} />
   ) : (
@@ -263,40 +271,28 @@ export const ChatMessage = memo(function ChatMessage({
               Stopped
             </p>
           )}
-          {unconfirmed !== undefined && (
+          {isAssistant && (streaming || isLast) && (
             <span
-              role="status"
-              data-testid="reply-unconfirmed"
-              className="inline-flex items-center gap-2 py-1 text-xs text-muted-foreground"
+              role={working ? "status" : undefined}
+              aria-hidden={!working}
+              className={cn(
+                "inline-flex items-center py-1",
+                !working && "invisible",
+              )}
             >
-              <Spinner size={12} className="text-inherit" />
-              {UNCONFIRMED_LABEL[unconfirmed]}
+              <WorkingDots size="md" className="text-accent" />
+              {working && workingFor !== undefined ? (
+                <span
+                  data-testid="working-for"
+                  className="ml-2 text-xs text-muted-foreground"
+                >
+                  Working for {workingFor}
+                </span>
+              ) : (
+                working && <span className="sr-only">Working</span>
+              )}
             </span>
           )}
-          {isAssistant &&
-            (streaming || isLast) &&
-            unconfirmed === undefined && (
-              <span
-                role={working ? "status" : undefined}
-                aria-hidden={!working}
-                className={cn(
-                  "inline-flex items-center py-1",
-                  !working && "invisible",
-                )}
-              >
-                <WorkingDots size="md" className="text-accent" />
-                {working && workingFor !== undefined ? (
-                  <span
-                    data-testid="working-for"
-                    className="ml-2 text-xs text-muted-foreground"
-                  >
-                    Working for {workingFor}
-                  </span>
-                ) : (
-                  working && <span className="sr-only">Working</span>
-                )}
-              </span>
-            )}
           {isAssistant && streaming && parts.length === 0 && pendingNotice}
           {undelivered && !providerFailure && (
             <UndeliveredNotice
@@ -306,6 +302,16 @@ export const ChatMessage = memo(function ChatMessage({
             />
           )}
         </div>
+      )}
+      {unconfirmedSend !== undefined && (
+        <span
+          role="status"
+          data-testid="send-unconfirmed"
+          className="anim-in-late inline-flex items-center gap-1.5 text-2xs text-muted-foreground"
+        >
+          <Spinner size={10} className="text-inherit" />
+          {UNCONFIRMED_LABEL[unconfirmedSend]}
+        </span>
       )}
       {isAssistant && showModel && !streaming && message.model && (
         <Tooltip side="top" content={message.model}>

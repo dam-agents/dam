@@ -231,19 +231,32 @@ function waitsBehindAnotherReply(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A sent message's reply waits as "sending" or
- * "waking" until the runtime confirms it has the message
- * (`platform/promptAccepted` or `platform/promptStarted`), so the chat never
- * shows the agent working on a message it does not have yet.
+ * UNIT_BOUNDARY_DESCRIPTION: A sent message and its reply wait as "sending"
+ * or "waking" until the runtime confirms it has the message
+ * (`platform/promptAccepted` or `platform/promptStarted`). The person's
+ * message says it is on its way, and the reply and the session's row show
+ * nothing of the agent's yet, so neither claims the agent works on a message
+ * it does not have.
  */
 function withConfirmedSend(messages: Message[], promptId: string): Message[] {
-  if (!messages.some((m) => m.promptId === promptId && m.unconfirmed))
-    return messages;
+  const ofSend = (m: Message) =>
+    m.unconfirmed !== undefined &&
+    (m.promptId === promptId || (m.role === "user" && m.id === promptId));
+  if (!messages.some(ofSend)) return messages;
   return messages.map((m) => {
-    if (m.promptId !== promptId || m.unconfirmed === undefined) return m;
+    if (!ofSend(m)) return m;
     const { unconfirmed: _sent, ...rest } = m;
     return rest;
   });
+}
+
+export function hasWorkingReply(messages: Message[]): boolean {
+  return messages.some(
+    (m) =>
+      m.role === "assistant" &&
+      m.streaming &&
+      !(m.unconfirmed !== undefined && m.parts.length === 0),
+  );
 }
 
 function setQueuedByPromptId(

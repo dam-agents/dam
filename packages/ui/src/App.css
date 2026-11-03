@@ -373,6 +373,9 @@
 .anim-in {
   animation: fade-in 0.2s ease-out both;
 }
+.anim-in-late {
+  animation: fade-in 0.2s ease-out 1s both;
+}
 .anim-scale-in {
   animation: scale-in 0.15s ease both;
 }

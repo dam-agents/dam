@@ -30,6 +30,7 @@ import {
   appendUndelivered,
   finalizeAllStreaming,
   hasStreamingAssistant,
+  hasWorkingReply,
 } from "../../acp/session-projection.js";
 import {
   untilAgentOperable,
@@ -106,17 +107,20 @@ export function useAcpSession(
   const busy =
     sessionMode !== SessionMode.Terminal &&
     (hasStreamingAssistant(messages) || queueWaiting);
+  const working =
+    sessionMode !== SessionMode.Terminal &&
+    (hasWorkingReply(messages) || queueWaiting);
   useEffect(() => {
-    setBusy(busy);
-  }, [busy, setBusy]);
-  const prevBusyRef = useRef(busy);
+    setBusy(working);
+  }, [working, setBusy]);
+  const prevWorkingRef = useRef(working);
   useEffect(() => {
-    if (prevBusyRef.current === busy) return;
-    prevBusyRef.current = busy;
+    if (prevWorkingRef.current === working) return;
+    prevWorkingRef.current = working;
     if (selectedAgent && sessionId) {
-      setSessionRunning(selectedAgent, sessionId, busy);
+      setSessionRunning(selectedAgent, sessionId, working);
     }
-  }, [busy, selectedAgent, sessionId]);
+  }, [working, selectedAgent, sessionId]);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
 
