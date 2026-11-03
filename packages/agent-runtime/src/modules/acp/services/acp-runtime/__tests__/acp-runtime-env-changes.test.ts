@@ -3,7 +3,6 @@ import {
   createSessionMetadata,
   createWorld,
   frames,
-  QUEUE_PARK_MS,
 } from "./acp-world.js";
 import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
 import { createUndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
@@ -53,11 +52,10 @@ describe("acp-runtime: env changes", () => {
    * to report it either.
    *
    * A queue may not be discarded anywhere without being written down first,
-   * so every route that drops one — the park window expiring, a session
-   * being released, the harness going down — hands its prompts to the same
-   * recorder. This is the route only the runtime can see: a browser cannot
-   * make a harness exit, and the client that sent the prompts may be long
-   * gone by the time it happens.
+   * so every route that drops one — a session being released, the harness
+   * going down — hands its prompts to the same recorder. This is the route
+   * only the runtime can see: a browser cannot make a harness exit, and the
+   * client that sent the prompts may be long gone by the time it happens.
    */
   it("should record queued prompts as undelivered when the harness goes down", () => {
     const undelivered = createUndeliveredPromptStore(
@@ -185,13 +183,13 @@ describe("acp-runtime: env changes", () => {
   });
 
   /**
-   * TEST_SCENARIO: An env change lands while a prompt waits parked behind a
-   * finished turn, its sender gone, on a harness that cannot close sessions.
-   * The parked queue keeps the runtime busy until the park window drops it;
-   * no session is closed then, so the drop itself is the idle edge.
+   * TEST_SCENARIO: An env change lands while a prompt waits behind a running
+   * turn, its sender gone, on a harness that cannot close sessions. The
+   * waiting prompt still runs once the turn ahead ends, so the runtime stays
+   * busy until that second turn ends too; no session is closed then, so the
+   * end of the last turn is the idle edge.
    */
-  it("should recycle when a parked queue expires on a harness without session close", () => {
-    vi.useFakeTimers();
+  it("should recycle once a queued prompt whose sender left has run, on a harness without session close", () => {
     const world = createWorld();
     const client = world.connect();
     client.send(frames.initialize(1));
@@ -206,7 +204,7 @@ describe("acp-runtime: env changes", () => {
     world.runtime.refreshEnv({ force: false });
     expect(world.harness().killed()).toBe(false);
 
-    vi.advanceTimersByTime(QUEUE_PARK_MS);
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
     expect(world.harness().killed()).toBe(true);
   });

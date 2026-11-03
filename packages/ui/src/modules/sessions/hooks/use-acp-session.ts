@@ -138,6 +138,7 @@ export function useAcpSession(
 
   const {
     ensureLive,
+    engageAside,
     beginSession,
     loadSessionHistory,
     runtimeIdle,
@@ -302,6 +303,7 @@ export function useAcpSession(
     selectedAgent,
     agentRunState,
     ensureConnection: ensureLive,
+    engageAside,
     beginSession,
     engagedSessionIdRef,
     connectionRef,

@@ -61,7 +61,13 @@ function runningTurnOf(
 ): { turn: Message; opening: Message | undefined } | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const turn = messages[i];
-    if (turn?.role !== "assistant" || !turn.streaming || turn.queued) continue;
+    if (
+      turn?.role !== "assistant" ||
+      !turn.streaming ||
+      turn.queued ||
+      turn.unconfirmed !== undefined
+    )
+      continue;
     const opening = messages
       .slice(0, i)
       .reverse()

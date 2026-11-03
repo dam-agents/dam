@@ -178,17 +178,23 @@ function applyUpdateOf(
         : closeTurn(messages, update.turnId, end);
     }
 
-    case "platform_prompt_accepted":
+    case "platform_prompt_accepted": {
       if (update.steered) return withSteeredSend(messages, update.promptId);
+      const confirmed = withConfirmedSend(messages, update.promptId);
       if (!update.queued)
-        return setQueuedByPromptId(messages, update.promptId, false);
-      return waitsBehindAnotherReply(messages, update.promptId)
-        ? setQueuedByPromptId(messages, update.promptId, true)
-        : messages;
+        return setQueuedByPromptId(confirmed, update.promptId, false);
+      return waitsBehindAnotherReply(confirmed, update.promptId)
+        ? setQueuedByPromptId(confirmed, update.promptId, true)
+        : confirmed;
+    }
 
     case "platform_prompt_started":
       return withReplyPlaceholder(
-        setQueuedByPromptId(messages, update.promptId, false),
+        setQueuedByPromptId(
+          withConfirmedSend(messages, update.promptId),
+          update.promptId,
+          false,
+        ),
         update.promptId,
       );
 
@@ -222,6 +228,22 @@ function waitsBehindAnotherReply(
   return messages.some(
     (m) => m.role === "assistant" && m.streaming && m.promptId !== promptId,
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A sent message's reply waits as "sending" or
+ * "waking" until the runtime confirms it has the message
+ * (`platform/promptAccepted` or `platform/promptStarted`), so the chat never
+ * shows the agent working on a message it does not have yet.
+ */
+function withConfirmedSend(messages: Message[], promptId: string): Message[] {
+  if (!messages.some((m) => m.promptId === promptId && m.unconfirmed))
+    return messages;
+  return messages.map((m) => {
+    if (m.promptId !== promptId || m.unconfirmed === undefined) return m;
+    const { unconfirmed: _sent, ...rest } = m;
+    return rest;
+  });
 }
 
 function setQueuedByPromptId(

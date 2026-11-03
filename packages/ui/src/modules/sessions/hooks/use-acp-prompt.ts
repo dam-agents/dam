@@ -34,6 +34,7 @@ import {
   undeliveredRecordOf,
 } from "../lib/undelivered-store.js";
 import type {
+  AsideSession,
   LiveConnection,
   LiveSession,
   StartedSession,
@@ -55,6 +56,7 @@ interface UseAcpPromptOptions {
   selectedAgent: string | null;
   agentRunState: AgentState | undefined;
   ensureConnection: () => Promise<LiveSession | null>;
+  engageAside: (sessionId: string) => Promise<AsideSession>;
   beginSession: () => Promise<StartedSession>;
   engagedSessionIdRef: React.MutableRefObject<string | null>;
   connectionRef: React.MutableRefObject<LiveConnection | null>;
@@ -74,6 +76,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     selectedAgent,
     agentRunState,
     ensureConnection,
+    engageAside,
     beginSession,
     engagedSessionIdRef,
     connectionRef,
@@ -180,6 +183,15 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         void queryClient.invalidateQueries({
           queryKey: trpc.providerStatus.list.queryKey(),
         });
+      let started: StartedSession | null = null;
+      const conversationShown = () => {
+        const state = useStore.getState();
+        return (
+          state.selectedAgent === selectedAgent &&
+          (state.sessionId === intendedSessionId ||
+            (started !== null && state.sessionId === started.sessionId))
+        );
+      };
       const failUserMessage = (message: string) => {
         if (reported) return;
         reported = true;
@@ -196,7 +208,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                 if (m.id !== uId) return [m];
                 return [failed];
               })
-            : [...p.filter((m) => m.id !== aId), failed],
+            : conversationShown()
+              ? [...p.filter((m) => m.id !== aId), failed]
+              : p,
         );
       };
       const interruptTurn = (message: string) => {
@@ -225,6 +239,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         useStore.getState().messages,
         useStore.getState().queuedPrompts,
       );
+      const hold = untilAgentOperable(selectedAgent);
+      const waking = !hold && agentRunState !== "running";
       const uMsg: Message = {
         id: uId,
         role: "user",
@@ -240,6 +256,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
+        unconfirmed: hold || waking ? "waking" : "sending",
         ...(waits && { queued: true }),
         ...(hidden ? {} : { retryWith: retryPayload }),
       };
@@ -278,10 +295,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           ];
         });
       };
-      const hold = untilAgentOperable(selectedAgent);
       if (hold) recordUndeliveredLocally(LEFT_BEFORE_START);
 
-      let started: StartedSession | null = null;
+      let aside: AsideSession | null = null;
       let detached = false;
       try {
         if (hold) {
@@ -289,7 +305,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           forgetUndelivered(draftKey(selectedAgent, intendedSessionId), uId);
         }
         delivery.beginSend(promptId, failDelivery, {
-          waking: !hold && agentRunState !== "running",
+          waking,
           recover: recoverDelivery,
         });
 
@@ -298,14 +314,22 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         let isOpen: () => boolean;
 
         if (intendedSessionId !== null) {
-          const live = await ensureConnection();
-          if (!live) throw new Error("Failed to establish connection");
-          if (live.sessionId !== intendedSessionId) {
+          const live = await ensureConnection().catch((err: unknown) => {
+            if (conversationShown()) throw err;
+            return null;
+          });
+          if (live?.sessionId === intendedSessionId) {
+            ({ connection, isOpen, sessionId } = live);
+          } else if (!conversationShown() || !mountedRef.current) {
+            aside = await engageAside(intendedSessionId);
+            ({ connection, isOpen, sessionId } = aside);
+          } else if (!live) {
+            throw new Error("Failed to establish connection");
+          } else {
             throw new Error(
               "Couldn't send — the conversation changed while the message was on its way.",
             );
           }
-          ({ connection, isOpen, sessionId } = live);
         } else {
           started = await beginSession();
           startedRef.current = started;
@@ -386,6 +410,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         }
       } finally {
         delivery.endSend(promptId);
+        aside?.close();
         if (startedRef.current === started) startedRef.current = null;
         started?.finish();
         queryClient.invalidateQueries({
@@ -398,6 +423,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       selectedAgent,
       agentRunState,
       ensureConnection,
+      engageAside,
       beginSession,
       canKeepConnection,
       viewerStillHere,

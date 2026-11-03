@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 
+import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -118,6 +119,14 @@ function LoadOlderMarker({
   );
 }
 
+const UNCONFIRMED_LABEL: Record<
+  NonNullable<Message["unconfirmed"]>,
+  string
+> = {
+  sending: "Sending…",
+  waking: "Waking the agent…",
+};
+
 export const ChatMessage = memo(function ChatMessage({
   message,
   avatarAgent,
@@ -189,7 +198,10 @@ export const ChatMessage = memo(function ChatMessage({
     hasAgentContent(message) &&
     !errorOnly;
   if (isAssistant && streaming && queued && parts.length === 0) return null;
-  const working = isAssistant && streaming && !queued && !hasPendingPermission;
+  const waiting = isAssistant && streaming && !queued && !hasPendingPermission;
+  const unconfirmed =
+    waiting && parts.length === 0 ? message.unconfirmed : undefined;
+  const working = waiting && unconfirmed === undefined;
   const speaker = isAssistant ? (
     <AgentSpeaker agent={avatarAgent} />
   ) : (
@@ -254,7 +266,17 @@ export const ChatMessage = memo(function ChatMessage({
               Stopped
             </p>
           )}
-          {isAssistant && (streaming || isLast) && (
+          {unconfirmed !== undefined && (
+            <span
+              role="status"
+              data-testid="reply-unconfirmed"
+              className="inline-flex items-center gap-2 py-1 text-xs text-muted-foreground"
+            >
+              <Spinner size={12} className="text-inherit" />
+              {UNCONFIRMED_LABEL[unconfirmed]}
+            </span>
+          )}
+          {isAssistant && (streaming || isLast) && unconfirmed === undefined && (
             <span
               role={working ? "status" : undefined}
               aria-hidden={!working}
