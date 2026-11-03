@@ -536,6 +536,32 @@ node_image_gc_off() {
   printf '%s\n' "$want" | node_sh tee "$NODE_IMAGE_GC_DROPIN" >/dev/null
 }
 
+# NODE_THP_SERVICE: transparent huge pages on, at every boot of an
+# Environment. Its kernel defaults to `madvise`, and the runner maps guest
+# RAM without advising it, so under `madvise` a nested guest's RAM is mapped
+# 4 KiB at a time: a VM start took 11 to 28 s there, and 3.5 to 6.3 s with
+# `always`, in turns on one quiet Environment (#6199). Each start past the
+# VMM's 30 s of no progress fails. The lima VMs pin `always` for the same
+# reason (etc/lima/k3s.yaml). An Environment's sysfs write is lost when it
+# sleeps, so an openrc service makes it again before k3s starts.
+NODE_THP_SERVICE=/etc/init.d/platform-thp
+
+# node_thp_always: writes and starts NODE_THP_SERVICE, and checks that the
+# kernel took it.
+node_thp_always() {
+  printf '%s\n' '#!/sbin/openrc-run' \
+    "# Transparent huge pages on for the nested VM runners (cluster:install)." \
+    'description="Transparent huge pages always"' \
+    'depend() { before k3s; }' \
+    'start() { echo always > /sys/kernel/mm/transparent_hugepage/enabled; }' |
+    node_sh tee "$NODE_THP_SERVICE" >/dev/null
+  node_sh chmod 755 "$NODE_THP_SERVICE"
+  node_sh rc-update add "$(basename "$NODE_THP_SERVICE")" default >/dev/null 2>&1 || true
+  node_sh "$NODE_THP_SERVICE" restart >/dev/null 2>&1 || true
+  node_sh grep -q '\[always\]' /sys/kernel/mm/transparent_hugepage/enabled ||
+    { echo "FATAL: transparent huge pages did not turn on, so nested VMs boot past their 30 s window" >&2; return 1; }
+}
+
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
 # names, and does nothing without it. CI's two lanes set it, and e2e:timings
 # turns the marks into the job's per-phase timing summary.

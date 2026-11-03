@@ -66,7 +66,6 @@ That first stage only executes the share's platform-init, which is the release's
 Its guest kernel is the smolvm release's own libkrunfw, Linux 6.18 with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31), rebuilt with a patch that adds btrfs ([vm-runner](vm-runner.md)) and zram swap ([vm-memory](vm-memory.md)).
 The image build refuses a rebuilt kernel whose version is not the release's.
 Without that fix, from 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)); 6.18 also stalls a guest whose mapped working set outgrows the DAX window.
-The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so a smolvm release whose kernel fails them fails the lane.
 The Mac's host runner has the same kernel, and its guests have no FUSE DAX.
 The pod's libc does not: a release whose runner does not load in the pod can take it over only as a new pod.
 
