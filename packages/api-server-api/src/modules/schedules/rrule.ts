@@ -143,6 +143,7 @@ const QUIET_SKIP_LIMIT = 64;
 const MAX_RRULE_LENGTH = 1000;
 const MAX_INTERVAL = 10_000;
 const FLOATING_UNTIL = /UNTIL=(\d{8}T\d{6})(?!Z)/;
+const UTC_UNTIL = /UNTIL=(\d{8}T\d{6})Z/;
 
 export type VisibleOccurrence =
   | { kind: "next"; at: Temporal.ZonedDateTime }
@@ -155,9 +156,91 @@ function withUtcUntil(rruleBody: string, timezone: string): string {
       .toZonedDateTime(timezone)
       .toInstant()
       .toZonedDateTimeISO("UTC");
-    const pad = (n: number, width = 2) => String(n).padStart(width, "0");
-    return `UNTIL=${pad(utc.year, 4)}${pad(utc.month)}${pad(utc.day)}T${pad(utc.hour)}${pad(utc.minute)}${pad(utc.second)}Z`;
+    return `UNTIL=${untilStamp(utc.toPlainDateTime())}Z`;
   });
+}
+
+type OccurrenceSearch = (
+  after: Temporal.ZonedDateTime,
+  inclusive: boolean,
+) => Temporal.ZonedDateTime | null;
+
+function occurrenceSearch(
+  rruleBody: string,
+  timezone: string,
+): OccurrenceSearch {
+  const options = parseRRule(rruleBody).options();
+  const firstHour = Math.min(...(options.byHour ?? []));
+  if (
+    (options.freq !== "HOURLY" && options.freq !== "MINUTELY") ||
+    !Number.isFinite(firstHour)
+  ) {
+    const rule = boundedRule(
+      withUtcUntil(rruleBody, timezone),
+      anchoredAt(timezone),
+    );
+    return (after, inclusive) => rule.next(after, inclusive);
+  }
+  const firstMinute =
+    options.freq === "MINUTELY" ? Math.min(...(options.byMinute ?? [0])) : 0;
+  const rule = boundedRule(
+    withUtcUntil(withWallUntil(rruleBody, timezone), "UTC"),
+    anchoredAt("UTC").with({ hour: firstHour, minute: firstMinute }),
+  );
+  return (after, inclusive) => {
+    const start = wallSearchStart(after);
+    let wall = start.toZonedDateTime("UTC");
+    let wallInclusive = inclusive || !start.equals(after.toPlainDateTime());
+    for (;;) {
+      const found = rule.next(wall, wallInclusive);
+      if (!found) return null;
+      const at = found.toPlainDateTime().toZonedDateTime(timezone);
+      const order = Temporal.ZonedDateTime.compare(at, after);
+      if (order > 0 || (inclusive && order === 0)) return at;
+      wall = found;
+      wallInclusive = false;
+    }
+  };
+}
+
+function wallSearchStart(
+  after: Temporal.ZonedDateTime,
+): Temporal.PlainDateTime {
+  const shift = after.add({ nanoseconds: 1 }).getTimeZoneTransition("previous");
+  if (!shift) return after.toPlainDateTime();
+  const gap =
+    shift.offsetNanoseconds -
+    shift.subtract({ nanoseconds: 1 }).offsetNanoseconds;
+  const since = after.epochNanoseconds - shift.epochNanoseconds;
+  return gap > 0 && since < BigInt(gap)
+    ? shift.toPlainDateTime().subtract({ nanoseconds: gap })
+    : after.toPlainDateTime();
+}
+
+function boundedRule(
+  rruleString: string,
+  dtstart: Temporal.ZonedDateTime,
+): RRuleTemporal {
+  return new RRuleTemporal({
+    rruleString,
+    dtstart,
+    maxIterations: MAX_PERIODS,
+    maxCandidateEvaluations: MAX_CANDIDATES,
+  });
+}
+
+function withWallUntil(rruleBody: string, timezone: string): string {
+  return rruleBody.replace(UTC_UNTIL, (_, utc: string) => {
+    const wall = Temporal.Instant.from(`${utc}Z`)
+      .toZonedDateTimeISO(timezone)
+      .toPlainDateTime();
+    return `UNTIL=${untilStamp(wall)}`;
+  });
+}
+
+function untilStamp(t: Temporal.PlainDateTime): string {
+  const pad = (n: number, width = 2) => String(n).padStart(width, "0");
+  return `${pad(t.year, 4)}${pad(t.month)}${pad(t.day)}T${pad(t.hour)}${pad(t.minute)}${pad(t.second)}`;
 }
 
 export function nextVisibleOccurrence(
@@ -167,16 +250,11 @@ export function nextVisibleOccurrence(
   windows: QuietWindow[],
 ): VisibleOccurrence {
   const enabled = windows.filter((w) => w.enabled);
-  const rule = new RRuleTemporal({
-    rruleString: withUtcUntil(rruleBody, timezone),
-    dtstart: anchoredAt(timezone),
-    maxIterations: MAX_PERIODS,
-    maxCandidateEvaluations: MAX_CANDIDATES,
-  });
+  const search = occurrenceSearch(rruleBody, timezone);
   let cursor = after.toZonedDateTimeISO(timezone);
   let inclusive = false;
   for (let i = 0; i < QUIET_SKIP_LIMIT; i++) {
-    const next = rule.next(cursor, inclusive);
+    const next = search(cursor, inclusive);
     if (!next) return i === 0 ? { kind: "exhausted" } : { kind: "suppressed" };
     const end = quietWindowEnd(next, enabled);
     if (!end) return { kind: "next", at: next };
