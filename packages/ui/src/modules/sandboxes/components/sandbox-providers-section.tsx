@@ -13,7 +13,7 @@ import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
 import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
 import {
   useGrantProvider,
-  useHarnessCatalog,
+  useAgentHarnessCatalog,
   useProviderConnections,
 } from "../../sessions/api/session-pair.js";
 import { DetachProviderMessage } from "../../sessions/components/detach-provider-message.js";
@@ -34,7 +34,7 @@ export function SandboxProvidersSection({
   const { owned, granted, loaded } = useProviderConnections(agentId);
   const { grant, revoke, pending } = useGrantProvider(agentId);
   const root = useRootDriver(agentId);
-  const catalog = useHarnessCatalog().data?.harnesses;
+  const catalog = useAgentHarnessCatalog(agentId).data?.harnesses;
   const usage = useProviderUsage(agentId);
   const access = useAgent(agentId)?.access;
   const managesProviders = !access || holds(access, "connections");

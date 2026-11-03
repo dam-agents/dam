@@ -16,7 +16,9 @@ import {
   type ProfilesService,
   type ProfileWithUsage,
   type SessionPair,
+  withImageHarnesses,
 } from "api-server-api";
+import type { HarnessCapability } from "agent-runtime-api";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -205,6 +207,8 @@ export async function bindDefaultProfile(
 export function createProfilesService(
   deps: OwnerDeps & {
     agentBinding: readonly string[] | "*";
+    /* UNIT_BOUNDARY_DESCRIPTION: the harnesses an agent's runtime reports, so a profile saved from that agent can name its image harness. */
+    carriedHarnesses: (agentId: string) => Promise<HarnessCapability[] | null>;
     resolve: ProfileResolver;
     /* UNIT_BOUNDARY_DESCRIPTION: sends an agent that points at an edited profile its new pair, or answers why it cannot take it. */
     republish: (agentId: string) => Promise<string | null>;
@@ -213,19 +217,26 @@ export function createProfilesService(
   const { repo, owner, catalog } = deps;
   const agentIds = deps.agentBinding === "*" ? undefined : deps.agentBinding;
 
-  function validate(
+  async function validate(
     profile: Pick<ProfileRow, "harness" | "providerTemplate" | "model">,
-  ): void {
+    agentId: string | undefined,
+  ): Promise<void> {
     const { harness, providerTemplate, model } = profile;
+    const harnesses = {
+      harnesses: withImageHarnesses(
+        catalog,
+        agentId === undefined ? null : await deps.carriedHarnesses(agentId),
+      ),
+    };
     const type = providerTypeForTemplateId(providerTemplate);
     const alias = parseQualifiedModel(model, { claudePrefix: true })?.alias;
-    const problem = !catalog.harnesses.some((h) => h.name === harness)
+    const problem = !harnesses.harnesses.some((h) => h.name === harness)
       ? `unknown harness ${harness}`
       : type === null || !PROVIDER_TEMPLATE_IDS.has(providerTemplate)
         ? `unknown provider ${providerTemplate}`
         : alias !== aliasForProviderType(type)
           ? `${model} is not a ${providerTemplate} model`
-          : !harnessFits(catalog, harness, type, providerTemplate)
+          : !harnessFits(harnesses, harness, type, providerTemplate)
             ? `the ${harness} harness cannot run on ${providerTemplate}`
             : null;
     if (problem) throw new TRPCError({ code: "BAD_REQUEST", message: problem });
@@ -312,7 +323,7 @@ export function createProfilesService(
     async create(input) {
       /* UNIT_BOUNDARY_DESCRIPTION: seeded first, so a user-made "Default" cannot take the seed's name. */
       const defaultId = (await ensureDefault(deps))?.id;
-      validate(input);
+      await validate(input, input.agentId);
       const row = await repo
         .insert(owner, {
           name: input.name,
@@ -331,9 +342,9 @@ export function createProfilesService(
       );
     },
 
-    async update({ id, agentId: _agentId, ...patch }) {
+    async update({ id, agentId, ...patch }) {
       const current = await owned(id);
-      validate({ ...current, ...patch });
+      await validate({ ...current, ...patch }, agentId);
       const written = await repo
         .update(owner, id, patch)
         .catch((err: unknown) => {

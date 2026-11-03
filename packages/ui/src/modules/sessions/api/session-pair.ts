@@ -46,7 +46,8 @@ export function useHarnessCatalog() {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the harnesses one agent can run: the install's
  * catalog plus the image harnesses its runtime reports, which no other agent
- * is offered.
+ * is offered. It reads as pending until both are in, so a list without the
+ * agent's own harness never reads as loaded.
  */
 export function useAgentHarnessCatalog(agentId: string | null): {
   data: { default: string; harnesses: AgentHarnessView[] } | undefined;
@@ -54,14 +55,16 @@ export function useAgentHarnessCatalog(agentId: string | null): {
   isError: boolean;
 } {
   const catalog = useHarnessCatalog();
-  const { data: status } = useHarnessConfigStatus(agentId);
+  const status = useHarnessConfigStatus(agentId);
+  const statusPending = agentId !== null && status.isPending;
   return {
-    data: catalog.data && {
-      default: catalog.data.default,
-      harnesses: withImageHarnesses(catalog.data, status?.harnesses),
-    },
-    isPending: catalog.isPending,
-    isError: catalog.isError,
+    data: catalog.data &&
+      !statusPending && {
+        default: catalog.data.default,
+        harnesses: withImageHarnesses(catalog.data, status.data?.harnesses),
+      },
+    isPending: catalog.isPending || statusPending,
+    isError: catalog.isError || (agentId !== null && status.isError),
   };
 }
 

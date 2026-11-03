@@ -1,3 +1,4 @@
+import type { HarnessCapability } from "agent-runtime-api";
 // TEST_OVERVIEW: Profiles are an owner's named presets. A profile names a provider template, so whether it runs on an agent follows from the agent's grants: its own Connection of the template, else an owner's one it may be granted, never one replacing a rival of the same alias. An owner with no profile is seeded one Default where the install names it, and every owner has one default for new agents, which a new agent starts on and which cannot be deleted; a profile in use cannot be deleted; an edit no referencing agent can run is put back.
 import { TRPCError } from "@trpc/server";
 import type {
@@ -133,6 +134,7 @@ function service(
     ownerCatalog?: () => Promise<OwnerModelCatalogView>;
     republish?: () => Promise<string | null>;
     agentBinding?: readonly string[] | "*";
+    carried?: Record<string, HarnessCapability[]>;
   } = {},
 ) {
   return createProfilesService({
@@ -145,6 +147,7 @@ function service(
         : opts.seed,
     ...(opts.ownerCatalog && { ownerCatalog: opts.ownerCatalog }),
     agentBinding: opts.agentBinding ?? "*",
+    carriedHarnesses: async (agentId) => opts.carried?.[agentId] ?? null,
     resolve: profileResolver(repo),
     republish: opts.republish ?? (async () => null),
   });
@@ -333,6 +336,29 @@ describe("the owner's profiles", () => {
       }),
     );
     expect(err.code).toBe("BAD_REQUEST");
+  });
+
+  /** TEST_SCENARIO: a pair on an agent's image harness — one its own image carries and the catalog does not list — saves as a profile from that agent, and is refused without it, since no other agent can run that harness. */
+  it("saves a profile on the image harness of the agent it comes from", async () => {
+    const { repo } = fakeRepo();
+    const imageAgent = {
+      name: "image-agent",
+      harnessConfig: false,
+      sessionModel: false,
+      dialects: ["openai-chat"],
+    };
+    const profiles = service(repo, { carried: { "agent-1": [imageAgent] } });
+    const body = {
+      name: "Image agent",
+      harness: "image-agent",
+      providerTemplate: "curve-bender-deployment",
+      model: "cb/gpt-5",
+    };
+    await expect(
+      profiles.create({ ...body, agentId: "agent-1" }),
+    ).resolves.toBeDefined();
+    const err = await refusal(profiles.create({ ...body, name: "Elsewhere" }));
+    expect(err.message).toMatch(/unknown harness image-agent/);
   });
 
   /** TEST_SCENARIO: a profile something points at cannot be deleted, and the refusal says what uses it. */

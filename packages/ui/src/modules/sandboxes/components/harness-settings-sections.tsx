@@ -12,7 +12,7 @@ import {
   useAgentLacksLiveUpdates,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
-import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
+import { useAgentHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
 
@@ -64,7 +64,7 @@ export function HarnessSettingsSections({
   agentId: string;
   harnesses: readonly HarnessCapability[];
 }) {
-  const { data: catalog } = useHarnessCatalog();
+  const { data: catalog } = useAgentHarnessCatalog(agentId);
   const configurable = harnesses.filter(
     (h) =>
       h.harnessConfig && h.harnessConfigCatalog?.options.some(harnessWide(h)),

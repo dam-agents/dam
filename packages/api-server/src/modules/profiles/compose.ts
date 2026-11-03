@@ -1,4 +1,5 @@
 import type { Db } from "db";
+import type { HarnessCapability } from "agent-runtime-api";
 import type { HarnessCatalog, OwnerModelCatalogView } from "api-server-api";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import { createProfilesRepository } from "./infrastructure/profiles-repository.js";
@@ -21,6 +22,7 @@ export function composeProfilesForOwner(deps: {
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   seed: { harness: string; model: string } | null;
   ownerCatalog: () => Promise<OwnerModelCatalogView>;
+  carriedHarnesses: (agentId: string) => Promise<HarnessCapability[] | null>;
   republish: (agentId: string) => Promise<string | null>;
 }) {
   const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
@@ -36,6 +38,7 @@ export function composeProfilesForOwner(deps: {
     profiles: createProfilesService({
       ...owner,
       agentBinding: deps.agentBinding,
+      carriedHarnesses: deps.carriedHarnesses,
       resolve: resolveProfile,
       republish: deps.republish,
     }),
