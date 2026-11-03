@@ -148,8 +148,10 @@ function runPageScript(
   frame: object,
   hash: string,
 ) {
-  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
-    .map((m) => m[1]!)
+  const script = html
+    .split("<script>")
+    .slice(1)
+    .map((part) => part.split("</script>")[0]!)
     .find((body) => body.includes(marker))!;
   const listeners: Record<string, () => void> = {};
   const location = { ...fakeLocation(), hash };
