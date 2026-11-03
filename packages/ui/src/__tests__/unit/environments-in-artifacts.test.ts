@@ -91,6 +91,7 @@ function environment(
     members: [],
     agentMemberCount: 0,
     expiresAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+    idleTimeoutMin: 60,
     createdAt: new Date().toISOString(),
     state: "running",
     ...extra,

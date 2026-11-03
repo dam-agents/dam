@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The owning agent's Environment tools never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who.
+// TEST_OVERVIEW: The owning agent's Environment tools never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who. An `idle_timeout` reaches create and update as whole minutes, and one that means "never sleep" is refused before the service is called.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -14,6 +14,7 @@ const view: AgentEnvironmentView = {
   endpoints: [{ name: "app", port: 4444, url: null }],
   peopleWhoMayOpen: 2,
   expiresAt: new Date().toISOString(),
+  idleTimeoutMin: 60,
   createdAt: new Date().toISOString(),
   state: "running",
 };
@@ -79,5 +80,35 @@ describe("who may open an Environment, from the agent's tools", () => {
     const listed = await call("list_environments", {});
     expect(JSON.parse(listed.text)).toEqual([view]);
     expect(listed.text).not.toContain("@");
+  });
+});
+
+describe("an Environment's idle timeout, from the agent's tools", () => {
+  // TEST_SCENARIO: an agent gives `idle_timeout` as it gives `expires`; create and update pass it on in minutes, and "never" is refused with a message that says why, with nothing created or changed.
+  it("passes an idle timeout on in minutes and refuses never", async () => {
+    const { call, environments } = await tools();
+
+    await call("create_environment", {
+      name: "pr-1",
+      endpoints,
+      idle_timeout: "90m",
+    });
+    await call("update_environment", { name: "pr-1", idle_timeout: "4h" });
+    const never = await call("update_environment", {
+      name: "pr-1",
+      idle_timeout: "never",
+    });
+
+    expect(environments.create).toHaveBeenCalledWith({
+      name: "pr-1",
+      endpoints,
+      idleTimeoutMin: 90,
+    });
+    expect(environments.update).toHaveBeenCalledTimes(1);
+    expect(environments.update).toHaveBeenCalledWith("pr-1", {
+      idleTimeoutMin: 240,
+    });
+    expect(never.isError).toBe(true);
+    expect(never.text).toMatch(/always sleeps/);
   });
 });

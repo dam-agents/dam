@@ -256,6 +256,13 @@ environments:
   maxPerAgent: 5
   # -- Furthest ahead an Environment's expiry may be set, in days.
   expiryMaxDays: 30
+  # -- How long an Environment may sit idle before it sleeps, when its agent
+  # gives no idle timeout of its own. Longer than the agents' `vmIdleTimeout`,
+  # since what an Environment runs takes minutes to come back.
+  idleTimeout: "60m"
+  # -- Longest idle timeout an agent may give an Environment; a longer one is
+  # cut to it. An Environment always sleeps in the end.
+  idleTimeoutMax: "24h"
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
   # Environment address to the api-server; visitors sign in on the share
   # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
@@ -1899,8 +1906,9 @@ controller:
       # kubelet (see `virtualization.imageCache`).
       imagePullSecrets: [] # must exist in agentNamespace
 
-      # Lifecycle. A machine starts fast, so every agent takes this and
-      # ignores its own hibernationTimeout; "0s" disables hibernation.
+      # Lifecycle. A machine starts fast, so every agent takes this unless
+      # its spec carries a hibernationTimeout of its own, as an Environment's
+      # does (`environments.idleTimeout`); "0s" disables hibernation.
       vmIdleTimeout: "5m"
 
     harnessTemplateDefaults:

@@ -6,6 +6,7 @@ import {
 
 export const ENVIRONMENT_EXPIRY_MAX_DAYS = 30;
 export const ENVIRONMENT_EXPIRY_DEFAULT_DAYS = 7;
+export const ENVIRONMENT_IDLE_TIMEOUT_DEFAULT_MIN = 60;
 
 export const environmentNameSchema = z
   .string()
@@ -53,6 +54,7 @@ export const environmentViewSchema = z.object({
   members: z.array(z.string()),
   agentMemberCount: z.number().int(),
   expiresAt: z.string(),
+  idleTimeoutMin: z.number().int().nullable(),
   createdAt: z.string(),
   state: z.string(),
 });

@@ -2095,6 +2095,8 @@ export async function bootstrap() {
       urlTemplate: config.environmentsUrl,
       maxPerAgent: config.environmentsMaxPerAgent,
       expiryMaxDays: config.environmentExpiryMaxDays,
+      idleTimeoutDefaultMin: config.environmentIdleTimeoutMinutes,
+      idleTimeoutMaxMin: config.environmentIdleTimeoutMaxMinutes,
     },
   });
 

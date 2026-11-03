@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -33,7 +33,11 @@ Who may open it is two lists of rows, one per person, at most as many as an arti
   The Agent is named `<owning agent> · <name>`, which keeps it unique among the owner's agents.
   If the row cannot be written, the Agent is deleted again.
 - **Start.** A `start` command is delivered once, as a workspace command, that writes it as a [Startup Item](agent-processes.md#startup-items), an openrc user service, which then runs at every boot.
-- **Sleep.** An Environment sleeps like any machine, after the install's idle time, and keeps its disk; there is no setting of its own.
+- **Sleep.** An Environment sleeps like any machine when it sits idle, and keeps its disk, but after an idle timeout of its own: what it runs, Docker, k3s and an install of an app, takes far longer to come back than an agent's harness.
+  The Owning Agent gives it at create or update (`idle_timeout`, in minutes, hours or days, as `"90m"` or `"4h"`), and the api-server writes it as the Environment Agent's `hibernationTimeout`, which the controller's idle sweep reads in place of the install's `vmIdleTimeout`.
+  Without one it is `environments.idleTimeout` (default 60 minutes); one past `environments.idleTimeoutMax` (default 24 hours) is cut to it, as an expiry is, and zero or a word such as `never` is refused, so an Environment always sleeps in the end.
+  The memory reclaim that puts an idle machine to sleep early when its owner needs the room still applies.
+  `list_environments` shows each one's idle timeout.
 - **Expiry.** Every Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
   The Owning Agent and the owner set and extend it, and a sweep every five minutes deletes an Environment whose expiry passed.
 - **Delete.** The Owning Agent or the owner deletes an Environment at any time; it goes through the agents service, so the Agent's own cleanup runs.

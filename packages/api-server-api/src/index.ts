@@ -1150,6 +1150,7 @@ export type {
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
   ENVIRONMENT_EXPIRY_MAX_DAYS,
+  ENVIRONMENT_IDLE_TIMEOUT_DEFAULT_MIN,
   environmentEndpointsSchema,
   environmentNameSchema,
 } from "./modules/environments/schemas.js";
