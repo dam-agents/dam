@@ -179,12 +179,12 @@ Naming refuses them and delivery drops them, and the Agents already holding one 
 
 Naming a Connection is only *required* where two of them genuinely collide: the same header on the same host over paths that overlap.
 Connections that scope themselves to different parts of one service — one per Google Workspace service on `www.googleapis.com` — are not rivals, and each keeps being injected on its own paths without any address.
-Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end.
+Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end — unless the Agent requires naming (below), where it carries no credential of the Agent's at all.
 
 An Agent can make naming *required* for every one of its Connections; a new one does unless its create or starter kit says otherwise.
 The Agent's spec says so, and agent settings change it later.
 Its gateway then injects a Connection's credential only into a request that names it, and sends any other request upstream with the credential it already carries, rather than replacing it.
-Contested scopes still fail closed.
+That holds on contested scopes too: a request naming none of two rival Connections goes upstream unchanged, so a public download from a host where the Agent holds two accounts answers as it does to anyone, and nothing is ambiguous, since no credential is chosen.
 It serves an agent whose tools — Docker containers, nested agents, a browser its user drives — call the same hosts with their own credentials or none: their requests name none of the agent's Connections, so the gateway leaves them alone.
 Off serves the opposite: tools that need a credential added to a request naming no Connection.
 Platform-written values already carry an address, so the agent's own clients are unaffected.
