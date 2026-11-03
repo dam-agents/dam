@@ -120,8 +120,11 @@ Determines: Runtime configuration section of CLAUDE.md, the ONBOARDING config di
   Then it gets the per-item measurement and the anomaly factor (`references/architecture.md` → Per-item cost and anomalies).
 - Which harness?
   On Claude Code the tool deny list and the lean subagent type are part of the design, not an afterthought (`references/platform-dam.md` → Harness facts).
+- Is the output's quality a judgment call (a review, a classification, a summary), and would the operator act on a number saying whether a model or definition change made it better?
+  Then offer the **quality benchmark** (`references/benchmark.md`), off by default: a monthly replay of synthetic items with seeded ground truth.
+  Settle its domain parts now: what one fixture is, the classes and severities of a seeded item, the **matcher** (how an output entry is matched to a seeded item), the machine-readable part of the output it needs, whether a follow-up phase applies (block 2: re-processing on change), and the simple and complex tier sizes.
 
-Determines: cadences, pre-flight scope, how much batching the design needs, the harness adapter's parts.
+Determines: cadences, pre-flight scope, how much batching the design needs, the harness adapter's parts, whether the benchmark and its scripts exist.
 
 ## 10. Kit & catalog
 
@@ -143,4 +146,4 @@ Determines: `kit.yaml` in full, the Phase 6 handoff, and how much of ONBOARDING 
 
 ## Wrap-up — the design brief
 
-Summarize into a short brief and get a "yes": mission, name, unit of work + lifecycle, integrations (read/write) with idempotency markers, run model + cadences (fan-out or sequential, the monitor), channels + proactive opt-ins + trust exceptions, state files + backup choice, config keys (`run_model`, `definition_issues` included), the kit surface, the harness adapter's parts, cost notes.
+Summarize into a short brief and get a "yes": mission, name, unit of work + lifecycle, integrations (read/write) with idempotency markers, run model + cadences (fan-out or sequential, the monitor), channels + proactive opt-ins + trust exceptions, state files + backup choice, config keys (`run_model`, `definition_issues` included), the kit surface, the harness adapter's parts, cost notes, and the benchmark (yes or no; with yes, its matcher and tiers).

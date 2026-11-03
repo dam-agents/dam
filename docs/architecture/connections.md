@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -85,6 +85,8 @@ Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
 A model provider's key is proven where the provider offers a check.
+A key that passes names its account where the provider tells that key: an Anthropic OAuth token the email and organization of its profile, an Anthropic or OpenAI API key the organization its provider answers with, an IBM LiteLLM or Bob key the user it belongs to, and a Bedrock key its AWS account.
+The account is extra: a lookup that fails leaves the key passed, with no account.
 A provider that cannot say leaves the key unverified; the CurveBender deployment's key, which the user holds no copy of, leaves it unchecked.
 The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, which Settings › Providers also does each time it opens, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.

@@ -1,15 +1,16 @@
 import { context, metrics, trace, SpanStatusCode } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
   AggregationTemporality,
   InMemoryMetricExporter,
   MeterProvider,
   PeriodicExportingMetricReader,
 } from "@opentelemetry/sdk-metrics";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-node";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import { TRPCError } from "@trpc/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -20,15 +21,16 @@ import {
 describe("withTrpcTelemetry", () => {
   let spans: InMemorySpanExporter;
   let reader: PeriodicExportingMetricReader;
-  let tracerProvider: NodeTracerProvider;
+  let tracerProvider: TracerProvider;
   let meterProvider: MeterProvider;
 
   beforeEach(() => {
     spans = new InMemorySpanExporter();
-    tracerProvider = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(spans)],
+    context.setGlobalContextManager(new AsyncLocalStorageContextManager());
+    tracerProvider = new TracerProvider({
+      spanProcessors: [new SimpleSpanProcessor({ exporter: spans })],
     });
-    tracerProvider.register();
+    trace.setGlobalTracerProvider(tracerProvider);
     reader = new PeriodicExportingMetricReader({
       exporter: new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE),
       exportIntervalMillis: 3_600_000,

@@ -301,11 +301,6 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   # An Environment runs the platform's agent image, whose root is an overlay,
   # as a sandbox's is.
   node_volumes_on_home
-  # The runners' claims on a filesystem of their own, before k3s starts, as the
-  # service that mounts it at every boot does (node_claim_fs).
-  CLAIM_BYTES="$(node_runner_storage helm/values.yaml helm/values-local.yaml ${HELM_VALUES:+"$HELM_VALUES"} -- ${HELM_EXTRA_ARGS[@]+"${HELM_EXTRA_ARGS[@]}"})" ||
-    { echo "FATAL: virtualization.runner.storage is no size" >&2; exit 1; }
-  node_claim_fs "$CLAIM_BYTES" || exit 1
   # Every image the install puts in stays (NODE_IMAGE_GC_DROPIN); a k3s that
   # already runs takes it at a restart.
   if node_image_gc_off && node_k3s_running; then
@@ -539,7 +534,7 @@ fi
 # dependencies are resolved into charts/ (gitignored) here, first: rendering
 # needs them even with clickstack.enabled=false, and the build refreshes both
 # repositories. Best effort: the kubelet still pulls whatever this misses.
-ISTIO_VERSION="1.31.2"
+ISTIO_VERSION="1.31.3"
 # Istio publishes its charts here from 1.31 on; the GCS bucket stops at 1.30
 # and is being retired. --force-update repoints an `istio` repo a machine
 # already has registered at the old URL.
@@ -883,18 +878,12 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   echo "Installing the host-name bridge on port $BRIDGE_PORT..."
   env_bridge_manifest "$(yq '.controller.envoyImage' helm/values.yaml)" \
     "$BRIDGE_PORT" "$APP_PORT" "$BRIDGE_SCHEME" "$BRIDGE_PUBLIC_PORT" | kubectl apply -f -
-  echo "Installing storage class $NODE_CLAIM_CLASS for the runners' claims..."
-  node_claim_class_config "$(kubectl -n kube-system get configmap local-path-config -o jsonpath='{.data.helperPod\.yaml}')" | kubectl apply -f -
-  node_claim_class_manifest "$(kubectl -n kube-system get deployment local-path-provisioner -o jsonpath='{.spec.template.spec.containers[0].image}')" | kubectl apply -f -
-  # A claim keeps its class: one an earlier install made on local-path stays
-  # on the node's disk until it is deleted, as e2e:reset deletes them.
-  HELM_EXTRA_ARGS+=("--set-string=virtualization.runner.storageClass=$NODE_CLAIM_CLASS")
 fi
 
 # 2. Install cert-manager, beside the Istio install below: neither needs the
 # other, and each spends most of its time waiting for its pods. Its output is
 # prefixed, and the Istio block ends by waiting for it.
-CERT_MANAGER_VERSION="v1.21.2"
+CERT_MANAGER_VERSION="v1.21.3"
 
 install_cert_manager() {
   if ! kubectl get ns cert-manager >/dev/null 2>&1; then
@@ -1252,12 +1241,8 @@ fi
 # images outgrow. The MongoDB agent stays on the 108 line, which still runs the
 # MongoDB 5.0 the clickstack subchart deploys: the 109 line 1.13 defaults to
 # dropped 5.0. Move it with that MongoDB version.
-# The operator image runs 1.13.1 under the 1.13.0 chart. The 1.13.1 tag was
-# built 2026-10-07 and has no upstream release or chart yet; it fixes the
-# libxml2 (CVE-2026-74860, CVE-2026-86138, CVE-2026-86140, CVE-2026-86142,
-# CVE-2026-86143, CVE-2026-86144) and gawk (CVE-2026-40467, CVE-2026-40468,
-# CVE-2026-40553) findings of 1.13.0. Drop operator.version once a chart ships
-# 1.13.1 or later.
+# The 1.14.0 chart runs its own 1.14.0 operator image, so the dated
+# operator.version override this install carried while the chart lagged is gone.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
   # A cluster installed with the umbrella: its CRDs outlive the uninstall (resource-policy
@@ -1274,10 +1259,9 @@ if [ -n "${CLICKSTACK:-}" ]; then
     --set manager.image.tag=v0.0.8
   helm upgrade --install mongodb-operator mongodb-kubernetes \
     --repo https://mongodb.github.io/helm-charts \
-    --version 1.13.0 --namespace clickstack-operators --wait --timeout 5m \
+    --version 1.14.0 --namespace clickstack-operators --wait --timeout 5m \
     --take-ownership \
     --set registry.operator=quay.io/dam-agents \
-    --set operator.version=1.13.1 \
     --set community.agent.version=108.0.27.9091-1 \
     --set operator.watchNamespace="$CLUSTER_NAMESPACE" \
     --set 'operator.watchedResources={mongodbcommunity}'

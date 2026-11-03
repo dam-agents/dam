@@ -11,7 +11,6 @@ import {
   templateIdsForAlias,
 } from "api-server-api";
 
-import { prettyModelLabel } from "./model-families.js";
 import type { ProviderConnectionRef } from "./session-pair-options.js";
 
 export interface ModelGroup {
@@ -72,16 +71,6 @@ export function sameSideGroups(
     : groups.filter((g) => g.native === own.native);
 }
 
-export function modelLabel(model: CatalogModelView): string {
-  return model.upstreamId;
-}
-
-export function contextLabel(model: CatalogModelView): string | null {
-  if (model.contextWindow === null) return null;
-  const k = Math.round(model.contextWindow / 1000);
-  return k >= 1000 ? `${(k / 1000).toFixed(k % 1000 === 0 ? 0 : 1)}M` : `${k}K`;
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the catalog names a model the way its harness
  * sees it (Claude Code's lowercased `claude/…`) while a session stores the
@@ -103,36 +92,6 @@ export function findModel(
     if (model) return { group, model };
   }
   return null;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the upstream id and the Connection's name, so a
- * reader sees where the next turn goes.
- */
-export function modelIndicatorLabel(
-  groups: readonly ModelGroup[],
-  name: string | null,
-): string | null {
-  const hit = findModel(groups, name);
-  if (hit) return `${modelLabel(hit.model)} (${hit.group.displayName})`;
-  return name;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: what the chat shows for the session's model: the
- * family's name for a model the menu recognises, and the upstream id with its
- * provider for one it does not.
- */
-export function sessionModelLabel(
-  groups: readonly ModelGroup[],
-  name: string | null,
-): string | null {
-  if (name === null) return null;
-  const hit = findModel(groups, name);
-  return (
-    (hit && prettyModelLabel(hit.model.name)) ??
-    (hit ? `${modelLabel(hit.model)} (${hit.group.displayName})` : name)
-  );
 }
 
 export interface AddableProvider {

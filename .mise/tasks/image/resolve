@@ -55,7 +55,7 @@ UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclu
 # directory: the task, image:pack and image:name-layout that put them
 # together, and the base. The root config names their Debian base; a bump of
 # another tool there re-tags them too, which errs toward rebuilds.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/.mise/lib/agents-md.sh .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # agent images; CI's `agents` build/merge matrix. The default image carries
 # every harness, whose directories are its sources and no image of their own.
@@ -117,8 +117,9 @@ import_path() { if grep -qx "$1" "$OCI_OUT/load" 2>/dev/null; then echo "$OCI_OU
 own_paths() {
   if is_workload "$1"; then echo "$MISE_IMAGE_PATHS packages/agents/$1"; return; fi
   case "$1" in
-    # The mock's harness bundles the mock control API client.
-    mock) echo "packages/e2e/agents/mock packages/e2e/agents/mock-api" ;;
+    # The mock's harness bundles the mock control API client and the e2e
+    # contract's schemas, which the api-server drives it by.
+    mock) echo "packages/e2e/agents/mock packages/e2e/agents/mock-api packages/api-server-api" ;;
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
     # script that fetches it, image.toml and the task that builds the image
@@ -245,6 +246,10 @@ self_check() {
   has "$(effective_paths default)" packages/agents/base
   has "$(effective_paths default)" packages/agent-runtime
   has "$(effective_paths default)" .mise/config.toml
+  # What composes a workload's /etc/AGENTS.md ships in the image, so a change
+  # to it alone must rebuild the workload.
+  has "$(effective_paths default)" packages/agents/.mise/lib/agents-md.sh
+  has "$(effective_paths gepa)" packages/agents/.mise/lib/agents-md.sh
   chk "$(base_of keycloak)" ""
   chk "$(base_of controller)" ""
   chk "$(base_of ui)" ""
@@ -267,6 +272,7 @@ self_check() {
   case "$(third_party | grep -vE '^[^[:space:]]+[:@][^[:space:]]+$' || true)" in ?*) echo "FAIL: third_party lists a line that is no image ref" >&2; f=1 ;; esac
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api
+  has "$(effective_paths mock)" packages/api-server-api
   has "$(effective_paths k-search)" packages/agents/claude-code
   has "$(effective_paths nous)" packages/agents/claude-code
   has "$(effective_paths nous)" packages/agents/nous

@@ -1,9 +1,10 @@
-import { trace } from "@opentelemetry/api";
+import { context, trace } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
   InMemorySpanExporter,
-  NodeTracerProvider,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-node";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import { inBackgroundSpan } from "../../core/background-span.js";
 import type { Schedule } from "api-server-api";
@@ -1367,18 +1368,20 @@ describe("scheduler-runner runNow", () => {
 
 describe("scheduler-runner fire: the trace of a fire", () => {
   let spans: InMemorySpanExporter;
-  let tracerProvider: NodeTracerProvider;
+  let tracerProvider: TracerProvider;
 
   beforeEach(() => {
     spans = new InMemorySpanExporter();
-    tracerProvider = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(spans)],
+    context.setGlobalContextManager(new AsyncLocalStorageContextManager());
+    tracerProvider = new TracerProvider({
+      spanProcessors: [new SimpleSpanProcessor({ exporter: spans })],
     });
-    tracerProvider.register();
+    trace.setGlobalTracerProvider(tracerProvider);
   });
 
   afterEach(async () => {
     await tracerProvider.shutdown();
+    context.disable();
     trace.disable();
   });
 

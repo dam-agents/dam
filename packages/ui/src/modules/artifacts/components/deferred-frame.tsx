@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { useArtifactPrint } from "../hooks/use-artifact-print.js";
 import { useArtifactPrompt } from "../hooks/use-artifact-prompt.js";
 import { useArtifactRequest } from "../hooks/use-artifact-request.js";
 
@@ -27,6 +28,7 @@ export function DeferredFrame({
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   useArtifactPrompt(frameRef, onSendPrompt);
   useArtifactRequest(frameRef, agentApiArtifactId);
+  useArtifactPrint(frameRef);
   useEffect(() => {
     if (deferMs === 0) return;
     const timer = setTimeout(() => setMounted(true), deferMs);

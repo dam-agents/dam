@@ -6,7 +6,7 @@ The alerts that cannot wait a week (an outage, a silent heartbeat, a failing bac
 
 Default: weekly (e.g. Friday morning), gated by a config key (`audit_report: enabled` default).
 **Read-only toward external systems and repair-free**: it reports; routine findings heal on their pipeline's next run, everything else goes to the operator.
-Its only local write beyond its log line is memory consolidation (when the agent has memory).
+Its only local write beyond its log line is memory consolidation (when the agent has memory); its only external writes are the tracking issue, the trend artifact and the agent manifest.
 
 ## Division of labor
 
@@ -74,6 +74,8 @@ Include what applies; add domain checks from the design's effects list.
 - **Outcome shifts against the recorded baseline** (Trend history below): a share that moved 20 pp or more against the four recorded weeks, or a rate that halved or doubled, which a z-test (\|z\| ≥ 2) does not explain as noise → warn naming the **definition versions on both sides** (every output row records the `def` that wrote it) and, after reading two or three outputs of the moved side, whether the agent changed or the inputs did.
 - **A human overruled the agent's verdict** (a change request after the agent's approve, a reverted item it passed): each is a defect the agent let through; read it, name the missed class, record the lesson, list the items under *Action needed*.
 - Config validity: required keys present and parseable; roster integrity when one exists.
+- **Agent manifest** (`references/manifest.md`): rewrite the card from its sources, `manifest-check.sh stamp` then `publish`, and publish on change under `agent_manifest: dam`; a `FAIL` keeps the old card and is a `fail` here.
+  Then each peer in `work/PEERS.md`: fetch, `manifest-check.sh peer`, compare with the pinned version; a changed id the definition `uses` is **Action needed** (the operator adopts the new version through **Pin a peer**); a config value that differs from the pinned copy is a `warn`, and the config wins.
 
 ## Trend history
 
@@ -116,14 +118,8 @@ Then append `<ISO> ok=<n> warn=<n> red=<n> sent=<channel|chat>` to `work/AUDIT.l
 
 ## Optional: a periodic quality benchmark
 
-For agents whose output quality is a judgment call (reviews, classifications, summaries): a rarer run (monthly, off by default, own config key) replays fixed synthetic fixtures through the full pipeline and scores output against seeded ground truth, recording time and token cost per item, so "did the model upgrade help?"
-gets an answer.
-Trust invariants: ground truth lives **outside** the pipeline's inputs (a set naming its own answers is never scored); fixture creation and scored runs never share a session; one scored run at a time behind a lock; results append-only and validated before entering the history; nothing in the production domain touched beyond its own report.
-Difficulty: grade it in the ground truth on two axes, so the report can say "good enough for simple work, not for complex".
-The task tier (`simple` \| `complex`: size, files, interacting changes) belongs to each fixture, with a minimum count per tier in the set; item difficulty (`easy` \| `hard`, hard = needs reasoning across items or steps, never a surface pattern) belongs to each seeded item.
-Score each tier by pooling its fixtures into one sample (summed hits, false alarms and totals, never an average of small fractions), report easy and hard recall beside each other, and give each tier one verdict against an operator-set bar (own config table, documented defaults): sufficient, borderline, insufficient, or too few items to decide.
-The bar has two measures per tier, recall over the seeded items and a false-alarm measure (precision, or wrong outputs on clean items), each with its own threshold; a tier is sufficient only when both clear.
-Show the counts behind every verdict (`17/20`), and keep the verdicts beside the headline index, never inside it, so earlier runs stay comparable.
+For agents whose output quality is a judgment call (reviews, classifications, summaries): a rarer run (monthly, off by default, own config key) replays fixed synthetic fixtures through the full pipeline and scores the output against seeded ground truth, with time and token cost per item.
+How to create the fixtures, run, score, judge and report it, and what the audit checks about it: `references/benchmark.md`.
 Propose it only where the operator would act on the numbers: it costs real tokens, and the complex tier costs the most.
 
 ## Memory consolidation (only when the agent has memory)

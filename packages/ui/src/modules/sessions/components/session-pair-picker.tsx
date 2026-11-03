@@ -6,7 +6,6 @@ import {
 } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type {
-  DefaultKind,
   SessionChoiceReferences,
   SessionChoiceSlots,
   SessionPair,
@@ -49,9 +48,7 @@ import {
   attachableProviders,
   findModel,
   modelGroups,
-  sameModel,
 } from "../lib/catalog-groups.js";
-import { DEFAULT_KIND_LABEL, DEFAULT_KIND_TITLE } from "../lib/default-kind.js";
 import {
   harnessDisplayName,
   harnessOptions,
@@ -638,47 +635,6 @@ export function ConnectProvidersPrompt({ onClick }: { onClick: () => void }) {
         </span>{" "}
         first.
       </span>
-    </button>
-  );
-}
-
-export function SetAsDefault({
-  agentId,
-  kind,
-  pair,
-  defaults,
-  remembered,
-  onSet,
-}: {
-  agentId: string;
-  kind: DefaultKind;
-  pair: SessionPair;
-  defaults: Readonly<Record<string, string>>;
-  remembered: SessionPair | null | undefined;
-  onSet?: () => void;
-}) {
-  if (pair.model === null) return null;
-  const saved =
-    !!remembered &&
-    remembered.harness === pair.harness &&
-    (pair.provider === null || remembered.provider === pair.provider) &&
-    (remembered.model === pair.model ||
-      sameModel(remembered.model, pair.model)) &&
-    Object.entries(pair.settings ?? {}).every(
-      ([id, value]) => (remembered.settings?.[id] ?? defaults[id]) === value,
-    );
-  return (
-    <button
-      type="button"
-      disabled={saved}
-      onClick={() => {
-        rememberSessionPair(agentId, pair, kind, onSet);
-      }}
-      className="shrink-0 whitespace-nowrap underline underline-offset-2 hover:text-foreground disabled:no-underline disabled:opacity-60"
-    >
-      {saved
-        ? `${DEFAULT_KIND_TITLE[kind]} default`
-        : `Set as ${DEFAULT_KIND_LABEL[kind]} default`}
     </button>
   );
 }

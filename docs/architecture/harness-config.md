@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-01
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -225,7 +225,7 @@ The router recognizes that call (auxiliary, no subagent id) and sends it to the 
 A session with **server-side auto mode** — a Claude model on a preset flagged `serverAutoMode` (Anthropic and the IBM proxy), and no non-Claude subagent model — leaves the call alone, since that provider answers the check itself.
 The router reads the catalog at each call while the process holds its spawn value, so a replaced listing reaches a running process only when it recycles.
 A title naming the classifier's model, which only a Haiku slot falling back to it sends, cannot be told from the classifier and follows the same rule.
-Claude Code ignores the knob below 2.1.302, so it arrives with the image's adapter pin: `@agentclientprotocol/claude-agent-acp` 0.94.0 bundles it through `@anthropic-ai/claude-agent-sdk` 0.3.303, whose CLI is 2.1.303.
+Claude Code ignores the knob below 2.1.302, so it arrives with the image's adapter pin: `@agentclientprotocol/claude-agent-acp` 0.96.0 bundles it through `@anthropic-ai/claude-agent-sdk` 0.3.310.
 The platform's **preferred models** are one ordered list per role, `work` and `classifier`, a constant beside the provider presets in `api-server-api`; the list decides only where nothing the person chose does, never an agent that already runs or a model someone saved.
 Within a role the first entry whose model a provider lists wins, and providers are tried in the agent's own alias order, so the list's order beats a provider's.
 A model matches by its family, the version right behind it and the variant behind that where the list names one, across the spellings providers use: a deployment prefix (`rits/`, `aws/`, `eu/`), case, a version split by `-`, `_` or `.`, a `v` before it, a build stamp (`-1017`), Claude Code's `[1m]`.

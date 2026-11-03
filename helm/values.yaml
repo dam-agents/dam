@@ -865,7 +865,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: mirror.gcr.io/chrislusf/seaweedfs:4.48
+  image: mirror.gcr.io/chrislusf/seaweedfs:4.51
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
@@ -918,7 +918,7 @@ clickstack:
     podAnnotations: {}
     # Mirror of otel/opentelemetry-collector-contrib. Registered in
     # .mise/tasks/image/mirror, which CI runs on every main push.
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.162.0
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.163.2
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
@@ -949,7 +949,7 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.41.0"
+        tag: "2.42.0"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.38.0"
 
@@ -1971,8 +1971,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.40.0 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0
+  # envoyproxy/envoy:distroless-v1.40.1 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.1
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
   # its gateway passes through untouched. The api-server trusts them too
@@ -2021,7 +2021,7 @@ controller:
   # pod: it answers every name with the gateway's address and resolves nothing
   # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like
   # Envoy.
-  machineDNSImage: mirror.gcr.io/coredns/coredns:1.14.7
+  machineDNSImage: mirror.gcr.io/coredns/coredns:1.15.0
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart

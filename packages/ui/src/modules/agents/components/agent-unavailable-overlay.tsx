@@ -1,7 +1,7 @@
 import { Asleep, Play, Restart, Warning } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
+import { match } from "ts-pattern";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -31,6 +31,21 @@ const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
   over_budget: Warning,
 };
 
+export function takesOverChat(state: AgentDisplayState | null): boolean {
+  return match(state)
+    .with(null, () => true)
+    .with("starting", "preparing_workspace", "running", () => false)
+    .with(
+      "hibernating",
+      "hibernated",
+      "over_budget",
+      "error",
+      "disabled",
+      () => true,
+    )
+    .exhaustive();
+}
+
 export function AgentUnavailableOverlay({
   agent,
   display,
@@ -57,24 +72,6 @@ export function AgentUnavailableOverlay({
           Loading agent…
         </p>
         <StartupTip sandbox={name} />
-      </OverlayFrame>
-    );
-  }
-
-  if (display.state === "running") {
-    return (
-      <OverlayFrame onBack={onBack}>
-        <Spinner size={40} />
-        <div className="flex flex-col items-center gap-4">
-          <h2 className="text-5xl font-normal tracking-tight text-foreground">
-            {agent.name}
-          </h2>
-          <Badge variant="warning">Reconnecting</Badge>
-        </div>
-        <p className="max-w-105 text-sm text-muted-foreground">
-          Lost contact with the agent. Reconnecting…
-        </p>
-        <StartupTip sandbox={agent.name} />
       </OverlayFrame>
     );
   }

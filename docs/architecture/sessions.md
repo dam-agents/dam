@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-29
+Last verified: 2026-11-02
 
 ## Session inside the machine
 
@@ -214,6 +214,9 @@ The runtime reports such a request to the api-server the moment no engaged chann
 It reports how every permission request it held ended, watched or not: the answer it accepted, which settles the row whoever wrote it, or its end when the request is dropped.
 Dropping covers both the ten-minute wait and a session reset, so a row never outlives the question it describes.
 The api-server records it as a pending tool approval at once, so Home and the approvals bell show it with the time the agent asked, not first when someone opens the session; a verdict given there answers it, the session still unwatched ([home-feed](home-feed.md#what-home-reads)).
+A viewer's copy of a request follows the runtime's: while the viewer's own connection is gone it keeps the card on screen with its options disabled, and once the session is live again it drops every request whose channel is closed and takes the reissued one.
+A chat whose channel is not live stays on screen: its labels follow the connection state, so a dropped channel that is retrying reads reconnecting and every other non-live state reads connecting, and the notice offers Retry in each blocked state that is not loading; the composer keeps the draft and Stop waits, since a cancel cannot reach the Agent.
+A terminal session has its own viewer connection rather than this channel, so this gate, its notice and its labels leave it alone.
 A cold re-attach, whichever verb the harness advertised for one, has a load budget, which a harness's image can lengthen when it spawns or loads slowly, as Bob's does.
 Past it the waiting clients get the timeout and the request's frames are suppressed, but the harness gets as long again to answer late: one that does stays up, with every call it still owes, such as a new chat on the same process.
 Until the late answer comes, a prompt or setting for that Session is refused, and an open of it waits and loads it once the harness is free.

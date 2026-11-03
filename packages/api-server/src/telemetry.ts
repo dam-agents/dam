@@ -17,7 +17,10 @@ if (isOtelEnabled(process.env)) {
   register("import-in-the-middle/hook.mjs", import.meta.url, registerOptions);
 
   const [
-    { NodeSDK, logs, metrics, resources },
+    { NodeSDK },
+    { resourceFromAttributes },
+    metrics,
+    { BatchLogRecordProcessor },
     { OTLPTraceExporter },
     { OTLPMetricExporter },
     { OTLPLogExporter },
@@ -31,6 +34,9 @@ if (isOtelEnabled(process.env)) {
     { withGaugeDeltaTemporality },
   ] = await Promise.all([
     import("@opentelemetry/sdk-node"),
+    import("@opentelemetry/resources"),
+    import("@opentelemetry/sdk-metrics"),
+    import("@opentelemetry/sdk-logs"),
     import("@opentelemetry/exporter-trace-otlp-proto"),
     import("@opentelemetry/exporter-metrics-otlp-proto"),
     import("@opentelemetry/exporter-logs-otlp-proto"),
@@ -45,7 +51,7 @@ if (isOtelEnabled(process.env)) {
   ]);
 
   const sdk = new NodeSDK({
-    resource: resources.resourceFromAttributes({
+    resource: resourceFromAttributes({
       "service.version": process.env.PLATFORM_APP_VERSION ?? "0.0.0",
     }),
     traceExporter: new OTLPTraceExporter(),
@@ -55,7 +61,7 @@ if (isOtelEnabled(process.env)) {
       }),
     ],
     logRecordProcessors: [
-      new logs.BatchLogRecordProcessor({ exporter: new OTLPLogExporter() }),
+      new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() }),
     ],
     instrumentations: [
       new HttpInstrumentation({

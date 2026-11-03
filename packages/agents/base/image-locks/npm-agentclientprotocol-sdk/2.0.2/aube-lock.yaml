@@ -9,22 +9,22 @@ importers:
   .:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: 1.7.0
-        version: 1.7.0(zod@4.6.7)
+        specifier: 2.0.2
+        version: 2.0.2(zod@4.6.7)
 
 packages:
 
-  '@agentclientprotocol/sdk@1.7.0':
-    resolution: {integrity: sha512-ZORuxsuEnLjRly7t6Ad7zAsWitjWsyprswyPUHz/yycPb+tTm3DGa8XheaHhRXqX8LS9snuxaYavXSRA50TlHw==}
+  '@agentclientprotocol/sdk@2.0.2':
+    resolution: {integrity: sha512-jLywRB42hZMRMc4aUgt0uRjkY9FQnMdybv4XgLl+ddi75QuJn8Vbl0+CHcVHJDC0+WDfi1KQXRWtHaR5vp6gHw==}
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      zod: ^3.25.76 || ^4.0.0
 
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
-  '@agentclientprotocol/sdk@1.7.0(zod@4.6.7)':
+  '@agentclientprotocol/sdk@2.0.2(zod@4.6.7)':
     dependencies:
       zod: 4.6.7
 

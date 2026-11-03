@@ -262,8 +262,8 @@ func LoadFromEnv() (*Config, error) {
 
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
-	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0")
-	cfg.MachineDNSImage = envOrDefault("MACHINE_DNS_IMAGE", "mirror.gcr.io/coredns/coredns:1.14.7")
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.1")
+	cfg.MachineDNSImage = envOrDefault("MACHINE_DNS_IMAGE", "mirror.gcr.io/coredns/coredns:1.15.0")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
 	cfg.VMRunnerCAIssuer = envOrDefault("VM_RUNNER_CA_ISSUER", "platform-vm-runner-ca-issuer")

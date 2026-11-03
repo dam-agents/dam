@@ -36,6 +36,7 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     isError: false,
     exitCode: 0,
     output: "all good",
+    images: [],
     truncated: false,
     reason: null,
     cancelRequested: false,
@@ -211,6 +212,22 @@ describe("waking an agent with a finished job", () => {
     expect(text).not.toContain("x".repeat(5000));
   });
 
+  /**
+   * TEST_SCENARIO: A synthetic turn is text, so an image cannot ride it. The
+   * Agent must still learn the picture exists and where to get it, or a tool
+   * whose whole answer was a plot would read as having answered nothing.
+   */
+  it("names the image and the tool that shows it, since a turn cannot carry one", async () => {
+    const data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB";
+    const { deliver, events } = harness([
+      [job({ images: [{ type: "image", data, mimeType: "image/png" }] })],
+    ]);
+    await deliver("agent-1");
+    const text = task(events[0]?.payload);
+    expect(text).toContain("gpu_box__get");
+    expect(text).not.toContain(data);
+  });
+
   it("reports an interrupted job by its reason rather than pretending it finished", async () => {
     const { deliver, events } = harness([
       [
@@ -298,6 +315,7 @@ describe("reporting an outcome reaches the wake", () => {
         isError: false,
         exitCode: 0,
         output: "ok",
+        images: [],
         truncated: false,
       },
     });

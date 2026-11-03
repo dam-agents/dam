@@ -1,4 +1,5 @@
 import type {
+  SatelliteImage,
   SatelliteManifest,
   SatelliteTool,
   WorkItem,
@@ -26,6 +27,7 @@ export interface WorkerTransport {
           isError: boolean;
           exitCode: number | null;
           output: string;
+          images: SatelliteImage[];
           truncated: boolean;
         }
       | { status: "cancelled"; output?: string; truncated?: boolean }
@@ -100,6 +102,7 @@ function reportable(
     isError: outcome.isError,
     exitCode: outcome.exitCode,
     output: outcome.output,
+    images: outcome.images ?? [],
     truncated: outcome.truncated,
   };
 }

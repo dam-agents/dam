@@ -26,21 +26,22 @@ repo_root = "{{config_root}}"
 # Each pin is the newest build of its tag that cleared the 7-day floor, timed
 # by publication (the Red Hat catalog's push_date) rather than the build label,
 # which issue #5291's tag-to-digest comparison ignores:
-#   nodejs:26             pushed 2026-10-15T02:23:49Z, eligible 2026-10-22T02:23:49Z
-#   core-runtime:latest   pushed 2026-10-15T02:31:23Z, eligible 2026-10-22T02:31:23Z
-# The digests the tags name now were pushed 2026-10-22T06:24Z and T06:10Z, so
-# they qualify from 2026-10-29.
+#   core-runtime:latest   built 2026-10-25T06:02Z, eligible 2026-11-01T06:02Z
+# The other two tags name builds that are still under the floor (nodejs built
+# 2026-10-29, nginx 2026-10-27), so those pins wait for the next run.
 base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c46573a1d159c05370bada02d6049f38fbdcfa6418c0868ad404f4b92743475c"
-base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:12ebc4493ccbb80fd47175c9c670ea590c4e7140a7c4858e038ac2df42be8ca8"
-# 26.8.1 (2026-10-13T08:59Z) fixes the pcre2 CVEs in 26.8.0 and Keycloak's own
-# advisories, so it carries a dated exception that ends 2026-10-20T08:59Z. It
-# is still the newest tag upstream publishes.
-base_image_keycloak = "quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244"
+base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:4163796d8b7f28021178093d31cb97c05336fd3f3a4d7006603a7fef29e997e7"
+# The 26.8.1 tag was rebuilt on 2026-10-31T10:43Z with a current base OS: it
+# clears the OpenJDK, ca-certificates and pcre2 findings of the 2026-10-13
+# build this pin held, so it carries a dated exception that ends
+# 2026-11-07T10:43Z. Keycloak's own libraries (mariadb-java-client,
+# opentelemetry-api, guava) still wait on a newer upstream release.
+base_image_keycloak = "quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332"
 # nginx 1.30.6's floor exception is spent: this build was pushed
 # 2026-10-15T06:51:53Z, so it has been eligible since 2026-10-22T06:51:53Z. It
 # fixes CVE-2026-15176, CVE-2026-93479, CVE-2026-95101, CVE-2026-97629 and
 # CVE-2026-97205. The digest the tag names now is another build of the same
-# 1.30.6, pushed 2026-10-22T07:48:02Z, so it qualifies from 2026-10-29.
+# 1.30.6, built 2026-10-27T15:18Z, so it qualifies from 2026-11-03.
 base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:63ef79903a967e6bf45ed76e7c5f8bf28fb7457931162e0d645e75bcdeee0c49"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
@@ -67,9 +68,9 @@ gh = "latest"
 go = "1.27"
 gum = "latest"
 helm = "latest"
-# 2.3.0 (2026-10-21) is under the 7-day floor until 2026-10-28; 2.2.0 is the
+# 2.4.0 (2026-10-29) is under the 7-day floor until 2026-11-05; 2.3.0 is the
 # newest release past it. The check is check:actions.
-jactionlint = "2.2.0"
+jactionlint = "2.3.0"
 java = "temurin-25"
 jq = "latest"
 kubeconform = "latest"

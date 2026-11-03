@@ -44,3 +44,11 @@ export type ArtifactWhoamiResponseMessage = {
   id: string;
   ok: true;
 } & ArtifactApiCaller;
+
+export const ARTIFACT_SIZE_TYPE = "artifact.size";
+export const ARTIFACT_PRINT_MAX_WIDTH = 960;
+
+export const artifactSizeMessageSchema = z.object({
+  type: z.literal(ARTIFACT_SIZE_TYPE),
+  height: z.number().positive().max(1_000_000),
+});

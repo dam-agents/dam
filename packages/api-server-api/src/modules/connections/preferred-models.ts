@@ -31,7 +31,7 @@ export const PREFERRED_MODELS: readonly PreferredModel[] = [
     version: ["3"],
     variant: "ultra",
   },
-  { role: "classifier", family: ["claude", "sonnet"], version: ["5", "5"] },
+  { role: "classifier", family: ["claude", "sonnet"], version: ["5"] },
 ];
 
 const NOT_AN_ID = /[^a-z0-9]+/g;
@@ -67,14 +67,18 @@ export function modelTokens(upstreamId: string): string[] {
  * DeepSeek 4.1, and gpt-5.6 is not gpt-6), and so is a different variant
  * (Nemotron 3 Nano is not the Ultra the platform prefers), so a listing that
  * holds only one of those falls through to the next entry rather than running
- * on it unseen. What may still follow is the build stamp providers append
- * (`-1017`, `-20260101`) — digits only, so a word there is a variant.
+ * on it unseen. A version that goes on past the listed digits is that other
+ * version too: Sonnet 5.5 is not the Sonnet 5 the list names. What may still
+ * follow is the build stamp providers append (`-1017`, `-20260101`), three
+ * digits or more — a version's own digits come one or two at a time, so a
+ * shorter number after the version continues it — and a word there is a
+ * variant.
  */
 export function modelMatches(
   tokens: readonly string[],
   pref: PreferredModel,
 ): boolean {
-  const stamp = /^\d+$/;
+  const stamp = /^\d{3,}$/;
   return tokens.some((_, at) => {
     if (!pref.family.every((token, offset) => tokens[at + offset] === token))
       return false;

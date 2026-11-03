@@ -5,12 +5,10 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import {
-  type ModelGroup,
+  findModel,
   modelGroups,
-  modelIndicatorLabel,
   sameModel,
   sameSideGroups,
-  sessionModelLabel,
 } from "../../modules/sessions/lib/catalog-groups.js";
 import { settingsForModel } from "../../modules/sessions/lib/session-settings.js";
 
@@ -147,21 +145,16 @@ describe("settingsForModel", () => {
   });
 });
 
-describe("modelIndicatorLabel", () => {
+describe("findModel", () => {
   /** TEST_SCENARIO: Claude Code's catalog names models as it sees them
    * (`claude/ibm/aws/…`, lowercased) while the session stores the plain
-   * `ibm/aws/…`; the label under the composer still finds the model and
-   * names its provider, as it does on every other harness. */
+   * `ibm/aws/…`; the picker still finds the model, so it names the provider
+   * the next turn goes to instead of the raw name. */
   it("finds a session's model in Claude Code's prefixed catalog", () => {
-    const groups: ModelGroup[] = [
-      {
-        connectionId: "conn-ibm",
-        alias: "ibm",
+    const groups = modelGroups(
+      catalog({
+        ...provider("conn-ibm", "listed"),
         displayName: "IBM ETE LiteLLM Proxy",
-        status: "listed" as const,
-        listedAt: null,
-        native: false,
-        attached: true,
         models: [
           {
             name: "claude/ibm/aws/claude-opus-4-5",
@@ -174,15 +167,20 @@ describe("modelIndicatorLabel", () => {
             source: { limits: "none" as const, prices: "none" as const },
           },
         ],
-      },
-    ];
-    expect(modelIndicatorLabel(groups, "ibm/aws/claude-opus-4-5")).toBe(
-      "aws/claude-opus-4-5 (IBM ETE LiteLLM Proxy)",
+      }),
     );
-    expect(sessionModelLabel(groups, "ibm/aws/claude-opus-4-5")).toBe(
-      "Claude Opus 4.5",
-    );
-    expect(sessionModelLabel(groups, "cb/unlisted")).toBe("cb/unlisted");
+    const hit = findModel(groups, "ibm/aws/claude-opus-4-5");
+    expect(hit?.group.connectionId).toBe("conn-ibm");
+    expect(hit?.model.upstreamId).toBe("aws/claude-opus-4-5");
+    expect(findModel(groups, "cb/unlisted")).toBeNull();
+  });
+});
+
+describe("sameModel", () => {
+  /** TEST_SCENARIO: Claude Code's catalog names models as it sees them
+   * (`claude/ibm/aws/…`, lowercased) while the session stores the plain
+   * `ibm/aws/…`, so the two compare equal without that prefix and case. */
+  it("matches a session's model to Claude Code's prefixed catalog entry", () => {
     expect(sameModel("claude/ibm/aws/x", "ibm/aws/x")).toBe(true);
     expect(sameModel("ibm/aws/x", null)).toBe(false);
   });

@@ -2,7 +2,13 @@ import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { satelliteNameSchema } from "api-server-api";
+import {
+  MAX_JOB_OUTPUT_BYTES,
+  escapedTextBytes,
+  reportInputSchema,
+  satelliteNameSchema,
+  storedPayloadBytes,
+} from "api-server-api";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { parseServerUrl } from "../modules/satellite/commands/mcp.js";
@@ -20,13 +26,19 @@ import { createMcpBackend } from "../modules/satellite/services/mcp-backend.js";
  * real Streamable HTTP server and pin that its tools are what the Satellite
  * offers, that a call is forwarded and its result comes back, and that headers
  * the user passes reach the server, since an existing server usually wants
- * credentials. They also pin how a --url is read, the name a Satellite takes
- * when given none, and the guide the worker prints once connected.
+ * credentials. An image a tool returns travels on as the block it was, so the
+ * agent meets a picture rather than a placeholder, and one too large to carry is
+ * reported in the output rather than dropped. They also pin how a --url is read,
+ * the name a Satellite takes when given none, and the guide the worker prints
+ * once connected.
  */
 
 let server: Server;
 let base: string;
 const seenHeaders: IncomingHttpHeaders[] = [];
+
+const PNG_1X1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==";
 
 function mcpServer(): McpServer {
   const mcp = new McpServer({ name: "existing", version: "1.0.0" });
@@ -39,6 +51,58 @@ function mcpServer(): McpServer {
     isError: true,
     content: [{ type: "text", text: "nope" }],
   }));
+  mcp.registerTool("plot", { description: "Plot something" }, async () => ({
+    content: [
+      { type: "text", text: "the plot" },
+      { type: "image", data: PNG_1X1, mimeType: "image/png" },
+    ],
+  }));
+  mcp.registerTool("huge", { description: "An image too large" }, async () => ({
+    content: [
+      {
+        type: "image",
+        data: "A".repeat(MAX_JOB_OUTPUT_BYTES + 4),
+        mimeType: "image/png",
+      },
+    ],
+  }));
+  mcp.registerTool(
+    "flood",
+    { description: "More images than fit" },
+    async () => ({
+      content: [
+        { type: "text", text: "four frames" },
+        ...Array.from({ length: 4 }, () => ({
+          type: "image" as const,
+          data: "A".repeat(400_000),
+          mimeType: "image/png",
+        })),
+      ],
+    }),
+  );
+  mcp.registerTool(
+    "sketch",
+    { description: "Not a raster image" },
+    async () => ({
+      content: [
+        {
+          type: "image" as const,
+          data: "PHN2Zz48L3N2Zz4=",
+          mimeType: "image/svg+xml",
+        },
+      ],
+    }),
+  );
+  mcp.registerTool(
+    "dense",
+    { description: "Text the JSON has to escape" },
+    async () => ({
+      content: [
+        { type: "text", text: "\u0001".repeat(300_000) },
+        { type: "image" as const, data: PNG_1X1, mimeType: "image/png" },
+      ],
+    }),
+  );
   return mcp;
 }
 
@@ -70,8 +134,13 @@ describe("a satellite forwarding to an MCP server by URL", () => {
     });
     try {
       expect(backend.tools.map((tool) => tool.name).sort()).toEqual([
+        "dense",
         "fail",
+        "flood",
         "greet",
+        "huge",
+        "plot",
+        "sketch",
       ]);
       const outcome = await backend.call({
         sequence: 1,
@@ -101,6 +170,142 @@ describe("a satellite forwarding to an MCP server by URL", () => {
         args: {},
       });
       expect(outcome).toMatchObject({ status: "done", isError: true });
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("passes an image a tool returned through unchanged", async () => {
+    const backend = await createMcpBackend({
+      kind: "url",
+      url: parseServerUrl(base)!,
+      headers: {},
+    });
+    try {
+      const outcome = await backend.call({
+        sequence: 1,
+        tool: "plot",
+        args: {},
+      });
+      expect(outcome).toMatchObject({
+        status: "done",
+        output: "the plot\n[image image/png]",
+        truncated: false,
+        images: [{ type: "image", data: PNG_1X1, mimeType: "image/png" }],
+      });
+      expect(
+        outcome.status === "done" ? outcome.output : "",
+        "the base64 belongs to the image block, not to the text the model reads",
+      ).not.toContain(PNG_1X1);
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("says so in the output when an image is over the limit, rather than dropping it", async () => {
+    const backend = await createMcpBackend({
+      kind: "url",
+      url: parseServerUrl(base)!,
+      headers: {},
+    });
+    try {
+      const outcome = await backend.call({
+        sequence: 1,
+        tool: "huge",
+        args: {},
+      });
+      expect(outcome).toMatchObject({ status: "done", images: [] });
+      expect(outcome.status === "done" ? outcome.output : "").toContain(
+        "not passed on",
+      );
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("keeps the images that fit and names the ones that do not", async () => {
+    const backend = await createMcpBackend({
+      kind: "url",
+      url: parseServerUrl(base)!,
+      headers: {},
+    });
+    try {
+      const outcome = await backend.call({
+        sequence: 1,
+        tool: "flood",
+        args: {},
+      });
+      const kept = outcome.status === "done" ? (outcome.images ?? []) : [];
+      expect(kept).toHaveLength(2);
+      expect(kept.reduce((bytes, i) => bytes + i.data.length, 0)).toBeLessThan(
+        MAX_JOB_OUTPUT_BYTES,
+      );
+      expect(outcome.status === "done" ? outcome.output : "").toContain(
+        "not passed on",
+      );
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("measures the escaped text, so the report it sends is one the platform takes", async () => {
+    const backend = await createMcpBackend({
+      kind: "url",
+      url: parseServerUrl(base)!,
+      headers: {},
+    });
+    try {
+      const outcome = await backend.call({
+        sequence: 1,
+        tool: "dense",
+        args: {},
+      });
+      if (outcome.status !== "done") throw new Error(outcome.status);
+      const output = outcome.output;
+      const images = outcome.images ?? [];
+      expect(
+        escapedTextBytes(output),
+        "the text is bounded after JSON escaping, not before it",
+      ).toBeLessThanOrEqual(
+        MAX_JOB_OUTPUT_BYTES - storedPayloadBytes({ output: "", images }),
+      );
+      expect(output.length).toBeLessThan(200_000);
+      expect(
+        reportInputSchema.safeParse({
+          satellite: "test-box",
+          sequence: 1,
+          outcome: {
+            status: "done",
+            isError: outcome.isError,
+            exitCode: outcome.exitCode,
+            output,
+            truncated: outcome.truncated,
+            images,
+          },
+        }).success,
+        "a report the platform would refuse would cost the job everything",
+      ).toBe(true);
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("refuses a block the contract will not take, and says why", async () => {
+    const backend = await createMcpBackend({
+      kind: "url",
+      url: parseServerUrl(base)!,
+      headers: {},
+    });
+    try {
+      const outcome = await backend.call({
+        sequence: 1,
+        tool: "sketch",
+        args: {},
+      });
+      expect(outcome).toMatchObject({ status: "done", images: [] });
+      const text = outcome.status === "done" ? outcome.output : "";
+      expect(text).toContain("image/svg+xml");
+      expect(text).toContain("not passed on");
     } finally {
       await backend.close();
     }

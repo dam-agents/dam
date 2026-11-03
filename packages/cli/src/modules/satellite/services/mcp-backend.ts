@@ -3,8 +3,14 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
+  MAX_JOB_IMAGES,
   MAX_JOB_OUTPUT_BYTES,
+  SATELLITE_IMAGE_MIME_TYPES,
+  escapedTextBytes,
+  satelliteImageOf,
   satelliteToolSchema,
+  storedPayloadBytes,
+  type SatelliteImage,
   type SatelliteTool,
 } from "api-server-api";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
@@ -31,35 +37,100 @@ import { errorMessage } from "../../shared/error-message.js";
  * sentence naming the tool the user has to rename. Title and description are
  * trimmed to their caps instead — a wordy title is not a reason to refuse a
  * machine, where a name the platform cannot register is.
+ *
+ * A result's images travel on unchanged, as the blocks the Agent's harness turns
+ * back into pictures. Each is checked against the contract here first, so a
+ * block the platform would refuse costs the Job its image rather than its whole
+ * report, and the text and the images together are held to one ceiling. Each
+ * image leaves a short marker in that text, so a harness that renders no image
+ * blocks still shows that a picture came back. An image over any bound, or one
+ * the contract will not take, is named there in full rather than vanishing from
+ * a result that then looks empty. Images take their bytes first: text over the
+ * inline limit reaches the Agent as a file anyway, where an image cannot.
+ * Audio and embedded resources stay placeholders: no harness hands either to its
+ * model, so passing them on would only cost bytes.
  */
 
 interface McpContent {
   type: string;
   text?: string;
+  data?: string;
+  mimeType?: string;
+}
+
+function kilobytes(bytes: number): string {
+  return `${Math.round(bytes / 1024)} kB`;
+}
+
+function textFits(text: string, max: number): boolean {
+  return escapedTextBytes(text) <= max;
+}
+
+function truncatedTo(text: string, max: number): string {
+  if (textFits(text, max)) return text;
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (textFits(text.slice(0, middle), max)) low = middle;
+    else high = middle - 1;
+  }
+  let cut = text.slice(0, low);
+  while (cut !== "" && !textFits(cut, max)) cut = cut.slice(0, -1);
+  return cut;
 }
 
 function renderContent(result: Record<string, unknown>): {
   output: string;
   truncated: boolean;
+  images: SatelliteImage[];
 } {
   const blocks = Array.isArray(result.content)
     ? (result.content as McpContent[])
     : [];
-  const text = blocks
-    .map((block) =>
-      block.type === "text" && typeof block.text === "string"
-        ? block.text
-        : `[${block.type}]`,
-    )
-    .join("\n");
+  const images: SatelliteImage[] = [];
+  const kept = new Set<number>();
+  const dropped: string[] = [];
+  const textBudget = (candidate: readonly SatelliteImage[]): number =>
+    MAX_JOB_OUTPUT_BYTES -
+    storedPayloadBytes({ output: "", images: candidate });
+  blocks.forEach((block, index) => {
+    if (block.type !== "image") return;
+    const image = satelliteImageOf(block);
+    if (image === null) {
+      dropped.push(
+        `[image ${block.mimeType ?? "of an unknown type"} — not passed on: a satellite passes on base64 ${SATELLITE_IMAGE_MIME_TYPES.join(", ")} only]`,
+      );
+      return;
+    }
+    if (
+      images.length === MAX_JOB_IMAGES ||
+      textBudget([...images, image]) < 0
+    ) {
+      dropped.push(
+        `[image ${image.mimeType}, ${kilobytes(image.data.length)} — not passed on: a satellite job carries at most ${MAX_JOB_IMAGES} images and ${MAX_JOB_OUTPUT_BYTES / 1024 / 1024} MiB between its text and them]`,
+      );
+      return;
+    }
+    images.push(image);
+    kept.add(index);
+  });
+  const parts = blocks.map((block, index) => {
+    if (block.type === "text" && typeof block.text === "string")
+      return block.text;
+    if (block.type === "image")
+      return kept.has(index) ? `[image ${block.mimeType}]` : "";
+    return `[${block.type}]`;
+  });
   const structured =
     result.structuredContent === undefined
       ? ""
       : JSON.stringify(result.structuredContent, null, 2);
-  const joined = [text, structured].filter((part) => part !== "").join("\n");
-  return joined.length > MAX_JOB_OUTPUT_BYTES
-    ? { output: joined.slice(0, MAX_JOB_OUTPUT_BYTES), truncated: true }
-    : { output: joined, truncated: false };
+  const joined = [...dropped, ...parts, structured]
+    .filter((part) => part !== "")
+    .join("\n");
+  const output = truncatedTo(joined, textBudget(images));
+  return { output, truncated: output !== joined, images };
 }
 
 export type McpServerSpec =
@@ -144,12 +215,13 @@ export async function createMcpBackend(
           undefined,
           { signal: controller.signal },
         );
-        const { output, truncated } = renderContent(result);
+        const { output, truncated, images } = renderContent(result);
         return {
           status: "done",
           isError: result.isError === true,
           exitCode: null,
           output,
+          images,
           truncated,
         };
       } catch (err) {

@@ -87,6 +87,21 @@ if [ "$STRUCTURE" = 1 ]; then
     # invariant the shared home forces); work/AGENTS.md pointer present;
     # work/VERSION matches the checkout; per state file: present, template
     # sections/table header intact, every row matching the documented format.
+
+  : # --------------------------------------------------------------- manifest
+  # The agent's public card (docs/manifest.md). Shape only: the content is the
+  # agent's own; manifest-check.sh owns the rules.
+  if [ -f "$WORK/manifest.json" ]; then
+    if out="$(bash "$SCRIPT_DIR/manifest-check.sh" check "$WORK/manifest.json" 2>&1)"; then
+      ok manifest "work/manifest.json passes manifest-check.sh"
+    else
+      fail manifest "$(printf '%s\n' "$out" | grep -m1 '^FAIL')" "follow docs/manifest.md → Write, check, publish"
+    fi
+  else
+    fail manifest "work/manifest.json missing" "write the card per docs/manifest.md (ONBOARDING Step 6)"
+  fi
+  [ -f "$WORK/PEERS.md" ] && ok peers "work/PEERS.md present" \
+    || fail peers "work/PEERS.md missing" "create it with the header from docs/manifest.md → Peers (an empty table is fine)"
 fi
 
 # ------------------------------------------------------------------- CONFIG

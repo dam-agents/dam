@@ -505,6 +505,7 @@ describe("a claimed call", () => {
     isError: false,
     exitCode: null,
     output: null,
+    images: [],
     truncated: false,
     reason: null,
     cancelRequested: false,

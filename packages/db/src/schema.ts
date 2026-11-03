@@ -827,6 +827,7 @@ export const satelliteJobs = pgTable(
     isError: boolean("is_error").notNull().default(false),
     exitCode: integer("exit_code"),
     output: text("output"),
+    images: jsonb("images"),
     truncated: boolean("truncated").notNull().default(false),
     reason: text("reason"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),
