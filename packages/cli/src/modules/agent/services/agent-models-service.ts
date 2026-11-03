@@ -4,7 +4,7 @@ import {
   harnessCatalogOf,
   type HarnessConfigStatus,
   type ProfileWithUsage,
-  type SessionDefaults,
+  type SessionDefaultsView,
   type SessionPair,
 } from "api-server-api";
 import type { HarnessCatalogView } from "agent-runtime-api";
@@ -32,7 +32,7 @@ export interface AgentModelsService {
   grantedConnectionIds(agentId: string): Promise<ModelsResult<string[]>>;
   connections(): Promise<ModelsResult<readonly ConnectionView[]>>;
   status(agentId: string): Promise<ModelsResult<HarnessConfigStatus>>;
-  savedDefaults(agentId: string): Promise<ModelsResult<SessionDefaults>>;
+  savedDefaults(agentId: string): Promise<ModelsResult<SessionDefaultsView>>;
   updateProviders(
     agentId: string,
     change: { grant: string[]; revoke: string[] },
