@@ -211,6 +211,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         role: "user",
         parts: userParts,
         streaming: false,
+        sentHere: true,
         at: new Date().toISOString(),
       };
       const aMsg: Message = {

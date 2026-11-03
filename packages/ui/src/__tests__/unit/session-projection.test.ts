@@ -243,6 +243,32 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[0].parts).toEqual([{ kind: "text", text: "hello" }]);
   });
 
+  // TEST_SCENARIO: the runtime echoes the prompt back after a queued first prompt (a new Session waits for its directory report). The bubble the person already sees keeps one copy, and a later echo of the same id merges as usual.
+  test("user_message_chunk of a prompt this client sent replaces it, not doubles it", () => {
+    const start: Message[] = [
+      {
+        id: "u1",
+        role: "user",
+        parts: [{ kind: "text", text: "hello" }],
+        streaming: false,
+        sentHere: true,
+      },
+    ];
+    const echoed = applyUpdate(start, {
+      ...txtChunk("hello", "user_message_chunk"),
+      messageId: "u1",
+    });
+    expect(echoed).toHaveLength(1);
+    expect(echoed[0].parts).toEqual([{ kind: "text", text: "hello" }]);
+    expect(echoed[0].sentHere).toBe(false);
+
+    const again = applyUpdate(echoed, {
+      ...txtChunk("!", "user_message_chunk"),
+      messageId: "u1",
+    });
+    expect(again[0].parts).toEqual([{ kind: "text", text: "hello!" }]);
+  });
+
   test("user_message_chunk strips <context> tags and extracts file chip", () => {
     const start: Message[] = [];
     const update = {

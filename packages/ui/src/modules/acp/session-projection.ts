@@ -919,7 +919,11 @@ function appendOrExtendUser(
     const idx = messages.findIndex((m) => m.id === mid);
     if (idx !== -1) {
       return messages.map((m, i) =>
-        i !== idx ? m : { ...m, parts: mergeParts(m.parts, parts) },
+        i !== idx
+          ? m
+          : m.sentHere
+            ? { ...m, parts, sentHere: false }
+            : { ...m, parts: mergeParts(m.parts, parts) },
       );
     }
   }
