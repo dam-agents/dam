@@ -22,9 +22,12 @@ const STYLES: Record<
 > = {
   anthropic: {
     Icon: AnthropicIcon,
-    bg: "bg-icon-clay",
+    bg: "bg-icon-anthropic",
   },
-  openai: { Icon: OpenAIIcon, bg: "bg-icon-green" },
+  openai: {
+    Icon: OpenAIIcon,
+    bg: "bg-icon-openai dark:ring-1 dark:ring-white/25",
+  },
   "ibm-litellm": {
     Icon: LiteLLMIcon,
     bg: "bg-icon-litellm",
@@ -33,8 +36,8 @@ const STYLES: Record<
     Icon: CurveBenderIcon,
     bg: "bg-icon-cb",
   },
-  bob: { Icon: BobIcon, bg: "bg-icon-violet" },
-  bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
+  bob: { Icon: BobIcon, bg: "bg-icon-ibm" },
+  bedrock: { Icon: Cloud, bg: "bg-icon-aws" },
 };
 
 type CardIconSize = "lg" | "md" | "sm" | "tile-sm" | "tile-xs";

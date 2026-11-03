@@ -79,78 +79,87 @@ export function ProviderSection({
 
   return (
     <>
-      <Card className="divide-y divide-border overflow-hidden">
+      <div className="flex flex-col gap-3">
         {loading
           ? rows.map((row) => (
-              <ProviderRow.Skeleton
+              <Card
                 key={`${row.type}:${row.templateId ?? ""}`}
-              />
+                className="overflow-hidden"
+              >
+                <ProviderRow.Skeleton />
+              </Card>
             ))
           : rows.map((row) => {
               const item = itemOf(row);
               const managed =
                 row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
               return (
-                <ProviderRow
+                <Card
                   key={`${row.type}:${row.templateId ?? ""}`}
-                  type={row.type}
-                  templateId={row.templateId}
-                  name={providerRowName(row)}
-                  harnesses={catalog?.harnesses
-                    .filter((h) =>
-                      harnessFits(
-                        catalog,
-                        h.name,
-                        row.type,
-                        item?.conn.templateId,
-                      ),
-                    )
-                    .map((h) => h.name)}
-                  connected={!!item}
-                  degraded={!!item && degradedTemplate(item.conn.templateId)}
-                  keyCheck={
-                    item && !managed ? (item.conn.keyCheck ?? null) : undefined
-                  }
-                  checking={
-                    checking && !!item && hasKeyCheck(item.conn.templateId)
-                  }
-                  balance={
-                    item &&
-                    !managed &&
-                    BALANCE_PROVIDER_TYPES.has(row.type) && (
-                      <ProviderBalance connectionId={item.id} />
-                    )
-                  }
-                  spend={
-                    item &&
-                    !onConnected && (
-                      <AllAgentsSpendBadge
-                        connectionId={item.id}
-                        connectionName={item.conn.name}
-                        templateId={item.conn.templateId}
-                      />
-                    )
-                  }
-                  connectedAction={
-                    item && managed && !onConnected
-                      ? "About"
-                      : onConnected && "Use"
-                  }
-                  onOpen={
-                    managed
-                      ? item &&
-                        (onConnected
-                          ? () => onConnected(item.id)
-                          : () => setInfoOpen(true))
-                      : () =>
-                          item && onConnected
-                            ? onConnected(item.id)
-                            : setDialog({ provider: row.type, item })
-                  }
-                />
+                  className="overflow-hidden"
+                >
+                  <ProviderRow
+                    type={row.type}
+                    templateId={row.templateId}
+                    name={providerRowName(row)}
+                    harnesses={catalog?.harnesses
+                      .filter((h) =>
+                        harnessFits(
+                          catalog,
+                          h.name,
+                          row.type,
+                          item?.conn.templateId,
+                        ),
+                      )
+                      .map((h) => h.name)}
+                    connected={!!item}
+                    degraded={!!item && degradedTemplate(item.conn.templateId)}
+                    keyCheck={
+                      item && !managed
+                        ? (item.conn.keyCheck ?? null)
+                        : undefined
+                    }
+                    checking={
+                      checking && !!item && hasKeyCheck(item.conn.templateId)
+                    }
+                    balance={
+                      item &&
+                      !managed &&
+                      BALANCE_PROVIDER_TYPES.has(row.type) && (
+                        <ProviderBalance connectionId={item.id} />
+                      )
+                    }
+                    spend={
+                      item &&
+                      !onConnected && (
+                        <AllAgentsSpendBadge
+                          connectionId={item.id}
+                          connectionName={item.conn.name}
+                          templateId={item.conn.templateId}
+                        />
+                      )
+                    }
+                    connectedAction={
+                      item && managed && !onConnected
+                        ? "About"
+                        : onConnected && "Use"
+                    }
+                    onOpen={
+                      managed
+                        ? item &&
+                          (onConnected
+                            ? () => onConnected(item.id)
+                            : () => setInfoOpen(true))
+                        : () =>
+                            item && onConnected
+                              ? onConnected(item.id)
+                              : setDialog({ provider: row.type, item })
+                    }
+                  />
+                </Card>
               );
             })}
-      </Card>
+      </div>
 
       {infoOpen && <CurveBenderInfoDialog onClose={() => setInfoOpen(false)} />}
 

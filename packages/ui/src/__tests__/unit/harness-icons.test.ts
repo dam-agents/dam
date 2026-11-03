@@ -12,7 +12,7 @@ import {
   CodexIcon,
   OpenAIIcon,
 } from "../../components/brand-icons.js";
-import { HarnessIcons } from "../../components/harness-icons.js";
+import { HARNESS_ORDER, HarnessIcons } from "../../components/harness-icons.js";
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { CardIcon } from "../../modules/providers/components/card-icon.js";
 import { ProviderBalance } from "../../modules/providers/components/provider-balance.js";
@@ -156,7 +156,7 @@ describe("harness icons on provider and preset cards", () => {
   );
 
   it.each([true, false])(
-    "reads one line per provider when connected=%s, its state as an icon",
+    "reads one line per provider when connected=%s, its state in words",
     (connected) => {
       const html = renderToStaticMarkup(
         createElement(ProviderRow, {
@@ -169,21 +169,18 @@ describe("harness icons on provider and preset cards", () => {
           onOpen() {},
         }),
       );
-      expect(html).not.toContain("Supports:");
       if (connected) {
         expect(html).toContain("$12.00 of $100.00 used");
-        expect(html).toContain(
-          'role="img" aria-label="Configured · Connected"',
-        );
+        expect(html).toContain(">Connected<");
       } else {
         expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
-        expect(html).toContain('role="img" aria-label="Not configured"');
+        expect(html).toContain(">Not connected<");
       }
-      expect(html).not.toMatch(/>(Not configured|Configured · Connected)</);
+      expect(html).not.toContain('role="img"');
     },
   );
 
-  /** TEST_SCENARIO: the row-wide button that opens a provider covers the row; what has a title or an action of its own (the harness icons, the balance, the spend pill and the status icon with the key check's reason) sits in the raised layer above it, so its title shows and its own action works. */
+  /** TEST_SCENARIO: the row-wide button that opens a provider covers the row; what has a title or an action of its own (the balance, the spend pill and the status with the key check's reason) sits in the raised layer above it, so its title shows and its own action works. */
   it("keeps whatever has a title or an action above the row's button", () => {
     const html = renderToStaticMarkup(
       createElement(ProviderRow, {
@@ -209,28 +206,28 @@ describe("harness icons on provider and preset cards", () => {
       [...doc.querySelectorAll(selector)].find((el) =>
         el.textContent.includes(text),
       );
-    expect(
-      raised(doc.querySelector('[aria-label="Configured · Unverified"]')),
-    ).toBe(true);
+    expect(raised(doc.querySelector('[title*="HTTP 503"]'))).toBe(true);
     expect(raised(withText("p", "$12.00 of $100.00 used"))).toBe(true);
     expect(raised(withText("button", "$0.00 today"))).toBe(true);
-    expect(raised(doc.querySelector('[aria-label="Claude"]'))).toBe(true);
     expect(
       html.match(/<button[^>]*aria-label="Edit [^"]*"[^>]*><\/button>/),
     ).not.toBeNull();
   });
 
-  it("names each compatible harness inline after the provider's name", () => {
+  it.each<[HarnessFamily[], string]>([
+    [[...HARNESS_ORDER], "All harnesses"],
+    [["bob"], "Bob only"],
+    [["codex", "pi", "copilot", "hermes"], "Codex, Pi, Copilot, and Hermes"],
+    [["claude-code", "pi"], "Claude and Pi"],
+  ])("names the harnesses %j in words: %s", (harnesses, text) => {
     const html = renderToStaticMarkup(
       createElement(ProviderRow, {
         type: "ibm-litellm",
         connected: true,
-        harnesses: ALL,
+        harnesses,
       }),
     );
-    for (const name of ["Bob", "Claude", "Codex", "Pi"])
-      expect(html).toContain(`role="img" aria-label="${name}"`);
-    expect(html).not.toContain("tabindex");
+    expect(html.replace(/<!-- -->/g, "")).toContain(`>${text}<`);
   });
 
   it.each([{ harnesses: undefined }, { harnesses: [] }])(
@@ -244,22 +241,7 @@ describe("harness icons on provider and preset cards", () => {
           onOpen() {},
         }),
       );
-      expect(html).not.toContain('aria-label="Claude"');
-      expect(html).not.toContain('aria-label="Pi"');
+      expect(html).not.toMatch(/harnesses|Claude|>Pi/);
     },
   );
-
-  it("does not advertise unsupported harnesses", () => {
-    const html = renderToStaticMarkup(
-      createElement(ProviderRow, {
-        type: "anthropic",
-        connected: true,
-        harnesses: ["claude-code"],
-        onOpen() {},
-      }),
-    );
-    expect(html).toContain('aria-label="Claude"');
-    for (const name of ["Bob", "Codex", "Pi"])
-      expect(html).not.toContain(`aria-label="${name}"`);
-  });
 });

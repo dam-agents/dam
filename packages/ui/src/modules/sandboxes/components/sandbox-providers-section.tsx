@@ -72,34 +72,35 @@ export function SandboxProvidersSection({
         </EmptyState>
       )}
       {owned.length > 0 && (
-        <Card className="divide-y divide-border overflow-hidden">
+        <div className="flex flex-col gap-3">
           {owned.map((p) => {
             const attached = granted.some((g) => g.id === p.id);
             return (
-              <ProviderSpendRow
-                key={p.id}
-                agentId={agentId}
-                provider={p}
-                harnesses={catalog && providerHarnesses(catalog, p)}
-                checked={attached}
-                disabled={pending || !managesProviders}
-                showSpend={attached && root === null}
-                onCheckedChange={(on) =>
-                  on
-                    ? void grant(p.id)
-                    : void showConfirm(
-                        <DetachProviderMessage
-                          name={p.name}
-                          usage={usage(p)}
-                        />,
-                        `Disconnect ${p.name} from this agent?`,
-                        { kind: "destructive", confirmLabel: "Disconnect" },
-                      ).then((ok) => ok && revoke(p.id))
-                }
-              />
+              <Card key={p.id}>
+                <ProviderSpendRow
+                  agentId={agentId}
+                  provider={p}
+                  harnesses={catalog && providerHarnesses(catalog, p)}
+                  checked={attached}
+                  disabled={pending || !managesProviders}
+                  showSpend={attached && root === null}
+                  onCheckedChange={(on) =>
+                    on
+                      ? void grant(p.id)
+                      : void showConfirm(
+                          <DetachProviderMessage
+                            name={p.name}
+                            usage={usage(p)}
+                          />,
+                          `Disconnect ${p.name} from this agent?`,
+                          { kind: "destructive", confirmLabel: "Disconnect" },
+                        ).then((ok) => ok && revoke(p.id))
+                  }
+                />
+              </Card>
             );
           })}
-        </Card>
+        </div>
       )}
       {owned.length > 0 && managesProviders && (
         <Card className="overflow-hidden">

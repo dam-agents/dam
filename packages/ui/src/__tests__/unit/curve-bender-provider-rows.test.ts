@@ -126,7 +126,7 @@ describe("CurveBender provider rows", () => {
     const html = render();
     expect(html).toContain(`>${CUSTOM}<`);
     expect(html).toContain(`>${SHARED}<`);
-    expect(html).toContain("Configured · Connected");
+    expect(html).toContain(">Connected<");
     expect(html).toMatch(
       /<button[^>]*aria-label="About CurveBender \(shared\)"/,
     );
