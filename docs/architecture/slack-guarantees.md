@@ -279,7 +279,7 @@ A revoked bot token or uninstalled app silences every conversation, and nothing 
 
 ### Notices
 
-Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment.
+Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment, a model that refused the message.
 Ambient turns get none.
 
 ---
