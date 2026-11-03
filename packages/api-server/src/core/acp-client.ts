@@ -185,7 +185,10 @@ const platformSessionMetaSchema = z.object({
   initialization: z.boolean().optional(),
   threadTs: z.string().optional(),
   createdAt: z.string().optional(),
-  customTitle: z.string().optional(),
+  customTitle: z
+    .string()
+    .nullish()
+    .transform((title) => title ?? undefined),
 });
 
 export interface TriggerSessionResult {
