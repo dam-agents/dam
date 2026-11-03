@@ -40,6 +40,7 @@ export const satelliteToolSchema = z.object({
   description: z.string().max(4096).optional(),
   inputSchema: z.record(z.string(), z.unknown()),
   maxConcurrent: z.number().int().positive().max(1024).optional(),
+  transfer: z.enum(["download", "upload"]).optional(),
 });
 
 export const satelliteManifestSchema = z.object({
@@ -301,10 +302,25 @@ export const jobRefSchema = z.object({
 export const SATELLITE_FILE_MAX_BYTES = 50 * 1024 * 1024;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The name a transferred file may carry into the
- * Agent's workspace. The machine names the file it sends, and the platform is
- * the side that turns that name into a path, so a name is one segment and
- * nothing else — no separator, no `..`, no NUL.
+ * UNIT_BOUNDARY_DESCRIPTION: The transfer token a worker is handed with the
+ * work item it claimed, and must present with any file request for that Job.
+ * It is minted per claim, stored as a hash on the Job row, and consumed by the
+ * transfer it authorises, so a transfer belongs to one claimant of one running
+ * Job and can happen once. That is what makes a transfer request prove the
+ * operation the Agent asked for, rather than merely naming a Job that happens
+ * to be running.
+ */
+export const SATELLITE_TRANSFER_CLAIM_HEADER = "x-dam-claim";
+
+export const satelliteTransferTokenSchema = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/, "a transfer token is 64 hex characters");
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The name a transferred file takes in the Agent's
+ * workspace. The platform takes it from the Job's own arguments — the path the
+ * Agent asked for — so a name is one segment and nothing else: no separator, no
+ * `..`, no NUL.
  */
 export const satelliteFileNameSchema = z
   .string()

@@ -21,6 +21,10 @@ import type {
   SatelliteTool,
 } from "api-server-api";
 import {
+  mintTransferToken,
+  transferTokenHash,
+} from "../domain/transfer-token.js";
+import {
   TERMINAL_STATUSES,
   type JobRow,
   type SatelliteRow,
@@ -461,7 +465,7 @@ export function createSatellitesRepository(db: Db) {
       capacity: number,
       leaseUntil: Date,
       incarnation?: string,
-    ): Promise<JobRow[]> {
+    ): Promise<{ job: JobRow; transferToken: string }[]> {
       if (capacity <= 0) return [];
       return db.transaction(async (tx) => {
         const pending = await tx
@@ -478,24 +482,82 @@ export function createSatellitesRepository(db: Db) {
           .orderBy(asc(satelliteJobs.sequence))
           .limit(capacity)
           .for("update", { skipLocked: true });
-        if (pending.length === 0) return [];
-        const rows = await tx
-          .update(satelliteJobs)
-          .set({ status: "running", startedAt: new Date(), leaseUntil })
-          .where(
-            and(
-              eq(satelliteJobs.owner, owner),
-              eq(satelliteJobs.satellite, satellite),
-              inArray(
-                satelliteJobs.sequence,
-                pending.map((p) => p.sequence),
+        const claimed: { job: JobRow; transferToken: string }[] = [];
+        for (const { sequence } of pending) {
+          const transferToken = mintTransferToken();
+          const [row] = await tx
+            .update(satelliteJobs)
+            .set({
+              status: "running",
+              startedAt: new Date(),
+              leaseUntil,
+              transferTokenHash: transferTokenHash(transferToken),
+            })
+            .where(
+              and(
+                eq(satelliteJobs.owner, owner),
+                eq(satelliteJobs.satellite, satellite),
+                eq(satelliteJobs.sequence, sequence),
+                sameRegistration(incarnation),
               ),
-              sameRegistration(incarnation),
-            ),
-          )
-          .returning();
-        return rows.map(toJob);
+            )
+            .returning();
+          if (row !== undefined)
+            claimed.push({ job: toJob(row), transferToken });
+        }
+        return claimed;
       });
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Takes the claim's transfer capability for the
+     * one transfer it authorises, or reports that there is nothing to take. One
+     * statement does the whole check: the Job must still be running, the token
+     * must be this claim's, and it must not have been spent — so a transfer that
+     * finishes after its Job was settled, cancelled or swept cannot land, and a
+     * second transfer on the same Job cannot either.
+     */
+    async consumeTransfer(
+      owner: string,
+      satellite: string,
+      sequence: number,
+      transferToken: string,
+    ): Promise<JobRow | null> {
+      const [row] = await db
+        .update(satelliteJobs)
+        .set({ transferTokenHash: null })
+        .where(
+          and(
+            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.satellite, satellite),
+            eq(satelliteJobs.sequence, sequence),
+            eq(satelliteJobs.status, "running"),
+            eq(
+              satelliteJobs.transferTokenHash,
+              transferTokenHash(transferToken),
+            ),
+          ),
+        )
+        .returning();
+      return row === undefined ? null : toJob(row);
+    },
+
+    async transferTokenHashOf(
+      owner: string,
+      satellite: string,
+      sequence: number,
+    ): Promise<string | null> {
+      const rows = await db
+        .select({ hash: satelliteJobs.transferTokenHash })
+        .from(satelliteJobs)
+        .where(
+          and(
+            eq(satelliteJobs.owner, owner),
+            eq(satelliteJobs.satellite, satellite),
+            eq(satelliteJobs.sequence, sequence),
+          ),
+        );
+      return rows[0]?.hash ?? null;
     },
 
     /**

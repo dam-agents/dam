@@ -1,106 +1,30 @@
 import { createHash } from "node:crypto";
-import {
-  lstat,
-  mkdir,
-  readFile,
-  realpath,
-  stat,
-  writeFile,
-} from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, isAbsolute, join, resolve, sep } from "node:path";
+import { unlink, type FileHandle } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { SATELLITE_FILE_MAX_BYTES, type SatelliteTool } from "api-server-api";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
+import {
+  MAX_TRANSFER_BYTES,
+  openInRoot,
+  pathSegments,
+  publishInRoot,
+  stageInRoot,
+  type Refusal,
+} from "./confined-files.js";
 import type { FileTransfer } from "./file-transfer.js";
 
 export const DOWNLOAD_TOOL = "download";
 export const UPLOAD_TOOL = "upload";
-const MAX_PATH_CHARS = 1024;
 
-export type ResolvedRoot =
-  { ok: true; root: string } | { ok: false; reason: string };
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: The one directory a `dam satellite files` worker
- * exposes, resolved once at startup. A root is refused when it is the whole
- * filesystem or an ancestor of the home directory, because the boundary is the
- * root itself: a deny-list of credential paths inside the home would be false
- * comfort, and whoever wants the agent to see a directory can name it.
- */
-export async function resolveFileRoot(raw: string): Promise<ResolvedRoot> {
-  const root = await realpath(resolve(raw)).catch(() => null);
-  if (root === null) return { ok: false, reason: `there is no ${raw}` };
-  const info = await stat(root).catch(() => null);
-  if (info === null || !info.isDirectory())
-    return { ok: false, reason: `${raw} is not a directory` };
-  if (root === sep)
-    return { ok: false, reason: "name a directory, not the whole filesystem" };
-  const home = await realpath(homedir()).catch(() => homedir());
-  if (home === root)
-    return {
-      ok: false,
-      reason:
-        "name the directory the agent may read, not your home directory — it is all of it",
-    };
-  if (home.startsWith(root + sep))
-    return {
-      ok: false,
-      reason: `name the directory the agent may read, not ${root} — your home directory is inside it`,
-    };
-  return { ok: true, root };
-}
-
-function wellFormed(path: unknown): path is string {
-  return (
-    typeof path === "string" &&
-    path !== "" &&
-    path.length <= MAX_PATH_CHARS &&
-    !path.includes("\0") &&
-    !isAbsolute(path) &&
-    !path.split("/").includes("..")
-  );
-}
-
-async function fileInRoot(root: string, path: unknown): Promise<string | null> {
-  if (!wellFormed(path)) return null;
-  const real = await realpath(join(root, path)).catch(() => null);
-  if (real === null || !real.startsWith(root + sep)) return null;
-  return real;
-}
-
-async function writableInRoot(
-  root: string,
-  path: unknown,
-): Promise<string | null> {
-  if (!wellFormed(path)) return null;
-  const segments = path.split("/").filter((part) => part !== "");
-  const name = segments.at(-1);
-  if (name === undefined || name === ".") return null;
-
-  let dir = root;
-  for (const segment of segments.slice(0, -1)) {
-    const next = join(dir, segment);
-    const info = await lstat(next).catch(() => null);
-    if (info === null) {
-      if ((await mkdir(next).catch(() => null)) === null) return null;
-    } else if (!info.isDirectory() || info.isSymbolicLink()) {
-      return null;
-    }
-    dir = next;
-  }
-  const target = join(dir, name);
-  if ((await lstat(target).catch(() => null))?.isSymbolicLink() === true)
-    return null;
-  return target;
-}
-
-function sha256(bytes: Buffer): string {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+const REFUSALS: Record<Refusal, string> = {
+  outside: "is not a place inside the directory this satellite exposes",
+  "not-a-file":
+    "is not a regular file — it is a link, a directory, or something that is not a file",
+  "too-large": `is over the ${MAX_TRANSFER_BYTES} byte transfer limit`,
+  exists: "already exists on this machine — pass overwrite: true to replace it",
+  "no-such-file": "does not exist on this machine",
+  "not-writable": "cannot be written here",
+};
 
 function refused(reason: string): CallOutcome {
   return {
@@ -110,6 +34,16 @@ function refused(reason: string): CallOutcome {
     output: reason,
     truncated: false,
     blocked: true,
+  };
+}
+
+function failed(reason: string): CallOutcome {
+  return {
+    status: "done",
+    isError: true,
+    exitCode: null,
+    output: reason,
+    truncated: false,
   };
 }
 
@@ -131,11 +65,12 @@ function downloadTool(root: string): SatelliteTool {
   return {
     name: DOWNLOAD_TOOL,
     title: "Copy one file from this machine into your workspace",
+    transfer: "download",
     description: [
       `Copy one file from ${root} on this machine into your own workspace.`,
       "The contents do not come back in the result: you get the workspace path the file landed at, its size and its sha256, and you open, grep or hash it with your own tools.",
-      "path is relative to the directory this machine exposes; a symlink that leads out of it is refused, and so is anything that is not a regular file.",
-      `Files up to ${Math.round(SATELLITE_FILE_MAX_BYTES / (1024 * 1024))} MB.`,
+      "path is relative to the directory this machine exposes. A link is refused at any point on the way, even one that points back inside; so is anything that is not a regular file.",
+      `Files up to ${Math.round(MAX_TRANSFER_BYTES / (1024 * 1024))} MB.`,
     ].join("\n"),
     inputSchema: {
       type: "object",
@@ -156,11 +91,12 @@ function uploadTool(root: string): SatelliteTool {
   return {
     name: UPLOAD_TOOL,
     title: "Copy one file from your workspace onto this machine",
+    transfer: "upload",
     description: [
       `Copy one file from your workspace to ${root} on this machine.`,
       "path is where it lands, relative to the directory this machine exposes; a missing directory on the way is created, and workspacePath is the file in your own workspace.",
       "An existing file is refused unless overwrite is true.",
-      `Files up to ${Math.round(SATELLITE_FILE_MAX_BYTES / (1024 * 1024))} MB.`,
+      `Files up to ${Math.round(MAX_TRANSFER_BYTES / (1024 * 1024))} MB.`,
     ].join("\n"),
     inputSchema: {
       type: "object",
@@ -190,13 +126,14 @@ function uploadTool(root: string): SatelliteTool {
  * UNIT_BOUNDARY_DESCRIPTION: A directory on the user's machine, offered to an
  * agent as two tools: one file down into the agent's workspace, and with
  * `--upload` one file back up. Read-only unless the user said otherwise, and
- * confined to the root the worker was started with — `realpath` on both the
- * file read and the directory written, so a symlink that leads out is refused
- * along with `..` and an absolute path.
+ * confined to the root the worker was started with — see `confined-files.ts`
+ * for what a path must survive before it is opened.
  *
- * The ceiling to know: `realpath` and the read or write are separate calls, so
- * a process inside the root could swap a link between them (TOCTOU). The
- * upgrade path is `openat2(RESOLVE_BENEATH)`, which Node does not expose.
+ * The bytes are counted while they move in both directions, so a file that
+ * grows after it was measured, or a response that never ends, is cut off at the
+ * limit instead of being read whole. What a call reports is a path, a size and a
+ * sha256; the file's contents never reach the Agent's context, this process's
+ * log, or an error message.
  */
 export function createFilesBackend(input: {
   root: string;
@@ -207,72 +144,122 @@ export function createFilesBackend(input: {
   const cap = input.maxBytes ?? SATELLITE_FILE_MAX_BYTES;
   const running = new Map<number, AbortController>();
 
+  function chunks(handle: FileHandle, signal: AbortSignal): Readable {
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let offset = 0;
+    const source = new Readable({
+      async read() {
+        if (signal.aborted) {
+          this.destroy(new Error("cancelled"));
+          return;
+        }
+        const { bytesRead } = await handle.read(
+          buffer,
+          0,
+          buffer.length,
+          offset,
+        );
+        if (bytesRead === 0) {
+          this.push(null);
+          return;
+        }
+        offset += bytesRead;
+        if (offset > cap) {
+          this.destroy(new Error("too large"));
+          return;
+        }
+        this.push(Buffer.from(buffer.subarray(0, bytesRead)));
+      },
+    });
+    source.on("close", () => void handle.close().catch(() => {}));
+    return source;
+  }
+
   async function download(
     sequence: number,
     args: Record<string, unknown>,
+    token: string | undefined,
     signal: AbortSignal,
   ): Promise<CallOutcome> {
-    if (typeof args.path !== "string")
+    const segments = pathSegments(args.path);
+    if (segments === null)
       return refused(
-        "path is the file's path on this machine, relative to the directory it exposes",
+        "path must be the file's path on this machine, relative to the directory it exposes",
       );
-    const file = await fileInRoot(input.root, args.path);
-    if (file === null)
-      return refused(
-        `${String(args.path)} is not a file inside ${input.root} — give a path relative to it, with no .. and no symlink that leads out`,
-      );
-    const info = await stat(file).catch(() => null);
-    if (info === null || !info.isFile())
-      return refused(`${String(args.path)} is not a regular file`);
-    if (info.size > cap)
-      return refused(
-        `${String(args.path)} is ${info.size} bytes; one transfer carries at most ${cap}`,
-      );
-    const bytes = await readFile(file);
-    return done(
-      await input.transfer.send({
-        sequence,
-        name: basename(file),
-        bytes,
-        signal,
-      }),
-    );
+    if (token === undefined)
+      return failed("this job was claimed without a transfer token");
+
+    const opened = await openInRoot(input.root, segments, cap);
+    if (!opened.ok)
+      return refused(`${String(args.path)} ${REFUSALS[opened.reason]}`);
+
+    const written = await input.transfer.send({
+      sequence,
+      token,
+      bytes: chunks(opened.handle, signal),
+      declaredBytes: opened.size,
+      signal,
+    });
+    return done(written);
   }
 
   async function upload(
     sequence: number,
     args: Record<string, unknown>,
+    token: string | undefined,
     signal: AbortSignal,
   ): Promise<CallOutcome> {
     if (typeof args.workspacePath !== "string")
       return refused(
         "workspacePath is the file in your own workspace, e.g. work/report.csv",
       );
-    const target = await writableInRoot(input.root, args.path);
-    if (target === null)
+    const segments = pathSegments(args.path);
+    if (segments === null)
       return refused(
-        `${String(args.path)} is not a place inside ${input.root} this satellite may write to — give a path relative to it, with no .. and no symlink`,
+        "path must be where the file lands on this machine, relative to the directory it exposes",
       );
+    if (token === undefined)
+      return failed("this job was claimed without a transfer token");
+
     const overwrite = args.overwrite === true;
-    if (!overwrite && (await lstat(target).catch(() => null)) !== null)
-      return refused(
-        `${String(args.path)} already exists on this machine — pass overwrite: true to replace it`,
+    const staged = await stageInRoot(input.root, segments);
+    if (!staged.ok)
+      return refused(`${String(args.path)} ${REFUSALS[staged.reason]}`);
+
+    const hash = createHash("sha256");
+    let digest = "";
+    let bytes = 0;
+    try {
+      const incoming = await input.transfer.receive({
+        sequence,
+        token,
+        signal,
+      });
+      for await (const chunk of incoming.stream) {
+        const part = chunk as Buffer;
+        bytes += part.length;
+        if (bytes > cap) throw new Error("too large");
+        hash.update(part);
+        await staged.handle.write(part);
+      }
+      await staged.handle.close();
+      digest = hash.digest("hex");
+    } catch (err) {
+      await staged.handle.close().catch(() => {});
+      await unlink(staged.path).catch(() => {});
+      if (signal.aborted)
+        return { status: "cancelled", output: "", truncated: false };
+      return failed(
+        err instanceof Error && err.message === "too large"
+          ? `the file is over the ${cap} byte transfer limit`
+          : "the transfer did not finish",
       );
-    const bytes = await input.transfer.receive({
-      sequence,
-      path: args.workspacePath,
-      signal,
-    });
-    if (bytes.length > cap)
-      return refused(
-        `${String(args.workspacePath)} is ${bytes.length} bytes; one transfer carries at most ${cap}`,
-      );
-    await writeFile(target, bytes, { flag: overwrite ? "w" : "wx" });
-    return done({
-      path: String(args.path),
-      size: bytes.length,
-      sha256: sha256(bytes),
-    });
+    }
+
+    const published = await publishInRoot(input.root, staged, overwrite);
+    if (published !== null)
+      return refused(`${String(args.path)} ${REFUSALS[published]}`);
+    return done({ path: String(args.path), size: bytes, sha256: digest });
   }
 
   return {
@@ -282,15 +269,20 @@ export function createFilesBackend(input: {
         : [downloadTool(input.root)];
     },
 
-    async call({ sequence, tool, args }): Promise<CallOutcome> {
+    async call({ sequence, tool, args, transferToken }): Promise<CallOutcome> {
       const controller = new AbortController();
       running.set(sequence, controller);
       try {
         if (tool === DOWNLOAD_TOOL)
-          return await download(sequence, args, controller.signal);
+          return await download(
+            sequence,
+            args,
+            transferToken,
+            controller.signal,
+          );
         if (tool === UPLOAD_TOOL)
           return input.allowUpload
-            ? await upload(sequence, args, controller.signal)
+            ? await upload(sequence, args, transferToken, controller.signal)
             : refused(
                 "this satellite cannot receive files — it was started without --upload",
               );
@@ -298,13 +290,11 @@ export function createFilesBackend(input: {
       } catch (err) {
         if (controller.signal.aborted)
           return { status: "cancelled", output: "", truncated: false };
-        return {
-          status: "done",
-          isError: true,
-          exitCode: null,
-          output: `the transfer failed: ${reasonOf(err)}`,
-          truncated: false,
-        };
+        return failed(
+          err instanceof Error && err.message === "too large"
+            ? `the file is over the ${cap} byte transfer limit`
+            : "the transfer failed",
+        );
       } finally {
         running.delete(sequence);
       }

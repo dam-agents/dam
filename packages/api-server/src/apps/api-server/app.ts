@@ -19,8 +19,8 @@ import { createEditorRuntimeAccess } from "./agent-proxies/editor-runtime-access
 import { createEditorSockets } from "./agent-proxies/editor-sockets.js";
 import { composeEditorStanding } from "../../modules/agents/index.js";
 import {
+  createAgentTransfer,
   createSatelliteFileRoutes,
-  createSatelliteWorkspaceFiles,
 } from "../../modules/satellites/index.js";
 import { editorEmailOf, type UserIdentity } from "api-server-api";
 import { createImportProxy } from "./agent-proxies/import-proxy.js";
@@ -118,7 +118,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     "/",
     createSatelliteFileRoutes({
       repo: deps.satellitesBoot.repo,
-      files: createSatelliteWorkspaceFiles(config.namespace),
+      transferFor: (agentId) => createAgentTransfer(agentId, config.namespace),
     }),
   );
   app.route("/api/trpc", createTrpcHttpRoutes({ composeApiContext }));

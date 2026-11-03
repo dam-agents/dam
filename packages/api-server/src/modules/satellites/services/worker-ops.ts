@@ -120,19 +120,25 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
           input.incarnation,
         );
         const names = await Promise.all(
-          claimed.map((job) =>
+          claimed.map(({ job }) =>
             (deps.agentName?.(job.agentId) ?? Promise.resolve(null)).catch(
               () => null,
             ),
           ),
         );
-        for (const [index, job] of claimed.entries())
+        const transfers = new Set(
+          satellite.tools
+            .filter((tool) => tool.transfer !== undefined)
+            .map((tool) => tool.name),
+        );
+        for (const [index, { job, transferToken }] of claimed.entries())
           items.push({
             kind: "call",
             sequence: job.sequence,
             tool: job.tool,
             args: job.args,
             agent: { id: job.agentId, name: names[index] ?? null },
+            ...(transfers.has(job.tool) ? { transferToken } : {}),
           });
 
         if (items.length > 0 || now().getTime() >= deadline) return items;

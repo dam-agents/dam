@@ -520,13 +520,17 @@ describe("a claimed call", () => {
     createdAt: NOW,
   };
 
-  function claimWith(agentName: (id: string) => Promise<string | null>) {
+  function claimWith(
+    agentName: (id: string) => Promise<string | null>,
+    job: JobRow = queued,
+    tools = satellite().tools,
+  ) {
     const repo = {
-      get: async () => satellite(),
+      get: async () => satellite({ tools }),
       touch: async () => {},
       setDraining: async () => {},
       takeCancellations: async () => [],
-      claimQueued: async () => [queued],
+      claimQueued: async () => [{ job, transferToken: "f".repeat(64) }],
     };
     return createSatelliteWorkerOps({
       repo: repo as never,
@@ -549,5 +553,26 @@ describe("a claimed call", () => {
       throw new Error("db down");
     });
     expect(item).toMatchObject({ agent: { id: "agent-1", name: null } });
+  });
+
+  /**
+   * TEST_SCENARIO: A file transfer is authorised by the claim's own token, so
+   * the token reaches only the work item of a Job whose tool the Snapshot
+   * declares as a transfer. A command or an ordinary MCP call is handed none,
+   * and so can never present one at the file endpoint.
+   */
+  it("hands a transfer token only to a tool that moves files", async () => {
+    const [plain] = await claimWith(async () => "Builder");
+    expect(plain?.transferToken).toBeUndefined();
+
+    const [transfer] = await claimWith(
+      async () => "Builder",
+      { ...queued, tool: "download" },
+      [
+        ...satellite().tools,
+        { name: "download", inputSchema: {}, transfer: "download" },
+      ],
+    );
+    expect(transfer?.transferToken).toBe("f".repeat(64));
   });
 });

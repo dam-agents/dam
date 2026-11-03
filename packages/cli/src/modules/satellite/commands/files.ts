@@ -1,11 +1,9 @@
 import { basename, resolve } from "node:path";
 import { Command } from "commander";
 import { DEFAULT_MAX_CONCURRENT, satelliteNameSchema } from "api-server-api";
+import { pinRoot, platformRefusal } from "../services/confined-files.js";
 import { createFileTransfer } from "../services/file-transfer.js";
-import {
-  createFilesBackend,
-  resolveFileRoot,
-} from "../services/files-backend.js";
+import { createFilesBackend } from "../services/files-backend.js";
 import {
   activeHost,
   asSatelliteName,
@@ -53,7 +51,7 @@ export function buildFilesCommand(deps: ConnectDeps): Command {
         "  dam satellite files --name laptop --root ~/work\n" +
         "  dam satellite files --name laptop --root ~/work --upload\n\n" +
         "--root is the whole allowlist: every path is resolved inside it, and an\n" +
-        "absolute path, a .. segment or a symlink that leads out is refused.\n" +
+        "absolute path, a .. segment or a symlink is refused.\n" +
         "It refuses / and your home directory — name the directory an agent may\n" +
         "read, e.g. ~/work rather than ~. Without --upload the agent can read but\n" +
         "never write; with it, a file already there is replaced only when the\n" +
@@ -63,9 +61,11 @@ export function buildFilesCommand(deps: ConnectDeps): Command {
         "re-read. First interrupt drains, second kills running jobs.\n",
     )
     .action(async (opts: Opts) => {
+      const unsupported = platformRefusal();
+      if (unsupported !== null) fail(unsupported);
       if (opts.root === undefined)
         fail("--root is required — name the one directory an agent may read");
-      const root = await resolveFileRoot(opts.root);
+      const root = await pinRoot(opts.root);
       if (!root.ok) fail(root.reason);
 
       const name = satelliteNameSchema.safeParse(

@@ -503,6 +503,9 @@ export function createWorker(deps: {
         sequence: item.sequence,
         tool: item.tool,
         args: item.args,
+        ...(item.transferToken === undefined
+          ? {}
+          : { transferToken: item.transferToken }),
       })
       .then((outcome) => {
         log.line(describeOutcome(item.sequence, outcome, startedAt));

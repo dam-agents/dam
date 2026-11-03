@@ -222,7 +222,7 @@ Either way, a worker that cannot authenticate retries like any other failure but
 ## Files between the machine and the Agent
 
 A Job's result carries one string of at most 1 MiB beside a handful of images, which is the wrong channel for a file: a tool that returned contents would spend the Agent's context on bytes, and a large file would not fit at all.
-So a file travels on **its own request, in the direction the queue cannot go** — the machine makes it, over the same outbound HTTPS the worker already uses, and never through a Job's arguments or its result.
+So a file travels on **its own request, in the direction the queue cannot go** — the machine makes it, over the same outbound HTTPS the worker already uses, streamed both ways and never through a Job's arguments or its result.
 
 `dam satellite files --root <dir>` exposes one directory on the machine as a **transfer surface**:
 
@@ -231,21 +231,32 @@ So a file travels on **its own request, in the direction the queue cannot go** �
 - `upload`, offered only when the worker was started with `--upload`, copies one file **from the Agent's workspace onto the machine**.
   It is the same request in reverse, and it never replaces a file that is already there unless the call says to.
 
-A transfer is authorised by a **Job that is running at that moment**: the machine names the Job it is serving, and the platform reads that Job's own Agent.
-The serve key therefore buys nothing new — a machine can only write into the workspace of an Agent whose call it is serving right now, and only where the platform puts it.
-The platform chooses the destination, one directory per Job inside the Agent's workspace, so a machine never names a path in someone else's file tree; the machine only names the file.
-Upload asks for a workspace path instead, and the runtime's own workspace rules decide what that means.
+Each tool declares which way it moves files, in the tool list the Satellite registers, and that declaration is what the platform checks a request against: a Job whose tool does not move files, or moves them the other way, authorises nothing.
 
-The directory is the whole allowlist, and it is decided on the machine:
+**A transfer belongs to the claim that is running the Job.** Claiming a Job issues that worker a transfer token, stored on the Job row as a hash, and a file request must present it; the token is spent by the transfer it authorises, in the same statement that checks the Job is still running.
+So a transfer happens once, for one Job, and only while that Job runs: bytes that arrive after it settled land nowhere, and a second transfer on the same Job is refused.
+This is the one thing the serve key does *not* buy: two keys of one owner are indistinguishable to the queue, and the token is what tells the claimant from any other worker of that owner.
 
-- The root is resolved once at startup, and `/` and the home directory are refused as roots — the boundary is the directory, and a deny-list of credential paths inside the home would be false comfort.
-- Every call resolves its path with `realpath` and refuses anything that ends outside the root: a `..` segment, an absolute path, and a symlink that leads out are all refused, as is anything that is not a regular file.
+**The platform takes the direction and both paths from the Job's own arguments** — the Agent's call — so a machine cannot ask for a file its Agent did not ask for, and cannot choose where a received file lands.
+A download lands in a directory the platform derives from the Job and its claim, so two transfers never collide even when a Satellite is removed and its sequences start again; the file's name is the last segment of the path the Agent asked for.
+An upload reads the workspace path the Agent asked for, and no other.
+
+The directory is the whole allowlist on the machine, and every path is opened without trusting a component:
+
+- The root is resolved once at startup and re-resolved on every call, so a root replaced afterwards stops being a root.
+  `/` and the home directory are refused as roots.
+- Each directory on the way must be a real one, and the file is opened without following a link, without blocking on a FIFO, and then compared with the path it was opened by — same device and inode, a regular file, one link.
+  A `..`, an absolute path, a link at any point, a hard link out and a special file are all refused.
 - Read-only unless the user passed `--upload`.
-  An upload creates a missing directory on the way, and refuses a symlinked one, so the write cannot be steered out of the root.
+  A write is staged beside its destination under an exclusive name, verified before a byte is written, and published by replacing its own directory entry: it never writes through a link, and it never replaces a file with more than one link.
+- The surface is POSIX only; on Windows the verb refuses to start rather than promise a confinement it cannot keep.
 
-**One transfer carries at most 50 MB**, the Agent runtime's own per-file limit, so a transfer can never carry a file the workspace would refuse to hold.
-A transfer is held whole in one api-server replica for the length of the request; the streaming alternative is the same path an import takes into the runtime, and is worth building only when that memory cost is real.
-The path, the size and the direction are the whole of what is recorded — on the Job row for the machine's side, and in the workspace for the Agent's — and file contents never enter a log.
+The Agent's own workspace is treated as untrusted in exactly the same way, because the Agent owns everything inside it.
+The platform's writes are staged in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; and both directions walk the workspace components and open without following a link, refusing a hard link and a special file.
+
+**One transfer carries at most 50 MB**, counted while the bytes move in both directions, and a file that grows after it was measured or a response that never ends is cut off at the limit rather than read whole.
+Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
+Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
 
 ## Trust boundary
 
@@ -259,7 +270,7 @@ This is a narrower promise than matching in both places, and deliberately so: a 
 What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
 
 A **file transfer crosses in the other direction**, so the platform is the side that writes what it is given.
-It trusts none of it: the name the machine sends is one path segment and becomes a path only inside a directory the platform chose for that Job, the size is bounded before the body is read, and the body lands in the Agent's workspace only while the Job that authorised it is still running.
+It trusts none of it: the machine names no path at all, the direction and both paths come from the Job's own arguments, the claim's token is spent atomically so nothing lands or leaves after the Job ended, and the workspace end walks every component without following a link.
 What the machine reads is bounded on the machine, by its root.
 
 Anything an Agent can call is callable by a **prompt-injected** Agent.
