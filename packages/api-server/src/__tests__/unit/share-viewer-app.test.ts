@@ -132,6 +132,39 @@ function contentAppWith(viewer: ShareViewerService) {
   });
 }
 
+function fakeLocation() {
+  return {
+    hash: "",
+    replaced: "",
+    replace(url: string) {
+      this.replaced = url;
+    },
+  };
+}
+
+function runPageScript(
+  html: string,
+  marker: string,
+  frame: object,
+  hash: string,
+) {
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map((m) => m[1]!)
+    .find((body) => body.includes(marker))!;
+  const listeners: Record<string, () => void> = {};
+  const location = { ...fakeLocation(), hash };
+  new Function("document", "window", "location", script)(
+    { querySelector: () => frame },
+    {
+      addEventListener: (type: string, fn: () => void) => {
+        listeners[type] = fn;
+      },
+    },
+    location,
+  );
+  return { location, listeners };
+}
+
 describe("share viewer app", () => {
   it("frames a public artifact from the content origin, never inline", async () => {
     const app = appWith(publicViewer());
@@ -145,6 +178,34 @@ describe("share viewer app", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(res.headers.get("Content-Security-Policy")).not.toContain("sandbox");
+  });
+
+  /**
+   * TEST_SCENARIO: A page can open an item named in the URL fragment, and only
+   * the share page sees the fragment of a shared link. The frame starts loading
+   * once, with the fragment. It follows a later fragment change by replacing its
+   * own history entry, so Back moves the page and the frame together.
+   */
+  it("hands the share link's fragment to the frame and follows it", async () => {
+    const html = await (
+      await appWith(publicViewer()).request("/a/slug-a")
+    ).text();
+    const contentUrl = "https://content.example.com/a/slug-a?v=1";
+    expect(html).toMatch(
+      /<iframe [^>]*data-src="https:\/\/content\.example\.com\/a\/slug-a\?v=1"/,
+    );
+    expect(html).not.toMatch(/<iframe [^>]* src=/);
+    const frame = {
+      dataset: { src: contentUrl },
+      src: "",
+      contentWindow: { location: fakeLocation() },
+    };
+    const page = runPageScript(html, "hashchange", frame, "#C-35");
+    expect(frame.src).toBe(`${contentUrl}#C-35`);
+    page.location.hash = "#C-40";
+    page.listeners.hashchange!();
+    expect(frame.contentWindow.location.replaced).toBe(`${contentUrl}#C-40`);
+    expect(frame.src).toBe(`${contentUrl}#C-35`);
   });
 
   /**
@@ -673,15 +734,22 @@ describe("restricted artifacts on the share host", () => {
 
   /**
    * TEST_SCENARIO: A stranger with no share session must be sent to sign in and
-   * come back to the same page afterwards. The raw download cannot redirect a
-   * browser download, so it answers 401 instead.
+   * come back to the same page afterwards, with the fragment of the link, which
+   * only the browser sees. The raw download cannot run a page, so it answers a
+   * plain 401.
    */
   it("sends an anonymous visitor to sign in and back", async () => {
     const app = appWith(restrictedViewer([]));
     const page = await app.request("/a/slug-a?v=1");
-    expect(page.status).toBe(302);
-    expect(page.headers.get("Location")).toBe(
-      `/auth/login?next=${encodeURIComponent("/a/slug-a?v=1")}`,
+    expect(page.status).toBe(401);
+    const signIn = runPageScript(
+      await page.text(),
+      "location.replace",
+      { dataset: {}, src: "" },
+      "#C-35",
+    );
+    expect(signIn.location.replaced).toBe(
+      `/auth/login?next=${encodeURIComponent("/a/slug-a?v=1#C-35")}`,
     );
     expect(page.headers.get("Cache-Control")).toBe("private, no-store");
     expect((await app.request("/a/slug-a/raw?v=1")).status).toBe(401);
@@ -697,8 +765,8 @@ describe("restricted artifacts on the share host", () => {
     const app = appWith(restrictedViewer(["alice@example.com"]));
     const planted = { headers: { cookie: "share_session=sid-alice" } };
     const page = await app.request("/a/slug-a", planted);
-    expect(page.status).toBe(302);
-    expect(page.headers.get("Location")).toBe(
+    expect(page.status).toBe(401);
+    expect(await page.text()).toContain(
       `/auth/login?next=${encodeURIComponent("/a/slug-a")}`,
     );
     expect((await app.request("/a/slug-a/raw", planted)).status).toBe(401);

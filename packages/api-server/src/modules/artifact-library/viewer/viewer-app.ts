@@ -39,6 +39,7 @@ import {
   renderFolderPage,
   renderNoAccess,
   renderNotFound,
+  renderSignInRedirect,
   renderWrapper,
 } from "./renderer.js";
 import {
@@ -130,7 +131,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
           if (!signIn) {
             return denied(
               surface === "page"
-                ? c.redirect(loginPath(currentPath(c)), 302)
+                ? c.html(renderSignInRedirect(loginPath(currentPath(c))), 401)
                 : c.text("unauthorized", 401),
             );
           }

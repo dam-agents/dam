@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -149,6 +149,8 @@ The code is redeemed server-side and no token ever reaches the browser: the brow
 On an https share host the cookie is named with the `__Host-` prefix, so the browser accepts it only from the share host itself: another host under the same parent domain, the content host included, cannot plant a session the share host would read or that sign-out would leave behind.
 On plain http, as on the local cluster, browsers refuse that prefix, so the cookie keeps its bare name there.
 Signing out ends both that session and the identity provider's, so "switch account" on the no-access page really switches.
+A visitor with no session first gets a small page that sends the browser to sign-in with the fragment of the link added to the return path, because the identity provider's sign-in form drops the fragment.
+The return path accepts a fragment of printable ASCII after a share page or an Environment's front door, and the callback sends the browser back to it.
 Every restricted response is marked private and uncacheable so no shared cache replays it to the next visitor.
 
 **The artifact frame.** A share page is two documents from two origins.
@@ -156,6 +158,11 @@ The outer page, on the share host, is platform chrome (title banner and source d
 The browser's same-origin rule is the boundary: artifact code runs as the content origin, so it can neither read the share session cookie nor call the share host as the signed-in viewer.
 The sandbox blocks top-level navigation and forms, but permits scripts, same-origin access and unsandboxed popups: it does not provide an independent origin boundary.
 The content host agrees to be framed only by the share origin, and serves raw bytes under a sandbox directive so a document opened directly cannot run either.
+
+**Fragment links.** A page can open an item named in the URL fragment (`/a/<slug>#C-35`), and only the share page's own address carries the fragment of a shared link: the server never sees it.
+So the share page gives the frame its address from a script, as the content address plus the page's fragment, and the frame loads once.
+When the page's fragment changes later, the frame follows it without loading the document again.
+A frame that changes its own fragment does not change the page's address.
 
 **Printing.** The browser's own print (Cmd/Ctrl+P or its menu) prints the whole artifact, not only the part in view.
 The frame is sandboxed without modals, so the artifact's document cannot print itself, and the browser prints the outer page even when the keyboard focus is inside the frame.
