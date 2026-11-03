@@ -8,7 +8,7 @@ import { parseUserText } from "./prompts.js";
 
 export const MAX_AUTOMATIC_REPLIES = 3;
 
-function userText(message: Message): string {
+export function userText(message: Message): string {
   return message.parts
     .flatMap((part) => (part.kind === "text" ? [part.text] : []))
     .join("\n");
