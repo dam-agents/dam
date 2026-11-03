@@ -64,10 +64,19 @@ const levelOf = (used: number, limit: number): PoolLevel =>
 
 const MIB = 1024 ** 2;
 
+// UNIT_BOUNDARY_DESCRIPTION: what the runner does not say about CPU: the owner's CPU pool, null when their budget could not be read, and the vCPUs every machine gets, null when the install does not say.
+export interface CpuPool {
+  poolMilli: number | null;
+  machineMilli: number | null;
+}
+
+const NO_CPU_POOL: CpuPool = { poolMilli: null, machineMilli: null };
+
 // UNIT_BOUNDARY_DESCRIPTION: the runner's figures as the budgets read publishes them, in bytes, with only the caller's own agents listed: a runner outside the cluster serves every owner and lists every machine.
 export function vmUsageView(
   usage: RunnerUsage,
   ownAgentIds: ReadonlySet<string>,
+  cpuPool: CpuPool = NO_CPU_POOL,
 ): BudgetVmUsage {
   const usedBytes = usage.memory.committedMiB * MIB;
   const limitBytes = usage.memory.limitMiB * MIB;
@@ -81,7 +90,7 @@ export function vmUsageView(
       level: levelOf(storage.usedBytes, storage.usableBytes),
     },
     ...(cpu && (cpu.limitMilli > 0 || cpu.pressurePercent !== undefined)
-      ? { cpu: cpuView(cpu) }
+      ? { cpu: cpuView(cpu, cpuPool) }
       : {}),
     agents: usage.machines
       .filter((m) => ownAgentIds.has(m.id))
@@ -98,11 +107,14 @@ export function vmUsageView(
 
 function cpuView(
   cpu: NonNullable<RunnerUsage["cpu"]>,
+  { poolMilli, machineMilli }: CpuPool,
 ): NonNullable<BudgetVmUsage["cpu"]> {
   const pressurePercent = cpu.pressurePercent ?? cpu.throttledPercent;
   return {
     limitMilli: cpu.limitMilli,
     usedMilli: cpu.usedMilli,
+    ...(poolMilli !== null && poolMilli > 0 ? { poolMilli } : {}),
+    ...(machineMilli !== null && machineMilli > 0 ? { machineMilli } : {}),
     throttledPercent: cpu.throttledPercent,
     pressurePercent,
     ...cpuLevel(pressurePercent),

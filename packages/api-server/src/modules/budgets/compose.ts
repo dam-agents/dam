@@ -8,11 +8,14 @@ import {
   readUserBudget as readStoredUserBudget,
   writeUserBudget as writeStoredUserBudget,
 } from "../agent-store/user-budgets.js";
+import { readUserBudgetSizes as readStoredUserBudgetSizes } from "../agent-store/user-budgets.js";
+import { parseCpuMilli } from "../../core/quantities.js";
 import { readRunnerUsage } from "./infrastructure/runner-usage.js";
 import {
   deleteUserBudget,
   listUserBudgets,
   readUserBudget,
+  readUserBudgetSizes,
   writeUserBudget,
 } from "./infrastructure/user-budgets.js";
 import {
@@ -35,19 +38,35 @@ export function composeStorageGate(deps: {
   });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what the home dashboard shows CPU use against: the owner's CPU pool, from the same budget record the operator writes, else the install's default, and the vCPUs every machine gets.
+export interface CpuPoolSettings {
+  defaultCpu: string;
+  machineCpus: number;
+  agentStore: { authority: AgentStoreMode; db: Db };
+}
+
 export function composeBudgetsModule(deps: {
   k8s: K8sClient;
   owner: string;
+  cpuPool: CpuPoolSettings;
   listAgentIds(): Promise<string[]>;
   isSlackUnlinked(): Promise<boolean>;
 }): {
   budgets: BudgetsService;
   storageGate: StorageGate;
 } {
+  const { defaultCpu, machineCpus, agentStore } = deps.cpuPool;
   return {
     budgets: createBudgetsService({
       listAgentIds: deps.listAgentIds,
       readVmUsage: () => readRunnerUsage(deps.k8s, deps.owner),
+      readCpuPoolMilli: async () => {
+        const { cpu } = readsRows(agentStore.authority)
+          ? await readStoredUserBudgetSizes(agentStore.db, deps.owner)
+          : await readUserBudgetSizes(deps.k8s, deps.owner);
+        return parseCpuMilli(cpu ?? defaultCpu);
+      },
+      machineMilli: machineCpus > 0 ? machineCpus * 1000 : null,
       isSlackUnlinked: deps.isSlackUnlinked,
     }),
     storageGate: composeStorageGate(deps),

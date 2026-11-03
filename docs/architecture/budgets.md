@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-24
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -23,7 +23,7 @@ An Agent has no size of its own: its machine draws on its owner's runner and may
 - **CPU** is the runner's CPU limit, which follows the machines that should be running up to the owner's CPU pool; it is never refused on, since a short CPU only slows agents down.
 - **Storage** is the owner's claim, which every machine disk may grow into ([vm storage](vm-storage.md#the-owners-claim)); a create is refused once it is nearly full.
 
-The budget endpoint carries the pool: the memory it holds and what it has committed, its storage used and usable, its CPU limit, how often that limit held it back and its CPU pressure — the share of the last minute its agents waited for a CPU — over the last minute, and each of the owner's agents' measured memory, CPU and disk share, read from the runner on demand and never stored.
+The budget endpoint carries the pool: the memory it holds and what it has committed, its storage used and usable, the owner's CPU pool and a machine's vCPUs, the runner's CPU limit and use, how often that limit held it back and its CPU pressure — the share of the last minute its agents waited for a CPU — over the last minute, and each of the owner's agents' measured memory, CPU and disk share, read from the runner on demand and never stored.
 Each pool carries a level, warning from 75% and critical from 90%, defined once so the home dashboard, the create refusal and the resource alerts agree; CPU's pressure is named as congestion instead — low, moderate from 20% (the warning level), high from 50% and severe from 75% (both critical) — with a fill that grows with the log of the slowdown and is full at four times slower.
 **Deliberate exclusion:** each agent's gateway pod, a uniform per-agent platform overhead outside the runner that operators price into the install.
 
@@ -97,8 +97,9 @@ This also means the whole enforcement path is invisible on the happy path: users
 The home dashboard's resource card shows the pools: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage logs and system — as the last.
 Once storage reaches the warning level, or an agent reports its own disk full, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, and what is left.
 An agent whose own disk is full says so on its row — its writes are failing while it keeps running — so the owner sees which agent to open where they go to free space.
-CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
-The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — disable agents not in use, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are put to sleep for memory, and new agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
+CPU's bar is a use against the owner's CPU pool too — their UserBudget's `cpu`, else the install's default, which the budget endpoint carries beside the runner's figures — with each running agent's CPU as a segment, and what the runner and the machines' I/O used beyond them as the last; not against the runner's own limit, which moves with the machines running.
+Its colour is still its congestion's, since agents can wait for a CPU on a bar short of full, and the meter's spoken value names the congestion beside the use; with no pool to read the bar falls back to the congestion's fill.
+The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — disable agents not in use, delete old ones or have them clean their disks, or, for CPU from moderate congestion, which agents use the most, and also, at any congestion, which agent uses nine tenths or more of the vCPUs its machine gets (`virtualization.runner.machineCPUs`), since that agent is slow however empty the pool is — and at critical what the platform does: idle agents are put to sleep for memory, and new agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
 Each agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
 A start the controller parks raises a dialog that names the cause and sends the user to the agent list on the home dashboard to free room.
 First-time users with no agents see none of it.
