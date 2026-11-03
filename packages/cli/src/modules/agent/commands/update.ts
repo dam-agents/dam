@@ -350,8 +350,7 @@ function renderMove(
   agentName: string,
   connections: readonly ConnectionView[],
 ): string {
-  const name = (id: string) =>
-    connections.find((c) => c.id === id)?.name ?? id;
+  const name = (id: string) => connections.find((c) => c.id === id)?.name ?? id;
   const which = `the ${move.kind} default${move.model ? ` (${move.model})` : ""}`;
   if (move.to !== null)
     return `note: ${which} moved from ${name(move.from)} to ${name(move.to)}\n`;

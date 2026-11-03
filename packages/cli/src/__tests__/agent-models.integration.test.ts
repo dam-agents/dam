@@ -527,7 +527,12 @@ describe("dam agent get / update / models (integration)", () => {
         from: "conn-ibm",
         to: "conn-ibm2",
       },
-      { kind: "channel", model: "ibm/gpt-5.5", from: "conn-ibm", to: "conn-ibm2" },
+      {
+        kind: "channel",
+        model: "ibm/gpt-5.5",
+        from: "conn-ibm",
+        to: "conn-ibm2",
+      },
       {
         kind: "scheduled",
         model: "ibm/gpt-5.5",
@@ -538,7 +543,9 @@ describe("dam agent get / update / models (integration)", () => {
     expect(r.stderr).toContain(
       "note: the chat default (ibm/aws/claude-opus-4-8) moved from IBM proxy to IBM proxy of my own",
     );
-    expect(r.stderr).toContain("note: the scheduled default (ibm/gpt-5.5) moved");
+    expect(r.stderr).toContain(
+      "note: the scheduled default (ibm/gpt-5.5) moved",
+    );
   });
 
   /**
