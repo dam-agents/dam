@@ -24,7 +24,7 @@ const binding: ModelRouterBinding = {
   classifierModelEnv: "CLAUDE_CODE_AUTO_MODE_MODEL",
 };
 
-const PROCESS_CLASSIFIER = "claude/anthropic/claude-sonnet-5-5";
+const PROCESS_CLASSIFIER = "claude/anthropic/claude-sonnet-5";
 const CB_WORK = "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
 const CB_CLASSIFIER = "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4";
 
@@ -105,6 +105,7 @@ describe("the classifier's own call", () => {
     const ibm = provider("ibm", [
       "aws/claude-opus-5-5",
       "aws/claude-sonnet-5-5",
+      "aws/claude-sonnet-5",
       "gpt-5.5",
     ]);
     expect(
@@ -116,7 +117,7 @@ describe("the classifier's own call", () => {
         subagentModel: "ibm/gpt-5.5",
         providers: [ibm],
       }),
-    ).toBe("claude/ibm/aws/claude-sonnet-5-5");
+    ).toBe("claude/ibm/aws/claude-sonnet-5");
     expect(
       where({
         sessionModel: "ibm/aws/claude-opus-5-5",
@@ -138,6 +139,7 @@ describe("the classifier's own call", () => {
     const ibm = provider("ibm", [
       "aws/claude-opus-5-5",
       "aws/claude-sonnet-5-5",
+      "aws/claude-sonnet-5",
       "gpt-5.5",
     ]);
     expect(
@@ -147,7 +149,7 @@ describe("the classifier's own call", () => {
       where({ sessionModel: "ibm/aws/claude-opus-5-5", providers: [ibm] }),
     ).toBe(PROCESS_CLASSIFIER);
     expect(where({ sessionModel: "ibm/gpt-5.5", providers: [ibm] })).toBe(
-      "claude/ibm/aws/claude-sonnet-5-5",
+      "claude/ibm/aws/claude-sonnet-5",
     );
   });
 
@@ -156,6 +158,7 @@ describe("the classifier's own call", () => {
     const ibm = provider("ibm", [
       "aws/claude-opus-5-5",
       "aws/claude-sonnet-5-5",
+      "aws/claude-sonnet-5",
       "gpt-5.5",
     ]);
     const env = { CLAUDE_CODE_AUTO_MODE_SERVER: "0" };
