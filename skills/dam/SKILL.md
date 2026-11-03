@@ -128,7 +128,9 @@ For `dam connection connect` and `dam connection update`, the user types the sec
    Run it again for a new link.
 4. Read the `check` in the `--json` output before you tell the user the connection is ready.
    These connections are checked when they are saved: a GitHub token (`github-pat`, `github-enterprise-pat`), a GitHub App (`github-app`, `github-enterprise-app`), a Kubernetes token, and a model provider key.
-   `"status": "passed"` names the `account`, so tell the user which account it is.
+   `"status": "passed"` names the `account` when the check can tell it, so tell the user which account it is.
+   A model provider check names it only where the provider tells it: an Anthropic OAuth token's email and organization, an Anthropic or OpenAI key's organization, an IBM LiteLLM or Bob key's user, a Bedrock key's AWS account.
+   It may still come without an `account`: then tell the user the key works but you can't tell whose it is.
    A GitHub App's `account` is its bot (`<app>[bot]`), `installedOn` the user or organization it is installed on, and `repositories` the repositories it reaches (`repositoriesTruncated` when there are more): tell the user these.
    When `expiresAt` is set, tell the user when the token expires; the CLI warns when that is within a day.
    A Kubernetes token's `account` is the user it acts as, such as `system:serviceaccount:<namespace>:<name>`.
