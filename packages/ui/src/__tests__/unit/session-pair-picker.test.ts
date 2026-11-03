@@ -93,6 +93,7 @@ const state = vi.hoisted(() => ({
     | undefined,
   chosenModel: vi.fn(),
   grant: vi.fn(async (_id: string) => true),
+  navigate: vi.fn(),
   remember: vi.fn(),
   saved: undefined as
     | {
@@ -109,7 +110,7 @@ vi.mock("../../store.js", () => ({
         ? { agent: state.chosen, "agent-b": state.chosen }
         : {},
       setNextSessionPair: state.chosenModel,
-      navigateToSandboxHome: vi.fn(),
+      navigateToSandboxHome: state.navigate,
       showConfirm: state.showConfirm,
     }),
 }));
@@ -1790,7 +1791,7 @@ describe("the picker choosing for a schedule or a channel", () => {
                 platformSubagentSettings: null,
               },
               label: "Schedule harness and model",
-              placeholder: "The agent's chat default",
+              placeholder: "The agent's model for schedules",
               onChoose,
             },
           }),
@@ -1816,6 +1817,253 @@ describe("the picker choosing for a schedule or a channel", () => {
     } finally {
       act(() => root.unmount());
       profilesState = [];
+    }
+  });
+});
+
+describe("a config page's picker", () => {
+  const emptySlots = {
+    profileId: null,
+    pair: null,
+    platformSubagentProfileId: null,
+    platformSubagentSettings: null,
+  };
+
+  const targetOf = (overrides: Record<string, unknown> = {}) => ({
+    slots: emptySlots,
+    label: "Model for schedules",
+    placeholder: "Use agent default",
+    agentDefault: {
+      summary: "Claude Opus 5.5 · Medium (IBM)",
+      harness: "codex",
+      onClear: vi.fn(),
+    },
+    onChoose: vi.fn(),
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    state.catalog = routedCatalog;
+    state.chosen = null;
+    state.chosenModel.mockReset();
+    state.navigate.mockReset();
+    profilesState = [];
+  });
+
+  /** TEST_SCENARIO: the page's trigger is a row card, named by the page's own label, which shows the default's harness rather than the runtime's while the pick follows the agent's default. */
+  it("shows the agent's default as a row card while the pick follows it", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+        row: true,
+        target: targetOf(),
+      }),
+    );
+    const trigger =
+      /data-testid="session-pair-row-picker"[^>]*>(.*?)<\/button>/.exec(
+        html,
+      )?.[1];
+    expect(trigger).toContain("Use agent default");
+    expect(trigger).toContain("Claude Opus 5.5 · Medium (IBM)");
+    expect(trigger).toContain('aria-label="Codex"');
+    expect(trigger).not.toContain('aria-label="Pi"');
+    expect(html).toContain(
+      'aria-label="Model for schedules: Use agent default. Claude Opus 5.5 · Medium (IBM)"',
+    );
+  });
+
+  /** TEST_SCENARIO: the list's first row is the agent's default, selected while the pick follows it, above Custom selection; picking it clears the pick. */
+  it("lists the agent's default first, selected, and clears the pick", () => {
+    const target = targetOf();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+            row: true,
+            target,
+          }),
+        ),
+      );
+      const rows = [...container.querySelectorAll('[aria-current="true"]')];
+      expect(rows.map((row) => row.textContent)).toEqual([
+        expect.stringContaining("Use agent default"),
+      ]);
+      expect(rows[0]!.textContent).toContain("Follows Claude Opus 5.5");
+      const row = [...container.querySelectorAll("button")].find(
+        (b) =>
+          b.textContent?.startsWith("Use agent default") &&
+          b.closest('[data-testid="session-pair-row-picker"]') === null,
+      );
+      expect(container.innerHTML.indexOf("Use agent default")).toBeLessThan(
+        container.innerHTML.indexOf("Custom selection"),
+      );
+      act(() => row!.click());
+      expect(target.agentDefault.onClear).toHaveBeenCalled();
+      expect(target.onChoose).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  /** TEST_SCENARIO: a page with a pick of its own shows that pick, its model's name over the provider it reaches, and the agent's default is not marked. */
+  it("shows the page's own pick over the harness and provider it runs on", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+        row: true,
+        target: targetOf({
+          slots: {
+            ...emptySlots,
+            pair: { harness: "pi", provider: "ibm", model: "ibm/gpt-5.5" },
+          },
+        }),
+      }),
+    );
+    const trigger =
+      /data-testid="session-pair-row-picker"[^>]*>(.*?)<\/button>/.exec(
+        html,
+      )?.[1];
+    expect(trigger).toContain("GPT 5.5");
+    expect(trigger).toContain(">IBM</span>");
+    const defaultRow =
+      /<button[^>]*class="[^"]*mt-0[^"]*">(.*?)<\/span><\/button>/.exec(html);
+    expect(defaultRow?.[1]).toContain("Use agent default");
+    expect(defaultRow?.[0]).not.toContain('aria-current="true"');
+  });
+
+  /** TEST_SCENARIO: a page keeps no profile reference, so a pick that matches a profile marks that profile and names it on the card, rather than falling to Custom selection. */
+  it("marks the profile a page pick matches", () => {
+    const runnable = {
+      harness: "pi",
+      providerTemplate: "curve-bender",
+      model: "cb/rits/zai-org/glm-5-3",
+      settings: {},
+      newAgentDefault: false,
+      usage: { agents: 0, channels: 0, schedules: 0 },
+      availability: { available: true, reason: null, attachable: false },
+    };
+    profilesState = [{ ...runnable, id: "p-main", name: "Main" }];
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+            row: true,
+            target: targetOf({
+              slots: {
+                ...emptySlots,
+                pair: {
+                  harness: "pi",
+                  provider: null,
+                  model: "cb/rits/zai-org/glm-5-3",
+                },
+              },
+            }),
+          }),
+        ),
+      );
+      const marked = [
+        ...container.querySelectorAll('[aria-current="true"]'),
+      ].map((row) => row.textContent);
+      expect(marked).toHaveLength(1);
+      expect(marked[0]).toContain("Main");
+      expect(
+        container.querySelector('[data-testid="session-pair-row-picker"]')
+          ?.textContent,
+      ).toContain("Main");
+    } finally {
+      act(() => root.unmount());
+      profilesState = [];
+    }
+  });
+
+  /** TEST_SCENARIO: the gear that opens the agent's Providers section sits on the chat input's pickers alone — the new chat's and a running session's — and a config page's picker carries none. */
+  it("carries no gear, which the chat input's pickers keep", () => {
+    const config = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+        row: true,
+        target: targetOf(),
+      }),
+    );
+    expect(config).not.toContain('aria-label="Configure providers"');
+    const chat = document.createElement("div");
+    const root = createRoot(chat);
+    try {
+      act(() =>
+        root.render(
+          createElement(SessionPairPicker, {
+            agentId: "agent",
+            defaultHarness: "pi",
+            carried,
+            routed: true,
+            onConnectProviders: state.connectProviders,
+          }),
+        ),
+      );
+      const gear = chat.querySelector<HTMLButtonElement>(
+        'button[aria-label="Configure providers"]',
+      );
+      expect(gear).not.toBeNull();
+      act(() => gear!.click());
+      expect(state.navigate).toHaveBeenCalledWith("agent", "providers");
+    } finally {
+      act(() => root.unmount());
+    }
+    state.navigate.mockReset();
+    const running = document.createElement("div");
+    const runningRoot = createRoot(running);
+    try {
+      act(() =>
+        runningRoot.render(
+          createElement(ModelIndicator, {
+            onToolApproval: () => {},
+            agentId: "agent",
+            sessionId: "s1",
+            harness: "pi",
+            provider: "ibm",
+            model: "ibm/gpt-5.5",
+            carried,
+            routed: true,
+            onChoose: vi.fn(),
+            onConfigure: vi.fn(),
+            onNewSession: state.newSession,
+          }),
+        ),
+      );
+      const gear = running.querySelector<HTMLButtonElement>(
+        'button[aria-label="Configure providers"]',
+      );
+      expect(gear).not.toBeNull();
+      act(() => gear!.click());
+      expect(state.navigate).toHaveBeenCalledWith("agent", "providers");
+    } finally {
+      act(() => runningRoot.unmount());
     }
   });
 });
