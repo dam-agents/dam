@@ -20,6 +20,7 @@ import {
 import type { CallerSessionLookup } from "./infrastructure/caller-session.js";
 import { createCallCostsEndpoint } from "./services/call-costs-endpoint.js";
 import { createCatalogEndpoints } from "./services/catalog-endpoints.js";
+import { unboundHarnessModels } from "./domain/unbound-harness-models.js";
 import {
   createModelRouter,
   type ModelCallRecord,
@@ -173,7 +174,13 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
         dialect,
       ),
     extensions: [
-      createCatalogEndpoints(opts.catalog),
+      createCatalogEndpoints({
+        ...opts.catalog,
+        forHarness: (harness) =>
+          opts.harnesses[harness]
+            ? opts.catalog.forHarness(harness)
+            : unboundHarnessModels(opts.catalog.providers()),
+      }),
       ...(opts.callCosts
         ? [createCallCostsEndpoint(opts.callCosts, opts.log)]
         : []),

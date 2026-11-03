@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-29
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -115,6 +115,8 @@ flowchart LR
 - **Own image** — optional.
   A kit for a workload baked into a custom image (the research frameworks) names the image itself — an OCI reference, the harness family inside it, and the providers it can run on — and its sessions have no harness choice.
   The Agent is created on that image exactly as a custom-image agent is, with the install's default mounts; nothing has to be declared in Helm for a kit to work.
+  An image may carry a harness of its own that the platform does not route, with no `modelRouter` section in its manifest.
+  It still reaches models through the Agent's [Model Router](harness-config.md#the-model-router), by provider-qualified names, and learns them from the router's `/v1/models`: every model the Agent's providers list, except one kept to named harnesses, with the platform's preferred work model first.
   A kit without an image runs on the default Template.
   The former `preconfigured` Templates are now kits in the built-in catalog: workload images belong in kits, harness images in Templates.
 - **Kit Egress** — optional `egressPreset` (`none`, `trusted` or `all`, the presets an agent's egress settings offer) and `egressRules`, a list of host rules in the shape a hand-written rule takes (`host`, optional `port`, `method`, `pathPattern`, `verdict`, which defaults to `allow`).

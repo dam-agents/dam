@@ -272,6 +272,28 @@ describe("catalog endpoints", () => {
     ).toBe("zai");
   });
 
+  /** TEST_SCENARIO: A kit image's own harness has no modelRouter section, so
+   * the router lists it every model the agent's providers list, each under
+   * its plain qualified name with its dialects, since a chat call naming one
+   * resolves for any harness; before, it got an empty list and no way to
+   * find a model. The subscription's model is kept to Claude Code, so it is
+   * left out. */
+  it("serves an unrouted harness every listed model by its qualified name", async () => {
+    const r = await get("/v1/models", "image-agent");
+    expect(r.status).toBe(200);
+    const list = r.json as {
+      data: { id: string; metadata: { dialects: string[] } }[];
+    };
+    expect(list.data.map((m) => m.id).sort()).toEqual([
+      "cb/rits/zai-org/glm-5-3",
+      "ibm/aws/claude-opus-4-8",
+      "ibm/gpt-5.5",
+    ]);
+    expect(
+      list.data.find((m) => m.id === "ibm/gpt-5.5")?.metadata.dialects,
+    ).toContain("openai-chat");
+  });
+
   /** TEST_SCENARIO: Codex drops a catalog with a missing required field, so
    * every field its ModelInfo struct requires is present on each entry with
    * the qualified name as slug, and the catalog stays under Codex's body
