@@ -247,6 +247,18 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
       ],
     },
   }),
+  useAgentHarnessCatalog: () => ({
+    data: state.catalogLoaded && {
+      harnesses: [
+        {
+          name: "pi",
+          displayName: "Pi",
+          providers: ["ibm-litellm", "curve-bender", "anthropic"],
+        },
+        { name: "codex", displayName: "Codex", providers: ["openai"] },
+      ],
+    },
+  }),
   useRememberedPair: () => ({
     data: { harness: "pi", provider: "ibm", model: null },
   }),

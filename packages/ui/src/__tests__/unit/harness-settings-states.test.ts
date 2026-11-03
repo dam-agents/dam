@@ -47,6 +47,9 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
     data: { harnesses: [{ name: "claude-code", displayName: "Claude" }] },
   }),
+  useAgentHarnessCatalog: () => ({
+    data: { harnesses: [{ name: "claude-code", displayName: "Claude" }] },
+  }),
 }));
 
 function render() {

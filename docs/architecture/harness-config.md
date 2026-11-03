@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -137,6 +137,14 @@ Provider compatibility follows the configured harness catalog, shared by the set
 It also follows the [Connection](connections.md)'s credential mode: an Anthropic API key works with Claude Code and Pi, but a subscription OAuth Connection is offered only to Claude Code.
 Automatic provider selection and scheduled or channel-driven turns apply the same restriction.
 A provider speaking another harness's API dialect is not enough: the Connection must also supply that harness's authentication and endpoint configuration.
+
+An **image harness** is a harness an Agent's own image carries that the install's harness catalog does not list, such as the harness a starter kit's image brings.
+Its runtime describes it on `hello` from its manifest: the model dialects it speaks through the [Model Router](#the-model-router), and the title its ACP agent gives.
+That Agent alone is offered it, under that title, and nothing in the platform or its configuration names it.
+It fits each provider that serves one of its dialects and is not kept to named harnesses, so a Chat Completions harness runs on the LiteLLM proxies and OpenAI, and never on Bob's gateway or a subscription.
+Its chat default, schedules, channel turns and the agent's model catalog accept it as they accept a catalog harness.
+A harness reported with no dialect is not routed, and stays outside session selection as before.
+A plain create and the default Template never offer it, since only its image can run it.
 
 ## The event
 

@@ -117,6 +117,7 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({ data: { harnesses: [] } }),
+  useAgentHarnessCatalog: () => ({ data: { harnesses: [] } }),
   useHarnessCatalogModels: () => ({ data: undefined, granted: [] }),
   useHarnessConfigured: () => undefined,
   useGrantProvider: () => ({ grant: vi.fn(), pending: false }),

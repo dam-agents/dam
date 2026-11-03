@@ -49,7 +49,7 @@ export function useHarnessCatalog() {
  * is offered.
  */
 export function useAgentHarnessCatalog(agentId: string | null): {
-  data: { harnesses: AgentHarnessView[] } | undefined;
+  data: { default: string; harnesses: AgentHarnessView[] } | undefined;
   isPending: boolean;
   isError: boolean;
 } {
@@ -57,6 +57,7 @@ export function useAgentHarnessCatalog(agentId: string | null): {
   const { data: status } = useHarnessConfigStatus(agentId);
   return {
     data: catalog.data && {
+      default: catalog.data.default,
       harnesses: withImageHarnesses(catalog.data, status?.harnesses),
     },
     isPending: catalog.isPending,

@@ -1,5 +1,5 @@
 import { routesSessionPairs } from "agent-runtime-api";
-import type { HarnessView } from "api-server-api";
+import { type HarnessView, withImageHarnesses } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -78,6 +78,27 @@ describe("session pair options", () => {
   it("splits a harness's providers into granted and addable", () => {
     expect(
       providerOptions("codex", CATALOG, [lite, claude], [lite, claude, oai]),
+    ).toEqual({ granted: [lite], addable: [oai] });
+  });
+
+  /** TEST_SCENARIO: An agent whose image carries a harness the catalog does
+   * not list offers it under its reported title, with the granted and addable
+   * providers that serve its reported dialect. */
+  it("offers an agent's image harness with the providers its dialect fits", () => {
+    const views = withImageHarnesses({ harnesses: CATALOG }, [
+      {
+        name: "image-agent",
+        harnessConfig: false,
+        sessionModel: false,
+        dialects: ["openai-chat"],
+        title: "Image Agent",
+      },
+    ]);
+    expect(harnessOptions(["image-agent"], views)).toEqual([
+      { name: "image-agent", displayName: "Image Agent" },
+    ]);
+    expect(
+      providerOptions("image-agent", views, [lite, claude], [lite, claude, oai]),
     ).toEqual({ granted: [lite], addable: [oai] });
   });
 

@@ -59,7 +59,7 @@ vi.mock("../../modules/agents/api/harness-config.js", () => ({
   }),
 }));
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
-  useHarnessCatalog: () => ({
+  useAgentHarnessCatalog: () => ({
     isPending: false,
     isError: false,
     data: { harnesses: fake.catalog },

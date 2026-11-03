@@ -80,6 +80,13 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
       ],
     },
   }),
+  useAgentHarnessCatalog: () => ({
+    data: {
+      harnesses: [
+        { name: "codex", displayName: "Codex", providers: ["openai"] },
+      ],
+    },
+  }),
   useHarnessCatalogModels: () => ({
     data: state.routed
       ? {

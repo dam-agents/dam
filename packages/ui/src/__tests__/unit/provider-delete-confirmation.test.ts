@@ -68,6 +68,7 @@ vi.mock("../../modules/provider-status/api/queries.js", () => ({
 }));
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({ data: { harnesses: [] } }),
+  useAgentHarnessCatalog: () => ({ data: { harnesses: [] } }),
   useProviderConnections: () => ({
     owned: [{ id: "c1", name: "My OpenAI", templateId: "openai" }],
     granted: [{ id: "c1" }],

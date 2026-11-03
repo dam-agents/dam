@@ -59,6 +59,7 @@ vi.mock("../../modules/providers/api/mutations.js", () => ({
 }));
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({ data: { harnesses: [] }, isPending: false }),
+  useAgentHarnessCatalog: () => ({ data: { harnesses: [] }, isPending: false }),
 }));
 vi.mock("../../modules/providers/components/provider-balance.js", () => ({
   ProviderBalance: () => null,
