@@ -85,8 +85,10 @@ export {
   renderName,
   selectDiscoverySource,
   servesHarness,
+  withImageHarnesses,
 } from "./modules/model-catalog/index.js";
 export type {
+  AgentHarnessView,
   CatalogEntry,
   CatalogProvider,
   DiscoveredModel,

@@ -186,6 +186,7 @@ import {
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
   createInitializationPairResolver,
+  harnessesOf,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -1136,6 +1137,11 @@ export async function bootstrap() {
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
+      carriedHarnesses: async (agentId) =>
+        harnessesOf(
+          (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+            ?.runtimeCapabilities ?? null,
+        ),
       providerModelCatalog: connectionsBoot.providerModelCatalog,
     });
   await periodicJobs

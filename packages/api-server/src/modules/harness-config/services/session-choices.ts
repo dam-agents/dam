@@ -6,7 +6,11 @@ import {
   sessionSettingsError,
   type SessionSettings,
 } from "agent-runtime-api";
-import { aliasForProviderType, type HarnessCatalog } from "api-server-api";
+import {
+  aliasForProviderType,
+  withImageHarnesses,
+  type HarnessCatalog,
+} from "api-server-api";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { harnessFits } from "../../templates/index.js";
@@ -135,6 +139,7 @@ export function createSessionChoicesValidator(deps: {
     if (!routesByModelName(capabilities))
       return legacyChoices(agentId, capabilities, choices);
     const carried = harnessesOf(capabilities) ?? [];
+    const offered = { harnesses: withImageHarnesses(deps.catalog, carried) };
     const harness =
       choices.harness ??
       (await deps.pairRepo.read(agentId, "scheduled"))?.harness ??
@@ -143,7 +148,7 @@ export function createSessionChoicesValidator(deps: {
     if (
       choices.harness !== undefined &&
       (!carried.some((h) => h.name === harness) ||
-        !deps.catalog.harnesses.some((h) => h.name === harness))
+        !offered.harnesses.some((h) => h.name === harness))
     )
       return `this agent does not carry the ${harness} harness`;
     const harnessCapability = carried.find((h) => h.name === harness);
@@ -158,7 +163,7 @@ export function createSessionChoicesValidator(deps: {
       );
       if (!provider) return `this agent holds no ${alias} provider`;
       if (
-        !harnessFits(deps.catalog, harness, provider.type, provider.templateId)
+        !harnessFits(offered, harness, provider.type, provider.templateId)
       )
         return `the ${harness} harness cannot run on ${alias}`;
       const listed = (await deps.snapshotRepo.read(agentId, harness))

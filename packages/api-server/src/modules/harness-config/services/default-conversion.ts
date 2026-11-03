@@ -1,6 +1,7 @@
 import { routesByModelName, type HarnessCatalogView } from "agent-runtime-api";
 import {
   parseQualifiedModel,
+  withImageHarnesses,
   type HarnessCatalog,
   type SessionPair,
 } from "api-server-api";
@@ -9,7 +10,7 @@ import { convertedDefault } from "../domain/converted-default.js";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import type { FillableSessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
-import { defaultHarnessOf } from "./harness-config-service.js";
+import { defaultHarnessOf, harnessesOf } from "./harness-config-service.js";
 import { NoDefaultModelError } from "../domain/no-default-model.js";
 
 export type DefaultConversion =
@@ -109,8 +110,11 @@ export function createDefaultConverter(deps: {
       defaultHarnessOf(capabilities) ??
       (await deps.specHarness(agentId)) ??
       deps.catalog.default;
+    const offered = {
+      harnesses: withImageHarnesses(deps.catalog, harnessesOf(capabilities)),
+    };
     const fitting = (await deps.pairRepo.grantedProviders(agentId)).filter(
-      (p) => harnessFits(deps.catalog, harness, p.type, p.templateId),
+      (p) => harnessFits(offered, harness, p.type, p.templateId),
     );
     if (fitting.length === 0)
       return save(agentId, { harness, provider: null, model: null });

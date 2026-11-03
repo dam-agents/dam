@@ -1,4 +1,5 @@
 import type { Db } from "db";
+import type { HarnessCapability } from "agent-runtime-api";
 import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   type ConnectionsService,
@@ -256,6 +257,7 @@ export function composeConnectionsForOwner(opts: {
   maxSharedKbConnections?: number;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
+  carriedHarnesses?: (agentId: string) => Promise<HarnessCapability[] | null>;
   providerModelCatalog: ProviderModelCatalog;
   newAgentProvider?: () => Promise<{
     connectionId: string;
@@ -313,6 +315,7 @@ export function composeConnectionsForOwner(opts: {
     resolveKbShare: createKbShareResolver(opts.db),
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey,
     harnesses: opts.harnesses,
+    ...(opts.carriedHarnesses && { carriedHarnesses: opts.carriedHarnesses }),
     providerModelCatalog: opts.providerModelCatalog,
     newAgentProvider: opts.newAgentProvider,
     ...(opts.maxSharedKbConnections !== undefined

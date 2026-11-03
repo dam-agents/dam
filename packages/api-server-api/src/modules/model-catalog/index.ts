@@ -43,6 +43,10 @@ export {
   type ModelDiscoverySpec,
 } from "./discovery.js";
 export { harnessCatalogOf } from "./harness-view.js";
+export {
+  withImageHarnesses,
+  type AgentHarnessView,
+} from "./image-harnesses.js";
 export type {
   OwnerModelCatalogView,
   ProviderCatalogModel,

@@ -15,6 +15,7 @@ import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
   createDefaultModelNoticeReader,
+  harnessesOf,
   isNoDefaultModelError,
 } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
@@ -168,6 +169,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
+      carriedHarnesses: async (agentId) =>
+        harnessesOf(await getAgentCapabilities(agentId)),
       providerModelCatalog: connectionsBoot.providerModelCatalog,
       newAgentProvider: async () => {
         const chosen = await defaultProfile();

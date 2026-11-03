@@ -307,7 +307,10 @@ export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
 
   /** UNIT_BOUNDARY_DESCRIPTION: every provider Connection the owner holds, or with `agentId` only those granted to that agent. */
-  modelCatalog(agentId?: string): Promise<OwnerModelCatalogView>;
+  modelCatalog(
+    agentId?: string,
+    opts?: { harnessesOf?: string },
+  ): Promise<OwnerModelCatalogView>;
 
   listConnections(): Promise<ConnectionView[]>;
 

@@ -9,6 +9,7 @@ import {
   PROVIDER_DIALECTS,
   providerTypeForTemplateId,
   renderName,
+  type AgentHarnessView,
   type CatalogEntry,
   type ProviderListingStatus,
   type Connection,
@@ -21,6 +22,7 @@ import {
   type ProviderListingSpec,
 } from "api-server-api";
 import { VENDORED_PRICE_TABLE } from "api-server-api/model-prices";
+import type { HarnessCapability } from "agent-runtime-api";
 import { getLogger } from "../../../core/logger.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import {
@@ -42,7 +44,11 @@ interface KeptListing {
 export interface ProviderModelCatalog {
   read(
     connections: readonly Connection[],
-    harnesses: Pick<HarnessCatalog, "default" | "harnesses">,
+    harnesses: {
+      default: HarnessCatalog["default"];
+      harnesses: readonly AgentHarnessView[];
+    },
+    imageHarnesses?: readonly HarnessCapability[],
   ): Promise<OwnerModelCatalogView>;
 }
 
@@ -186,7 +192,7 @@ export function createProviderModelCatalog(deps: {
   };
 
   return {
-    async read(connections, harnesses) {
+    async read(connections, harnesses, imageHarnesses = []) {
       const current = now().getTime();
       const providers = await Promise.all(
         connections.map(
@@ -272,10 +278,12 @@ export function createProviderModelCatalog(deps: {
           },
         ),
       );
+      const reported = new Map(imageHarnesses.map((h) => [h.name, h]));
       const capabilities = harnesses.harnesses.map((h) => {
         const facts = shipped[h.name];
         return (
-          (facts && harnessCapabilityOf(facts)) || {
+          (facts && harnessCapabilityOf(facts)) ||
+          reported.get(h.name) || {
             name: h.name,
             harnessConfig: false,
             sessionModel: false,
@@ -287,7 +295,9 @@ export function createProviderModelCatalog(deps: {
         modelRouter:
           capabilities.length > 0 &&
           harnesses.harnesses.every(
-            (h) => shipped[h.name]?.modelRouter === true,
+            (h) =>
+              shipped[h.name]?.modelRouter === true ||
+              (!shipped[h.name] && !!reported.get(h.name)?.dialects?.length),
           ),
         harnesses: capabilities,
         providers: providers.filter((p) => p !== null),

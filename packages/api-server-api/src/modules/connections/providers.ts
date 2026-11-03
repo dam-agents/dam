@@ -1,4 +1,3 @@
-import type { HarnessView } from "../templates/types.js";
 
 export type ProviderPresetType =
   "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
@@ -9,7 +8,9 @@ export interface EnvMapping {
 }
 
 export function harnessFits(
-  catalog: { harnesses: readonly HarnessView[] },
+  catalog: {
+    harnesses: readonly { name: string; providers?: ProviderPresetType[] }[];
+  },
   harness: string,
   type: ProviderPresetType,
   templateId?: string,

@@ -36,7 +36,9 @@ import {
   type ConnectionProviderView,
   type HarnessCatalog,
   type ProviderPresetType,
+  withImageHarnesses,
 } from "api-server-api";
+import type { HarnessCapability } from "agent-runtime-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
 import {
@@ -266,6 +268,7 @@ export function createConnectionsService(deps: {
   maxSharedKbConnections?: number;
   curveBenderDeploymentKey?: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
+  carriedHarnesses?: (agentId: string) => Promise<HarnessCapability[] | null>;
   providerModelCatalog?: ProviderModelCatalog;
   /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
   newAgentProvider?: () => Promise<{
@@ -1660,7 +1663,7 @@ export function createConnectionsService(deps: {
   }
 
   const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
-    async modelCatalog(agentId) {
+    async modelCatalog(agentId, opts) {
       const owned = await deps.repo.listByOwner(deps.ownerId);
       const granted =
         agentId === undefined
@@ -1670,9 +1673,18 @@ export function createConnectionsService(deps: {
                 (g) => g.connectionId,
               ),
             );
+      const harnessesOf = opts?.harnessesOf ?? agentId;
+      const carried =
+        harnessesOf === undefined
+          ? null
+          : ((await deps.carriedHarnesses?.(harnessesOf)) ?? null);
       return providerModelCatalog().read(
         granted ? owned.filter((c) => granted.has(c.id)) : owned,
-        deps.harnesses,
+        {
+          default: deps.harnesses.default,
+          harnesses: withImageHarnesses(deps.harnesses, carried),
+        },
+        carried ?? [],
       );
     },
 

@@ -11,7 +11,7 @@ import {
   type HarnessCapability,
   type HarnessConfigCatalog,
 } from "agent-runtime-api";
-import { aliasForProviderType } from "api-server-api";
+import { aliasForProviderType, withImageHarnesses } from "api-server-api";
 import type {
   DefaultKind,
   HarnessCatalog,
@@ -270,9 +270,10 @@ export function createHarnessConfigService(deps: {
     pair: SessionPair,
   ): Promise<SessionPair> {
     const carried = harnessesOf(await deps.getCapabilities(agentId));
+    const harnesses = { harnesses: withImageHarnesses(deps.catalog, carried) };
     if (
       !carried?.some((h) => h.name === pair.harness) ||
-      !deps.catalog.harnesses.some((h) => h.name === pair.harness)
+      !harnesses.harnesses.some((h) => h.name === pair.harness)
     )
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -291,7 +292,7 @@ export function createHarnessConfigService(deps: {
       pair.provider !== null &&
       (!provider ||
         !harnessFits(
-          deps.catalog,
+          harnesses,
           pair.harness,
           provider.type,
           provider.templateId,
@@ -489,7 +490,8 @@ export async function resolveRememberedPair(
  * harness, or else the default saved for its kind of run (chat, channel or
  * scheduled, the last two falling back to chat). Undefined when the agent's
  * runtime holds one harness only and would ignore a pair, or runs a harness
- * the catalog does not offer, such as a custom template's own.
+ * neither the catalog offers nor its own image reports as routed, such as a
+ * custom template's own.
  */
 export async function resolveFirePair(
   deps: PairResolverDeps,
@@ -510,8 +512,8 @@ export async function resolveFirePair(
     defaultHarnessOf(capabilities) ??
     (await deps.specHarness(agentId)) ??
     deps.catalog.default;
-  if (!deps.catalog.harnesses.some((h) => h.name === agentHarness))
-    return undefined;
+  const offered = { harnesses: withImageHarnesses(deps.catalog, harnesses) };
+  if (!offered.harnesses.some((h) => h.name === agentHarness)) return undefined;
   const routed = routesByModelName(capabilities);
   const requestedHarness = preferred.harness ?? stored?.harness ?? agentHarness;
   const savedForHarness = stored?.harness === requestedHarness ? stored : null;
@@ -543,7 +545,7 @@ export async function resolveFirePair(
     defaultHarness: deps.catalog.default,
     granted,
     fits: (harness, type, templateId) =>
-      harnessFits(deps.catalog, harness, type, templateId),
+      harnessFits(offered, harness, type, templateId),
     routed,
   });
   if (requireLeases && routed && pair?.model === null && granted.length > 0)

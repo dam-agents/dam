@@ -63,6 +63,7 @@ import {
 } from "./drivers/harness-config-plugin.js";
 import { createModelDiscovery } from "./infrastructure/model-discovery.js";
 import { catalogChoices } from "./domain/catalog-choices.js";
+import { harnessFacts } from "./domain/harness-facts.js";
 import type { ModelCatalog } from "../model-catalog/index.js";
 import { servedModels } from "../model-router/index.js";
 import {
@@ -417,6 +418,7 @@ export async function composeRuntimeChannel(
               derivedStartMode: plugin.derivedStartMode,
             }),
             ...(nativeTemplates?.length && { nativeTemplates }),
+            ...harnessFacts(opts.manifests[name]),
           };
         }),
         kbPublish: 2,

@@ -503,6 +503,8 @@ export const harnessCapability = z.object({
   derivedStartMode: z.array(z.string().min(1)).optional(),
   nativeTemplates: z.array(z.string().min(1)).optional(),
   platformSubagentSettings: z.boolean().optional(),
+  dialects: z.array(z.string().min(1)).optional(),
+  title: z.string().min(1).optional(),
 });
 export type HarnessCapability = z.infer<typeof harnessCapability>;
 export function routesSessionPairs(
