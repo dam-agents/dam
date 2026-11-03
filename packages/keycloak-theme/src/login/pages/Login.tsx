@@ -7,8 +7,16 @@ import { Input } from "../../components/input.js";
 import { Label } from "../../components/label.js";
 import { cn } from "../../lib/cn.js";
 import { HeroBgShapes } from "../components/hero-bg-shapes.js";
+import { AccessSection } from "../components/sections/access.js";
+import { CapabilitiesSection } from "../components/sections/capabilities.js";
+import { ChannelsSection } from "../components/sections/channels.js";
+import { DevOpsSection } from "../components/sections/devops.js";
+import { SandboxSection } from "../components/sections/sandbox.js";
+import { TestimonialsSection } from "../components/sections/testimonials.js";
 import { SlackDmIllustration } from "../components/slack-dm-illustration.js";
 import { SocialProviderButton } from "../components/social-provider-button.js";
+import type { LoginContent } from "../content.js";
+import { DEFAULT_LOGIN_CONTENT } from "../content.js";
 import { useApplyThemeScript } from "../hooks/use-apply-theme-script.js";
 import { useRotatingNameMeaning } from "../hooks/use-rotating-name-meaning.js";
 import type { I18n } from "../i18n.js";
@@ -16,8 +24,6 @@ import type { KcContext } from "../KcContext.js";
 import { BRAND_FALLBACK } from "../Template.js";
 
 type LoginContext = Extract<KcContext, { pageId: "login.ftl" }>;
-
-const LOGIN_DOCS_URL = "https://ibm.biz/dam-docs";
 
 const PRIMARY_FORM_ID = "kc-form-login";
 
@@ -35,6 +41,7 @@ export default function Login(props: PageProps<LoginContext, I18n>) {
   const isShareSignIn =
     kcContext.client.clientId === kcContext.properties.PLATFORM_SHARE_CLIENT_ID;
   const brand = realm.displayName || BRAND_FALLBACK;
+  const content = DEFAULT_LOGIN_CONTENT;
 
   const form: LoginFormShared = {
     kcContext,
@@ -74,8 +81,17 @@ export default function Login(props: PageProps<LoginContext, I18n>) {
       kcContext={kcContext}
       i18n={i18n}
       brand={brand}
+      content={content}
       showMessage={!usernameError}
       heroForm={<LoginForm {...form} formId={PRIMARY_FORM_ID} autoFocusInput />}
+      bottomForm={
+        <LoginForm
+          {...form}
+          formId="kc-form-login-bottom"
+          autoFocusInput={false}
+          dividerBgClass="bg-section"
+        />
+      }
     />
   );
 }
@@ -225,14 +241,18 @@ function ScrollPage({
   kcContext,
   i18n,
   brand,
+  content,
   showMessage,
   heroForm,
+  bottomForm,
 }: {
   kcContext: LoginContext;
   i18n: I18n;
   brand: string;
+  content: LoginContent;
   showMessage: boolean;
   heroForm: React.ReactNode;
+  bottomForm: React.ReactNode;
 }) {
   const { realm, message, isAppInitiatedAction } = kcContext;
   const { msgStr } = i18n;
@@ -271,7 +291,7 @@ function ScrollPage({
             <div className="relative @container">
               <HeroBgShapes />
               <div className="relative">
-                <SlackDmIllustration />
+                <SlackDmIllustration brand={brand} />
               </div>
             </div>
           </div>
@@ -323,17 +343,19 @@ function ScrollPage({
       </section>
 
       <div id="info-bands" className="overflow-x-hidden">
-        <p className="text-muted-foreground px-6 py-24 text-center text-sm">
-          <a
-            href={LOGIN_DOCS_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="text-accent hover:underline"
-          >
-            Read the docs
-          </a>{" "}
-          to learn more about {brand}.
-        </p>
+        <CapabilitiesSection brand={brand} docsUrl={content.docsUrl} />
+        <ChannelsSection brand={brand} />
+        <TestimonialsSection
+          brand={brand}
+          testimonials={content.testimonials}
+        />
+        <SandboxSection />
+        <DevOpsSection />
+        <AccessSection
+          form={bottomForm}
+          docsUrl={content.docsUrl}
+          community={content.community}
+        />
       </div>
     </div>
   );
