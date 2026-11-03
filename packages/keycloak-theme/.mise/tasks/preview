@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Preview the login page in the browser at http://localhost:5181, without Keycloak"
+# Renders the theme's pages against the sample contexts in src/dev-preview/scenarios.ts;
+# ?scenario=<name> picks one. $PREVIEW_PORT moves the port.
+set -euo pipefail
+pnpm exec vite --config vite.preview.config.ts --port "${PREVIEW_PORT:-5181}" "$@"
