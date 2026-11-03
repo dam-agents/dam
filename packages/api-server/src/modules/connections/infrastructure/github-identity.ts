@@ -24,6 +24,10 @@ export function stripControlChars(name: string): string {
     .join("");
 }
 
+export function displayLabel(label: string): string {
+  return [...stripControlChars(label)].slice(0, 200).join("");
+}
+
 export async function resolveGitHubIdentity(
   accessToken: string,
 ): Promise<GitHubIdentity> {
