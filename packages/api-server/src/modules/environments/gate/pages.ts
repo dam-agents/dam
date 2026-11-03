@@ -18,7 +18,7 @@ const CSS = `
  * UNIT_BOUNDARY_DESCRIPTION: The page an Environment address, or the share
  * host's front door for one, answers with when it does not let the visitor
  * through: a missing Environment, a visitor who may not open it, or one that
- * is not answering. It never names the Environment's owner or anything the
+ * is not ready yet. It never names the Environment's owner or anything the
  * visitor could not already see in the address. A refusal on the share host
  * offers to switch account, by the share host's own sign-out. A step of a
  * sign-in moves the browser on by itself, with a link for one that does not;
