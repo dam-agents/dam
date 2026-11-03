@@ -10,6 +10,7 @@ import type {
   ProviderKeyProbe,
   ProviderKeyTarget,
 } from "../domain/provider-key-probe.js";
+import { getLogger } from "../../../core/logger.js";
 import { stripControlChars } from "./github-identity.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -33,7 +34,7 @@ const ANTHROPIC_OAUTH_HEADERS = {
 
 type Get = (url: string, headers: Record<string, string>) => Promise<Response>;
 
-type AccountLookup = (
+type ProviderAccountLookup = (
   res: Response,
   key: string,
   get: Get,
@@ -79,11 +80,11 @@ async function organizationOf(
 }
 
 const organizationHeader =
-  (header: string): AccountLookup =>
+  (header: string): ProviderAccountLookup =>
   (res) =>
     organizationOf(res, header);
 
-const anthropicOAuthAccount: AccountLookup = async (res, key, get) => {
+const anthropicOAuthAccount: ProviderAccountLookup = async (res, key, get) => {
   const organization = await organizationOf(res, "anthropic-organization-id");
   const profile = await get("https://api.anthropic.com/api/oauth/profile", {
     ...bearer(key),
@@ -91,40 +92,35 @@ const anthropicOAuthAccount: AccountLookup = async (res, key, get) => {
   });
   if (!profile.ok) {
     await profile.body?.cancel();
-    return organization;
+    if (organization) return organization;
+    throw new Error(`the profile route answered HTTP ${profile.status}`);
   }
-  const parsed = anthropicProfileSchema.safeParse(await profile.json());
-  const named = parsed.success
-    ? accountName(parsed.data.account?.email, parsed.data.organization?.name)
-    : undefined;
-  return named ?? organization;
+  const parsed = anthropicProfileSchema.parse(await profile.json());
+  return (
+    accountName(parsed.account?.email, parsed.organization?.name) ??
+    organization
+  );
 };
 
 const liteLlmAccount =
-  (host: string): AccountLookup =>
+  (host: string): ProviderAccountLookup =>
   async (res, key, get) => {
     await res.body?.cancel();
     const info = await get(`https://${host}/key/info`, bearer(key));
     if (!info.ok) {
       await info.body?.cancel();
-      return undefined;
+      throw new Error(`the key info route answered HTTP ${info.status}`);
     }
-    const parsed = liteLlmKeyOwnerSchema.safeParse(await info.json());
-    return parsed.success
-      ? accountName(parsed.data.info.user_id, null)
-      : undefined;
+    const parsed = liteLlmKeyOwnerSchema.parse(await info.json());
+    return accountName(parsed.info.user_id, null);
   };
 
-const bobAccount: AccountLookup = async (res) => {
-  const parsed = bobProfileOwnerSchema.safeParse(await res.json());
-  return parsed.success ? accountName(parsed.data.user_id, null) : undefined;
-};
+const bobAccount: ProviderAccountLookup = async (res) =>
+  accountName(bobProfileOwnerSchema.parse(await res.json()).user_id, null);
 
-const bedrockAccount: AccountLookup = async (res) => {
-  const parsed = bedrockProfilesSchema.safeParse(await res.json());
-  const arn = parsed.success
-    ? parsed.data.inferenceProfileSummaries?.[0]?.inferenceProfileArn
-    : undefined;
+const bedrockAccount: ProviderAccountLookup = async (res) => {
+  const arn = bedrockProfilesSchema.parse(await res.json())
+    .inferenceProfileSummaries?.[0]?.inferenceProfileArn;
   const id = arn?.split(":")[4];
   return id && AWS_ACCOUNT_ID.test(id) ? `AWS account ${id}` : undefined;
 };
@@ -136,7 +132,7 @@ const MODELS_ENDPOINTS: Record<
     headers: (key: string) => Record<string, string>;
     refusedStatus?: number;
     invalidKey?: RegExp;
-    account?: AccountLookup;
+    account?: ProviderAccountLookup;
   }
 > = {
   anthropic: {
@@ -184,7 +180,7 @@ const MODELS_ENDPOINTS: Record<
   },
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Bedrock lists the inference profiles of the Connection's region and answers a wrong, malformed or expired key with a 403 that says so; its 403 for a key without permission to list profiles is not a refusal. Bob's gateway answers a wrong key with its own 401 message and refuses with a Cloudflare 403 a request whose User-Agent does not name Bob, so its check names itself. Bob answers its model list with a 403 for a key it accepts everywhere else, so Bob's check asks the profile route its Bobcoin budget comes from: a key that route answers is one the platform already treats as working. A key that passes names its account where the provider tells that key: an Anthropic OAuth token by the email and organization of its profile, falling back to the organization header of the model list; an Anthropic or OpenAI API key by that header; an IBM LiteLLM key by the user of its key info; a Bob key by the user of the profile it was checked on; a Bedrock key by the AWS account in its inference profiles' ARN. The account is extra, so a lookup that fails or names nobody leaves the key passed with no account. A template with no check here (the CurveBender deployment's, the built-in platform provider's) is accepted, marked unchecked.
+// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Bedrock lists the inference profiles of the Connection's region and answers a wrong, malformed or expired key with a 403 that says so; its 403 for a key without permission to list profiles is not a refusal. Bob's gateway answers a wrong key with its own 401 message and refuses with a Cloudflare 403 a request whose User-Agent does not name Bob, so its check names itself. Bob answers its model list with a 403 for a key it accepts everywhere else, so Bob's check asks the profile route its Bobcoin budget comes from: a key that route answers is one the platform already treats as working. A key that passes names its account where the provider tells that key: an Anthropic OAuth token by the email and organization of its profile, falling back to the organization header of the model list; an Anthropic or OpenAI API key by that header; an IBM LiteLLM key by the user of its key info; a Bob key by the user of the profile it was checked on; a Bedrock key by the AWS account in its inference profiles' ARN. The account is extra, so a lookup that fails or names nobody leaves the key passed with no account; a failed one is logged, so a broken identity route reads apart from a provider that names nobody. A template with no check here (the CurveBender deployment's, the built-in platform provider's) is accepted, marked unchecked.
 export function createProviderKeyProbe(
   opts: { timeoutMs?: number } = {},
 ): ProviderKeyProbe {
@@ -192,7 +188,8 @@ export function createProviderKeyProbe(
   const get: Get = (url, headers) =>
     fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
   async function accountOf(
-    lookup: AccountLookup | undefined,
+    templateId: string,
+    lookup: ProviderAccountLookup | undefined,
     res: Response,
     key: string,
   ): Promise<string | undefined> {
@@ -202,7 +199,14 @@ export function createProviderKeyProbe(
     }
     try {
       return await lookup(res, key, get);
-    } catch {
+    } catch (err) {
+      getLogger().warn(
+        {
+          templateId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        "provider key check: the key passed, but its account lookup failed",
+      );
       return undefined;
     }
   }
@@ -221,7 +225,12 @@ export function createProviderKeyProbe(
       try {
         const res = await get(url, endpoint.headers(key));
         if (res.ok) {
-          const account = await accountOf(endpoint.account, res, key);
+          const account = await accountOf(
+            templateId,
+            endpoint.account,
+            res,
+            key,
+          );
           return { ok: true, ...(account ? { account } : {}) };
         }
         const body = await res.text();

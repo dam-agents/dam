@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BOB_HOST, IBM_LITELLM_HOST } from "api-server-api";
 
+import { configureLogger } from "../../core/logger.js";
 import { createProviderKeyProbe } from "../../modules/connections/infrastructure/provider-key-probe.js";
 
 /**
@@ -11,8 +12,12 @@ import { createProviderKeyProbe } from "../../modules/connections/infrastructure
  * its key info names, a Bob key by the user of its profile, and a Bedrock key
  * by the AWS account of its inference profiles. The account is extra: a lookup
  * that fails, or an answer that names nobody, leaves the check passed without
- * an account.
+ * an account, and a failed lookup is logged so it reads apart from a provider
+ * that names nobody.
  */
+
+const logLines: string[] = [];
+configureLogger({ level: "warn", write: (line) => logLines.push(line) });
 
 type Route = (headers: Record<string, string>) => Response;
 
@@ -37,7 +42,11 @@ const ANTHROPIC_PROFILE = "https://api.anthropic.com/api/oauth/profile";
 describe("provider key probe account", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    logLines.length = 0;
   });
+
+  const lookupFailures = () =>
+    logLines.filter((l) => l.includes("account lookup failed"));
 
   const probe = (templateId: string, region?: string) =>
     createProviderKeyProbe().probe(
@@ -134,6 +143,28 @@ describe("provider key probe account", () => {
       [`https://${IBM_LITELLM_HOST}/key/info`]: info,
     });
     await expect(probe("ibm-litellm")).resolves.toEqual({ ok: true });
+  });
+
+  // TEST_SCENARIO: a broken identity route is logged once, naming the template and the HTTP status, while an answer that names nobody logs nothing, so the two read apart.
+  it("logs a failed account lookup, and not an account nobody names", async () => {
+    stubFetch({
+      [`https://${IBM_LITELLM_HOST}/v1/models`]: () => json({ data: [] }),
+      [`https://${IBM_LITELLM_HOST}/key/info`]: () =>
+        new Response("{}", { status: 503 }),
+    });
+    await expect(probe("ibm-litellm")).resolves.toEqual({ ok: true });
+    expect(lookupFailures()).toHaveLength(1);
+    expect(lookupFailures()[0]).toContain("ibm-litellm");
+    expect(lookupFailures()[0]).toContain("HTTP 503");
+
+    logLines.length = 0;
+    stubFetch({
+      [`https://${IBM_LITELLM_HOST}/v1/models`]: () => json({ data: [] }),
+      [`https://${IBM_LITELLM_HOST}/key/info`]: () =>
+        json({ info: { user_id: null } }),
+    });
+    await expect(probe("ibm-litellm")).resolves.toEqual({ ok: true });
+    expect(lookupFailures()).toHaveLength(0);
   });
 
   // TEST_SCENARIO: Bob's check already reads its profile, so the check names the user that profile names, with no second request.
