@@ -90,7 +90,7 @@ export function AgentModelPicker({
         capability: status?.harnesses?.find((h) => h.name === chat.harness),
         provider: owned.find((p) => p.id === chat.provider)?.name,
       })
-    : "Not set yet";
+    : null;
   const choose = (pair: SessionPair, references: SessionChoiceReferences) => {
     /* UNIT_BOUNDARY_DESCRIPTION: a harness picked without a model waits in the open picker, since a routed runtime keeps no default without one. */
     if (!references.profileId && pair.model === null)
@@ -133,7 +133,9 @@ export function AgentModelPicker({
             placeholder: copy.placeholder,
             ...(kind !== "chat" && {
               agentDefault: {
-                summary: defaultSummary,
+                detail: defaultSummary
+                  ? `Follows ${defaultSummary}`
+                  : "No default set yet",
                 harness: chat?.harness,
                 onClear: () => {
                   setDraft(null);

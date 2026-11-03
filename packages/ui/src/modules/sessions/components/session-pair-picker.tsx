@@ -116,7 +116,8 @@ type Props = CommonProps &
           placeholder: string;
           /** UNIT_BOUNDARY_DESCRIPTION: the agent's own default, which this pick follows while neither primary slot is set: the list's first row reads it, the row card shows the harness it runs on, and picking that row clears the pick through `onClear`. */
           agentDefault?: {
-            summary: string;
+            /** UNIT_BOUNDARY_DESCRIPTION: what the pick follows, a sentence the row card reads under "Use agent default" and the list's first row repeats; with no default set it says so. */
+            detail: string;
             harness?: string | undefined;
             onClear: () => void;
           };
@@ -412,7 +413,7 @@ export function SessionPairPicker(props: Props) {
   /* UNIT_BOUNDARY_DESCRIPTION: one that follows the default names the whole default, model and provider together; a profile's row names its values under the profile's name, and a model of the page's own names the provider under the model. */
   const rowSubtitle =
     agentDefault && following
-      ? agentDefault.summary
+      ? agentDefault.detail
       : primary
         ? (label ?? "")
         : (findModel(groups, pair?.model ?? null)?.group.displayName ??
@@ -481,7 +482,7 @@ export function SessionPairPicker(props: Props) {
                 defaultChoice={
                   target?.agentDefault && {
                     label: "Use agent default",
-                    detail: `Follows ${target.agentDefault.summary}`,
+                    detail: target.agentDefault.detail,
                     selected: following,
                     onClick: target.agentDefault.onClear,
                   }
