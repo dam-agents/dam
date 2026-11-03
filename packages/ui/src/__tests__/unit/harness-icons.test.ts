@@ -64,6 +64,19 @@ describe("harness icons on provider and preset cards", () => {
     }
   });
 
+  // TEST_SCENARIO: a provider's mark keeps its vendor's colour on a white tile in both themes, so each logo colour needs the 3:1 a graphic needs against white.
+  it("keeps coloured provider marks legible on their white tile", () => {
+    const css = readFileSync(new URL("../../App.css", import.meta.url), "utf8");
+    const colors = [...css.matchAll(/--color-logo-[a-z-]+: #([0-9a-f]{6});/g)];
+    expect(colors.length).toBeGreaterThan(0);
+    for (const [, hex] of colors) {
+      const rgb = [0, 2, 4].map((i) =>
+        Number.parseInt(hex!.slice(i, i + 2), 16),
+      );
+      expect(1.05 / (luminance(rgb) + 0.05)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it("uses monochrome SVGs without tiles for inline harnesses", () => {
     const html = renderToStaticMarkup(
       createElement(HarnessIcons, { size: "sm" }),
@@ -146,10 +159,8 @@ describe("harness icons on provider and preset cards", () => {
         expect(html).not.toMatch(/<img|<mask|gradient|🚅|fill="#|stroke="#/);
         if (size === "sm") expect(html).not.toMatch(/bg-|text-white/);
         else {
-          expect(html).toContain("bg-");
-          expect(html).toContain("text-white");
-          expect(html).toMatch(/bg-icon-[a-z]+/);
-          expect(html).not.toMatch(/bg-icon-[a-z]+\//);
+          expect(html).toContain("bg-white");
+          expect(html).toMatch(/text-logo-[a-z-]+/);
         }
       }
     },

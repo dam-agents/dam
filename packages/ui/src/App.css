@@ -47,11 +47,14 @@
   --color-icon-cb: #4d7e88;
   --color-icon-cb-deep: #38626a;
   --color-icon-litellm: #4962ab;
-  /* Provider tiles wear their vendor's colour, in a shade dark enough to keep the white mark at 4.5:1: Claude's orange, OpenAI's black, IBM blue for Bob, AWS's machine-learning green for Bedrock. */
-  --color-icon-anthropic: #b5532f;
-  --color-icon-openai: #000000;
-  --color-icon-ibm: #0f62fe;
-  --color-icon-aws: #055f4e;
+  /* Provider tiles show each vendor's mark in its own colour on white: Claude's orange, OpenAI's black, IBM blue for Bob, AWS's machine-learning green for Bedrock. */
+  --color-logo-anthropic: #d97757;
+  --color-logo-openai: #000000;
+  --color-logo-ibm: #0f62fe;
+  --color-logo-aws: #01a88d;
+  --color-logo-litellm: #4962ab;
+  --color-logo-cb: #4d7e88;
+  --color-logo-cb-deep: #38626a;
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 

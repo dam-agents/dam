@@ -124,7 +124,6 @@ describe("CurveBender provider rows", () => {
       ],
     ]);
     const html = render();
-    expect(html).toContain(`>${CUSTOM}<`);
     expect(html).toContain(`>${SHARED}<`);
     expect(html).toContain(">Connected<");
     expect(html).toMatch(
@@ -133,6 +132,16 @@ describe("CurveBender provider rows", () => {
     expect(html).not.toContain(`aria-label="Connect ${SHARED}"`);
     expect(html).not.toContain(`aria-label="Edit ${SHARED}"`);
     expect(html).not.toContain("Disconnect");
+  });
+
+  // TEST_SCENARIO: where the deployment offers CurveBender, the own-key row shows only to a user who already connected their own key, so everyone else sees one CurveBender row.
+  it("shows the own-key row beside the deployment's only once connected", () => {
+    deploymentConfigured();
+    expect(render()).not.toContain(`>${CUSTOM}<`);
+    state.itemsByTemplate = new Map([
+      ["curve-bender", { id: "c2", conn: { templateId: "curve-bender" } }],
+    ]);
+    expect(render()).toContain(`aria-label="Edit ${CUSTOM}"`);
   });
 
   // TEST_SCENARIO: the explainer is read-only: it says what CurveBender is and that inference is free within fair use, and its only control is Close, with the docs link opening in a new tab.

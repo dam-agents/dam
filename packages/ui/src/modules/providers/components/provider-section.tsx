@@ -47,6 +47,8 @@ export function ProviderSection({
     const item = itemOf(row);
     if (row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)
       return configured(row.templateId) && (!onConnected || item !== undefined);
+    if (row.templateId === "curve-bender")
+      return !configured(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID) || !!item;
     return true;
   });
   const { data: status } = useProviderStatus();

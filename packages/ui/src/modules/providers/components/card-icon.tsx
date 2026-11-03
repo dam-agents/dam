@@ -17,27 +17,27 @@ const STYLES: Record<
   ProviderPresetType,
   {
     Icon: ComponentType<SVGProps<SVGSVGElement>>;
-    bg: string;
+    fg: string;
   }
 > = {
   anthropic: {
     Icon: AnthropicIcon,
-    bg: "bg-icon-anthropic",
+    fg: "text-logo-anthropic",
   },
   openai: {
     Icon: OpenAIIcon,
-    bg: "bg-icon-openai dark:ring-1 dark:ring-white/25",
+    fg: "text-logo-openai",
   },
   "ibm-litellm": {
     Icon: LiteLLMIcon,
-    bg: "bg-icon-litellm",
+    fg: "text-logo-litellm",
   },
   "curve-bender": {
     Icon: CurveBenderIcon,
-    bg: "bg-icon-cb",
+    fg: "text-logo-cb",
   },
-  bob: { Icon: BobIcon, bg: "bg-icon-ibm" },
-  bedrock: { Icon: Cloud, bg: "bg-icon-aws" },
+  bob: { Icon: BobIcon, fg: "text-logo-ibm" },
+  bedrock: { Icon: Cloud, fg: "text-logo-aws" },
 };
 
 type CardIconSize = "lg" | "md" | "sm" | "tile-sm" | "tile-xs";
@@ -53,10 +53,11 @@ const TILE_SIZE_CLASS: Record<CardIconSize, string> = {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one preset can offer two providers a user tells
  * apart only by their rows, so a template may take its own shade of the
- * preset's tile. The glyph stays white on the tile whichever theme is up.
+ * preset's mark. The tile stays white whichever theme is up, so the vendor's
+ * own colours read the same in both.
  */
-const TEMPLATE_BG: Readonly<Record<string, string>> = {
-  "curve-bender-deployment": "bg-icon-cb-deep",
+const TEMPLATE_FG: Readonly<Record<string, string>> = {
+  "curve-bender-deployment": "text-logo-cb-deep",
 };
 
 export function CardIcon({
@@ -68,8 +69,8 @@ export function CardIcon({
   templateId?: string;
   size?: CardIconSize;
 }) {
-  const { Icon: OutlineIcon, bg } = STYLES[provider];
-  const tileBg = (templateId && TEMPLATE_BG[templateId]) || bg;
+  const { Icon: OutlineIcon, fg } = STYLES[provider];
+  const tileFg = (templateId && TEMPLATE_FG[templateId]) || fg;
   const Icon =
     size === "sm" && provider === "bob" ? BobFilledIcon : OutlineIcon;
   return (
@@ -78,7 +79,7 @@ export function CardIcon({
       className={cn(
         "shrink-0 flex items-center justify-center",
         TILE_SIZE_CLASS[size],
-        size !== "sm" && ["text-white", tileBg],
+        size !== "sm" && ["bg-white ring-1 ring-border", tileFg],
       )}
     >
       <Icon

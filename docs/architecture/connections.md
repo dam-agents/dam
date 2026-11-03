@@ -305,6 +305,7 @@ A second LiteLLM proxy, fronting open models hosted on RITS rather than Claude a
 An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
 This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender (own key)` so it cannot be confused with the deployment's own.
+Where the deployment offers CurveBender, Settings / Providers lists the own-key row only to a user who already connected their own key.
 
 Work runs on DeepSeek V4.1 Flash, which the Connection's work slots pin; Claude Code's non-reasoning permission classifier is the router's call, from the session provider's preferred classifier ([harness configuration](harness-config.md#the-model-router)), since a routed provider's env never reaches the harness.
 The endpoint's model list names models but does not describe them, so the Connection supplies the deployment's window to the catalog, which Claude Code's per-model map and Pi read: 1,048,576 tokens, the `max_model_len` its own RITS router reports, which a live 270k-token prompt confirmed.
