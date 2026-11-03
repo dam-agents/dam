@@ -18,6 +18,7 @@ import {
   relayHeaders,
   requestAllowed,
   RESERVED_PREFIX,
+  safeNext,
   siblingPreflight,
   SESSION_COOKIE_PLAIN,
   SESSION_COOKIE_SECURE,
@@ -39,11 +40,12 @@ const FORWARD_PREFIX = "/api/environment/forward/";
 const DECLARED_PORTS_HEADER = "x-platform-environment-ports";
 const UNREACHABLE_HEADER = "x-platform-environment-unreachable";
 const STATUS_PATH = `${RESERVED_PREFIX}status`;
+const START_PATH = `${RESERVED_PREFIX}start`;
 const ACTIVITY_INTERVAL_MS = 60_000;
 const WAKE_FAILED_HOLD_MS = 30_000;
 const PROBE_TIMEOUT_MS = 5_000;
 const RETRY_AFTER_S = 5;
-const GIVE_UP_AFTER_MS = 5 * 60_000;
+const SLOW_AFTER_MS = 5 * 60_000;
 const NO_STORE = "private, no-store";
 const HOP_BY_HOP = [
   "transfer-encoding",
@@ -213,7 +215,7 @@ export function createEnvironmentGate(
     };
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: wakes the Environment and says at once whether its machine runs, is still waking, or could not be woken; a request never waits for a wake. A wake that failed is not tried again for half a minute, so a waiting page can say it did not start. A finished wake forgets what was known of its endpoints, since their apps start again.
+  // UNIT_BOUNDARY_DESCRIPTION: wakes the Environment and says at once whether its machine runs, is still waking, or could not be woken; a request never waits for a wake. A wake that failed is not tried again for half a minute, so a waiting page can say it did not start, unless the visitor asks to try again. A finished wake forgets what was known of its endpoints, since their apps start again.
   function machine(agentId: string): Promise<MachineState> {
     const failed = wakeFailedAt.get(agentId);
     if (failed !== undefined && Date.now() - failed < WAKE_FAILED_HOLD_MS)
@@ -273,25 +275,24 @@ export function createEnvironmentGate(
     if (!isNavigation(c))
       return c.text(
         state === "failed"
-          ? "The Environment did not start."
+          ? "The Environment could not be started."
           : "The Environment is starting.",
         503,
       );
+    const url = new URL(c.req.url);
     return c.html(
       state === "failed"
         ? renderGatePage({
             brandName: deps.brandName,
             title: "Did not start",
-            body: "The Environment could not be started. Try again in a moment.",
+            body: "The Environment could not be started.",
+            retry: `${START_PATH}?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`,
           })
         : renderGatePage({
             brandName: deps.brandName,
             title: "Starting…",
             body: "The Environment is starting. This page opens it as soon as it is ready.",
-            waitFor: {
-              statusPath: STATUS_PATH,
-              giveUpAfterMs: GIVE_UP_AFTER_MS,
-            },
+            waitFor: { statusPath: STATUS_PATH, slowAfterMs: SLOW_AFTER_MS },
           }),
       503,
     );
@@ -535,7 +536,11 @@ export function createEnvironmentGate(
         "A page of another site asked for this in your name, so the Environment did not answer it.",
       );
     }
-    if (c.req.path.startsWith(RESERVED_PREFIX) && c.req.path !== STATUS_PATH)
+    if (
+      c.req.path.startsWith(RESERVED_PREFIX) &&
+      c.req.path !== STATUS_PATH &&
+      c.req.path !== START_PATH
+    )
       return reserved(c, address, record);
     const preflight = siblingPreflight(
       {
@@ -592,6 +597,11 @@ export function createEnvironmentGate(
       );
     }
 
+    if (c.req.path === START_PATH) {
+      wakeFailedAt.delete(record.agentId);
+      gateHeaders(c);
+      return c.redirect(safeNext(c.req.query("next")), 302);
+    }
     const state = await startState(resolved, c.req.header("host"));
     if (state !== "failed") stamp(record.agentId);
     if (c.req.path === STATUS_PATH) {

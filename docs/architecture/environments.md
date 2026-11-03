@@ -94,7 +94,7 @@ The api-server names the declared ports on every request, so a port the Environm
   Each step is a page that moves on by itself, not a redirect, so an Environment with many endpoints never reaches a browser's limit on redirects in a row.
 - **The address checks again on every request**, by its session and the lists as they stand, so a person taken off either list is refused at their next request.
   The session lasts only while the share host's session it came from does; signing out of an address ends both and the identity provider's session, and comes back to the share host's sign-in.
-  Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out and the loading page's status, which never reach the app.
+  Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out and the loading page's status and retry, which never reach the app.
 - **Only the visitor's own pages act in their name.** Every page under the platform's parent domain is the same site as an address, so the browser sends the session cookie with a request any of them makes, an artifact or another Environment's app included.
   The address refuses every request whose `Origin` is not one of its own Environment's endpoints — a script's call, a form post, a WebSocket — before it reaches the app; a link, a typed address, a frame and an image carry no origin and pass.
   A page whose `Referrer-Policy` is `no-referrer` sends its own form posts with the opaque origin `null`, which passes only when the browser also marks the request `Sec-Fetch-Site: same-origin`, a header no page can set.
@@ -110,7 +110,8 @@ The api-server names the declared ports on every request, so a port the Environm
   A readiness path matters where something answers before the app does, such as a k3s ingress in front of it.
   The gate keeps a "not ready" for a few seconds, so a burst of requests costs one probe; a "ready" it keeps until a relay finds nothing listening or the Environment wakes again, so a running app costs no probe per request.
 - **The loading page.** Until the endpoint is ready, a page load (a `GET` navigation) gets the gate's "Starting…" page, with status 503, `Retry-After` and no caching.
-  The page asks the gate's status at `/.platform/status` every few seconds and reloads into the app once it says ready; when the wake fails, or after five minutes, it says the Environment did not start.
+  The page shows a working indicator and asks the gate's status at `/.platform/status` every few seconds; it reloads once the status says ready, into the app, or failed, into the gate's "did not start" page, which offers one "Try again" (`/.platform/start`, which wakes it again at once and returns to the page).
+  A start that takes longer than five minutes, such as an install, is not a failure: the page says it is still starting and asks every fifteen seconds.
   Every other request — a script's call, an API client, a WebSocket — gets a plain 503 with `Retry-After`, never the page and never a 200, so a health check or a monitor does not read the Environment as up and a client that expects JSON gets no HTML.
 - **Activity.** Requests refresh its activity at most once a minute, the loading page's status checks included, so a visitor waiting on the page does not let it fall asleep again.
   No open connection holds it awake, so a forgotten tab lets it sleep.

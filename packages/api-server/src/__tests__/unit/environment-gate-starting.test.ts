@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The Environment gate while an Environment is asleep, waking or its app not ready yet. A page load wakes a sleeping Environment and gets the "Starting…" loading page at once, with status 503, `Retry-After` and no caching; the page asks the gate's status under `/.platform/`, which says starting until the endpoint is ready and refreshes the Environment's activity as any request does. Every other request, a script's call or a WebSocket, gets a plain 503 with `Retry-After`, never HTML or a 200. An endpoint is ready once its readiness path answers 2xx or 3xx, or without one once anything answers on its port; an app's own error still counts as an answer. A wake that fails ends on "did not start". Once ready the gate relays without probing again, until a relay finds nothing listening or the Environment wakes again.
+// TEST_OVERVIEW: The Environment gate while an Environment is asleep, waking or its app not ready yet. A page load wakes a sleeping Environment and gets the "Starting…" loading page at once, with status 503, `Retry-After` and no caching; the page asks the gate's status under `/.platform/`, which says starting until the endpoint is ready and refreshes the Environment's activity as any request does. Every other request, a script's call or a WebSocket, gets a plain 503 with `Retry-After`, never HTML or a 200. An endpoint is ready once its readiness path answers 2xx or 3xx, or without one once anything answers on its port; an app's own error still counts as an answer. A wake that fails ends on "did not start", with one button that tries again. Once ready the gate relays without probing again, until a relay finds nothing listening or the Environment wakes again.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -250,8 +250,8 @@ describe("the gate while an Environment starts", () => {
     expect(await w.upgrade()).toBe("open");
   });
 
-  // TEST_SCENARIO: a wake that fails ends the wait: the status says failed, which the page shows as "did not start", and a page load gets that page with no script that keeps waiting.
-  it("ends on did not start when the wake fails", async () => {
+  // TEST_SCENARIO: a wake that fails ends the wait: the status says failed, and a page load gets "did not start" with no script that keeps waiting and one "Try again" button, which starts a new wake at once rather than after the failure's hold, and returns the visitor to the page they asked for.
+  it("ends on did not start when the wake fails, and tries again on request", async () => {
     const w = await world();
     w.machine.sleeping = true;
     await w.request("/", PAGE);
@@ -260,10 +260,22 @@ describe("the gate while an Environment starts", () => {
     await settle();
 
     expect(await w.status()).toBe("failed");
-    const res = await w.request("/", PAGE);
+    const res = await w.request("/a?b=1", PAGE);
     expect(res.status).toBe(503);
     expect(res.body).toContain("Did not start");
     expect(res.body).not.toContain("<script>");
+    const retry =
+      /<a class="button primary" href="([^"]+)">Try again<\/a>/.exec(
+        res.body,
+      )?.[1];
+    expect(retry).toBe("/.platform/start?next=%2Fa%3Fb%3D1");
+    expect(w.machine.wakes).toBe(1);
+
+    const again = await w.request(retry!, PAGE);
+    expect(again.status).toBe(302);
+    expect(again.headers.location).toBe("/a?b=1");
+    expect(await w.status()).toBe("starting");
+    expect(w.machine.wakes).toBe(2);
   });
 
   // TEST_SCENARIO: an app that answers with its own error is up, so it is relayed rather than hidden behind the loading page; once ready the gate probes no more, until a relay finds nothing listening, which puts the loading page back and probes again.
