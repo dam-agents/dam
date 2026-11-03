@@ -3,6 +3,7 @@ import { agentsRouter } from "./modules/agents/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { artifactLibraryRouter } from "./modules/artifact-library/router.js";
 import { budgetsRouter } from "./modules/budgets/router.js";
+import { loginTestimonialsRouter } from "./modules/login-testimonials/router.js";
 import { attentionRouter } from "./modules/attention/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { caseStudiesRouter } from "./modules/case-studies/router.js";
@@ -70,6 +71,7 @@ export const appRouter = t.router({
   profiles: profilesRouter,
   budgets: budgetsRouter,
   operator: operatorRouter,
+  loginTestimonials: loginTestimonialsRouter,
   spend: spendRouter,
   providerStatus: providerStatusRouter,
   events: eventsRouter,

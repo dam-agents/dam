@@ -73,6 +73,10 @@ import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
 import type { AddressSets } from "../../core/address-sets.js";
+import type {
+  LoginTestimonialsForOperator,
+  PublicTestimonials,
+} from "../../modules/login-testimonials/index.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
 import type { SidebarOrderModule } from "../../modules/sidebar-order/index.js";
 export type { ApiVariables };
@@ -103,6 +107,10 @@ export interface ApiServerDeps {
   spendForOwner: SpendSystem["forOwner"];
   spendCeilingsForOperator: SpendSystem["ceilingsForOperator"];
   userBudgetsForOperator: UserBudgetsForOperator;
+  loginTestimonials: {
+    forOperator: LoginTestimonialsForOperator;
+    readPublic: PublicTestimonials;
+  };
   providerStatus: ProviderStatusService;
   outageAlerts: OutageAlertNotices;
   approvalsRelay: ApprovalsRelayService;

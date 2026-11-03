@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
 import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
@@ -772,6 +773,10 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
+  const loginTestimonials = composeLoginTestimonialsModule({
+    db,
+    photoUrl: (id) => `${addresses.public.uiBaseUrl}/api/public/avatars/${id}`,
+  });
   const auth = createAuth(
     {
       issuers: addresses.all.map((set) =>
@@ -870,6 +875,7 @@ export async function bootstrap() {
     const removed = await sweepAvatarImages(createAvatarImagesRepository(db), [
       ...agents.map((a) => a.spec.avatar),
       ...kits.map((k) => k.kit.avatar),
+      ...(await loginTestimonials.photoIds()).map((id) => `image:${id}`),
     ]);
     if (removed > 0) getLogger().info({ removed }, "avatar_images.swept");
   });
@@ -2482,6 +2488,7 @@ export async function bootstrap() {
     redisBus,
     spendForOwner: spend.forOwner,
     spendCeilingsForOperator: spend.ceilingsForOperator,
+    loginTestimonials,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
       agentStore: { authority: config.agentStore, db },

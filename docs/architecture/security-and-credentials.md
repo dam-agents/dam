@@ -80,7 +80,10 @@ The same page also knows which client started the sign-in: when it is the artifa
 The general sign-in page scrolls: its first screen holds the sign-in form, and the sections below it say what an agent does, where it works, what users say and what developers and DevOps get, ending in a second sign-in form.
 The shared-artifact sign-in keeps the short single-screen layout.
 The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
-The docs link, the community channel link and the testimonials the page shows are `keycloak.login` values too, so each install sets its own; an empty value hides that part of the page, and a testimonial list that does not parse hides the section instead of breaking the sign-in.
+The docs link and the community channel link the page shows are `keycloak.login` values too, so each install sets its own; an empty value hides that link.
+The testimonials the page shows are rows in the platform's database, which only an [operator](#identity) changes, so a change reaches the page within a minute, with no redeploy.
+The page fetches them from the api-server's public `/api/public/login-testimonials`, which a browser may read only from Keycloak's origin; their photos are uploaded and served as [agent avatars](agent-avatars.md#custom-avatars) are.
+While the call is pending, failed or empty, the page hides the section, and sign-in never waits for it.
 An install with no meanings shows only the heading.
 Upstream identity providers themselves (e.g. w3id, IBMid) and the rule for who they admit are realm configuration managed outside the chart.
 The page knows the IBM sign-in providers, w3id and IBMid, by their alias on the realm and shows the IBM logo on their buttons, so a realm can offer both while sign-in moves from one to the other.

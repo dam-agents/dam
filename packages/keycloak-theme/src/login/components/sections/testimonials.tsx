@@ -4,8 +4,15 @@ import { SectionLabel, SectionTitle } from "./section-kit.js";
 
 /* UNIT_BOUNDARY_DESCRIPTION: The "From the community" section: what users say
  * about the product, three cards in the first row and the rest centred below.
- * Each card shows the person's initials; there are no photos. With no
+ * Each card shows the person's photo when the operator uploaded one, and their
+ * initials otherwise. With no
  * testimonials the section is not rendered. */
+const FIRST_ROW: Record<number, string> = {
+  1: "mx-auto grid w-full grid-cols-1 gap-5 md:max-w-[calc(50%-10px)] lg:max-w-[calc(33.333%-14px)]",
+  2: "mx-auto grid w-full grid-cols-1 gap-5 md:grid-cols-2 lg:max-w-[calc(66.666%+10px)]",
+  3: "grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3",
+};
+
 export function TestimonialsSection({
   brand,
   testimonials,
@@ -31,7 +38,7 @@ export function TestimonialsSection({
         </div>
 
         <div className="mt-16 flex flex-col gap-5">
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          <div className={FIRST_ROW[Math.min(testimonials.length, 3)]}>
             {testimonials.slice(0, 3).map((t) => (
               <TestimonialCard key={t.name} testimonial={t} brand={brand} />
             ))}
@@ -50,7 +57,7 @@ export function TestimonialsSection({
 }
 
 function TestimonialCard({
-  testimonial: { name, role, quote, initials, color },
+  testimonial: { name, role, quote, photoUrl, initials, color },
   brand,
 }: {
   testimonial: Testimonial;
@@ -70,13 +77,21 @@ function TestimonialCard({
         {withBrand(quote, brand)}
       </blockquote>
       <figcaption className="mt-5 flex items-center gap-3">
-        <div
-          className="flex size-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
-          style={{ background: color }}
-          aria-hidden="true"
-        >
-          {initials}
-        </div>
+        {photoUrl ? (
+          <img
+            src={photoUrl}
+            alt=""
+            className="size-10 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
+            style={{ background: color }}
+            aria-hidden="true"
+          >
+            {initials}
+          </div>
+        )}
         <div>
           <p className="text-foreground text-[14px] font-semibold">{name}</p>
           {role && <p className="text-muted-foreground text-[13px]">{role}</p>}

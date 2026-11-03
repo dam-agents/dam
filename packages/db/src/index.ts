@@ -58,6 +58,7 @@ export {
   resourceAlerts,
   outageAlerts,
   avatarImages,
+  loginTestimonials,
   spendCalls,
   spendAgentNames,
   spendDaily,

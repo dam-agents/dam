@@ -1346,6 +1346,23 @@ export const avatarImages = pgTable("avatar_images", {
     .notNull(),
 });
 
+export const loginTestimonials = pgTable(
+  "login_testimonials",
+  {
+    id: text("id").primaryKey(),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    role: text("role").notNull().default(""),
+    quote: text("quote").notNull(),
+    photoId: text("photo_id"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedBy: text("updated_by").notNull(),
+  },
+  (t) => [uniqueIndex("login_testimonials_position_idx").on(t.position)],
+);
+
 export const spendDaily = pgTable(
   "spend_daily",
   {

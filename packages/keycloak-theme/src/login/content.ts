@@ -1,17 +1,20 @@
-/* UNIT_BOUNDARY_DESCRIPTION: The login page's deployment-specific content: the
- * docs link, the community link and the testimonials. Each deployment sets them
- * through the chart's keycloak.login values, which reach the theme as the
- * PLATFORM_LOGIN_* properties; readLoginContent turns those into the one
- * LoginContent value the sections read. An empty docs URL, a community link
- * without both a label and a URL, or no testimonials hides that part of the
- * page. Testimonials are a JSON list of { name, role, quote }; an entry that is
- * not one is dropped with a console warning, so a bad value never breaks the
- * sign-in page. A quote may name the product as {brand}. */
+import { useEffect, useState } from "react";
+
+/* UNIT_BOUNDARY_DESCRIPTION: The login page's deployment-specific content. The
+ * docs link and the community link are the chart's keycloak.login values, read
+ * from the PLATFORM_LOGIN_* properties by readLoginContent; an empty docs URL,
+ * or a community link without both a label and a URL, hides it. The
+ * testimonials are what operators saved in the platform: useTestimonials
+ * fetches them from the api-server at PLATFORM_API_URL when the page loads,
+ * and gives an empty list while loading, on a failure or after five seconds,
+ * so the section stays hidden and sign-in never waits for it. A quote may name
+ * the product as {brand}. */
 
 export type Testimonial = {
   name: string;
   role: string;
   quote: string;
+  photoUrl: string | null;
   initials: string;
   color: string;
 };
@@ -21,17 +24,16 @@ export type CommunityLink = { label: string; url: string };
 export type LoginContent = {
   docsUrl: string;
   community: CommunityLink | undefined;
-  testimonials: Testimonial[];
 };
 
 export type LoginContentProperties = {
   PLATFORM_LOGIN_DOCS_URL: string;
   PLATFORM_LOGIN_COMMUNITY_LABEL: string;
   PLATFORM_LOGIN_COMMUNITY_URL: string;
-  PLATFORM_LOGIN_TESTIMONIALS: string;
 };
 
 const AVATAR_COLORS = ["#4589ff", "#42be65", "#a56eff", "#ee5396", "#0f62fe"];
+const FETCH_TIMEOUT_MS = 5000;
 
 export function readLoginContent(
   properties: LoginContentProperties,
@@ -41,41 +43,54 @@ export function readLoginContent(
   return {
     docsUrl: properties.PLATFORM_LOGIN_DOCS_URL.trim(),
     community: label && url ? { label, url } : undefined,
-    testimonials: parseTestimonials(properties.PLATFORM_LOGIN_TESTIMONIALS),
   };
 }
 
-export function parseTestimonials(raw: string): Testimonial[] {
-  if (raw.trim() === "") return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    console.warn("[keycloak-theme] PLATFORM_LOGIN_TESTIMONIALS is not JSON");
-    return [];
-  }
-  if (!Array.isArray(parsed)) {
-    console.warn("[keycloak-theme] PLATFORM_LOGIN_TESTIMONIALS is not a list");
-    return [];
-  }
+export function useTestimonials(apiUrl: string): Testimonial[] {
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  useEffect(() => {
+    if (!apiUrl) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    fetch(`${apiUrl.replace(/\/$/, "")}/api/public/login-testimonials`, {
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : { testimonials: [] }))
+      .then((body: unknown) => setTestimonials(toTestimonials(body)))
+      .catch(() => {
+        if (!controller.signal.aborted) return;
+        console.warn("[keycloak-theme] testimonials did not load in time");
+      })
+      .finally(() => clearTimeout(timer));
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [apiUrl]);
+  return testimonials;
+}
+
+export function toTestimonials(body: unknown): Testimonial[] {
+  const list =
+    typeof body === "object" && body !== null && "testimonials" in body
+      ? (body as { testimonials: unknown }).testimonials
+      : [];
+  if (!Array.isArray(list)) return [];
   const testimonials: Testimonial[] = [];
-  parsed.forEach((entry: unknown, index) => {
+  for (const entry of list) {
     const name = text(entry, "name");
     const quote = text(entry, "quote");
-    if (!name || !quote) {
-      console.warn(
-        `[keycloak-theme] testimonial ${index} has no name or quote; skipped`,
-      );
-      return;
-    }
+    if (!name || !quote) continue;
+    const photoUrl = text(entry, "photoUrl");
     testimonials.push({
       name,
       quote,
       role: text(entry, "role"),
+      photoUrl: photoUrl || null,
       initials: initialsOf(name),
       color: AVATAR_COLORS[testimonials.length % AVATAR_COLORS.length]!,
     });
-  });
+  }
   return testimonials;
 }
 

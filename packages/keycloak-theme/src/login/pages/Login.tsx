@@ -17,7 +17,7 @@ import { TestimonialsSection } from "../components/sections/testimonials.js";
 import { SlackDmIllustration } from "../components/slack-dm-illustration.js";
 import { SocialProviderButton } from "../components/social-provider-button.js";
 import type { LoginContent } from "../content.js";
-import { readLoginContent } from "../content.js";
+import { readLoginContent, useTestimonials } from "../content.js";
 import { useApplyThemeScript } from "../hooks/use-apply-theme-script.js";
 import { useRotatingNameMeaning } from "../hooks/use-rotating-name-meaning.js";
 import type { I18n } from "../i18n.js";
@@ -259,6 +259,7 @@ function ScrollPage({
   const { msgStr } = i18n;
 
   useApplyThemeScript();
+  const testimonials = useTestimonials(kcContext.properties.PLATFORM_API_URL);
   const nameMeaning = useRotatingNameMeaning(
     kcContext.properties.PLATFORM_BRAND_NAME_MEANINGS,
   );
@@ -346,10 +347,7 @@ function ScrollPage({
       <div id="info-bands" className="overflow-x-hidden">
         <CapabilitiesSection brand={brand} docsUrl={content.docsUrl} />
         <ChannelsSection brand={brand} />
-        <TestimonialsSection
-          brand={brand}
-          testimonials={content.testimonials}
-        />
+        <TestimonialsSection brand={brand} testimonials={testimonials} />
         <SandboxSection />
         <DevOpsSection />
         <AccessSection

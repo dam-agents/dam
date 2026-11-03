@@ -20,7 +20,7 @@ const { getKcContextMock } = createGetKcContextMock({
       PLATFORM_LOGIN_DOCS_URL: "",
       PLATFORM_LOGIN_COMMUNITY_LABEL: "",
       PLATFORM_LOGIN_COMMUNITY_URL: "",
-      PLATFORM_LOGIN_TESTIMONIALS: "[]",
+      PLATFORM_API_URL: "",
     },
   } satisfies KcContextExtension,
   kcContextExtensionPerPage: {},

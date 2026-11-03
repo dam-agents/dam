@@ -18,7 +18,7 @@ export default defineConfig({
         { name: "PLATFORM_LOGIN_DOCS_URL", default: "https://ibm.biz/dam-docs" },
         { name: "PLATFORM_LOGIN_COMMUNITY_LABEL", default: "" },
         { name: "PLATFORM_LOGIN_COMMUNITY_URL", default: "" },
-        { name: "PLATFORM_LOGIN_TESTIMONIALS", default: "[]" },
+        { name: "PLATFORM_API_URL", default: "" },
       ],
     }),
   ],

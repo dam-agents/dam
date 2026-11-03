@@ -1,6 +1,6 @@
 # Agent avatars
 
-Last verified: 2026-10-23
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -24,7 +24,7 @@ The spec then stores `emoji:<emoji>` or `image:<id>`; anything else that is not 
 An emoji is accepted only as a single RGI emoji, and is drawn as SVG text, so it looks like the viewer's system emoji.
 An upload is at most 2 MB; the api-server crops it to a 512 px square PNG and stores it in Postgres under the SHA-256 of that PNG.
 It is served without sign-in, because an `<img>` sends no token; the id is a hash, so it cannot be guessed, and the image never changes.
-An hourly sweep deletes uploaded images older than a day that no Agent and no resolved Starter Kit names, with their Slack icon URLs; the day covers an upload not yet saved onto a spec.
+An hourly sweep deletes uploaded images older than a day that no Agent, no resolved Starter Kit and no login page testimonial names, with their Slack icon URLs; the day covers an upload not yet saved onto a spec.
 A [Starter Kit](starter-kits.md) can declare the avatar its Agents start with, a custom one included.
 A custom avatar has no eyes, so it shows sleep with a *zzz* mark instead ([state](#state)).
 

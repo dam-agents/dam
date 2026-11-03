@@ -1,37 +1,5 @@
 import type { KcContext } from "../login/KcContext.js";
 
-const SAMPLE_TESTIMONIALS = [
-  {
-    name: "Edgar Bruney Castañeda",
-    role: "Software Developer, Technology CPQ - SOVA",
-    quote:
-      "I have it integrated with Jira and GitHub, and I’ve given it context regarding everything my team does. It saves me a lot of time on routine tasks. It’s incredibly easy to work with.",
-  },
-  {
-    name: "Ashley Evans",
-    role: "Research Software Engineer",
-    quote:
-      "We use {brand} across our whole software development lifecycle, from planning, drafting GitHub issues, writing and reviewing code, to analysing production logs, monitoring OpenShift cluster health and keeping watch over our system architecture, and its Slack integration has turned it from a UI tool into a shared workspace where 16 team members work with {brand} and each other in one channel.",
-  },
-  {
-    name: "Alexander Merschel",
-    role: "AI Leader, IBM z Software",
-    quote:
-      "The Slack integration and the general setup is a gamechanger in how we work together.",
-  },
-  {
-    name: "Mudhakar Srivatsa",
-    role: "Distinguished Engineer, AI Platform",
-    quote: "Immensely useful to have this agent on Spyre Slack channels.",
-  },
-  {
-    name: "Tom Morris",
-    role: "Infrastructure & Operations Lead, AI Platform Enablement",
-    quote:
-      "{brand} is doing a fleet sweep for me for several of my clusters every morning, and I use it to bridge Slack requests to GitHub.",
-  },
-];
-
 type LoginContext = Extract<KcContext, { pageId: "login.ftl" }>;
 
 const BASE: LoginContext = {
@@ -107,7 +75,7 @@ const BASE: LoginContext = {
     PLATFORM_LOGIN_COMMUNITY_LABEL: "#dam-community",
     PLATFORM_LOGIN_COMMUNITY_URL:
       "https://ibm.enterprise.slack.com/archives/C07PDAWV0QG",
-    PLATFORM_LOGIN_TESTIMONIALS: JSON.stringify(SAMPLE_TESTIMONIALS),
+    PLATFORM_API_URL: "/preview-api",
   },
   "x-keycloakify": {
     messages: {},
@@ -131,7 +99,7 @@ export const NO_CONTENT: LoginContext = {
     PLATFORM_LOGIN_DOCS_URL: "",
     PLATFORM_LOGIN_COMMUNITY_LABEL: "",
     PLATFORM_LOGIN_COMMUNITY_URL: "",
-    PLATFORM_LOGIN_TESTIMONIALS: "[]",
+    PLATFORM_API_URL: "/preview-api/empty",
   },
 } as unknown as LoginContext;
 
@@ -139,7 +107,7 @@ export const BAD_TESTIMONIALS: LoginContext = {
   ...BASE,
   properties: {
     ...BASE.properties,
-    PLATFORM_LOGIN_TESTIMONIALS: "[{not json",
+    PLATFORM_API_URL: "/preview-api/broken",
   },
 } as unknown as LoginContext;
 
