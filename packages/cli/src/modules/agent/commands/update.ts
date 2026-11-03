@@ -1,5 +1,10 @@
 import { Command, Option } from "commander";
-import type { DefaultKind, SessionPair } from "api-server-api";
+import type {
+  ConnectionView,
+  DefaultKind,
+  SessionDefaults,
+  SessionPair,
+} from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveConnectionRef } from "../../connection/index.js";
 import type { AgentService } from "../services/agent-service.js";
@@ -17,6 +22,10 @@ import {
   modelEntries,
   renderEntries,
 } from "../domain/agent-models.js";
+import {
+  moveDefaultsOffRevoked,
+  type DefaultMove,
+} from "../services/default-moves.js";
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
 
@@ -164,6 +173,11 @@ export function buildUpdateCommand(deps: {
       );
       const svc = deps.createAgentModelsService(host);
 
+      let revoked: {
+        before: SessionDefaults;
+        ids: Set<string>;
+        connections: readonly ConnectionView[];
+      } | null = null;
       if (providersGiven) {
         const all = await svc.connections();
         exitOnServiceError(all, host);
@@ -180,11 +194,24 @@ export function buildUpdateCommand(deps: {
               );
             return found.id;
           });
+        const revoke = idsOf(opts.removeProvider);
+        const before =
+          revoke.length > 0 ? await svc.savedDefaults(agent.id) : null;
         const updated = await svc.updateProviders(agent.id, {
           grant: idsOf(opts.provider),
-          revoke: idsOf(opts.removeProvider),
+          revoke,
         });
         exitOnServiceError(updated, host);
+        if (before && !before.ok)
+          process.stderr.write(
+            `warning: could not read the agent's defaults (${before.error.reason}), so a default on a removed provider was not moved\nhint: check them with \`dam agent get ${agent.name}\`\n`,
+          );
+        if (before?.ok)
+          revoked = {
+            before: before.value,
+            ids: new Set(revoke),
+            connections: all.value,
+          };
       }
 
       if (opts.sameAsChat && opts.kind !== "chat") {
@@ -207,9 +234,27 @@ export function buildUpdateCommand(deps: {
         exitOnServiceError(remembered, host);
       }
 
+      const setHere = new Set<DefaultKind>(
+        opts.sameAsChat || pairGiven ? [opts.kind] : [],
+      );
+      const defaultMoves = revoked
+        ? await moveDefaultsOffRevoked(svc, agent.id, {
+            before: revoked.before,
+            revoked: revoked.ids,
+            connections: revoked.connections,
+            skip: setHere,
+          })
+        : [];
+      for (const move of defaultMoves)
+        process.stderr.write(
+          renderMove(move, agent.name, revoked?.connections ?? []),
+        );
+
       const models = await readAgentModels(svc, agent.id);
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(models)}\n`);
+        process.stdout.write(
+          `${JSON.stringify({ ...models, ...(revoked && { defaultMoves }) })}\n`,
+        );
       } else {
         process.stdout.write(
           `✓ Updated ${agent.name}.\n${renderEntries(modelEntries(models))}`,
@@ -217,4 +262,21 @@ export function buildUpdateCommand(deps: {
       }
       process.exit(EXIT_SUCCESS);
     });
+}
+
+function renderMove(
+  move: DefaultMove,
+  agentName: string,
+  connections: readonly ConnectionView[],
+): string {
+  const name = (id: string) => connections.find((c) => c.id === id)?.name ?? id;
+  const which = `the ${move.kind} default${move.model ? ` (${move.model})` : ""}`;
+  if (move.to !== null)
+    return `note: ${which} moved from ${name(move.from)} to ${name(move.to)}\n`;
+  const kind = move.kind === "chat" ? "" : ` --kind ${move.kind}`;
+  return (
+    `warning: ${which} ran on ${name(move.from)}, which the agent no longer holds, and it has no provider now` +
+    (move.reason ? `: ${move.reason}` : "") +
+    `\nhint: set one with \`dam agent update ${agentName}${kind} --model <provider>/<model id>\`; \`dam agent models ${agentName}\` lists them\n`
+  );
 }

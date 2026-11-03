@@ -30,6 +30,7 @@ function connection(id: string, name: string, templateId: string) {
 
 const CONNECTIONS = [
   connection("conn-ibm", "IBM proxy", "ibm-litellm"),
+  connection("conn-ibm2", "IBM proxy of my own", "ibm-litellm"),
   connection("conn-oai", "My OpenAI", "openai"),
   connection("conn-gh", "github", "github"),
 ];
@@ -171,51 +172,58 @@ describe("dam agent get / update / models (integration)", () => {
           harness: string;
         }): Promise<HarnessCatalogView> => {
           catalogHarness = harness;
+          const ibm = (
+            connectionId: string,
+            displayName: string,
+          ): HarnessCatalogView["providers"][number] => ({
+            connectionId,
+            alias: "ibm",
+            template: "ibm-litellm",
+            displayName,
+            status: "listed",
+            listedAt: new Date(0).toISOString(),
+            native: false,
+            models: [
+              ...(harness === "claude-code"
+                ? [
+                    {
+                      name: "claude/ibm/aws/claude-opus-4-8",
+                      upstreamId: "aws/claude-opus-4-8",
+                      contextWindow: 1000000,
+                      maxOutputTokens: null,
+                      reasoning: true,
+                      vision: true,
+                      prices: null,
+                      source: {
+                        limits: "table" as const,
+                        prices: "none" as const,
+                      },
+                    },
+                  ]
+                : []),
+              {
+                name:
+                  harness === "claude-code"
+                    ? "claude/ibm/gpt-5.5"
+                    : "ibm/gpt-5.5",
+                upstreamId: "gpt-5.5",
+                contextWindow: 400000,
+                maxOutputTokens: null,
+                reasoning: true,
+                vision: true,
+                prices: null,
+                source: { limits: "table" as const, prices: "none" as const },
+              },
+            ],
+          });
           return {
             harness,
             routed: true,
             providers: [
-              {
-                connectionId: "conn-ibm",
-                alias: "ibm",
-                template: "ibm-litellm",
-                displayName: "IBM ETE LiteLLM Proxy",
-                status: "listed",
-                listedAt: new Date(0).toISOString(),
-                native: false,
-                models: [
-                  ...(harness === "claude-code"
-                    ? [
-                        {
-                          name: "claude/ibm/aws/claude-opus-4-8",
-                          upstreamId: "aws/claude-opus-4-8",
-                          contextWindow: 1000000,
-                          maxOutputTokens: null,
-                          reasoning: true,
-                          vision: true,
-                          prices: null,
-                          source: {
-                            limits: "table" as const,
-                            prices: "none" as const,
-                          },
-                        },
-                      ]
-                    : []),
-                  {
-                    name:
-                      harness === "claude-code"
-                        ? "claude/ibm/gpt-5.5"
-                        : "ibm/gpt-5.5",
-                    upstreamId: "gpt-5.5",
-                    contextWindow: 400000,
-                    maxOutputTokens: null,
-                    reasoning: true,
-                    vision: true,
-                    prices: null,
-                    source: { limits: "table", prices: "none" },
-                  },
-                ],
-              },
+              ibm("conn-ibm", "IBM ETE LiteLLM Proxy"),
+              ...(granted.includes("conn-ibm2")
+                ? [ibm("conn-ibm2", "IBM proxy of my own")]
+                : []),
               {
                 connectionId: "conn-oai",
                 alias: "openai",
@@ -503,6 +511,147 @@ describe("dam agent get / update / models (integration)", () => {
       "github is not a model-provider connection",
     );
     expect(grantCalls).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: swapping one provider for another of the same alias in one
+   * update must not leave a default on the Connection just taken away: every
+   * default kind that named it moves to the new one, and the output says so.
+   */
+  it("agent update moves the defaults off a removed provider to its replacement", async () => {
+    defaults = {
+      ...defaults,
+      channel: {
+        harness: "claude-code",
+        provider: "conn-ibm",
+        model: "ibm/gpt-5.5",
+      },
+    };
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "conn-ibm2",
+      "--remove-provider",
+      "conn-ibm",
+      "--json",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      defaults: SessionDefaults;
+      defaultMoves: unknown[];
+    };
+    expect(parsed.defaults.chat).toEqual({
+      harness: "claude-code",
+      provider: "conn-ibm2",
+      model: "ibm/aws/claude-opus-4-8",
+      settings: { effort: "high" },
+    });
+    expect(parsed.defaults.channel?.provider).toBe("conn-ibm2");
+    expect(parsed.defaults.scheduled?.provider).toBe("conn-ibm2");
+    expect(parsed.defaultMoves).toEqual([
+      {
+        kind: "chat",
+        model: "ibm/aws/claude-opus-4-8",
+        from: "conn-ibm",
+        to: "conn-ibm2",
+      },
+      {
+        kind: "channel",
+        model: "ibm/gpt-5.5",
+        from: "conn-ibm",
+        to: "conn-ibm2",
+      },
+      {
+        kind: "scheduled",
+        model: "ibm/gpt-5.5",
+        from: "conn-ibm",
+        to: "conn-ibm2",
+      },
+    ]);
+    expect(r.stderr).toContain(
+      "note: the chat default (ibm/aws/claude-opus-4-8) moved from IBM proxy to IBM proxy of my own",
+    );
+    expect(r.stderr).toContain(
+      "note: the scheduled default (ibm/gpt-5.5) moved",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: with no provider of the same alias left, a default cannot
+   * move; the output names each one left without a provider and how to set a
+   * new one, instead of succeeding in silence.
+   */
+  it("agent update warns about a default with no provider left", async () => {
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "My OpenAI",
+      "--remove-provider",
+      "conn-ibm",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(remembered).toEqual([]);
+    expect(r.stderr).toContain(
+      "warning: the chat default (ibm/aws/claude-opus-4-8) ran on IBM proxy, which the agent no longer holds, and it has no provider now",
+    );
+    expect(r.stderr).toContain(
+      "hint: set one with `dam agent update demo --model <provider>/<model id>`",
+    );
+    expect(r.stderr).toContain(
+      "warning: the scheduled default (ibm/gpt-5.5) ran on IBM proxy",
+    );
+    expect(r.stderr).toContain(
+      "hint: set one with `dam agent update demo --kind scheduled --model",
+    );
+    expect(r.stderr).not.toContain("channel default");
+  });
+
+  /**
+   * TEST_SCENARIO: the server keeps the rules about which pair is valid, so
+   * a move it refuses leaves the default without a provider, and the
+   * warning carries the server's reason.
+   */
+  it("agent update warns with the server's reason when a move is refused", async () => {
+    rememberRefusal = "the codex harness cannot run on that provider";
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "conn-ibm2",
+      "--remove-provider",
+      "conn-ibm",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stderr).toContain(
+      "warning: the scheduled default (ibm/gpt-5.5) ran on IBM proxy, which the agent no longer holds, and it has no provider now: the codex harness cannot run on that provider",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: a default the same update sets with --model is the
+   * caller's pick, so it is saved as asked and never moved after it.
+   */
+  it("agent update leaves a default the same update sets", async () => {
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "conn-ibm2",
+      "--remove-provider",
+      "conn-ibm",
+      "--model",
+      "ibm/gpt-5.5",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(remembered.map((m) => m.kind)).toEqual(["chat", "scheduled"]);
+    expect(remembered[0]?.pair.provider).toBeNull();
+    expect(r.stderr).not.toContain("the chat default");
   });
 
   /**

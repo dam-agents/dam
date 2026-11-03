@@ -224,6 +224,8 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
   A provider that has not listed its models yet is named in a note; ask again in a minute.
 - `dam agent update` changes only what you pass.
   `--provider <connection>` grants a model provider and `--remove-provider <connection>` takes one away; `dam connection list` names them.
+  To swap a provider for another one of the same alias, pass both in one update: each default on the removed provider moves to the new one when it offers the same model, and a `note:` names each default that moved (`defaultMoves` in `--json`).
+  A default that cannot move gets a `warning:` and runs fail until you set a new model with `--model` (with `--kind` for a channel or scheduled default).
   `--kind channel` or `--kind scheduled` changes that default instead of chat's, and `--same-as-chat` makes it follow chat again.
   Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
 - `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
