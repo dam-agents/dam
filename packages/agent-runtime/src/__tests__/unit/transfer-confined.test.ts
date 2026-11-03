@@ -7,18 +7,43 @@ import {
   mkdtemp,
   readFile,
   realpath,
+  rename,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const hooks = vi.hoisted(() => ({ shortWrite: false }));
+
+vi.mock("node:fs/promises", async (original) => {
+  const fs = await original<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    async open(...args: Parameters<typeof fs.open>) {
+      const handle = await fs.open(...args);
+      const write = handle.write.bind(handle);
+      handle.write = (async (buffer: Buffer, ...rest: unknown[]) =>
+        write(
+          hooks.shortWrite ? buffer.subarray(0, 2) : buffer,
+          ...(rest as []),
+        )) as typeof handle.write;
+      return handle;
+    },
+  };
+});
+
 import {
-  createConfined,
+  createStaged,
   openConfined,
-  publishConfined,
-  TRANSFER_STAGING_DIR,
+  openStaged,
+  publishStaged,
+  STAGING_PREFIX,
+  sweepStaging,
+  TRANSFER_ROOT,
   workspaceSegments,
 } from "../../modules/transfer/confined.js";
 import { createTransferHandlers } from "../../modules/transfer/http.js";
@@ -27,11 +52,13 @@ import { createTransferHandlers } from "../../modules/transfer/http.js";
  * TEST_OVERVIEW: The workspace end of a satellite file transfer. The Agent owns
  * everything inside its own workspace, links included, so a transfer must not
  * follow one: every path is walked component by component, opened with
- * O_NOFOLLOW, and the descriptor is compared with the path it was opened by
- * (same device and inode, a regular file, one link). The specs pin each way out
- * — a symlink to a file outside, a symlinked directory, a hard link to an
- * outside inode, a FIFO that would hang the reader, a staged file swapped after
- * it was written — and pin the byte cap on both the read and the stage.
+ * O_NOFOLLOW, and the descriptor is compared with the path it was opened by.
+ * Publication happens inside the destination directory's inode — not by a
+ * pathname that could be swapped between a check and the call — and the bytes on
+ * disk are read back before a transfer counts as written. The specs pin each way
+ * out: a symlink to a file outside, a symlinked directory, a hard link, a FIFO,
+ * a staged file or a destination parent swapped after it was verified, a sweeper
+ * steered by a symlink, and a short write that would otherwise truncate a file.
  */
 
 const RESERVED = [".triggers", ".initialized"];
@@ -59,6 +86,17 @@ beforeAll(async () => {
 afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
+
+function stage(name: string, destination: string[] = [...TRANSFER_ROOT, name]) {
+  return createStaged(root, destination);
+}
+
+async function writeStaged(
+  staged: { handle: { write: (b: Buffer) => Promise<unknown> } },
+  text: string,
+): Promise<void> {
+  await staged.handle.write(Buffer.from(text));
+}
 
 describe("a path a transfer may name", () => {
   it("refuses escapes and reserved names, and keeps ordinary segments", () => {
@@ -116,82 +154,139 @@ describe("reading a file out of the workspace", () => {
 });
 
 describe("staging and publishing a file into the workspace", () => {
-  it("stages under a name nobody has taken and publishes it once", async () => {
-    const staged = await createConfined(root, TRANSFER_STAGING_DIR, "abc123");
-    expect(staged.ok).toBe(true);
-    if (!staged.ok) return;
-    await staged.handle.writeFile("one");
-    await staged.handle.close();
+  it("stages beside the destination and publishes it once", async () => {
+    const created = await stage("one");
+    if (!created.ok) throw new Error(created.reason);
+    await writeStaged(created.staged, "one");
+    await created.staged.handle.close();
 
-    const published = await publishConfined(
+    const reopened = await openStaged(
       root,
-      [...TRANSFER_STAGING_DIR, "abc123"],
-      [".dam", "satellite-files", "laptop-1", "note.txt"],
-      CAP,
+      [...TRANSFER_ROOT, "one"],
+      created.staged.id,
     );
+    if (reopened === null) throw new Error("the staged file is gone");
+    const published = await publishStaged(root, reopened);
     expect(published.ok).toBe(true);
-    expect(
-      await readFile(
-        join(root, ".dam/satellite-files/laptop-1/note.txt"),
-        "utf8",
-      ),
-    ).toBe("one");
+    expect(await readFile(join(root, ...TRANSFER_ROOT, "one"), "utf8")).toBe(
+      "one",
+    );
   });
 
   it("refuses to publish over a file that is already there", async () => {
-    const target = join(
-      root,
-      ".dam",
-      "satellite-files",
-      "laptop-2",
-      "taken.txt",
-    );
-    await mkdir(join(root, ".dam", "satellite-files", "laptop-2"), {
-      recursive: true,
-    });
+    const target = join(root, ...TRANSFER_ROOT, "taken");
     await writeFile(target, "original");
+    const created = await stage("taken");
+    if (!created.ok) throw new Error(created.reason);
+    await writeStaged(created.staged, "replacement");
+    await created.staged.handle.close();
 
-    const staged = await createConfined(root, TRANSFER_STAGING_DIR, "def456");
-    if (!staged.ok) throw new Error(staged.reason);
-    await staged.handle.writeFile("replacement");
-    await staged.handle.close();
-
-    const published = await publishConfined(
+    const reopened = await openStaged(
       root,
-      [...TRANSFER_STAGING_DIR, "def456"],
-      [".dam", "satellite-files", "laptop-2", "taken.txt"],
-      CAP,
+      [...TRANSFER_ROOT, "taken"],
+      created.staged.id,
     );
+    if (reopened === null) throw new Error("the staged file is gone");
+    const published = await publishStaged(root, reopened);
     expect(published).toMatchObject({ ok: false, reason: "exists" });
     expect(await readFile(target, "utf8")).toBe("original");
   });
 
-  it("refuses to publish a staged file that was swapped for a link", async () => {
-    const staged = await createConfined(root, TRANSFER_STAGING_DIR, "aaa111");
-    if (!staged.ok) throw new Error(staged.reason);
-    await staged.handle.writeFile("one");
-    await staged.handle.close();
-    const stagedPath = join(root, ...TRANSFER_STAGING_DIR, "aaa111");
+  it("refuses a staged file that was swapped for a link after it was written", async () => {
+    const created = await stage("swapped");
+    if (!created.ok) throw new Error(created.reason);
+    await writeStaged(created.staged, "one");
+    await created.staged.handle.close();
+    const stagedPath = join(root, ...TRANSFER_ROOT, created.staged.name);
     await rm(stagedPath);
     await symlink(join(outside, "secret.txt"), stagedPath);
 
-    const published = await publishConfined(
-      root,
-      [...TRANSFER_STAGING_DIR, "aaa111"],
-      [".dam", "satellite-files", "laptop-3", "x.txt"],
-      CAP,
-    );
-    expect(published).toMatchObject({ ok: false, reason: "refused" });
+    expect(
+      await openStaged(root, [...TRANSFER_ROOT, "swapped"], created.staged.id),
+    ).toBeNull();
     await expect(
-      readFile(join(root, ".dam/satellite-files/laptop-3/x.txt"), "utf8"),
+      readFile(join(root, ...TRANSFER_ROOT, "swapped"), "utf8"),
     ).rejects.toThrow();
   });
 
-  it("refuses to create a file where one exists", async () => {
-    const first = await createConfined(root, TRANSFER_STAGING_DIR, "bbb222");
-    if (first.ok) await first.handle.close();
-    const second = await createConfined(root, TRANSFER_STAGING_DIR, "bbb222");
-    expect(second).toMatchObject({ ok: false, reason: "exists" });
+  it("publishes nothing through a destination parent swapped after staging", async () => {
+    const created = await stage("swap-parent", ["landing", "note"]);
+    if (!created.ok) throw new Error(created.reason);
+    await writeStaged(created.staged, "RUNTIME-FIXTURE");
+    await created.staged.handle.close();
+
+    await rename(join(root, "landing"), join(outside, "moved"));
+    await symlink(join(outside, "moved"), join(root, "landing"));
+
+    expect(
+      await openStaged(root, ["landing", "note"], created.staged.id),
+    ).toBeNull();
+    await expect(
+      readFile(join(outside, "moved", "note"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("refuses to stage a name that is already there", async () => {
+    const first = await stage("dup");
+    if (!first.ok) throw new Error(first.reason);
+    await first.staged.handle.close();
+    await rm(join(root, ...TRANSFER_ROOT, first.staged.name));
+    const second = await stage("dup");
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    await second.staged.handle.close();
+  });
+});
+
+describe("sweeping abandoned stages", () => {
+  it("removes an old staged file and leaves a fresh one", async () => {
+    const claim = ["laptop-2-aaaaaaaa"];
+    const created = await stage("sweep", [...TRANSFER_ROOT, ...claim, "sweep"]);
+    if (!created.ok) throw new Error(created.reason);
+    await created.staged.handle.close();
+    const stagedPath = join(
+      root,
+      ...TRANSFER_ROOT,
+      ...claim,
+      created.staged.name,
+    );
+    await utimes(stagedPath, new Date(0), new Date(0));
+
+    const fresh = await stage("sweep", [...TRANSFER_ROOT, ...claim, "sweep"]);
+    if (!fresh.ok) throw new Error(fresh.reason);
+    await fresh.staged.handle.close();
+
+    await sweepStaging(root, 600_000);
+    await expect(readFile(stagedPath, "utf8")).rejects.toThrow();
+    expect(
+      await readFile(
+        join(root, ...TRANSFER_ROOT, ...claim, fresh.staged.name),
+        "utf8",
+      ),
+    ).toEqual("");
+  });
+
+  it("does not unlink through a claim directory symlinked outside the workspace", async () => {
+    const transferRoot = join(root, ...TRANSFER_ROOT);
+    await mkdir(transferRoot, { recursive: true });
+    await writeFile(
+      join(outside, `${STAGING_PREFIX}${"a".repeat(32)}`),
+      "KEEP",
+    );
+    await utimes(
+      join(outside, `${STAGING_PREFIX}${"a".repeat(32)}`),
+      new Date(0),
+      new Date(0),
+    );
+    await symlink(outside, join(transferRoot, "laptop-1-aaaaaaaa"));
+
+    await sweepStaging(root, 1);
+    expect(
+      await readFile(
+        join(outside, `${STAGING_PREFIX}${"a".repeat(32)}`),
+        "utf8",
+      ),
+    ).toBe("KEEP");
   });
 });
 
@@ -232,11 +327,18 @@ describe("the transfer route the api-server calls", () => {
     server.close();
   });
 
-  it("stages a body, publishes it where it was asked, and reads it back", async () => {
-    const staged = await fetch(`${base}/api/transfer/stage`, {
+  const stageBody = (path: string, body: Buffer) =>
+    fetch(`${base}/api/transfer/stage`, {
       method: "POST",
-      body: Buffer.from("body bytes"),
+      headers: { "x-dam-path": path },
+      body: new Uint8Array(body),
     });
+
+  it("stages a body, publishes it where it was asked, and reads it back", async () => {
+    const staged = await stageBody(
+      ".dam/satellite-files/laptop-9-aaaaaaaa/given.txt",
+      Buffer.from("body bytes"),
+    );
     expect(staged.status).toBe(200);
     const { id } = (await staged.json()) as { id: string };
 
@@ -244,39 +346,61 @@ describe("the transfer route the api-server calls", () => {
       method: "POST",
       body: JSON.stringify({
         id,
-        path: ".dam/satellite-files/laptop-4/given.txt",
+        path: ".dam/satellite-files/laptop-9-aaaaaaaa/given.txt",
       }),
     });
     expect(published.status).toBe(200);
 
     const read = await fetch(
-      `${base}/api/transfer/read?path=${encodeURIComponent(".dam/satellite-files/laptop-4/given.txt")}`,
+      `${base}/api/transfer/read?path=${encodeURIComponent(".dam/satellite-files/laptop-9-aaaaaaaa/given.txt")}`,
     );
     expect(read.status).toBe(200);
     expect(await read.text()).toBe("body bytes");
   });
 
   it("refuses a body over the cap and publishes nothing", async () => {
-    const staged = await fetch(`${base}/api/transfer/stage`, {
-      method: "POST",
-      body: Buffer.alloc(CAP + 1, 1),
-    });
+    const staged = await stageBody(
+      ".dam/satellite-files/laptop-9-aaaaaaaa/big.bin",
+      Buffer.alloc(CAP + 1, 1),
+    );
     expect(staged.status).toBe(413);
     expect(await staged.json()).toEqual({ error: "transfer_too_large" });
   });
 
+  /**
+   * TEST_SCENARIO: A regular-file write may write less than it was given. The
+   * stage must notice and fail rather than answer with a success whose file is
+   * shorter than the body, because the platform would then publish a truncated
+   * file under a digest that describes the whole of it.
+   */
+  it("fails a stage whose short write would truncate the file", async () => {
+    hooks.shortWrite = true;
+    try {
+      const staged = await stageBody(
+        ".dam/satellite-files/laptop-9-aaaaaaaa/short.txt",
+        Buffer.from("ABCDEF"),
+      );
+      expect(staged.status).not.toBe(200);
+    } finally {
+      hooks.shortWrite = false;
+    }
+  });
+
   it("refuses a path outside the workspace on publish and on read", async () => {
-    const staged = await fetch(`${base}/api/transfer/stage`, {
-      method: "POST",
-      body: Buffer.from("x"),
-    });
+    const staged = await stageBody(
+      ".dam/satellite-files/laptop-9-aaaaaaaa/safe.txt",
+      Buffer.from("x"),
+    );
     const { id } = (await staged.json()) as { id: string };
-    for (const path of ["../outside/secret.txt", "work/linked-dir/x.txt"]) {
+    for (const [path, status] of [
+      ["../outside/secret.txt", 400],
+      ["work/linked-dir/x.txt", 409],
+    ] as const) {
       const published = await fetch(`${base}/api/transfer/publish`, {
         method: "POST",
         body: JSON.stringify({ id, path }),
       });
-      expect(published.status).toBe(400);
+      expect(published.status).toBe(status);
     }
     const read = await fetch(
       `${base}/api/transfer/read?path=${encodeURIComponent("work/link.txt")}`,

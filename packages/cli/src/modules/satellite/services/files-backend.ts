@@ -8,8 +8,10 @@ import {
   openInRoot,
   pathSegments,
   publishInRoot,
+  stagedDigest,
   stageInRoot,
   type Refusal,
+  type Staged,
 } from "./confined-files.js";
 import type { FileTransfer } from "./file-transfer.js";
 
@@ -24,6 +26,7 @@ const REFUSALS: Record<Refusal, string> = {
   exists: "already exists on this machine — pass overwrite: true to replace it",
   "no-such-file": "does not exist on this machine",
   "not-writable": "cannot be written here",
+  changed: "changed while it was being written, so it was not published",
 };
 
 function refused(reason: string): CallOutcome {
@@ -45,6 +48,29 @@ function failed(reason: string): CallOutcome {
     output: reason,
     truncated: false,
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Writes one chunk in full. A regular-file write may
+ * write less than it was given, and a transfer that treated a short result as
+ * success would publish a file shorter than the one it hashed.
+ */
+async function writeAll(staged: Staged, bytes: Buffer): Promise<void> {
+  let written = 0;
+  while (written < bytes.length) {
+    const { bytesWritten } = await staged.handle.write(
+      bytes,
+      written,
+      bytes.length - written,
+    );
+    if (bytesWritten <= 0) throw new Error("the write made no progress");
+    written += bytesWritten;
+  }
+}
+
+async function discardStaged(staged: Staged): Promise<void> {
+  await staged.handle.close().catch(() => {});
+  await unlink(staged.path).catch(() => {});
 }
 
 function done(result: {
@@ -227,7 +253,6 @@ export function createFilesBackend(input: {
       return refused(`${String(args.path)} ${REFUSALS[staged.reason]}`);
 
     const hash = createHash("sha256");
-    let digest = "";
     let bytes = 0;
     try {
       const incoming = await input.transfer.receive({
@@ -240,13 +265,10 @@ export function createFilesBackend(input: {
         bytes += part.length;
         if (bytes > cap) throw new Error("too large");
         hash.update(part);
-        await staged.handle.write(part);
+        await writeAll(staged.staged, part);
       }
-      await staged.handle.close();
-      digest = hash.digest("hex");
     } catch (err) {
-      await staged.handle.close().catch(() => {});
-      await unlink(staged.path).catch(() => {});
+      await discardStaged(staged.staged);
       if (signal.aborted)
         return { status: "cancelled", output: "", truncated: false };
       return failed(
@@ -256,10 +278,20 @@ export function createFilesBackend(input: {
       );
     }
 
-    const published = await publishInRoot(input.root, staged, overwrite);
+    const onDisk = await stagedDigest(staged.staged);
+    if (
+      onDisk === null ||
+      onDisk.size !== bytes ||
+      onDisk.sha256 !== hash.digest("hex")
+    ) {
+      await discardStaged(staged.staged);
+      return failed("what reached this machine is not what the workspace sent");
+    }
+
+    const published = await publishInRoot(input.root, staged.staged, overwrite);
     if (published !== null)
       return refused(`${String(args.path)} ${REFUSALS[published]}`);
-    return done({ path: String(args.path), size: bytes, sha256: digest });
+    return done({ path: String(args.path), ...onDisk });
   }
 
   return {

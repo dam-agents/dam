@@ -126,11 +126,6 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
             ),
           ),
         );
-        const transfers = new Set(
-          satellite.tools
-            .filter((tool) => tool.transfer !== undefined)
-            .map((tool) => tool.name),
-        );
         for (const [index, { job, transferToken }] of claimed.entries())
           items.push({
             kind: "call",
@@ -138,7 +133,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
             tool: job.tool,
             args: job.args,
             agent: { id: job.agentId, name: names[index] ?? null },
-            ...(transfers.has(job.tool) ? { transferToken } : {}),
+            ...(transferToken === undefined ? {} : { transferToken }),
           });
 
         if (items.length > 0 || now().getTime() >= deadline) return items;

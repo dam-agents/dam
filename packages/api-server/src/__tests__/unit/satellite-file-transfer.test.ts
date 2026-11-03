@@ -4,7 +4,6 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SATELLITE_TRANSFER_CLAIM_HEADER,
-  type SatelliteTool,
   type UserIdentity,
 } from "api-server-api";
 import { configureLogger } from "../../core/logger.js";
@@ -44,16 +43,6 @@ const SERVE_KEY: UserIdentity = {
   agentIds: "*",
 };
 
-const TOOLS: SatelliteTool[] = [
-  {
-    name: "download",
-    inputSchema: { type: "object" },
-    transfer: "download",
-  },
-  { name: "upload", inputSchema: { type: "object" }, transfer: "upload" },
-  { name: "run", inputSchema: { type: "object" } },
-];
-
 function job(overrides: Partial<JobRow> = {}): JobRow {
   return {
     owner: "owner-1",
@@ -62,6 +51,7 @@ function job(overrides: Partial<JobRow> = {}): JobRow {
     agentId: "agent-1",
     tool: "download",
     args: { path: "logs/app.log" },
+    transferDirection: "download",
     status: "running",
     isError: false,
     exitCode: null,
@@ -101,7 +91,10 @@ function setup(
     onStage?: () => void;
     readFail?: "not-found" | "too-large" | "refused";
     readBytes?: Buffer;
+    declaredSize?: number;
     readDeferred?: { release: () => void };
+    onRead?: () => void;
+    readStream?: Readable;
   } = {},
 ): Harness {
   const state = {
@@ -115,16 +108,6 @@ function setup(
 
   const repo = {
     getJob: async () => state.job,
-    get: async () => ({
-      owner: "owner-1",
-      name: "laptop",
-      description: null,
-      host: null,
-      maxConcurrent: 4,
-      tools: TOOLS,
-      draining: false,
-      lastSeenAt: new Date(),
-    }),
     transferTokenHashOf: async () => state.hash,
     consumeTransfer: async (
       _owner: string,
@@ -142,7 +125,7 @@ function setup(
   } as unknown as SatellitesRepository;
 
   const transfer: AgentTransfer = {
-    async stage(body) {
+    async stage({ body }) {
       options.onStage?.();
       try {
         for await (const chunk of body) void chunk;
@@ -159,8 +142,15 @@ function setup(
     },
     async read(path) {
       read.push(path);
+      options.onRead?.();
       if (options.readFail !== undefined)
         return { ok: false, reason: options.readFail };
+      if (options.readStream !== undefined)
+        return {
+          ok: true,
+          size: options.declaredSize ?? 0,
+          stream: options.readStream,
+        };
       const bytes = options.readBytes ?? Buffer.from("from the workspace");
       const stream = Readable.from([bytes]);
       if (options.readDeferred !== undefined) {
@@ -174,7 +164,11 @@ function setup(
         });
         return { ok: true, size: bytes.length, stream: deferred };
       }
-      return { ok: true, size: bytes.length, stream };
+      return {
+        ok: true,
+        size: options.declaredSize ?? bytes.length,
+        stream,
+      };
     },
   };
 
@@ -260,9 +254,15 @@ describe("a file the machine sends into the agent's workspace", () => {
     expect(harness.state.spent).toBe(1);
   });
 
-  it("refuses a job whose tool moves files the other way, or not at all", async () => {
-    for (const tool of ["upload", "run"]) {
-      const harness = setup({ job: job({ tool }) });
+  /**
+   * TEST_SCENARIO: The direction is frozen on the Job when the Agent's call is
+   * admitted, so a Satellite that registers its tool list again with the tool
+   * pointing the other way cannot reinterpret the Job's own arguments: the row
+   * the request is checked against is the one the Agent made.
+   */
+  it("refuses a job whose frozen direction is not this request's", async () => {
+    for (const direction of ["upload", null] as const) {
+      const harness = setup({ job: job({ transferDirection: direction }) });
       const res = await transferRequest(harness.app);
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "wrong_direction" });
@@ -407,6 +407,7 @@ describe("a file the machine asks the agent's workspace for", () => {
     const harness = setup({
       job: job({
         tool: "upload",
+        transferDirection: "upload",
         args: { path: "inbox/x", workspacePath: "work/report.csv" },
       }),
       readBytes: bytes,
@@ -434,6 +435,7 @@ describe("a file the machine asks the agent's workspace for", () => {
     const harness = setup({
       job: job({
         tool: "upload",
+        transferDirection: "upload",
         args: { path: "x", workspacePath: "../etc/passwd" },
       }),
     });
@@ -452,6 +454,7 @@ describe("a file the machine asks the agent's workspace for", () => {
       const harness = setup({
         job: job({
           tool: "upload",
+          transferDirection: "upload",
           args: { path: "x", workspacePath: "work/a" },
         }),
         readFail: reason,
@@ -462,11 +465,100 @@ describe("a file the machine asks the agent's workspace for", () => {
     }
   });
 
+  /**
+   * TEST_SCENARIO: The read is a round trip to the workspace, and a Job can end
+   * inside it. The bytes must not leave after that: the response is refused
+   * before its first byte, not opened and then stopped.
+   */
+  it("delivers nothing when the job ends while the workspace read is open", async () => {
+    const harness = setup({
+      job: job({
+        tool: "upload",
+        transferDirection: "upload",
+        args: { path: "x", workspacePath: "work/a" },
+      }),
+      onRead: () => {
+        harness.state.job = { ...harness.state.job, status: "cancelled" };
+      },
+    });
+    const res = await transferRequest(harness.app, { method: "GET" });
+    expect(res.status).toBe(409);
+    expect(await res.text()).not.toContain("from the workspace");
+  });
+
+  /**
+   * TEST_SCENARIO: A Satellite's sequence numbers restart when it is registered
+   * again, so a row at the same owner, Satellite and sequence can be a different
+   * Job. A running successor must not keep the predecessor's stream open.
+   */
+  it("stops the stream when a successor job answers to the same reference", async () => {
+    const stream = new Readable({ read() {} });
+    const harness = setup({
+      job: job({
+        tool: "upload",
+        transferDirection: "upload",
+        args: { path: "x", workspacePath: "work/a" },
+      }),
+      readStream: stream,
+      declaredSize: 0,
+      reCheckMs: 5,
+    });
+    const res = await transferRequest(harness.app, { method: "GET" });
+    expect(res.status).toBe(200);
+
+    harness.state.job = {
+      ...harness.state.job,
+      agentId: "another-agent",
+      createdAt: new Date(Date.now() + 60_000),
+    };
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(stream.destroyed).toBe(true);
+    await res.body?.cancel().catch(() => {});
+  });
+
+  /**
+   * TEST_SCENARIO: A runtime that says a file is small and then sends more is
+   * the same escape as one that says it is large: the platform counts the bytes
+   * it relays and cuts the response off at the cap.
+   */
+  it("cuts a stream off at the cap even when the workspace understates its size", async () => {
+    const harness = setup({
+      job: job({
+        tool: "upload",
+        transferDirection: "upload",
+        args: { path: "x", workspacePath: "work/a" },
+      }),
+      cap: 4,
+      declaredSize: 2,
+      readBytes: Buffer.from("12345678"),
+    });
+    const res = await transferRequest(harness.app, { method: "GET" });
+    const body = await res.arrayBuffer().catch(() => new ArrayBuffer(0));
+    expect(body.byteLength).toBeLessThanOrEqual(4);
+  });
+
+  it("refuses a workspace that declares more than the cap", async () => {
+    const harness = setup({
+      job: job({
+        tool: "upload",
+        transferDirection: "upload",
+        args: { path: "x", workspacePath: "work/a" },
+      }),
+      cap: 4,
+      declaredSize: 8,
+      readBytes: Buffer.from("12345678"),
+    });
+    const res = await transferRequest(harness.app, { method: "GET" });
+    expect(res.status).toBe(413);
+  });
+
   it("stops sending when the job ends mid-read", async () => {
     const deferred = { release: () => {} };
     const harness = setup({
       job: job({
         tool: "upload",
+        transferDirection: "upload",
         args: { path: "x", workspacePath: "work/a" },
       }),
       readDeferred: deferred,

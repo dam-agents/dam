@@ -12,10 +12,11 @@ import { agentServiceAddress } from "../../agents/infrastructure/k8s.js";
  * is a code the runtime chose rather than an error's raw text.
  */
 export interface AgentTransfer {
-  stage(
-    body: Readable,
-    declaredBytes: number | undefined,
-  ): Promise<{ ok: true; id: string } | { ok: false; reason: "aborted" }>;
+  stage(input: {
+    body: Readable;
+    path: string;
+    declaredBytes: number | undefined;
+  }): Promise<{ ok: true; id: string } | { ok: false; reason: "aborted" }>;
   publish(input: {
     id: string;
     path: string;
@@ -83,10 +84,11 @@ export function createAgentTransfer(
     });
 
   return {
-    async stage(stream, declaredBytes) {
+    async stage({ body: stream, path, declaredBytes }) {
       try {
         const res = await send("/api/transfer/stage", "POST", stream, {
           "content-type": "application/octet-stream",
+          "x-dam-path": path,
           ...(declaredBytes === undefined
             ? {}
             : { "content-length": String(declaredBytes) }),

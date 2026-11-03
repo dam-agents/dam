@@ -76,6 +76,10 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
     agentId: r.agentId,
     tool: r.tool,
     args: r.args as Record<string, unknown>,
+    transferDirection:
+      r.transferDirection === "download" || r.transferDirection === "upload"
+        ? r.transferDirection
+        : null,
     status: r.status as JobStatus,
     isError: r.isError,
     exitCode: r.exitCode,
@@ -361,6 +365,7 @@ export function createSatellitesRepository(db: Db) {
       agentId: string;
       tool: string;
       args: Record<string, unknown>;
+      transferDirection: "download" | "upload" | null;
       status: JobStatus;
       expiresAt: Date;
       maxConcurrent: number;
@@ -465,7 +470,7 @@ export function createSatellitesRepository(db: Db) {
       capacity: number,
       leaseUntil: Date,
       incarnation?: string,
-    ): Promise<{ job: JobRow; transferToken: string }[]> {
+    ): Promise<{ job: JobRow; transferToken?: string }[]> {
       if (capacity <= 0) return [];
       return db.transaction(async (tx) => {
         const pending = await tx
@@ -482,7 +487,7 @@ export function createSatellitesRepository(db: Db) {
           .orderBy(asc(satelliteJobs.sequence))
           .limit(capacity)
           .for("update", { skipLocked: true });
-        const claimed: { job: JobRow; transferToken: string }[] = [];
+        const claimed: { job: JobRow; transferToken?: string }[] = [];
         for (const { sequence } of pending) {
           const transferToken = mintTransferToken();
           const [row] = await tx
@@ -502,8 +507,11 @@ export function createSatellitesRepository(db: Db) {
               ),
             )
             .returning();
-          if (row !== undefined)
-            claimed.push({ job: toJob(row), transferToken });
+          if (row === undefined) continue;
+          const job = toJob(row);
+          claimed.push(
+            job.transferDirection === null ? { job } : { job, transferToken },
+          );
         }
         return claimed;
       });

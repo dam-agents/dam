@@ -7,7 +7,9 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -16,7 +18,26 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const hooks = vi.hoisted(() => ({ shortWrite: false }));
+
+vi.mock("node:fs/promises", async (original) => {
+  const fs = await original<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    async open(...args: Parameters<typeof fs.open>) {
+      const handle = await fs.open(...args);
+      const write = handle.write.bind(handle);
+      handle.write = (async (buffer: Buffer, ...rest: unknown[]) =>
+        write(
+          hooks.shortWrite ? buffer.subarray(0, 2) : buffer,
+          ...(rest as []),
+        )) as typeof handle.write;
+      return handle;
+    },
+  };
+});
 import type { TokenProvider } from "../modules/auth/index.js";
 import type { CallOutcome } from "../modules/satellite/services/backend.js";
 import {
@@ -415,6 +436,94 @@ describe("an upload from the agent's workspace onto the machine", () => {
     expect(replaceLinked.isError).toBe(true);
     expect(await readFile(join(outside, "secret.txt"), "utf8")).toBe("SECRET");
     expect((await lstat(join(root, "hard.txt"))).nlink).toBe(2);
+  });
+
+  /**
+   * TEST_SCENARIO: The network read is the longest window a transfer has, and
+   * the staging name sits in the user's directory while it runs. Replacing it
+   * with a link to a file outside must not publish that file, and must not
+   * report success.
+   */
+  it("refuses a staging name replaced with a link during the read", async () => {
+    const transfer = fakeTransfer();
+    transfer.receive = async () => {
+      const entry = (await readdir(root)).find((name) =>
+        name.startsWith(".note.incoming-"),
+      );
+      if (entry === undefined) throw new Error("no staged file");
+      await rm(join(root, entry));
+      await symlink(join(outside, "secret.txt"), join(root, entry));
+      return { stream: Readable.from([Buffer.from("EXPECTED")]), size: 8 };
+    };
+    const backend = createFilesBackend({ root, allowUpload: true, transfer });
+
+    const outcome = outcomeOf(
+      await backend.call({
+        sequence: 4,
+        tool: UPLOAD_TOOL,
+        args: { path: "note", workspacePath: "work/note" },
+        transferToken: TOKEN,
+      }),
+    );
+    expect(outcome.isError).toBe(true);
+    const published = await lstat(join(root, "note")).catch(() => null);
+    expect(published).toBeNull();
+  });
+
+  /**
+   * TEST_SCENARIO: A destination parent that is renamed away and replaced by a
+   * link while the read is in flight must not move the publish outside the root.
+   */
+  it("publishes nothing through a destination parent swapped during the read", async () => {
+    await mkdir(join(root, "landing"), { recursive: true });
+    const transfer = fakeTransfer();
+    transfer.receive = async () => {
+      await rename(join(root, "landing"), join(outside, "moved"));
+      await symlink(join(outside, "moved"), join(root, "landing"));
+      return {
+        stream: Readable.from([Buffer.from("STAGED-FIXTURE")]),
+        size: 14,
+      };
+    };
+    const backend = createFilesBackend({ root, allowUpload: true, transfer });
+
+    const outcome = outcomeOf(
+      await backend.call({
+        sequence: 5,
+        tool: UPLOAD_TOOL,
+        args: { path: "landing/note", workspacePath: "work/note" },
+        transferToken: TOKEN,
+      }),
+    );
+    expect(outcome.isError).toBe(true);
+    await expect(
+      readFile(join(outside, "moved", "note"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  /**
+   * TEST_SCENARIO: A regular-file write may write less than it was given. The
+   * upload must notice and fail rather than publish a file shorter than the one
+   * it hashed and reported.
+   */
+  it("fails an upload whose short write would truncate the file", async () => {
+    hooks.shortWrite = true;
+    try {
+      const transfer = fakeTransfer({ receives: Buffer.from("ABCDEF") });
+      const backend = createFilesBackend({ root, allowUpload: true, transfer });
+      const outcome = outcomeOf(
+        await backend.call({
+          sequence: 6,
+          tool: UPLOAD_TOOL,
+          args: { path: "short.txt", workspacePath: "work/short.txt" },
+          transferToken: TOKEN,
+        }),
+      );
+      expect(outcome.isError).toBe(true);
+      await expect(lstat(join(root, "short.txt"))).rejects.toThrow();
+    } finally {
+      hooks.shortWrite = false;
+    }
   });
 
   it("refuses a workspace file over the cap and leaves nothing behind", async () => {

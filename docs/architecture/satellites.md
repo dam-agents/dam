@@ -231,13 +231,15 @@ So a file travels on **its own request, in the direction the queue cannot go** �
 - `upload`, offered only when the worker was started with `--upload`, copies one file **from the Agent's workspace onto the machine**.
   It is the same request in reverse, and it never replaces a file that is already there unless the call says to.
 
-Each tool declares which way it moves files, in the tool list the Satellite registers, and that declaration is what the platform checks a request against: a Job whose tool does not move files, or moves them the other way, authorises nothing.
+Each tool declares which way it moves files, and **that direction is frozen on the Job when the Agent's call is admitted**, from the Snapshot that accepted it.
+A Satellite replaces its tool list every time it connects, so the direction cannot be read again later: a manifest that points the tool the other way must not reinterpret a Job the Agent already made.
+A Job whose tool moved no file, or moves them the other way, authorises nothing.
 
 **A transfer belongs to the claim that is running the Job.** Claiming a Job issues that worker a transfer token, stored on the Job row as a hash, and a file request must present it; the token is spent by the transfer it authorises, in the same statement that checks the Job is still running.
 So a transfer happens once, for one Job, and only while that Job runs: bytes that arrive after it settled land nowhere, and a second transfer on the same Job is refused.
 This is the one thing the serve key does *not* buy: two keys of one owner are indistinguishable to the queue, and the token is what tells the claimant from any other worker of that owner.
 
-**The platform takes the direction and both paths from the Job's own arguments** — the Agent's call — so a machine cannot ask for a file its Agent did not ask for, and cannot choose where a received file lands.
+**The platform takes the direction and both paths from the Job itself** — the direction frozen at admission and the arguments the Agent's call carried — so a machine cannot ask for a file its Agent did not ask for, and cannot choose where a received file lands.
 A download lands in a directory the platform derives from the Job and its claim, so two transfers never collide even when a Satellite is removed and its sequences start again; the file's name is the last segment of the path the Agent asked for.
 An upload reads the workspace path the Agent asked for, and no other.
 
@@ -248,13 +250,17 @@ The directory is the whole allowlist on the machine, and every path is opened wi
 - Each directory on the way must be a real one, and the file is opened without following a link, without blocking on a FIFO, and then compared with the path it was opened by — same device and inode, a regular file, one link.
   A `..`, an absolute path, a link at any point, a hard link out and a special file are all refused.
 - Read-only unless the user passed `--upload`.
-  A write is staged beside its destination under an exclusive name, verified before a byte is written, and published by replacing its own directory entry: it never writes through a link, and it never replaces a file with more than one link.
+  A write is staged beside its destination under an exclusive name, verified before a byte is written, and published **inside the destination directory's inode**: the process steps into that directory, proves it is the one that was checked, and names both files relatively, so renaming a path on top of it cannot steer the step.
+  It never writes through a link, and it never replaces a file with more than one link.
+- Every chunk is written in full, and the finished file is read back through its own descriptor and compared with what was hashed before anything is published: a short write fails the transfer instead of leaving a truncated file.
 - The surface is POSIX only; on Windows the verb refuses to start rather than promise a confinement it cannot keep.
 
 The Agent's own workspace is treated as untrusted in exactly the same way, because the Agent owns everything inside it.
-The platform's writes are staged in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; and both directions walk the workspace components and open without following a link, refusing a hard link and a special file.
+The platform's writes are staged beside their destination in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; both directions walk the workspace components, open without following a link, refuse a hard link and a special file, and publish and clean up inside a verified directory's inode rather than by a pathname.
+Cleanup of an abandoned stage is confined the same way, and it removes only an entry that is one of the platform's own staged files, so it cannot be steered into deleting an Agent's file through a link.
 
-**One transfer carries at most 50 MB**, counted while the bytes move in both directions, and a file that grows after it was measured or a response that never ends is cut off at the limit rather than read whole.
+**One transfer carries at most 50 MB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
+A file that grows after it was measured, or a response that never ends, is cut off at the limit rather than read whole.
 Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
 Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
 

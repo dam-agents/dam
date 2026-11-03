@@ -1,33 +1,35 @@
+import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import type { FileHandle } from "node:fs/promises";
 import {
-  link,
-  lstat,
-  mkdir,
-  open,
-  realpath,
-  rename,
-  unlink,
-} from "node:fs/promises";
+  linkSync,
+  lstatSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import type { FileHandle } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, sep } from "node:path";
-import { randomBytes } from "node:crypto";
+import { basename, isAbsolute, join, sep } from "node:path";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A file on the user's machine read or written
  * through one directory, without trusting a path component. The machine is the
  * user's own, but the caller is a prompt-injectable Agent, so a transfer must not
- * be steerable outside the root by a link that was already there or by one that
- * appears between two calls: every directory on the way is `lstat`ed and must be
- * real, a file is opened with `O_NOFOLLOW` and `O_NONBLOCK` (so a FIFO cannot
- * hang the worker), and the descriptor is then compared with the path it was
- * opened by — same device and inode, a regular file, one link. A write is
- * created exclusively, verified before a byte is written, and published by
- * replacing its own directory entry, never by writing through a link.
+ * be steerable outside the root: every directory on the way is `lstat`ed and must
+ * be real, a file is opened with `O_NOFOLLOW` and `O_NONBLOCK` (so a FIFO cannot
+ * hang the worker), and the descriptor is compared with the path it was opened by
+ * — same device and inode, a regular file, one link.
  *
- * The ceiling: Node cannot make the check and the open one operation, so a
- * process already running as this user can still race the final comparison.
- * Closing that needs `openat2(RESOLVE_BENEATH)`, which Node does not expose.
+ * A write is staged under a random name beside its destination and published by
+ * one step taken *inside* the verified destination directory: the process moves
+ * into that directory's inode, proves it is still the one that was checked, and
+ * then names the file relatively. Nothing else runs between the proof and the
+ * step, so renaming a path on top of it cannot redirect the step — the same
+ * guarantee `linkat`/`renameat` give, which Node does not expose. The staged
+ * file is proved to be ours, and the published entry proved to be that same
+ * inode, before the transfer is called successful.
  */
 
 export const MAX_TRANSFER_BYTES = 50 * 1024 * 1024;
@@ -44,7 +46,8 @@ export type Refusal =
   | "too-large"
   | "exists"
   | "no-such-file"
-  | "not-writable";
+  | "not-writable"
+  | "changed";
 
 export type Opened =
   | { ok: true; handle: FileHandle; size: number }
@@ -97,6 +100,11 @@ export function pathSegments(raw: unknown): string[] | null {
   return segments;
 }
 
+interface Proved {
+  dev: number;
+  ino: number;
+}
+
 async function sameFile(handle: FileHandle, path: string): Promise<boolean> {
   const opened = await handle.stat();
   if (!opened.isFile() || opened.nlink !== 1) return false;
@@ -133,6 +141,36 @@ async function walk(
     current = next;
   }
   return current;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Runs one synchronous filesystem step with the
+ * process inside a directory that was verified before, so the step names its
+ * file relative to that directory's inode instead of by path. The directory is
+ * proved again inside the step — its device and inode, and that its path still
+ * resolves to it — because a rename followed by a symlink between the caller's
+ * check and this move would otherwise steer it. Returns null when the directory
+ * is no longer the one that was verified, before anything is written.
+ */
+function insideDirectory<T>(
+  dir: string,
+  proved: Proved,
+  step: () => T,
+): { ok: true; value: T } | { ok: false } {
+  if (realpathSync(dir) !== dir) return { ok: false };
+  const cwd = process.cwd();
+  try {
+    process.chdir(dir);
+    const here = statSync(".");
+    if (here.dev !== proved.dev || here.ino !== proved.ino)
+      return { ok: false };
+    if (realpathSync(dir) !== dir) return { ok: false };
+    return { ok: true, value: step() };
+  } catch {
+    return { ok: false };
+  } finally {
+    process.chdir(cwd);
+  }
 }
 
 export async function openInRoot(
@@ -172,22 +210,30 @@ export async function openInRoot(
   return { ok: true, handle, size: opened.size };
 }
 
+export interface Staged {
+  handle: FileHandle;
+  path: string;
+  target: string;
+  dir: string;
+  proved: Proved;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A new file beside the one an upload will land as,
- * created exclusively and verified before anything is written, so a refused
- * destination leaves nothing behind and no byte is ever written outside the
- * root.
+ * created exclusively and verified before anything is written, in a directory
+ * that is proved and remembered so the publish can act inside it. A refused
+ * destination leaves nothing behind and no byte is written outside the root.
  */
 export async function stageInRoot(
   root: string,
   target: readonly string[],
-): Promise<
-  | { ok: true; handle: FileHandle; path: string; target: string }
-  | { ok: false; reason: Refusal }
-> {
+): Promise<{ ok: true; staged: Staged } | { ok: false; reason: Refusal }> {
   const parent = await walk(root, target.slice(0, -1), true);
   const name = target.at(-1);
   if (parent === null || name === undefined)
+    return { ok: false, reason: "outside" };
+  const info = await lstat(parent).catch(() => null);
+  if (info === null || !info.isDirectory() || info.isSymbolicLink())
     return { ok: false, reason: "outside" };
 
   const path = join(
@@ -198,7 +244,7 @@ export async function stageInRoot(
   try {
     handle = await open(
       path,
-      constants.O_WRONLY |
+      constants.O_RDWR |
         constants.O_CREAT |
         constants.O_EXCL |
         constants.O_NOFOLLOW,
@@ -212,61 +258,131 @@ export async function stageInRoot(
     await unlink(path).catch(() => {});
     return { ok: false, reason: "not-writable" };
   }
-  return { ok: true, handle, path, target: join(parent, name) };
+  return {
+    ok: true,
+    staged: {
+      handle,
+      path,
+      target: join(parent, name),
+      dir: parent,
+      proved: { dev: info.dev, ino: info.ino },
+    },
+  };
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Moves a staged file onto its name. Without
+ * UNIT_BOUNDARY_DESCRIPTION: Reads the staged file back through the descriptor
+ * it was written on and reports its size and digest, or null when what is on
+ * disk is not what was written — a short write, a truncated file, a file that is
+ * no longer the one staged. A transfer that cannot prove its own file is not
+ * published.
+ */
+export async function stagedDigest(staged: Staged): Promise<{
+  size: number;
+  sha256: string;
+} | null> {
+  try {
+    await staged.handle.sync();
+    const info = await staged.handle.stat();
+    if (!info.isFile() || info.nlink !== 1) return null;
+    const hash = createHash("sha256");
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let read = 0;
+    for (;;) {
+      const { bytesRead } = await staged.handle.read(
+        buffer,
+        0,
+        buffer.length,
+        read,
+      );
+      if (bytesRead === 0) break;
+      read += bytesRead;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    if (read !== info.size) return null;
+    return { size: info.size, sha256: hash.digest("hex") };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Moves a staged file onto its name, once. Without
  * `overwrite` the name is taken by a hard link, which fails rather than
- * replacing anything; with it, a regular single-link file is replaced by
- * renaming over its directory entry, so a link someone else holds to the same
- * inode keeps its own content and a device or a FIFO is never written through.
+ * replacing anything; with it, a regular single-link file is replaced by renaming
+ * over its directory entry, so a link someone else holds to the same inode keeps
+ * its own content and a device or a FIFO is never written through. Both the
+ * staged file and the published entry are proved to be the inode that was
+ * staged, inside the directory that was proved when it was created.
  */
 export async function publishInRoot(
   root: string,
-  staged: { handle: FileHandle; path: string; target: string },
+  staged: Staged,
   overwrite: boolean,
 ): Promise<Refusal | null> {
-  await staged.handle.close().catch(() => {});
-  const parent = await realpath(join(staged.target, "..")).catch(() => null);
-  if (
-    parent === null ||
-    (parent !== root && !parent.startsWith(root + sep)) ||
-    (await realpath(root).catch(() => null)) !== root
-  ) {
-    await unlink(staged.path).catch(() => {});
+  const from = basename(staged.path);
+  const to = basename(staged.target);
+  const opened = await staged.handle.stat().catch(() => null);
+  if (opened === null || !opened.isFile() || opened.nlink !== 1) {
+    await discard(staged);
+    return "changed";
+  }
+  if ((await realpath(root).catch(() => null)) !== root) {
+    await discard(staged);
     return "outside";
   }
-  const existing = await lstat(staged.target).catch(() => null);
-  if (existing !== null) {
-    if (!overwrite) {
-      await unlink(staged.path).catch(() => {});
-      return "exists";
-    }
+
+  const anchored = insideDirectory(staged.dir, staged.proved, () => {
+    const current = lstatSync(from, { throwIfNoEntry: false });
     if (
-      !existing.isFile() ||
-      existing.isSymbolicLink() ||
-      existing.nlink !== 1
-    ) {
-      await unlink(staged.path).catch(() => {});
-      return "not-writable";
+      current === undefined ||
+      current.isSymbolicLink() ||
+      current.dev !== opened.dev ||
+      current.ino !== opened.ino
+    )
+      return "changed" as const;
+
+    const existing = lstatSync(to, { throwIfNoEntry: false });
+    if (existing !== undefined) {
+      if (!overwrite) return "exists" as const;
+      if (
+        !existing.isFile() ||
+        existing.isSymbolicLink() ||
+        existing.nlink !== 1
+      )
+        return "not-writable" as const;
+      renameSync(from, to);
+    } else {
+      try {
+        linkSync(from, to);
+      } catch {
+        return "exists" as const;
+      }
     }
+
+    const published = lstatSync(to, { throwIfNoEntry: false });
     if (
-      await rename(staged.path, staged.target)
-        .then(() => false)
-        .catch(() => true)
+      published === undefined ||
+      published.dev !== opened.dev ||
+      published.ino !== opened.ino
     ) {
-      return "not-writable";
+      rmSync(to, { force: true });
+      return "changed" as const;
     }
-    return null;
-  }
-  const linked = await link(staged.path, staged.target)
-    .then(() => true)
-    .catch(() => false);
-  if (!linked) {
-    await unlink(staged.path).catch(() => {});
-    return "not-writable";
-  }
+    if (!overwrite) rmSync(from, { force: true });
+    return "published" as const;
+  });
+
+  await staged.handle.close().catch(() => {});
+  const outcome: Refusal | "published" = anchored.ok
+    ? anchored.value
+    : "outside";
+  if (outcome === "published") return null;
   await unlink(staged.path).catch(() => {});
-  return null;
+  return outcome;
+}
+
+async function discard(staged: Staged): Promise<void> {
+  await staged.handle.close().catch(() => {});
+  await unlink(staged.path).catch(() => {});
 }

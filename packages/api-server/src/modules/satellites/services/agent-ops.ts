@@ -161,6 +161,9 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         agentId,
         tool,
         args,
+        transferDirection:
+          satellite.tools.find((entry) => entry.name === tool)?.transfer ??
+          null,
         status: "queued",
         expiresAt: new Date(at.getTime() + JOB_TTL_MS),
         maxConcurrent: satellite.maxConcurrent,

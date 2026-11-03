@@ -108,9 +108,7 @@ export function createSatelliteFileRoutes(deps: {
     if (job === null || job.status !== "running")
       return c.json({ error: "no_running_job" }, 409);
 
-    const satellite = await deps.repo.get(user.sub, name.data);
-    const tool = satellite?.tools.find((entry) => entry.name === job.tool);
-    if (tool?.transfer !== direction)
+    if (job.transferDirection !== direction)
       return c.json({ error: "wrong_direction" }, 403);
 
     const hash = await deps.repo.transferTokenHashOf(
@@ -191,12 +189,15 @@ export function createSatelliteFileRoutes(deps: {
       );
       body.on("error", () => {});
 
+      const destination = destinationOf(job, token.slice(0, 8), name.data);
       const agent = deps.transferFor(job.agentId);
       const staged = await agent
-        .stage(
+        .stage({
           body,
-          Number.isFinite(declared) && declared > 0 ? declared : undefined,
-        )
+          path: destination,
+          declaredBytes:
+            Number.isFinite(declared) && declared > 0 ? declared : undefined,
+        })
         .catch(() => ({ ok: false as const, reason: "aborted" as const }));
       if (received > cap) return c.json({ error: "transfer_too_large" }, 413);
       if (!staged.ok) return c.json({ error: "workspace_refused" }, 409);
@@ -205,10 +206,7 @@ export function createSatelliteFileRoutes(deps: {
         return c.json({ error: "no_running_job" }, 409);
 
       const published = await agent
-        .publish({
-          id: staged.id,
-          path: destinationOf(job, token.slice(0, 8), name.data),
-        })
+        .publish({ id: staged.id, path: destination })
         .catch(() => ({ ok: false as const, reason: "refused" as const }));
       if (!published.ok)
         return c.json(
@@ -254,28 +252,35 @@ export function createSatelliteFileRoutes(deps: {
       if (!(await spend(owner, job, token, "upload")))
         return c.json({ error: "no_running_job" }, 409);
 
-      const read = await deps
-        .transferFor(job.agentId)
-        .read(path)
-        .catch(() => ({ ok: false as const, reason: "refused" as const }));
-      if (!read.ok)
-        return c.json(
-          {
-            error:
-              read.reason === "not-found"
-                ? "not_found"
-                : read.reason === "too-large"
-                  ? "transfer_too_large"
-                  : "workspace_refused",
-          },
-          read.reason === "not-found"
-            ? 404
-            : read.reason === "too-large"
-              ? 413
-              : 409,
+      /**
+       * UNIT_BOUNDARY_DESCRIPTION: The Job this stream belongs to, as it was at
+       * the moment the token was spent. A Satellite's sequence numbers restart
+       * when it is registered again, so "the same owner, Satellite and sequence"
+       * is not the same Job: a running successor must not keep a predecessor's
+       * stream alive, and a Job that ended must not deliver another byte.
+       */
+      const claim = {
+        agentId: job.agentId,
+        createdAt: job.createdAt.getTime(),
+        startedAt: job.startedAt?.getTime() ?? null,
+      };
+      const stillOurs = async (): Promise<boolean> => {
+        const current = await deps.repo.getJob(
+          owner,
+          job.satellite,
+          job.sequence,
         );
+        return (
+          current !== null &&
+          current.status === "running" &&
+          current.agentId === claim.agentId &&
+          current.createdAt.getTime() === claim.createdAt &&
+          (current.startedAt?.getTime() ?? null) === claim.startedAt
+        );
+      };
 
       let sent = 0;
+      let stream: Readable | null = null;
       let announced = false;
       const finished = (
         outcome: "delivered" | "job_ended" | "aborted",
@@ -294,26 +299,79 @@ export function createSatelliteFileRoutes(deps: {
           outcome,
         });
       };
+      const revoke = (): void => {
+        finished("job_ended");
+        stream?.destroy(new Error("job ended"));
+      };
+
       const watcher = setInterval(() => {
-        void deps.repo
-          .getJob(owner, job.satellite, job.sequence)
-          .then((current) => {
-            if (current?.status === "running" || read.stream.destroyed) return;
-            finished("job_ended");
-            read.stream.destroy(new Error("job ended"));
+        if (announced) return;
+        void stillOurs()
+          .then((ours) => {
+            if (!ours) revoke();
           })
           .catch(() => {});
       }, reCheckMs);
 
-      read.stream.on("data", (chunk: Buffer) => {
-        sent += chunk.length;
+      const read = await deps
+        .transferFor(job.agentId)
+        .read(path)
+        .catch(() => ({ ok: false as const, reason: "refused" as const }));
+      if (announced) return c.json({ error: "no_running_job" }, 409);
+      if (!(await stillOurs())) {
+        revoke();
+        return c.json({ error: "no_running_job" }, 409);
+      }
+      if (!read.ok) {
+        finished("aborted");
+        return c.json(
+          {
+            error:
+              read.reason === "not-found"
+                ? "not_found"
+                : read.reason === "too-large"
+                  ? "transfer_too_large"
+                  : "workspace_refused",
+          },
+          read.reason === "not-found"
+            ? 404
+            : read.reason === "too-large"
+              ? 413
+              : 409,
+        );
+      }
+      if (read.size > cap) {
+        finished("aborted");
+        read.stream.destroy();
+        return c.json({ error: "transfer_too_large" }, 413);
+      }
+
+      stream = read.stream;
+      const limiter = new Transform({
+        transform(chunk: Buffer, _encoding, done) {
+          sent += chunk.length;
+          if (sent > cap) {
+            finished("aborted");
+            done(new Error("transfer_too_large"));
+            return;
+          }
+          done(null, chunk);
+        },
       });
+      read.stream.pipe(limiter);
       read.stream.on("end", () => finished("delivered"));
-      read.stream.on("close", () => finished("aborted"));
-      read.stream.on("error", () => finished("aborted"));
+      read.stream.on("error", (err: Error) => {
+        finished("aborted");
+        limiter.destroy(err);
+      });
+      read.stream.on("close", () => {
+        if (read.stream.readableEnded) return;
+        finished("aborted");
+        limiter.destroy(new Error("the transfer was stopped"));
+      });
 
       return new Response(
-        Readable.toWeb(read.stream) as ReadableStream<Uint8Array>,
+        Readable.toWeb(limiter) as ReadableStream<Uint8Array>,
         {
           status: 200,
           headers: {
