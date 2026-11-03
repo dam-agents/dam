@@ -179,6 +179,7 @@ export function createWorker(deps: {
   let connected = false;
   let everConnected = false;
   let incarnation: string | undefined;
+  let fenced = false;
   const slotWaiters = new Set<() => void>();
   let cancelPoll: Promise<void> | null = null;
   const stopWaiters = new Set<() => void>();
@@ -279,8 +280,20 @@ export function createWorker(deps: {
    * starts over, so settling its #1 with this machine's #1 would be wrong — and
    * a result claimed before the platform named registrations cannot be told
    * from that other machine's, so it is never replayed at all.
+   *
+   * Nothing is replayed to a server that does not name registrations: a fence
+   * the endpoint ignores is no fence, and a result sent there could settle the
+   * Job of a machine that replaced this one.
    */
   async function flushUnsent(): Promise<void> {
+    if (unsent.size > 0 && !fenced) {
+      for (const sequence of unsent.keys())
+        log.line(
+          `dropping the outcome of ${name}#${sequence}: this server does not name registrations, so it cannot tell this machine's Job from another's — the Job is settled as interrupted`,
+        );
+      unsent.clear();
+      return;
+    }
     for (const [sequence, entry] of [...unsent]) {
       if (entry.incarnation === undefined) {
         unsent.delete(sequence);
@@ -357,6 +370,7 @@ export function createWorker(deps: {
             ...(incarnation === undefined ? {} : { resume: incarnation }),
           }),
         );
+        fenced = registered?.incarnation !== undefined;
         if (registered?.incarnation !== undefined)
           incarnation = registered.incarnation;
       } catch (err) {
@@ -655,12 +669,13 @@ export function createWorker(deps: {
       backend.killAll();
       const reports = [...running].map((sequence) => {
         const at = claimed.get(sequence);
-        if (at === undefined || at !== incarnation) return Promise.resolve();
+        if (fenced ? at !== incarnation : at !== undefined)
+          return Promise.resolve();
         return transport
           .report({
             satellite: name,
             sequence,
-            incarnation: at,
+            ...(at === undefined ? {} : { incarnation: at }),
             outcome: {
               status: "interrupted",
               reason: "the satellite was stopped while this job was running",

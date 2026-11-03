@@ -188,40 +188,58 @@ function throwIfRemoved(err: unknown, satellite: string): never {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: How the worker's calls reach the platform, and how
- * a server that does not name registrations is written to. A capability the
- * server lacks is not sent: connect's answer says whether this one names
- * registrations, and only then does a drain travel as anything but the bare
- * name it has always been — a new CLI against an older server must not lose its
- * drain to a validation error.
+ * UNIT_BOUNDARY_DESCRIPTION: A failure that means the endpoint did not
+ * understand the shape of the call, which is what an older server answers to a
+ * drain that names a registration. It says nothing about whether the Satellite
+ * is there, so it is the one failure a fallback may answer.
+ */
+function rejectsAsUnknownShape(err: unknown): boolean {
+  return (
+    err instanceof TRPCClientError &&
+    (err.data as { code?: string } | undefined)?.code === "BAD_REQUEST"
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How the worker's calls reach the platform. A drain
+ * names the registration it serves only to a server that takes it: the shape the
+ * call carries is decided by what this request accepts, because a rolling
+ * deployment can have the connect answered by one replica and the drain by
+ * another, so the answer to a connect says nothing about the next request. A
+ * server that does not understand the newer shape is answered in the bare-name
+ * form every version takes.
  */
 export function transportFor(trpc: TrpcClient): WorkerTransport {
-  let namesRegistrations = false;
   return {
-    connect: async ({ manifest, host, resume }) => {
-      const registered = await trpc.satellites.connect
+    connect: async ({ manifest, host, resume }) =>
+      trpc.satellites.connect
         .mutate({
           manifest,
           host,
           ...(resume === undefined ? {} : { resume }),
         })
-        .catch((err: unknown) => throwIfRemoved(err, manifest.name));
-      namesRegistrations = registered?.incarnation !== undefined;
-      return registered;
-    },
+        .catch((err: unknown) => throwIfRemoved(err, manifest.name)),
     claim: (input) =>
       trpc.satellites.claim
         .mutate(input)
         .catch((err: unknown) => throwIfRemoved(err, input.satellite)),
     heartbeat: (input) => trpc.satellites.heartbeat.mutate(input),
     report: (input) => trpc.satellites.report.mutate(input),
-    drain: (input) =>
-      namesRegistrations && input.incarnation !== undefined
-        ? trpc.satellites.drain.mutate({
-            satellite: input.satellite,
-            incarnation: input.incarnation,
-          })
-        : trpc.satellites.drain.mutate(input.satellite),
+    drain: async (input) => {
+      if (input.incarnation === undefined) {
+        await trpc.satellites.drain.mutate(input.satellite);
+        return;
+      }
+      try {
+        await trpc.satellites.drain.mutate({
+          satellite: input.satellite,
+          incarnation: input.incarnation,
+        });
+      } catch (err) {
+        if (!rejectsAsUnknownShape(err)) throw err;
+        await trpc.satellites.drain.mutate(input.satellite);
+      }
+    },
   };
 }
 

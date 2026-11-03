@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { TRPCClientError } from "@trpc/client";
 import type { CompatService, ConfigService } from "../modules/cli/index.js";
 import type { CompatVerdict } from "../modules/cli/domain/compat.js";
 import type {
@@ -337,59 +338,112 @@ function runToolFixture() {
 }
 
 describe("talking to a server that names no registrations", () => {
+  const registrationId = "22222222-2222-4222-8222-222222222222";
+
+  function clientWith(
+    drain: (input: unknown) => Promise<void>,
+  ): Parameters<typeof transportFor>[0] {
+    return {
+      satellites: {
+        connect: { mutate: async () => undefined },
+        claim: { mutate: async () => [] },
+        heartbeat: { mutate: async () => {} },
+        report: { mutate: async () => {} },
+        drain: { mutate: drain },
+      },
+    } as never;
+  }
+
+  function badRequest(): Error {
+    return TRPCClientError.from({
+      error: {
+        code: -32600,
+        message: "invalid input",
+        data: { code: "BAD_REQUEST" },
+      },
+    } as never);
+  }
+
   /**
    * TEST_SCENARIO: A drain used to be the bare name, and an older server still
    * validates it as one. Sending the object a newer server accepts would lose
    * the drain to a validation error, leaving the worker online and not draining
-   * while it waits for its last job, so the wire shape follows what the server
-   * said it has.
+   * while it waits for its last job, so a shape the endpoint refuses is retried
+   * in the one every version takes.
    */
-  it("sends a drain in the shape the server understands", async () => {
+  it("falls back to the bare name when the server does not understand the fenced drain", async () => {
     const drains: unknown[] = [];
-    const registrationId = "22222222-2222-4222-8222-222222222222";
-    const connect = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce({ incarnation: registrationId });
-    const trpc = {
-      satellites: {
-        connect: { mutate: connect },
-        claim: { mutate: async () => [] },
-        heartbeat: { mutate: async () => {} },
-        report: { mutate: async () => {} },
-        drain: {
-          mutate: async (input: unknown) => {
-            drains.push(input);
-          },
-        },
-      },
-    };
-    const transport = transportFor(trpc as never);
-    const registration = { name: "gpu-box", maxConcurrent: 1, tools: [] };
+    const transport = transportFor(
+      clientWith(async (input) => {
+        drains.push(input);
+        if (typeof input !== "string") throw badRequest();
+      }),
+    );
 
-    await transport.connect({ manifest: registration, host: HOST });
-    await transport.drain({
-      satellite: "gpu-box",
-      incarnation: "11111111-1111-4111-8111-111111111111",
-    });
-    expect(
-      satelliteNameSchema.safeParse(drains[0]).success,
-      "an older server is sent the bare name it validates",
-    ).toBe(true);
-
-    await transport.connect({
-      manifest: registration,
-      host: HOST,
-      resume: registrationId,
-    });
     await transport.drain({
       satellite: "gpu-box",
       incarnation: registrationId,
     });
+
     expect(
-      drainInputSchema.safeParse(drains[1]).success,
-      "a server that names registrations is told which one drains",
+      drains.map((input) => typeof input),
+      "the fenced shape first, then the legacy one",
+    ).toEqual(["object", "string"]);
+    expect(
+      satelliteNameSchema.safeParse(drains[1]).success,
+      "the fallback is the shape an older server validates",
     ).toBe(true);
-    expect(typeof drains[1], "and it is the fenced shape").toBe("object");
+  });
+
+  /**
+   * TEST_SCENARIO: A newer server takes the fenced shape straight away, and the
+   * request names the registration that is draining.
+   */
+  it("sends a fenced drain to a server that takes it", async () => {
+    const drains: unknown[] = [];
+    const transport = transportFor(
+      clientWith(async (input) => {
+        drains.push(input);
+      }),
+    );
+
+    await transport.drain({
+      satellite: "gpu-box",
+      incarnation: registrationId,
+    });
+
+    expect(drains).toHaveLength(1);
+    expect(drainInputSchema.safeParse(drains[0]).success).toBe(true);
+    expect(drains[0]).toEqual({
+      satellite: "gpu-box",
+      incarnation: registrationId,
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: A removal answers NOT_FOUND, which is the platform saying
+   * the Satellite is gone rather than that it did not understand the call. Falling
+   * back there would send an unfenced drain at a name that may already belong to
+   * another machine, so the failure travels on.
+   */
+  it("does not fall back on an answer that is not a shape error", async () => {
+    const drains: unknown[] = [];
+    const transport = transportFor(
+      clientWith(async (input) => {
+        drains.push(input);
+        throw TRPCClientError.from({
+          error: {
+            code: -32004,
+            message: "not found",
+            data: { code: "NOT_FOUND" },
+          },
+        } as never);
+      }),
+    );
+
+    await expect(
+      transport.drain({ satellite: "gpu-box", incarnation: registrationId }),
+    ).rejects.toThrow();
+    expect(drains, "one attempt, no unfenced fallback").toHaveLength(1);
   });
 });

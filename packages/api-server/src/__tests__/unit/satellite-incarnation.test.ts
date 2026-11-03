@@ -251,7 +251,7 @@ describe("admission against a registration that changes underneath it", () => {
   function ops(repo: Record<string, unknown>) {
     return createSatelliteAgentOps({
       repo: {
-        grantedNames: async () => [{ owner: "alice", name: "gpu-box" }],
+        grantedSatellite: async () => satellite(),
         get: async () => satellite(),
         activeJobs: async () => [],
         ...repo,
@@ -465,5 +465,105 @@ describe("the statements that own a registration", () => {
         incarnation: OLD,
       }),
     ).resolves.toEqual({ stale: true });
+  });
+});
+
+describe("an agent's access to one registration", () => {
+  function ops(repo: Record<string, unknown>) {
+    return createSatelliteAgentOps({
+      repo: {
+        get: async () => satellite(),
+        activeJobs: async () => [],
+        getJob: async () => null,
+        ...repo,
+      } as never,
+      ownerOf: async () => "alice",
+      spillLog: async () => null,
+    });
+  }
+
+  /**
+   * TEST_SCENARIO: A grant is keyed by name, and the name can be registered
+   * again while an Agent's access is being checked. Reading the grant and the
+   * Satellite separately would let an old grant authorize the machine that
+   * replaced the one it was given to, so both come from one statement — and a
+   * grant that only exists for a registration that is gone authorizes nothing.
+   */
+  it("refuses an Agent's access that belongs to a replaced registration", async () => {
+    const worker = ops({
+      grantedNames: async () => [{ owner: "alice", name: "gpu-box" }],
+      grantedSatellite: async () => null,
+      insertJob: async () => ({
+        sequence: 1,
+        owner: "alice",
+        satellite: "gpu-box",
+        agentId: "agent-1",
+        tool: "run",
+        args: {},
+        status: "queued",
+      }),
+    });
+    await expect(
+      worker.start("agent-1", "gpu-box", "run", { cmd: ["./x"] }),
+    ).rejects.toThrow(/no access|no satellite/);
+  });
+
+  it("admits through the satellite and grant that were read together", async () => {
+    const reads: string[] = [];
+    const worker = ops({
+      grantedSatellite: async () => {
+        reads.push("granted");
+        return satellite();
+      },
+      insertJob: async () => ({
+        sequence: 1,
+        owner: "alice",
+        satellite: "gpu-box",
+        agentId: "agent-1",
+        tool: "run",
+        args: {},
+        status: "queued",
+      }),
+    });
+    await worker.start("agent-1", "gpu-box", "run", { cmd: ["./x"] });
+    expect(reads).toEqual(["granted"]);
+  });
+
+  /**
+   * TEST_SCENARIO: The MCP cancellation path authorizes against a Job and then
+   * writes a cancellation. The name can be registered again in between, and the
+   * new machine's number 1 is a different Job, so both writes carry the
+   * registration the Job was read under.
+   */
+  it("cancels through the MCP path only in the registration it read", async () => {
+    const requested: unknown[][] = [];
+    const settled: unknown[][] = [];
+    const worker = ops({
+      grantedSatellite: async () => satellite(),
+      getJob: async () => ({
+        owner: "alice",
+        satellite: "gpu-box",
+        sequence: 1,
+        agentId: "agent-1",
+        status: "running",
+        tool: "run",
+        args: {},
+        output: null,
+        truncated: false,
+        exitCode: null,
+        isError: false,
+        reason: null,
+      }),
+      requestCancel: async (...args: unknown[]) => {
+        requested.push(args);
+      },
+      settle: async (...args: unknown[]) => {
+        settled.push(args);
+        return null;
+      },
+    });
+    await worker.cancel("agent-1", "gpu-box", 1);
+    expect(requested[0]?.at(-1)).toBe(OLD);
+    expect(settled, "a running job is cancelled, not settled").toHaveLength(0);
   });
 });

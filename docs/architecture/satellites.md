@@ -206,6 +206,7 @@ One that did exit is started again, and the tool list it comes back with is **re
 It is replayed only to the **registration it was claimed under**: a name registered again starts its Job sequence over, so an old machine's `#1` is not the new machine's `#1`, and the platform settles a report that names the wrong registration as nothing at all.
 A rollout moves the two ends apart for a while, so a missing identity is read as *unknown* rather than as *different*, and the worker keeps the registration it last learned.
 A result claimed before the platform could name a registration is never replayed, though: the worker cannot tell it from the same number of a machine registered since, so it says so and lets the lease settle that Job as interrupted.
+Nor is one sent to a server that does not name registrations: a fence the receiving endpoint ignores is no fence, and a rolling deployment can answer one call from a newer replica and the next from an older one, so each request is shaped by what that endpoint takes.
 Beyond the lease, the sweep settles the Job as interrupted and the Agent is told its outcome is unknown, so a call in flight during a drop ends in a sentence rather than a wait.
 A call made while the Satellite is offline never starts at all: admission refuses it and says since when the machine has been gone ([Admission](#admission)).
 

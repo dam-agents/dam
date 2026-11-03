@@ -278,6 +278,31 @@ export function createSatellitesRepository(db: Db) {
         );
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: One agent's access to one Satellite, read in a
+     * statement that only answers when both are there. The grant is keyed by
+     * name, and a name can be registered again while an Agent's access is being
+     * checked, so a grant read beside a separate row read could authorize the
+     * machine that replaced the one it was given to.
+     */
+    async grantedSatellite(
+      agentId: string,
+      owner: string,
+      name: string,
+    ): Promise<SatelliteRow | null> {
+      const rows = await db
+        .select()
+        .from(satellites)
+        .where(
+          and(
+            eq(satellites.owner, owner),
+            eq(satellites.name, name),
+            sql`exists (select 1 from ${satelliteGrants} where ${satelliteGrants.agentId} = ${agentId} and ${satelliteGrants.owner} = ${satellites.owner} and ${satelliteGrants.name} = ${satellites.name})`,
+          ),
+        );
+      return rows[0] ? toSatellite(rows[0]) : null;
+    },
+
     async grantedNames(
       agentId: string,
     ): Promise<{ owner: string; name: string }[]> {

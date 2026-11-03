@@ -267,7 +267,7 @@ describe("a job that finishes while its agent is waiting", () => {
     });
     const repo = composition.repo as unknown as Record<string, unknown>;
     repo.get = async () => satellite();
-    repo.grantedNames = async () => [{ owner: "alice", name: "gpu-box" }];
+    repo.grantedSatellite = async () => satellite();
     repo.isGranted = async () => true;
     repo.markAwaited = async () => {
       calls.push("markAwaited");

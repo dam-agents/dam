@@ -928,49 +928,49 @@ describe("surviving a drop", () => {
 
   /**
    * TEST_SCENARIO: A server from before the registration identity answers a
-   * connect with no incarnation of its own. The worker already knows which
+   * reconnect with no incarnation of its own. The worker already knows which
    * registration it serves, and that knowledge must not be replaced by nothing:
-   * a rollout that lands the worker on an older replica would otherwise throw
-   * away a result whose Job is still leased.
+   * every later call it makes names the registration, so a rollout that lands the
+   * worker on an older replica does not lose track of the machine it is.
    */
   it("keeps the registration it knows when the server does not name one", async () => {
     const queue = pollQueue();
-    const reports: number[] = [];
+    const claims: (string | undefined)[] = [];
+    const reports: (string | undefined)[] = [];
     let connectCalls = 0;
-    let reportCalls = 0;
+    let claimCalls = 0;
     const transport: WorkerTransport = {
       connect: async () => {
         connectCalls += 1;
         return connectCalls === 1 ? { incarnation: "reg-1" } : undefined;
       },
-      claim: queue.binding,
+      claim: async (input) => {
+        claims.push(input.incarnation);
+        claimCalls += 1;
+        if (claimCalls === 1) return [runItem(1, ["/bin/echo", "hello"])];
+        if (claimCalls === 2) throw new Error("fetch failed");
+        if (claimCalls === 3) return [runItem(2, ["/bin/echo", "hello"])];
+        return queue.binding();
+      },
       heartbeat: async () => {},
       drain: async () => queue.release(),
       report: async (input) => {
-        reportCalls += 1;
-        if (reportCalls === 1) throw new Error("fetch failed");
-        reports.push(input.sequence);
+        reports.push(input.incarnation);
       },
     };
-    const { worker, lines } = workerWith(transport);
+    const { worker } = workerWith(transport);
 
     const running = worker.start();
-    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
-    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
-    await vi.waitFor(() =>
-      expect(
-        lines.some((line) => line.startsWith("could not report test-box#1")),
-      ).toBe(true),
-    );
-    queue.polls[1]?.reject(new Error("fetch failed"));
-    await vi.waitFor(() => expect(reports).toEqual([1]), { timeout: 5000 });
+    await vi.waitFor(() => expect(reports).toHaveLength(2), { timeout: 5000 });
     await worker.drain();
     await running;
 
+    expect(connectCalls).toBeGreaterThanOrEqual(2);
     expect(
-      lines.some((line) => line.startsWith("dropping the outcome")),
-      "the same registration, so the result is still this worker's to send",
-    ).toBe(false);
+      reports,
+      "the registration outlives a server that stopped naming it",
+    ).toEqual(["reg-1", "reg-1"]);
+    expect(claims.at(-1)).toBe("reg-1");
   });
 
   /**
@@ -1188,6 +1188,63 @@ describe("surviving a drop", () => {
       reports,
       "the replacement's $1 is never settled with this machine's result",
     ).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that has learned a registration reconnects and
+   * reaches an older server, which ignores the identity it is sent. A result
+   * held from before that reconnect would be settled by name and number alone —
+   * onto whatever machine holds the name now — so nothing is replayed to a server
+   * that does not name registrations.
+   */
+  it("replays nothing to a server that does not name registrations", async () => {
+    const queue = pollQueue();
+    const reports: { sequence: number; incarnation?: string }[] = [];
+    let connectCalls = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connectCalls += 1;
+        return connectCalls === 1 ? { incarnation: "reg-1" } : undefined;
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        reports.push({
+          sequence: input.sequence,
+          ...(input.incarnation === undefined
+            ? {}
+            : { incarnation: input.incarnation }),
+        });
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() =>
+      expect(
+        lines.some((line) => line.startsWith("could not report test-box#1")),
+      ).toBe(true),
+    );
+    queue.polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(
+      () =>
+        expect(
+          lines.some((line) =>
+            line.startsWith("dropping the outcome of test-box#1"),
+          ),
+        ).toBe(true),
+      { timeout: 5000 },
+    );
+    await worker.drain();
+    await running;
+
+    expect(reports, "a fence an endpoint ignores is no fence").toEqual([]);
   });
 
   /**
