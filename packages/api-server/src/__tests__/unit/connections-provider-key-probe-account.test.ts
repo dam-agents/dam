@@ -93,7 +93,12 @@ describe("provider key probe account", () => {
   // TEST_SCENARIO: an Anthropic or OpenAI API key has no profile route it may read, so the check names the organization of the model list's response header.
   it.each([
     ["anthropic", ANTHROPIC_MODELS, "anthropic-organization-id", "org-uuid"],
-    ["openai", "https://api.openai.com/v1/models", "openai-organization", "acme"],
+    [
+      "openai",
+      "https://api.openai.com/v1/models",
+      "openai-organization",
+      "acme",
+    ],
   ])(
     "names the organization header of a %s key",
     async (templateId, url, header, value) => {
