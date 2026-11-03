@@ -16,8 +16,8 @@ import { configureLogger } from "../../core/logger.js";
  * work; a provider that cannot be reached does not block the save. The result
  * and its time are kept on the connection and listed with it, and a recheck
  * probes every stored provider key again, records the new result, and logs a
- * refused or unverified one. A Bedrock key is checked in the region its
- * Connection serves.
+ * refused or unverified one. The account a passed check names is kept with
+ * its result. A Bedrock key is checked in the region its Connection serves.
  */
 
 const logLines: string[] = [];
@@ -162,6 +162,28 @@ describe("provider key recheck", () => {
     const [view] = await svc.listConnections();
     expect(view?.keyCheck).toMatchObject({ result: "ok" });
     expect(Date.parse(view!.keyCheck!.checkedAt)).not.toBeNaN();
+  });
+
+  // TEST_SCENARIO: the account a passed check names is kept with the result, so `dam connection list --providers --json` shows it on the key check and on the credential check alike, and a recheck replaces it.
+  it("keeps the account a passed check names", async () => {
+    const saved = makeService({ ok: true, account: "user@example.com" });
+    const id = await connect(saved.svc, "anthropic-oauth", "sk-ant-oat");
+    const [view] = await saved.svc.listConnections();
+    expect(view?.keyCheck).toMatchObject({
+      result: "ok",
+      account: "user@example.com",
+    });
+    expect(view?.check).toMatchObject({
+      status: "passed",
+      account: "user@example.com",
+    });
+
+    const later = makeService({ ok: true });
+    for (const [rowId, row] of saved.rows) later.rows.set(rowId, row);
+    for (const [path, fields] of saved.secrets) later.secrets.set(path, fields);
+    const [result] = await later.svc.recheckProviderKeys();
+    expect(result).toMatchObject({ connectionId: id, check: { result: "ok" } });
+    expect(result?.check).not.toHaveProperty("account");
   });
 
   // TEST_SCENARIO: each stored provider key is probed again with the stored value, and the result per connection is ok, refused with the HTTP detail or unverified with its detail; the new result replaces the stored one.

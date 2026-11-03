@@ -1133,7 +1133,12 @@ export function createConnectionsService(deps: {
   ): ProviderKeyCheck | null {
     const checkedAt = new Date().toISOString();
     if (outcome.ok) {
-      return outcome.unchecked ? null : { result: "ok", checkedAt };
+      if (outcome.unchecked) return null;
+      return {
+        result: "ok",
+        ...(outcome.account ? { account: outcome.account } : {}),
+        checkedAt,
+      };
     }
     securityLog("warn", "connection.provider_key_probe_failed", {
       category: "credential",
