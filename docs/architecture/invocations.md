@@ -1,11 +1,11 @@
 # Invocations
 
-Last verified: 2026-10-23
+Last verified: 2026-10-30
 
 ## Overview
 
 An **Invocation** is a run-once request from one Agent to another: a **Driver** asks a **target** to do one piece of work and return one result that matches a JSON Schema the Driver supplied, or, for a script, the script's exit code and output.
-The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped as soon as the Invocation goes terminal.
+The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped soon after the Invocation goes terminal ([Outcomes](#outcomes)).
 
 A Driver reaches Invocations two ways.
 A script — a loop an agent wrote that fans work out and gathers the results — speaks over the per-agent HTTP surface on the harness port through the [Driver SDK](#driver-sdk).
@@ -49,6 +49,7 @@ It resolves each choice in one order: the calling Session's **platform sub-agent
 The model has no harness default: a spawn onto a routed provider that ends with no model is refused at once, telling the agent to name one, since the target's runtime refuses a turn without a model ([harness configuration](harness-config.md)); a spawn of an image alone and one on Bedrock keep their own choices.
 The Session's settings follow only its model: once the settings or the spawn name a model, they stay behind, since they may not hold for it.
 A set harness binds: a spawn naming another is refused, and a spawn naming neither harness nor image gets it; a set model, mode or config option outranks the spawn's, and the result names what the settings set.
+With no set harness, a `spawn_subagent` call naming neither harness nor image runs on the agent's own harness, since models read the harness as optional and leave it out; a driver script's spawn still names one.
 The Session's harness supplies its model and each setting its harness binds, except model-valued ones, ones for the harness's own subagents, and a choice its catalog marks as waiting for a person's approval, since nobody is there to give one.
 A spawn on an image alone keeps its own choices, and a script spawn has no Session, so neither binds nor inherits.
 A script spawn that names no model takes the Driver's saved chat default instead, when that default runs on the harness the spawn names: the owner chose that model, so the sub-agent runs on it rather than being refused.
@@ -64,7 +65,8 @@ The delegation view shows its user the same: each target's card names the model 
 The delegation card and the root Driver's spend rows show the label, else the first line of the prompt.
 The minted name keeps the target's prefix and its entropy either way, because that shape is how a target is still recognised as one after it is deleted and only spend rows remain ([observability](observability.md)).
 
-**The order is the workspace-event order.** The seed is queued with the create; the install is queued ahead of the task in the same delivery, so the harness opens its session on a workspace that is already seeded and bootstrapped ([runtime-delivery](runtime-delivery.md)).
+**The order is the workspace-event order.** The seed is queued with the create; the install is queued in a bump of its own ahead of the task's, so the harness opens its session on a workspace that is already seeded and bootstrapped.
+One bump would not do: its events share a version and reach the runtime in no set order ([runtime-delivery](runtime-delivery.md#applystate--state-and-events-delivery-server--agent)).
 External skills are applied the way kit apply applies them, after the target is woken.
 
 **Provider Inheritance.** A target runs on one of its Driver's model providers; a spawn never names one.
@@ -84,9 +86,14 @@ A spawn whose root Driver is at a [spend limit or the Spend Ceiling](spend-limit
 
 ## Outcomes
 
-**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — flips the Invocation to done and reaps the target 30 seconds later, so the target's closing reply and the last telemetry it exported land before its pod goes.
+**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — and flips the Invocation to done.
 The harness still sends the accepted answer back to the model, which costs one more model call; the answer tells the target to end its turn at once, so that call stays short.
-A closing call that runs longer is cut, and the spend ledger counts it as an estimate ([spend-limits](spend-limits.md#ledger)).
+**A reported target goes once its model calls have ended.** The target is reaped when the gateway meter shows no open model call of it on two checks five seconds apart, the first ten seconds after the report, so the closing reply and the last telemetry it exported land before its machine goes.
+A delete that cut the closing call would leave the meter no usage, and the spend ledger would count the call as an estimate ([spend-limits](spend-limits.md#estimates)).
+A call counts as open while the gateway still sends its records, every two seconds, so a call whose gateway went away stops counting ten seconds after its last record.
+A call that never ends does not keep the target: it is reaped 90 seconds after the report whatever still runs, since a finished target still holds its share of the owner's memory.
+When the meter cannot be read, the target is reaped 30 seconds after the report.
+The liveness sweep reaps a reported target that no wait holds any more, as after an api-server restart: from 30 seconds after the report when one read finds no open call, else at the 90-second limit.
 The schema lives on the Invocation record and never on a Kubernetes resource.
 
 **Failure says why.** A failed Invocation carries the platform's reason, because the target is gone by the time the Driver sees it.
@@ -144,7 +151,7 @@ Spend is not on the record; it stays in telemetry, keyed by the invocation id th
 The root Driver reads it per sub-agent through its own cost read, which the delegation view's figures match ([metrics — agent-facing read](metrics.md#agent-facing-read)).
 The record also names each sub-agent row in the root Driver's spend by agent, by its label, else the first line of its prompt, after the target is gone ([spend limits](spend-limits.md#grouped-read)).
 
-**The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its pod and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
+**The target's conversation is kept on the root Driver's volume.** When a target reports, and again before its reap, the platform reads the target's one session out of its pod and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
 Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest.
 Capture is best effort and bounded: it never blocks a report, never fails a reap, and **never wakes the root** — a root that is not up (sleeping, crashed, or whose script did not await its spawn) keeps no copy.
 A cascade that deletes the root itself skips capture, since the root's volume goes too.

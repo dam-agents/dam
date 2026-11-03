@@ -103,6 +103,7 @@ export interface ComposeRuntimeChannelOpts {
   onSessionDefaults: (defaults: SessionDefaultsEventPayload) => void;
   onStartupItems: (payload: StartupItemsEventPayload) => Promise<void>;
   findSessionByRef?: (ref: string) => string | undefined;
+  recordContinuation?: (sessionId: string, scheduleId: string) => void;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: LeaseEnvReader;
@@ -186,6 +187,9 @@ export async function composeRuntimeChannel(
       reporter,
       ...(opts.findSessionByRef
         ? { findSessionByRef: opts.findSessionByRef }
+        : {}),
+      ...(opts.recordContinuation
+        ? { recordContinuation: opts.recordContinuation }
         : {}),
       ...(opts.catalog ? { catalogListed: () => opts.catalog!.listed() } : {}),
       invocationWatch: opts.invocationWatch,
@@ -413,9 +417,6 @@ export async function composeRuntimeChannel(
               derivedStartMode: plugin.derivedStartMode,
             }),
             ...(nativeTemplates?.length && { nativeTemplates }),
-            ...(opts.manifests[name]?.sessionMcpEntry === false && {
-              identifiesSession: false,
-            }),
           };
         }),
         kbPublish: 2,

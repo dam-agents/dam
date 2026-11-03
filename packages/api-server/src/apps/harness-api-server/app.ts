@@ -8,6 +8,7 @@ import type {
   HarnessCatalog,
   RuntimeDeliveryService,
   SessionDirectoryService,
+  SpendCallCostReader,
   SpendStatus,
   ToolApprovalReports,
 } from "api-server-api";
@@ -107,6 +108,7 @@ export interface HarnessApiServerAppDeps {
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentTelemetry: AgentTelemetryService;
+  spendCalls: SpendCallCostReader;
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   scriptOutputs: ScriptOutputs;
@@ -118,6 +120,7 @@ export interface HarnessApiServerAppDeps {
   satellitesBoot: SatellitesComposition;
   secretStore: SecretStore;
   spendHold: SpendHoldGate;
+  openCalls: (agentId: string) => Promise<number>;
   spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
   toolApprovalsFor: (owner: string) => ToolApprovalReports;
 }
@@ -198,6 +201,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
+      openCalls: deps.openCalls,
       readHarnessConfigSupport,
       scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,
@@ -341,6 +345,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     kbPublish: kbPublishGate,
     toolApprovalsFor: deps.toolApprovalsFor,
     invocationScripts: deps.scriptOutputs,
+    spendCalls: deps.spendCalls,
   });
 
   const server = serve(

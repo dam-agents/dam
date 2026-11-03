@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-27
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -25,6 +25,7 @@ Fires are idempotent per occurrence, so at-least-once delivery cannot run one tw
 The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window.
 Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time.
 Every RRULE counts its steps from one fixed start — midnight on 1 January 2001 in the schedule's timezone, a Monday and the first of a month — so its occurrences never depend on when they are computed and stay put across restarts and re-arms: an unanchored rule defaults to midnight, weekly to Monday, monthly to the 1st.
+A `FREQ=HOURLY` or `FREQ=MINUTELY` rule with `BYHOUR` is the exception: it starts at its first `BYHOUR` hour that day (a minutely one at its first `BYMINUTE` minute of that hour) and steps in local wall-clock time, so a clock change does not move its steps off the hours it lists.
 `COUNT` is rejected, because counted from that start it would be spent, and so is `FREQ=SECONDLY`, because schedules fire at minute granularity.
 A rule with no future occurrence is rejected at save time; the occurrence search runs on the api-server's event loop, so every search is capped in the periods and candidate times it may examine, and a rule that can never fire answers at once instead of blocking it.
 An occurrence inside quiet hours resumes the search at the end of that window, and a rule still quiet after 64 windows counts as covered.
@@ -34,7 +35,7 @@ A cron expression always fires in UTC, and a cron schedule has no timezone and n
 A user edits a cron schedule they created as cron, or converts it to an RRULE to get both.
 The conversion keeps the cron fields' values and reads them in a timezone the user picks — UTC by default, so the schedule fires at the same moments — and it shows the next runs before and after.
 An expression with no exact RRULE match is not converted and stays a cron schedule: one that names both days of the month and days of the week, which cron matches as either, or one that uses `L`, `W`, `#`, `H` or seconds.
-A local time erased by the spring-forward jump is skipped, as RFC 5545 requires.
+A local time erased by the spring-forward jump is skipped, as RFC 5545 requires — except in a sub-daily rule with `BYHOUR`, which fires it one hour later, as the jump moved it.
 An enabled schedule with no next run shows why — a refused rule, one that never fires or has run out, or quiet hours that cover every remaining occurrence — worked out when the schedule is read, so it clears the moment an edit re-arms it.
 
 When a fire is due:
@@ -110,7 +111,8 @@ So agent-runtime gives every session a reference of its own and hands the harnes
 A harness that does not honour a per-session entry sends no reference, and the tool refuses to tie the task to a session rather than guess.
 Codex's ACP adapter drops a session's entry whose name its `config.toml` already holds, and the platform entry is there for the terminal's `codex`, so Codex chat processes run with that filtering off and the session's own entry wins.
 Pi's adapter takes no HTTP servers, so the reference reaches Pi another way: the image's patch of the adapter starts each session's Pi process with the reference its session carried, and the platform entry in Pi's own file names it in its header, which Pi fills in per process.
-Bob reads MCP servers only from its own files, so it gets no entry: its manifest declares `sessionMcpEntry: false`, the harness reports `identifiesSession: false`, the session picker's Subagents block says a session's platform sub-agent settings cannot pass, and `spawn_subagent` names that reason when a spawn from such a session names no model.
+Bob takes a session's entry too, but keeps one server per name and lets its own settings file's entry outrank it, and the platform entry is in that file for the terminal's `bob chat`; so Bob's chat process alone runs with a preload that hides the file's platform entry from what Bob reads and restores it in what Bob writes, and the session's own entry wins.
+A session the runtime opens for a rewind or a fork gets the entry the same way: a fork with a reference of its own, a rewind with the original's, since it takes the original's place.
 The turn that lands in the scheduling session runs **unattended**, as a scheduled fire does, even in a person's chat with no tab open — a permission request in it waits on Home for a verdict the way a detached run's does, and expires only when nobody answers it in time ([cli](cli.md#headless-runs)).
 If that session is gone by then, *continue* runs the task in a fresh session instead, so it is not lost; *report* drops the result, since there is nobody left to tell.
 
@@ -177,6 +179,9 @@ The session model differs by schedule mode (a one-time schedule is fresh, or lan
   A schedule that names no choices of its own runs that session on the scheduled default, and the session follows it from its next fire ([sessions](sessions.md#session-inside-the-pod)).
 
 The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`, or `schedule_once` for a one-time schedule) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the PVC.
+A one-time task that continues its scheduling session opens no session of its own, so the session it continued records the schedule on itself, and a schedule's sessions are the ones it opened plus the ones it continued.
+That is how the schedules tab reaches the chat a check-back ran in.
+The list is not the session's `scheduleId`: a chat continued by several tasks belongs to each of them, and stays a chat.
 Boot recovery moves that binding when it re-runs a continuous schedule's cut first turn in a fresh session, so the next fire continues the session that holds the work instead of one it retired.
 Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh.
 Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session.

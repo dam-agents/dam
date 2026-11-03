@@ -4,6 +4,7 @@ import {
   createWorld,
   frames,
   type Client,
+  type SessionMetadata,
   type World,
 } from "./acp-world.js";
 import type { HistoryProvider } from "../../../infrastructure/history-provider.js";
@@ -94,12 +95,17 @@ async function settle(): Promise<void> {
 
 async function readyWorld(
   histories: Record<string, string[]>,
-): Promise<{ world: World; bob: Client }> {
+  refs: string[] = [],
+): Promise<{ world: World; bob: Client; metadata: SessionMetadata }> {
   const metadata = createSessionMetadata();
-  metadata.store.set(SESSION, {});
+  metadata.store.set(SESSION, { ref: "ref-original" });
   const world = createWorld({
     sessionMetadata: metadata.store,
     historyProvider: providerOf(histories),
+    sessionMcpServers: (ref) => {
+      refs.push(ref);
+      return [{ name: "platform-outbound", ref }];
+    },
   });
   const bob = world.connect();
   bob.send(frames.initialize(1));
@@ -107,17 +113,21 @@ async function readyWorld(
     agentCapabilities: { sessionCapabilities: { fork: {} } },
   });
   await settle();
-  return { world, bob };
+  return { world, bob, metadata };
 }
 
-function rewriteFrom(id: number, messageId: string) {
+function rewriteFrom(
+  id: number,
+  messageId: string,
+  mode: "fork" | "rewind" = "fork",
+) {
   return {
     jsonrpc: "2.0",
     id,
     method: "platform/rewriteFrom",
     params: {
       sessionId: SESSION,
-      mode: "fork",
+      mode,
       messageId,
       prompt: [
         { type: "text", text: "I changed my mind, wish me the worst day!" },
@@ -189,5 +199,56 @@ describe("acp-runtime: rewriting a conversation", () => {
       "2026-10-08T07:00:30Z",
       "2026-10-08T07:00:40Z",
     ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A fork is a second session beside the original, so it
+   * gets a ref of its own on its session/fork and the original keeps its
+   * ref; two sessions under one ref would make the tools act on the wrong
+   * one.
+   */
+  it("should fork with the platform entry under a ref of its own", async () => {
+    const refs: string[] = [];
+    const { world, bob, metadata } = await readyWorld(
+      { [SESSION]: original, [COPY]: copy },
+      refs,
+    );
+
+    bob.send(rewriteFrom(2, "u2"));
+    await settle();
+    expect(world.harness().received("session/fork")[0]?.params).toMatchObject({
+      mcpServers: [{ name: "platform-outbound", ref: refs[0] }],
+    });
+    world.harness().replyTo("session/fork", { sessionId: COPY });
+    await settle();
+
+    expect(bob.reply(2)).toMatchObject({ result: { sessionId: COPY } });
+    expect(refs[0]).not.toBe("ref-original");
+    expect(metadata.store.get(COPY)?.meta.ref).toBe(refs[0]);
+    expect(metadata.store.get(SESSION)?.meta.ref).toBe("ref-original");
+  });
+
+  /**
+   * TEST_SCENARIO: A rewind by copy takes the original's place and the
+   * original goes, so the copy keeps the original's ref: a check-back the
+   * original scheduled with `continue` must still find its session.
+   */
+  it("should rewind by copy under the original's ref", async () => {
+    const { world, bob, metadata } = await readyWorld({
+      [SESSION]: original,
+      [COPY]: copy,
+    });
+
+    bob.send(rewriteFrom(2, "u2", "rewind"));
+    await settle();
+    expect(world.harness().received("session/fork")[0]?.params).toMatchObject({
+      mcpServers: [{ name: "platform-outbound", ref: "ref-original" }],
+    });
+    world.harness().replyTo("session/fork", { sessionId: COPY });
+    await settle();
+    world.harness().replyTo("session/load", {});
+    await settle();
+
+    expect(metadata.store.get(COPY)?.meta.ref).toBe("ref-original");
   });
 });

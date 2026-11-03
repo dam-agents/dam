@@ -117,7 +117,7 @@ describe("slack outbound — cross-workspace reach", () => {
     const posts = vi.spyOn(h.gw, "postMessage");
     const text = "Before\n```ps -ef\nkill -9 <pid>```\nAfter.";
 
-    expect(await h.post(text)).toEqual({ ok: true });
+    expect(await h.post(text)).toMatchObject({ ok: true });
     expect(posts.mock.calls[0]![0]).toMatchObject({
       text: signed(text),
       blocks: [
@@ -179,9 +179,13 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(h.messages()).toHaveLength(0);
   });
 
-  it("omitted chatId still posts to the bound channel", async () => {
+  it("omitted chatId still posts to the bound channel, and names the post", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    expect(await h.post("hello")).toEqual({ ok: true });
+    expect(await h.post("hello")).toEqual({
+      ok: true,
+      conversationId: BOUND,
+      ts: expect.any(String),
+    });
     expect(h.messages()).toMatchObject([
       { channel: BOUND, text: signed("hello") },
     ]);
@@ -207,7 +211,7 @@ describe("slack outbound — cross-workspace reach", () => {
 
   it("bound-channel chatId short-circuits — works even when discovery knows nothing", async () => {
     const h = harness({ boundChannelId: BOUND, channels: [] });
-    expect(await h.post("hello", { conversationId: BOUND })).toEqual({
+    expect(await h.post("hello", { conversationId: BOUND })).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([{ channel: BOUND }]);
@@ -215,7 +219,9 @@ describe("slack outbound — cross-workspace reach", () => {
 
   it("posts into another channel the bot is a member of", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    expect(await h.post("update", { conversationId: "C-GENERAL" })).toEqual({
+    expect(
+      await h.post("update", { conversationId: "C-GENERAL" }),
+    ).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([{ channel: "C-GENERAL" }]);
@@ -247,8 +253,9 @@ describe("slack outbound — cross-workspace reach", () => {
       channels: workspace,
       ownerSlackUsers: ["UOWNER"],
     });
-    expect(await h.post("psst", { conversationId: "UOWNER" })).toEqual({
+    expect(await h.post("psst", { conversationId: "UOWNER" })).toMatchObject({
       ok: true,
+      conversationId: "D-UOWNER",
     });
     expect(h.messages()).toMatchObject([{ channel: "D-UOWNER" }]);
   });
@@ -276,26 +283,38 @@ describe("slack outbound — cross-workspace reach", () => {
       channels: workspace,
       ownerSlackUsers: ["UOWNER"],
     });
-    expect(await h.post("again", { conversationId: "D-UOWNER" })).toEqual({
-      ok: true,
-    });
+    expect(await h.post("again", { conversationId: "D-UOWNER" })).toMatchObject(
+      {
+        ok: true,
+      },
+    );
     expect(h.messages()).toMatchObject([{ channel: "D-UOWNER" }]);
   });
 
-  it("attachments follow the resolved target", async () => {
+  /**
+   * TEST_SCENARIO: A message with a file is one Slack post: the file is shared
+   * with the agent's text and footer on it, into the conversation the message
+   * resolved to. Posting the text and then sharing the file made two posts, so
+   * a reader saw a bare file next to the text it belonged to.
+   */
+  it("attachments follow the resolved target, on the post itself", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     const result = await h.post("report attached", {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    expect(result).toEqual({ ok: true });
-    expect(h.messages()).toMatchObject([{ channel: "C-ALERTS" }]);
+    expect(result).toEqual({ ok: true, conversationId: "C-ALERTS" });
+    expect(h.messages()).toEqual([]);
     expect(h.uploads()).toMatchObject([
-      { channelId: "C-ALERTS", filename: "report.md" },
+      {
+        channelId: "C-ALERTS",
+        filename: "report.md",
+        text: signed("report attached", "*"),
+      },
     ]);
   });
 
-  it("a reply's attachment is uploaded into the same thread", async () => {
+  it("a reply's attachment is shared into the same thread, with its text", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     await h.worker.start("agent-1");
     const result = await h.worker.reply("agent-1", {
@@ -303,10 +322,8 @@ describe("slack outbound — cross-workspace reach", () => {
       threadTs: "1700000000.000100",
       attachment: { filename: "lorem-ipsum.txt", data: Buffer.from("x") },
     });
-    expect(result).toEqual({ ok: true });
-    expect(h.messages()).toMatchObject([
-      { channel: BOUND, threadTs: "1700000000.000100" },
-    ]);
+    expect(result).toMatchObject({ ok: true });
+    expect(h.messages()).toEqual([]);
     expect(h.uploads()).toEqual([
       {
         kind: "upload",
@@ -314,13 +331,70 @@ describe("slack outbound — cross-workspace reach", () => {
         channelId: BOUND,
         filename: "lorem-ipsum.txt",
         threadTs: "1700000000.000100",
+        text: signed("lorem ipsum attached", "*"),
       },
     ]);
   });
 
   /**
-   * TEST_SCENARIO: The text is posted before the file is shared, so a failed
-   * upload leaves a delivered message behind. The send succeeded and only the
+   * TEST_SCENARIO: Slack can refuse a file share that carries the text, for
+   * example for blocks it will not take on a file. The text must still reach
+   * the conversation, so the worker falls back to the two posts: the text
+   * first, with the file's id in its metadata, then the bare file. Slack
+   * completes an upload only once, so the fallback uploads the file again.
+   */
+  it("a file share Slack refuses with the text falls back to the text, then the file", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const share = h.gw.shareFile.bind(h.gw);
+    const shared: string[] = [];
+    h.gw.shareFile = async (args) => {
+      shared.push(args.fileId);
+      if (args.blocks) throw new Error("internal_error");
+      await share(args);
+    };
+    const posts = vi.spyOn(h.gw, "postMessage");
+    const result = await h.post("report attached", {
+      conversationId: "C-ALERTS",
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    expect(result).toMatchObject({ ok: true });
+    expect(
+      h.gw
+        .readOutbound()
+        .filter((r) => r.kind === "message" || r.kind === "upload"),
+    ).toMatchObject([
+      { kind: "message", channel: "C-ALERTS", text: signed("report attached") },
+      { kind: "upload", channelId: "C-ALERTS", filename: "report.md" },
+    ]);
+    expect(h.uploads()[0]).not.toHaveProperty("text");
+    expect(shared).toEqual(["F1-report.md", "F2-report.md"]);
+    expect(posts.mock.calls[0]![0].metadata).toEqual({
+      eventType: "agent_post",
+      payload: { files: ["F2-report.md"] },
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Slack has no unfurl switch on a file share, so an agent
+   * that turns link previews off gets its text as its own post, where the
+   * switch holds, and the file after it.
+   */
+  it("a message that turns link previews off keeps them off, beside its file", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    await h.post("see https://example.com", {
+      conversationId: "C-ALERTS",
+      unfurlLinks: false,
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    expect(h.messages()).toMatchObject([
+      { channel: "C-ALERTS", unfurlLinks: false },
+    ]);
+    expect(h.uploads()).toMatchObject([{ filename: "report.md" }]);
+  });
+
+  /**
+   * TEST_SCENARIO: When the file share fails both with and without the text,
+   * the text is already posted on its own. The send succeeded and only the
    * attachment is missing, so the result says ok and names the upload failure
    * beside it. Reporting it as a plain failure would read as nothing having
    * been sent, and the agent would send the whole message a second time.
@@ -334,7 +408,7 @@ describe("slack outbound — cross-workspace reach", () => {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       attachmentError: expect.stringContaining("upload_error"),
     });
@@ -395,7 +469,7 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
     });
     expect(
       await h.worker.reply("agent-1", { ...stale, conversationId: SECOND }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     expect(h.messages()).toMatchObject([
       { channel: SECOND, threadTs: stale.threadTs },
     ]);
@@ -403,10 +477,10 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
 
   it("either bound conversation is a valid chatId", async () => {
     const h = multi();
-    expect(await h.post("one", { conversationId: BOUND })).toEqual({
+    expect(await h.post("one", { conversationId: BOUND })).toMatchObject({
       ok: true,
     });
-    expect(await h.post("two", { conversationId: SECOND })).toEqual({
+    expect(await h.post("two", { conversationId: SECOND })).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([
@@ -421,7 +495,7 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
       extraBoundChannelIds: [SECOND],
       channels: [],
     });
-    expect(await h.post("hi", { conversationId: SECOND })).toEqual({
+    expect(await h.post("hi", { conversationId: SECOND })).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([{ channel: SECOND }]);
@@ -517,7 +591,7 @@ describe("slack outbound — reach follows the owner (#4165)", () => {
     expect(listed).toContain("C-GENERAL");
     expect(listed).not.toContain("C-THEIRS");
 
-    expect(await h.post("hi", { conversationId: "C-GENERAL" })).toEqual({
+    expect(await h.post("hi", { conversationId: "C-GENERAL" })).toMatchObject({
       ok: true,
     });
     expect(await h.post("leak", { conversationId: "C-THEIRS" })).toMatchObject({
@@ -555,10 +629,10 @@ describe("slack outbound — a direct message stays within reach (#5509)", () =>
       channels,
       ownerSlackUsers: ["UOWNER"],
     });
-    expect(await h.post("hi", { conversationId: "UOWNER" })).toEqual({
+    expect(await h.post("hi", { conversationId: "UOWNER" })).toMatchObject({
       ok: true,
     });
-    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toEqual({
+    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toMatchObject({
       ok: true,
     });
     for (const conversationId of ["USTRANGER", "D-USTRANGER"]) {
@@ -578,7 +652,7 @@ describe("slack outbound — a direct message stays within reach (#5509)", () =>
       extraBoundChannelIds: ["D-UFRIEND"],
       channels,
     });
-    expect(await h.post("hi", { conversationId: "UFRIEND" })).toEqual({
+    expect(await h.post("hi", { conversationId: "UFRIEND" })).toMatchObject({
       ok: true,
     });
     expect(h.messages()).toMatchObject([{ channel: "D-UFRIEND" }]);
@@ -586,7 +660,7 @@ describe("slack outbound — a direct message stays within reach (#5509)", () =>
 
   it("an owner with no linked Slack identity reaches only members of bound conversations", async () => {
     const h = harness({ boundChannelId: BOUND, channels, ownerSlackUsers: [] });
-    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toEqual({
+    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toMatchObject({
       ok: true,
     });
     expect(

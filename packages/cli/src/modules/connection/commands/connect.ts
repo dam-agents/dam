@@ -1,5 +1,5 @@
 import { isCancel, password, text } from "@clack/prompts";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import {
   type ConnectionCreateInput,
   type ConnectionTemplateInput,
@@ -37,6 +37,7 @@ import { enterSecretOnPage, PAGE_SECRET_FIELDS } from "./secret-page.js";
 
 const POLL_INTERVAL_MS = 2000;
 const DEFAULT_TIMEOUT_SECONDS = 300;
+const SECRETS_GROUP = "Secrets (for scripts; agents leave these out):";
 
 interface ConnectOpts {
   name?: string;
@@ -97,7 +98,12 @@ export function buildConnectCommand(deps: {
     .option("--url <url>", "input: url")
     .option("--host <host>", "input: host")
     .option("--client-id <id>", "input: OAuth client id")
-    .option("--client-secret <secret>", "input: OAuth client secret")
+    .addOption(
+      new Option(
+        "--client-secret <secret>",
+        "input: OAuth client secret (client credentials: omit to enter it on a DAM web page)",
+      ).helpGroup(SECRETS_GROUP),
+    )
     .option(
       "--issuer-url <url>",
       "input: OAuth issuer URL — the token endpoint is discovered from its metadata (client credentials)",
@@ -116,9 +122,11 @@ export function buildConnectCommand(deps: {
       "--installation-id <id>",
       "input: GitHub App installation ID (GitHub App installation)",
     )
-    .option(
-      "--private-key <pem>",
-      'input: GitHub App private key — PEM or base64; use --private-key "$(cat app.pem)" (GitHub App installation)',
+    .addOption(
+      new Option(
+        "--private-key <pem>",
+        "input: GitHub App private key, PEM or base64 — omit to enter it on a DAM web page (GitHub App installation)",
+      ).helpGroup(SECRETS_GROUP),
     )
     .option(
       "--account <login>",
@@ -142,7 +150,12 @@ export function buildConnectCommand(deps: {
       "--env-name <name>",
       "input: expose the credential to the agent as this env var (custom header credentials)",
     )
-    .option("--value <value>", "input: header secret value")
+    .addOption(
+      new Option(
+        "--value <value>",
+        "input: header secret value (header credentials: omit to enter it on a DAM web page)",
+      ).helpGroup(SECRETS_GROUP),
+    )
     .option(
       "--ca-data <data>",
       "input: upstream CA certificate — PEM or base64 (a kubeconfig's certificate-authority-data)",
@@ -159,13 +172,17 @@ export function buildConnectCommand(deps: {
       "--bucket <name>",
       "input: limit the agent to this bucket (Object Storage)",
     )
-    .option(
-      "--access-key-id <id>",
-      "input: HMAC access key ID (Object Storage)",
+    .addOption(
+      new Option(
+        "--access-key-id <id>",
+        "input: HMAC access key ID — omit both keys to enter them on a DAM web page (Object Storage)",
+      ).helpGroup(SECRETS_GROUP),
     )
-    .option(
-      "--secret-access-key <key>",
-      "input: HMAC secret access key (Object Storage)",
+    .addOption(
+      new Option(
+        "--secret-access-key <key>",
+        "input: HMAC secret access key — omit both keys to enter them on a DAM web page (Object Storage)",
+      ).helpGroup(SECRETS_GROUP),
     )
     .option(
       "-c, --config <key=value>",
@@ -197,30 +214,36 @@ export function buildConnectCommand(deps: {
     )
     .addHelpText(
       "after",
-      "\nExamples:\n" +
+      "\nA missing secret (token, API key, client secret, private key, key pair)\n" +
+        "is entered on a DAM web page: the command opens it, waits until the\n" +
+        "secret is saved, and reports the result. The page shows where the secret\n" +
+        "will be sent, and takes a multi-line PEM key. Sign in there as the same\n" +
+        "user. Pass --prompt to type it at a hidden terminal prompt instead.\n" +
+        "\nExamples:\n" +
         "  dam connection connect github\n" +
-        "  dam connection connect github --client-id Iv1.… --client-secret …  # use your own OAuth app\n" +
         "  dam connection connect github --no-browser\n" +
         "  dam connection connect github --account acme --repositories api,web \\\n" +
         "      --permissions contents:read,pull_requests:write\n" +
-        "  dam connection connect github-pat   # the user enters the token on a web page\n" +
-        "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
+        "  dam connection connect github-pat   # the token is entered on a DAM web page\n" +
+        "  dam connection connect custom-header --host api.example.com \\\n" +
+        "      --header-name X-API-Key --value-format '{value}'   # the key, on the page\n" +
         "  dam connection connect custom-client-credentials --host api.example.com \\\n" +
-        "      --issuer-url https://auth.example.com/realms/main --client-id … --client-secret …\n" +
-        "  dam connection connect github-app --app-id 123456 --installation-id 987654 \\\n" +
-        '      --private-key "$(cat app.pem)"\n' +
+        "      --issuer-url https://auth.example.com/realms/main --client-id my-client \\\n" +
+        "      --header-name Authorization --value-format 'Bearer {value}'\n" +
+        "  dam connection connect github-app --app-id 123456 --installation-id 987654\n" +
         "  dam connection connect github-enterprise-app --host ghe.acme.com \\\n" +
-        '      --app-id 123456 --installation-id 987654 --private-key "$(cat app.pem)"\n' +
-        "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=agent\n" +
+        "      --app-id 123456 --installation-id 987654   # the private key, on the page\n" +
+        "  dam connection connect bob --config model=premium-shell --config chatMode=agent\n" +
         "  dam connection connect s3-compatible --endpoint https://s3.us-south.cloud-object-storage.appdomain.cloud \\\n" +
-        "      --bucket my-bucket --access-key-id … --secret-access-key …\n" +
+        "      --bucket my-bucket   # both keys, on the page\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n" +
-        "\nA missing secret (token, API key, client secret, private key, key pair)\n" +
-        "is entered on a web page of the server: the command opens it, waits until\n" +
-        "the secret is saved, and reports the result. The page shows where the\n" +
-        "secret will be sent. Sign in there as the same user. Pass --prompt to type\n" +
-        "it at a hidden terminal prompt instead.\n",
+        "\nThe secret flags are for scripts with nobody at a browser, which read the\n" +
+        "secret from their environment; an agent leaves them out:\n" +
+        '  dam connection connect github-pat --value "$GITHUB_TOKEN" --json\n' +
+        "The client secret of your own OAuth app has no page: the user passes it\n" +
+        "in a terminal of their own:\n" +
+        "  dam connection connect github --client-id Iv1.… --client-secret …\n",
     )
     .action(async (providerOrUrl: string, opts: ConnectOpts) => {
       const json = opts.json ?? false;

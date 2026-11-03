@@ -16,6 +16,6 @@ INITIAL_AGENT_MODE=agent-full-access
 # schedule_once read the session's choices from, so that copy must win.
 DISABLE_MCP_CONFIG_FILTERING=true
 export CODEX_CONFIG CODEX_PATH INITIAL_AGENT_MODE DISABLE_MCP_CONFIG_FILTERING
-# codex-acp-patch.mjs: turns off codex-acp's title generator, see the codex README.
+# codex-acp-patch.mjs: temporary fixes for codex-acp, see the codex README.
 NODE_OPTIONS="--import=/usr/local/share/codex-platform/codex-acp-patch.mjs${NODE_OPTIONS:+ $NODE_OPTIONS}" \
   exec codex-acp

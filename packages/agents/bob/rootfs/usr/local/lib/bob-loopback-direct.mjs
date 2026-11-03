@@ -4,6 +4,8 @@
  * fail. This preload sends loopback requests to the dispatcher Node installs
  * under NODE_USE_ENV_PROXY, which honours NO_PROXY, by wrapping the one
  * Object.defineProperty write undici's setGlobalDispatcher makes. */
+import { dropOwnImport } from "./bob-preload-lib.mjs";
+
 const KEY = Symbol.for("undici.globalDispatcher.2");
 const direct = globalThis[KEY];
 
@@ -34,14 +36,7 @@ const loopbackDirect = (agent) =>
  * starts (tools, MCP servers, scripts) keep their dispatchers as they are. The
  * `bob chat` TUI runs in a child that its supervisor starts with this env, and
  * the supervisor installs no agent, so the child still gets the preload. */
-const ownImport = /(^|\s)--import=\S*bob-loopback-direct\.mjs(?=\s|$)/g;
-const dropPreload = () => {
-  const remaining = (process.env.NODE_OPTIONS ?? "")
-    .replace(ownImport, " ")
-    .trim();
-  if (remaining) process.env.NODE_OPTIONS = remaining;
-  else delete process.env.NODE_OPTIONS;
-};
+const dropPreload = () => dropOwnImport("bob-loopback-direct.mjs");
 
 if (direct && typeof direct.dispatch === "function") {
   const define = Object.defineProperty;

@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-23
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -203,6 +203,7 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
 - **Providers, harnesses and defaults** are the agent's Providers page: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying and the three Session Pair defaults ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections and saves or clears a default through the same procedures the page calls, so the server keeps every rule about which pair is valid; `models` lists a harness's model catalog from the agent-runtime.
   An `update` flag changes only what it names: a new model keeps the default's harness and settings, a new harness drops the settings, since they belong to one harness.
+  Revoking a provider changes only the grants on the server, so `update --remove-provider` then moves each saved default that named the revoked Connection to a granted provider of the same alias that offers its model, and warns about each default it cannot move; a default the same `update` sets is left as set.
   A part `get` may not read, such as the providers for a key without credential-read permission, shows as unknown and leaves the rest.
 - **`--wait`** on create and restart polls until the agent settles on running (success) or error (terminal), with a bounded timeout after which the agent is left as-is and the command exits non-zero.
   A refused start — the agent parked because its owner's pool is full ([budgets](budgets.md)) — also ends the wait: it names the refusal, says how to free room, and exits non-zero, leaving the agent parked.

@@ -4,6 +4,7 @@ import type { InvocationScriptReports } from "./modules/invocations/harness.js";
 import type { KbPublishGate } from "./modules/kb-publish/harness.js";
 import type { RuntimeDeliveryService } from "./modules/runtime/types.js";
 import type { SessionDirectoryService } from "./modules/session-directory/types.js";
+import type { SpendCallCostReader } from "./modules/spend/harness.js";
 
 export interface HarnessContext {
   agentId: string;
@@ -13,4 +14,5 @@ export interface HarnessContext {
   kbPublish: KbPublishGate;
   toolApprovals: ToolApprovalReports;
   invocationScripts: InvocationScriptReports;
+  spendCalls: SpendCallCostReader;
 }

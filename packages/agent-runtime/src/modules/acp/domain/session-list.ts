@@ -40,6 +40,7 @@ export interface SessionMetaLike {
   runStartedAt?: string;
   runTotalMs?: number;
   runCount?: number;
+  continuedScheduleIds?: string[];
 }
 
 export interface SessionListPredicates {
@@ -74,6 +75,9 @@ function fromEntry(
     customTitle: entry.meta.customTitle ?? null,
     autoTitle: listed?.title ?? entry.meta.title ?? null,
     scheduleId: entry.meta.scheduleId ?? null,
+    ...(entry.continuedScheduleIds !== undefined && {
+      continuedScheduleIds: entry.continuedScheduleIds,
+    }),
     initialization: entry.meta.initialization === true,
     threadTs: entry.meta.threadTs ?? null,
     seenAt: entry.seenAt ?? null,

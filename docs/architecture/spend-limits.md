@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-22
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -127,12 +127,13 @@ A delete that no api-server replica sees leaves the agent with no name.
 
 **Session check.** The Session comes from the stamp in the agent's pod, so it serves display only, and no total and no limit depends on it.
 A call's Session counts only when the calling agent reported that Session to the [Session directory](metrics.md#session-directory); a Session that the agent never reported, or a failed check, counts as no Session.
-Bob sends no `X-Task-Id` on the first call of a new task, which asks for the model `background`, so the Model Router stamps no Session on that call and it counts as no Session.
-The totals and the limits of that call stay correct, because they do not read the Session.
+The totals and the limits of such a call stay correct, because they do not read the Session.
 The agent's own pod writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
 The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
+A new Session's first prompt waits for that report, at most two seconds ([metrics](metrics.md#session-directory)).
+A call that still counted as no Session keeps its stamp, and a job every five minutes moves such calls of the last two days to their Session once the directory knows it.
 
-**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
+**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, its stamp when it counted as no Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
 The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
 It serves the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn, the cost of each call in the turn timeline, `get_metrics` and `dam metrics`, found by the router call id within the owner's rows, the reads in hours, and the first and last call time of a Session; no limit reads it.
 A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.
@@ -166,6 +167,8 @@ A missing counter, for example after a Redis restart, is rebuilt from the rollup
 The api-server keeps the amounts it last applied for each call and adds only the difference, in one atomic step, so two replicas never count the same part twice and a call counts once.
 A periodic record that arrives after the final one changes nothing.
 
+**Open calls per agent.** Redis also keeps, per calling agent, the calls still in flight and when a record of each was last heard, so the [Invocation reaper](invocations.md#outcomes) can wait until a reported sub-agent's model calls have ended.
+
 ## Estimates
 
 DAM counts high and marks a call estimated when its usage is missing or unsure:
@@ -182,6 +185,7 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
   A real record that arrives later corrects the estimate.
 
 An estimated call keeps the Session and the calling agent of its stamp, and the gate's own row for a refused call keeps them too.
+Each estimate writes one `spend.call_estimated` log line with its reasons, whether the payer's most expensive call priced it, the calling agent and whether it is a sub-agent, the Connection, the model, the cost, the reply size and the duration, so the share of spend that estimates add can be measured.
 
 **Shutdown.** A stopping api-server takes no new streams, ends every open record stream with a success status so that each gateway reconnects to another replica and loses no record, and gives the open calls twenty seconds before it closes the port.
 
@@ -265,8 +269,8 @@ A call on a Bob Connection gets the same text inside a JSON error object, becaus
 Paths that are not metered, such as model lists and token counting, are never refused.
 Every refusal carries the `x-platform-refusal` header, so the [Model Router](harness-config.md#the-model-router) passes it to the harness unchanged and does not explain it as a provider error.
 
-**Recorded refusal.** Codex and Pi end a refused turn like a normal one, so the platform cannot see the refusal in the turn.
-So the gate counts each refusal in the day's rollup, under an unknown model, because the gate does not read the request body.
+**Recorded refusal.** The gate counts each refusal in the day's rollup itself, because it sees every refused call, whatever harness or turn made it.
+It counts the refusal under an unknown model, because the gate does not read the request body.
 
 ## Continue
 

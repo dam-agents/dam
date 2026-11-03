@@ -46,6 +46,7 @@ function makeService(row: InvocationRow) {
     } as never,
     driverResolution: { resolveRoot: async (id: string) => id },
     reaper: { reap: async () => {} },
+    reportedReap: { afterReport: () => {} },
     runtimeMutator: {} as never,
     wakeAgent: async () => {},
     readHarnessConfigSupport: async () => null,

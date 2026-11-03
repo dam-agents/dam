@@ -122,6 +122,36 @@ describe("createSessionMetadataStore", () => {
     expect(store.get("s1")?.runStartedAt).toBeUndefined();
   });
 
+  // TEST_SCENARIO: A one-time task that continues a session opens none, so the session records which schedules ran a turn in it; the record keeps each schedule once, outlives a later metadata write and a restart, and is never made for a session the store does not hold.
+  it("records each schedule that continued a session, once, across metadata writes", () => {
+    const store = createSessionMetadataStore(backend);
+    store.set("s1", { mode: "chat" });
+
+    store.recordContinuation("s1", "sch-a");
+    store.recordContinuation("s1", "sch-a");
+    store.recordContinuation("s1", "sch-b");
+    store.set("s1", { mode: "chat", title: "renamed" });
+    store.recordContinuation("gone", "sch-a");
+
+    const reopened = createSessionMetadataStore(backend);
+    expect(reopened.get("s1")?.continuedScheduleIds).toEqual([
+      "sch-a",
+      "sch-b",
+    ]);
+    expect(reopened.get("gone")).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: A rewind adopts the original session under a new id and takes its place, so the schedules that continued the original stay on the session that replaced it.
+  it("keeps the schedules that continued a session across a rewind", () => {
+    const store = createSessionMetadataStore(backend);
+    store.set("old", { mode: "chat" });
+    store.recordContinuation("old", "sch-a");
+
+    store.adopt("new", "old", { mode: "chat" });
+
+    expect(store.get("new")?.continuedScheduleIds).toEqual(["sch-a"]);
+  });
+
   it("drops a run stamp that outlived the process that set it", () => {
     writeFileSync(
       path,

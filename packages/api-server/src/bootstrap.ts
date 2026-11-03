@@ -1274,6 +1274,9 @@ export async function bootstrap() {
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
   );
+  await periodicJobs.register("spend-stamped-calls", 5 * 60_000, () =>
+    spend.ingest.bookStampedCalls(),
+  );
   await periodicJobs.register(
     "spend-call-rows-retention",
     24 * 60 * 60 * 1000,
@@ -2044,6 +2047,7 @@ export async function bootstrap() {
     hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,
+    openCalls: spend.openCalls,
   });
   const invocationPinReconciler = composeInvocationPinReconciler({
     db,
@@ -2297,6 +2301,7 @@ export async function bootstrap() {
     satellitesBoot,
     secretStore,
     spendHold,
+    openCalls: spend.openCalls,
     spendStatusFor: async (agentId: string, owner: string) =>
       spend
         .forOwner({
@@ -2334,6 +2339,7 @@ export async function bootstrap() {
       reader: metricsReader,
       spend: spend.agentSpend,
     }),
+    spendCalls: spend.agentSpend,
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
     scriptOutputs,

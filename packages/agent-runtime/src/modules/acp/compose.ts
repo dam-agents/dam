@@ -113,6 +113,7 @@ export interface ComposeAcpOptions {
   agentRequests: AgentRequestObserver;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
+  beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
   unroutedProviderEnv?: (harness: string) => Record<string, string>;
@@ -144,6 +145,7 @@ export interface HarnessRuntime extends SessionHarness {
   sessionModel: boolean;
   initialize?: Record<string, unknown>;
   harnessState?: HarnessStateDialect;
+  loadTimeoutMs?: number;
   nonClaudeModelEnv?: Record<string, string>;
 }
 
@@ -491,11 +493,17 @@ export function composeAcp(opts: ComposeAcpOptions): {
         ...(harness?.harnessState && {
           harnessState: HARNESS_STATE_PORTS[harness.harnessState],
         }),
+        ...(harness?.loadTimeoutMs && {
+          harnessLoadTimeoutMs: harness.loadTimeoutMs,
+        }),
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
         agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
+        ...(opts.beforeFirstPrompt && {
+          beforeFirstPrompt: opts.beforeFirstPrompt,
+        }),
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
         ...(ownHistory ? { historyProvider: ownHistory } : {}),

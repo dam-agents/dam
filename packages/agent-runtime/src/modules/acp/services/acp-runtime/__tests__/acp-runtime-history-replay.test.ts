@@ -448,9 +448,10 @@ describe("acp-runtime: history replay", () => {
    * harness still owes a response for a load nobody is waiting for, and its
    * replay would carry no request correlation, so the runtime must not send
    * a second load for that session — it recycles the unresponsive harness
-   * instead. When the abandoned load does answer late, its replay must never
-   * be reclassified as live activity, or a client that retried would watch
-   * its whole history arrive as if the agent were speaking now.
+   * once the load stays unanswered for a second budget. When the abandoned
+   * load does answer late, its replay must never be reclassified as live
+   * activity, or a client that retried would watch its whole history arrive
+   * as if the agent were speaking now.
    */
   it("should time out a cold fill the harness never answers, recycle it, and suppress its late replay", async () => {
     const world = createWorld({ harnessLoadTimeoutMs: 1 });
@@ -462,6 +463,7 @@ describe("acp-runtime: history replay", () => {
 
     expect(bob.reply(1)).toMatchObject({ error: { code: -32000 } });
     expect(wedged.received("session/load")).toHaveLength(1);
+    await settle();
     expect(wedged.killed()).toBe(true);
 
     wedged.emit(frames.agentMessage(SESSION, "m1"));
@@ -476,11 +478,105 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
-   * TEST_SCENARIO: A cold load runs past its budget while a turn is running,
-   * so the recycle of the seemingly wedged harness waits for the turn, with a
-   * grace period. Then the load answers, a moment late: the harness is alive.
-   * Killing it anyway would end the running turn for nothing, and the
-   * harness would record that turn's tool call as rejected by the user.
+   * TEST_SCENARIO: The viewer whose load timed out retries while the harness
+   * still owes the first load. The retry cannot send a second load then, so
+   * it waits; once the first load answers late, the harness is free, and the
+   * retry must load the session and get its answer instead of timing out on
+   * a harness that is fine.
+   */
+  it("should load a retry that waited behind a late load once that load answers", () => {
+    vi.useFakeTimers();
+    const world = createWorld({ harnessLoadTimeoutMs: 30_000 });
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    const [abandoned] = world.harness().received("session/load");
+
+    vi.advanceTimersByTime(30_000);
+    bob.send(loadTail(2, SESSION));
+    expect(world.harness().received("session/load")).toHaveLength(1);
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: abandoned!.id,
+      result: { sessionId: SESSION, modes: null },
+    });
+    const [, retried] = world.harness().received("session/load");
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: retried!.id,
+      result: { sessionId: SESSION, modes: null },
+    });
+
+    expect(bob.reply(2)).toMatchObject({ result: { sessionId: SESSION } });
+  });
+
+  /**
+   * TEST_SCENARIO: A prompt arrives for a Session whose load the harness
+   * still owes. Every frame of that Session is suppressed until the load
+   * answers, so a turn run now would end with no visible reply. The prompt
+   * is refused with a reason instead, and never reaches the harness.
+   */
+  it("should refuse a prompt for a Session whose late load is still owed", () => {
+    vi.useFakeTimers();
+    const world = createWorld({ harnessLoadTimeoutMs: 30_000 });
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+
+    vi.advanceTimersByTime(30_000);
+    bob.send(frames.prompt(2, SESSION, "are you there"));
+
+    expect(bob.reply(2)).toMatchObject({
+      error: {
+        message: "the harness is still loading this session; try again shortly",
+      },
+    });
+    expect(world.harness().received("session/prompt")).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A turn is running when one load misses both budgets, so
+   * the recycle waits for the turn, and a second load is still inside its
+   * own late window. When the first load answers late, no load is past its
+   * second budget any more: the recycle is called off, and the second load
+   * keeps the time it was promised.
+   */
+  it("should call off the recycle while another late load is still inside its window", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 10_000,
+    });
+    const alice = startTurn(world);
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    vi.advanceTimersByTime(35_000);
+    bob.send(loadTail(2, "sess-other"));
+    const [first, second] = world.harness().received("session/load");
+
+    vi.advanceTimersByTime(31_000);
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: first!.id,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(14_000);
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: second!.id,
+      result: { sessionId: "sess-other", modes: null },
+    });
+    vi.advanceTimersByTime(60_000);
+
+    expect(world.harness().killed()).toBe(false);
+    expect(alice.closes).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A cold load runs past its budget and its second one while
+   * a turn is running, so the recycle of the seemingly wedged harness waits
+   * for the turn, with a grace period. Then the load answers, late: the
+   * harness is alive. Killing it anyway would end the running turn for
+   * nothing, and the harness would record that turn's tool call as rejected
+   * by the user.
    */
   it("should call off the recycle when the abandoned load answers late", () => {
     vi.useFakeTimers();
@@ -495,6 +591,7 @@ describe("acp-runtime: history replay", () => {
 
     vi.advanceTimersByTime(30_000);
     expect(bob.reply(1)).toMatchObject({ error: { code: -32000 } });
+    vi.advanceTimersByTime(30_000);
     world.harness().emit({
       jsonrpc: "2.0",
       id: abandoned,
@@ -541,11 +638,11 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
-   * TEST_SCENARIO: A cold load runs past its budget while a turn is running,
-   * and only then does an env change arrive, before the load answers late.
-   * The change came while the harness was thought wedged, but it is owed all
-   * the same: the late answer must not call it off with the unresponsive
-   * recycle, or the harness would keep the old credentials.
+   * TEST_SCENARIO: A cold load runs past its budget and its second one while
+   * a turn is running, and only then does an env change arrive, before the
+   * load answers late. The change came while the harness was thought wedged,
+   * but it is owed all the same: the late answer must not call it off with
+   * the unresponsive recycle, or the harness would keep the old credentials.
    */
   it("should keep an env recycle that arrives before the late answer", () => {
     vi.useFakeTimers();
@@ -558,7 +655,7 @@ describe("acp-runtime: history replay", () => {
     bob.send(loadTail(1, SESSION));
     const abandoned = world.harness().received("session/load")[0]!.id;
 
-    vi.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(60_000);
     world.runtime.refreshEnv({ force: true });
     world.harness().emit({
       jsonrpc: "2.0",
@@ -577,7 +674,8 @@ describe("acp-runtime: history replay", () => {
   /**
    * TEST_SCENARIO: Two cold loads run past their budget while a turn is
    * running, and only one of them ever answers. The harness still owes the
-   * other, so it stays wedged and is recycled when the grace period ends.
+   * other, so it stays wedged and is recycled when that load's second budget
+   * and then the grace period end.
    */
   it("should still recycle when another abandoned load stays unanswered", () => {
     vi.useFakeTimers();
@@ -597,7 +695,9 @@ describe("acp-runtime: history replay", () => {
       id: answered!.id,
       result: { sessionId: SESSION, modes: null },
     });
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(89_000);
+    expect(world.harness().killed()).toBe(false);
+    vi.advanceTimersByTime(1_000);
 
     expect(world.harness().killed()).toBe(true);
     expect(alice.closes[0]).toMatchObject({

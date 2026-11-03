@@ -23,8 +23,9 @@ if (pinnedVersion !== patched) {
     `codex-acp-patch: the image pins codex-acp ${pinnedVersion} but the patch targets ${patched}. ` +
       "If that release closes agentclientprotocol/codex-acp#663 (skips title generation on a provider other than OpenAI's own, #595, " +
       "names the session from session/new, #338, or carries a switch), " +
-      "drop the patch (packages/agents/codex/README.md, \"codex-acp patch\"); " +
-      "otherwise confirm its edit still applies and update PATCHED_VERSION.",
+      "or fails a turn whose model request failed with the error in data.details and no error text in the reply (#647), " +
+      "drop the edits it makes unnecessary (packages/agents/codex/README.md, \"codex-acp patch\"); " +
+      "otherwise confirm its edits still apply and update PATCHED_VERSION.",
   );
   process.exit(1);
 }

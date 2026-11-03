@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-22
+Last verified: 2026-10-27
 
 ## Overview
 
@@ -12,7 +12,7 @@ What a Connection is and which rail each Contribution kind takes is [connections
 The subsystem cuts across two bounded contexts:
 
 - **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` and `runtime.reportArtifactTouch` callbacks from agents.
-  The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), the tool-approval report to [home-feed](home-feed.md#what-home-reads), and the event report below is generic to the channel.
+  The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), the tool-approval report to [home-feed](home-feed.md#what-home-reads), the call-cost read to the [ledger](spend-limits.md#ledger), and the event report below is generic to the channel.
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
 The runtime channel is six routes between api-server and agent-runtime — `applyState` inward, `hello`, the artifact-touch report, the session-directory report, the tool-approval report and the event report outward:
@@ -117,6 +117,7 @@ The computed state slice merges user-typed env, connection-granted contributions
 
 The server sends a per-agent monotonic `version` cursor, the **full desired state** (the post-capability-filter Contribution snapshot plus a deterministic hash that short-circuits no-op pushes), and the **currently pending events** in order.
 The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers in the agent-runtime.
+The order is the version order: the events of one bump share a version and have no order among themselves, so an event that must run before another goes in an earlier bump.
 
 The reply is a discriminated outcome, not a bare ack:
 

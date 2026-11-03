@@ -297,7 +297,7 @@ describe("slack ambient inbound", () => {
     const result = await h.worker.reply("agent-1", {
       text: "here's the runbook",
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
     expect(h.messages()[0]).toMatchObject({
       channel: "C1",
       threadTs: "7.7",
@@ -330,6 +330,17 @@ describe("slack ambient inbound", () => {
     const opts = h.sendOpts[0]!;
     expect("platformMeta" in opts && opts.platformMeta?.threadTs).toBe(
       "ambient:C1",
+    );
+  });
+
+  it("ambient on: names the message it reads, without its speaker, as the session's title", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "hello there");
+    await h.settled(() => h.sendOpts.length === 1);
+
+    const opts = h.sendOpts[0]!;
+    expect("platformMeta" in opts && opts.platformMeta?.title).toBe(
+      "hello there",
     );
   });
 
@@ -500,7 +511,7 @@ describe("slack ambient inbound", () => {
       text: "answering two",
       threadTs: "2.2",
     });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.messages()[0]).toMatchObject({
       threadTs: "2.2",
       text: signed("answering two"),
@@ -624,7 +635,7 @@ describe("slack ambient inbound", () => {
       text: "late answer",
       threadTs: "T.1",
     });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.messages()[0]).toMatchObject({ threadTs: "T.1" });
 
     pending[1]!.resolve("");

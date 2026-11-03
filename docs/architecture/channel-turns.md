@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-21
+Last verified: 2026-10-29
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -157,7 +157,7 @@ A few observations the diagram glosses over:
   On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a refusal by the model, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.
   The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)).
@@ -170,6 +170,10 @@ The probe window is floor-bounded by the egress-approval hold at config load (ra
 The relay abandons a turn on exactly two verdicts — the connection is lost, or the runtime reports the turn gone — and abandoning the relay never touches the work: the harness keeps running detached, and its late reply still lands through the lingering turn record.
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
+A turn the model refused ends with ACP's `refusal` stop reason rather than an error, and the relay counts it as failed with the `model-refused` reason.
+The reply says the model refused the message and links the agent's Providers section, where the owner can switch models.
+On Slack it also advises a new thread: the refused message stays in the thread's session, so asking there again is refused too.
+For the same reason the refused message counts as delivered, and the next turn's catch-up does not hand it to the agent again.
 The failure reason still rides the turn event either way.
 
 An abandoned turn is handed to the **recovery watch**, which polls the session's run status for as long as the runtime reports it alive.
@@ -206,11 +210,15 @@ A fence that ends a line moves to the next line.
 Text after an opening fence moves below it, unless the text is one lowercase language word.
 The renderer works line by line, so a fence pair inside one line of prose stays as it is; tools request separate fence lines.
 
+An artifact's in-app link (`platform://artifacts/<id>`) opens only in the app's chat, so before a `reply` or `send_channel_message` posts, the endpoint puts the artifact's share URL in place of each such link, on Slack and Telegram alike.
+An artifact with no share URL, a private one, or an id the owner has no artifact for refuses the whole message, and the error tells the Agent to say the artifact must be shared first and to send the message without the link.
+
 What the agent sees:
 
 - **Cross-channel tools.** `describe_channel` reports the chats an Agent can reach; `send_channel_message` makes a **new top-level post** — for proactive or cross-channel messages, and on Slack never a turn reply, which `reply` owns.
   A post into a channel still counts as answering the newest turn in flight there, whichever thread that turn is in, so that turn is not nudged.
   Telegram has no thread to reply into, so there it is also how a turn is answered.
+  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; a post Slack makes by sharing its file, or a file sent alone, names no `ts`.
   Where a target is ambiguous the worker refuses and names the candidates rather than picking one.
 - **The agent meets people as ids, and resolves them itself.** A messenger names a person only by their user id — in speaker labels, injected history, and mentions inside message text — so `describe_channel_users` turns ids into people, as far as the workspace discloses.
   An id means something only inside one workspace, so the lookup asks the workspace of the conversation it is named or called from, and an Agent in several workspaces that settles neither is refused rather than answered from a guess.
@@ -241,7 +249,11 @@ What the agent sees:
   Gated by the binding; the log records the message and tally, never who reacted.
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
-  A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can: the text lands before the file, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
+  A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can.
+  Like `send_channel_message`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one, and neither does a private reply to a whisper, which only its sender sees.
+  A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
+  Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
+  Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
   A reply with only a file posts it as one message, and cannot also go to the channel.
   A thread-triggered turn is never nudged towards it: the thread is where the answer belongs, and surfacing it to the channel takes an explicit ask.
   The one turn still nudged is a coalesced batch of top-level messages, which has no thread the channel is already watching.
@@ -298,7 +310,9 @@ Its owner removes one with `/platform delete <message link> [reason]`, naming th
 Nothing is rendered on the post and nothing is added to Slack's message menus, which is the whole point: a rendered button stands in front of everyone in the conversation although only one person may press it, and a message shortcut, the one affordance Slack draws without touching the post, is registered app-wide and so lands on every message in the workspace, agent or not.
 Only the Agent's owner may delete: the typist's identity link must resolve to the owner, and anyone unlinked is told to link first.
 The platform reads the linked message back from Slack to recover its footer, refusing a link it cannot resolve and one that names a post no Agent wrote.
-The owner then confirms in a Slack modal, with any reason they typed already filled in; the platform deletes the text first, then the files uploaded with it, whose ids ride in the post's **message metadata**: a file's id is reserved before its post, and its bytes are sent and the file shared after it, so the post never needs an edit and the text never waits for the upload.
+The owner then confirms in a Slack modal, with any reason they typed already filled in; the platform deletes the text first, then the files uploaded with it.
+A file shared with its text is part of that one post, so reading the post back names it.
+A text posted apart from its file carries the file's id in the post's **message metadata**: the id is reserved before the post, and the bytes are sent and the file shared after it, so the post never needs an edit.
 Metadata carries those ids because it is invisible in the client and comes back on a later read, where a button's value died with the button.
 A reply's session is then told once, with a short notice, unless the Agent is stopped; a top-level post names no session, so nobody is told.
 A post that is only an attachment, top-level or a thread reply, is a single file message instead: its footer block rides on the file itself, so its own link names the Agent, and the files it carries are deleted with it.

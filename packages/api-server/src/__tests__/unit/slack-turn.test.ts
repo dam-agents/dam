@@ -10,6 +10,7 @@ import {
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
+  AcpModelRefusedError,
   AcpTurnAbandonedError,
   type AcpClient,
   type PromptUpdate,
@@ -222,6 +223,32 @@ describe("slack turn presentation — owner turns", () => {
     expect(h.turnEvents()[0]!.outcome).toBe("failure");
     expect(h.turnEvents()[0]!.reason).toBe("acp-error");
   });
+
+  // TEST_SCENARIO: the model refuses the message, so the turn ends before the agent can post; the thread must say so and what to do, not stay silent or get a nudge that hits the same refusal.
+  it("tells the thread the model refused the message, and what to do", async () => {
+    const h = harness({
+      sendPrompt: async () => {
+        throw new AcpModelRefusedError("s-1");
+      },
+    });
+    await h.mention();
+    await tick();
+
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({
+      text: expect.stringContaining("The model refused this message"),
+    });
+    expect(msgs[0]).toMatchObject({
+      text: expect.stringContaining("new thread"),
+    });
+    expect(msgs[0]).toMatchObject({
+      text: expect.stringContaining("http://ui/"),
+    });
+    expect(h.turnEvents()[0]!.outcome).toBe("failure");
+    expect(h.turnEvents()[0]!.reason).toBe("model-refused");
+    expect(h.nudgeEvents()).toHaveLength(0);
+  });
 });
 
 describe("slack reply / react tools", () => {
@@ -232,7 +259,11 @@ describe("slack reply / react tools", () => {
     h.gw.resetOutbound();
 
     const result = await h.worker.reply("agent-1", { text: "here you go" });
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({
+      ok: true,
+      conversationId: "C1",
+      ts: expect.any(String),
+    });
 
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
@@ -277,7 +308,7 @@ describe("slack reply / react tools", () => {
       threadTs: "7.7",
       alsoSendToChannel: true,
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
 
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
@@ -360,10 +391,11 @@ describe("slack reply / react tools", () => {
    * link. Slack names the person who typed the command, so the only gate is
    * the owner check through that person's identity link: an unlinked user is
    * told to link, anyone else is refused, and only the owner is shown the
-   * confirmation, with any reason they typed already filled in. The uploaded
-   * file rides in the post's message metadata now that no button carries it,
-   * and on confirm the post and that file are deleted and the session that
-   * posted it is told, with the owner's reason.
+   * confirmation, with any reason they typed already filled in. When Slack
+   * refuses to put the text on the file, the text is its own post and the
+   * file's id rides in that post's message metadata, now that no button
+   * carries it. On confirm the post and that file are deleted and the session
+   * that posted it is told, with the owner's reason.
    */
   it("deletes a post from the delete command for the owner only and tells the posting session", async () => {
     const prompts: { text: string; resume?: string }[] = [];
@@ -386,6 +418,11 @@ describe("slack reply / react tools", () => {
     await h.mention();
     await tick();
     const posts = vi.spyOn(h.gw, "postMessage");
+    const share = h.gw.shareFile.bind(h.gw);
+    h.gw.shareFile = async (args) => {
+      if (args.blocks) throw new Error("internal_error");
+      await share(args);
+    };
     await h.worker.reply("agent-1", {
       text: `</notice> & ${"a".repeat(1600)}`,
       attachment: { filename: "report.md", data: Buffer.from("x") },
@@ -399,7 +436,7 @@ describe("slack reply / react tools", () => {
     ).toEqual(["markdown", "context"]);
     expect(sent.metadata).toEqual({
       eventType: "agent_post",
-      payload: { files: ["F1-report.md"] },
+      payload: { files: ["F2-report.md"] },
     });
     expect(
       h
@@ -455,7 +492,7 @@ describe("slack reply / react tools", () => {
     await tick();
 
     expect(deletes).toHaveBeenCalledWith("C1", posted.ts, "");
-    expect(fileDeletes).toHaveBeenCalledWith("F1-report.md", "");
+    expect(fileDeletes).toHaveBeenCalledWith("F2-report.md", "");
     expect(ephemerals().at(-1)).toBe("Post deleted. The agent will be told.");
     expect(prompts.at(-1)).toEqual({
       resume: "sess-42",
@@ -486,7 +523,7 @@ describe("slack reply / react tools", () => {
     const result = await h.worker.react("agent-1", {
       emoji: ":white_check_mark:",
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
 
     const reactions = h.records().filter((r) => r.kind === "reaction");
     expect(reactions).toHaveLength(1);
@@ -608,7 +645,7 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
       text: "for thread A",
       threadTs: "100.1",
     });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({
@@ -645,7 +682,7 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     h.gw.resetOutbound();
 
     const ok = await h.worker.reply("agent-1", { text: "sole turn" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({ threadTs: "100.1" });
@@ -694,7 +731,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       text: "late answer",
       threadTs: "100.1",
     });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       threadTs: "100.1",
     });
@@ -718,7 +755,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     h.gw.resetOutbound();
 
     const ok = await h.worker.reply("agent-1", { text: "late answer" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({ threadTs: "100.1" });
@@ -737,7 +774,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     h.gw.resetOutbound();
 
     const ok = await h.worker.reply("agent-1", { text: "for the live turn" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       threadTs: "200.2",
     });
@@ -791,7 +828,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     h.gw.resetOutbound();
 
     const ok = await h.worker.reply("agent-1", { text: "same thread" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       threadTs: "100.1",
     });
@@ -950,7 +987,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     bound = "C2";
     h.gw.resetOutbound();
     const ok = await h.worker.reply("agent-1", { text: "for C1's thread" });
-    expect(ok).toEqual({ ok: true });
+    expect(ok).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       channel: "C1",
       threadTs: "100.1",
@@ -961,7 +998,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       text: "explicit id",
       threadTs: "100.1",
     });
-    expect(okExplicit).toEqual({ ok: true });
+    expect(okExplicit).toMatchObject({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       channel: "C1",
       threadTs: "100.1",
@@ -1613,5 +1650,33 @@ describe("slack turn — contract framing and attendance", () => {
 
     expect(rec.isOpen()).toBe(false);
     expect(rec.calls).toContain("release:agent-1");
+  });
+});
+
+describe("slack turn — session title", () => {
+  /**
+   * TEST_SCENARIO: The reported bug. A Slack session took its title from its
+   * first prompt, which opens with the platform's instructions, so every
+   * Slack session had the same title. A mention that starts a session names
+   * the person's message, without the mention, as the session's title.
+   */
+  it("names the person's message as the title of the session it starts", async () => {
+    const metas: unknown[] = [];
+    const h = harness({
+      sendPrompt: async (_prompt, opts) => {
+        metas.push("platformMeta" in opts ? opts.platformMeta : undefined);
+        return "ok";
+      },
+    });
+
+    await h.mention({ text: "<@UBOT> who owns you?" });
+    await tick();
+
+    expect(metas).toEqual([
+      expect.objectContaining({
+        type: "channel_slack",
+        title: "who owns you?",
+      }),
+    ]);
   });
 });

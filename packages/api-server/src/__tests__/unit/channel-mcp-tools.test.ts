@@ -16,6 +16,7 @@ import type {
   AttachmentQuery,
   AttachmentResult,
   ChannelReply,
+  ChannelSendResult,
   MessageReactionsResult,
   ReactionsQuery,
   ThreadQuery,
@@ -36,10 +37,12 @@ vi.mock("../../core/security-log.js", () => ({
 }));
 
 async function mcpHarness(opts?: {
-  postResult?: { ok: true } | { error: string };
+  postResult?: ChannelSendResult;
+  replyResult?: ChannelSendResult;
   reactions?: MessageReactionsResult | { error: string };
   thread?: ThreadResult | { error: string };
   attachment?: AttachmentResult | { error: string };
+  artifacts?: Record<string, { title: string; shareUrl: string | null }>;
 }) {
   const replies: ChannelReply[] = [];
   const posts: { text: string; options: Record<string, unknown> }[] = [];
@@ -55,13 +58,13 @@ async function mcpHarness(opts?: {
         options: Record<string, unknown>,
       ) => {
         posts.push({ text, options });
-        return opts?.postResult ?? { ok: true as const };
+        return opts?.postResult ?? ({ ok: true } as ChannelSendResult);
       },
     ),
     reply: vi.fn(
       async (_agentId: string, _type: ChannelType, args: ChannelReply) => {
         replies.push(args);
-        return { ok: true as const };
+        return opts?.replyResult ?? ({ ok: true } as ChannelSendResult);
       },
     ),
     describeMessageReactions: vi.fn(
@@ -110,6 +113,9 @@ async function mcpHarness(opts?: {
     channelManager,
     k8s: { namespace: "platform" },
     maxArtifactBytes: 10 * 1024 * 1024,
+    artifactLibrary: {
+      get: async (id: string) => opts?.artifacts?.[id] ?? null,
+    },
   } as unknown as McpSessionDeps);
 
   const [clientTransport, serverTransport] =
@@ -574,5 +580,151 @@ describe("outbound MCP tools — activity", () => {
     sub.unsubscribe();
 
     expect(sent).toMatchObject([{ action: "post", outcome: "failure" }]);
+  });
+});
+
+describe("outbound MCP tools — the posted message", () => {
+  /**
+   * TEST_SCENARIO: An agent that starts a thread with a top-level post needs the post's ts to reply into that thread later.
+   */
+  it("names the conversation and ts of a Slack post", async () => {
+    const { client } = await mcpHarness({
+      postResult: {
+        ok: true,
+        conversationId: "D-UOWNER",
+        ts: "1712345.000100",
+      },
+    });
+
+    const result = await client.callTool({
+      name: "send_channel_message",
+      arguments: { channel: "slack", text: "kick-off", chatId: "UOWNER" },
+    });
+
+    expect((result.content as { text: string }[])[0]!.text).toBe(
+      "Message sent to chatId D-UOWNER as ts 1712345.000100",
+    );
+  });
+
+  it("names the conversation and ts of a Slack reply", async () => {
+    const { client } = await mcpHarness({
+      replyResult: { ok: true, conversationId: "C1", ts: "1712345.000200" },
+    });
+
+    const result = await client.callTool({
+      name: "reply",
+      arguments: { text: "answer", threadTs: "1.1" },
+    });
+
+    expect((result.content as { text: string }[])[0]!.text).toBe(
+      "Reply posted to chatId C1 as ts 1712345.000200",
+    );
+  });
+
+  it("says only that it was sent when the channel names no ts", async () => {
+    const { client } = await mcpHarness({
+      postResult: { ok: true, conversationId: "C-ALERTS" },
+    });
+
+    const result = await client.callTool({
+      name: "send_channel_message",
+      arguments: { channel: "slack", text: "report", chatId: "C-ALERTS" },
+    });
+
+    expect((result.content as { text: string }[])[0]!.text).toBe(
+      "Message sent",
+    );
+  });
+});
+
+describe("outbound MCP tools — artifact links (#5965)", () => {
+  const PUBLIC_ID = "0b6f6a52-5d0e-4a4e-9b1e-1f0c2a3b4c5d";
+  const PRIVATE_ID = "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+  const artifacts = {
+    [PUBLIC_ID]: {
+      title: "Weekly report",
+      shareUrl: "https://share.example/a/weekly-report",
+    },
+    [PRIVATE_ID]: { title: "Draft plan", shareUrl: null },
+  };
+
+  /**
+   * TEST_SCENARIO: The reported bug. An agent posts the in-app artifact link
+   * to Slack, where it is dead text. A public artifact's link is posted as
+   * its share URL, in a reply and in a new message alike.
+   */
+  it("posts a public artifact's share URL in place of its in-app link", async () => {
+    const { client, replies, posts } = await mcpHarness({ artifacts });
+
+    await client.callTool({
+      name: "reply",
+      arguments: {
+        text: `See [Weekly report](platform://artifacts/${PUBLIC_ID})`,
+      },
+    });
+    await client.callTool({
+      name: "send_channel_message",
+      arguments: {
+        channel: ChannelType.Telegram,
+        text: `Report: platform://artifacts/${PUBLIC_ID}`,
+      },
+    });
+
+    expect(replies[0]?.text).toBe(
+      "See [Weekly report](https://share.example/a/weekly-report)",
+    );
+    expect(posts[0]?.text).toBe(
+      "Report: https://share.example/a/weekly-report",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A private artifact has no link that opens outside the
+   * app. The message is not posted, and the agent is told to say that the
+   * artifact must be shared first and to send the message without the link.
+   */
+  it("refuses a message that links a private artifact", async () => {
+    const { client, replies } = await mcpHarness({ artifacts });
+
+    const res = await client.callTool({
+      name: "reply",
+      arguments: { text: `Draft: platform://artifacts/${PRIVATE_ID}` },
+    });
+
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.content)).toContain(
+      "must be shared from the app",
+    );
+    expect(replies).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A link names an id the owner has no artifact for, a
+   * deleted one or a typo. The message is not posted with a dead link.
+   */
+  it("refuses a message that links an unknown artifact", async () => {
+    const { client, posts } = await mcpHarness({ artifacts });
+
+    const res = await client.callTool({
+      name: "send_channel_message",
+      arguments: {
+        channel: ChannelType.Slack,
+        text: "platform://artifacts/does-not-exist",
+      },
+    });
+
+    expect(res.isError).toBe(true);
+    expect(posts).toEqual([]);
+  });
+
+  it("posts a message without artifact links unchanged", async () => {
+    const { client, replies } = await mcpHarness({ artifacts });
+
+    await client.callTool({
+      name: "reply",
+      arguments: { text: "see https://example.com/report" },
+    });
+
+    expect(replies[0]?.text).toBe("see https://example.com/report");
   });
 });

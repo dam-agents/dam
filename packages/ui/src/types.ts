@@ -85,6 +85,7 @@ export interface Message {
   parts: MessagePart[];
   streaming: boolean;
   queued?: boolean;
+  sentHere?: boolean;
   promptId?: string;
   turnId?: string;
   retryWith?: RetryPayload;

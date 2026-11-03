@@ -103,6 +103,7 @@ import {
 } from "./pending-agent-requests.js";
 import { createAutonomousTurns } from "./autonomous-turns.js";
 import { createHarnessActivity } from "./harness-activity.js";
+import { createLocalCommandEchoes } from "./local-command-echoes.js";
 import type { HarnessStatePort } from "../../domain/harness-state.js";
 import {
   createPromptScheduler,
@@ -189,6 +190,7 @@ export interface AcpRuntimeDeps {
   spawnWorkTimeoutMs?: number;
   beforeSpawn?: () => Promise<void>;
   onPrompt?: () => void;
+  beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   logBytesCap?: number;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
@@ -244,6 +246,11 @@ export interface ReportableTurn {
   reportName: string;
   text: string;
   truncated: boolean;
+}
+
+interface OrphanedLoad {
+  outboundId: number;
+  lateTimer: ReturnType<typeof setTimeout> | null;
 }
 
 interface OutboundMapping {
@@ -350,6 +357,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ),
   });
 
+  const localCommandEchoes = createLocalCommandEchoes();
+
   const heldRuns = new Map<
     string,
     { promptId: string | null; stopReason: string | null; cancelled: boolean }
@@ -420,6 +429,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       autonomousTurns.end(sessionId);
       finishHeldRun(sessionId);
       generating.add(sessionId);
+      localCommandEchoes.start(sessionId, typed);
       const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
@@ -483,7 +493,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     canStart: ({ sessionId, unattended }) =>
       (unattended === true || hasEngagedChannel(sessionId)) &&
-      !harnessColdSessions.has(sessionId),
+      !harnessColdSessions.has(sessionId) &&
+      !registeringSessions.has(sessionId),
     sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause, refusal) {
       const recordedAt = new Date().toISOString();
@@ -625,6 +636,24 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const registeringSessions = new Set<string>();
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a new Session's first prompt waits in the
+   * Prompt Scheduler until beforeFirstPrompt settles, which the runtime uses
+   * to let the Session directory learn the Session before its first model
+   * call is metered. Settings still go out meanwhile, as they call no model.
+   */
+  function holdFirstPrompt(sessionId: string): void {
+    const wait = deps.beforeFirstPrompt?.(sessionId);
+    if (!wait) return;
+    registeringSessions.add(sessionId);
+    void wait
+      .catch(() => {})
+      .finally(() => {
+        registeringSessions.delete(sessionId);
+        promptScheduler.onSessionReady(sessionId);
+      });
+  }
   const appliedSettings = new Map<string, Map<string, string>>();
   const settingsChannel: ClientChannel = {
     send() {},
@@ -750,15 +779,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const rehydratingSessions = new Set<string>();
   const rehydrateTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const rehydrateLoadIds = new Map<string, number>();
-  const orphanedHarnessLoads = new Map<string, number>();
+  const orphanedHarnessLoads = new Map<string, OrphanedLoad>();
 
   function orphanLoad(sessionId: string, outboundId: number): void {
-    orphanedHarnessLoads.set(sessionId, outboundId);
+    const previous = orphanedHarnessLoads.get(sessionId)?.lateTimer;
+    if (previous) clearTimeout(previous);
     deps.log?.(
       `harness left session/load for ${sessionId} unanswered; ` +
-        `suppressing its frames and recycling the harness`,
+        `suppressing its frames and recycling the harness unless it ` +
+        `answers within ${harnessLoadTimeoutMs}ms`,
     );
-    lease.requestRecycle();
+    const orphan: OrphanedLoad = {
+      outboundId,
+      lateTimer: setTimeout(() => {
+        orphan.lateTimer = null;
+        deps.log?.(`harness still owes session/load for ${sessionId}`);
+        lease.requestRecycle();
+      }, harnessLoadTimeoutMs),
+    };
+    orphanedHarnessLoads.set(sessionId, orphan);
   }
 
   function settleOrphanedLoad(
@@ -766,10 +805,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     outboundId: number,
   ): boolean {
     if (sessionId === null) return false;
-    if (orphanedHarnessLoads.get(sessionId) !== outboundId) return false;
+    const orphan = orphanedHarnessLoads.get(sessionId);
+    if (orphan?.outboundId !== outboundId) return false;
+    if (orphan.lateTimer) clearTimeout(orphan.lateTimer);
     orphanedHarnessLoads.delete(sessionId);
     deps.log?.(`orphaned session/load for ${sessionId} answered late; dropped`);
-    if (orphanedHarnessLoads.size === 0) lease.cancelRecycleRequest();
+    if ([...orphanedHarnessLoads.values()].every((o) => o.lateTimer !== null))
+      lease.cancelRecycleRequest();
+    bootstrap.harnessLoadFreed(sessionId);
     return true;
   }
 
@@ -1015,6 +1058,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const t of rehydrateTimers.values()) clearTimeout(t);
     rehydrateTimers.clear();
     rehydrateLoadIds.clear();
+    for (const { lateTimer } of orphanedHarnessLoads.values())
+      if (lateTimer) clearTimeout(lateTimer);
     orphanedHarnessLoads.clear();
     harnessGone = teardownCause(reason);
     if (!shuttingDown)
@@ -1033,6 +1078,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     harnessActivity.clear();
     promptScheduler.clear();
     autonomousTurns.clear();
+    localCommandEchoes.clear();
     runTextBuffers.clear();
     openToolCalls.clear();
     generating.clear();
@@ -1487,12 +1533,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   ): void {
     const oldId = params.sessionId;
     const fresh = cut.kind === "start";
+    const ref = params.mode === "rewind" ? refFor(oldId) : randomUUID();
     requestFromHarness(
       fresh ? "session/new" : "session/fork",
       {
         ...(fresh ? {} : { sessionId: oldId }),
         cwd: ".",
-        mcpServers: [],
+        mcpServers: deps.sessionMcpServers?.(ref) ?? [],
         ...(!fresh && {
           _meta: {
             jetbrains: {
@@ -1534,6 +1581,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             rewritingSessions.delete(oldId);
             const meta = {
               ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
+              ref,
               ...(params.title !== undefined && { customTitle: params.title }),
             };
             deps.continuedFrom.copy(oldId, newId, !fresh);
@@ -1684,6 +1732,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     harnessColdSessions.add(sessionId);
     appliedSettings.delete(sessionId);
     autonomousTurns.end(sessionId);
+    localCommandEchoes.end(sessionId);
     transcript.forget(sessionId);
     openToolCalls.delete(sessionId);
     generating.delete(sessionId);
@@ -1843,6 +1892,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
     autonomousTurns.end(sessionId);
+    localCommandEchoes.end(sessionId);
     transcript.forget(sessionId);
     openToolCalls.delete(sessionId);
     generating.delete(sessionId);
@@ -1968,6 +2018,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           ) {
             deps.sessionMetadata.set(sidFromResult, mapping.platformMeta ?? {});
             deps.sessionMetadata.markUnstored(sidFromResult);
+            holdFirstPrompt(sidFromResult);
             syncSettings(sidFromResult);
           }
         }
@@ -2057,6 +2108,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (turnEnded) {
             openToolCalls.delete(sid);
             generating.delete(sid);
+            localCommandEchoes.end(sid);
             deps.sessionMetadata?.markStored(sid);
           }
           for (const follower of steered)
@@ -2124,7 +2176,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (
         orphanedHarnessLoads.has(sessionId) ||
         rehydratingSessions.has(sessionId) ||
-        isNoResponseFiller(frame)
+        isNoResponseFiller(frame) ||
+        localCommandEchoes.isEcho(sessionId, frame)
       ) {
         return;
       }
@@ -2410,7 +2463,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (
         (method === "session/prompt" || settingSessionId !== null) &&
         paramsSid &&
-        harnessColdSessions.has(paramsSid) &&
         orphanedHarnessLoads.has(paramsSid)
       ) {
         sendToChannel(
@@ -2422,7 +2474,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               error: {
                 code: -32000,
                 message:
-                  "the harness is not answering; it is being restarted — try again",
+                  "the harness is still loading this session; try again shortly",
               },
             }),
           ),
@@ -2455,9 +2507,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
       const platformMeta =
-        method === "session/new"
-          ? { ...(extractPlatformMeta(frame) ?? {}), ref: randomUUID() }
-          : null;
+        method === "session/new" ? newSessionMeta(frame) : null;
       const promptId =
         method === "session/prompt" ? platformString(frame, "promptId") : null;
       const retryOf =
@@ -2715,6 +2765,12 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   return parsed.success ? parsed.data : null;
 }
 
+function newSessionMeta(frame: unknown): PlatformSessionMeta & { ref: string } {
+  const { title, ...meta } = extractPlatformMeta(frame) ?? {};
+  const shortened = title === undefined ? null : titleOf(title);
+  return { ...meta, ...(shortened && { title: shortened }), ref: randomUUID() };
+}
+
 function platformString(frame: unknown, key: string): string | null {
   const value = stringAt(platformOf(frame), key);
   return value === "" ? null : value;
@@ -2731,7 +2787,11 @@ function promptTitle(prompt: unknown): string | null {
         : "",
     )
     .join(" ");
-  const text = separateRendererBlocks(joined).text.replace(/\s+/g, " ");
+  return titleOf(joined);
+}
+
+function titleOf(raw: string): string | null {
+  const text = separateRendererBlocks(raw).text.replace(/\s+/g, " ").trim();
   if (!text) return null;
   return text.length > TITLE_CHARS
     ? `${text.slice(0, TITLE_CHARS - 1)}…`
@@ -2784,6 +2844,9 @@ function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
     createdAt: session.createdAt,
     running: session.running,
     ...(session.scheduleId !== null && { scheduleId: session.scheduleId }),
+    ...(session.continuedScheduleIds !== undefined && {
+      continuedScheduleIds: session.continuedScheduleIds,
+    }),
     ...(session.initialization === true && { initialization: true }),
     ...(session.threadTs !== null && { threadTs: session.threadTs }),
     ...(session.seenAt !== null && { seenAt: session.seenAt }),

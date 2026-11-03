@@ -1,7 +1,11 @@
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 import { emit, EventType } from "../../../events.js";
-import { measureCall, type CallRecord } from "../domain/call.js";
+import {
+  measureCall,
+  type CallRecord,
+  type EstimateReason,
+} from "../domain/call.js";
 import { proxyCostDifference } from "../domain/cost.js";
 import {
   amountsDelta,
@@ -35,16 +39,20 @@ export type StartedCall = CallMeta & { readonly callId: string };
 interface SettledAt {
   readonly startedAt: Date;
   readonly routerCallId?: string | null;
+  readonly sessionId?: string | null;
 }
 
 export interface SpendIngest {
   callStarted(call: StartedCall): Promise<void>;
   record(record: CallRecord): Promise<void>;
   settleUnrecordedCalls(): Promise<void>;
+  bookStampedCalls(): Promise<void>;
 }
 
 const UNRECORDED_AFTER_MS = 60 * 60 * 1000;
 const UNRECORDED_BATCH = 500;
+const STAMPED_BOOKING_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
+const STAMPED_BOOKING_BATCH = 200;
 const REFERENCE_DAYS = 7;
 const PROXY_COST_TOLERANCE = 0.05;
 
@@ -113,6 +121,8 @@ export function createSpendIngest(deps: {
         ownerSub: row.ownerSub,
         payer: row.payer,
         sessionId: row.sessionId,
+        stampedSessionId:
+          row.sessionId === NO_SESSION ? (call.sessionId ?? "") : "",
         connectionId: row.connectionId,
         providerTemplate: row.provider,
         model: row.model,
@@ -141,9 +151,9 @@ export function createSpendIngest(deps: {
     amounts: CallAmounts,
     final: boolean,
     call: SettledAt,
-  ) => {
+  ): Promise<boolean> => {
     const applied = await deps.calls.apply(callId, row, amounts, final);
-    if (!applied) return;
+    if (!applied) return false;
     const delta = amountsDelta(amounts, applied.previous);
     if (!isZero(delta)) {
       try {
@@ -154,9 +164,10 @@ export function createSpendIngest(deps: {
       }
       if (delta.costMicros !== 0) await countDay(applied.row, delta.costMicros);
     }
-    if (!final) return;
-    await deps.calls.release(callId);
+    if (!final) return false;
+    await deps.calls.release(callId, applied.row.callingAgentId || null);
     await putCall(callId, applied.row, amounts, call);
+    return !applied.previousFinal;
   };
 
   const referenceCost = async (row: SpendRow) => {
@@ -179,13 +190,45 @@ export function createSpendIngest(deps: {
     return highest ?? 0;
   };
 
+  const logEstimate = (
+    callId: string,
+    row: SpendRow,
+    amounts: CallAmounts,
+    detail: {
+      readonly reasons: readonly EstimateReason[];
+      readonly referenceCost: boolean;
+      readonly dialect?: string;
+      readonly status?: number | null;
+      readonly replyBytes?: number | null;
+      readonly complete?: boolean;
+    },
+  ) =>
+    log().info(
+      {
+        callId,
+        agentId: row.callingAgentId,
+        payer: row.payer,
+        subAgent: row.callingAgentId !== row.payer,
+        connectionId: row.connectionId,
+        provider: row.provider,
+        model: row.model,
+        unit: row.unit,
+        costMicros: amounts.costMicros,
+        uncachedInputTokens: amounts.uncachedInputTokens,
+        outputTokens: amounts.outputTokens,
+        durationMs: amounts.durationMs,
+        ...detail,
+      },
+      "spend.call_estimated",
+    );
+
   const ownerOf = async (record: CallRecord) =>
     (await deps.owners.ownerOf(record.payer)) ??
     (await deps.calls.read(record.callId))?.meta?.ownerSub ??
     (await deps.owners.ownerOf(record.agentId));
 
   const settleUnrecorded = async (callId: string) => {
-    if (!(await deps.calls.release(callId))) return;
+    if (!(await deps.calls.release(callId, null))) return;
     try {
       await settleReleased(callId);
     } catch (err) {
@@ -198,17 +241,18 @@ export function createSpendIngest(deps: {
     const state = await deps.calls.read(callId);
     if (!state || state.final) return;
     if (state.row) {
-      await settle(
-        callId,
-        state.row,
-        { ...state.amounts, estimatedCalls: 1 },
-        true,
-        {
-          startedAt:
-            state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
-          routerCallId: state.meta?.routerCallId ?? null,
-        },
-      );
+      const amounts = { ...state.amounts, estimatedCalls: 1 };
+      const settled = await settle(callId, state.row, amounts, true, {
+        startedAt:
+          state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
+        routerCallId: state.meta?.routerCallId ?? null,
+        sessionId: state.meta?.sessionId ?? null,
+      });
+      if (settled)
+        logEstimate(callId, state.row, amounts, {
+          reasons: ["record-missing"],
+          referenceCost: false,
+        });
       return;
     }
     if (!state.meta) return;
@@ -236,10 +280,49 @@ export function createSpendIngest(deps: {
           ? 1
           : 0,
     );
-    await settle(callId, row, estimate, true, {
+    const settled = await settle(callId, row, estimate, true, {
       startedAt: state.meta.startedAt,
       routerCallId: state.meta.routerCallId ?? null,
+      sessionId: state.meta.sessionId ?? null,
     });
+    if (settled)
+      logEstimate(callId, row, estimate, {
+        reasons: ["record-missing", "usage-missing"],
+        referenceCost: true,
+      });
+  };
+
+  const bookStamp = async (
+    {
+      callingAgentId,
+      sessionId,
+    }: { callingAgentId: string; sessionId: string },
+    since: Date,
+  ): Promise<void> => {
+    if (
+      (await checkedSession(deps.sessions, callingAgentId, sessionId)) ===
+      NO_SESSION
+    )
+      return;
+    try {
+      const moved = await deps.ledger.bookCalls({
+        callingAgentId,
+        sessionId,
+        since,
+      });
+      for (const callId of moved)
+        await deps.calls.rebook(callId, sessionId).catch(() => {});
+      if (moved.length > 0)
+        log().info(
+          { agentId: callingAgentId, sessionId, calls: moved.length },
+          "spend.calls_booked_late",
+        );
+    } catch (err) {
+      log().error(
+        { agentId: callingAgentId, sessionId, reason: formatError(err) },
+        "spend.late_booking_failed",
+      );
+    }
   };
 
   return {
@@ -265,9 +348,19 @@ export function createSpendIngest(deps: {
           endedAt: new Date(record.startedAt.getTime() + record.durationMs),
         });
       const measure = measureCall(record, deps.priceBook);
-      if (measure.kind === "skip") return;
+      if (measure.kind === "skip") {
+        await deps.calls
+          .heard(record.callId)
+          .catch((err: unknown) =>
+            log().warn(
+              { callId: record.callId, reason: formatError(err) },
+              "spend.call_heard_not_noted",
+            ),
+          );
+        return;
+      }
       if (measure.kind === "forget") {
-        await deps.calls.forget(record.callId);
+        await deps.calls.forget(record.callId, record.agentId || null);
         return;
       }
       const ownerSub = await ownerOf(record);
@@ -296,7 +389,22 @@ export function createSpendIngest(deps: {
       const amounts = measure.needsReferenceCost
         ? { ...measure.amounts, costMicros: await referenceCost(row) }
         : measure.amounts;
-      await settle(record.callId, row, amounts, record.final, record);
+      const settled = await settle(
+        record.callId,
+        row,
+        amounts,
+        record.final,
+        record,
+      );
+      if (settled && measure.estimateReasons.length > 0)
+        logEstimate(record.callId, row, amounts, {
+          reasons: measure.estimateReasons,
+          referenceCost: measure.needsReferenceCost,
+          dialect: record.dialect,
+          status: record.status,
+          replyBytes: record.replyBytes,
+          complete: record.complete,
+        });
       if (record.final)
         log().debug(
           {
@@ -348,6 +456,33 @@ export function createSpendIngest(deps: {
             "spend.unrecorded_call_failed",
           ),
         );
+      }
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: books to its Session a settled call that
+     * was metered before the agent's report of that Session reached the
+     * directory, as when the report failed or came after the new Session's
+     * wait for it ran out. The call row kept the stamp, so once the
+     * directory knows the Session the call and its share of the daily
+     * rollup move from no Session to it, and the call's state moves too in
+     * case a late record still arrives for it. A stamp the agent never
+     * reports stays with no Session and ages out of the window; each pass
+     * walks every stamp in the window in key order, so such stamps never
+     * crowd out the ones that the directory now knows.
+     */
+    async bookStampedCalls() {
+      const since = new Date(Date.now() - STAMPED_BOOKING_WINDOW_MS);
+      let after: { callingAgentId: string; sessionId: string } | null = null;
+      for (;;) {
+        const stamps = await deps.ledger.unbookedStamps({
+          since,
+          after,
+          limit: STAMPED_BOOKING_BATCH,
+        });
+        for (const stamp of stamps) await bookStamp(stamp, since);
+        if (stamps.length < STAMPED_BOOKING_BATCH) return;
+        after = stamps.at(-1) ?? null;
       }
     },
   };

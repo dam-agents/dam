@@ -20,6 +20,7 @@ interface PlatformMeta {
   mode?: string;
   type?: string;
   scheduleId?: string;
+  continuedScheduleIds?: string[];
   initialization?: boolean;
   threadTs?: string;
   createdAt?: string;
@@ -56,6 +57,9 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
       : SessionMode.Terminal,
     createdAt: p?.createdAt ?? s.updatedAt ?? new Date(0).toISOString(),
     scheduleId: p?.scheduleId ?? null,
+    ...(p?.continuedScheduleIds !== undefined && {
+      continuedScheduleIds: p.continuedScheduleIds,
+    }),
     initialization: p?.initialization ?? null,
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
@@ -134,6 +138,9 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     mode: POD_MODE[s.mode],
     createdAt: s.createdAt,
     scheduleId: s.scheduleId,
+    ...(s.continuedScheduleIds !== undefined && {
+      continuedScheduleIds: s.continuedScheduleIds,
+    }),
     initialization: s.initialization ?? null,
     threadTs: s.threadTs,
     title: s.title,

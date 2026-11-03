@@ -32,9 +32,11 @@ const sessionMetaEntrySchema = z.object({
   runCount: z.number().optional(),
   runStarts: z.array(z.string()).optional(),
   unstored: z.boolean().optional(),
+  continuedScheduleIds: z.array(z.string()).optional().catch(undefined),
 });
 
 const RUN_STARTS_CAP = 500;
+const CONTINUED_SCHEDULES_CAP = 500;
 
 const sessionMetadataStateSchema = z
   .object({
@@ -62,6 +64,7 @@ export interface SessionMetadataStore {
   startRun(sessionId: string): string | null;
   finishRun(sessionId: string): void;
   runStartsOf(sessionId: string): string[];
+  recordContinuation(sessionId: string, scheduleId: string): void;
   markUnstored(sessionId: string): void;
   markStored(sessionId: string): void;
   clearFireEvent(sessionId: string): void;
@@ -150,6 +153,9 @@ export function createSessionMetadataStore(
             createdAt: from?.createdAt ?? now(),
             seenAt: now(),
             lastActivityAt: now(),
+            ...(from?.continuedScheduleIds !== undefined && {
+              continuedScheduleIds: from.continuedScheduleIds,
+            }),
           },
         },
       });
@@ -219,6 +225,25 @@ export function createSessionMetadataStore(
     },
     runStartsOf(sessionId) {
       return [...(store.read().sessions[sessionId]?.runStarts ?? [])];
+    },
+    recordContinuation(sessionId, scheduleId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing || existing.continuedScheduleIds?.includes(scheduleId))
+        return;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            ...existing,
+            continuedScheduleIds: [
+              ...(existing.continuedScheduleIds ?? []),
+              scheduleId,
+            ].slice(-CONTINUED_SCHEDULES_CAP),
+          },
+        },
+      });
     },
     markUnstored(sessionId) {
       const { sessions, tombstones } = store.read();

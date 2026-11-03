@@ -39,6 +39,11 @@ import {
   createTargetReaper,
   type TargetReaper,
 } from "./services/target-reaper.js";
+import {
+  createReportedTargetReap,
+  type OpenCalls,
+  type ReportedTargetReap,
+} from "./services/reported-target-reap.js";
 import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createSetupFailure } from "./services/setup-failure.js";
 import {
@@ -71,6 +76,19 @@ function composeReaper(
   });
 }
 
+function composeReportedReap(
+  repo: InvocationsRepository,
+  agentsFor: (owner: string) => AgentsService,
+  frames: DelegationFramesPort,
+  openCalls: OpenCalls,
+): ReportedTargetReap {
+  return createReportedTargetReap({
+    reaper: composeReaper(repo, agentsFor, frames),
+    capture: createTargetCapture({ repo, frames }),
+    openCalls,
+  });
+}
+
 export function composeInvocationsForOwner(opts: {
   db: Db;
   owner: string;
@@ -78,6 +96,7 @@ export function composeInvocationsForOwner(opts: {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   frames: DelegationFramesPort;
+  openCalls: OpenCalls;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   scriptOutputsAvailable: boolean;
   targetAdmission?: TargetAdmission;
@@ -92,6 +111,12 @@ export function composeInvocationsForOwner(opts: {
     agents: opts.agents,
     driverResolution: createDriverResolution({ repo }),
     reaper: composeReaper(repo, () => opts.agents, opts.frames),
+    reportedReap: composeReportedReap(
+      repo,
+      () => opts.agents,
+      opts.frames,
+      opts.openCalls,
+    ),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
@@ -139,11 +164,18 @@ export function composeInvocationLivenessSweep(opts: {
   outputs: ScriptOutputs;
   batchSize: number;
   frames: DelegationFramesPort;
+  openCalls: OpenCalls;
 }): InvocationLivenessSweep {
   const repo = createInvocationsRepository(opts.db);
   return createInvocationLivenessSweep({
     repo,
     reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+    reportedReap: composeReportedReap(
+      repo,
+      opts.agentsFor,
+      opts.frames,
+      opts.openCalls,
+    ),
     readTargetRestart: opts.readTargetRestart,
     hasAgent: opts.hasAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,

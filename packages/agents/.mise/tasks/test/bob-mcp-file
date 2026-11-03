@@ -1,0 +1,133 @@
+#!/usr/bin/env node
+//MISE description="Test that the bob acp preload hides the file's platform MCP entry from Bob's reads of mcp.json, restores it in Bob's writes, leaves every other file alone, says so when it cannot hide the entry, and is loaded by harness-chat alone"
+//MISE sources=["bob/rootfs/usr/local/lib/bob-mcp-file.mjs", "bob/rootfs/usr/local/lib/bob-preload-lib.mjs", "bob/rootfs/usr/local/bin/harness-chat", "bob/rootfs/usr/local/bin/harness-terminal", "bob/rootfs/app/bob-settings.mjs", ".mise/tasks/test/bob-mcp-file"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+// TEST_OVERVIEW: bob-mcp-file.mjs is preloaded into `bob acp`, where the platform entry of ~/.bob/settings/mcp.json would outrank the same-named entry a session carries with its session ref. Through the preload, every read of that file lacks platform-outbound, every write of it gets the entry back from the file on disk, and no other path changes. A read that finds nothing to hide is said once on stderr. harness-chat always loads it; harness-terminal never does, so `bob chat` keeps the file's entry.
+
+const preload = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/bob-mcp-file.mjs", import.meta.url));
+const rootfs = fileURLToPath(new URL("../../../bob/rootfs/", import.meta.url));
+const home = mkdtempSync(join(tmpdir(), "bob mcp-file-"));
+const settings = join(home, ".bob/settings");
+const target = join(settings, "mcp.json");
+const other = join(home, "work/.bob/mcp.json");
+mkdirSync(settings, { recursive: true });
+mkdirSync(join(home, "work/.bob"), { recursive: true });
+const platform = { type: "http", url: "http://platform/mcp", transportType: "http" };
+const slack = { type: "http", url: "https://mcp.slack.com/mcp", headers: { Authorization: "Bearer dummy-placeholder" } };
+const whole = JSON.stringify({ mcpServers: { "platform-outbound": platform, slack } }, null, 2);
+writeFileSync(target, whole);
+writeFileSync(other, whole);
+
+const run = (script) => {
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    env: { ...process.env, HOME: home, NODE_OPTIONS: `--import=${preload} --max-old-space-size=512` },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return { out: JSON.parse(result.stdout), err: result.stderr };
+};
+
+try {
+  // TEST_SCENARIO: Bob reads the file through fs/promises as Bob 2.0.6 does, with a callback after an options argument, as bytes, and by file URL. Each read lacks platform-outbound and keeps the rest, bytes come back as bytes, the workspace mcp.json with the same content is read whole, nothing is said on stderr, and the preload takes its own --import out of NODE_OPTIONS only once the file is read, so a parent that reads nothing still hands it down and Bob's own children do not inherit it.
+  const reads = run(`
+    import fs from "node:fs";
+    const target = ${JSON.stringify(target)};
+    const names = (data) => Object.keys(JSON.parse(String(data)).mcpServers);
+    const beforeRead = process.env.NODE_OPTIONS ?? null;
+    const callback = await new Promise((resolve, reject) => fs.readFile(target, "utf8", (err, data) => (err ? reject(err) : resolve(data))));
+    const bytes = fs.readFileSync(target);
+    console.log(JSON.stringify({
+      beforeRead,
+      promise: names(await fs.promises.readFile(target, "utf8")),
+      callback: names(callback),
+      bytes: Buffer.isBuffer(bytes) ? names(bytes) : "not bytes",
+      url: names(fs.readFileSync(new URL(${JSON.stringify(pathToFileURL(target).href)}), "utf8")),
+      other: names(fs.readFileSync(${JSON.stringify(other)}, "utf8")),
+      afterRead: process.env.NODE_OPTIONS ?? null,
+    }));
+  `);
+  assert.deepEqual(reads.out, {
+    beforeRead: `--import=${preload} --max-old-space-size=512`,
+    promise: ["slack"],
+    callback: ["slack"],
+    bytes: ["slack"],
+    url: ["slack"],
+    other: ["platform-outbound", "slack"],
+    afterRead: "--max-old-space-size=512",
+  });
+  assert.equal(reads.err.includes("bob-mcp-file:"), false, reads.err);
+  assert.equal(readFileSync(target, "utf8"), whole, "a read changed the file on disk");
+
+  // TEST_SCENARIO: Bob rewrites the file from what it read, so the content it writes lacks platform-outbound. The preload puts the entry back from the file on disk, both for a direct write and for content staged in another file and renamed over it; the workspace mcp.json is written as given.
+  const writes = run(`
+    import fs from "node:fs";
+    const target = ${JSON.stringify(target)};
+    const other = ${JSON.stringify(other)};
+    const names = () => Object.keys(JSON.parse(fs.readFileSync(target, "utf8")).mcpServers);
+    const without = (extra) => JSON.stringify({ mcpServers: { slack: { type: "http", url: "https://mcp.slack.com/mcp" }, ...extra } }, null, 2);
+    const seen = {};
+    await fs.promises.writeFile(target, without({ a: { command: "a" } }), "utf8");
+    seen.promise = names();
+    fs.writeFileSync(target + ".tmp", without({ b: { command: "b" } }));
+    fs.renameSync(target + ".tmp", target);
+    seen.rename = names();
+    fs.writeFileSync(other, without({}));
+    seen.other = Object.keys(JSON.parse(fs.readFileSync(other, "utf8")).mcpServers);
+    console.log(JSON.stringify(seen));
+  `);
+  assert.deepEqual(writes.out, { promise: ["slack", "a"], rename: ["slack", "b"], other: ["slack"] });
+  const onDisk = JSON.parse(readFileSync(target, "utf8")).mcpServers;
+  assert.deepEqual(Object.keys(onDisk), ["slack", "b", "platform-outbound"]);
+  assert.deepEqual(onDisk["platform-outbound"], platform);
+
+  // TEST_SCENARIO: Content that is not a JSON object with mcpServers passes through both ways, so Bob reports its own parse error on a broken file and a write of something else lands as written; the preload says once on stderr that it hid nothing, since the only other symptom would be anonymous platform calls.
+  writeFileSync(target, "{ not json");
+  const broken = run(`
+    import fs from "node:fs";
+    const target = ${JSON.stringify(target)};
+    const read = fs.readFileSync(target, "utf8");
+    fs.readFileSync(target, "utf8");
+    fs.writeFileSync(target, "[]");
+    console.log(JSON.stringify({ read, written: fs.readFileSync(target, "utf8") }));
+  `);
+  assert.deepEqual(broken.out, { read: "{ not json", written: "[]" });
+  const said = broken.err.split("\n").filter((line) => line.startsWith("bob-mcp-file:"));
+  assert.equal(said.length, 2, broken.err);
+  assert.match(said[0], /cannot parse .*mcp\.json, so its platform-outbound entry is not hidden/);
+  assert.match(said[1], /holds no mcpServers object, so nothing is hidden/);
+
+  // TEST_SCENARIO: harness-chat starts `bob acp` with the preload whether or not the process carries session pins, and harness-terminal never names it, so `bob chat` reads the whole file.
+  mkdirSync(join(home, "bin"));
+  writeFileSync(join(home, "bin/bob"), '#!/bin/sh\nprintf "%s\\n" "$NODE_OPTIONS" > "$HOME/bob-args"\n', { mode: 0o755 });
+  writeFileSync(join(settings, "settings.json"), "{}");
+  const chat = readFileSync(join(rootfs, "usr/local/bin/harness-chat"), "utf8")
+    .replaceAll("/app/bob-settings.mjs", join(rootfs, "app/bob-settings.mjs"))
+    .replaceAll("--import=/usr/local/lib/", "--import=/preload/");
+  writeFileSync(join(home, "harness-chat"), chat);
+  const launch = (env) => {
+    execFileSync("/bin/sh", [join(home, "harness-chat")], {
+      env: { PATH: `${join(home, "bin")}:${process.env.PATH}`, HOME: home, ...env },
+      encoding: "utf8",
+    });
+    return readFileSync(join(home, "bob-args"), "utf8").trim().split(" ");
+  };
+  assert.deepEqual(launch({}), ["--import=/preload/bob-mcp-file.mjs", "--import=/preload/bob-acp-patch.mjs"]);
+  assert.deepEqual(launch({ PLATFORM_MODEL: "m-1", PLATFORM_MODEL_ROUTER_URL: "http://127.0.0.1:1" }), [
+    "--import=/preload/bob-loopback-direct.mjs",
+    "--import=/preload/bob-mcp-file.mjs",
+    "--import=/preload/bob-acp-patch.mjs",
+    "--import=/preload/bob-settings-file.mjs",
+  ]);
+  const terminal = readFileSync(join(rootfs, "usr/local/bin/harness-terminal"), "utf8");
+  assert.equal(terminal.includes("bob-mcp-file"), false, "harness-terminal must not load the preload");
+  console.log("bob acp reads mcp.json without the platform entry and writes it back whole; bob chat reads it whole");
+} finally {
+  rmSync(home, { recursive: true, force: true });
+}

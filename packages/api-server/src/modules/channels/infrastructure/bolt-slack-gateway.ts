@@ -735,6 +735,7 @@ export function createBoltSlackGateway(
         files: [{ id: args.fileId, title: args.title ?? args.filename }],
         channel_id: args.channelId,
         ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+        ...(args.blocks ? { blocks: args.blocks } : {}),
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
       } as FilesCompleteUploadExternalArgs);

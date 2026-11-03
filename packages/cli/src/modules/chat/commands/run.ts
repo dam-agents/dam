@@ -119,6 +119,7 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
     .description(
       "Run an agent headlessly: submit a prompt and stream the answer",
     )
+    .enablePositionalOptions()
     .argument("<agent>", "agent name or ID")
     .option("--server <url>", "override the configured server URL")
     .option("-p, --prompt <text>", "the prompt text")
