@@ -47,14 +47,14 @@ interface ShapeConfig {
 }
 
 const SHAPES: ShapeConfig[] = [
-  { piece: "crescent", color: RUST, x: 93, y: -299, size: 440 },
-  { piece: "eye", color: PINK, x: 553, y: -269, size: 180 },
-  { piece: "singleWing", color: GREEN, x: 768, y: -299, size: 550, flip: true },
-  { piece: "bar", color: BLUE, x: -27, y: -44, size: 340 },
-  { piece: "singleWing", color: GREEN, x: 57, y: 71, size: 400, flip: true },
-  { piece: "shortBar", color: GOLD, x: 173, y: 101, size: 360 },
-  { piece: "bar", color: BLUE, x: 473, y: 261, size: 460 },
-  { piece: "halfDisc", color: GOLD, x: 473, y: 411, size: 460 },
+  { piece: "crescent", color: RUST, x: 93, y: -183, size: 440 },
+  { piece: "eye", color: PINK, x: 553, y: -180, size: 180 },
+  { piece: "singleWing", color: GREEN, x: 768, y: -183, size: 550, flip: true },
+  { piece: "bar", color: BLUE, x: -27, y: 72, size: 340 },
+  { piece: "singleWing", color: GREEN, x: 57, y: 187, size: 400, flip: true },
+  { piece: "shortBar", color: GOLD, x: 173, y: 217, size: 360 },
+  { piece: "bar", color: BLUE, x: 473, y: 377, size: 460 },
+  { piece: "halfDisc", color: GOLD, x: 473, y: 527, size: 460 },
 ];
 
 function Shape({ piece, color, x, y, size, flip = false }: ShapeConfig) {
