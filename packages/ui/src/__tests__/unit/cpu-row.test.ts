@@ -10,7 +10,6 @@ vi.mock("../../store.js", () => ({
 }));
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
-
 import { CpuRow } from "../../modules/budgets/components/cpu-row.js";
 import type { AgentView } from "../../types.js";
 
