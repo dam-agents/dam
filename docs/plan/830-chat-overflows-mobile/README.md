@@ -27,7 +27,7 @@ Two causes produce this, and each one hides the other.
 iOS Safari zooms the page when a text field below 16px takes focus.
 The chat composer is 14px.
 `Input` is 14px, 12px or 12px by size, and `Textarea` is 14px.
-Three raw text `<input>` elements do not use these primitives.
+Four raw text `<input>` elements do not use these primitives.
 
 **Cause 2 — the frame ignores the keyboard.**
 iOS Safari does not resize the layout viewport when the keyboard opens.
@@ -71,10 +71,10 @@ No architecture page describes the app frame or the viewport, so no page under `
 
 ## Sub-issues
 
-| #   | Title                                                                            | Scope                                                                                                                                                             | Depends on |
-| --- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [Inputs stay 16px on a phone](./01-inputs-16px-on-phone.md)                      | Below `md`, `Input`, `Textarea`, the composer and the three raw text inputs use 16px. No zoom on focus.                                                           | —          |
-| 02  | [The frame follows the visible viewport](./02-frame-follows-visible-viewport.md) | One hook publishes `visualViewport` as CSS variables. The two root frames read them, and the chat root fills its parent. The keyboard no longer moves the header. | 01         |
+| #     | Title                                                                            | Scope                                                                                                                                                                                                                 | Depends on |
+| ----- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| ✅ 01 | [Inputs stay 16px on a phone](./01-inputs-16px-on-phone.md)                      | Below `md`, `Input`, `Textarea`, the composer and the four raw text inputs use 16px. No zoom on focus.                                                                                                                | —          |
+| 02    | [The frame follows the visible viewport](./02-frame-follows-visible-viewport.md) | One hook publishes `visualViewport` as CSS variables. The two root frames read them, and the chat root fills its parent. The keyboard no longer moves the header, and the composer stops at half of the visible area. | 01         |
 
 Slice 01 comes first.
 The zoom hides the keyboard behavior, so a tester cannot judge slice 02 on a real phone until the zoom is gone.

@@ -45,8 +45,17 @@ Apply the `/react-ui-engineering` skill.
    - The phone side panel in `packages/ui/src/modules/sessions/components/classic-chat-layout.tsx` (`max-md:fixed max-md:inset-0`).
    - The Getting started dock in `packages/ui/src/modules/getting-started/components/getting-started-dock.tsx`.
    - Anything that uses `has-[[data-full-page]]`.
+     `position: fixed` and the transform also make the frame a stacking context.
+     In the chat, `<main>` rises with `has-[[data-full-page]]:z-overlay`, and that z-index now works only inside the frame.
+     Open an artifact full page on a phone and check that nothing outside the frame covers it.
+     `ConnectionBanner` sits outside the chat frame, so it does not follow the keyboard there.
+     That is accepted.
 7. Leave the views that use `min-h-dvh` or `h-dvh` outside this frame as they are: `startup-error-view.tsx`, `public-agent-view.tsx`, `usage-report-view.tsx`.
    The keyboard does not matter on them.
+8. Cap the composer at half of the visible area.
+   `packages/ui/src/hooks/use-auto-resize.ts` caps it at half of `window.innerHeight`, and iOS Safari does not shrink `innerHeight` when the keyboard opens.
+   A long message can then fill the whole area above the keyboard.
+   Use half of `window.visualViewport.height` and fall back to `window.innerHeight`.
 
 If `top: var(--app-offset-top)` fits better than the transform, use it.
 Check in the simulator first: it drops the containing-block effect from step 6.
@@ -55,6 +64,8 @@ Check in the simulator first: it drops the containing-block effect from step 6.
 
 - [ ] In iOS Safari on a phone, with the keyboard open on the composer: the header is fully visible at the top, the composer sits directly above the keyboard, the list scrolls on its own, and the page itself does not scroll.
 - [ ] Typing three lines keeps all of that true while the composer grows.
+- [ ] A message longer than the visible area keeps the header visible: the composer stops at half of the visible area and scrolls inside.
+- [ ] An artifact opened full page on a phone is not covered by anything outside the frame.
 - [ ] After the keyboard closes, the chat fills the whole screen.
   No gap or offset remains.
 - [ ] Showing and hiding the address bar does not make the page scroll as a whole, and the frame keeps filling the screen.
@@ -71,6 +82,8 @@ Check in the simulator first: it drops the containing-block effect from step 6.
 3. Open the app in iOS Simulator Safari on a phone, sign in, and open a chat with many messages.
 4. Tap the composer and type three lines with the on-screen keys.
    Check the header, the composer position and the list scroll as the acceptance criteria say.
+   Then type until the message is longer than the visible area.
+   Check that the header stays and the composer scrolls inside.
 5. Close the keyboard.
    Check that the frame is full height again.
 6. Open the Files section on the phone while the keyboard is open in the chat.
