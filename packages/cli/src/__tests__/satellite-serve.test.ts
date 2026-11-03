@@ -270,6 +270,7 @@ describe("starting the worker", () => {
     const client = {
       satellites: {
         connect: { mutate: async () => ({ incarnation: "reg-1" }) },
+        connectFenced: { mutate: async () => ({ incarnation: "reg-1" }) },
         claim: {
           mutate: async () => {
             claims.push(1);
@@ -278,7 +279,16 @@ describe("starting the worker", () => {
             return [];
           },
         },
+        claimFenced: {
+          mutate: async () => {
+            claims.push(1);
+            if (claims.length === 1) return [];
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            return [];
+          },
+        },
         heartbeat: { mutate: async () => {} },
+        heartbeatFenced: { mutate: async () => {} },
         report: { mutate: async () => {} },
         drain: { mutate: async () => {} },
       },
@@ -475,5 +485,127 @@ describe("a platform that does not enforce registrations", () => {
     expect(
       calls.map((call) => (call.input as { incarnation?: string }).incarnation),
     ).toEqual([undefined, undefined]);
+  });
+});
+
+describe("a worker that knows the registration it serves", () => {
+  const registrationId = "22222222-2222-4222-8222-222222222222";
+  const manifest = {
+    name: "gpu-box",
+    maxConcurrent: 2,
+    tools: [{ name: "run", inputSchema: {} }],
+  };
+
+  function noProcedure(path: string): Error {
+    return TRPCClientError.from({
+      error: {
+        code: -32004,
+        message: `No procedure found on path "${path}"`,
+        data: { code: "NOT_FOUND" },
+      },
+    } as never);
+  }
+
+  function clientWith(
+    overrides: Record<string, (input: never) => Promise<never>>,
+  ) {
+    const calls: { procedure: string; input: unknown }[] = [];
+    const record = (procedure: string) => async (input: unknown) => {
+      calls.push({ procedure, input });
+      const work = overrides[procedure];
+      if (work !== undefined) return work(input as never);
+      return undefined as never;
+    };
+    return {
+      calls,
+      client: {
+        satellites: {
+          connect: { mutate: record("connect") },
+          connectFenced: { mutate: record("connectFenced") },
+          claim: { mutate: record("claim") },
+          claimFenced: { mutate: record("claimFenced") },
+          heartbeat: { mutate: record("heartbeat") },
+          heartbeatFenced: { mutate: record("heartbeatFenced") },
+          report: { mutate: record("report") },
+          reportFenced: { mutate: record("reportFenced") },
+          drain: { mutate: record("drain") },
+          drainFenced: { mutate: record("drainFenced") },
+        },
+      } as never,
+    };
+  }
+
+  /**
+   * TEST_SCENARIO: A resumed registration names the one it served, so it goes to
+   * the procedure that requires that name. An older replica would drop the field
+   * and register a removed name again, which is the opposite of what a reconnect
+   * after a removal must do; the refusal is reported as a fence it cannot
+   * enforce, and no plain connect is made in its place.
+   */
+  it("resumes through the fenced procedure, never the plain one", async () => {
+    const { client, calls } = clientWith({
+      connectFenced: async () => {
+        throw noProcedure("satellites.connectFenced");
+      },
+    });
+    await expect(
+      transportFor(client).connect({
+        manifest,
+        host: "gpu-box.internal",
+        resume: registrationId,
+      }),
+    ).rejects.toBeInstanceOf(FenceUnsupportedError);
+    expect(calls.map((call) => call.procedure)).toEqual(["connectFenced"]);
+  });
+
+  it("registers for the first time through the plain procedure", async () => {
+    const { client, calls } = clientWith({});
+    await transportFor(client).connect({ manifest, host: "gpu-box.internal" });
+    expect(calls.map((call) => call.procedure)).toEqual(["connect"]);
+  });
+
+  /**
+   * TEST_SCENARIO: A claim that names its registration goes to the procedure
+   * that requires one, so an old replica cannot lease the Jobs of a machine that
+   * replaced this one. Its refusal is a fence it cannot enforce, and nothing is
+   * claimed through the plain procedure.
+   */
+  it("claims and renews through the fenced procedures, never the plain ones", async () => {
+    const { client, calls } = clientWith({
+      claimFenced: async () => {
+        throw noProcedure("satellites.claimFenced");
+      },
+      heartbeatFenced: async () => {
+        throw noProcedure("satellites.heartbeatFenced");
+      },
+    });
+    const transport = transportFor(client);
+    await expect(
+      transport.claim({
+        satellite: "gpu-box",
+        capacity: 1,
+        waitMs: 0,
+        incarnation: registrationId,
+      }),
+    ).rejects.toBeInstanceOf(FenceUnsupportedError);
+    await expect(
+      transport.heartbeat({
+        satellite: "gpu-box",
+        running: [1],
+        incarnation: registrationId,
+      }),
+    ).rejects.toBeInstanceOf(FenceUnsupportedError);
+    expect(calls.map((call) => call.procedure)).toEqual([
+      "claimFenced",
+      "heartbeatFenced",
+    ]);
+  });
+
+  it("claims and renews through the plain procedures when it names nothing", async () => {
+    const { client, calls } = clientWith({});
+    const transport = transportFor(client);
+    await transport.claim({ satellite: "gpu-box", capacity: 1, waitMs: 0 });
+    await transport.heartbeat({ satellite: "gpu-box", running: [] });
+    expect(calls.map((call) => call.procedure)).toEqual(["claim", "heartbeat"]);
   });
 });

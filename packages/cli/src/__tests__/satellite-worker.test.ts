@@ -504,6 +504,7 @@ describe("surviving a drop", () => {
         retry: FAST,
         drainGraceMs: 200,
         drainRetryMs: 10,
+        childCloseMs: 2000,
       }),
     };
   }
@@ -1190,6 +1191,112 @@ describe("surviving a drop", () => {
       reports,
       "the replacement's $1 is never settled with this machine's result",
     ).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that knows the registration it serves must not
+   * reach an older replica that would register the removed name again from the
+   * resume it silently drops. The resume goes to a procedure that requires it,
+   * the refusal is the older replica, and the worker waits for one that
+   * enforces the fence rather than taking the unfenced path.
+   */
+  it("waits for a platform that enforces the registration it resumes", async () => {
+    let connects = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connects += 1;
+        throw new FenceUnsupportedError("test-box");
+      },
+      claim: async () => [],
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async () => {},
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(connects).toBeGreaterThanOrEqual(3), {
+      timeout: 5000,
+    });
+    await worker.drain();
+    await running;
+
+    expect(
+      lines.some((line) =>
+        line.startsWith(
+          "this platform does not enforce registrations, so it cannot serve a worker that knows its own",
+        ),
+      ),
+      "the refusal is said out loud, not hidden as a drop",
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A claim that names its registration is refused by an older
+   * replica. Claiming through the plain procedure in its place would lease the
+   * Jobs of the machine that replaced this one, so nothing is claimed and the
+   * worker keeps trying the fenced one.
+   */
+  it("claims nothing where the platform cannot enforce the registration", async () => {
+    const queue = pollQueue();
+    let claims = 0;
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claims += 1;
+        throw new FenceUnsupportedError("test-box");
+      },
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async () => {},
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(claims).toBeGreaterThanOrEqual(3), {
+      timeout: 5000,
+    });
+    await worker.drain();
+    await running;
+
+    expect(worker.runningCount).toBe(0);
+  });
+
+  /**
+   * TEST_SCENARIO: A stop with nothing running used to release every waiter,
+   * including the one the machine's own MCP server is closed under, so the
+   * process could exit before the SDK finished stopping the child. The close is
+   * awaited on its own, and `start()` returns only once it has finished.
+   */
+  it("closes the machine's own server before it exits", async () => {
+    const closed: string[] = [];
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => [],
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async () => {},
+    };
+    const parsed = parseCommandSurface(PATTERNS, IDENTITY);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const backend = createCommandBackend(parsed.value);
+    const { worker } = workerWith(transport, {
+      ...backend,
+      close: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        closed.push("closed");
+      },
+    });
+
+    const running = worker.start();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await worker.drain();
+    await running;
+
+    expect(
+      closed,
+      "the child's termination finished before the worker exited",
+    ).toEqual(["closed"]);
   });
 
   /**

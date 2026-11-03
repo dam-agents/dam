@@ -20,6 +20,7 @@ const MAX_UNSENT = 16;
 const CRASH_LOOP_MS = 10_000;
 const DRAIN_GRACE_MS = 15_000;
 const DRAIN_RETRY_MS = 1_000;
+const CHILD_CLOSE_MS = 5_000;
 const FORCE_REPORT_MS = 2_000;
 
 type ReportOutcome =
@@ -121,6 +122,8 @@ export function describeOffline(err: unknown): string {
   for (let at: unknown = err; at instanceof Error; at = at.cause) {
     if (at instanceof AuthRequiredAtTransportError)
       return `not signed in (${at.message}) — run \`dam login\`, or set DAM_TOKEN to a key with the satellites:serve scope`;
+    if (at instanceof FenceUnsupportedError)
+      return `this platform does not enforce registrations, so it cannot serve a worker that knows its own (${at.message})`;
   }
   return `offline: ${String(err)}`;
 }
@@ -183,6 +186,7 @@ export function createWorker(deps: {
   retry?: BackoffOptions;
   drainGraceMs?: number;
   drainRetryMs?: number;
+  childCloseMs?: number;
 }) {
   const { name, backend, transport, log } = deps;
   const running = new Set<number>();
@@ -200,6 +204,7 @@ export function createWorker(deps: {
   let abandoning = false;
   let grace: ReturnType<typeof setTimeout> | undefined;
   let stopSettling: Promise<void> = Promise.resolve();
+  let closing: Promise<void> | undefined;
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: Stops waiting on the platform for good. Every
@@ -342,6 +347,24 @@ export function createWorker(deps: {
         }
       }
     }
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: The machine's own MCP server, closed and waited
+   * for. A stop releases its waiters on the platform as soon as it can, and that
+   * same release would abandon this: the SDK then never finishes its stdin,
+   * SIGTERM, SIGKILL sequence and the child outlives the worker. So the close is
+   * awaited on its own, once, with a deadline that fits inside a supervisor's
+   * stop timeout, and the normal and forced paths share it.
+   */
+  function closeBackend(): Promise<void> {
+    closing ??= Promise.race([
+      backend.close().catch(() => {}),
+      new Promise<void>((resolve) =>
+        setTimeout(resolve, deps.childCloseMs ?? CHILD_CLOSE_MS),
+      ),
+    ]);
+    return closing;
   }
 
   /**
@@ -690,7 +713,7 @@ export function createWorker(deps: {
         await settleReports();
         await stopSettling;
         if (connected && !stopped) await flushUnsent().catch(() => {});
-        await guarded(backend.close()).catch(() => {});
+        await closeBackend();
       }
     },
 
@@ -738,7 +761,7 @@ export function createWorker(deps: {
       ]);
       running.clear();
       abandon();
-      await backend.close().catch(() => {});
+      await closeBackend();
     },
   };
 }

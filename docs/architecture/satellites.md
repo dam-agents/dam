@@ -206,7 +206,9 @@ One that did exit is started again, and the tool list it comes back with is **re
 It is replayed only to the **registration it was claimed under**: a name registered again starts its Job sequence over, so an old machine's `#1` is not the new machine's `#1`, and the platform settles a report that names the wrong registration as nothing at all.
 A rollout moves the two ends apart for a while, so a missing identity is read as *unknown* rather than as *different*, and the worker keeps the registration it last learned.
 A result claimed before the platform could name a registration is never replayed, though: the worker cannot tell it from the same number of a machine registered since, so it says so and lets the lease settle that Job as interrupted.
-Nor is one sent to a server that cannot enforce a registration: a call that names one goes to a procedure of its own, which an older server refuses by name instead of reading it and ignoring the field, and a rolling deployment can answer one call from a newer replica and the next from an older one.
+Nor is one sent to a server that cannot enforce a registration: every call a worker makes once it knows its registration — resuming, claiming, renewing a lease, reporting, draining — goes to a procedure of its own that requires it, and an older server refuses such a call by name instead of reading it and ignoring the field.
+A rolling deployment can answer one call from a newer replica and the next from an older one, so the fence has to travel on the call that writes rather than on a promise from an earlier one.
+A worker that meets such a refusal waits for a platform that enforces registrations; it never takes the unfenced path with a registration in hand.
 Beyond the lease, the sweep settles the Job as interrupted and the Agent is told its outcome is unknown, so a call in flight during a drop ends in a sentence rather than a wait.
 A call made while the Satellite is offline never starts at all: admission refuses it and says since when the machine has been gone ([Admission](#admission)).
 
@@ -265,7 +267,7 @@ The api-server resolves the Agent's name when the worker claims the call, and fa
 Every outcome is one line too, and each way a call ends reads differently: `DONE` with its exit code, `FAILED` for a command that ran and failed or a tool that returned an error, `BLOCKED` for a call the machine refused without running, which names the pattern it came closest to, and `CANCELLED` and `INTERRUPTED`.
 A parse error names the line it is on, since the text the user just typed is the whole allowlist.
 Shutdown stops claiming on the first interrupt — a claim already open hands nothing back that is then started — and lets what is running report.
-After a bounded grace it stops waiting on the platform, so a supervisor's stop timeout gets an exit rather than a kill.
+After a bounded grace it stops waiting on the platform, so a supervisor's stop timeout gets an exit rather than a kill, and it closes the MCP server it started before it exits, waiting for the child to stop within its own deadline.
 A Satellite found removed by a reconnect drains what is running just as a removed claim does, rather than closing the machine's MCP server on top of it.
 The second interrupt forces.
 There is no reload: neither form reads a file, so changing what a machine offers means restarting it.

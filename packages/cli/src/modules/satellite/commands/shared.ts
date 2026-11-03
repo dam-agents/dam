@@ -214,19 +214,55 @@ function rejectsAsUnknownProcedure(err: unknown): boolean {
  */
 export function transportFor(trpc: TrpcClient): WorkerTransport {
   return {
-    connect: async ({ manifest, host, resume }) =>
-      trpc.satellites.connect
-        .mutate({
+    connect: async ({ manifest, host, resume }) => {
+      if (resume === undefined)
+        return trpc.satellites.connect
+          .mutate({ manifest, host })
+          .catch((err: unknown) => throwIfRemoved(err, manifest.name));
+      try {
+        return await trpc.satellites.connectFenced.mutate({
           manifest,
           host,
-          ...(resume === undefined ? {} : { resume }),
-        })
-        .catch((err: unknown) => throwIfRemoved(err, manifest.name)),
-    claim: (input) =>
-      trpc.satellites.claim
-        .mutate(input)
-        .catch((err: unknown) => throwIfRemoved(err, input.satellite)),
-    heartbeat: (input) => trpc.satellites.heartbeat.mutate(input),
+          resume,
+        });
+      } catch (err) {
+        if (rejectsAsUnknownProcedure(err))
+          throw new FenceUnsupportedError(manifest.name);
+        return throwIfRemoved(err, manifest.name);
+      }
+    },
+    claim: async (input) => {
+      if (input.incarnation === undefined)
+        return trpc.satellites.claim
+          .mutate(input)
+          .catch((err: unknown) => throwIfRemoved(err, input.satellite));
+      try {
+        return await trpc.satellites.claimFenced.mutate({
+          ...input,
+          incarnation: input.incarnation,
+        });
+      } catch (err) {
+        if (rejectsAsUnknownProcedure(err))
+          throw new FenceUnsupportedError(input.satellite);
+        return throwIfRemoved(err, input.satellite);
+      }
+    },
+    heartbeat: async (input) => {
+      if (input.incarnation === undefined) {
+        await trpc.satellites.heartbeat.mutate(input);
+        return;
+      }
+      try {
+        await trpc.satellites.heartbeatFenced.mutate({
+          ...input,
+          incarnation: input.incarnation,
+        });
+      } catch (err) {
+        if (rejectsAsUnknownProcedure(err))
+          throw new FenceUnsupportedError(input.satellite);
+        throw err;
+      }
+    },
     report: async (input) => {
       if (input.incarnation === undefined) {
         await trpc.satellites.report.mutate(input);

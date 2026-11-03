@@ -96,6 +96,26 @@ export const drainInputSchema = z.union([
 ]);
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: The connect, claim and heartbeat of a worker that
+ * already knows which registration it served, as procedures of their own for the
+ * same reason as the fenced drain: an older server answers that it does not
+ * exist rather than reading the call and ignoring the identity it carries, which
+ * would let it register a removed name again, or claim and renew the Jobs of a
+ * machine that replaced this one. The identity is required in each.
+ */
+export const connectFencedInputSchema = satelliteConnectInputSchema.extend({
+  resume: z.string().uuid(),
+});
+
+export const claimFencedInputSchema = claimInputSchema.extend({
+  incarnation: z.string().uuid(),
+});
+
+export const heartbeatFencedInputSchema = heartbeatInputSchema.extend({
+  incarnation: z.string().uuid(),
+});
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: What a worker that knows which registration it
  * serves says when it stops. It is a procedure of its own so an older server
  * answers that it does not exist — a refusal, not a call it reads and ignores —
