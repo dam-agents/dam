@@ -136,6 +136,30 @@ export function domainOf(urlTemplate: string | null): string | null {
 export type AccessDecision =
   { allow: true } | { allow: false; reason: "not-signed-in" | "not-allowed" };
 
+// UNIT_BOUNDARY_DESCRIPTION: the Agent an Agent Key named, as the gate admits it.
+export interface AgentVisitor {
+  agentId: string;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether an Agent, named by its key, may open an
+ * Environment: its Owning Agent always, as its owner may; any other Agent
+ * only when an Agent list of the Environment or of its Owning Agent names
+ * it. Being of the same owner, or the agent of someone on a list, counts for
+ * nothing. A key that named no Agent is refused, not sent to sign in, since
+ * no sign-in could help.
+ */
+export function decideAgentAccess(
+  record: Pick<EnvironmentRecord, "owningAgentId">,
+  memberAgents: readonly string[],
+  visitor: AgentVisitor | null,
+): AccessDecision {
+  if (!visitor) return { allow: false, reason: "not-allowed" };
+  if (visitor.agentId === record.owningAgentId) return { allow: true };
+  if (memberAgents.includes(visitor.agentId)) return { allow: true };
+  return { allow: false, reason: "not-allowed" };
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The people who may open one Environment: its
  * owning agent's Agent Environment Members, the Environment's own Environment
@@ -205,12 +229,13 @@ export interface PlatformCredentials {
   isApiKey: (token: string) => boolean;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the request headers the relay never passes on: the headers that only describe this hop, and the one that names the declared ports. `Authorization` is judged by its value, in platformCredential.
+// UNIT_BOUNDARY_DESCRIPTION: the request headers the relay never passes on: the headers that only describe this hop, the one that names the declared ports, and the one an Agent's gateway carries its key in. `Authorization` is judged by its value, in platformCredential.
 const DROPPED_REQUEST_HEADERS = new Set([
   "host",
   "connection",
   "proxy-authorization",
   "x-platform-environment-ports",
+  "x-platform-agent-key",
 ]);
 
 /**

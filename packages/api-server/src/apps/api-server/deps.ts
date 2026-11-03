@@ -1,3 +1,4 @@
+import type { AgentAccess } from "../../modules/agent-keys/index.js";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { EnvironmentGate } from "../../modules/environments/index.js";
 import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
@@ -111,6 +112,8 @@ export interface ApiServerDeps {
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;
+  // UNIT_BOUNDARY_DESCRIPTION: what follows the platform's Environments egress rule: the Agent's key.
+  platformAccess: AgentAccess;
   trustedHosts: readonly string[];
   agentCleanupHooks: readonly AgentCleanupHook[];
   environmentsFor: (owner: string) => EnvironmentsServiceImpl;

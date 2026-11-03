@@ -13,6 +13,7 @@ import {
   egressRuleCurrentPresetInputSchema,
   egressRuleGetInputSchema,
   egressRuleListForAgentInputSchema,
+  egressPlatformRuleInputSchema,
   egressRuleRevokeInputSchema,
   egressRuleUpdateInputSchema,
 } from "./schemas.js";
@@ -76,6 +77,22 @@ export const egressRulesRouter = t.router({
     .mutation(({ ctx, input }) =>
       ctx.egressRules.applyPreset(input.agentId, input.preset),
     ),
+
+  platformRule: readAgentProcedure
+    .input(egressPlatformRuleInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.egressRules.platformRule(input.agentId);
+    }),
+
+  restorePlatformRule: manageAgentsProcedure
+    .input(egressPlatformRuleInputSchema)
+    .use(agentPermission("egressRules", (input) => agentTarget(input.agentId)))
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.egressRules.restorePlatformRule(input.agentId);
+    }),
 
   trustedHosts: readAgentProcedure.query(({ ctx }) =>
     ctx.egressRules.trustedHosts(),
