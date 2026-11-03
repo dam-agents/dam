@@ -13,7 +13,10 @@ function browser(slowAfterMs = 300_000) {
     body: "The Environment is starting.",
     waitFor: { statusPath: STATUS, slowAfterMs },
   });
-  const script = /<script>([\s\S]*)<\/script>/.exec(html)![1]!;
+  const script = html.slice(
+    html.indexOf("<script>") + "<script>".length,
+    html.lastIndexOf("</script>"),
+  );
   let now = 0;
   let timers: { at: number; fn: () => void; id: number }[] = [];
   let nextId = 1;
