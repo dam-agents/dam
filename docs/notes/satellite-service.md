@@ -149,6 +149,6 @@ One line per state change, and one per call:
 - `not signed in (…) — run dam login, or set DAM_TOKEN …` when the key is missing, revoked or expired.
   Replace the value in `satellite.env` and restart the unit: the worker reads its environment once, when it starts.
 - `restarted what this machine serves — the MCP server had exited` when the server the worker started died and was started again, and `the MCP server exited 0.4s after it started — retrying in …` when it keeps doing that, which is a crash loop rather than a restart.
-- `could not report … yet, keeping it for the next attempt: …` when a result did not reach the platform; it is sent before more work is taken, and `dropping the outcome of …` when the name has been registered again from another machine, since that result belongs to Jobs nobody can settle any more.
+- `could not report … yet, keeping it for the next attempt: …` when a result did not reach the platform; it is sent before more work is taken, and `dropping the outcome of …` when the name has been registered again from another machine — or when it was claimed before the platform named registrations, so it cannot be told from another machine's Job of the same number — since that result belongs to a Job nobody can settle any more.
 - `draining — no longer waiting on the platform; a job still running is settled as interrupted` 15 seconds into a stop that has a job running.
 - `DONE #7 in 1.2s: exit 0`, `FAILED`, `BLOCKED`, `CANCELLED`, `INTERRUPTED` for each call, as [satellites.md](../architecture/satellites.md#surfaces) describes.

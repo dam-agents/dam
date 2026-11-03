@@ -9,7 +9,8 @@ import {
   EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
 } from "../modules/shared/exit-codes.js";
-import { serve } from "../modules/satellite/commands/shared.js";
+import { serve, transportFor } from "../modules/satellite/commands/shared.js";
+import { drainInputSchema, satelliteNameSchema } from "api-server-api";
 import { runTool } from "../modules/satellite/services/command-backend.js";
 import { parseCommandSurface } from "../modules/satellite/domain/command-surface.js";
 import { resolveActiveHost } from "../modules/shared/preflight.js";
@@ -334,3 +335,61 @@ function runToolFixture() {
   if (!parsed.ok) throw new Error(parsed.error);
   return runTool(parsed.value);
 }
+
+describe("talking to a server that names no registrations", () => {
+  /**
+   * TEST_SCENARIO: A drain used to be the bare name, and an older server still
+   * validates it as one. Sending the object a newer server accepts would lose
+   * the drain to a validation error, leaving the worker online and not draining
+   * while it waits for its last job, so the wire shape follows what the server
+   * said it has.
+   */
+  it("sends a drain in the shape the server understands", async () => {
+    const drains: unknown[] = [];
+    const registrationId = "22222222-2222-4222-8222-222222222222";
+    const connect = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ incarnation: registrationId });
+    const trpc = {
+      satellites: {
+        connect: { mutate: connect },
+        claim: { mutate: async () => [] },
+        heartbeat: { mutate: async () => {} },
+        report: { mutate: async () => {} },
+        drain: {
+          mutate: async (input: unknown) => {
+            drains.push(input);
+          },
+        },
+      },
+    };
+    const transport = transportFor(trpc as never);
+    const registration = { name: "gpu-box", maxConcurrent: 1, tools: [] };
+
+    await transport.connect({ manifest: registration, host: HOST });
+    await transport.drain({
+      satellite: "gpu-box",
+      incarnation: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(
+      satelliteNameSchema.safeParse(drains[0]).success,
+      "an older server is sent the bare name it validates",
+    ).toBe(true);
+
+    await transport.connect({
+      manifest: registration,
+      host: HOST,
+      resume: registrationId,
+    });
+    await transport.drain({
+      satellite: "gpu-box",
+      incarnation: registrationId,
+    });
+    expect(
+      drainInputSchema.safeParse(drains[1]).success,
+      "a server that names registrations is told which one drains",
+    ).toBe(true);
+    expect(typeof drains[1], "and it is the fenced shape").toBe("object");
+  });
+});

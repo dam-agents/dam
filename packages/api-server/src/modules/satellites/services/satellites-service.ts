@@ -122,12 +122,19 @@ export function createSatellitesService(
     async cancelJob(name: string, sequence: number): Promise<void> {
       await mustExist(name);
       for (let attempt = 0; attempt < CANCEL_ATTEMPTS; attempt++) {
+        const satellite = await deps.repo.get(deps.owner, name);
         const job = await deps.repo.getJob(deps.owner, name, sequence);
-        if (job === null || !bound(job.agentId))
+        if (satellite === null || job === null || !bound(job.agentId))
           throw new TRPCError({ code: "NOT_FOUND", message: "no such job" });
+        const incarnation = satellite.incarnation;
         if (isTerminal(job.status)) return;
         if (job.status === "running") {
-          await deps.repo.requestCancel(deps.owner, name, sequence);
+          await deps.repo.requestCancel(
+            deps.owner,
+            name,
+            sequence,
+            incarnation,
+          );
           return;
         }
         const settled = await deps.repo.settle(
@@ -136,6 +143,7 @@ export function createSatellitesService(
           sequence,
           { status: "cancelled", reason: "cancelled before it started" },
           job.status,
+          incarnation,
         );
         if (settled === null) continue;
         await deps.deliverOutcome({

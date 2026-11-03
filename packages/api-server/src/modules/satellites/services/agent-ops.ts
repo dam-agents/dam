@@ -165,7 +165,13 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         expiresAt: new Date(at.getTime() + JOB_TTL_MS),
         maxConcurrent: satellite.maxConcurrent,
         toolMax: verdict.toolMax,
+        incarnation: satellite.incarnation,
       });
+      if ("stale" in inserted)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `${name} was registered again while this call was being admitted — retry it`,
+        });
       if ("full" in inserted)
         throw new TRPCError({
           code: "BAD_REQUEST",

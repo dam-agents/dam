@@ -171,6 +171,7 @@ export function createWorker(deps: {
 }) {
   const { name, backend, transport, log } = deps;
   const running = new Set<number>();
+  const claimed = new Map<number, string | undefined>();
   const reporting = new Set<Promise<void>>();
   const unsent = new Map<number, Unsent>();
   let draining = false;
@@ -273,17 +274,22 @@ export function createWorker(deps: {
    * again before more work is taken. A Job's lease runs out a minute after its
    * last heartbeat and the sweep then reports the outcome as unknown, so an
    * outage shorter than that is a result the Agent would otherwise never see.
-   * An outcome is replayed only to the registration it was claimed under: a
-   * name can be registered again from another machine, whose Job sequence
-   * starts over, and settling its #1 with this machine's #1 would be wrong.
+   * An outcome is replayed only with the registration it was claimed under.
+   * A name can be registered again from another machine, whose Job sequence
+   * starts over, so settling its #1 with this machine's #1 would be wrong — and
+   * a result claimed before the platform named registrations cannot be told
+   * from that other machine's, so it is never replayed at all.
    */
   async function flushUnsent(): Promise<void> {
     for (const [sequence, entry] of [...unsent]) {
-      if (
-        entry.incarnation !== undefined &&
-        incarnation !== undefined &&
-        entry.incarnation !== incarnation
-      ) {
+      if (entry.incarnation === undefined) {
+        unsent.delete(sequence);
+        log.line(
+          `dropping the outcome of ${name}#${sequence}: it was claimed before the platform named registrations, so it cannot be told from the same number of another machine — the Job is settled as interrupted`,
+        );
+        continue;
+      }
+      if (incarnation !== undefined && entry.incarnation !== incarnation) {
         unsent.delete(sequence);
         log.line(
           `dropping the outcome of ${name}#${sequence}: the platform holds a different registration of ${name}`,
@@ -295,7 +301,7 @@ export function createWorker(deps: {
           transport.report({
             satellite: name,
             sequence,
-            ...(incarnation === undefined ? {} : { incarnation }),
+            incarnation: entry.incarnation,
             outcome: entry.outcome,
           }),
         );
@@ -431,6 +437,7 @@ export function createWorker(deps: {
 
   function startJob(item: WorkItem): void {
     running.add(item.sequence);
+    claimed.set(item.sequence, incarnation);
     const startedAt = Date.now();
     const at = incarnation;
     log.line(
@@ -467,6 +474,7 @@ export function createWorker(deps: {
       })
       .finally(() => {
         running.delete(item.sequence);
+        claimed.delete(item.sequence);
         for (const wake of slotWaiters) wake();
         slotWaiters.clear();
       });
@@ -559,6 +567,7 @@ export function createWorker(deps: {
           if (!(await ready(retry, crashRetry))) break;
           if (stopped || draining) continue;
           if (unsent.size > 0) await flushUnsent();
+          if (stopped || draining) continue;
           const capacity = deps.maxConcurrent - running.size;
           if (capacity <= 0) {
             cancelPoll ??= guarded(
@@ -644,19 +653,21 @@ export function createWorker(deps: {
     async forceStop(): Promise<void> {
       stopped = true;
       backend.killAll();
-      const reports = [...running].map((sequence) =>
-        transport
+      const reports = [...running].map((sequence) => {
+        const at = claimed.get(sequence);
+        if (at === undefined || at !== incarnation) return Promise.resolve();
+        return transport
           .report({
             satellite: name,
             sequence,
-            ...(incarnation === undefined ? {} : { incarnation }),
+            incarnation: at,
             outcome: {
               status: "interrupted",
               reason: "the satellite was stopped while this job was running",
             },
           })
-          .catch(() => {}),
-      );
+          .catch(() => {});
+      });
       await Promise.race([
         Promise.all(reports),
         new Promise((resolve) => setTimeout(resolve, FORCE_REPORT_MS)),

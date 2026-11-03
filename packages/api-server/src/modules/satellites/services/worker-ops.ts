@@ -251,7 +251,8 @@ export function createLeaseSweep(deps: WorkerOpsDeps) {
         }
       }
 
-      expired = await deps.repo.expiredLeases(now());
+      const at = now();
+      expired = await deps.repo.expiredLeases(at);
       for (const job of expired) {
         try {
           const settled = await deps.repo.settle(
@@ -262,6 +263,9 @@ export function createLeaseSweep(deps: WorkerOpsDeps) {
               status: "interrupted",
               reason: `${formatJobRef(job.satellite, job.sequence)} lost its worker; the command may have completed`,
             },
+            "running",
+            undefined,
+            at,
           );
           if (settled === null) continue;
           await deps.deliverOutcome({

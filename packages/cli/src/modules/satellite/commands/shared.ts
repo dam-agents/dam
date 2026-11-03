@@ -187,23 +187,41 @@ function throwIfRemoved(err: unknown, satellite: string): never {
   throw err;
 }
 
-function transportFor(trpc: TrpcClient): WorkerTransport {
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How the worker's calls reach the platform, and how
+ * a server that does not name registrations is written to. A capability the
+ * server lacks is not sent: connect's answer says whether this one names
+ * registrations, and only then does a drain travel as anything but the bare
+ * name it has always been — a new CLI against an older server must not lose its
+ * drain to a validation error.
+ */
+export function transportFor(trpc: TrpcClient): WorkerTransport {
+  let namesRegistrations = false;
   return {
-    connect: ({ manifest, host, resume }) =>
-      trpc.satellites.connect
+    connect: async ({ manifest, host, resume }) => {
+      const registered = await trpc.satellites.connect
         .mutate({
           manifest,
           host,
           ...(resume === undefined ? {} : { resume }),
         })
-        .catch((err: unknown) => throwIfRemoved(err, manifest.name)),
+        .catch((err: unknown) => throwIfRemoved(err, manifest.name));
+      namesRegistrations = registered?.incarnation !== undefined;
+      return registered;
+    },
     claim: (input) =>
       trpc.satellites.claim
         .mutate(input)
         .catch((err: unknown) => throwIfRemoved(err, input.satellite)),
     heartbeat: (input) => trpc.satellites.heartbeat.mutate(input),
     report: (input) => trpc.satellites.report.mutate(input),
-    drain: (input) => trpc.satellites.drain.mutate(input),
+    drain: (input) =>
+      namesRegistrations && input.incarnation !== undefined
+        ? trpc.satellites.drain.mutate({
+            satellite: input.satellite,
+            incarnation: input.incarnation,
+          })
+        : trpc.satellites.drain.mutate(input.satellite),
   };
 }
 

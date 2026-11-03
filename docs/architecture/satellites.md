@@ -195,6 +195,7 @@ An Agent sees the same tools before and after a drop, and never two of anything.
 A Satellite's row is nevertheless a **registration** of that name, and each registration has an identity of its own.
 A worker names the registration it serves on every call it makes — registering, claiming, renewing a lease, cancelling, reporting — and the platform puts that identity inside the statements that act rather than in a read before them, because a name can be registered again between the two.
 A removal, or a name registered again from another machine, is therefore refused rather than taken over: the worker is told there is no such Satellite before it runs anything, and stops ([Jobs](#jobs)).
+Removing a Satellite takes its row first, in one transaction, and admission binds its insert to the registration it admitted against, so a call arriving beside a removal is either deleted with it or refused — never left for the next machine of that name to claim.
 That is what keeps a stale worker from undoing the owner's decision to remove one, from claiming jobs queued for a machine that is not this one, and from settling another machine's `#1` with its own.
 A worker from before the identity existed names nothing and is served as it always was: it cannot be fenced, which is the cost of the rollout, not a promise the platform makes.
 
@@ -203,7 +204,8 @@ One that did exit is started again, and the tool list it comes back with is **re
 
 **A result survives a short drop.** An outcome that could not be reported is kept and sent again before more work is taken, and once the platform answers again, which covers any outage shorter than the Job's lease.
 It is replayed only to the **registration it was claimed under**: a name registered again starts its Job sequence over, so an old machine's `#1` is not the new machine's `#1`, and the platform settles a report that names the wrong registration as nothing at all.
-A rollout moves the two ends apart for a while, so a missing identity is read as *unknown* rather than as *different*: the worker keeps the registration it last learned, and a result held from before the platform could name one is still sent.
+A rollout moves the two ends apart for a while, so a missing identity is read as *unknown* rather than as *different*, and the worker keeps the registration it last learned.
+A result claimed before the platform could name a registration is never replayed, though: the worker cannot tell it from the same number of a machine registered since, so it says so and lets the lease settle that Job as interrupted.
 Beyond the lease, the sweep settles the Job as interrupted and the Agent is told its outcome is unknown, so a call in flight during a drop ends in a sentence rather than a wait.
 A call made while the Satellite is offline never starts at all: admission refuses it and says since when the machine has been gone ([Admission](#admission)).
 

@@ -1,7 +1,14 @@
 import { TRPCError } from "@trpc/server";
+import { satelliteGrants, satelliteJobs, satellites } from "db";
 import { describe, expect, it } from "vitest";
 import type { SatelliteRow } from "../../modules/satellites/domain/types.js";
-import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
+import { createSatellitesRepository } from "../../modules/satellites/infrastructure/satellites-repository.js";
+import { createSatelliteAgentOps } from "../../modules/satellites/services/agent-ops.js";
+import { createSatellitesService } from "../../modules/satellites/services/satellites-service.js";
+import {
+  createLeaseSweep,
+  createSatelliteWorkerOps,
+} from "../../modules/satellites/services/worker-ops.js";
 
 /**
  * TEST_OVERVIEW: Which registration of a Satellite a call belongs to. A name
@@ -237,5 +244,226 @@ describe("a satellite's registration", () => {
       TRPCError,
     );
     expect(calls.setDraining).toBeUndefined();
+  });
+});
+
+describe("admission against a registration that changes underneath it", () => {
+  function ops(repo: Record<string, unknown>) {
+    return createSatelliteAgentOps({
+      repo: {
+        grantedNames: async () => [{ owner: "alice", name: "gpu-box" }],
+        get: async () => satellite(),
+        activeJobs: async () => [],
+        ...repo,
+      } as never,
+      ownerOf: async () => "alice",
+      spillLog: async () => null,
+    });
+  }
+
+  const start = { agentId: "agent-1", tool: "run", args: { cmd: ["./x"] } };
+
+  /**
+   * TEST_SCENARIO: A call is admitted against the tools, grants and limits of
+   * the machine that answered a moment ago. The name can be registered again
+   * between that read and the insert, and the new machine's row is not the one
+   * the call was admitted for: the insert says so and the caller is refused
+   * rather than having the call run somewhere it was never approved to run.
+   */
+  it("refuses a call admitted against a registration that was replaced", async () => {
+    const worker = ops({ insertJob: async () => ({ stale: true }) });
+    await expect(
+      worker.start(start.agentId, "gpu-box", start.tool, start.args),
+    ).rejects.toThrow(/registered again/);
+  });
+
+  it("admits against the registration it read", async () => {
+    const insertions: { incarnation?: string }[] = [];
+    const worker = ops({
+      insertJob: async (input: { incarnation?: string }) => {
+        insertions.push(input);
+        return {
+          sequence: 1,
+          owner: "alice",
+          satellite: "gpu-box",
+          agentId: "agent-1",
+          tool: "run",
+          args: {},
+          status: "queued",
+        };
+      },
+    });
+    await worker.start(start.agentId, "gpu-box", start.tool, start.args);
+    expect(insertions[0]?.incarnation).toBe(OLD);
+  });
+});
+
+describe("writes derived from a snapshot", () => {
+  /**
+   * TEST_SCENARIO: The lease sweep reads the Jobs whose lease expired, and the
+   * name can be registered again before it writes. The expiry it read travels
+   * into the update, so a Job that a replacement created and claimed — whose
+   * lease is in the future — is not settled with the old machine's snapshot.
+   */
+  it("settles an expired lease only while it is still expired", async () => {
+    const settles: unknown[][] = [];
+    const now = new Date("2026-10-01T12:00:00Z");
+    const sweep = createLeaseSweep({
+      repo: {
+        stopDispatch: async () => [],
+        expiredLeases: async () => [
+          {
+            owner: "alice",
+            satellite: "gpu-box",
+            sequence: 1,
+            agentId: "agent-1",
+            tool: "run",
+            args: {},
+            status: "running",
+            isError: false,
+            exitCode: null,
+            output: null,
+            images: [],
+            truncated: false,
+            reason: null,
+            cancelRequested: false,
+            cancelSentAt: null,
+            deliveredAt: null,
+            wokeAt: null,
+            awaitedUntil: null,
+            startedAt: now,
+            endedAt: null,
+            createdAt: now,
+          },
+        ],
+        settle: async (...args: unknown[]) => {
+          settles.push(args);
+          return null;
+        },
+        purgeExpired: async () => {},
+      } as never,
+      maxConcurrentCeiling: 8,
+      deliverOutcome: async () => {},
+      now: () => now,
+    });
+    await sweep();
+    expect(settles[0]?.at(-1), "the expiry is rechecked in the update").toEqual(
+      now,
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A cancellation is authorized against the Job it read. The
+   * name can be registered again before the cancel is written, and the new
+   * machine's number 1 is a different Job, so the write carries the registration
+   * the Job was read under.
+   */
+  it("cancels a Job only in the registration it was read from", async () => {
+    const requested: unknown[][] = [];
+    const service = createSatellitesService({
+      repo: {
+        get: async () => satellite(),
+        getJob: async () => ({
+          owner: "alice",
+          satellite: "gpu-box",
+          sequence: 1,
+          agentId: "agent-1",
+          status: "running",
+          tool: "run",
+          args: {},
+        }),
+        requestCancel: async (...args: unknown[]) => {
+          requested.push(args);
+        },
+      } as never,
+      owner: "alice",
+      agentBinding: "*",
+      isAgentOwnedBy: async () => true,
+      deliverOutcome: async () => {},
+      stopDispatch: async () => {},
+    });
+    await service.cancelJob("gpu-box", 1);
+    expect(requested[0]?.at(-1)).toBe(OLD);
+  });
+});
+
+describe("the statements that own a registration", () => {
+  const tableName = new Map<unknown, string>([
+    [satellites, "satellites"],
+    [satelliteJobs, "jobs"],
+    [satelliteGrants, "grants"],
+  ]);
+
+  function recordingDb(steps: string[], locked: unknown) {
+    const tx = {
+      select: () => ({
+        from: (table: unknown) => ({
+          where: () => ({
+            for: async () => {
+              steps.push(`lock ${tableName.get(table) ?? "?"}`);
+              return [locked];
+            },
+          }),
+        }),
+      }),
+      delete: (table: unknown) => ({
+        where: async () => {
+          steps.push(`delete ${tableName.get(table) ?? "?"}`);
+        },
+      }),
+    };
+    return {
+      transaction: async (work: (t: unknown) => Promise<unknown>) => work(tx),
+    } as never;
+  }
+
+  /**
+   * TEST_SCENARIO: Admission locks the Satellite's row before it inserts, so a
+   * removal that takes the same lock first can never leave a Job of the
+   * registration it deletes behind for the next machine of that name to claim.
+   * The removal therefore runs in one transaction whose first statement is that
+   * lock, and every delete follows it.
+   */
+  it("takes the registration's row before deleting anything", async () => {
+    const steps: string[] = [];
+    const repo = createSatellitesRepository(
+      recordingDb(steps, { incarnation: OLD }),
+    );
+    await repo.remove("alice", "gpu-box");
+    expect(steps).toEqual([
+      "lock satellites",
+      "delete jobs",
+      "delete grants",
+      "delete satellites",
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A call is admitted from a Satellite row read a moment ago.
+   * The row that the insert locks is that same registration, or the insert says
+   * the registration changed instead of writing the call into a machine that
+   * was never approved for it.
+   */
+  it("refuses to insert into a registration the caller did not read", async () => {
+    const repo = createSatellitesRepository(
+      recordingDb([], {
+        next: 1,
+        incarnation: NEW,
+      }),
+    );
+    await expect(
+      repo.insertJob({
+        owner: "alice",
+        satellite: "gpu-box",
+        agentId: "agent-1",
+        tool: "run",
+        args: {},
+        status: "queued",
+        expiresAt: new Date(),
+        maxConcurrent: 4,
+        toolMax: null,
+        incarnation: OLD,
+      }),
+    ).resolves.toEqual({ stale: true });
   });
 });

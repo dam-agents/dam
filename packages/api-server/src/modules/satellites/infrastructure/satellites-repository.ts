@@ -191,22 +191,33 @@ export function createSatellitesRepository(db: Db) {
      * asks for.
      */
     async remove(owner: string, name: string): Promise<void> {
-      await db
-        .delete(satelliteJobs)
-        .where(
-          and(
-            eq(satelliteJobs.owner, owner),
-            eq(satelliteJobs.satellite, name),
-          ),
-        );
-      await db
-        .delete(satelliteGrants)
-        .where(
-          and(eq(satelliteGrants.owner, owner), eq(satelliteGrants.name, name)),
-        );
-      await db
-        .delete(satellites)
-        .where(and(eq(satellites.owner, owner), eq(satellites.name, name)));
+      await db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select({ incarnation: satellites.incarnation })
+          .from(satellites)
+          .where(and(eq(satellites.owner, owner), eq(satellites.name, name)))
+          .for("update");
+        if (locked === undefined) return;
+        await tx
+          .delete(satelliteJobs)
+          .where(
+            and(
+              eq(satelliteJobs.owner, owner),
+              eq(satelliteJobs.satellite, name),
+            ),
+          );
+        await tx
+          .delete(satelliteGrants)
+          .where(
+            and(
+              eq(satelliteGrants.owner, owner),
+              eq(satelliteGrants.name, name),
+            ),
+          );
+        await tx
+          .delete(satellites)
+          .where(and(eq(satellites.owner, owner), eq(satellites.name, name)));
+      });
     },
 
     async touch(
@@ -309,6 +320,11 @@ export function createSatellitesRepository(db: Db) {
      * declared, and one waiting behind another, which is the backlog the design
      * says cannot exist. The Satellite row exists whether or not any Job does,
      * so taking it first is what serializes the pair.
+     *
+     * The locked row also has to be the registration the caller admitted the
+     * call against: a name can be registered again while a call is being
+     * validated, and the tools, the grants and the limits read a moment ago
+     * belong to the machine that is gone.
      */
     async insertJob(input: {
       owner: string;
@@ -320,10 +336,16 @@ export function createSatellitesRepository(db: Db) {
       expiresAt: Date;
       maxConcurrent: number;
       toolMax: number | null;
-    }): Promise<JobRow | { full: true; total: number; forTool: number }> {
+      incarnation: string;
+    }): Promise<
+      JobRow | { full: true; total: number; forTool: number } | { stale: true }
+    > {
       return db.transaction(async (tx) => {
         const [locked] = await tx
-          .select({ next: satellites.nextSequence })
+          .select({
+            next: satellites.nextSequence,
+            incarnation: satellites.incarnation,
+          })
           .from(satellites)
           .where(
             and(
@@ -332,8 +354,8 @@ export function createSatellitesRepository(db: Db) {
             ),
           )
           .for("update");
-        if (locked === undefined)
-          throw new Error(`satellite ${input.satellite} no longer exists`);
+        if (locked === undefined || locked.incarnation !== input.incarnation)
+          return { stale: true as const };
 
         const live = await tx
           .select({
@@ -522,6 +544,7 @@ export function createSatellitesRepository(db: Db) {
       },
       expect?: JobStatus,
       incarnation?: string,
+      expiredBefore?: Date,
     ): Promise<JobRow | null> {
       const rows = await db
         .update(satelliteJobs)
@@ -537,6 +560,9 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.sequence, sequence),
             notInArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
             ...(expect ? [eq(satelliteJobs.status, expect)] : []),
+            ...(expiredBefore === undefined
+              ? []
+              : [lt(satelliteJobs.leaseUntil, expiredBefore)]),
             sameRegistration(incarnation),
           ),
         )
@@ -554,6 +580,7 @@ export function createSatellitesRepository(db: Db) {
       owner: string,
       satellite: string,
       sequence: number,
+      incarnation?: string,
     ): Promise<void> {
       await db
         .update(satelliteJobs)
@@ -563,6 +590,7 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.owner, owner),
             eq(satelliteJobs.satellite, satellite),
             eq(satelliteJobs.sequence, sequence),
+            sameRegistration(incarnation),
           ),
         );
     },

@@ -974,50 +974,6 @@ describe("surviving a drop", () => {
   });
 
   /**
-   * TEST_SCENARIO: A worker that connected before the platform learned the
-   * registration identity holds an untagged result. Once the platform names the
-   * row's registration, that result is still the same row's, so it is sent
-   * rather than discarded on a rollout in the other direction.
-   */
-  it("replays an untagged outcome once the server names the registration", async () => {
-    const queue = pollQueue();
-    const reports: { sequence: number; incarnation?: string }[] = [];
-    let connectCalls = 0;
-    let reportCalls = 0;
-    const transport: WorkerTransport = {
-      connect: async () => {
-        connectCalls += 1;
-        return connectCalls === 1 ? undefined : { incarnation: "reg-1" };
-      },
-      claim: queue.binding,
-      heartbeat: async () => {},
-      drain: async () => queue.release(),
-      report: async (input) => {
-        reportCalls += 1;
-        if (reportCalls === 1) throw new Error("fetch failed");
-        reports.push({
-          sequence: input.sequence,
-          ...(input.incarnation === undefined
-            ? {}
-            : { incarnation: input.incarnation }),
-        });
-      },
-    };
-    const { worker } = workerWith(transport);
-
-    const running = worker.start();
-    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
-    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
-    await vi.waitFor(() => expect(reportCalls).toBe(1));
-    queue.polls[1]?.reject(new Error("fetch failed"));
-    await vi.waitFor(() => expect(reports).toHaveLength(1), { timeout: 5000 });
-    await worker.drain();
-    await running;
-
-    expect(reports[0]).toEqual({ sequence: 1, incarnation: "reg-1" });
-  });
-
-  /**
    * TEST_SCENARIO: A stop arrives while a claim is open, and the platform hands
    * work back anyway. Starting it would run a tool call nobody is waiting for on
    * a machine that is leaving, so the work is dropped and its lease runs out.
@@ -1173,6 +1129,119 @@ describe("surviving a drop", () => {
     await worker.drain();
     await running;
   }, 30_000);
+
+  /**
+   * TEST_SCENARIO: A result claimed through a server that named no registrations
+   * carries no identity, and the name can be registered again while the worker
+   * is away. Number 1 of the old machine and number 1 of the new one are
+   * different Jobs, and the worker cannot tell which it holds, so it never sends
+   * one — the lease settles the Job as interrupted instead.
+   */
+  it("never replays an outcome that was claimed without a registration", async () => {
+    const queue = pollQueue();
+    const reports: { sequence: number; incarnation?: string }[] = [];
+    let connectCalls = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connectCalls += 1;
+        return connectCalls === 1 ? undefined : { incarnation: "reg-2" };
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        reports.push({
+          sequence: input.sequence,
+          ...(input.incarnation === undefined
+            ? {}
+            : { incarnation: input.incarnation }),
+        });
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() =>
+      expect(
+        lines.some((line) => line.startsWith("could not report test-box#1")),
+      ).toBe(true),
+    );
+    queue.polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(
+      () =>
+        expect(
+          lines.some((line) =>
+            line.startsWith("dropping the outcome of test-box#1"),
+          ),
+        ).toBe(true),
+      { timeout: 5000 },
+    );
+    await worker.drain();
+    await running;
+
+    expect(
+      reports,
+      "the replacement's $1 is never settled with this machine's result",
+    ).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A stop arrives while a held result is still being replayed
+   * and another job is running. Claiming after the replay would reopen admission
+   * on a machine that is leaving, so the loop ends there instead.
+   */
+  it("claims nothing after a replay that outlived a stop", async () => {
+    const queue = pollQueue();
+    let claimCalls = 0;
+    let reportCalls = 0;
+    let replayStarted: () => void = () => {};
+    const replaying = new Promise<void>((resolve) => {
+      replayStarted = resolve;
+    });
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claimCalls += 1;
+        if (claimCalls === 1)
+          return [
+            runItem(1, ["/bin/echo", "hello"]),
+            runItem(2, ["/usr/bin/tail", "-f", "/etc/hosts"]),
+          ];
+        if (claimCalls === 2) return [];
+        return queue.binding();
+      },
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async (input) => {
+        if (input.sequence === 2) return;
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        replayStarted();
+        return new Promise<never>(() => {});
+      },
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(reportCalls).toBe(2), { timeout: 5000 });
+    await replaying;
+    const draining = worker.drain();
+    await draining;
+    const claimsAtStop = claimCalls;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await worker.forceStop();
+    await running;
+
+    expect(
+      claimCalls,
+      "no claim is issued after a stop that arrived during the replay",
+    ).toBe(claimsAtStop);
+  });
 
   /**
    * TEST_SCENARIO: A stop must not wait on a request that never answers. The
