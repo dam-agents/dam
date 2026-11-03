@@ -4,6 +4,7 @@ import { err, ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import type { AcpSessionClient } from "../infrastructure/acp-session-client.js";
 import { errorMessage } from "../../shared/error-message.js";
+import { terminalPath } from "../domain/terminal-path.js";
 
 export type TerminalStrategy =
   | { kind: "new" }
@@ -50,12 +51,14 @@ export function createSessionsPort(deps: {
     },
 
     async resolveTerminal(agentId, strategy, opts) {
-      const terminalPath = (sid: string) =>
-        `/api/agents/${encodeURIComponent(agentId)}/terminal?sessionId=${encodeURIComponent(sid)}${opts?.reset ? "&reset=1" : ""}`;
       const ready = (sid: string): SessionResolution => ({
         kind: "ready",
         sessionId: sid,
-        terminalPath: terminalPath(sid),
+        terminalPath: terminalPath(
+          agentId,
+          sid,
+          opts?.reset ? "reset" : "attach",
+        ),
       });
 
       try {

@@ -722,6 +722,7 @@ export function ChatView() {
                 });
               }}
               onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
+              onSessionMoved={setSessionId}
             />
           ) : (
             <>

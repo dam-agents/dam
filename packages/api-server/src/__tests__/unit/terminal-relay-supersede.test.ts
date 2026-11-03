@@ -5,6 +5,7 @@ import { createTerminalRelay } from "../../apps/api-server/agent-proxies/termina
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import type { SessionPresence } from "../../apps/api-server/agent-proxies/session-presence.js";
 import type { RedisBus, BusListener } from "../../core/redis-bus.js";
+import { AgentStoppedError } from "../../modules/agents/domain/agent-stopped.js";
 
 function fakeBus(): RedisBus {
   const listeners = new Map<string, Set<BusListener>>();
@@ -258,6 +259,28 @@ describe("terminal relay keepalive", () => {
   });
 });
 
+async function firstClose(
+  relay: ReturnType<typeof createTerminalRelay>,
+): Promise<{ code: number; reason: string }> {
+  const server = createServer();
+  servers.push(server);
+  server.on("upgrade", (req, socket, head) =>
+    relay.handleUpgrade(req, socket, head, "agent-1", {
+      sub: "u",
+      surface: "ui",
+      attached: () => {},
+    }),
+  );
+  await new Promise<void>((r) => server.listen(0, r));
+  const ws = new WebSocket(
+    `ws://127.0.0.1:${(server.address() as { port: number }).port}/`,
+  );
+  sockets.push(ws);
+  return new Promise((r) =>
+    ws.once("close", (code, reason) => r({ code, reason: reason.toString() })),
+  );
+}
+
 describe("terminal relay connect failure", () => {
   // TEST_SCENARIO: the agent's socket refuses the connection (its pod is gone). The viewer is closed with the connect reason instead of being left open.
   it("closes with failed to connect when the agent's socket refuses", async () => {
@@ -268,28 +291,36 @@ describe("terminal relay connect failure", () => {
       fakeBus(),
       () => "ws://127.0.0.1:1",
     );
-    const server = createServer();
-    servers.push(server);
-    server.on("upgrade", (req, socket, head) =>
-      relay.handleUpgrade(req, socket, head, "agent-1", {
-        sub: "u",
-        surface: "ui",
-        attached: () => {},
-      }),
-    );
-    await new Promise<void>((r) => server.listen(0, r));
-    const ws = new WebSocket(
-      `ws://127.0.0.1:${(server.address() as { port: number }).port}/`,
-    );
-    sockets.push(ws);
-    const closed = new Promise<{ code: number; reason: string }>((r) =>
-      ws.once("close", (code, reason) =>
-        r({ code, reason: reason.toString() }),
-      ),
-    );
-    expect(await closed).toEqual({
+    expect(await firstClose(relay)).toEqual({
       code: 1011,
       reason: "failed to connect to agent",
+    });
+  });
+
+  // TEST_SCENARIO: a viewer that reconnects by itself tries again after "failed to connect to agent", and stops at a close whose reason starts with "agent not ready". An agent that its owner put to sleep or disabled while the viewer was away must get the second, so the viewer does not try again for minutes.
+  it("closes with agent not ready when the owner stopped or disabled the agent", async () => {
+    const closeFor = (disabled: boolean) =>
+      firstClose(
+        createTerminalRelay(
+          "ns",
+          {
+            ...repo,
+            ensureReady: async () => {
+              throw new AgentStoppedError("agent-1", disabled);
+            },
+          } as unknown as AgentsRepository,
+          presence,
+          fakeBus(),
+          () => "ws://127.0.0.1:1",
+        ),
+      );
+    expect(await closeFor(false)).toEqual({
+      code: 1011,
+      reason: "agent not ready: stopped",
+    });
+    expect(await closeFor(true)).toEqual({
+      code: 1011,
+      reason: "agent not ready: disabled",
     });
   });
 });
