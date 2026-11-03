@@ -55,7 +55,11 @@ if [ -z "$report" ] || [ ! -s "$report" ]; then
   echo "No Playwright JSON report (E2E_REPORT_JSON is unset or missing)."
   exit 0
 fi
-jq -r --arg scope "${E2E_SCOPE:-full}" '
+# The scope names the smoke specs a run took; E2E_FULL=1 adds the tier under
+# src/tests/full/, which only the nightly run takes in CI.
+scope="${E2E_SCOPE:-full} scope"
+[ "${E2E_FULL:-}" != 1 ] || scope="$scope, plus the full/ tier"
+jq -r --arg scope "$scope" '
   def epoch: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
   [.. | objects | select(has("projectName") and has("results"))
       | {project: .projectName, result: (.results[-1] // null)}
@@ -64,7 +68,7 @@ jq -r --arg scope "${E2E_SCOPE:-full}" '
          start: (.result.startTime | epoch),
          end: ((.result.startTime | epoch) + (.result.duration / 1000))}] as $tests
   | ($tests | map(.start) | min) as $s0
-  | "Suite (\($scope) scope): \($tests | length) tests, \($tests | map(select(.status == "passed")) | length) passed, \($tests | map(select(.status != "passed" and .status != "skipped")) | length) failed, \($tests | map(select(.status == "skipped")) | length) skipped; wall \((($tests | map(.end) | max) - $s0) | floor)s.",
+  | "Suite (\($scope)): \($tests | length) tests, \($tests | map(select(.status == "passed")) | length) passed, \($tests | map(select(.status != "passed" and .status != "skipped")) | length) failed, \($tests | map(select(.status == "skipped")) | length) skipped; wall \((($tests | map(.end) | max) - $s0) | floor)s.",
     "",
     "| Project | Tests | Starts at +s | Ends at +s | Wall |",
     "|---|---|---|---|---|",

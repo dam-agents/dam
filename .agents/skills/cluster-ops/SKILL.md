@@ -169,7 +169,7 @@ The cluster tasks load the tools' PATH from the image's mise themselves; in a sh
 Iterate with `e2e:loop`; use `e2e` after helm/realm/infra changes.
 
 **Suite tiers.** **Smoke** (`src/tests/smoke/`) is what CI (both jobs, see [VM runner](#vm-runner-kvm)) and plain `e2e` / `e2e:loop` run.
-**Full** adds the slow scenario specs under `src/tests/full/`, on demand only: `mise run e2e:loop -- --full` (fresh cluster: `mise run e2e -- --full`).
+**Full** adds the slow scenario specs under `src/tests/full/`: locally on demand, `mise run e2e:loop -- --full` (fresh cluster: `mise run e2e -- --full`), and in CI on the nightly run alone, in the default lane.
 `src/tests/full/` specs: one `<area>-full` Playwright project per area, self-contained (own agents, own token via `getAccessToken` + `acceptTerms`, no smoke-chain fixtures), motivating ticket in the test title.
 
 ### The e2e suite in an Environment

@@ -3,7 +3,7 @@
 #MISE raw=true
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 #USAGE flag "--headed" help="Run Playwright headed"
-#USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/; the pipeline runs smoke only"
+#USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/; in CI only the nightly run takes them"
 #USAGE flag "--rebuild <components>" help="Comma-separated cluster:build components (controller, api-server, ui, keycloak, agents); asked for when omitted on a terminal"
 #USAGE flag "--test <filter>" help="Playwright file/title filter, e.g. prompt-delivery"
 #USAGE flag "--environment <name>" help="Run in this agent's Environment of that name: install what the checkout changed there, then run the suite over the link"
