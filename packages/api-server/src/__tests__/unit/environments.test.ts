@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner lists all of them, extends, shares and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints and expiry. Only people decide who may open one: the owner names Agent Environment Members for every Environment of an agent and Environment Members for one, while the agent reads only how many people may open each, and its tools refuse an `access` list. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
+// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner lists all of them, extends, shares and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints and expiry; an endpoint may name a readiness path, set at create and changed at update by endpoint name. Only people decide who may open one: the owner names Agent Environment Members for every Environment of an agent and Environment Members for one, while the agent reads only how many people may open each, and its tools refuse an `access` list. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
 import { describe, expect, it } from "vitest";
 import {
   listedAgents,
@@ -265,6 +265,37 @@ describe("changing and deleting Environments", () => {
     await service.delete(env.id);
     expect(agents.deleted).toEqual([env.id]);
     expect(repo.rows).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: an endpoint declares its readiness path at create, and the owning Agent sets, changes or removes one by endpoint name later, leaving the others as they were; a name that is no endpoint is refused and nothing changes.
+  it("sets readiness paths at create and update", async () => {
+    const { service, repo } = setup();
+    const mine = service.forOwningAgent(vmOwning.id!);
+    const env = await mine.create({
+      name: "a",
+      endpoints: [
+        { name: "app", port: 80, ready: "/healthz" },
+        { name: "auth", port: 81 },
+      ],
+    });
+    expect(env.endpoints.map((e) => e.ready)).toEqual(["/healthz", undefined]);
+
+    const updated = await mine.update("a", {
+      ready: { app: null, auth: "/realms/x" },
+    });
+    expect(updated.endpoints.map((e) => e.ready)).toEqual([
+      undefined,
+      "/realms/x",
+    ]);
+    expect(repo.rows[0]!.endpoints).toEqual([
+      { name: "app", port: 80 },
+      { name: "auth", port: 81, ready: "/realms/x" },
+    ]);
+
+    await expect(mine.update("a", { ready: { web: "/" } })).rejects.toThrow(
+      /no endpoint named web/,
+    );
+    expect(repo.rows[0]!.endpoints[1]!.ready).toBe("/realms/x");
   });
 
   // TEST_SCENARIO: the owner names the agent's members once, for every Environment it has or creates later, and adds a person to one Environment only; the owner's view of each Environment lists its own members and counts the agent's, so the Share dialog can say who is in through the agent. The agent's own view says only how many people may open each, editors included, never who.

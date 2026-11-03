@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The owning agent's Environment tools never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who.
+// TEST_OVERVIEW: The owning agent's Environment tools take each endpoint's readiness path, at create and at update, and never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -79,5 +79,36 @@ describe("who may open an Environment, from the agent's tools", () => {
     const listed = await call("list_environments", {});
     expect(JSON.parse(listed.text)).toEqual([view]);
     expect(listed.text).not.toContain("@");
+  });
+});
+
+describe("an endpoint's readiness path, from the agent's tools", () => {
+  // TEST_SCENARIO: the agent declares a readiness path on an endpoint at create and sets or removes one by endpoint name at update; a path that does not start with a slash is refused before the service sees it.
+  it("takes readiness paths at create and update", async () => {
+    const { call, environments } = await tools();
+
+    await call("create_environment", {
+      name: "pr-1",
+      endpoints: [{ name: "app", port: 4444, ready: "/healthz" }],
+    });
+    expect(environments.create).toHaveBeenCalledWith({
+      name: "pr-1",
+      endpoints: [{ name: "app", port: 4444, ready: "/healthz" }],
+    });
+
+    await call("update_environment", {
+      name: "pr-1",
+      ready: { app: "/up", auth: null },
+    });
+    expect(environments.update).toHaveBeenCalledWith("pr-1", {
+      ready: { app: "/up", auth: null },
+    });
+
+    const refused = await call("create_environment", {
+      name: "pr-2",
+      endpoints: [{ name: "app", port: 4444, ready: "healthz" }],
+    });
+    expect(refused.isError).toBe(true);
+    expect(environments.create).toHaveBeenCalledTimes(1);
   });
 });
