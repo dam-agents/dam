@@ -145,7 +145,7 @@ func ownerAgentResources(p bootstrapParams) (listeners, clusters []any) {
 			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA))
 		}
 	}
-	return listeners, clusters
+	return listeners, append(clusters, agentKeyClusters(p)...)
 }
 
 func ownerAgentRevision(listeners, clusters []any, epoch int) string {

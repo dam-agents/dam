@@ -37,6 +37,8 @@ type bootstrapParams struct {
 	ObjectStoreAuthority   string
 	ObjectStoreHost        string
 	ObjectStorePort        int
+	APIServerHost          string
+	APIServerPort          int
 	HealthPath             string
 	ExtAuthzHost           string
 	ExtAuthzPort           int
@@ -121,6 +123,8 @@ func newBootstrapParams(instanceID, attributionID string, cfg *config.Config, ch
 		ObjectStoreAuthority:   objectStoreAuthority,
 		ObjectStoreHost:        cfg.ObjectStoreHost,
 		ObjectStorePort:        cfg.ObjectStorePort,
+		APIServerHost:          cfg.APIServerHost(),
+		APIServerPort:          cfg.APIServerPort,
 		HealthPath:             platformGatewayHealthPath,
 		ExtAuthzHost:           cfg.ExtAuthzHostFor(instanceID),
 		ExtAuthzPort:           cfg.ExtAuthzPort,
@@ -363,6 +367,10 @@ func gatewayOTLPFailuresOnly(p bootstrapParams, accessLogs []any) []any {
 func buildInternalListener(p bootstrapParams) ev {
 	chains := make([]any, 0, len(p.Chains)+2)
 	for _, c := range p.Chains {
+		if c.AgentKey != nil {
+			chains = append(chains, buildAgentKeyChain(p, c))
+			continue
+		}
 		chains = append(chains, buildTerminatingChain(p, c))
 	}
 	if p.Telemetry {
@@ -864,6 +872,87 @@ func buildCollectorChain(p bootstrapParams) ev {
 	}
 }
 
+func agentKeyClusters(p bootstrapParams) []any {
+	var out []any
+	for _, c := range p.Chains {
+		if c.AgentKey != nil {
+			out = append(out, pinnedTCPCluster(c.UpstreamCluster, p.APIServerHost, p.APIServerPort))
+		}
+	}
+	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the chain that carries an Agent's key to the Environment gate. It terminates TLS for the environments domain with the gateway's leaf, still asks ext_authz like every chain, so the owner's rule for the domain is what lets it through, and sends the request to the api-server's public port inside the cluster. The key is the only proof of who calls: the injector overwrites whatever the agent sent in its header. Only a Host under the domain is relayed, and anything else is refused here, so the key reaches the gate and no other route of the api-server; the client address headers the agent could have set are removed, as the ingress would.
+func buildAgentKeyChain(p bootstrapParams, c envoyHostChain) ev {
+	suffix := strings.TrimPrefix(c.Host, "*")
+	sdsFile, sdsDir := p.credentialFile(c.AgentKey.VolumeName, c.AgentKey.SDSFileKey)
+	injector := ev{
+		"name": "agent_key_injector",
+		"typed_config": ev{
+			"@type":     "type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
+			"overwrite": true,
+			"credential": ev{
+				"name": "envoy.http.injected_credentials.generic",
+				"typed_config": ev{
+					"@type": "type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic",
+					"credential": ev{
+						"name": p.CredentialSDSName,
+						"sds_config": ev{"path_config_source": ev{
+							"path":              sdsFile,
+							"watched_directory": ev{"path": sdsDir},
+						}},
+					},
+					"header": c.AgentKey.HeaderName,
+				},
+			},
+		},
+	}
+	hcm := ev{
+		"@type":           "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+		"stat_prefix":     "terminate_" + c.ChainID,
+		"upgrade_configs": []any{ev{"upgrade_type": "websocket"}},
+		"http_filters":    []any{extAuthzHTTPFilter(p), injector, routerHTTPFilter()},
+		"route_config": ev{
+			"name": "forward_" + c.ChainID,
+			"virtual_hosts": []any{
+				ev{
+					"name":    "environments",
+					"domains": []any{c.Host, c.Host + ":*"},
+					"routes": []any{ev{
+						"match": ev{"prefix": "/"},
+						"route": ev{"cluster": c.UpstreamCluster, "timeout": "0s", "idle_timeout": "14400s"},
+					}},
+					"request_headers_to_remove": append(chainHeadersToRemove(p), "x-forwarded-for", "x-real-ip"),
+				},
+				ev{
+					"name":    "elsewhere",
+					"domains": []any{"*"},
+					"routes": []any{ev{
+						"match":                   ev{"prefix": "/"},
+						"direct_response":         ev{"status": 421, "body": ev{"inline_string": "This gateway sends only addresses under " + suffix + " to the Environment gate.\n"}},
+						"typed_per_filter_config": extAuthzDisabledPerRoute(),
+					}},
+				},
+			},
+		},
+	}
+	if p.OTel.AccessLogs {
+		hcm["access_log"] = hcmAccessLog(p, "terminate_"+c.ChainID, "terminate_"+c.ChainID, "chains")
+	}
+	return ev{
+		"name":               "terminate_" + c.ChainID,
+		"filter_chain_match": ev{"server_names": []any{c.Host}},
+		"transport_socket": ev{
+			"name": "envoy.transport_sockets.tls",
+			"typed_config": ev{
+				"@type":              "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext",
+				"common_tls_context": leafTLSContext(p),
+			},
+		},
+		"filters": []any{ev{"name": "envoy.filters.network.http_connection_manager", "typed_config": hcm}},
+	}
+}
+
 func buildL4CatchAllChain(p bootstrapParams) ev {
 	tcpProxy := ev{
 		"@type":       "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
@@ -922,6 +1011,7 @@ func buildClusters(p bootstrapParams) []any {
 	if p.Telemetry {
 		clusters = append(clusters, pinnedTCPCluster("otel_collector", p.TelemetryCollectorHost, p.TelemetryCollectorPort))
 	}
+	clusters = append(clusters, agentKeyClusters(p)...)
 	clusters = append(clusters, extAuthzCluster(p))
 	if p.OTel.Collector {
 		clusters = append(clusters, buildOTelExportCluster(p))
