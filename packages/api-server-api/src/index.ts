@@ -445,6 +445,9 @@ export {
   artifactRequestMessageSchema,
   ARTIFACT_WHOAMI_TYPE,
   artifactWhoamiMessageSchema,
+  ARTIFACT_SIZE_TYPE,
+  ARTIFACT_PRINT_MAX_WIDTH,
+  artifactSizeMessageSchema,
   type ArtifactResponseMessage,
   type ArtifactWhoamiResponseMessage,
 } from "./modules/artifact-library/prompt.js";
