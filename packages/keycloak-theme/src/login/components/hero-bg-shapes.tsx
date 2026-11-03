@@ -46,6 +46,10 @@ interface ShapeConfig {
   flip?: boolean;
 }
 
+const CHANNELS_SHAPES: ShapeConfig[] = [
+  { piece: "singleWing", color: GREEN, x: 609, y: -79, size: 468 },
+];
+
 const SHAPES: ShapeConfig[] = [
   { piece: "crescent", color: RUST, x: 93, y: -183, size: 440 },
   { piece: "eye", color: PINK, x: 553, y: -180, size: 180 },
@@ -92,17 +96,26 @@ function Shape({ piece, color, x, y, size, flip = false }: ShapeConfig) {
   );
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: The coloured shapes behind the Slack
- * illustration on the login page's first screen, placed in design pixels
- * around the illustration's 820 x 520 px window as the design draws them.
- * Render it on the same ScaledStage as the illustration, so both scale as one
- * and the frame keeps its exact look at every page width. */
-export function HeroBgShapes() {
+function StageShapes({ shapes }: { shapes: ShapeConfig[] }) {
   return (
     <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-      {SHAPES.map((s, i) => (
+      {shapes.map((s, i) => (
         <Shape key={i} {...s} />
       ))}
     </div>
   );
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: The coloured shapes behind the two Slack
+ * windows of the login page, placed in design pixels around each window's
+ * 820 x 520 px frame as the design draws them: HeroBgShapes on the first
+ * screen, ChannelsBgShapes in the channels section. Render each on the same
+ * ScaledStage as its window, so both scale as one and the composition keeps
+ * its exact look at every page width. */
+export function HeroBgShapes() {
+  return <StageShapes shapes={SHAPES} />;
+}
+
+export function ChannelsBgShapes() {
+  return <StageShapes shapes={CHANNELS_SHAPES} />;
 }

@@ -111,7 +111,7 @@ function AgentAvatar() {
 function Sidebar() {
   return (
     <div
-      className="hidden w-[200px] shrink-0 flex-col md:flex"
+      className="flex w-[200px] shrink-0 flex-col"
       style={{ background: SLACK_AUBERGINE }}
     >
       <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
@@ -815,6 +815,7 @@ export function SlackTeamIllustration({ brand }: { brand: string }) {
     <BrandProvider value={brand}>
       <div
         ref={containerRef}
+        className="h-full w-full"
         role="img"
         aria-label={`Illustration: a team in Slack files a bug report together with their ${brand} agent.`}
       >
