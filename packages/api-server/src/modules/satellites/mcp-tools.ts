@@ -48,7 +48,11 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  *
  * An outcome is JSON in a text block, except for its images, which travel as the
  * image blocks the tool returned: the Agent's harness then hands them to the
- * model as pictures rather than as base64 text.
+ * model as pictures rather than as base64 text. The marker the worker leaves in
+ * the text names each image, and that text is gone once a long outcome is
+ * spilled to a file — so when there is no inline output the tool result names
+ * the images itself, rather than leaving a harness that renders no image block
+ * with nothing at all.
  */
 export const DEFAULT_SATELLITE_WAIT_MS = 240_000;
 
@@ -60,8 +64,15 @@ function failedJson(value: unknown): ToolContent {
 
 function outcomeContent(outcome: JobOutcome): ToolContent {
   const { images, ...rest } = outcome;
+  const markers =
+    outcome.output === null && images.length > 0
+      ? [images.map((image) => `[image ${image.mimeType}]`).join("\n")]
+      : [];
   const content: ToolContentBlock[] = [
-    { type: "text", text: JSON.stringify(rest, null, 2) },
+    {
+      type: "text",
+      text: [...markers, JSON.stringify(rest, null, 2)].join("\n\n"),
+    },
     ...images,
   ];
   return outcome.isError || outcome.status === "interrupted"

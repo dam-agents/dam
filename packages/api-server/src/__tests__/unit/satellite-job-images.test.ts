@@ -259,7 +259,7 @@ describe("the images a report may carry", () => {
 });
 
 describe("a reported job read back", () => {
-  function world() {
+  function world(spillLog: () => Promise<string | null> = async () => null) {
     const rows = new Map<string, Row>();
     rows.set("gpu-box#7", {
       owner: "alice",
@@ -322,7 +322,7 @@ describe("a reported job read back", () => {
     const agentOps = createSatelliteAgentOps({
       repo: repo as never,
       ownerOf: async () => "alice",
-      spillLog: async () => null,
+      spillLog,
     });
     return { rows, workerOps, agentOps };
   }
@@ -342,6 +342,30 @@ describe("a reported job read back", () => {
         PNG_1X1,
       );
     }
+  });
+
+  /**
+   * TEST_SCENARIO: The marker that names an image lives in the output text, and
+   * a long output is spilled to a file, so the marker goes with it. A harness
+   * that renders no image block would then be told nothing at all about the
+   * picture the tool returned — so a result with no inline text names its
+   * images itself, beside the path the rest was written to.
+   */
+  it("names the image when the text it was marked in has been spilled", async () => {
+    const { workerOps, agentOps } = world(
+      async () => "/home/agent/.dam/satellite-jobs/gpu-box#7.log",
+    );
+    await workerOps.report("alice", {
+      ...REPORT,
+      outcome: { ...REPORT.outcome, output: "x".repeat(5000) },
+    });
+
+    const result = await callTool("gpu_box__get", { job: 7 }, agentOps);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain("[image image/png]");
+    expect(text).toContain("gpu-box#7.log");
+    expect(text).not.toContain("x".repeat(5000));
+    expect(result.content[1]).toEqual(IMAGE);
   });
 
   /**

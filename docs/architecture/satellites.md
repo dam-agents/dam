@@ -172,10 +172,12 @@ The file is written **at read time** — when an outcome arrives the Agent may b
 
 An MCP tool's images are not output: each one reaches the Agent as the image content block the tool returned, so the harness shows its model a picture instead of base64 the model would have to decode.
 The machine is not trusted to send a picture, so an image is forwarded only when it is base64 and of a format a harness shows — PNG, JPEG, GIF or WebP — which is also what makes its length a byte count.
-The text and the images of one Job share one ceiling, counted on the JSON the platform stores and hands back rather than on the bytes the tool printed — text that the JSON must escape grows sixfold — because an image cannot be spilled to a file the way a log can, and a Job carries at most a handful of them.
+A Job that carries an image holds the text and the images together under a single ceiling, counted on the JSON the platform stores and hands back rather than on the bytes the tool printed, because text the JSON must escape grows sixfold.
+It carries at most a handful of them, because an image cannot be spilled to a file the way a log can.
+A report that carries no image keeps the character cap it has always had, since a worker of an older version sends one.
 Within that ceiling an image takes its bytes first: a long log reaches the Agent as a file it can read, and a picture has nowhere else to go.
 An image over any of those bounds is named in the output as not passed on, rather than vanishing from a result that then looks empty.
-An image that does pass leaves a marker of its own in the text, so a harness that renders no image blocks still shows that a picture came back.
+An image that does pass leaves a marker of its own in the text, so a harness that renders no image blocks still shows that a picture came back; a tool result whose text was spilled names its images itself, since the marker went to the file.
 Audio and embedded resources stay placeholders: no harness hands either to its model.
 A turn the platform starts carries no images, so it says the picture exists and names the job tool that shows it.
 
