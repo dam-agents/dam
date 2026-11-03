@@ -34,8 +34,10 @@ export const NO_CHOICE: SessionChoiceSlots = {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what a channel's turns run on, picked with the
  * chat's own picker in both slots; neither primary slot set follows the
- * agent's chat default. A pick answers the slots it leaves and the request
- * that stores them, both slots named so nothing is left to the server's guess.
+ * agent's model for channels, which its Channels page picks and which the
+ * agent's chat default answers until it does. A pick answers the slots it
+ * leaves and the request that stores them, both slots named so nothing is left
+ * to the server's guess.
  */
 export function ChannelChoicePicker({
   agentId,
@@ -64,7 +66,7 @@ export function ChannelChoicePicker({
         target={{
           slots,
           label: "Channel harness and model",
-          placeholder: "The agent's chat default",
+          placeholder: "The agent's model for channels",
           onChoose: (pair, references) => {
             const next = nextSlots(slots, pair, references);
             /* UNIT_BOUNDARY_DESCRIPTION: the request carries the subagent values the slots keep, since a primary pick may hand back a pair without them. */

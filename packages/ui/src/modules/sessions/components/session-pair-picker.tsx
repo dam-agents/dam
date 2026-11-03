@@ -49,6 +49,7 @@ import {
   findModel,
   modelGroups,
 } from "../lib/catalog-groups.js";
+import { prettyModelLabel } from "../lib/model-families.js";
 import {
   harnessDisplayName,
   harnessOptions,
@@ -79,7 +80,11 @@ import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { CustomPairScreen, HarnessList } from "./custom-pair-screen.js";
 import { DetachProviderMessage } from "./detach-provider-message.js";
 import { NotConnectedMark } from "./session-model-list.js";
-import { PairSummary, SessionPairTrigger } from "./session-pair-trigger.js";
+import {
+  PairSummary,
+  SessionPairRowTrigger,
+  SessionPairTrigger,
+} from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
@@ -109,11 +114,19 @@ type Props = CommonProps &
           slots: SessionChoiceSlots;
           label: string;
           placeholder: string;
+          /** UNIT_BOUNDARY_DESCRIPTION: the agent's own default, which this pick follows while neither primary slot is set: the list's first row reads it, the row card shows the harness it runs on, and picking that row clears the pick through `onClear`. */
+          agentDefault?: {
+            summary: string;
+            harness?: string | undefined;
+            onClear: () => void;
+          };
           onChoose: (
             pair: SessionPair,
             references: SessionChoiceReferences,
           ) => void;
         };
+        /** UNIT_BOUNDARY_DESCRIPTION: a config page has room for the pick as a row card, titled and set apart, where the chat's picker carries its values inline. */
+        row?: boolean;
       }
   );
 
@@ -130,6 +143,7 @@ export function SessionPairPicker(props: Props) {
   const routed = props.pending ? false : (props.routed ?? false);
   const edit = props.pending ? undefined : props.edit;
   const target = props.pending ? undefined : props.target;
+  const row = props.pending ? false : (props.row ?? false);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
@@ -260,10 +274,11 @@ export function SessionPairPicker(props: Props) {
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
   const models = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
-  /* UNIT_BOUNDARY_DESCRIPTION: a target names its profiles, so its rows mark those rather than a profile its values happen to match. */
-  const primary = target
-    ? targetProfile
-    : primaryProfileOf(pair, profiles, capability);
+  /* UNIT_BOUNDARY_DESCRIPTION: a channel row and a schedule form name a profile, so their rows mark that one; a page keeps no reference, so it marks the profile its values match, as a chat's picker does. */
+  const primary =
+    target && !target.agentDefault
+      ? targetProfile
+      : primaryProfileOf(pair, profiles, capability);
   const saved = useSessionDefaults(edit || target ? null : agentId).data;
   const held = withHeldSubagent(
     pair,
@@ -381,6 +396,29 @@ export function SessionPairPicker(props: Props) {
     agentId
       ? navigateToSandboxHome(agentId, "providers")
       : onConnectProviders();
+  /* UNIT_BOUNDARY_DESCRIPTION: the gear belongs to the chat input's pickers; a page's or a profile's picker leaves it out. */
+  const configureProviders = target || edit ? undefined : manageProviders;
+  /* UNIT_BOUNDARY_DESCRIPTION: neither primary slot set is this pick following the agent's default. */
+  const agentDefault = target?.agentDefault;
+  const following =
+    agentDefault !== undefined && targetProfile === null && pair === null;
+  const rowTitle =
+    agentDefault && following
+      ? "Use agent default"
+      : (primary?.name ??
+        (pair?.model
+          ? (prettyModelLabel(pair.model) ?? pair.model)
+          : "Choose a model"));
+  /* UNIT_BOUNDARY_DESCRIPTION: one that follows the default names the whole default, model and provider together; a profile's row names its values under the profile's name, and a model of the page's own names the provider under the model. */
+  const rowSubtitle =
+    agentDefault && following
+      ? agentDefault.summary
+      : primary
+        ? (label ?? "")
+        : (findModel(groups, pair?.model ?? null)?.group.displayName ??
+          provider?.name ??
+          harnessName(pair?.harness ?? "") ??
+          "");
 
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -394,18 +432,31 @@ export function SessionPairPicker(props: Props) {
         }}
       >
         <PopoverTrigger asChild>
-          <SessionPairTrigger
-            harness={pair?.harness}
-            label={
-              catalog &&
-              (pair
-                ? label
-                : (target?.placeholder ?? "Choose a harness and model"))
-            }
-          />
+          {row ? (
+            <SessionPairRowTrigger
+              label={target?.label}
+              harness={
+                (agentDefault && following
+                  ? agentDefault.harness
+                  : pair?.harness) ?? defaultHarness
+              }
+              title={rowTitle}
+              subtitle={rowSubtitle}
+            />
+          ) : (
+            <SessionPairTrigger
+              harness={pair?.harness}
+              label={
+                catalog &&
+                (pair
+                  ? label
+                  : (target?.placeholder ?? "Choose a harness and model"))
+              }
+            />
+          )}
         </PopoverTrigger>
         <PopoverContent
-          side="top"
+          side={row ? "bottom" : "top"}
           align="start"
           aria-label={
             target?.label ??
@@ -414,7 +465,10 @@ export function SessionPairPicker(props: Props) {
               : "New session harness and model")
           }
           onInteractOutside={keepOpenWhileDialog}
-          className="flex w-[340px] flex-col gap-2 p-1 text-sm"
+          className={cn(
+            "flex flex-col gap-2 p-1 text-sm",
+            row ? "w-[420px]" : "w-[340px]",
+          )}
         >
           {showProfiles ? (
             <div className="p-1">
@@ -423,6 +477,15 @@ export function SessionPairPicker(props: Props) {
                 profiles={profiles}
                 carried={carried}
                 customHint={`${runnable} harness${runnable === 1 ? "" : "es"}`}
+                onConfigureProviders={configureProviders}
+                defaultChoice={
+                  target?.agentDefault && {
+                    label: "Use agent default",
+                    detail: `Follows ${target.agentDefault.summary}`,
+                    selected: following,
+                    onClick: target.agentDefault.onClear,
+                  }
+                }
                 primary={{
                   selectedId: primary?.id ?? null,
                   custom:
