@@ -23,12 +23,11 @@ const CALLING_AGENT_ID =
 
 const HARNESS_CALL =
   "Body IN ('claude_code.api_request', 'pi.api_request', 'codex.response_completed')";
-const CLAUDE_NATIVE_CALL =
-  "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')";
 const ROUTER_CALL = "Body = 'platform.model_call'";
+const NATIVE_HARNESS_CALL =
+  "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')";
+const BEDROCK_ROUTER_CALL = `${ROUTER_CALL} AND LogAttributes['platform.provider.alias'] = 'bedrock'`;
 
-const CALL_KEY =
-  "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
 const CALL_KEY_TEXT =
   "concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id'])";
 
@@ -39,17 +38,27 @@ const CALL_KEY_TEXT =
  * its driver's id, on a runtime of its own) from that key's own first router
  * record in the window on, so an image updated mid-window keeps its earlier
  * harness records whenever the owner's other agents moved. ClickHouse has no
- * correlated subquery, so the first records are one map looked up per row.
- * The split is read from the data, so a router export that never arrived
- * leaves the harness's count rather than none. A native Claude Code call
- * names its model without the `claude/` prefix and always counts from the
- * harness's record.
+ * correlated subquery, so the first records are one map looked up per row,
+ * a kind per map; a key with no such record answers with a threshold after
+ * its last call, which keeps a router export that never arrived counting
+ * from the harness. A Bedrock call reaches the router only from the release
+ * that routes it, so a native Claude Code record takes the Bedrock map: it
+ * counts until the agent's own first Bedrock router record in the window, so
+ * a regular router record does not stand in for it and history from before
+ * that cutover stays counted once.
  */
 const callRows = (w: MetricsWindow, gate = AGENT_GATE): string => {
-  const routerRows = [ROUTER_CALL, gate, ...timeBounds(w)].join(" AND ");
-  return `(${ROUTER_CALL} OR (${HARNESS_CALL} AND (${CLAUDE_NATIVE_CALL}
-     OR ${CALL_KEY} NOT IN (SELECT DISTINCT ${CALL_KEY} FROM otel_logs WHERE ${routerRows})
-     OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT ${CALL_KEY_TEXT} AS k, min(Timestamp) AS m FROM otel_logs WHERE ${routerRows} GROUP BY k))[${CALL_KEY_TEXT}])))`;
+  const callFilter = [
+    `(${ROUTER_CALL} OR ${HARNESS_CALL})`,
+    gate,
+    ...timeBounds(w),
+  ].join(" AND ");
+  const cutover = (threshold: string): string =>
+    `(SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT ${CALL_KEY_TEXT} AS k, ${threshold} AS m FROM otel_logs WHERE ${callFilter} GROUP BY k))[${CALL_KEY_TEXT}]`;
+  const lastCall = "max(Timestamp) + toIntervalSecond(1)";
+  const routerCutover = `if(countIf(${ROUTER_CALL}) = 0, ${lastCall}, minIf(Timestamp, ${ROUTER_CALL}))`;
+  const bedrockCutover = `if(countIf(${BEDROCK_ROUTER_CALL}) = 0, ${lastCall}, minIf(Timestamp, ${BEDROCK_ROUTER_CALL}))`;
+  return `(${ROUTER_CALL} OR (${HARNESS_CALL} AND Timestamp < if(${NATIVE_HARNESS_CALL}, ${cutover(bedrockCutover)}, ${cutover(routerCutover)})))`;
 };
 
 const timeBounds = (w: MetricsWindow): string[] => [
