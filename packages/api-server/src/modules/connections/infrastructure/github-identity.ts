@@ -19,7 +19,7 @@ export function stripControlChars(name: string): string {
   return [...name]
     .filter((c) => {
       const code = c.codePointAt(0) ?? 0;
-      return code >= 0x20 && code !== 0x7f;
+      return code >= 0x20 && !(code >= 0x7f && code <= 0x9f);
     })
     .join("");
 }
