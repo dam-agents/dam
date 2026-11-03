@@ -545,7 +545,41 @@ func TestRenderEnvoyBootstrap_RequireAddressGatesRivalsByTheirOwnAddress(t *test
 	require.Len(t, injectors, 2)
 	assertInjectsOnlyWhenAddressed(t, injectors[0], "conn-aaa")
 	assertInjectsOnlyWhenAddressed(t, injectors[1], "conn-bbb")
-	assert.Contains(t, got, "rh:respond", "a contested scope still refuses an unaddressed request")
+	assert.Contains(t, got, "local CONTESTED = {}",
+		"every rival skips a request naming no connection, so the address step refuses nothing")
+}
+
+func TestBuildChainForwardRoutes_RequireAddressSendsTheUnaddressedPathUpstream(t *testing.T) {
+	chains := requiringAddress(connectionChain("github.com",
+		connectionCredential("conn-aaa", "platform-conn-aaa", "Authorization", "github.com"),
+		connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "github.com"),
+	))
+
+	routes := buildChainForwardRoutes(chains[0])
+	catchAll := routes[len(routes)-1].(ev)
+	assert.Equal(t, "/", catchAll["match"].(ev)["prefix"])
+	assert.NotContains(t, catchAll, "direct_response",
+		"a public download naming no account goes upstream as anyone's would")
+	assert.Equal(t, "upstream_test", catchAll["route"].(ev)["cluster"])
+	assert.NotContains(t, catchAll, "typed_per_filter_config",
+		"the injectors skip it by their own gate, so the route switches nothing off")
+
+	perFilter := routeAddressedTo(t, routes, "/", "conn-aaa")["typed_per_filter_config"].(ev)
+	assert.Contains(t, perFilter, chains[0].Credentials[1].FilterName(),
+		"naming one account still keeps the other's credential off")
+}
+
+func TestRenderEnvoyBootstrap_RequireAddressRefusesNoContestedPathScope(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, requiringAddress(
+		connectionChain("www.googleapis.com",
+			scopedCredential("conn-a", "platform-conn-a", "Authorization", "www.googleapis.com", "/gmail/*"),
+			scopedCredential("conn-b", "platform-conn-b", "Authorization", "www.googleapis.com", "/gmail/*"),
+		),
+	), false)
+	require.NoError(t, err)
+
+	assert.NotContains(t, got, "More than one connection")
+	assert.Contains(t, got, "local CONTESTED = {}")
 }
 
 func TestRenderEnvoyBootstrap_RequireAddressGatesTheQueryParamStep(t *testing.T) {

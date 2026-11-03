@@ -714,7 +714,7 @@ func buildUnaddressedRoutes(c envoyHostChain) []any {
 	emitted := map[string]bool{}
 	var routes []any
 	for _, scope := range c.PathScopes() {
-		if c.ContestedAt(scope) {
+		if c.RefusesUnaddressedAt(scope) {
 			if !emitted[scope] {
 				emitted[scope] = true
 				routes = append(routes, buildRefusedRoute(c, scope))

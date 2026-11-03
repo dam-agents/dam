@@ -261,6 +261,11 @@ func (c envoyHostChain) ContestedAt(scope string) bool {
 	return false
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a request naming no Connection on this scope is refused at the gateway. A contested scope is refused, since serving it from whichever credential sorted first acts as the wrong account; on an Agent requiring addresses every rival skips such a request, so it goes upstream with no credential of the Agent's and nothing is ambiguous.
+func (c envoyHostChain) RefusesUnaddressedAt(scope string) bool {
+	return !c.RequireAddress && c.ContestedAt(scope)
+}
+
 func (c envoyHostChain) ScopesOf(connectionID string) []string {
 	seen := map[string]bool{}
 	var out []string
