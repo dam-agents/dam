@@ -1219,10 +1219,10 @@ describe("the picker editing a profile in Settings", () => {
 });
 
 describe("a model from a provider the agent is not connected to", () => {
-  /** TEST_SCENARIO: the picker lists an owner's provider the agent does not
-   * hold like any other, with no visible marker, only a screen-reader hint;
-   * picking its model asks to connect it, and only a confirmed connect grants
-   * it and applies the pick. */
+  /** TEST_SCENARIO: the picker marks an owner's provider the agent does not
+   * hold with a plug and a screen-reader hint, so a pick that connects it is
+   * no surprise; picking its model asks to connect it, and only a confirmed
+   * connect grants it and applies the pick. */
   it("asks to connect the provider, then grants it and applies the pick", async () => {
     state.catalog = {
       ...routedCatalog,
@@ -1268,11 +1268,17 @@ describe("a model from a provider the agent is not connected to", () => {
           .find((b) => b.textContent?.includes("Custom selection"))
           ?.click(),
       );
-      expect(container.innerHTML).toMatch(
-        /OpenAI<span class="sr-only">, not connected<\/span>/,
+      const marked = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("zz-unattached"),
+      )!;
+      expect(marked.querySelector("[data-not-connected]")).not.toBeNull();
+      expect(marked.textContent).toContain("OpenAI, not connected");
+      const connected = [...container.querySelectorAll("button")].filter(
+        (b) => b.title && !b.textContent?.includes("zz-unattached"),
       );
-      expect(container.innerHTML).not.toContain('aria-label="not connected"');
-      expect(container.textContent).not.toContain("(not connected)");
+      expect(connected.length).toBeGreaterThan(0);
+      for (const row of connected)
+        expect(row.querySelector("[data-not-connected]")).toBeNull();
       const custom = [...container.querySelectorAll("button")].find((b) =>
         b.textContent?.includes("Custom selection"),
       );
@@ -1530,7 +1536,7 @@ describe("the subagent slot while its provider is gone", () => {
       );
       expect(html).toMatch(/type="checkbox"[^>]*checked=""/);
       expect(html).toMatch(
-        /\(Anthropic\)<\/span><span class="sr-only">, not connected<\/span>/,
+        /\(Anthropic\)<\/span><span [^>]*>.*?<span class="sr-only">, not connected<\/span>/,
       );
     } finally {
       state.chosen = null;
