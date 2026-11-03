@@ -1074,6 +1074,20 @@ keycloak:
   # below it.
   login:
     allowPassword: true
+    # -- Where the login page's "Read the docs" links point. Empty string
+    # hides them.
+    docsUrl: "https://ibm.biz/dam-docs"
+    # -- The chat channel the login page names for questions, shown as
+    # "Questions? Ask in <label> on Slack." with the label linking to `url`.
+    # Both empty, or either one, hides it.
+    community:
+      label: ""
+      url: ""
+    # -- What users say, shown in the login page's "From the community"
+    # section: a list of `{name, role, quote}`. `{brand}` in a quote becomes
+    # `brand.name`. Each card shows the person's initials, never a photo. An
+    # empty list hides the section. Quote a person only with their consent.
+    testimonials: []
 
   # -- Event logging. Login + admin events are emitted to stdout via the
   # built-in `jboss-logging` event listener so they ride the cluster log

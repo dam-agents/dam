@@ -48,11 +48,11 @@ What the prototype gets wrong, and this feature does differently:
 
 ## Sub-issues
 
-| #   | Title                                      | Scope                                                                                                                                                                             | Depends on |
-| --- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | ✅ First screen and preview tool           | Preview page; first screen with background shapes, Slack illustration, the shared form, "Learn more"; top form ids kept; shared-artifact sign-in unchanged; dark mode kept        | —          |
-| 02  | ✅ Content sections and bottom sign-in     | Capabilities, channels, testimonials, sandbox, DevOps and access sections with the one character widget; trimmed; initials avatars; dark styles; content from one defaults module | 01         |
-| 03  | Deployment settings for the page's content | Env vars from new `keycloak.login.*` Helm values for the docs URL, the community link and the testimonials; empty hides                                                           | 02         |
+| #   | Title                                         | Scope                                                                                                                                                                             | Depends on |
+| --- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | ✅ First screen and preview tool              | Preview page; first screen with background shapes, Slack illustration, the shared form, "Learn more"; top form ids kept; shared-artifact sign-in unchanged; dark mode kept        | —          |
+| 02  | ✅ Content sections and bottom sign-in        | Capabilities, channels, testimonials, sandbox, DevOps and access sections with the one character widget; trimmed; initials avatars; dark styles; content from one defaults module | 01         |
+| 03  | ✅ Deployment settings for the page's content | Env vars from new `keycloak.login.*` Helm values for the docs URL, the community link and the testimonials; empty hides                                                           | 02         |
 
 ## Conventions & glossary
 

@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-26
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -77,7 +77,10 @@ It runs in-cluster as a Helm subchart and is the OIDC provider for every authent
 Keycloak's branded login page ships two presentation variants selected per deployment: password-first (the default — username/password form, with any identity-provider buttons offered below it) and SSO-first (identity-provider CTAs only, for deployments where corporate SSO is the expected sign-in path; the page falls back to the password form when the realm has no identity provider configured).
 The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
-Above its heading the page shows what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
+The general sign-in page scrolls: its first screen holds the sign-in form, and the sections below it say what an agent does, where it works, what users say and what developers and DevOps get, ending in a second sign-in form.
+The shared-artifact sign-in keeps the short single-screen layout.
+The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
+The docs link, the community channel link and the testimonials the page shows are `keycloak.login` values too, so each install sets its own; an empty value hides that part of the page, and a testimonial list that does not parse hides the section instead of breaking the sign-in.
 An install with no meanings shows only the heading.
 Upstream identity providers themselves (e.g. w3id, IBMid) and the rule for who they admit are realm configuration managed outside the chart.
 The page knows the IBM sign-in providers, w3id and IBMid, by their alias on the realm and shows the IBM logo on their buttons, so a realm can offer both while sign-in moves from one to the other.

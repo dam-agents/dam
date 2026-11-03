@@ -16,7 +16,7 @@ import { TestimonialsSection } from "../components/sections/testimonials.js";
 import { SlackDmIllustration } from "../components/slack-dm-illustration.js";
 import { SocialProviderButton } from "../components/social-provider-button.js";
 import type { LoginContent } from "../content.js";
-import { DEFAULT_LOGIN_CONTENT } from "../content.js";
+import { readLoginContent } from "../content.js";
 import { useApplyThemeScript } from "../hooks/use-apply-theme-script.js";
 import { useRotatingNameMeaning } from "../hooks/use-rotating-name-meaning.js";
 import type { I18n } from "../i18n.js";
@@ -41,7 +41,7 @@ export default function Login(props: PageProps<LoginContext, I18n>) {
   const isShareSignIn =
     kcContext.client.clientId === kcContext.properties.PLATFORM_SHARE_CLIENT_ID;
   const brand = realm.displayName || BRAND_FALLBACK;
-  const content = DEFAULT_LOGIN_CONTENT;
+  const content = readLoginContent(kcContext.properties);
 
   const form: LoginFormShared = {
     kcContext,

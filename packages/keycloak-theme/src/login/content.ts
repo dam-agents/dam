@@ -1,10 +1,12 @@
 /* UNIT_BOUNDARY_DESCRIPTION: The login page's deployment-specific content: the
- * docs link, the community link and the testimonials. The sections read it from
- * one LoginContent value that Login.tsx passes down, so where the values come
- * from can change without touching a section. An empty docsUrl, a missing
- * community or an empty testimonials list hides that part of the page. A quote
- * may name the product as {brand}; the testimonials section fills in the realm's
- * display name. */
+ * docs link, the community link and the testimonials. Each deployment sets them
+ * through the chart's keycloak.login values, which reach the theme as the
+ * PLATFORM_LOGIN_* properties; readLoginContent turns those into the one
+ * LoginContent value the sections read. An empty docs URL, a community link
+ * without both a label and a URL, or no testimonials hides that part of the
+ * page. Testimonials are a JSON list of { name, role, quote }; an entry that is
+ * not one is dropped with a console warning, so a bad value never breaks the
+ * sign-in page. A quote may name the product as {brand}. */
 
 export type Testimonial = {
   name: string;
@@ -22,54 +24,73 @@ export type LoginContent = {
   testimonials: Testimonial[];
 };
 
-export const DEFAULT_LOGIN_CONTENT: LoginContent = {
-  docsUrl: "https://ibm.biz/dam-docs",
-  community: {
-    label: "#dam-community",
-    url: "https://ibm.enterprise.slack.com/archives/C07PDAWV0QG",
-  },
-  testimonials: [
-    {
-      name: "Edgar Bruney Castañeda",
-      role: "Software Developer, Technology CPQ - SOVA",
-      quote:
-        "I have it integrated with Jira and GitHub, and I’ve given it context regarding everything my team does. It saves me a lot of time on routine tasks. It’s incredibly easy to work with.",
-      initials: "EC",
-      color: "#4589ff",
-    },
-    {
-      name: "Ashley Evans",
-      role: "Research Software Engineer",
-      quote:
-        "We use {brand} across our whole software development lifecycle, from planning, drafting GitHub issues, writing and reviewing code, to analysing production logs, monitoring OpenShift cluster health and keeping watch over our system architecture, and its Slack integration has turned it from a UI tool into a shared workspace where 16 team members work with {brand} and each other in one channel.",
-      initials: "AE",
-      color: "#42be65",
-    },
-    {
-      name: "Alexander Merschel",
-      role: "AI Leader, IBM z Software",
-      quote:
-        "The Slack integration and the general setup is a gamechanger in how we work together.",
-      initials: "AM",
-      color: "#a56eff",
-    },
-    {
-      name: "Mudhakar Srivatsa",
-      role: "Distinguished Engineer, AI Platform",
-      quote: "Immensely useful to have this agent on Spyre Slack channels.",
-      initials: "MS",
-      color: "#ee5396",
-    },
-    {
-      name: "Tom Morris",
-      role: "Infrastructure & Operations Lead, AI Platform Enablement",
-      quote:
-        "{brand} is doing a fleet sweep for me for several of my clusters every morning, and I use it to bridge Slack requests to GitHub.",
-      initials: "TM",
-      color: "#0f62fe",
-    },
-  ],
+export type LoginContentProperties = {
+  PLATFORM_LOGIN_DOCS_URL: string;
+  PLATFORM_LOGIN_COMMUNITY_LABEL: string;
+  PLATFORM_LOGIN_COMMUNITY_URL: string;
+  PLATFORM_LOGIN_TESTIMONIALS: string;
 };
+
+const AVATAR_COLORS = ["#4589ff", "#42be65", "#a56eff", "#ee5396", "#0f62fe"];
+
+export function readLoginContent(
+  properties: LoginContentProperties,
+): LoginContent {
+  const label = properties.PLATFORM_LOGIN_COMMUNITY_LABEL.trim();
+  const url = properties.PLATFORM_LOGIN_COMMUNITY_URL.trim();
+  return {
+    docsUrl: properties.PLATFORM_LOGIN_DOCS_URL.trim(),
+    community: label && url ? { label, url } : undefined,
+    testimonials: parseTestimonials(properties.PLATFORM_LOGIN_TESTIMONIALS),
+  };
+}
+
+export function parseTestimonials(raw: string): Testimonial[] {
+  if (raw.trim() === "") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.warn("[keycloak-theme] PLATFORM_LOGIN_TESTIMONIALS is not JSON");
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    console.warn("[keycloak-theme] PLATFORM_LOGIN_TESTIMONIALS is not a list");
+    return [];
+  }
+  const testimonials: Testimonial[] = [];
+  parsed.forEach((entry: unknown, index) => {
+    const name = text(entry, "name");
+    const quote = text(entry, "quote");
+    if (!name || !quote) {
+      console.warn(
+        `[keycloak-theme] testimonial ${index} has no name or quote; skipped`,
+      );
+      return;
+    }
+    testimonials.push({
+      name,
+      quote,
+      role: text(entry, "role"),
+      initials: initialsOf(name),
+      color: AVATAR_COLORS[testimonials.length % AVATAR_COLORS.length]!,
+    });
+  });
+  return testimonials;
+}
+
+function text(entry: unknown, key: string): string {
+  if (typeof entry !== "object" || entry === null) return "";
+  const value = (entry as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function initialsOf(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  const first = words[0]?.[0] ?? "";
+  const last = words.length > 1 ? words[words.length - 1]![0]! : "";
+  return (first + last).toUpperCase();
+}
 
 export function withBrand(quote: string, brand: string): string {
   return quote.split("{brand}").join(brand);
