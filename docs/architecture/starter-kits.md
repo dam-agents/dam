@@ -115,7 +115,9 @@ flowchart LR
 - **Own image** — optional.
   A kit for a workload baked into a custom image (the research frameworks) names the image itself — an OCI reference, the harness family inside it, and the providers it can run on — and its sessions have no harness choice.
   The Agent is created on that image exactly as a custom-image agent is, with the install's default mounts; nothing has to be declared in Helm for a kit to work.
-  An image whose harness is none of the platform's own leaves `image.harness` out: the image's own `PLATFORM_HARNESS` and manifest decide, and the Agent offers that [image harness](harness-config.md#provider-compatibility) from its runtime's report.
+  An image whose harness is none of the platform's own leaves `image.harness` out, and its own `PLATFORM_HARNESS` and manifest decide.
+  That **image harness** is one the install's harness catalog does not list: the Agent's runtime reports its model dialects and title from its manifest on `hello`, and that Agent alone is offered it, on the providers that serve those dialects and are not kept to named harnesses, for its chats, chat default, schedules and channel turns ([provider compatibility](harness-config.md#provider-compatibility)).
+  Nothing in the platform or its configuration names such a harness, and a plain create never offers it.
   A kit without an image runs on the default Template.
   The former `preconfigured` Templates are now kits in the built-in catalog: workload images belong in kits, harness images in Templates.
 - **Kit Egress** — optional `egressPreset` (`none`, `trusted` or `all`, the presets an agent's egress settings offer) and `egressRules`, a list of host rules in the shape a hand-written rule takes (`host`, optional `port`, `method`, `pathPattern`, `verdict`, which defaults to `allow`).

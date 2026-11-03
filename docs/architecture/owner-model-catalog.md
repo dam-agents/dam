@@ -14,7 +14,7 @@ A provider Connection's env pins are plain URLs in its Contributions, and its cr
 The api-server already calls provider endpoints with that credential for the key check and the balance lookup; credential injection through the egress gateway is only how a sandbox's traffic gets the key.
 The catalog uses the same listing specs, discovery parser and metadata layers as the [per-agent model catalog](harness-config.md#the-model-catalog), and sends each credential the way its provider expects, Bob's `Apikey` scheme included.
 Harness fit comes from the shipped harness catalog, and a model known to hold under 32k is left out of the harnesses it would otherwise fit.
-An agent's catalog also covers the [image harnesses](harness-config.md#provider-compatibility) its runtime reports, with their reported capabilities, whether it lists its granted providers or every provider its owner holds; the owner-level catalog, which names no agent, never does.
+An agent's catalog also covers the [image harnesses](starter-kits.md#concepts) its runtime reports, with their reported capabilities, whether it lists its granted providers or every provider its owner holds; the owner-level catalog, which names no agent, never does.
 A Bedrock Connection lists the native tier models its harness runs instead of a provider listing.
 A model is named the plain `<alias>/<id>` a session stores; the runtime renders a harness's own spelling when it starts.
 
