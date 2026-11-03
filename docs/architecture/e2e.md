@@ -61,7 +61,7 @@ A spec may read that same scope for its own route: the scheduled-fire case waits
 What that route leaves out is proved by the full set on the push to main and on the nightly run.
 Each lane's job summary states the scope beside its timings, so a green pull request is never read as a green full suite.
 The nightly run on main is the one run that also takes the `full/` tier, in the default lane alone: `cd.yml` passes it as `full-tier`, `e2e.yml` sets `E2E_FULL` for that lane, and the config adds the tier's projects.
-A pull request, the merge queue, a push to main and a tag never take it, and that lane's summary names the tier beside the scope.
+A pull request, the merge queue, a push to main, a dispatch and a tag never take it, and that lane's summary names the tier beside the scope.
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
 
 The merge queue is Mergify's.
