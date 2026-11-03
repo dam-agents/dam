@@ -10,6 +10,7 @@ import {
 } from "../../auth-procedures.js";
 import {
   claimInputSchema,
+  drainInputSchema,
   heartbeatInputSchema,
   jobRefSchema,
   reportInputSchema,
@@ -82,8 +83,14 @@ export const satellitesRouter = t.router({
     ),
 
   drain: serveSatellitesProcedure
-    .input(satelliteNameSchema)
+    .input(drainInputSchema)
     .mutation(({ ctx, input }) =>
-      ctx.satelliteWorker.drain(ctx.user.sub, input),
+      typeof input === "string"
+        ? ctx.satelliteWorker.drain(ctx.user.sub, input)
+        : ctx.satelliteWorker.drain(
+            ctx.user.sub,
+            input.satellite,
+            input.incarnation,
+          ),
     ),
 });

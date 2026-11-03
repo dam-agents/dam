@@ -7,7 +7,7 @@ import {
   type SatelliteManifest,
   type WorkItem,
 } from "api-server-api";
-import { incarnationOf, type JobRow } from "../domain/types.js";
+import type { JobRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
 export const LEASE_MS = 60_000;
@@ -40,11 +40,12 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
     /**
      * UNIT_BOUNDARY_DESCRIPTION: Registers a Satellite, or replaces what an
      * existing one offers. A worker that has served this name before says which
-     * registration it served: if that row is gone, or now holds a different
-     * registration of the same name, the answer is that there is no such
-     * Satellite. Registering anyway would undo a removal, or take a name over
-     * from the machine that holds it, and both are the owner's decisions. A
-     * worker registering for the first time says nothing and takes the name.
+     * registration it served, and only that one is written: a name that was
+     * removed, or registered again since, has another incarnation, so the answer
+     * is that there is no such Satellite. Registering anyway would undo a
+     * removal, or take a name over from the machine that holds it, and both are
+     * the owner's decisions. A worker registering for the first time says
+     * nothing and takes the name.
      */
     async connect(
       owner: string,
@@ -52,46 +53,57 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       host?: string,
       resume?: string,
     ): Promise<{ incarnation: string }> {
-      if (resume !== undefined) {
-        const existing = await deps.repo.get(owner, manifest.name);
-        if (existing === null)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `${manifest.name} is no longer registered on the platform`,
-          });
-        if (incarnationOf(existing) !== resume)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `${manifest.name} was registered again by another machine`,
-          });
-      }
-      return deps.repo.upsertFromManifest(
+      if (resume === undefined)
+        return deps.repo.upsertFromManifest(
+          owner,
+          manifest,
+          host ?? null,
+          deps.maxConcurrentCeiling,
+        );
+      const renewed = await deps.repo.renewFromManifest(
         owner,
         manifest,
         host ?? null,
         deps.maxConcurrentCeiling,
+        resume,
       );
+      if (renewed === null)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `${manifest.name} is no longer the registration this worker served`,
+        });
+      return renewed;
     },
 
     async claim(owner: string, input: ClaimInput): Promise<WorkItem[]> {
-      const satellite = await deps.repo.get(owner, input.satellite);
-      if (satellite === null)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "unknown satellite",
-        });
       const deadline = now().getTime() + (input.waitMs ?? 0);
 
-      if (satellite.draining)
-        await deps.repo.setDraining(owner, input.satellite, false);
-
       for (;;) {
-        await deps.repo.touch(owner, input.satellite);
+        const satellite = await deps.repo.get(owner, input.satellite);
+        if (
+          satellite === null ||
+          (input.incarnation !== undefined &&
+            satellite.incarnation !== input.incarnation)
+        )
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "unknown satellite",
+          });
+        if (satellite.draining)
+          await deps.repo.setDraining(
+            owner,
+            input.satellite,
+            false,
+            input.incarnation,
+          );
+
+        await deps.repo.touch(owner, input.satellite, input.incarnation);
 
         const cancels = await deps.repo.takeCancellations(
           owner,
           input.satellite,
           new Date(now().getTime() - LEASE_MS),
+          input.incarnation,
         );
         const items: WorkItem[] = cancels.map((job) => ({
           kind: "cancel",
@@ -105,6 +117,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
           input.satellite,
           input.capacity,
           new Date(now().getTime() + LEASE_MS),
+          input.incarnation,
         );
         const names = await Promise.all(
           claimed.map((job) =>
@@ -128,12 +141,23 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
     },
 
     async heartbeat(owner: string, input: HeartbeatInput): Promise<void> {
-      await deps.repo.touch(owner, input.satellite);
+      const satellite = await deps.repo.get(owner, input.satellite);
+      if (
+        satellite === null ||
+        (input.incarnation !== undefined &&
+          satellite.incarnation !== input.incarnation)
+      )
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "unknown satellite",
+        });
+      await deps.repo.touch(owner, input.satellite, input.incarnation);
       await deps.repo.renewLeases(
         owner,
         input.satellite,
         input.running,
         new Date(now().getTime() + LEASE_MS),
+        input.incarnation,
       );
     },
 
@@ -145,14 +169,6 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
      * Jobs, and settling one with the other's outcome would be a lie.
      */
     async report(owner: string, input: ReportInput): Promise<void> {
-      if (input.incarnation !== undefined) {
-        const satellite = await deps.repo.get(owner, input.satellite);
-        if (
-          satellite === null ||
-          incarnationOf(satellite) !== input.incarnation
-        )
-          return;
-      }
       const written = {
         output: input.outcome.output,
         truncated: input.outcome.truncated,
@@ -180,6 +196,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
         input.sequence,
         patch,
         "running",
+        input.incarnation,
       );
       if (settled === null) return;
       await deps.deliverOutcome({
@@ -190,8 +207,20 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       });
     },
 
-    async drain(owner: string, satellite: string): Promise<void> {
-      await deps.repo.setDraining(owner, satellite, true);
+    async drain(
+      owner: string,
+      satellite: string,
+      incarnation?: string,
+    ): Promise<void> {
+      if (incarnation !== undefined) {
+        const existing = await deps.repo.get(owner, satellite);
+        if (existing === null || existing.incarnation !== incarnation)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "unknown satellite",
+          });
+      }
+      await deps.repo.setDraining(owner, satellite, true, incarnation);
     },
   };
 }

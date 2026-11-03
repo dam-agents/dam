@@ -90,5 +90,5 @@ export interface SatelliteWorkerOps {
   claim(owner: string, input: ClaimInput): Promise<WorkItem[]>;
   heartbeat(owner: string, input: HeartbeatInput): Promise<void>;
   report(owner: string, input: ReportInput): Promise<void>;
-  drain(owner: string, satellite: string): Promise<void>;
+  drain(owner: string, satellite: string, incarnation?: string): Promise<void>;
 }

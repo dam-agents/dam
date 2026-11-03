@@ -21,7 +21,6 @@ import type {
   SatelliteTool,
 } from "api-server-api";
 import {
-  incarnationOf,
   TERMINAL_STATUSES,
   type JobRow,
   type SatelliteRow,
@@ -37,6 +36,7 @@ function toSatellite(r: typeof satellites.$inferSelect): SatelliteRow {
     tools: r.tools as SatelliteTool[],
     draining: r.draining,
     lastSeenAt: r.lastSeenAt,
+    incarnation: r.incarnation,
     createdAt: r.createdAt,
   };
 }
@@ -50,6 +50,18 @@ function toSatellite(r: typeof satellites.$inferSelect): SatelliteRow {
 function settlementFailure(message: string, err: unknown): Error {
   const code = (err as { cause?: { code?: unknown } }).cause?.code;
   return new Error(typeof code === "string" ? `${message} (${code})` : message);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One registration of a Satellite, as a predicate on
+ * a mutation of its Jobs. Rows written by another registration are not this
+ * one's to claim, lease, cancel or settle, and a name can be registered again
+ * in a fraction of a second, so the check travels inside the statement that
+ * would act rather than in a read before it.
+ */
+function sameRegistration(incarnation: string | undefined) {
+  if (incarnation === undefined) return undefined;
+  return sql`(select ${satellites.incarnation} from ${satellites} where ${satellites.owner} = ${satelliteJobs.owner} and ${satellites.name} = ${satelliteJobs.satellite}) = ${incarnation}`;
 }
 
 function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
@@ -82,9 +94,9 @@ export function createSatellitesRepository(db: Db) {
   return {
     /**
      * UNIT_BOUNDARY_DESCRIPTION: Registers a Satellite, or replaces what an
-     * existing one offers, and says which registration the row now is. What a
-     * worker that has served the name before may do is decided above this, in
-     * the worker operations, because it needs the row that is there now.
+     * existing one offers, and says which registration the row is. A worker that
+     * has served the name before uses `renewFromManifest` instead, because this
+     * one takes a removed name back.
      */
     async upsertFromManifest(
       owner: string,
@@ -115,8 +127,42 @@ export function createSatellitesRepository(db: Db) {
             lastSeenAt: new Date(),
           },
         })
-        .returning({ createdAt: satellites.createdAt });
-      return { incarnation: incarnationOf(row!) };
+        .returning({ incarnation: satellites.incarnation });
+      return { incarnation: row!.incarnation };
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Replaces what the registration a worker names
+     * offers, and only that one. A name that was removed, or registered again
+     * since, has another incarnation, so nothing is written and the answer is
+     * that there is no such Satellite — the owner's removal is not undone from a
+     * machine that was simply away.
+     */
+    async renewFromManifest(
+      owner: string,
+      manifest: SatelliteManifest,
+      host: string | null,
+      ceiling: number,
+      incarnation: string,
+    ): Promise<{ incarnation: string } | null> {
+      const [row] = await db
+        .update(satellites)
+        .set({
+          description: manifest.description ?? null,
+          host,
+          maxConcurrent: Math.min(manifest.maxConcurrent, ceiling),
+          tools: manifest.tools,
+          lastSeenAt: new Date(),
+        })
+        .where(
+          and(
+            eq(satellites.owner, owner),
+            eq(satellites.name, manifest.name),
+            eq(satellites.incarnation, incarnation),
+          ),
+        )
+        .returning({ incarnation: satellites.incarnation });
+      return row ?? null;
     },
 
     async get(owner: string, name: string): Promise<SatelliteRow | null> {
@@ -163,22 +209,43 @@ export function createSatellitesRepository(db: Db) {
         .where(and(eq(satellites.owner, owner), eq(satellites.name, name)));
     },
 
-    async touch(owner: string, name: string): Promise<void> {
+    async touch(
+      owner: string,
+      name: string,
+      incarnation?: string,
+    ): Promise<void> {
       await db
         .update(satellites)
         .set({ lastSeenAt: new Date() })
-        .where(and(eq(satellites.owner, owner), eq(satellites.name, name)));
+        .where(
+          and(
+            eq(satellites.owner, owner),
+            eq(satellites.name, name),
+            ...(incarnation === undefined
+              ? []
+              : [eq(satellites.incarnation, incarnation)]),
+          ),
+        );
     },
 
     async setDraining(
       owner: string,
       name: string,
       draining: boolean,
+      incarnation?: string,
     ): Promise<void> {
       await db
         .update(satellites)
         .set({ lastSeenAt: new Date(), draining })
-        .where(and(eq(satellites.owner, owner), eq(satellites.name, name)));
+        .where(
+          and(
+            eq(satellites.owner, owner),
+            eq(satellites.name, name),
+            ...(incarnation === undefined
+              ? []
+              : [eq(satellites.incarnation, incarnation)]),
+          ),
+        );
     },
 
     async grant(owner: string, name: string, agentId: string): Promise<void> {
@@ -346,6 +413,7 @@ export function createSatellitesRepository(db: Db) {
       satellite: string,
       capacity: number,
       leaseUntil: Date,
+      incarnation?: string,
     ): Promise<JobRow[]> {
       if (capacity <= 0) return [];
       return db.transaction(async (tx) => {
@@ -357,6 +425,7 @@ export function createSatellitesRepository(db: Db) {
               eq(satelliteJobs.owner, owner),
               eq(satelliteJobs.satellite, satellite),
               eq(satelliteJobs.status, "queued"),
+              sameRegistration(incarnation),
             ),
           )
           .orderBy(asc(satelliteJobs.sequence))
@@ -374,6 +443,7 @@ export function createSatellitesRepository(db: Db) {
                 satelliteJobs.sequence,
                 pending.map((p) => p.sequence),
               ),
+              sameRegistration(incarnation),
             ),
           )
           .returning();
@@ -393,6 +463,7 @@ export function createSatellitesRepository(db: Db) {
       owner: string,
       satellite: string,
       resendBefore: Date,
+      incarnation?: string,
     ): Promise<JobRow[]> {
       const rows = await db
         .update(satelliteJobs)
@@ -407,6 +478,7 @@ export function createSatellitesRepository(db: Db) {
               sql`${satelliteJobs.cancelSentAt} is null`,
               lt(satelliteJobs.cancelSentAt, resendBefore),
             ),
+            sameRegistration(incarnation),
           ),
         )
         .returning();
@@ -418,6 +490,7 @@ export function createSatellitesRepository(db: Db) {
       satellite: string,
       sequences: number[],
       leaseUntil: Date,
+      incarnation?: string,
     ): Promise<void> {
       if (sequences.length === 0) return;
       await db
@@ -429,6 +502,7 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.satellite, satellite),
             inArray(satelliteJobs.sequence, sequences),
             eq(satelliteJobs.status, "running"),
+            sameRegistration(incarnation),
           ),
         );
     },
@@ -447,6 +521,7 @@ export function createSatellitesRepository(db: Db) {
         reason?: string | null;
       },
       expect?: JobStatus,
+      incarnation?: string,
     ): Promise<JobRow | null> {
       const rows = await db
         .update(satelliteJobs)
@@ -462,6 +537,7 @@ export function createSatellitesRepository(db: Db) {
             eq(satelliteJobs.sequence, sequence),
             notInArray(satelliteJobs.status, [...TERMINAL_STATUSES]),
             ...(expect ? [eq(satelliteJobs.status, expect)] : []),
+            sameRegistration(incarnation),
           ),
         )
         .returning()

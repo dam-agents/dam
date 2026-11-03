@@ -9,7 +9,7 @@ import {
   createBackoff,
   type Backoff,
   type BackoffOptions,
-} from "../domain/backoff.js";
+} from "../../shared/backoff.js";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
 
 const HEARTBEAT_MS = 20_000;
@@ -48,15 +48,20 @@ export interface WorkerTransport {
     satellite: string;
     capacity: number;
     waitMs: number;
+    incarnation?: string;
   }): Promise<WorkItem[]>;
-  heartbeat(input: { satellite: string; running: number[] }): Promise<void>;
+  heartbeat(input: {
+    satellite: string;
+    running: number[];
+    incarnation?: string;
+  }): Promise<void>;
   report(input: {
     satellite: string;
     sequence: number;
     incarnation?: string;
     outcome: ReportOutcome;
   }): Promise<void>;
-  drain(satellite: string): Promise<void>;
+  drain(input: { satellite: string; incarnation?: string }): Promise<void>;
 }
 
 export class SatelliteRemovedError extends Error {
@@ -162,6 +167,7 @@ export function createWorker(deps: {
   host: string;
   guide?: string[];
   retry?: BackoffOptions;
+  drainGraceMs?: number;
 }) {
   const { name, backend, transport, log } = deps;
   const running = new Set<number>();
@@ -174,26 +180,59 @@ export function createWorker(deps: {
   let incarnation: string | undefined;
   const slotWaiters = new Set<() => void>();
   let cancelPoll: Promise<void> | null = null;
-  let abandon: () => void = () => {};
-  const abandoned = new Promise<void>((resolve) => {
-    abandon = resolve;
-  });
+  const stopWaiters = new Set<() => void>();
+  let abandoning = false;
+  let grace: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Stops waiting on the platform for good. Every
+   * call in flight is released, and what is still open is closed by the process
+   * exit.
+   */
+  function abandon(): void {
+    if (abandoning) return;
+    abandoning = true;
+    for (const wait of stopWaiters) wait();
+    stopWaiters.clear();
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Bounds how long a stop waits on the platform, so
+   * a supervisor's stop timeout gets an exit instead of a kill. It is armed once
+   * by whichever says stop first — a drain, a removal, or the final reporting.
+   */
+  function armAbandon(): void {
+    if (grace !== undefined || abandoning) return;
+    grace = setTimeout(() => {
+      log.line(
+        "no longer waiting on the platform — whatever is still running is settled as interrupted",
+      );
+      abandon();
+    }, deps.drainGraceMs ?? DRAIN_GRACE_MS);
+    grace.unref?.();
+  }
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: A call the shutdown stops waiting for. A worker
    * asked to stop cannot sit on a request that never answers — the supervisor
    * kills it instead of getting a clean stop — so every platform call, and the
-   * MCP server's own readiness, is raced against the stop. What is still open
-   * is closed by the process exit.
+   * MCP server's own readiness, is raced against the stop. The losing side is
+   * unsubscribed when the call settles, because a worker runs for weeks and a
+   * reaction kept per call would grow without bound.
    */
   async function guarded<T>(work: Promise<T>): Promise<T> {
     work.catch(() => {});
-    return Promise.race([
-      work,
-      abandoned.then(() => {
-        throw new SatelliteStoppedError();
-      }),
-    ]);
+    if (abandoning) throw new SatelliteStoppedError();
+    let stop: () => void = () => {};
+    const stopped = new Promise<never>((_, reject) => {
+      stop = () => reject(new SatelliteStoppedError());
+      stopWaiters.add(stop);
+    });
+    try {
+      return await Promise.race([work, stopped]);
+    } finally {
+      stopWaiters.delete(stop);
+    }
   }
 
   const report = (input: {
@@ -240,7 +279,11 @@ export function createWorker(deps: {
    */
   async function flushUnsent(): Promise<void> {
     for (const [sequence, entry] of [...unsent]) {
-      if (entry.incarnation !== incarnation) {
+      if (
+        entry.incarnation !== undefined &&
+        incarnation !== undefined &&
+        entry.incarnation !== incarnation
+      ) {
         unsent.delete(sequence);
         log.line(
           `dropping the outcome of ${name}#${sequence}: the platform holds a different registration of ${name}`,
@@ -308,10 +351,14 @@ export function createWorker(deps: {
             ...(incarnation === undefined ? {} : { resume: incarnation }),
           }),
         );
-        incarnation = registered?.incarnation;
+        if (registered?.incarnation !== undefined)
+          incarnation = registered.incarnation;
       } catch (err) {
         if (stopped || err instanceof SatelliteStoppedError) return false;
-        if (err instanceof SatelliteRemovedError) return stopClaiming(err);
+        if (err instanceof SatelliteRemovedError) {
+          stopClaiming(err);
+          return true;
+        }
         connected = false;
         await backOff(describeOffline(err), retry);
         continue;
@@ -452,13 +499,12 @@ export function createWorker(deps: {
    * log with an error that never resolves. What is running finishes and the
    * process exits; a supervisor that starts it again gets a fresh registration.
    */
-  function stopClaiming(err: SatelliteRemovedError): false {
+  function stopClaiming(err: SatelliteRemovedError): void {
     log.line(
-      `${name} was removed on the platform — no longer claiming work; start it again to register it anew`,
+      `${name} was removed on the platform — no longer claiming work (${err.message}); start it again to register it anew`,
     );
-    log.line(String(err));
     draining = true;
-    return false;
+    armAbandon();
   }
 
   function announce(prefix: string): void {
@@ -474,6 +520,15 @@ export function createWorker(deps: {
       return running.size;
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Calls currently waiting on the platform. A
+     * worker runs for weeks, so a shutdown subscription kept per completed call
+     * would grow without bound; this is what says they are released.
+     */
+    get waitingOnPlatform(): number {
+      return stopWaiters.size;
+    },
+
     announce,
 
     async start(): Promise<void> {
@@ -483,7 +538,11 @@ export function createWorker(deps: {
       const heartbeat = setInterval(() => {
         if (!connected || stopped) return;
         void guarded(
-          transport.heartbeat({ satellite: name, running: [...running] }),
+          transport.heartbeat({
+            satellite: name,
+            running: [...running],
+            ...(incarnation === undefined ? {} : { incarnation }),
+          }),
         ).catch((err: unknown) => {
           if (!stopped && !(err instanceof SatelliteStoppedError))
             log.line(`heartbeat failed: ${String(err)}`);
@@ -498,6 +557,7 @@ export function createWorker(deps: {
             continue;
           }
           if (!(await ready(retry, crashRetry))) break;
+          if (stopped || draining) continue;
           if (unsent.size > 0) await flushUnsent();
           const capacity = deps.maxConcurrent - running.size;
           if (capacity <= 0) {
@@ -506,6 +566,7 @@ export function createWorker(deps: {
                 satellite: name,
                 capacity: 0,
                 waitMs: CLAIM_WAIT_MS,
+                ...(incarnation === undefined ? {} : { incarnation }),
               }),
             )
               .then((items) => void handle(items))
@@ -530,9 +591,11 @@ export function createWorker(deps: {
                 satellite: name,
                 capacity,
                 waitMs: CLAIM_WAIT_MS,
+                ...(incarnation === undefined ? {} : { incarnation }),
               }),
             );
             retry.reset();
+            if (stopped || draining) continue;
             const started = handle(items);
             if (started === 0 && !stopped && !draining) await pause(IDLE_MS);
           } catch (err) {
@@ -547,10 +610,8 @@ export function createWorker(deps: {
         }
       } finally {
         clearInterval(heartbeat);
-        const grace = setTimeout(abandon, DRAIN_GRACE_MS);
-        grace.unref?.();
+        armAbandon();
         await settleReports();
-        clearTimeout(grace);
         if (connected && !stopped) await flushUnsent().catch(() => {});
         await guarded(backend.close()).catch(() => {});
       }
@@ -570,15 +631,14 @@ export function createWorker(deps: {
           ? "draining — nothing running, exiting"
           : `draining — waiting for ${running.size} job(s); interrupt again to kill them`,
       );
-      const grace = setTimeout(() => {
-        log.line(
-          `draining — no longer waiting on the platform; a job still running is settled as interrupted`,
-        );
-        abandon();
-      }, DRAIN_GRACE_MS);
-      grace.unref?.();
       if (running.size === 0) abandon();
-      await guarded(transport.drain(name)).catch(() => {});
+      else armAbandon();
+      await guarded(
+        transport.drain({
+          satellite: name,
+          ...(incarnation === undefined ? {} : { incarnation }),
+        }),
+      ).catch(() => {});
     },
 
     async forceStop(): Promise<void> {

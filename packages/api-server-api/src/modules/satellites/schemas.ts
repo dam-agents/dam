@@ -72,12 +72,28 @@ export const claimInputSchema = z.object({
   satellite: satelliteNameSchema,
   capacity: z.number().int().min(0).max(1024),
   waitMs: z.number().int().min(0).max(60_000).optional(),
+  incarnation: z.string().uuid().optional(),
 });
 
 export const heartbeatInputSchema = z.object({
   satellite: satelliteNameSchema,
   running: z.array(z.number().int().positive()).max(1024),
+  incarnation: z.string().uuid().optional(),
 });
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a worker says when it stops serving. A CLI
+ * that predates the registration fence sends the bare name, so both shapes are
+ * accepted: the platform cannot tell which registration an old worker served,
+ * and it says nothing rather than saying the wrong thing.
+ */
+export const drainInputSchema = z.union([
+  satelliteNameSchema,
+  z.object({
+    satellite: satelliteNameSchema,
+    incarnation: z.string().uuid().optional(),
+  }),
+]);
 
 export const MAX_JOB_OUTPUT_BYTES = 1024 * 1024;
 const MAX_TOOL_ARGS_BYTES = 64 * 1024;
@@ -201,7 +217,7 @@ export const toolArgsSchema = z
 export const reportInputSchema = z.object({
   satellite: satelliteNameSchema,
   sequence: z.number().int().positive(),
-  incarnation: z.string().max(64).optional(),
+  incarnation: z.string().uuid().optional(),
   outcome: z.discriminatedUnion("status", [
     z
       .object({

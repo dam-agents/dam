@@ -192,15 +192,18 @@ Nothing ends the loop; the process stops when it is told to stop.
 **A reconnect is a registration, not a second Satellite.** The name is what identifies a Satellite, so connecting again replaces the Snapshot of the one the machine already serves and keeps its Grants, its Jobs and its Job sequence.
 An Agent sees the same tools before and after a drop, and never two of anything.
 
-A Satellite's row is nevertheless a **registration** of that name, and a worker names the one it served.
-A removal, or a name registered again from another machine, is therefore refused rather than taken over: the worker is told there is no such Satellite, and stops ([Jobs](#jobs)).
-That is what keeps a stale worker from undoing the owner's decision to remove one, or from claiming jobs queued for a machine that is not this one.
+A Satellite's row is nevertheless a **registration** of that name, and each registration has an identity of its own.
+A worker names the registration it serves on every call it makes — registering, claiming, renewing a lease, cancelling, reporting — and the platform puts that identity inside the statements that act rather than in a read before them, because a name can be registered again between the two.
+A removal, or a name registered again from another machine, is therefore refused rather than taken over: the worker is told there is no such Satellite before it runs anything, and stops ([Jobs](#jobs)).
+That is what keeps a stale worker from undoing the owner's decision to remove one, from claiming jobs queued for a machine that is not this one, and from settling another machine's `#1` with its own.
+A worker from before the identity existed names nothing and is served as it always was: it cannot be fenced, which is the cost of the rollout, not a promise the platform makes.
 
 **The machine's own server is restarted, but only when it exited.** Reconnecting must not kill work that is in progress, so a server that is still up keeps serving.
 One that did exit is started again, and the tool list it comes back with is **registered before any more work is claimed**, because a Snapshot is that machine's claim about what it offers now; a server that keeps exiting seconds after it starts is restarted on its own backoff rather than as fast as work arrives.
 
 **A result survives a short drop.** An outcome that could not be reported is kept and sent again before more work is taken, and once the platform answers again, which covers any outage shorter than the Job's lease.
 It is replayed only to the **registration it was claimed under**: a name registered again starts its Job sequence over, so an old machine's `#1` is not the new machine's `#1`, and the platform settles a report that names the wrong registration as nothing at all.
+A rollout moves the two ends apart for a while, so a missing identity is read as *unknown* rather than as *different*: the worker keeps the registration it last learned, and a result held from before the platform could name one is still sent.
 Beyond the lease, the sweep settles the Job as interrupted and the Agent is told its outcome is unknown, so a call in flight during a drop ends in a sentence rather than a wait.
 A call made while the Satellite is offline never starts at all: admission refuses it and says since when the machine has been gone ([Admission](#admission)).
 
@@ -258,7 +261,9 @@ Every request is one line naming the Agent that sent it and what it asked for.
 The api-server resolves the Agent's name when the worker claims the call, and falls back to its id.
 Every outcome is one line too, and each way a call ends reads differently: `DONE` with its exit code, `FAILED` for a command that ran and failed or a tool that returned an error, `BLOCKED` for a call the machine refused without running, which names the pattern it came closest to, and `CANCELLED` and `INTERRUPTED`.
 A parse error names the line it is on, since the text the user just typed is the whole allowlist.
-Shutdown stops claiming on the first interrupt and lets what is running report; after a bounded grace it stops waiting on the platform, so a supervisor's stop timeout gets an exit rather than a kill.
+Shutdown stops claiming on the first interrupt — a claim already open hands nothing back that is then started — and lets what is running report.
+After a bounded grace it stops waiting on the platform, so a supervisor's stop timeout gets an exit rather than a kill.
+A Satellite found removed by a reconnect drains what is running just as a removed claim does, rather than closing the machine's MCP server on top of it.
 The second interrupt forces.
 There is no reload: neither form reads a file, so changing what a machine offers means restarting it.
 Keeping one worker running unattended is [running a satellite as a service](../notes/satellite-service.md), which holds the systemd unit and the launchd plist.

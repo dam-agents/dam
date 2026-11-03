@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SatelliteManifest, WorkItem } from "api-server-api";
-import { createBackoff } from "../modules/satellite/domain/backoff.js";
+import { createBackoff } from "../modules/shared/backoff.js";
 import { parseCommandSurface } from "../modules/satellite/domain/command-surface.js";
 import {
   createCommandBackend,
@@ -501,6 +501,7 @@ describe("surviving a drop", () => {
         log: { line: (text) => lines.push(text) },
         host: "test-host",
         retry: FAST,
+        drainGraceMs: 50,
       }),
     };
   }
@@ -924,6 +925,254 @@ describe("surviving a drop", () => {
       lines.some((line) => line.includes("was removed on the platform")),
     ).toBe(true);
   });
+
+  /**
+   * TEST_SCENARIO: A server from before the registration identity answers a
+   * connect with no incarnation of its own. The worker already knows which
+   * registration it serves, and that knowledge must not be replaced by nothing:
+   * a rollout that lands the worker on an older replica would otherwise throw
+   * away a result whose Job is still leased.
+   */
+  it("keeps the registration it knows when the server does not name one", async () => {
+    const queue = pollQueue();
+    const reports: number[] = [];
+    let connectCalls = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connectCalls += 1;
+        return connectCalls === 1 ? { incarnation: "reg-1" } : undefined;
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        reports.push(input.sequence);
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() =>
+      expect(
+        lines.some((line) => line.startsWith("could not report test-box#1")),
+      ).toBe(true),
+    );
+    queue.polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() => expect(reports).toEqual([1]), { timeout: 5000 });
+    await worker.drain();
+    await running;
+
+    expect(
+      lines.some((line) => line.startsWith("dropping the outcome")),
+      "the same registration, so the result is still this worker's to send",
+    ).toBe(false);
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that connected before the platform learned the
+   * registration identity holds an untagged result. Once the platform names the
+   * row's registration, that result is still the same row's, so it is sent
+   * rather than discarded on a rollout in the other direction.
+   */
+  it("replays an untagged outcome once the server names the registration", async () => {
+    const queue = pollQueue();
+    const reports: { sequence: number; incarnation?: string }[] = [];
+    let connectCalls = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connectCalls += 1;
+        return connectCalls === 1 ? undefined : { incarnation: "reg-1" };
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        reports.push({
+          sequence: input.sequence,
+          ...(input.incarnation === undefined
+            ? {}
+            : { incarnation: input.incarnation }),
+        });
+      },
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() => expect(reportCalls).toBe(1));
+    queue.polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() => expect(reports).toHaveLength(1), { timeout: 5000 });
+    await worker.drain();
+    await running;
+
+    expect(reports[0]).toEqual({ sequence: 1, incarnation: "reg-1" });
+  });
+
+  /**
+   * TEST_SCENARIO: A stop arrives while a claim is open, and the platform hands
+   * work back anyway. Starting it would run a tool call nobody is waiting for on
+   * a machine that is leaving, so the work is dropped and its lease runs out.
+   */
+  it("starts no work a claim hands back after a stop", async () => {
+    const queue = pollQueue();
+    const reports: number[] = [];
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async (input) => {
+        reports.push(input.sequence);
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([
+      runItem(1, ["/usr/bin/tail", "-f", "/etc/hosts"]),
+    ]);
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(2));
+
+    const draining = worker.drain();
+    queue.polls[1]?.resolve([runItem(2, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() => expect(worker.runningCount).toBe(1));
+    await worker.forceStop();
+    await draining;
+    await running;
+
+    expect(
+      lines.some((line) => line.startsWith("REQUEST #2")),
+      "work returned after the stop is not started",
+    ).toBe(false);
+    expect(reports).not.toContain(2);
+  });
+
+  /**
+   * TEST_SCENARIO: A reconnect finds the Satellite removed while a job is still
+   * running on this machine. Closing the MCP server there would kill work the
+   * architecture says finishes, so the removal drains exactly as a removed
+   * claim does and the result is still reported.
+   */
+  it("drains a running job when a reconnect finds the satellite removed", async () => {
+    const queue = pollQueue();
+    const reports: number[] = [];
+    const closed: string[] = [];
+    let connectCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connectCalls += 1;
+        if (connectCalls > 1) throw new SatelliteRemovedError("test-box");
+        return { incarnation: "reg-1" };
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reports.push(input.sequence);
+        closed.push("report");
+      },
+    };
+    const parsed = parseCommandSurface(PATTERNS, IDENTITY);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const backend = createCommandBackend(parsed.value);
+    const { worker } = workerWith(transport, {
+      ...backend,
+      close: async () => {
+        closed.push("close");
+      },
+    });
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([
+      runItem(1, ["/usr/bin/tail", "-f", "/etc/hosts"]),
+    ]);
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(2));
+    queue.polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() => expect(connectCalls).toBeGreaterThanOrEqual(2));
+    backend.cancel(1);
+    await vi.waitFor(() => expect(reports).toEqual([1]));
+    await running;
+
+    expect(
+      closed.indexOf("report"),
+      "the job is reported before the machine's server is closed",
+    ).toBeLessThan(closed.indexOf("close"));
+  });
+
+  /**
+   * TEST_SCENARIO: A removal found by a claim leaves a result that cannot be
+   * reported. Waiting on that report forever is the hang the drain grace exists
+   * to prevent, so the worker stops on its own.
+   */
+  it("stops when a held result cannot be sent after the satellite was removed", async () => {
+    const queue = pollQueue();
+    let claimCalls = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claimCalls += 1;
+        if (claimCalls === 1) return [runItem(1, ["/bin/echo", "hello"])];
+        if (claimCalls === 2) throw new SatelliteRemovedError("test-box");
+        return queue.binding();
+      },
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async () => {
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        return new Promise<never>(() => {});
+      },
+    };
+    const { worker } = workerWith(transport);
+
+    const outcome = await Promise.race([
+      worker.start().then(() => "stopped"),
+      new Promise((resolve) => setTimeout(() => resolve("hung"), 5000)),
+    ]);
+    expect(outcome).toBe("stopped");
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that runs for weeks completes millions of calls.
+   * Each one racing the shutdown must not leave its losing subscription behind,
+   * or the process grows until it is restarted for no reason.
+   */
+  it("keeps no shutdown subscription once a call has settled", async () => {
+    const queue = pollQueue();
+    let claims = 0;
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claims += 1;
+        if (claims > 30) return queue.binding();
+        return [runItem(claims, ["/bin/echo", "hello"])];
+      },
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async () => {},
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(claims).toBeGreaterThan(30), {
+      timeout: 15_000,
+    });
+    expect(worker.waitingOnPlatform).toBeLessThanOrEqual(1);
+    await worker.drain();
+    await running;
+  }, 30_000);
 
   /**
    * TEST_SCENARIO: A stop must not wait on a request that never answers. The

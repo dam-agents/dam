@@ -18,13 +18,19 @@ The plaintext is printed once, on stderr.
 A key has no expiry unless `--expires` names one, which is what lets a machine outside the cluster keep serving without a person: an interactive `dam login` would eventually expire instead.
 
 Put the key in a file only its owner can read, and never in a unit or a plist: a supervisor's own configuration is the first thing anyone with the machine's account reads.
-The value is typed at a prompt that echoes nothing, so it never lands in the shell history:
+The value is typed at a prompt that echoes nothing, so it never lands in the shell history.
+`stty` and `read` are POSIX and work the same in bash, zsh and dash, which matters because macOS starts zsh:
 
 ```sh
 mkdir -p ~/.config/dam
 chmod 700 ~/.config/dam
 install -m 600 /dev/null ~/.config/dam/satellite.env
-read -rsp "paste the serve key: " DAM_TOKEN
+printf 'paste the serve key, then press return: '
+stty -echo
+IFS= read -r DAM_TOKEN
+stty echo
+printf '\n'
+[ -n "$DAM_TOKEN" ] || { echo "nothing pasted" >&2; exit 1; }
 printf 'DAM_TOKEN=%s\n' "$DAM_TOKEN" > ~/.config/dam/satellite.env
 unset DAM_TOKEN
 ```

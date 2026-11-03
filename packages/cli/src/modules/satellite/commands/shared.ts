@@ -10,7 +10,6 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import { createBackoff, type BackoffOptions } from "../domain/backoff.js";
 import type { SatelliteBackend } from "../services/backend.js";
 import type { McpServerSpec } from "../services/mcp-backend.js";
 import {
@@ -204,38 +203,8 @@ function transportFor(trpc: TrpcClient): WorkerTransport {
         .catch((err: unknown) => throwIfRemoved(err, input.satellite)),
     heartbeat: (input) => trpc.satellites.heartbeat.mutate(input),
     report: (input) => trpc.satellites.report.mutate(input),
-    drain: (satellite) => trpc.satellites.drain.mutate(satellite),
+    drain: (input) => trpc.satellites.drain.mutate(input),
   };
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Waits until the platform answers its version
- * probe. A worker is started as a service, often before the network is up, so an
- * unreachable server is the ordinary case rather than an error: it is retried
- * with backoff, while a missing or malformed configuration, a server that
- * answers and an incompatible version all end the process as they do for every
- * other command. The wait is bounded per attempt by the probe's own timeout.
- */
-export async function waitForServer(
-  deps: { compatService: CompatService },
-  opts: CommonConnectOpts,
-  backoff: BackoffOptions = {},
-): Promise<void> {
-  const retry = createBackoff(backoff);
-  for (;;) {
-    const compat = await deps.compatService.check({
-      ...(opts.server === undefined ? {} : { flag: { server: opts.server } }),
-    });
-    if (compat.ok) return;
-    if (compat.error.kind !== "probe-error") return;
-    if (compat.error.code !== "network" && compat.error.code !== "timeout")
-      return;
-    const delay = retry.next();
-    log.line(
-      `offline: cannot reach the server (${compat.error.message}) — retrying in ${seconds(delay)}`,
-    );
-    await new Promise((resolve) => setTimeout(resolve, delay));
-  }
 }
 
 /**
@@ -264,8 +233,12 @@ export async function serve(
   identity: { name: string; description?: string; maxConcurrent: number },
   startupLines: string[] = [],
 ): Promise<never> {
-  await waitForServer(deps, opts);
-  const host = await activeHost(deps, opts);
+  const host = await resolveActiveHost(deps, opts.server, {
+    onWait: (reason, delay) =>
+      log.line(
+        `offline: cannot reach the server (${reason}) — retrying in ${seconds(delay)}`,
+      ),
+  });
   let interrupted = false;
   const worker = createWorker({
     name: identity.name,
