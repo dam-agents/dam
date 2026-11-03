@@ -25,7 +25,7 @@ Fires are idempotent per occurrence, so at-least-once delivery cannot run one tw
 The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window.
 Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time.
 Every RRULE counts its steps from one fixed start — midnight on 1 January 2001 in the schedule's timezone, a Monday and the first of a month — so its occurrences never depend on when they are computed and stay put across restarts and re-arms: an unanchored rule defaults to midnight, weekly to Monday, monthly to the 1st.
-A `FREQ=HOURLY` or `FREQ=MINUTELY` rule with `BYHOUR` is the exception: it starts at its first `BYHOUR` hour that day and steps in local wall-clock time, so a clock change does not move its steps off the hours it lists ([ADR-127](../adrs/127-sub-daily-byhour-steps-in-wall-clock-time.md)).
+A `FREQ=HOURLY` or `FREQ=MINUTELY` rule with `BYHOUR` is the exception: it starts at its first `BYHOUR` hour that day (a minutely one at its first `BYMINUTE` minute of that hour) and steps in local wall-clock time, so a clock change does not move its steps off the hours it lists.
 `COUNT` is rejected, because counted from that start it would be spent, and so is `FREQ=SECONDLY`, because schedules fire at minute granularity.
 A rule with no future occurrence is rejected at save time; the occurrence search runs on the api-server's event loop, so every search is capped in the periods and candidate times it may examine, and a rule that can never fire answers at once instead of blocking it.
 An occurrence inside quiet hours resumes the search at the end of that window, and a rule still quiet after 64 windows counts as covered.
@@ -35,7 +35,7 @@ A cron expression always fires in UTC, and a cron schedule has no timezone and n
 A user edits a cron schedule they created as cron, or converts it to an RRULE to get both.
 The conversion keeps the cron fields' values and reads them in a timezone the user picks — UTC by default, so the schedule fires at the same moments — and it shows the next runs before and after.
 An expression with no exact RRULE match is not converted and stays a cron schedule: one that names both days of the month and days of the week, which cron matches as either, or one that uses `L`, `W`, `#`, `H` or seconds.
-A local time erased by the spring-forward jump is skipped, as RFC 5545 requires.
+A local time erased by the spring-forward jump is skipped, as RFC 5545 requires — except in a sub-daily rule with `BYHOUR`, which fires it one hour later, as the jump moved it.
 An enabled schedule with no next run shows why — a refused rule, one that never fires or has run out, or quiet hours that cover every remaining occurrence — worked out when the schedule is read, so it clears the moment an edit re-arms it.
 
 When a fire is due:

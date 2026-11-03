@@ -181,22 +181,40 @@ function occurrenceSearch(
     );
     return (after, inclusive) => rule.next(after, inclusive);
   }
+  const firstMinute =
+    options.freq === "MINUTELY" ? Math.min(...(options.byMinute ?? [0])) : 0;
   const rule = boundedRule(
     withUtcUntil(withWallUntil(rruleBody, timezone), "UTC"),
-    anchoredAt("UTC").with({ hour: firstHour }),
+    anchoredAt("UTC").with({ hour: firstHour, minute: firstMinute }),
   );
   return (after, inclusive) => {
-    let wall = after.toPlainDateTime().toZonedDateTime("UTC");
+    const start = wallSearchStart(after);
+    let wall = start.toZonedDateTime("UTC");
+    let wallInclusive = inclusive || !start.equals(after.toPlainDateTime());
     for (;;) {
-      const found = rule.next(wall, inclusive);
+      const found = rule.next(wall, wallInclusive);
       if (!found) return null;
       const at = found.toPlainDateTime().toZonedDateTime(timezone);
       const order = Temporal.ZonedDateTime.compare(at, after);
       if (order > 0 || (inclusive && order === 0)) return at;
       wall = found;
-      inclusive = false;
+      wallInclusive = false;
     }
   };
+}
+
+function wallSearchStart(
+  after: Temporal.ZonedDateTime,
+): Temporal.PlainDateTime {
+  const shift = after.add({ nanoseconds: 1 }).getTimeZoneTransition("previous");
+  if (!shift) return after.toPlainDateTime();
+  const gap =
+    shift.offsetNanoseconds -
+    shift.subtract({ nanoseconds: 1 }).offsetNanoseconds;
+  const since = after.epochNanoseconds - shift.epochNanoseconds;
+  return gap > 0 && since < BigInt(gap)
+    ? shift.toPlainDateTime().subtract({ nanoseconds: gap })
+    : after.toPlainDateTime();
 }
 
 function boundedRule(

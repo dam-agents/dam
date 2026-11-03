@@ -129,7 +129,14 @@ function stepFromAnchor(rrule: string, from: Date): Date | null {
   const step = Number(fields.INTERVAL ?? 1) * (hourly ? 60 : 1);
   const minutes = list("BYMINUTE");
   const hours = list("BYHOUR");
-  const anchor = Date.UTC(2001, 0, 1, hours ? Math.min(...hours) : 0) / 60_000;
+  const anchor =
+    Date.UTC(
+      2001,
+      0,
+      1,
+      hours ? Math.min(...hours) : 0,
+      hours && !hourly && minutes ? Math.min(...minutes) : 0,
+    ) / 60_000;
   const first = Math.floor((from.getTime() / 60_000 - anchor) / step);
   for (let k = first; k < first + 200_000; k++) {
     const period = anchor + k * step;
@@ -195,7 +202,7 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
   });
 
   it.each([
-    "FREQ=MINUTELY;INTERVAL=60;BYHOUR=9;BYMINUTE=30",
+    "FREQ=MINUTELY;INTERVAL=60;BYMINUTE=30",
     "FREQ=HOURLY;BYSETPOS=3",
     "FREQ=DAILY;BYHOUR=9,10;BYSETPOS=3",
     "FREQ=MINUTELY;INTERVAL=15;BYMINUTE=0;BYMONTH=2;BYMONTHDAY=30",
@@ -263,6 +270,34 @@ describe("nextFireAt (sub-daily rule with BYHOUR across a clock change)", () => 
     const spec = rruleSpec("FREQ=HOURLY;BYHOUR=2;BYMINUTE=37", "Europe/Prague");
     const next = nextFireAt(spec, new Date("2027-03-27T23:00:00Z"));
     expect(next?.toISOString()).toBe("2027-03-28T01:37:00.000Z");
+  });
+
+  it("fires every pin a spring-forward jump moves one hour later", () => {
+    const spec = rruleSpec(
+      "FREQ=HOURLY;BYHOUR=2;BYMINUTE=15,45",
+      "Europe/Prague",
+    );
+    const first = nextFireAt(spec, new Date("2027-03-27T23:00:00Z"))!;
+    expect(first.toISOString()).toBe("2027-03-28T01:15:00.000Z");
+    expect(nextFireAt(spec, first)?.toISOString()).toBe(
+      "2027-03-28T01:45:00.000Z",
+    );
+    expect(
+      nextFireAt(spec, new Date("2027-03-28T01:00:00Z"))?.toISOString(),
+    ).toBe("2027-03-28T01:15:00.000Z");
+  });
+
+  // TEST_SCENARIO: a minutely rule starts its steps at its first hour and minute, so a stored rule whose pins sat on the steps from midnight still fires.
+  it("keeps a minutely rule on its first pinned minute", () => {
+    const spec = rruleSpec(
+      "FREQ=MINUTELY;INTERVAL=90;BYHOUR=1;BYMINUTE=30",
+      "Europe/Prague",
+    );
+    const first = nextFireAt(spec, new Date("2026-11-02T12:00:00Z"))!;
+    expect(first.toISOString()).toBe("2026-11-03T00:30:00.000Z");
+    expect(nextFireAt(spec, first)?.toISOString()).toBe(
+      "2026-11-04T00:30:00.000Z",
+    );
   });
 
   it.each([
@@ -412,7 +447,7 @@ describe("validateRRule", () => {
   });
 
   it.each([
-    ["FREQ=MINUTELY;INTERVAL=60;BYHOUR=9;BYMINUTE=30", /it never fires/],
+    ["FREQ=MINUTELY;INTERVAL=60;BYMINUTE=30", /it never fires/],
     ["FREQ=HOURLY;BYSETPOS=3", /it never fires/],
     ["FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30", /it never fires/],
     ["FREQ=DAILY;UNTIL=20200101T000000Z", /it has no more occurrences/],
