@@ -71,10 +71,10 @@ No architecture page describes the app frame or the viewport, so no page under `
 
 ## Sub-issues
 
-| #   | Title                                                                            | Scope                                                                                                                              | Depends on |
-| --- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [Inputs stay 16px on a phone](./01-inputs-16px-on-phone.md)                      | Below `md`, `Input`, `Textarea`, the composer and the three raw text inputs use 16px. No zoom on focus.                            | —          |
-| 02  | [The frame follows the visible viewport](./02-frame-follows-visible-viewport.md) | One hook publishes `visualViewport` as CSS variables. The three `h-dvh` frames read them. The keyboard no longer moves the header. | 01         |
+| #   | Title                                                                            | Scope                                                                                                                                                             | Depends on |
+| --- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | [Inputs stay 16px on a phone](./01-inputs-16px-on-phone.md)                      | Below `md`, `Input`, `Textarea`, the composer and the three raw text inputs use 16px. No zoom on focus.                                                           | —          |
+| 02  | [The frame follows the visible viewport](./02-frame-follows-visible-viewport.md) | One hook publishes `visualViewport` as CSS variables. The two root frames read them, and the chat root fills its parent. The keyboard no longer moves the header. | 01         |
 
 Slice 01 comes first.
 The zoom hides the keyboard behavior, so a tester cannot judge slice 02 on a real phone until the zoom is gone.

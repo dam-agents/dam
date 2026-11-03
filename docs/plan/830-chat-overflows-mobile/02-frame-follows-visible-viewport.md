@@ -7,7 +7,8 @@
 
 With the keyboard open, iOS Safari pans the page, and a frame of `100dvh` moves with it.
 The header leaves the screen.
-This slice adds one hook that publishes the visible area as CSS variables, and makes the three `h-dvh` frames read them.
+This slice adds one hook that publishes the visible area as CSS variables, and makes the two root frames read them.
+The classic chat root, the third `h-dvh` frame, fills its parent instead.
 The result is a frame that always matches what the person sees.
 
 ## Implementation plan
