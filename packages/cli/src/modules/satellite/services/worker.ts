@@ -19,6 +19,7 @@ const PAUSE_STEP_MS = 250;
 const MAX_UNSENT = 16;
 const CRASH_LOOP_MS = 10_000;
 const DRAIN_GRACE_MS = 15_000;
+const DRAIN_RETRY_MS = 1_000;
 const FORCE_REPORT_MS = 2_000;
 
 type ReportOutcome =
@@ -68,6 +69,19 @@ export class SatelliteRemovedError extends Error {
   constructor(satellite: string) {
     super(`${satellite} is no longer registered on the platform`);
     this.name = "SatelliteRemovedError";
+  }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The endpoint has no fenced procedure, so it cannot
+ * be trusted with a call that names a registration. It is not a drop to retry:
+ * an unfenced call would settle whichever machine holds the name now, so what
+ * was being sent is given up and the lease is left to settle the Job.
+ */
+export class FenceUnsupportedError extends Error {
+  constructor(satellite: string) {
+    super(`${satellite}'s platform does not enforce registrations`);
+    this.name = "FenceUnsupportedError";
   }
 }
 
@@ -168,6 +182,7 @@ export function createWorker(deps: {
   guide?: string[];
   retry?: BackoffOptions;
   drainGraceMs?: number;
+  drainRetryMs?: number;
 }) {
   const { name, backend, transport, log } = deps;
   const running = new Set<number>();
@@ -179,12 +194,12 @@ export function createWorker(deps: {
   let connected = false;
   let everConnected = false;
   let incarnation: string | undefined;
-  let fenced = false;
   const slotWaiters = new Set<() => void>();
   let cancelPoll: Promise<void> | null = null;
   const stopWaiters = new Set<() => void>();
   let abandoning = false;
   let grace: ReturnType<typeof setTimeout> | undefined;
+  let stopSettling: Promise<void> = Promise.resolve();
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: Stops waiting on the platform for good. Every
@@ -252,6 +267,12 @@ export function createWorker(deps: {
     )
       .catch((err: unknown) => {
         if (stopped || err instanceof SatelliteStoppedError) return;
+        if (err instanceof FenceUnsupportedError) {
+          log.line(
+            `dropping the outcome of ${name}#${input.sequence}: this platform does not enforce registrations, so a result cannot be told from another machine's Job of the same number — the Job is settled as interrupted`,
+          );
+          return;
+        }
         if (unsent.size >= MAX_UNSENT)
           unsent.delete(unsent.keys().next().value as number);
         unsent.set(input.sequence, {
@@ -286,14 +307,6 @@ export function createWorker(deps: {
    * Job of a machine that replaced this one.
    */
   async function flushUnsent(): Promise<void> {
-    if (unsent.size > 0 && !fenced) {
-      for (const sequence of unsent.keys())
-        log.line(
-          `dropping the outcome of ${name}#${sequence}: this server does not name registrations, so it cannot tell this machine's Job from another's — the Job is settled as interrupted`,
-        );
-      unsent.clear();
-      return;
-    }
     for (const [sequence, entry] of [...unsent]) {
       if (entry.incarnation === undefined) {
         unsent.delete(sequence);
@@ -321,6 +334,12 @@ export function createWorker(deps: {
         unsent.delete(sequence);
       } catch (err) {
         if (err instanceof SatelliteStoppedError) return;
+        if (err instanceof FenceUnsupportedError) {
+          unsent.delete(sequence);
+          log.line(
+            `dropping the outcome of ${name}#${sequence}: this platform does not enforce registrations, so a result cannot be told from another machine's Job of the same number — the Job is settled as interrupted`,
+          );
+        }
       }
     }
   }
@@ -370,7 +389,6 @@ export function createWorker(deps: {
             ...(incarnation === undefined ? {} : { resume: incarnation }),
           }),
         );
-        fenced = registered?.incarnation !== undefined;
         if (registered?.incarnation !== undefined)
           incarnation = registered.incarnation;
       } catch (err) {
@@ -521,6 +539,41 @@ export function createWorker(deps: {
    * log with an error that never resolves. What is running finishes and the
    * process exits; a supervisor that starts it again gets a fresh registration.
    */
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Tells the platform this machine is going away, in
+   * the form that names the registration it serves. A server that does not
+   * enforce registrations refuses that call, and its answer is never turned into
+   * a bare-name drain — that could drain a machine that replaced this one — so
+   * the attempt is repeated while the stop still has time, and given up on with
+   * one line. The Satellite then goes offline on its own window, which admission
+   * already refuses.
+   */
+  async function tellPlatformItIsDraining(): Promise<void> {
+    let refused = false;
+    for (;;) {
+      try {
+        await guarded(
+          transport.drain({
+            satellite: name,
+            ...(incarnation === undefined ? {} : { incarnation }),
+          }),
+        );
+        return;
+      } catch (err) {
+        if (err instanceof FenceUnsupportedError) refused = true;
+        else if (!(err instanceof SatelliteStoppedError)) return;
+        if (abandoning || stopped) break;
+        await new Promise((resolve) =>
+          setTimeout(resolve, deps.drainRetryMs ?? DRAIN_RETRY_MS),
+        );
+      }
+    }
+    if (refused)
+      log.line(
+        `could not tell the platform this machine is draining: it does not enforce registrations — ${name} goes offline on its own window instead`,
+      );
+  }
+
   function stopClaiming(err: SatelliteRemovedError): void {
     log.line(
       `${name} was removed on the platform — no longer claiming work (${err.message}); start it again to register it anew`,
@@ -635,6 +688,7 @@ export function createWorker(deps: {
         clearInterval(heartbeat);
         armAbandon();
         await settleReports();
+        await stopSettling;
         if (connected && !stopped) await flushUnsent().catch(() => {});
         await guarded(backend.close()).catch(() => {});
       }
@@ -654,14 +708,10 @@ export function createWorker(deps: {
           ? "draining — nothing running, exiting"
           : `draining — waiting for ${running.size} job(s); interrupt again to kill them`,
       );
+      armAbandon();
+      stopSettling = tellPlatformItIsDraining();
+      await stopSettling;
       if (running.size === 0) abandon();
-      else armAbandon();
-      await guarded(
-        transport.drain({
-          satellite: name,
-          ...(incarnation === undefined ? {} : { incarnation }),
-        }),
-      ).catch(() => {});
     },
 
     async forceStop(): Promise<void> {
@@ -669,8 +719,7 @@ export function createWorker(deps: {
       backend.killAll();
       const reports = [...running].map((sequence) => {
         const at = claimed.get(sequence);
-        if (fenced ? at !== incarnation : at !== undefined)
-          return Promise.resolve();
+        if (at !== undefined && at !== incarnation) return Promise.resolve();
         return transport
           .report({
             satellite: name,

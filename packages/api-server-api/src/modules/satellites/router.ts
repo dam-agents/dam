@@ -10,9 +10,11 @@ import {
 } from "../../auth-procedures.js";
 import {
   claimInputSchema,
+  drainFencedInputSchema,
   drainInputSchema,
   heartbeatInputSchema,
   jobRefSchema,
+  reportFencedInputSchema,
   reportInputSchema,
   satelliteConnectInputSchema,
   satelliteGrantInputSchema,
@@ -78,6 +80,22 @@ export const satellitesRouter = t.router({
 
   report: serveSatellitesProcedure
     .input(reportInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.satelliteWorker.report(ctx.user.sub, input),
+    ),
+
+  drainFenced: serveSatellitesProcedure
+    .input(drainFencedInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.satelliteWorker.drain(
+        ctx.user.sub,
+        input.satellite,
+        input.incarnation,
+      ),
+    ),
+
+  reportFenced: serveSatellitesProcedure
+    .input(reportFencedInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.satelliteWorker.report(ctx.user.sub, input),
     ),

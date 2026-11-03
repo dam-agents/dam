@@ -95,6 +95,17 @@ export const drainInputSchema = z.union([
   }),
 ]);
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a worker that knows which registration it
+ * serves says when it stops. It is a procedure of its own so an older server
+ * answers that it does not exist — a refusal, not a call it reads and ignores —
+ * and the identity is required, so a fence cannot be skipped silently.
+ */
+export const drainFencedInputSchema = z.object({
+  satellite: satelliteNameSchema,
+  incarnation: z.string().uuid(),
+});
+
 export const MAX_JOB_OUTPUT_BYTES = 1024 * 1024;
 const MAX_TOOL_ARGS_BYTES = 64 * 1024;
 
@@ -244,6 +255,16 @@ export const reportInputSchema = z.object({
       truncated: z.boolean().default(false),
     }),
   ]),
+});
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A report from a worker that knows which
+ * registration it serves, as a procedure of its own for the same reason as the
+ * fenced drain: an older server refuses it instead of reading it and ignoring
+ * the registration it names.
+ */
+export const reportFencedInputSchema = reportInputSchema.extend({
+  incarnation: z.string().uuid(),
 });
 
 export const jobRefSchema = z.object({

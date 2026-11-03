@@ -11,7 +11,7 @@ import {
   EXIT_RUNTIME_FAILURE,
 } from "../modules/shared/exit-codes.js";
 import { serve, transportFor } from "../modules/satellite/commands/shared.js";
-import { drainInputSchema, satelliteNameSchema } from "api-server-api";
+import { FenceUnsupportedError } from "../modules/satellite/services/worker.js";
 import { runTool } from "../modules/satellite/services/command-backend.js";
 import { parseCommandSurface } from "../modules/satellite/domain/command-surface.js";
 import { resolveActiveHost } from "../modules/shared/preflight.js";
@@ -337,113 +337,143 @@ function runToolFixture() {
   return runTool(parsed.value);
 }
 
-describe("talking to a server that names no registrations", () => {
+describe("a platform that does not enforce registrations", () => {
   const registrationId = "22222222-2222-4222-8222-222222222222";
 
-  function clientWith(
-    drain: (input: unknown) => Promise<void>,
-  ): Parameters<typeof transportFor>[0] {
-    return {
-      satellites: {
-        connect: { mutate: async () => undefined },
-        claim: { mutate: async () => [] },
-        heartbeat: { mutate: async () => {} },
-        report: { mutate: async () => {} },
-        drain: { mutate: drain },
-      },
-    } as never;
-  }
-
-  function badRequest(): Error {
+  function noProcedure(): Error {
     return TRPCClientError.from({
       error: {
-        code: -32600,
-        message: "invalid input",
-        data: { code: "BAD_REQUEST" },
+        code: -32004,
+        message: 'No procedure found on path "satellites.reportFenced"',
+        data: { code: "NOT_FOUND" },
       },
     } as never);
   }
 
+  function clientWith(overrides: {
+    report?: (input: unknown) => Promise<void>;
+    reportFenced?: (input: unknown) => Promise<void>;
+    drain?: (input: unknown) => Promise<void>;
+    drainFenced?: (input: unknown) => Promise<void>;
+  }) {
+    const calls: { procedure: string; input: unknown }[] = [];
+    const record =
+      (procedure: string, work?: (input: unknown) => Promise<void>) =>
+      async (input: unknown) => {
+        calls.push({ procedure, input });
+        if (work !== undefined) return work(input);
+      };
+    const client = {
+      satellites: {
+        connect: { mutate: async () => ({ incarnation: registrationId }) },
+        claim: { mutate: async () => [] },
+        heartbeat: { mutate: async () => {} },
+        report: { mutate: record("report", overrides.report) },
+        reportFenced: {
+          mutate: record("reportFenced", overrides.reportFenced),
+        },
+        drain: { mutate: record("drain", overrides.drain) },
+        drainFenced: { mutate: record("drainFenced", overrides.drainFenced) },
+      },
+    };
+    return { client: client as never, calls };
+  }
+
+  const outcome = {
+    satellite: "gpu-box",
+    sequence: 1,
+    incarnation: registrationId,
+    outcome: {
+      status: "done" as const,
+      isError: false,
+      exitCode: 0,
+      output: "ok",
+      images: [],
+      truncated: false,
+    },
+  };
+
   /**
-   * TEST_SCENARIO: A drain used to be the bare name, and an older server still
-   * validates it as one. Sending the object a newer server accepts would lose
-   * the drain to a validation error, leaving the worker online and not draining
-   * while it waits for its last job, so a shape the endpoint refuses is retried
-   * in the one every version takes.
+   * TEST_SCENARIO: A report that names its registration goes to the procedure
+   * that requires one, so the endpoint performing the write is the one that
+   * enforces the fence. A rolling deployment cannot answer the connect with one
+   * version and then quietly read and ignore the identity here.
    */
-  it("falls back to the bare name when the server does not understand the fenced drain", async () => {
-    const drains: unknown[] = [];
-    const transport = transportFor(
-      clientWith(async (input) => {
-        drains.push(input);
-        if (typeof input !== "string") throw badRequest();
-      }),
-    );
-
-    await transport.drain({
-      satellite: "gpu-box",
-      incarnation: registrationId,
-    });
-
-    expect(
-      drains.map((input) => typeof input),
-      "the fenced shape first, then the legacy one",
-    ).toEqual(["object", "string"]);
-    expect(
-      satelliteNameSchema.safeParse(drains[1]).success,
-      "the fallback is the shape an older server validates",
-    ).toBe(true);
+  it("sends a fenced report to the fenced procedure", async () => {
+    const { client, calls } = clientWith({});
+    await transportFor(client).report(outcome);
+    expect(calls.map((call) => call.procedure)).toEqual(["reportFenced"]);
   });
 
   /**
-   * TEST_SCENARIO: A newer server takes the fenced shape straight away, and the
-   * request names the registration that is draining.
+   * TEST_SCENARIO: An older server has no fenced procedure and refuses the call
+   * by name. Refusing is the point: the worker is told the platform cannot
+   * enforce a registration, and nothing unfenced is sent in its place — that
+   * would settle whichever machine holds the name now.
    */
-  it("sends a fenced drain to a server that takes it", async () => {
-    const drains: unknown[] = [];
-    const transport = transportFor(
-      clientWith(async (input) => {
-        drains.push(input);
-      }),
+  it("refuses a fenced report rather than sending an unfenced one", async () => {
+    const { client, calls } = clientWith({
+      reportFenced: async () => {
+        throw noProcedure();
+      },
+    });
+    await expect(transportFor(client).report(outcome)).rejects.toBeInstanceOf(
+      FenceUnsupportedError,
     );
+    expect(
+      calls.filter((call) => call.procedure === "report"),
+      "no unfenced report is sent while an identity is in hand",
+    ).toEqual([]);
+  });
 
-    await transport.drain({
+  it("sends a fenced drain to the fenced procedure", async () => {
+    const { client, calls } = clientWith({});
+    await transportFor(client).drain({
       satellite: "gpu-box",
       incarnation: registrationId,
     });
-
-    expect(drains).toHaveLength(1);
-    expect(drainInputSchema.safeParse(drains[0]).success).toBe(true);
-    expect(drains[0]).toEqual({
-      satellite: "gpu-box",
-      incarnation: registrationId,
-    });
+    expect(calls.map((call) => call.procedure)).toEqual(["drainFenced"]);
   });
 
   /**
-   * TEST_SCENARIO: A removal answers NOT_FOUND, which is the platform saying
-   * the Satellite is gone rather than that it did not understand the call. Falling
-   * back there would send an unfenced drain at a name that may already belong to
-   * another machine, so the failure travels on.
+   * TEST_SCENARIO: The older drain answers that it does not exist. Falling back
+   * to the bare-name drain would drain a registration that replaced this one, so
+   * the refusal is what the worker sees and it never sends the unfenced form.
    */
-  it("does not fall back on an answer that is not a shape error", async () => {
-    const drains: unknown[] = [];
-    const transport = transportFor(
-      clientWith(async (input) => {
-        drains.push(input);
-        throw TRPCClientError.from({
-          error: {
-            code: -32004,
-            message: "not found",
-            data: { code: "NOT_FOUND" },
-          },
-        } as never);
-      }),
-    );
-
+  it("refuses a fenced drain rather than draining unfenced", async () => {
+    const { client, calls } = clientWith({
+      drainFenced: async () => {
+        throw noProcedure();
+      },
+    });
     await expect(
-      transport.drain({ satellite: "gpu-box", incarnation: registrationId }),
-    ).rejects.toThrow();
-    expect(drains, "one attempt, no unfenced fallback").toHaveLength(1);
+      transportFor(client).drain({
+        satellite: "gpu-box",
+        incarnation: registrationId,
+      }),
+    ).rejects.toBeInstanceOf(FenceUnsupportedError);
+    expect(
+      calls.filter((call) => call.procedure === "drain"),
+      "no unfenced drain is sent while an identity is in hand",
+    ).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that never learned a registration — one talking to
+   * the platform as it was before any of this — keeps the legacy call it has
+   * always made. The fenced procedures are for what can be fenced; the plain
+   * ones are the compatibility path.
+   */
+  it("keeps the legacy calls for a worker that names no registration", async () => {
+    const { client, calls } = clientWith({});
+    await transportFor(client).report({
+      ...outcome,
+      incarnation: undefined,
+    } as never);
+    await transportFor(client).drain({ satellite: "gpu-box" });
+    expect(calls.map((call) => call.procedure)).toEqual(["report", "drain"]);
+    expect(
+      calls.map((call) => (call.input as { incarnation?: string }).incarnation),
+    ).toEqual([undefined, undefined]);
   });
 });

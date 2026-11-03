@@ -14,6 +14,7 @@ import type { SatelliteBackend } from "../services/backend.js";
 import type { McpServerSpec } from "../services/mcp-backend.js";
 import {
   createWorker,
+  FenceUnsupportedError,
   SatelliteRemovedError,
   type WorkerTransport,
 } from "../services/worker.js";
@@ -188,26 +189,28 @@ function throwIfRemoved(err: unknown, satellite: string): never {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A failure that means the endpoint did not
- * understand the shape of the call, which is what an older server answers to a
- * drain that names a registration. It says nothing about whether the Satellite
- * is there, so it is the one failure a fallback may answer.
+ * UNIT_BOUNDARY_DESCRIPTION: What a server that has no fenced procedure answers:
+ * the call it does not have. tRPC says so as a NOT_FOUND whose message names the
+ * missing path, and the newer key spells it METHOD_NOT_FOUND, so both are read.
+ * It says nothing about the Satellite, which is why it may never be answered
+ * with an unfenced call.
  */
-function rejectsAsUnknownShape(err: unknown): boolean {
-  return (
-    err instanceof TRPCClientError &&
-    (err.data as { code?: string } | undefined)?.code === "BAD_REQUEST"
-  );
+function rejectsAsUnknownProcedure(err: unknown): boolean {
+  if (!(err instanceof TRPCClientError)) return false;
+  const code = (err.data as { code?: string } | undefined)?.code;
+  if (code === "METHOD_NOT_FOUND") return true;
+  return code === "NOT_FOUND" && /No procedure found on path/.test(err.message);
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: How the worker's calls reach the platform. A drain
- * names the registration it serves only to a server that takes it: the shape the
- * call carries is decided by what this request accepts, because a rolling
- * deployment can have the connect answered by one replica and the drain by
- * another, so the answer to a connect says nothing about the next request. A
- * server that does not understand the newer shape is answered in the bare-name
- * form every version takes.
+ * UNIT_BOUNDARY_DESCRIPTION: How the worker's calls reach the platform. A call
+ * that names its registration goes to a procedure of its own, so the fence is
+ * enforced by the endpoint that performs the write: an older server has no such
+ * procedure and refuses the call instead of reading it and ignoring the
+ * identity, which a rolling deployment can otherwise do behind a connect that
+ * was answered by a newer replica. A refusal is reported as `FenceUnsupported`
+ * and never answered with an unfenced call; the plain procedures are left to
+ * the identity-free legacy case.
  */
 export function transportFor(trpc: TrpcClient): WorkerTransport {
   return {
@@ -224,20 +227,34 @@ export function transportFor(trpc: TrpcClient): WorkerTransport {
         .mutate(input)
         .catch((err: unknown) => throwIfRemoved(err, input.satellite)),
     heartbeat: (input) => trpc.satellites.heartbeat.mutate(input),
-    report: (input) => trpc.satellites.report.mutate(input),
+    report: async (input) => {
+      if (input.incarnation === undefined) {
+        await trpc.satellites.report.mutate(input);
+        return;
+      }
+      try {
+        await trpc.satellites.reportFenced.mutate({
+          ...input,
+          incarnation: input.incarnation,
+        });
+      } catch (err) {
+        if (!rejectsAsUnknownProcedure(err)) throw err;
+        throw new FenceUnsupportedError(input.satellite);
+      }
+    },
     drain: async (input) => {
       if (input.incarnation === undefined) {
         await trpc.satellites.drain.mutate(input.satellite);
         return;
       }
       try {
-        await trpc.satellites.drain.mutate({
+        await trpc.satellites.drainFenced.mutate({
           satellite: input.satellite,
           incarnation: input.incarnation,
         });
       } catch (err) {
-        if (!rejectsAsUnknownShape(err)) throw err;
-        await trpc.satellites.drain.mutate(input.satellite);
+        if (!rejectsAsUnknownProcedure(err)) throw err;
+        throw new FenceUnsupportedError(input.satellite);
       }
     },
   };

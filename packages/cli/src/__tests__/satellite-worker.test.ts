@@ -9,6 +9,7 @@ import {
 import {
   createWorker,
   describeOffline,
+  FenceUnsupportedError,
   SatelliteRemovedError,
   type WorkerTransport,
 } from "../modules/satellite/services/worker.js";
@@ -501,7 +502,8 @@ describe("surviving a drop", () => {
         log: { line: (text) => lines.push(text) },
         host: "test-host",
         retry: FAST,
-        drainGraceMs: 50,
+        drainGraceMs: 200,
+        drainRetryMs: 10,
       }),
     };
   }
@@ -1191,47 +1193,34 @@ describe("surviving a drop", () => {
   });
 
   /**
-   * TEST_SCENARIO: A worker that has learned a registration reconnects and
-   * reaches an older server, which ignores the identity it is sent. A result
-   * held from before that reconnect would be settled by name and number alone —
-   * onto whatever machine holds the name now — so nothing is replayed to a server
-   * that does not name registrations.
+   * TEST_SCENARIO: The platform behind a held result has no fenced procedure, so
+   * it cannot be trusted with a call that names a registration — a rolling
+   * deployment can answer the connect with one version and the replay with
+   * another. The result is given up rather than sent unfenced, and the lease
+   * settles that Job.
    */
-  it("replays nothing to a server that does not name registrations", async () => {
+  it("gives up a held result the platform cannot fence", async () => {
     const queue = pollQueue();
-    const reports: { sequence: number; incarnation?: string }[] = [];
-    let connectCalls = 0;
+    let claimCalls = 0;
     let reportCalls = 0;
     const transport: WorkerTransport = {
-      connect: async () => {
-        connectCalls += 1;
-        return connectCalls === 1 ? { incarnation: "reg-1" } : undefined;
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claimCalls += 1;
+        if (claimCalls === 1) return [runItem(1, ["/bin/echo", "hello"])];
+        return queue.binding();
       },
-      claim: queue.binding,
       heartbeat: async () => {},
       drain: async () => queue.release(),
       report: async (input) => {
+        if (input.incarnation === undefined) return;
         reportCalls += 1;
-        if (reportCalls === 1) throw new Error("fetch failed");
-        reports.push({
-          sequence: input.sequence,
-          ...(input.incarnation === undefined
-            ? {}
-            : { incarnation: input.incarnation }),
-        });
+        throw new FenceUnsupportedError("test-box");
       },
     };
     const { worker, lines } = workerWith(transport);
 
     const running = worker.start();
-    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
-    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
-    await vi.waitFor(() =>
-      expect(
-        lines.some((line) => line.startsWith("could not report test-box#1")),
-      ).toBe(true),
-    );
-    queue.polls[1]?.reject(new Error("fetch failed"));
     await vi.waitFor(
       () =>
         expect(
@@ -1241,10 +1230,60 @@ describe("surviving a drop", () => {
         ).toBe(true),
       { timeout: 5000 },
     );
+    const attempts = reportCalls;
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await worker.drain();
     await running;
 
-    expect(reports, "a fence an endpoint ignores is no fence").toEqual([]);
+    expect(
+      reportCalls,
+      "an unfenceable result is not retried against the same endpoint",
+    ).toBe(attempts);
+  });
+
+  /**
+   * TEST_SCENARIO: Telling the platform this machine is draining names the
+   * registration, and an older server refuses that call. A bare-name drain is
+   * never sent in its place — it would drain whichever machine holds the name
+   * now — so the worker retries while it still has time and then says the
+   * Satellite goes offline on its own.
+   */
+  it("drains only where the fence is enforced", async () => {
+    const drains: { satellite: string; incarnation?: string }[] = [];
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => new Promise<WorkItem[]>(() => {}),
+      heartbeat: async () => {},
+      drain: async (input) => {
+        drains.push(input);
+        throw new FenceUnsupportedError(input.satellite);
+      },
+      report: async () => {},
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await worker.drain();
+    const outcome = await Promise.race([
+      running.then(() => "stopped"),
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
+
+    expect(outcome).toBe("stopped");
+    expect(
+      drains.every((input) => input.incarnation === "reg-1"),
+      "every attempt names the registration it serves",
+    ).toBe(true);
+    expect(
+      drains.length,
+      "the attempt is repeated while there is time",
+    ).toBeGreaterThan(1);
+    expect(
+      lines.some((line) =>
+        line.startsWith("could not tell the platform this machine is draining"),
+      ),
+    ).toBe(true);
   });
 
   /**
