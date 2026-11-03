@@ -95,6 +95,7 @@ function setup(
     readDeferred?: { release: () => void };
     onRead?: () => void;
     readStream?: Readable;
+    onGetJob?: (call: number) => Promise<void>;
   } = {},
 ): Harness {
   const state = {
@@ -106,8 +107,14 @@ function setup(
   const published: { id: string; path: string }[] = [];
   const read: string[] = [];
 
+  let getJobCalls = 0;
   const repo = {
-    getJob: async () => state.job,
+    getJob: async () => {
+      const snapshot = state.job;
+      getJobCalls += 1;
+      await options.onGetJob?.(getJobCalls);
+      return snapshot;
+    },
     transferTokenHashOf: async () => state.hash,
     consumeTransfer: async (
       _owner: string,
@@ -551,6 +558,50 @@ describe("a file the machine asks the agent's workspace for", () => {
     });
     const res = await transferRequest(harness.app, { method: "GET" });
     expect(res.status).toBe(413);
+  });
+
+  /**
+   * TEST_SCENARIO: The pre-delivery check is a database round trip, and a
+   * watcher tick can land inside it: the tick revokes, the query then answers
+   * with the snapshot it took before the Job ended, and if the revocation were
+   * read before the awaited check the stream would be opened with no watcher
+   * left — delivering the whole file after the Job ended.
+   */
+  it("delivers nothing when the job ends while the pre-delivery check is in flight", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let reached!: () => void;
+    const atCheck = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const harness = setup({
+      job: job({
+        tool: "upload",
+        transferDirection: "upload",
+        args: { path: "x", workspacePath: "work/a" },
+      }),
+      reCheckMs: 1000,
+      onGetJob: async (call) => {
+        if (call !== 2) return;
+        reached();
+        await held;
+      },
+    });
+
+    const pending = transferRequest(harness.app, { method: "GET" });
+    await atCheck;
+    harness.state.job = { ...harness.state.job, status: "cancelled" };
+    await vi.advanceTimersByTimeAsync(1000);
+    for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r));
+    release();
+
+    const res = await pending;
+    expect(res.status).toBe(409);
+    expect(await res.text()).not.toContain("from the workspace");
+    vi.useRealTimers();
   });
 
   it("stops sending when the job ends mid-read", async () => {

@@ -336,7 +336,7 @@ export function createSatelliteFileRoutes(deps: {
               : 409,
         );
       }
-      if (announced || !(await stillOurs())) {
+      if (!(await stillOurs()) || announced) {
         finished("aborted");
         read.stream.destroy();
         return c.json({ error: "no_running_job" }, 409);

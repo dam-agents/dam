@@ -277,7 +277,7 @@ What Platform still guarantees is the record — every call, verdict and outcome
 
 A **file transfer crosses in the other direction**, so the platform is the side that writes what it is given.
 It trusts none of it: the machine names no path at all, the direction is the one frozen on the Job when the call was admitted and both paths come from the Job's own arguments, and the workspace end walks every component without following a link.
-The claim's token is spent atomically, which is what stops a transfer after the Job ended: a download cannot land once it is spent, and an upload's stream stops within one re-check interval of the Job ending — the resolution at which the platform re-proves the Job while bytes leave, not the instant they stop.
+The claim's token is spent atomically: a download lands only by spending it, so nothing lands once it is spent or once the Job ends, and an upload's stream stops within one re-check interval of the Job ending — the resolution at which the platform re-proves the Job while bytes leave, not the instant they stop.
 What the machine reads is bounded on the machine, by its root.
 
 Anything an Agent can call is callable by a **prompt-injected** Agent.
