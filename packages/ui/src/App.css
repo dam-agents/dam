@@ -287,6 +287,20 @@
   padding-top: env(safe-area-inset-top, 0px);
 }
 
+/* ── App frame: on touch devices it follows the visible viewport, so the keyboard does not push it off screen ── */
+.app-frame {
+  height: 100dvh;
+}
+@media (pointer: coarse) {
+  .app-frame {
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    height: var(--app-height, 100dvh);
+    transform: translateY(var(--app-offset-top, 0px));
+  }
+}
+
 /* ── Animations ── */
 @keyframes fade-in {
   from {

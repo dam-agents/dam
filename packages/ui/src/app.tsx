@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { getBrand } from "./brand.js";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
+import { useAppViewport } from "./hooks/use-app-viewport.js";
 import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { documentTitle } from "./lib/document-title.js";
 import { emitToast } from "./lib/toast.js";
@@ -150,6 +151,7 @@ function MainApp() {
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
   const desktop = useIsDesktop();
 
+  useAppViewport();
   useLiveEvents();
   useSyncRestartingAgents();
   useDocumentTitle();
@@ -182,7 +184,7 @@ function MainApp() {
     return (
       <>
         <SkipLink />
-        <div className="flex h-dvh bg-background overflow-hidden">
+        <div className="app-frame flex bg-background overflow-hidden">
           <Sidebar />
           <main
             id="main"
@@ -201,7 +203,7 @@ function MainApp() {
     );
 
   return (
-    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
+    <div className="app-frame flex flex-col bg-background relative overflow-hidden">
       <SkipLink />
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />

@@ -48,8 +48,8 @@ Slice 02 covers both.
 
 The fix has two parts:
 
-- Slice 01 sets text fields to 16px below the `md` breakpoint.
-  Desktop stays as it is.
+- Slice 01 sets text fields to 16px on a touch device (`pointer: coarse`), in portrait and in landscape.
+  Sizes with a mouse stay as they are.
 - Slice 02 adds one hook.
   The hook publishes the visible area as two CSS variables.
   The frames read them and fall back to `100dvh`.
@@ -60,8 +60,9 @@ Out of scope:
   It zooms on focus too, but it lives in the `keycloak-theme` package.
 - Dialogs and menus drawn through portals.
   They stay outside the frame and keep today's behavior.
-- A tablet at 768px or wider.
+- The layout of a tablet at 768px or wider.
   It keeps the desktop layout.
+  Its text fields use 16px and its frame follows the keyboard, because both rules key on a touch pointer.
 - The `Select` primitive.
   It is a button and takes no typed text.
 - Mobile rules for the whole design system.
@@ -73,8 +74,8 @@ No architecture page describes the app frame or the viewport, so no page under `
 
 | #     | Title                                                                            | Scope                                                                                                                                                                                                                 | Depends on |
 | ----- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| ✅ 01 | [Inputs stay 16px on a phone](./01-inputs-16px-on-phone.md)                      | Below `md`, `Input`, `Textarea`, the composer and the four raw text inputs use 16px. No zoom on focus.                                                                                                                | —          |
-| 02    | [The frame follows the visible viewport](./02-frame-follows-visible-viewport.md) | One hook publishes `visualViewport` as CSS variables. The two root frames read them, and the chat root fills its parent. The keyboard no longer moves the header, and the composer stops at half of the visible area. | 01         |
+| ✅ 01 | [Inputs stay 16px on a phone](./01-inputs-16px-on-phone.md)                      | On a touch device, `Input`, `Textarea`, the composer and the four raw text inputs use 16px. No zoom on focus.                                                                                                         | —          |
+| ✅ 02 | [The frame follows the visible viewport](./02-frame-follows-visible-viewport.md) | One hook publishes `visualViewport` as CSS variables. The two root frames read them, and the chat root fills its parent. The keyboard no longer moves the header, and the composer stops at half of the visible area. | 01         |
 
 Slice 01 comes first.
 The zoom hides the keyboard behavior, so a tester cannot judge slice 02 on a real phone until the zoom is gone.
@@ -85,8 +86,9 @@ The zoom hides the keyboard behavior, so a tester cannot judge slice 02 on a rea
 - **Visual viewport:** the part of the page the person sees.
   It shrinks when the keyboard opens and shifts when the page pans.
   `window.visualViewport` reports it.
-- **Phone:** a viewport below the `md` breakpoint (768px).
-  `useIsDesktop` in `packages/ui/src/hooks/use-is-desktop.ts` uses the same breakpoint.
+- **Phone:** a touch device (`pointer: coarse`).
+  In portrait it is below the `md` breakpoint (768px), the one `useIsDesktop` in `packages/ui/src/hooks/use-is-desktop.ts` uses.
+  In landscape it is wider than 768px and gets the desktop layout.
 - **Frame:** the root element that gives a view the height of the screen.
   Two live in `packages/ui/src/app.tsx`.
   One lives in `packages/ui/src/modules/sessions/views/chat-view.tsx`.

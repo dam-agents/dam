@@ -1268,7 +1268,7 @@ export function ChatView() {
     );
 
   return (
-    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {}
       {(providersModal ?? noProviders) && (
         <ProviderSettingsModal

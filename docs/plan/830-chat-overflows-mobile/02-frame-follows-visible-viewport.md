@@ -20,10 +20,11 @@ Apply the `/react-ui-engineering` skill.
    - It acts only on touch devices: `matchMedia("(pointer: coarse)")`.
      A mouse device keeps `100dvh` exactly.
    - When the pointer is coarse and `visualViewport.scale` is 1, it sets `--app-height` to `visualViewport.height` and `--app-offset-top` to `visualViewport.offsetTop`, in px, on `document.documentElement`.
-   - Otherwise it removes both variables.
-     A person who pinch-zooms keeps the zoom; the frames fall back to `100dvh`.
+   - With a mouse it removes both variables.
+   - While the page is pinch-zoomed it keeps the last values, so the frame does not jump when the zoom passes 1.
    - It uses no React state.
      It writes the variables straight to the element, so a keyboard animation does not re-render the tree.
+     It writes a variable only when its value changes, because a change on the root restyles the whole page.
    - Its cleanup removes the listeners and the variables.
    - It does nothing when `window.visualViewport` does not exist.
 2. Mount the hook once in `MainApp` in `packages/ui/src/app.tsx`, beside `useLiveEvents()` and the other app-level hooks.
@@ -55,7 +56,12 @@ Apply the `/react-ui-engineering` skill.
 8. Cap the composer at half of the visible area.
    `packages/ui/src/hooks/use-auto-resize.ts` caps it at half of `window.innerHeight`, and iOS Safari does not shrink `innerHeight` when the keyboard opens.
    A long message can then fill the whole area above the keyboard.
-   Use half of `window.visualViewport.height` and fall back to `window.innerHeight`.
+   Use half of `window.visualViewport.height` times `visualViewport.scale`, so a pinch-zoom does not shrink the cap, and fall back to `window.innerHeight`.
+   Measure again when the visible area resizes, so a long draft shrinks when the keyboard opens.
+9. Measure the composer again when its placeholder changes.
+   On a phone, the composer mounts with the placeholder "Connecting to this agent — your message stays in the draft.", which wraps to two lines at 14px and at 16px.
+   `useAutoResize` measures only when the text changes, so the empty composer keeps the two-line height after the placeholder becomes "Message…".
+   This bug is already on `main`; the person chose to fix it here.
 
 If `top: var(--app-offset-top)` fits better than the transform, use it.
 Check in the simulator first: it drops the containing-block effect from step 6.
@@ -66,6 +72,7 @@ Check in the simulator first: it drops the containing-block effect from step 6.
 - [ ] Typing three lines keeps all of that true while the composer grows.
 - [ ] A message longer than the visible area keeps the header visible: the composer stops at half of the visible area and scrolls inside.
 - [ ] An artifact opened full page on a phone is not covered by anything outside the frame.
+- [ ] On a fresh load on a phone, the empty composer is one line high (56px) once the agent is connected.
 - [ ] After the keyboard closes, the chat fills the whole screen.
   No gap or offset remains.
 - [ ] Showing and hiding the address bar does not make the page scroll as a whole, and the frame keeps filling the screen.
