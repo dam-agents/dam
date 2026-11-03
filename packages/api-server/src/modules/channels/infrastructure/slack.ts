@@ -1696,7 +1696,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch (err) {
       getLogger().warn(
         { channelId, error: formatError(err) },
-        "slack.bot_post.loop_bound_unrecorded",
+        "slack.bot_post.drop_unrecorded",
       );
     }
   }
