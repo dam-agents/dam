@@ -360,25 +360,36 @@ describe("an Environment's Share dialog", () => {
         environment: {
           ...demo,
           memberAgents: [
-            { agentId: "agent-qa1", name: "qa", ownerName: "Bob", lastOpenedAt: opened },
+            {
+              agentId: "agent-qa1",
+              name: "qa",
+              ownerName: "Bob",
+              lastOpenedAt: opened,
+            },
           ],
         },
         onClose: vi.fn(),
       }),
     );
-    const list = doc.querySelector('[data-testid="agent-member-list"]')?.textContent;
+    const list = doc.querySelector(
+      '[data-testid="agent-member-list"]',
+    )?.textContent;
     expect(list).toContain("Agent");
     expect(list).toContain("qa · Bob");
     expect(list).toContain("Last opened 2h");
     act(() =>
-      (doc.querySelector('[aria-label="Remove qa"]') as HTMLButtonElement).click(),
+      (
+        doc.querySelector('[aria-label="Remove qa"]') as HTMLButtonElement
+      ).click(),
     );
     act(() =>
       [...doc.querySelectorAll("button")]
         .find((b) => b.textContent === "Save")!
         .click(),
     );
-    expect(state.saveMembers).toEqual([{ id: demo.id, emails: [], agentIds: [] }]);
+    expect(state.saveMembers).toEqual([
+      { id: demo.id, emails: [], agentIds: [] },
+    ]);
   });
 
   // TEST_SCENARIO: the summary names only the parts that open it, joined as a sentence.

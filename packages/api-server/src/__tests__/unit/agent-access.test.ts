@@ -8,7 +8,10 @@ import {
 import { createAgentAccess } from "../../modules/agent-keys/services/agent-access.js";
 import type { EgressRuleRow } from "../../modules/egress-rules/domain/types.js";
 
-function world(domain: string | null = "env.example.com") {
+function world(
+  domain: string | null = "env.example.com",
+  port: number | null = null,
+) {
   const rules: EgressRuleRow[] = [];
   const hashes = new Map<string, { agentId: string; ownerSub: string }>();
   const byAgent = new Map<string, string>();
@@ -16,6 +19,7 @@ function world(domain: string | null = "env.example.com") {
   const codec = createAgentKeyCodec("pepper");
   const access = createAgentAccess({
     domain,
+    port,
     codec,
     keys: {
       put: async (agentId, ownerSub, hash) => {
@@ -34,14 +38,16 @@ function world(domain: string | null = "env.example.com") {
       listAgentIds: async () => [...byAgent.keys()],
     },
     secrets: {
-      write: async (agentId, _owner, host, key) => void secrets.set(agentId, { host, key }),
+      write: async (agentId, _owner, host, key) =>
+        void secrets.set(agentId, { host, key }),
       delete: async (agentId) => void secrets.delete(agentId),
       listAgentIds: async () => [...secrets.keys()],
     },
     rules: {
       platformRule: async (agentId) => {
         const mine = rules.filter(
-          (r) => r.agentId === agentId && r.source === PLATFORM_ENVIRONMENTS_SOURCE,
+          (r) =>
+            r.agentId === agentId && r.source === PLATFORM_ENVIRONMENTS_SOURCE,
         );
         return {
           active: mine.find((r) => r.status === "active") ?? null,
@@ -84,8 +90,14 @@ describe("Agent access to Environments", () => {
     const secret = secrets.get("agent-a")!;
     expect(secret.host).toBe("*.env.example.com");
     expect(isAgentKey(secret.key)).toBe(true);
-    expect(await access.resolve(secret.key)).toEqual({ agentId: "agent-a", ownerSub: "alice" });
-    expect(await access.state("agent-a")).toEqual({ state: "active", host: "*.env.example.com" });
+    expect(await access.resolve(secret.key)).toEqual({
+      agentId: "agent-a",
+      ownerSub: "alice",
+    });
+    expect(await access.state("agent-a")).toEqual({
+      state: "active",
+      host: "*.env.example.com",
+    });
   });
 
   // TEST_SCENARIO: the issue pass runs again, at the next start or periodically. An Agent that has its rule and key gets nothing new: its key stays the one its gateway holds.
@@ -110,15 +122,31 @@ describe("Agent access to Environments", () => {
     expect(await access.resolve(oldKey)).toBeNull();
     await access.issue("agent-a", "alice");
     expect(secrets.has("agent-a")).toBe(false);
-    expect(await access.state("agent-a")).toEqual({ state: "removed", host: "*.env.example.com" });
+    expect(await access.state("agent-a")).toEqual({
+      state: "removed",
+      host: "*.env.example.com",
+    });
 
     const restored = await access.restore("agent-a", "alice");
-    expect(restored).toMatchObject({ status: "active", source: PLATFORM_ENVIRONMENTS_SOURCE });
+    expect(restored).toMatchObject({
+      status: "active",
+      source: PLATFORM_ENVIRONMENTS_SOURCE,
+    });
     expect(rules.filter((r) => r.status === "active")).toHaveLength(1);
     const newKey = secrets.get("agent-a")!.key;
     expect(newKey).not.toBe(oldKey);
-    expect(await access.resolve(newKey)).toEqual({ agentId: "agent-a", ownerSub: "alice" });
+    expect(await access.resolve(newKey)).toEqual({
+      agentId: "agent-a",
+      ownerSub: "alice",
+    });
     expect(await access.resolve(oldKey)).toBeNull();
+  });
+
+  // TEST_SCENARIO: the local cluster's Environment addresses name a port of their own; the rule names it, since a rule without a port covers only the scheme's own.
+  it("names the addresses' port when they have one", async () => {
+    const { access, rules } = world("env.localhost", 4444);
+    await access.issue("agent-a", "alice");
+    expect(rules[0]).toMatchObject({ host: "*.env.localhost", port: 4444 });
   });
 
   // TEST_SCENARIO: an install that serves no Environments gives no Agent a rule or a key, and its owners see the rule as unavailable.
@@ -134,7 +162,13 @@ describe("Agent access to Environments", () => {
   // TEST_SCENARIO: a value in the key header that is not a key's shape costs no lookup; a key is the prefix and 32 random bytes, base64url.
   it("tells a key by its shape", () => {
     expect(isAgentKey(createAgentKeyCodec("p").mint().key)).toBe(true);
-    for (const v of [undefined, "", "ak_short", `pk_${"a".repeat(43)}`, `ak_${"a".repeat(43)}!`])
+    for (const v of [
+      undefined,
+      "",
+      "ak_short",
+      `pk_${"a".repeat(43)}`,
+      `ak_${"a".repeat(43)}!`,
+    ])
       expect(isAgentKey(v)).toBe(false);
   });
 });

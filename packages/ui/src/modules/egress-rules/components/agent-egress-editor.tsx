@@ -38,8 +38,8 @@ import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
-  useRevokeEgressRule,
   useRestorePlatformRule,
+  useRevokeEgressRule,
 } from "../api/mutations.js";
 import {
   useCurrentPreset,
@@ -618,7 +618,8 @@ function RemovedPlatformRule({ agentId }: { agentId: string }) {
       }
     >
       <p className="px-4 py-2.5 text-sm text-muted-foreground">
-        Removed: this agent cannot open Environments shared with it ({platform.host}).
+        Removed: this agent cannot open Environments shared with it (
+        {platform.host}).
       </p>
     </ListGroup>
   );

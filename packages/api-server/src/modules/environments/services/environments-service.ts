@@ -48,9 +48,11 @@ export interface UpdateEnvironmentInput {
 
 // UNIT_BOUNDARY_DESCRIPTION: an Agent of any owner, by its id, as a list shows it: its name, its owner's display name, and whether it is an Environment, which no list may name.
 export interface AgentDirectory {
-  describe(
-    agentId: string,
-  ): Promise<{ name: string; ownerName: string | null; environment: boolean } | null>;
+  describe(agentId: string): Promise<{
+    name: string;
+    ownerName: string | null;
+    environment: boolean;
+  } | null>;
   // UNIT_BOUNDARY_DESCRIPTION: an Environment's Owning Agent and owner by name, for an Agent it is shared with; the Agents of another owner are read here, never through that owner's agents service.
   environmentState(agentId: string): Promise<string>;
 }
@@ -212,9 +214,10 @@ export function createEnvironmentsService(
       live.map(async (r) =>
         view(r, agents.get(r.agentId) ?? null, {
           members: members.get(r.agentId) ?? [],
-          memberAgents: await describeAgents(memberAgentIds.get(r.agentId) ?? [], [
-            r.agentId,
-          ]),
+          memberAgents: await describeAgents(
+            memberAgentIds.get(r.agentId) ?? [],
+            [r.agentId],
+          ),
           agentMemberCount: agentMemberCounts.get(r.owningAgentId) ?? 0,
         }),
       ),

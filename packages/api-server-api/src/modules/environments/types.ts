@@ -13,11 +13,15 @@ export type EnvironmentEndpoint = z.infer<typeof environmentEndpointSchema>;
 export type EnvironmentView = z.infer<typeof environmentViewSchema>;
 export type AgentEnvironmentView = z.infer<typeof agentEnvironmentViewSchema>;
 export type SharedEnvironmentView = z.infer<typeof sharedEnvironmentViewSchema>;
-export type EnvironmentMemberAgent = z.infer<typeof environmentMemberAgentSchema>;
+export type EnvironmentMemberAgent = z.infer<
+  typeof environmentMemberAgentSchema
+>;
 export type AgentEnvironmentMembersView = z.infer<
   typeof agentEnvironmentMembersViewSchema
 >;
-export type EnvironmentAgentLookup = z.infer<typeof environmentAgentLookupSchema>;
+export type EnvironmentAgentLookup = z.infer<
+  typeof environmentAgentLookupSchema
+>;
 
 // UNIT_BOUNDARY_DESCRIPTION: a replacement list: its people, and its Agents when given; an omitted Agent list keeps the Agents it has, for a client that only knows people.
 export interface MembersUpdate {

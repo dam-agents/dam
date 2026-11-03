@@ -176,7 +176,11 @@ export function createEnvironmentGate(
   const lastAgentVisit = new Map<string, number>();
 
   // UNIT_BOUNDARY_DESCRIPTION: an admitted Agent's request, recorded at most once a minute per Agent and Environment: a test suite sends thousands, and the owner needs to know that the Agent opens it and when it last did, not each request.
-  function agentVisited(record: EnvironmentRecord, agent: AgentVisitor, address: string) {
+  function agentVisited(
+    record: EnvironmentRecord,
+    agent: AgentVisitor,
+    address: string,
+  ) {
     const key = `${record.agentId}\n${agent.agentId}`;
     const now = Date.now();
     if (now - (lastAgentVisit.get(key) ?? 0) < ACTIVITY_INTERVAL_MS) return;
@@ -194,7 +198,9 @@ export function createEnvironmentGate(
   }
 
   // UNIT_BOUNDARY_DESCRIPTION: whether a request came from an Agent's gateway, by the header only a gateway sets; such a request is the Agent's, whatever cookie it carries, so a person's sign-in in the Agent's browser never opens more than the Agent's own lists do.
-  function agentKeyOf(value: string | string[] | undefined): string | null | undefined {
+  function agentKeyOf(
+    value: string | string[] | undefined,
+  ): string | null | undefined {
     const raw = Array.isArray(value) ? value[0] : value;
     if (raw === undefined) return undefined;
     return isAgentKey(raw) ? raw : null;
@@ -204,7 +210,11 @@ export function createEnvironmentGate(
     const visitor = key === null ? null : await deps.agentOfKey(key);
     return {
       visitor,
-      access: decideAgentAccess(record, await deps.memberAgents(record), visitor),
+      access: decideAgentAccess(
+        record,
+        await deps.memberAgents(record),
+        visitor,
+      ),
     };
   }
 

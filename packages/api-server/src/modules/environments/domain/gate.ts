@@ -133,6 +133,20 @@ export function domainOf(urlTemplate: string | null): string | null {
   }
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The port an endpoint URL template names, or null
+ * when it names none and the scheme's own is meant.
+ */
+export function portOf(urlTemplate: string | null): number | null {
+  if (urlTemplate === null) return null;
+  try {
+    const port = new URL(urlTemplate.replace("{host}", "x")).port;
+    return port === "" ? null : Number(port);
+  } catch {
+    return null;
+  }
+}
+
 export type AccessDecision =
   { allow: true } | { allow: false; reason: "not-signed-in" | "not-allowed" };
 

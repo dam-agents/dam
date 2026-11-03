@@ -27,7 +27,10 @@ describe("groupRules", () => {
   it("puts the platform's Environments rule in a group of its own", () => {
     expect(
       groupRules(
-        [rule("*.env.example.com", "platform:environments"), rule("api.example.com", "manual")],
+        [
+          rule("*.env.example.com", "platform:environments"),
+          rule("api.example.com", "manual"),
+        ],
         "",
       ).map((g) => [g.key, g.rules.map((r) => r.host)]),
     ).toEqual([

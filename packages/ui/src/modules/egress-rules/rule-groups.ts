@@ -1,7 +1,7 @@
 import {
   EGRESS_HOST,
-  PLATFORM_ENVIRONMENTS_SOURCE,
   type EgressRuleView,
+  PLATFORM_ENVIRONMENTS_SOURCE,
 } from "api-server-api";
 
 import { splitHostPort } from "./host-port.js";

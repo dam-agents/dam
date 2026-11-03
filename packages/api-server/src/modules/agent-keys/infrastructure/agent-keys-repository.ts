@@ -49,7 +49,9 @@ export function createAgentKeysRepository(db: Db): AgentKeysRepository {
     },
 
     async listAgentIds() {
-      const rows = await db.select({ agentId: agentKeys.agentId }).from(agentKeys);
+      const rows = await db
+        .select({ agentId: agentKeys.agentId })
+        .from(agentKeys);
       return rows.map((r) => r.agentId);
     },
   };

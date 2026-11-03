@@ -6,7 +6,10 @@ import {
 import { securityLog } from "../../../core/security-log.js";
 import type { EgressRuleRow } from "../../egress-rules/domain/types.js";
 import type { NewEgressRule } from "../../egress-rules/infrastructure/egress-rules-repository.js";
-import { environmentsWildcard, type AgentKeyCodec } from "../domain/agent-key.js";
+import {
+  environmentsWildcard,
+  type AgentKeyCodec,
+} from "../domain/agent-key.js";
 import type { AgentKeySecretPort } from "../infrastructure/agent-key-secret-port.js";
 import type { AgentKeysRepository } from "../infrastructure/agent-keys-repository.js";
 
@@ -20,6 +23,8 @@ export interface PlatformRuleStore {
 
 export interface AgentAccessDeps {
   domain: string | null;
+  // UNIT_BOUNDARY_DESCRIPTION: the port the install's Environment addresses name, when it is not the scheme's own, so the rule covers it.
+  port: number | null;
   codec: AgentKeyCodec;
   keys: AgentKeysRepository;
   secrets: AgentKeySecretPort;
@@ -49,7 +54,12 @@ export interface AgentAccess {
 export function createAgentAccess(deps: AgentAccessDeps): AgentAccess {
   async function writeKey(agentId: string, ownerSub: string) {
     const { key, hash } = deps.codec.mint();
-    await deps.secrets.write(agentId, ownerSub, environmentsWildcard(deps.domain!), key);
+    await deps.secrets.write(
+      agentId,
+      ownerSub,
+      environmentsWildcard(deps.domain!),
+      key,
+    );
     await deps.keys.put(agentId, ownerSub, hash);
   }
 
@@ -58,6 +68,7 @@ export function createAgentAccess(deps: AgentAccessDeps): AgentAccess {
       id: randomUUID(),
       agentId,
       host: environmentsWildcard(deps.domain!),
+      ...(deps.port ? { port: deps.port } : {}),
       method: "*",
       pathPattern: "*",
       verdict: "allow",

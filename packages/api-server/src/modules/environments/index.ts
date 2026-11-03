@@ -14,3 +14,4 @@ export {
 export { composeEnvironmentGate, environmentNameLookup } from "./compose.js";
 export { createEgressIdentityResolver } from "./services/egress-identity.js";
 export { domainOf as environmentsDomainOf } from "./domain/gate.js";
+export { portOf as environmentsPortOf } from "./domain/gate.js";

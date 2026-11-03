@@ -25,8 +25,13 @@ export interface MembersRepository {
   agentsOfAgent(owningAgentId: string): Promise<string[]>;
   setAgentsOfAgent(owningAgentId: string, agentIds: string[]): Promise<void>;
   agentsOfEnvironment(environmentId: string): Promise<string[]>;
-  agentsOfEnvironments(environmentIds: string[]): Promise<Map<string, string[]>>;
-  setAgentsOfEnvironment(environmentId: string, agentIds: string[]): Promise<void>;
+  agentsOfEnvironments(
+    environmentIds: string[],
+  ): Promise<Map<string, string[]>>;
+  setAgentsOfEnvironment(
+    environmentId: string,
+    agentIds: string[],
+  ): Promise<void>;
   // UNIT_BOUNDARY_DESCRIPTION: the Environments an Agent is listed on: those whose own list names it, and every Environment of an Agent whose list names it.
   environmentsSharedWith(agentId: string): Promise<string[]>;
   recordVisit(environmentId: string, agentId: string, at: Date): Promise<void>;
@@ -93,7 +98,10 @@ export function createMembersRepository(db: Db): MembersRepository {
         .select({ agentId: agentAgentTable.memberAgentId })
         .from(agentAgentTable)
         .where(eq(agentAgentTable.owningAgentId, owningAgentId))
-        .orderBy(asc(agentAgentTable.addedAt), asc(agentAgentTable.memberAgentId));
+        .orderBy(
+          asc(agentAgentTable.addedAt),
+          asc(agentAgentTable.memberAgentId),
+        );
       return rows.map((r) => r.agentId);
     },
 
@@ -110,13 +118,20 @@ export function createMembersRepository(db: Db): MembersRepository {
         if (agentIds.length > 0)
           await tx
             .insert(agentAgentTable)
-            .values(agentIds.map((memberAgentId) => ({ owningAgentId, memberAgentId })))
+            .values(
+              agentIds.map((memberAgentId) => ({
+                owningAgentId,
+                memberAgentId,
+              })),
+            )
             .onConflictDoNothing();
       });
     },
 
     async agentsOfEnvironment(environmentId) {
-      return (await agentsOfEnvironments([environmentId])).get(environmentId) ?? [];
+      return (
+        (await agentsOfEnvironments([environmentId])).get(environmentId) ?? []
+      );
     },
 
     async setAgentsOfEnvironment(environmentId, agentIds) {
@@ -132,7 +147,12 @@ export function createMembersRepository(db: Db): MembersRepository {
         if (agentIds.length > 0)
           await tx
             .insert(environmentAgentTable)
-            .values(agentIds.map((memberAgentId) => ({ environmentId, memberAgentId })))
+            .values(
+              agentIds.map((memberAgentId) => ({
+                environmentId,
+                memberAgentId,
+              })),
+            )
             .onConflictDoNothing();
       });
     },
@@ -194,7 +214,9 @@ export function createMembersRepository(db: Db): MembersRepository {
 
     async forgetMemberAgent(agentId) {
       await db.transaction(async (tx) => {
-        await tx.delete(agentAgentTable).where(eq(agentAgentTable.memberAgentId, agentId));
+        await tx
+          .delete(agentAgentTable)
+          .where(eq(agentAgentTable.memberAgentId, agentId));
         await tx
           .delete(environmentAgentTable)
           .where(eq(environmentAgentTable.memberAgentId, agentId));

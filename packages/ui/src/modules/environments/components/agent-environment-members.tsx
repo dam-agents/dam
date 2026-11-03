@@ -12,8 +12,8 @@ import { useSetAgentEnvironmentMembers } from "../api/mutations.js";
 import { useAgentEnvironmentMembers } from "../api/queries.js";
 import {
   AgentMembersEditor,
-  sameAgents,
   type ListedAgent,
+  sameAgents,
 } from "./agent-members-editor.js";
 
 /**
@@ -174,8 +174,8 @@ function MembersForm({
       />
       <p className="mt-2 text-sm font-medium text-foreground">Agents</p>
       <p className="text-xs text-muted-foreground">
-        An agent named here opens every Environment this agent creates, from
-        its own sandbox, as itself — another user&apos;s too. This agent always
+        An agent named here opens every Environment this agent creates, from its
+        own sandbox, as itself — another user&apos;s too. This agent always
         opens its own.
       </p>
       <AgentMembersEditor
@@ -190,7 +190,12 @@ function MembersForm({
           <Button
             size="sm"
             disabled={saving}
-            onClick={() => onSave(emails, agents.map((a) => a.agentId))}
+            onClick={() =>
+              onSave(
+                emails,
+                agents.map((a) => a.agentId),
+              )
+            }
           >
             Save
           </Button>

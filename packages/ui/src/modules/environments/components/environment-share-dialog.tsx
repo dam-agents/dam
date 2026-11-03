@@ -17,8 +17,8 @@ import { useSetEnvironmentMembers } from "../api/mutations.js";
 import { sharedThroughAgent } from "../lib/environment-list.js";
 import {
   AgentMembersEditor,
-  sameAgents,
   type ListedAgent,
+  sameAgents,
 } from "./agent-members-editor.js";
 
 /**
@@ -51,8 +51,7 @@ export function EnvironmentShareDialog({
   const dirty =
     !sameViewers(members, environment.members) ||
     !sameAgents(memberAgents, environment.memberAgents);
-  const pendingDraft =
-    draft.trim().length > 0 || agentDraft.trim().length > 0;
+  const pendingDraft = draft.trim().length > 0 || agentDraft.trim().length > 0;
   const agentName = agent?.name ?? "its agent";
 
   const onSave = () =>

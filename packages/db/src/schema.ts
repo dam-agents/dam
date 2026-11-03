@@ -644,9 +644,7 @@ export const agentEnvironmentAgentMembers = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.owningAgentId, table.memberAgentId] }),
-    index("agent_environment_agent_members_member_idx").on(
-      table.memberAgentId,
-    ),
+    index("agent_environment_agent_members_member_idx").on(table.memberAgentId),
   ],
 );
 

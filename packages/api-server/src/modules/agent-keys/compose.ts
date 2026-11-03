@@ -1,18 +1,16 @@
 import { Subscription } from "rxjs";
 import { mergeMap } from "rxjs/operators";
 import type { Db } from "db";
-import {
-  events$,
-  EventType,
-  ofType,
-  type AgentCreated,
-} from "../../events.js";
+import { events$, EventType, ofType, type AgentCreated } from "../../events.js";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
 import { createEgressRulesRepository } from "../egress-rules/infrastructure/egress-rules-repository.js";
 import { createAgentKeyCodec } from "./domain/agent-key.js";
 import { createAgentKeySecretPort } from "./infrastructure/agent-key-secret-port.js";
 import { createAgentKeysRepository } from "./infrastructure/agent-keys-repository.js";
-import { createAgentAccess, type AgentAccess } from "./services/agent-access.js";
+import {
+  createAgentAccess,
+  type AgentAccess,
+} from "./services/agent-access.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: an Agent the cluster holds, as the issue pass reads it: its id, owner, and the Agent it is an Environment of, if any.
 export interface KeyedAgent {
@@ -26,6 +24,7 @@ export interface ComposeAgentKeysDeps {
   k8s: K8sClient;
   hmacKey: string;
   domain: string | null;
+  port: number | null;
   listAgents: () => Promise<KeyedAgent[]>;
   identityOf: (
     agentId: string,
@@ -53,12 +52,15 @@ const ISSUE_CONCURRENCY = 4;
  * it is created; an Environment never does, since an Environment is never a
  * visitor. Deleting an Agent deletes its key and its Secret.
  */
-export function composeAgentKeys(deps: ComposeAgentKeysDeps): AgentKeysComposition {
+export function composeAgentKeys(
+  deps: ComposeAgentKeysDeps,
+): AgentKeysComposition {
   const keys = createAgentKeysRepository(deps.db);
   const secrets = createAgentKeySecretPort(deps.k8s);
   const rules = createEgressRulesRepository(deps.db);
   const access = createAgentAccess({
     domain: deps.domain,
+    port: deps.port,
     codec: createAgentKeyCodec(deps.hmacKey),
     keys,
     secrets,
@@ -69,7 +71,9 @@ export function composeAgentKeys(deps: ComposeAgentKeysDeps): AgentKeysCompositi
     try {
       await access.issue(agentId, owner);
     } catch (err) {
-      deps.log(`could not give ${agentId} its Environments access: ${String(err)}`);
+      deps.log(
+        `could not give ${agentId} its Environments access: ${String(err)}`,
+      );
     }
   }
 
@@ -95,7 +99,9 @@ export function composeAgentKeys(deps: ComposeAgentKeysDeps): AgentKeysCompositi
           .pipe(
             ofType<AgentCreated>(EventType.AgentCreated),
             mergeMap(async (event) => {
-              const identity = await deps.identityOf(event.agentId).catch(() => null);
+              const identity = await deps
+                .identityOf(event.agentId)
+                .catch(() => null);
               if (!identity || identity.environmentOf) return;
               await issueFor(event.agentId, event.ownerSub);
             }, ISSUE_CONCURRENCY),

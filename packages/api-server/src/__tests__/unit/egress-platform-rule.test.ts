@@ -31,7 +31,10 @@ function service(owned = true) {
   const platformAccess = {
     withdraw: vi.fn(async () => {}),
     restore: vi.fn(async () => ({ ...platformRow, id: "r-new" })),
-    state: vi.fn(async () => ({ state: "removed" as const, host: platformRow.host })),
+    state: vi.fn(async () => ({
+      state: "removed" as const,
+      host: platformRow.host,
+    })),
   };
   const svc = createEgressRulesService({
     repo,
@@ -58,9 +61,9 @@ describe("the platform's Environments rule", () => {
   // TEST_SCENARIO: the owner tries to narrow the rule to one path. It is refused: the key is sent for the whole domain, and a narrowed rule would no longer say what the gateway does.
   it("cannot be edited", async () => {
     const { svc, repo } = service();
-    await expect(svc.update({ id: "r-platform", pathPattern: "/x" })).rejects.toThrow(
-      /cannot be edited/,
-    );
+    await expect(
+      svc.update({ id: "r-platform", pathPattern: "/x" }),
+    ).rejects.toThrow(/cannot be edited/);
     expect(repo.updateTakeOwnership).not.toHaveBeenCalled();
   });
 
@@ -77,8 +80,12 @@ describe("the platform's Environments rule", () => {
     });
 
     const theirs = service(false);
-    await expect(theirs.svc.restorePlatformRule("agent-a")).rejects.toThrow(/agent not found/);
+    await expect(theirs.svc.restorePlatformRule("agent-a")).rejects.toThrow(
+      /agent not found/,
+    );
     expect(theirs.platformAccess.restore).not.toHaveBeenCalled();
-    expect(await theirs.svc.platformRule("agent-a")).toEqual({ state: "unavailable" });
+    expect(await theirs.svc.platformRule("agent-a")).toEqual({
+      state: "unavailable",
+    });
   });
 });

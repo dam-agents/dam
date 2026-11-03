@@ -314,6 +314,7 @@ import {
   createEgressIdentityResolver,
   environmentNameLookup,
   environmentsDomainOf,
+  environmentsPortOf,
 } from "./modules/environments/index.js";
 import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
@@ -830,6 +831,7 @@ export async function bootstrap() {
     k8s: k8sClient,
     hmacKey: config.apiKeyHmacKey,
     domain: environmentsDomainOf(config.environmentsUrl),
+    port: environmentsPortOf(config.environmentsUrl),
     listAgents: async () =>
       (await agentsRepo.list()).flatMap((a) =>
         a.owner
@@ -1246,7 +1248,10 @@ export async function bootstrap() {
   await periodicJobs.register("agent-keys-issue", 30 * 60_000, async () => {
     const issued = await agentKeys.issueAll();
     if (issued > 0)
-      getLogger().info({ issued }, "agent-keys: Agents checked for their Environments access");
+      getLogger().info(
+        { issued },
+        "agent-keys: Agents checked for their Environments access",
+      );
   });
   const attachFirstProviderSub = startAttachFirstProviderSaga(
     async (owner, connectionId) =>

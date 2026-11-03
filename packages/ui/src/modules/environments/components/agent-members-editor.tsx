@@ -61,7 +61,11 @@ export function AgentMembersEditor({
       }
       onChange([
         ...agents,
-        { agentId: found.agentId, name: found.name, ownerName: found.ownerName },
+        {
+          agentId: found.agentId,
+          name: found.name,
+          ownerName: found.ownerName,
+        },
       ]);
       onDraftChange("");
       setError(null);
@@ -113,11 +117,14 @@ export function AgentMembersEditor({
       )}
       {agents.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No agents. An agent&apos;s id is on its page; add it to let that
-          agent open this from its sandbox.
+          No agents. An agent&apos;s id is on its page; add it to let that agent
+          open this from its sandbox.
         </p>
       ) : (
-        <ul className="-ml-1 max-h-32 overflow-y-auto pr-1" data-testid="agent-member-list">
+        <ul
+          className="-ml-1 max-h-32 overflow-y-auto pr-1"
+          data-testid="agent-member-list"
+        >
           {agents.map((a) => (
             <li
               key={a.agentId}
@@ -141,7 +148,9 @@ export function AgentMembersEditor({
                 label={`Remove ${a.name}`}
                 tooltip="Remove"
                 disabled={disabled}
-                onClick={() => onChange(agents.filter((x) => x.agentId !== a.agentId))}
+                onClick={() =>
+                  onChange(agents.filter((x) => x.agentId !== a.agentId))
+                }
               />
             </li>
           ))}

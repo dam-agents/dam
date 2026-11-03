@@ -32,7 +32,9 @@ export interface AgentKeySecretPort {
  * Agent's gateway alone, with the environments domain the gateway sends the
  * key to. Its one file is the key as Envoy's credential injector reads it.
  */
-export function createAgentKeySecretPort(client: K8sClient): AgentKeySecretPort {
+export function createAgentKeySecretPort(
+  client: K8sClient,
+): AgentKeySecretPort {
   return {
     async write(agentId, ownerSub, host, key) {
       const name = agentKeySecretName(agentId);

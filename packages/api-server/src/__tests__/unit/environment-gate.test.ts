@@ -984,10 +984,18 @@ describe("an agent at the Environment gate", () => {
     const cookie = await w.signInTo("app-pr-1-abcdef");
     expect((await w.request(host, "/", { cookie })).status).toBe(200);
 
-    const borrowed = await w.request(host, "/", keyed(QA_KEY, { cookie, accept: "text/html" }));
+    const borrowed = await w.request(
+      host,
+      "/",
+      keyed(QA_KEY, { cookie, accept: "text/html" }),
+    );
     expect(borrowed.status).toBe(403);
     expect(borrowed.location).toBeNull();
-    const unknown = await w.request(host, "/", keyed(UNKNOWN_KEY, { cookie, accept: "text/html" }));
+    const unknown = await w.request(
+      host,
+      "/",
+      keyed(UNKNOWN_KEY, { cookie, accept: "text/html" }),
+    );
     expect(unknown.status).toBe(403);
     expect(unknown.location).toBeNull();
   });
@@ -995,16 +1003,28 @@ describe("an agent at the Environment gate", () => {
   // TEST_SCENARIO: an agent's request reaches the sign-in paths, or another site's page in the agent's browser makes a request with the agent's key. Neither is served: a key gets no session, and the cross-origin check holds for agents too.
   it("gives a key no sign-in, and refuses another site's page", async () => {
     const w = await world({ memberAgents: ["agent-qa"] });
-    const signin = await w.request(host, "/.platform/session?code=x", keyed(QA_KEY));
+    const signin = await w.request(
+      host,
+      "/.platform/session?code=x",
+      keyed(QA_KEY),
+    );
     expect(signin.status).toBe(403);
-    const crossSite = await w.request(host, "/", keyed(QA_KEY, { origin: "https://evil.example" }));
+    const crossSite = await w.request(
+      host,
+      "/",
+      keyed(QA_KEY, { origin: "https://evil.example" }),
+    );
     expect(crossSite.status).toBe(403);
   });
 
   // TEST_SCENARIO: an agent sends its key with a Host of the platform itself. The api-server refuses it before any route reads it, so the key only ever reaches the Environment gate.
   it("refuses a key on any other host", async () => {
     const w = await world();
-    const res = await w.request("platform.test", "/api/anything", keyed(QA_KEY));
+    const res = await w.request(
+      "platform.test",
+      "/api/anything",
+      keyed(QA_KEY),
+    );
     expect(res.status).toBe(421);
     expect(res.body).not.toBe("the platform");
   });

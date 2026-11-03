@@ -30,7 +30,8 @@ export function createAgentKeyCodec(hmacKey: string): AgentKeyCodec {
     createHmac("sha256", hmacKey).update(key).digest("hex");
   return {
     mint() {
-      const key = AGENT_KEY_PREFIX + randomBytes(RANDOM_BYTES).toString("base64url");
+      const key =
+        AGENT_KEY_PREFIX + randomBytes(RANDOM_BYTES).toString("base64url");
       return { key, hash: hash(key) };
     },
     hash,
@@ -39,9 +40,7 @@ export function createAgentKeyCodec(hmacKey: string): AgentKeyCodec {
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a header value has an Agent Key's shape, checked before any lookup so a stray value costs no query.
 export function isAgentKey(value: string | undefined): value is string {
-  return (
-    value !== undefined && /^ak_[A-Za-z0-9_-]{43}$/.test(value)
-  );
+  return value !== undefined && /^ak_[A-Za-z0-9_-]{43}$/.test(value);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Agent Key Secret's name, one per Agent; agent ids are DNS labels, so the name is one too.

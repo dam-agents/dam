@@ -128,7 +128,9 @@ export function composeEnvironmentsOver(
     async environmentState(agentId) {
       const record = await repo.get(agentId);
       if (!record) return "unknown";
-      return (await deps.agentsFor(record.owner).get(agentId))?.state ?? "unknown";
+      return (
+        (await deps.agentsFor(record.owner).get(agentId))?.state ?? "unknown"
+      );
     },
   };
   const environmentsFor = (owner: string) =>
@@ -267,7 +269,10 @@ export function composeEnvironmentGate(
     members.ofAgent(owningAgentId);
   const environmentMembers = (environmentId: string) =>
     members.ofEnvironment(environmentId);
-  const memberAgents = async (record: { agentId: string; owningAgentId: string }) => [
+  const memberAgents = async (record: {
+    agentId: string;
+    owningAgentId: string;
+  }) => [
     ...(await members.agentsOfAgent(record.owningAgentId)),
     ...(await members.agentsOfEnvironment(record.agentId)),
   ];

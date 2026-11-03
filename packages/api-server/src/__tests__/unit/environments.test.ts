@@ -72,7 +72,8 @@ function memoryMembers(seed: Record<string, string[]> = {}) {
     setAgentsOfEnvironment: async (id, ids) =>
       void environmentAgentLists.set(id, ids),
     environmentsSharedWith: async () => [],
-    recordVisit: async (env, agent, at) => void visits.set(`${env}|${agent}`, at),
+    recordVisit: async (env, agent, at) =>
+      void visits.set(`${env}|${agent}`, at),
     lastOpened: async (envs, agents) => {
       const out = new Map<string, Date>();
       for (const [key, at] of visits) {
@@ -96,9 +97,20 @@ function memoryMembers(seed: Record<string, string[]> = {}) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: other owners' Agents, by id, as the agent directory reads them across owners.
-const OTHER_AGENTS: Record<string, { name: string; ownerName: string | null; environment: boolean }> = {
-  "agent-qa00000000000001": { name: "qa", ownerName: "Bob", environment: false },
-  "agent-env0000000000099": { name: "dev · pr-1", ownerName: "Bob", environment: true },
+const OTHER_AGENTS: Record<
+  string,
+  { name: string; ownerName: string | null; environment: boolean }
+> = {
+  "agent-qa00000000000001": {
+    name: "qa",
+    ownerName: "Bob",
+    environment: false,
+  },
+  "agent-env0000000000099": {
+    name: "dev · pr-1",
+    ownerName: "Bob",
+    environment: true,
+  },
 };
 
 function fakeAgents(seed: Partial<Agent>[]) {
@@ -168,7 +180,9 @@ function setup(
     directory: {
       describe: async (id) =>
         OTHER_AGENTS[id] ??
-        (id === vmOwning.id ? { name: "dev", ownerName: "Alice", environment: false } : null),
+        (id === vmOwning.id
+          ? { name: "dev", ownerName: "Alice", environment: false }
+          : null),
       environmentState: async () => "running",
     },
     agents: agents.service,
@@ -414,7 +428,9 @@ describe("changing and deleting Environments", () => {
     });
 
     await expect(
-      service.setMembers("agent-foreign000000001", { emails: ["x@example.com"] }),
+      service.setMembers("agent-foreign000000001", {
+        emails: ["x@example.com"],
+      }),
     ).rejects.toThrow(/no such Environment/);
     expect(members.environmentLists.size).toBe(0);
   });
@@ -562,7 +578,10 @@ describe("agents on an Environment's lists", () => {
       .create({ name: "a", endpoints: [{ name: "app", port: 80 }] });
     for (const id of ["agent-missing00000001", "agent-env0000000000099"])
       await expect(
-        service.setMembers(env.id, { emails: ["p@example.com"], agentIds: [id] }),
+        service.setMembers(env.id, {
+          emails: ["p@example.com"],
+          agentIds: [id],
+        }),
       ).rejects.toThrow(`${id} is not an agent that can open an Environment`);
     expect(members.environmentLists.get(env.id)).toBeUndefined();
     expect(await service.lookupAgent("agent-env0000000000099")).toEqual({
@@ -586,7 +605,9 @@ describe("agents on an Environment's lists", () => {
     const after = await service.setAgentMembers(vmOwning.id!, {
       emails: ["a@example.com"],
     });
-    expect(after.agents.map((a) => a.agentId)).toEqual(["agent-qa00000000000001"]);
+    expect(after.agents.map((a) => a.agentId)).toEqual([
+      "agent-qa00000000000001",
+    ]);
     expect(members.agentAgentLists.get(vmOwning.id!)).toEqual([
       "agent-qa00000000000001",
     ]);
