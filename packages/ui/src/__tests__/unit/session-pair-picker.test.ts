@@ -1834,7 +1834,7 @@ describe("a config page's picker", () => {
     label: "Model for schedules",
     placeholder: "Use agent default",
     agentDefault: {
-      summary: "Claude Opus 5.5 · Medium (IBM)",
+      detail: "Follows Claude Opus 5.5 · Medium (IBM)",
       harness: "codex",
       onClear: vi.fn(),
     },
@@ -1872,7 +1872,7 @@ describe("a config page's picker", () => {
     expect(trigger).toContain('aria-label="Codex"');
     expect(trigger).not.toContain('aria-label="Pi"');
     expect(html).toContain(
-      'aria-label="Model for schedules: Use agent default. Claude Opus 5.5 · Medium (IBM)"',
+      'aria-label="Model for schedules: Use agent default. Follows Claude Opus 5.5 · Medium (IBM)"',
     );
   });
 
