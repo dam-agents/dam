@@ -269,6 +269,82 @@ describe("the owner's provider model catalog", () => {
     expect(read).toEqual([["conn-granted"], ["conn-granted", "conn-other"]]);
   });
 
+  // TEST_SCENARIO: an agent's catalog covers the image harness its runtime reports, both from its granted providers and, while the picker offers unattached ones, from every provider its owner holds; the owner-level catalog, which names no agent, never does.
+  it("adds the agent's reported image harness to its catalog alone", async () => {
+    const store = newConnectionsStore();
+    store.rows.set("conn-1", connection({ id: "conn-1", templateId: "openai" }));
+    store.grants.add("conn-1|agent-1");
+    const seen: { names: string[]; image: string[] }[] = [];
+    const { svc } = serviceHarness({
+      templates: createConnectionTemplateRegistry(buildCatalog()),
+      store,
+      brandName: "Acme",
+      carriedHarnesses: async () => [
+        {
+          name: "image-agent",
+          harnessConfig: false,
+          sessionModel: false,
+          dialects: ["openai-chat"],
+        },
+      ],
+      providerModelCatalog: {
+        read: async (_connections, views, image = []) => {
+          seen.push({
+            names: views.harnesses.map((h) => h.name),
+            image: image.map((h) => h.name),
+          });
+          return {
+            defaultHarness: "claude-code",
+            modelRouter: true,
+            harnesses: [],
+            providers: [],
+          };
+        },
+      },
+    });
+    await svc.modelCatalog("agent-1");
+    await svc.modelCatalog(undefined, { harnessesOf: "agent-1" });
+    await svc.modelCatalog();
+    expect(seen).toEqual([
+      { names: ["image-agent"], image: ["image-agent"] },
+      { names: ["image-agent"], image: ["image-agent"] },
+      { names: [], image: [] },
+    ]);
+  });
+
+  // TEST_SCENARIO: a reported image harness that speaks a dialect the provider serves gets the provider's models and keeps the catalog routed, so the picker offers them rather than treating the agent as one on an old runtime.
+  it("lists a provider's models for a routed image harness", async () => {
+    const catalog = createProviderModelCatalog({
+      secretStore: memorySecretStore(secrets),
+      discover: observed([{ id: "gpt-5", contextWindow: 400_000 }]),
+      table,
+      shipped,
+    });
+    const image = {
+      name: "image-agent",
+      harnessConfig: false,
+      sessionModel: false,
+      dialects: ["openai-chat"],
+    };
+    const view = await catalog.read(
+      [connection({ id: "conn-1", templateId: "openai" })],
+      {
+        default: harnesses.default,
+        harnesses: [
+          ...harnesses.harnesses,
+          { name: "image-agent", displayName: "Image Agent", providers: ["openai"], tags: [], experimental: false },
+        ],
+      },
+      [image],
+    );
+    expect(view.modelRouter).toBe(true);
+    expect(view.harnesses.find((h) => h.name === "image-agent")).toEqual(image);
+    expect(harnessCatalogOf(view, "image-agent").providers[0]).toMatchObject({
+      status: "listed",
+      models: [expect.objectContaining({ name: "openai/gpt-5" })],
+    });
+  });
+
   it("keeps the last good list when a later listing fails", async () => {
     let fail = false;
     let calls = 0;

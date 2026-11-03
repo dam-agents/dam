@@ -34,7 +34,7 @@ import {
 import {
   rememberSessionPair,
   useGrantProvider,
-  useHarnessCatalog,
+  useAgentHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
@@ -132,7 +132,7 @@ export function SessionPairPicker(props: Props) {
   const target = props.pending ? undefined : props.target;
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
-  const { data: catalog } = useHarnessCatalog();
+  const { data: catalog } = useAgentHarnessCatalog(agentId);
   const picked = useStore((s) =>
     agentId ? (s.nextSessionPair[agentId] ?? null) : null,
   );

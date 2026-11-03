@@ -13,7 +13,7 @@ import {
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import {
-  useHarnessCatalog,
+  useAgentHarnessCatalog,
   useProviderConnections,
 } from "../api/session-pair.js";
 import {
@@ -34,7 +34,7 @@ export function TerminalHarnessMenu({
 }) {
   const setNextTerminalPair = useStore((s) => s.setNextTerminalPair);
   const status = useHarnessConfigStatus(agentId);
-  const catalogQuery = useHarnessCatalog();
+  const catalogQuery = useAgentHarnessCatalog(agentId);
   const { granted, owned, loaded, failed } = useProviderConnections(agentId);
   const attach = useAttachProvidersDialog(agentId);
   const picked = useRef<TerminalHarness | null>(null);

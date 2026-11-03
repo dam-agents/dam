@@ -1,3 +1,4 @@
+import type { HarnessCapability } from "agent-runtime-api";
 import type { Connection } from "api-server-api";
 
 import type { ConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
@@ -93,6 +94,7 @@ export function serviceHarness(opts: {
   brandName: string;
   curveBenderDeploymentKey?: string | null;
   providerModelCatalog?: ProviderModelCatalog;
+  carriedHarnesses?: (agentId: string) => Promise<HarnessCapability[] | null>;
 }) {
   const { rows, grants, secrets } = opts.store ?? newConnectionsStore();
   const secretReads: SecretReads = { get: 0, getField: 0 };
@@ -106,6 +108,7 @@ export function serviceHarness(opts: {
       .map(([, a]) => a!);
   const svc = createConnectionsService({
     harnesses: { default: "claude-code", harnesses: [] },
+    ...(opts.carriedHarnesses && { carriedHarnesses: opts.carriedHarnesses }),
     isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: opts.templates,

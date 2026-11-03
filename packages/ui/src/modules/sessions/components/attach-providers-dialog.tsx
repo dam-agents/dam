@@ -9,7 +9,7 @@ import {
 import { Card } from "@/components/ui/card";
 
 import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
-import { useGrantProvider, useHarnessCatalog } from "../api/session-pair.js";
+import { useAgentHarnessCatalog, useGrantProvider } from "../api/session-pair.js";
 import { attachableProviders } from "../lib/catalog-groups.js";
 import {
   type ProviderConnectionRef,
@@ -54,6 +54,7 @@ export function useAttachProvidersDialog(agentId: string | null): {
     dialog: request && (
       <AttachProvidersDialog
         key={request.harness}
+        agentId={agentId}
         request={request}
         pending={attaching}
         onCancel={() => close(null)}
@@ -69,11 +70,13 @@ export function useAttachProvidersDialog(agentId: string | null): {
 }
 
 function AttachProvidersDialog({
+  agentId,
   request,
   pending,
   onCancel,
   onAttach,
 }: {
+  agentId: string | null;
   request: Request;
   pending: boolean;
   onCancel: () => void;
@@ -86,7 +89,7 @@ function AttachProvidersDialog({
   const blocked = (p: ProviderConnectionRef) =>
     !selected.includes(p.id) &&
     attachableProviders(selectedRows, [p]).length === 0;
-  const catalog = useHarnessCatalog().data?.harnesses;
+  const catalog = useAgentHarnessCatalog(agentId).data?.harnesses;
   const harnessName =
     catalog?.find((h) => h.name === request.harness)?.displayName ??
     request.harness;

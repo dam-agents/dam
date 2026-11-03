@@ -1,6 +1,7 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
 import { routesSessionPairs } from "agent-runtime-api";
 import {
+  type AgentHarnessView,
   type ConnectionView,
   type DefaultKind,
   harnessCatalogOf,
@@ -8,12 +9,14 @@ import {
   type HarnessView,
   type SessionPair,
   type SessionView,
+  withImageHarnesses,
 } from "api-server-api";
 
 import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { trpc } from "../../../trpc.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
 import {
@@ -38,6 +41,27 @@ export function useHarnessCatalog() {
     ...trpc.templates.harnesses.queryOptions(),
     staleTime: 5 * 60_000,
   });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the harnesses one agent can run: the install's
+ * catalog plus the image harnesses its runtime reports, which no other agent
+ * is offered.
+ */
+export function useAgentHarnessCatalog(agentId: string | null): {
+  data: { harnesses: AgentHarnessView[] } | undefined;
+  isPending: boolean;
+  isError: boolean;
+} {
+  const catalog = useHarnessCatalog();
+  const { data: status } = useHarnessConfigStatus(agentId);
+  return {
+    data: catalog.data && {
+      harnesses: withImageHarnesses(catalog.data, status?.harnesses),
+    },
+    isPending: catalog.isPending,
+    isError: catalog.isError,
+  };
 }
 
 const sessionPairInput = (agentId: string, kind: DefaultKind) =>
@@ -314,10 +338,15 @@ export function readNextSessionPair(
     queryClient.getQueryData<ConnectionView[]>(
       trpc.connections.list.queryKey(),
     ) ?? [];
-  const catalog =
-    queryClient.getQueryData<{ harnesses: HarnessView[] }>(
-      trpc.templates.harnesses.queryKey(),
-    )?.harnesses ?? [];
+  const catalog = withImageHarnesses(
+    {
+      harnesses:
+        queryClient.getQueryData<{ harnesses: HarnessView[] }>(
+          trpc.templates.harnesses.queryKey(),
+        )?.harnesses ?? [],
+    },
+    status?.harnesses,
+  );
   const { granted } = grantedProviderRefs(
     (grants?.connections ?? []).map((g) => g.connectionId),
     connections,

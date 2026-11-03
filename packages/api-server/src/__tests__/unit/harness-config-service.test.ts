@@ -296,6 +296,63 @@ describe("harness-config service: pairs on a runtime that routes by model name",
   });
 });
 
+describe("harness-config service: an image harness", () => {
+  const IMAGE = {
+    defaultHarness: "image-agent",
+    modelRouter: true,
+    harnesses: [
+      {
+        name: "image-agent",
+        harnessConfig: false,
+        sessionModel: false,
+        dialects: ["openai-chat"],
+      },
+    ],
+  };
+  const granted: GrantedProvider[] = [
+    { id: "oai", type: "openai" },
+    { id: "bob", type: "bob" },
+  ];
+
+  /** TEST_SCENARIO: An agent whose own image carries a harness the catalog
+   * does not list saves a chat default on it, on a provider that serves the
+   * harness's reported dialect, and is refused one kept to another harness. */
+  it("saves a default on the agent's image harness", async () => {
+    const { service, calls } = makeService({ capabilities: IMAGE, granted });
+    await service.rememberSessionPair("a1", "chat", {
+      harness: "image-agent",
+      provider: null,
+      model: "openai/gpt-5.5",
+    });
+    expect(calls.pairs).toEqual([
+      { harness: "image-agent", provider: "oai", model: "openai/gpt-5.5" },
+    ]);
+    await expect(
+      service.rememberSessionPair("a1", "chat", {
+        harness: "image-agent",
+        provider: null,
+        model: "bob/premium",
+      }),
+    ).rejects.toThrow(/cannot run on that provider/);
+  });
+
+  /** TEST_SCENARIO: Another agent that does not report the harness is refused
+   * it, so a harness one image carries is never offered to the rest. */
+  it("refuses the image harness on an agent that does not report it", async () => {
+    const { service } = makeService({
+      capabilities: { ...IMAGE, harnesses: [] },
+      granted,
+    });
+    await expect(
+      service.rememberSessionPair("a1", "chat", {
+        harness: "image-agent",
+        provider: null,
+        model: "openai/gpt-5.5",
+      }),
+    ).rejects.toThrow(/does not carry the image-agent harness/);
+  });
+});
+
 describe("harness-config service", () => {
   it("fires a one-shot harness-config event carrying the change, then enqueues", async () => {
     const { service, calls } = makeService();

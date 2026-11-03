@@ -6,7 +6,7 @@ import {
   useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
 import {
-  useHarnessCatalog,
+  useAgentHarnessCatalog,
   useProviderConnections,
   useProviderModels,
   useRememberedPair,
@@ -30,7 +30,7 @@ export function useSessionModelChoices(
   const { data } = useHarnessConfigStatus(agentId);
   const { values } = useResolvedHarnessConfig(agentId);
   const { data: remembered } = useRememberedPair(agentId);
-  const { data: catalog } = useHarnessCatalog();
+  const { data: catalog } = useAgentHarnessCatalog(agentId);
   const { granted } = useProviderConnections(agentId);
   const harness = data?.harnesses ? (data.defaultHarness ?? null) : null;
   const provider = !harness

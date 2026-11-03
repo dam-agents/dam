@@ -27,7 +27,7 @@ import {
 } from "../../profiles/components/save-as-profile.js";
 import {
   useGrantProvider,
-  useHarnessCatalog,
+  useAgentHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
@@ -96,7 +96,7 @@ export function ModelIndicator({
 }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const { data: catalog } = useHarnessCatalog();
+  const { data: catalog } = useAgentHarnessCatalog(agentId);
   const capability = carried.find((h) => h.name === harness);
   const defaults = settingDefaults(
     capability,

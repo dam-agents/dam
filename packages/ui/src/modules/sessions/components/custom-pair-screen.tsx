@@ -7,7 +7,7 @@ import { HarnessIcons } from "@/components/harness-icons";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import {
-  useHarnessCatalog,
+  useAgentHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
@@ -59,7 +59,7 @@ export function CustomPairScreen({
   onManageProviders: () => void;
   foot?: ReactNode;
 }) {
-  const { data: catalog } = useHarnessCatalog();
+  const { data: catalog } = useAgentHarnessCatalog(agentId);
   const views = catalog?.harnesses ?? [];
   const connections = useProviderConnections(agentId);
   const granted = agentId === null ? connections.owned : connections.granted;
@@ -181,7 +181,7 @@ export function HarnessList({
   unsupported: (name: string) => boolean;
   onPick: (name: string) => void;
 }) {
-  const { data: catalog } = useHarnessCatalog();
+  const { data: catalog } = useAgentHarnessCatalog(agentId);
   return (
     <ul role="group" aria-label="Harness" className="flex flex-col">
       {harnessOptions(names, catalog?.harnesses ?? []).map((h) => (

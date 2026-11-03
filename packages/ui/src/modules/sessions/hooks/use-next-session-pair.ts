@@ -2,7 +2,7 @@ import type { SessionPair } from "api-server-api";
 
 import { useStore } from "../../../store.js";
 import {
-  useHarnessCatalog,
+  useAgentHarnessCatalog,
   useProviderConnections,
   useRememberedPair,
 } from "../api/session-pair.js";
@@ -18,7 +18,7 @@ export function useNextSessionPair(
   carried: readonly string[],
   defaultHarness: string | undefined,
 ): SessionPair | null {
-  const { data: catalog } = useHarnessCatalog();
+  const { data: catalog } = useAgentHarnessCatalog(agentId);
   const { data: remembered } = useRememberedPair(agentId);
   const chosen = useStore((s) =>
     agentId ? (s.nextSessionPair[agentId] ?? null) : null,

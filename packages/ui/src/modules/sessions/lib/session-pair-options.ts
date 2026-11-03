@@ -1,7 +1,7 @@
 import {
   aliasForProviderType,
   harnessFits,
-  type HarnessView,
+  type AgentHarnessView,
   parseQualifiedModel,
   type ProviderPresetType,
   providerTypeForTemplateId,
@@ -25,7 +25,7 @@ export interface HarnessOption {
 
 export function harnessOptions(
   carried: readonly string[],
-  catalog: readonly HarnessView[],
+  catalog: readonly AgentHarnessView[],
 ): HarnessOption[] {
   return carried.map((name) => ({
     name,
@@ -35,14 +35,14 @@ export function harnessOptions(
 
 export function harnessDisplayName(
   name: string,
-  catalog: readonly HarnessView[] | undefined,
+  catalog: readonly AgentHarnessView[] | undefined,
 ): string | undefined {
   return catalog && (catalog.find((h) => h.name === name)?.displayName ?? name);
 }
 
 export function pairLabel(
   pair: SessionPair,
-  catalog: readonly HarnessView[] | undefined,
+  catalog: readonly AgentHarnessView[] | undefined,
   granted: readonly ProviderConnectionRef[],
 ): string | undefined {
   const harness = harnessDisplayName(pair.harness, catalog);
@@ -71,7 +71,7 @@ export function providerOfModel(
 
 export function providerOptions(
   harness: string,
-  catalog: readonly HarnessView[],
+  catalog: readonly AgentHarnessView[],
   granted: readonly ProviderConnectionRef[],
   owned: readonly ProviderConnectionRef[],
 ): { granted: ProviderConnectionRef[]; addable: ProviderConnectionRef[] } {
@@ -136,7 +136,7 @@ export function pairMeta(pair: SessionPair): Record<string, string> {
 }
 
 export function fittingProviders(
-  catalog: readonly HarnessView[],
+  catalog: readonly AgentHarnessView[],
   granted: readonly ProviderConnectionRef[],
 ): (harness: string) => string[] {
   return (harness) =>
@@ -160,7 +160,7 @@ export function terminalHarnessChoice(input: {
   loading: boolean;
   failed: boolean;
   carried: readonly string[];
-  catalog: readonly HarnessView[] | undefined;
+  catalog: readonly AgentHarnessView[] | undefined;
   granted: readonly ProviderConnectionRef[];
   owned: readonly ProviderConnectionRef[];
 }): TerminalHarnessChoice {
@@ -182,7 +182,7 @@ export function terminalHarnessChoice(input: {
 }
 
 export function providerHarnesses(
-  catalog: readonly HarnessView[],
+  catalog: readonly AgentHarnessView[],
   provider: ProviderConnectionRef,
 ): string[] {
   return catalog

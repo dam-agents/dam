@@ -160,6 +160,32 @@ describe("session choices on a runtime that routes by model name", () => {
   });
 });
 
+describe("session choices on an agent's image harness", () => {
+  /** TEST_SCENARIO: A schedule on an agent whose image carries a harness the
+   * catalog does not list takes that harness and a model of a provider that
+   * serves its reported dialect. */
+  it("accepts the image harness and a model it fits", async () => {
+    const check = validator({
+      capabilities: {
+        ...ROUTED,
+        harnesses: [
+          ...ROUTED.harnesses,
+          {
+            name: "image-agent",
+            harnessConfig: false,
+            sessionModel: false,
+            dialects: ["openai-chat"],
+          },
+        ],
+      },
+      granted: [{ id: "oai", type: "openai" }],
+    });
+    await expect(
+      check("agent-1", { harness: "image-agent", model: "openai/gpt-5.5" }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("session choices on a runtime without the router", () => {
   const legacy = {
     sessionModel: true,
