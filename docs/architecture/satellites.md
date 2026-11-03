@@ -194,7 +194,9 @@ An Agent sees the same tools before and after a drop, and never two of anything.
 
 A Satellite's row is nevertheless a **registration** of that name, and each registration has an identity of its own.
 A worker names the registration it serves on every call it makes — registering, claiming, renewing a lease, cancelling, reporting — and the platform puts that identity inside the statements that act rather than in a read before them, because a name can be registered again between the two.
-A removal, or a name registered again from another machine, is therefore refused rather than taken over: the worker is told there is no such Satellite before it runs anything, and stops ([Jobs](#jobs)).
+A removal, or a registration replaced while a worker was away, is therefore refused: the worker that names a registration the platform no longer holds, or holds under another identity, is told there is no such Satellite before it runs anything, and stops ([Jobs](#jobs)).
+A **fresh** worker that names nothing is not refused one: connecting under a name another machine is serving takes that name over — the row keeps its identity and its Jobs, and both workers then claim from the same registration.
+Identity belongs to the registration, not to the process, so a second machine is never turned away on its own account; exporting one name from two machines at once is the case to avoid.
 Removing a Satellite takes its row first, in one transaction, and admission binds its insert to the registration it admitted against, so a call arriving beside a removal is either deleted with it or refused — never left for the next machine of that name to claim.
 That is what keeps a stale worker from undoing the owner's decision to remove one, from claiming jobs queued for a machine that is not this one, and from settling another machine's `#1` with its own.
 A worker from before the identity existed names nothing and is served as it always was: it cannot be fenced, which is the cost of the rollout, not a promise the platform makes.

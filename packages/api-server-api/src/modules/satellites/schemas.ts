@@ -62,24 +62,27 @@ export const jobStatusSchema = z.enum([
   "cancelled",
 ]);
 
-export const satelliteConnectInputSchema = z.object({
-  manifest: satelliteManifestSchema,
-  host: z.string().max(253).optional(),
-  resume: z.string().max(64).optional(),
-});
+export const satelliteConnectInputSchema = z
+  .object({
+    manifest: satelliteManifestSchema,
+    host: z.string().max(253).optional(),
+  })
+  .strict();
 
-export const claimInputSchema = z.object({
-  satellite: satelliteNameSchema,
-  capacity: z.number().int().min(0).max(1024),
-  waitMs: z.number().int().min(0).max(60_000).optional(),
-  incarnation: z.string().uuid().optional(),
-});
+export const claimInputSchema = z
+  .object({
+    satellite: satelliteNameSchema,
+    capacity: z.number().int().min(0).max(1024),
+    waitMs: z.number().int().min(0).max(60_000).optional(),
+  })
+  .strict();
 
-export const heartbeatInputSchema = z.object({
-  satellite: satelliteNameSchema,
-  running: z.array(z.number().int().positive()).max(1024),
-  incarnation: z.string().uuid().optional(),
-});
+export const heartbeatInputSchema = z
+  .object({
+    satellite: satelliteNameSchema,
+    running: z.array(z.number().int().positive()).max(1024),
+  })
+  .strict();
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What a worker says when it stops serving. A CLI
@@ -87,13 +90,7 @@ export const heartbeatInputSchema = z.object({
  * accepted: the platform cannot tell which registration an old worker served,
  * and it says nothing rather than saying the wrong thing.
  */
-export const drainInputSchema = z.union([
-  satelliteNameSchema,
-  z.object({
-    satellite: satelliteNameSchema,
-    incarnation: z.string().uuid().optional(),
-  }),
-]);
+export const drainInputSchema = satelliteNameSchema;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The connect, claim and heartbeat of a worker that
@@ -245,37 +242,38 @@ export const toolArgsSchema = z
     `tool arguments must be under ${MAX_TOOL_ARGS_BYTES} bytes`,
   );
 
-export const reportInputSchema = z.object({
-  satellite: satelliteNameSchema,
-  sequence: z.number().int().positive(),
-  incarnation: z.string().uuid().optional(),
-  outcome: z.discriminatedUnion("status", [
-    z
-      .object({
-        status: z.literal("done"),
-        isError: z.boolean().default(false),
-        exitCode: z.number().int().nullable().default(null),
-        output: z.string().max(MAX_JOB_OUTPUT_BYTES),
+export const reportInputSchema = z
+  .object({
+    satellite: satelliteNameSchema,
+    sequence: z.number().int().positive(),
+    outcome: z.discriminatedUnion("status", [
+      z
+        .object({
+          status: z.literal("done"),
+          isError: z.boolean().default(false),
+          exitCode: z.number().int().nullable().default(null),
+          output: z.string().max(MAX_JOB_OUTPUT_BYTES),
+          truncated: z.boolean().default(false),
+          images: satelliteImagesSchema.default([]),
+        })
+        .refine(
+          payloadFitsCeiling,
+          `the text and images of one job must fit in ${MAX_JOB_OUTPUT_BYTES} bytes between them, the result envelope aside`,
+        ),
+      z.object({
+        status: z.literal("cancelled"),
+        output: z.string().max(MAX_JOB_OUTPUT_BYTES).default(""),
         truncated: z.boolean().default(false),
-        images: satelliteImagesSchema.default([]),
-      })
-      .refine(
-        payloadFitsCeiling,
-        `the text and images of one job must fit in ${MAX_JOB_OUTPUT_BYTES} bytes between them, the result envelope aside`,
-      ),
-    z.object({
-      status: z.literal("cancelled"),
-      output: z.string().max(MAX_JOB_OUTPUT_BYTES).default(""),
-      truncated: z.boolean().default(false),
-    }),
-    z.object({
-      status: z.literal("interrupted"),
-      reason: z.string().max(280),
-      output: z.string().max(MAX_JOB_OUTPUT_BYTES).default(""),
-      truncated: z.boolean().default(false),
-    }),
-  ]),
-});
+      }),
+      z.object({
+        status: z.literal("interrupted"),
+        reason: z.string().max(280),
+        output: z.string().max(MAX_JOB_OUTPUT_BYTES).default(""),
+        truncated: z.boolean().default(false),
+      }),
+    ]),
+  })
+  .strict();
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A report from a worker that knows which

@@ -1,4 +1,16 @@
 import { TRPCError } from "@trpc/server";
+import {
+  claimFencedInputSchema,
+  claimInputSchema,
+  connectFencedInputSchema,
+  drainFencedInputSchema,
+  drainInputSchema,
+  heartbeatFencedInputSchema,
+  heartbeatInputSchema,
+  reportFencedInputSchema,
+  reportInputSchema,
+  satelliteConnectInputSchema,
+} from "api-server-api";
 import { satelliteGrants, satelliteJobs, satellites } from "db";
 import { describe, expect, it } from "vitest";
 import type { SatelliteRow } from "../../modules/satellites/domain/types.js";
@@ -565,5 +577,108 @@ describe("an agent's access to one registration", () => {
     await worker.cancel("agent-1", "gpu-box", 1);
     expect(requested[0]?.at(-1)).toBe(OLD);
     expect(settled, "a running job is cancelled, not settled").toHaveLength(0);
+  });
+});
+
+describe("the procedures a worker can call", () => {
+  const REGISTRATION = "11111111-1111-4111-8111-111111111111";
+  const manifest = {
+    name: "gpu-box",
+    maxConcurrent: 2,
+    tools: [{ name: "run", inputSchema: {} }],
+  };
+  const outcome = {
+    status: "done" as const,
+    isError: false,
+    exitCode: 0,
+    output: "ok",
+    images: [],
+    truncated: false,
+  };
+  const claim = { satellite: "gpu-box", capacity: 1, waitMs: 0 };
+  const heartbeat = { satellite: "gpu-box", running: [1] };
+  const report = { satellite: "gpu-box", sequence: 1, outcome };
+
+  /**
+   * TEST_SCENARIO: The plain procedures are the compatibility path for a call
+   * that names no registration. An identity sent to one of them would be read by
+   * a server that does not fence, so the schema refuses it instead: a caller
+   * that has an identity must use the procedure that requires it.
+   */
+  it("refuses an identity on a plain procedure", () => {
+    expect(
+      satelliteConnectInputSchema.safeParse({
+        manifest,
+        host: "gpu-box.internal",
+        resume: REGISTRATION,
+      }).success,
+    ).toBe(false);
+    expect(
+      claimInputSchema.safeParse({ ...claim, incarnation: REGISTRATION })
+        .success,
+    ).toBe(false);
+    expect(
+      heartbeatInputSchema.safeParse({
+        ...heartbeat,
+        incarnation: REGISTRATION,
+      }).success,
+    ).toBe(false);
+    expect(
+      reportInputSchema.safeParse({ ...report, incarnation: REGISTRATION })
+        .success,
+    ).toBe(false);
+    expect(
+      drainInputSchema.safeParse({
+        satellite: "gpu-box",
+        incarnation: REGISTRATION,
+      }).success,
+    ).toBe(false);
+  });
+
+  /** TEST_SCENARIO: The plain procedures still take the calls they always did. */
+  it("accepts the identity-free calls it always did", () => {
+    expect(
+      satelliteConnectInputSchema.safeParse({ manifest, host: "h" }).success,
+    ).toBe(true);
+    expect(claimInputSchema.safeParse(claim).success).toBe(true);
+    expect(heartbeatInputSchema.safeParse(heartbeat).success).toBe(true);
+    expect(reportInputSchema.safeParse(report).success).toBe(true);
+    expect(drainInputSchema.safeParse("gpu-box").success).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: The fenced procedures require the registration, and require
+   * it to be one. A resume that is not a uuid would otherwise reach a comparison
+   * in the database and fail as a server error instead of a refused call.
+   */
+  it("requires a real registration on a fenced procedure", () => {
+    expect(
+      connectFencedInputSchema.safeParse({ manifest, resume: "reg-1" }).success,
+    ).toBe(false);
+    expect(
+      connectFencedInputSchema.safeParse({ manifest, resume: REGISTRATION })
+        .success,
+    ).toBe(true);
+    expect(
+      claimFencedInputSchema.safeParse({ ...claim, incarnation: "reg-1" })
+        .success,
+    ).toBe(false);
+    expect(
+      claimFencedInputSchema.safeParse({ ...claim, incarnation: REGISTRATION })
+        .success,
+    ).toBe(true);
+    expect(
+      heartbeatFencedInputSchema.safeParse({ ...heartbeat }).success,
+      "the identity is required, not optional",
+    ).toBe(false);
+    expect(
+      reportFencedInputSchema.safeParse({
+        ...report,
+        incarnation: REGISTRATION,
+      }).success,
+    ).toBe(true);
+    expect(
+      drainFencedInputSchema.safeParse({ satellite: "gpu-box" }).success,
+    ).toBe(false);
   });
 });

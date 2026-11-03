@@ -13,9 +13,15 @@ export type SatelliteTool = z.infer<typeof satelliteToolSchema>;
 export type SatelliteImage = z.infer<typeof satelliteImageSchema>;
 export type SatelliteManifest = z.infer<typeof satelliteManifestSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
-export type ClaimInput = z.infer<typeof claimInputSchema>;
-export type HeartbeatInput = z.infer<typeof heartbeatInputSchema>;
-export type ReportInput = z.infer<typeof reportInputSchema>;
+export type ClaimInput = z.infer<typeof claimInputSchema> & {
+  incarnation?: string;
+};
+export type HeartbeatInput = z.infer<typeof heartbeatInputSchema> & {
+  incarnation?: string;
+};
+export type ReportInput = z.infer<typeof reportInputSchema> & {
+  incarnation?: string;
+};
 
 export interface SatelliteView {
   name: string;

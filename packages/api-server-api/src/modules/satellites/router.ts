@@ -61,12 +61,7 @@ export const satellitesRouter = t.router({
   connect: serveSatellitesProcedure
     .input(satelliteConnectInputSchema)
     .mutation(({ ctx, input }) =>
-      ctx.satelliteWorker.connect(
-        ctx.user.sub,
-        input.manifest,
-        input.host,
-        input.resume,
-      ),
+      ctx.satelliteWorker.connect(ctx.user.sub, input.manifest, input.host),
     ),
 
   claim: serveSatellitesProcedure
@@ -90,12 +85,7 @@ export const satellitesRouter = t.router({
   connectFenced: serveSatellitesProcedure
     .input(connectFencedInputSchema)
     .mutation(({ ctx, input }) =>
-      ctx.satelliteWorker.connect(
-        ctx.user.sub,
-        input.manifest,
-        input.host,
-        input.resume,
-      ),
+      ctx.satelliteWorker.connect(ctx.user.sub, input.manifest, input.host),
     ),
 
   claimFenced: serveSatellitesProcedure
@@ -129,12 +119,6 @@ export const satellitesRouter = t.router({
   drain: serveSatellitesProcedure
     .input(drainInputSchema)
     .mutation(({ ctx, input }) =>
-      typeof input === "string"
-        ? ctx.satelliteWorker.drain(ctx.user.sub, input)
-        : ctx.satelliteWorker.drain(
-            ctx.user.sub,
-            input.satellite,
-            input.incarnation,
-          ),
+      ctx.satelliteWorker.drain(ctx.user.sub, input),
     ),
 });
