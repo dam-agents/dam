@@ -119,9 +119,25 @@ node_host_dirs "$work/var/vm-images" "$work/var/releases"
 node_host_dirs_at_boot
 same "the boot service names the mount made now and one an earlier install made" \
   "2" "$(grep -c 'mount --bind' "$NODE_HOST_DIRS_SERVICE" 2>/dev/null)"
-grep -qF "mount --bind $NODE_HOME_SHARE/host-vm-images $work/var/vm-images" "$NODE_HOST_DIRS_SERVICE" &&
-  grep -qF "mount --bind $NODE_HOME_SHARE/host-releases $work/var/releases" "$NODE_HOST_DIRS_SERVICE" ||
+grep -qF "mount --bind '$NODE_HOME_SHARE/host-vm-images' '$work/var/vm-images'" "$NODE_HOST_DIRS_SERVICE" &&
+  grep -qF "mount --bind '$NODE_HOME_SHARE/host-releases' '$work/var/releases'" "$NODE_HOST_DIRS_SERVICE" ||
   { echo "FAIL: the boot service does not bind-mount both node directories from the home disk" >&2; fail=1; }
+# A path with a space is one operand in the service, not two (review of #6225).
+NODE_HOST_MOUNTS=("$work/home/host one" "$work/var/vm images")
+node_host_dirs_at_boot
+sed -n '/^start() {$/,/^}$/p' "$NODE_HOST_DIRS_SERVICE" > "$work/start-space.sh"
+: > "$work/root.log"
+( mountpoint() { return 1; }
+  mkdir() { :; }
+  mount() { printf '%s|' "$@" >> "$work/root.log"; }
+  . "$work/start-space.sh"; start )
+same "a path with a space reaches mount as one argument" \
+  "--bind|$work/home/host one|$work/var/vm images|" "$(cat "$work/root.log")"
+NODE_HOST_MOUNTS=()
+OVERLAY="$work/var/vm-images $work/var/releases" MOUNTED="$work/var/releases"
+mkdir -p "$NODE_HOME_SHARE/host-releases"
+node_host_dirs "$work/var/vm-images" "$work/var/releases"
+node_host_dirs_at_boot
 grep -q 'before k3s' "$NODE_HOST_DIRS_SERVICE" ||
   { echo "FAIL: the boot service does not start before k3s" >&2; fail=1; }
 grep -qF "rc-update add $(basename "$NODE_HOST_DIRS_SERVICE") default" "$work/root.log" ||
