@@ -12,6 +12,12 @@ export interface NpmInstaller {
   install(version: string): Promise<Result<void, InstallError>>;
 }
 
+export function upgradeAdvice(version: string): string {
+  return version.includes("-")
+    ? `run \`npm install -g ${CLI_PACKAGE}@${version}\` — \`dam update\` installs only the latest stable`
+    : "run `dam update`";
+}
+
 export function createNpmInstaller(): NpmInstaller {
   return {
     install(version) {
