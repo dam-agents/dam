@@ -181,22 +181,6 @@ export function terminalHarnessChoice(input: {
   };
 }
 
-export function providerHarnesses(
-  catalog: readonly HarnessView[],
-  provider: ProviderConnectionRef,
-): string[] {
-  return catalog
-    .filter((h) =>
-      harnessFits(
-        { harnesses: catalog },
-        h.name,
-        provider.type,
-        provider.templateId,
-      ),
-    )
-    .map((h) => h.name);
-}
-
 export function modelProviderLabel(
   model: string | null | undefined,
   provider: string | null | undefined,

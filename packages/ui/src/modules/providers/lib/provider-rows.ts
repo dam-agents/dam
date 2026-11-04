@@ -14,10 +14,10 @@ export interface ProviderRowDef {
 }
 
 export const IBM_LITELLM_DESCRIPTION =
-  "IBM's LiteLLM proxy for Claude, GPT and other models — Anthropic, OpenAI Chat and Responses APIs.";
+  "IBM Research's gateway to external model providers";
 
 export const CURVE_BENDER_DESCRIPTION =
-  "Open-source models hosted internally in IBM.";
+  "IBM's internal inference on open-source models";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one preset can offer a user-keyed template and
@@ -55,24 +55,32 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   },
   {
     type: "bob",
-    description: "IBM's model endpoint for Bob Shell.",
+    description: "IBM Bob's backend",
   },
   {
     type: "bedrock",
-    description:
-      "Models available in your AWS region for Claude and Pi, using a Bedrock API key.",
+    description: "Amazon Web Services inference engine",
   },
   {
     type: "anthropic",
-    description:
-      "Claude models for Claude and Pi. API keys also support OpenAI Chat Completions; OAuth is Claude-only.",
+    description: "Claude models straight from the source",
   },
   {
     type: "openai",
-    description:
-      "OpenAI models for Codex and Pi via Chat Completions and Responses APIs.",
+    description: "GPT models straight from the source",
   },
 ];
+
+export function providerDescription(
+  type: ProviderPresetType,
+  templateId?: string,
+): string | undefined {
+  return (
+    PROVIDER_ROWS.find(
+      (row) => row.templateId === templateId && row.type === type,
+    ) ?? PROVIDER_ROWS.find((row) => row.type === type)
+  )?.description;
+}
 
 export interface ProviderEntry {
   key: string;
