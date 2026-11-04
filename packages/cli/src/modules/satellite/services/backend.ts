@@ -19,6 +19,7 @@ export interface SatelliteBackend {
     sequence: number;
     tool: string;
     args: Record<string, unknown>;
+    transferToken?: string;
   }): Promise<CallOutcome>;
   describeCall(tool: string, args: Record<string, unknown>): string;
   cancel(sequence: number): void;
