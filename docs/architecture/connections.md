@@ -185,6 +185,7 @@ An Agent can make naming *required* for every one of its Connections; a new one 
 The Agent's spec says so, and agent settings change it later.
 Its gateway then injects a Connection's credential only into a request that names it, and sends any other request upstream with the credential it already carries, rather than replacing it.
 That holds on contested scopes too: a request naming none of two rival Connections goes upstream unchanged, so a public download from a host where the Agent holds two accounts answers as it does to anyone, and nothing is ambiguous, since no credential is chosen.
+A credential with no Connection, which no address gates, is the exception: where one claims the same header, the scope is still refused.
 It serves an agent whose tools — Docker containers, nested agents, a browser its user drives — call the same hosts with their own credentials or none: their requests name none of the agent's Connections, so the gateway leaves them alone.
 Off serves the opposite: tools that need a credential added to a request naming no Connection.
 Platform-written values already carry an address, so the agent's own clients are unaffected.
