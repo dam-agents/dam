@@ -49,7 +49,6 @@ import type {
   SpendService,
 } from "./modules/spend/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
-import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
 import type { TelemetryService } from "./modules/telemetry/types.js";
 import type {
@@ -78,7 +77,6 @@ export type AgentActing =
 export interface ApiContext {
   templates: TemplatesService;
   harnesses: HarnessCatalog;
-  repos: ReposService;
   agents: AgentsService;
   schedules: SchedulesService;
   channels: ChannelsService;
