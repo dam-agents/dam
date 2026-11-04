@@ -22,11 +22,12 @@ const EDITOR_PERMISSIONS: readonly AgentPermission[] = [
 ];
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what the owner may not do to the assistant. The
- * assistant is the one Agent the platform provisions for a person, so it stays
- * theirs alone and stays on: no delete, no other editors, no disabling, and no
- * binding it to a conversation. Everything else about it is the owner's, and
- * every other kind keeps every permission.
+ * UNIT_BOUNDARY_DESCRIPTION: what nobody may do to the assistant. It is the one
+ * Agent the platform provisions for a person, so it stays theirs alone and stays
+ * on: no delete, no other editors, no disabling, and no binding it to a
+ * conversation. No role holds these on it — an editor gets the editor's set
+ * without them, and no editor standing exists on it at all. Every other kind
+ * keeps every permission.
  */
 const ASSISTANT_REFUSED: readonly AgentPermission[] = [
   "delete",
@@ -34,6 +35,11 @@ const ASSISTANT_REFUSED: readonly AgentPermission[] = [
   "disable",
   "channelBinding",
 ];
+
+const withoutAssistantRefused = (
+  permissions: readonly AgentPermission[],
+): AgentPermission[] =>
+  permissions.filter((p) => !ASSISTANT_REFUSED.includes(p));
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Agent Permissions each role holds. The owner
@@ -54,9 +60,13 @@ export function permissionsOf(
   return match(role)
     .with("owner", () =>
       kind === "assistant"
-        ? AGENT_PERMISSIONS.filter((p) => !ASSISTANT_REFUSED.includes(p))
+        ? withoutAssistantRefused(AGENT_PERMISSIONS)
         : [...AGENT_PERMISSIONS],
     )
-    .with("editor", () => [...EDITOR_PERMISSIONS])
+    .with("editor", () =>
+      kind === "assistant"
+        ? withoutAssistantRefused(EDITOR_PERMISSIONS)
+        : [...EDITOR_PERMISSIONS],
+    )
     .exhaustive();
 }

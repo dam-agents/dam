@@ -94,6 +94,7 @@ function serviceFor(
     editorEmail: caller.editorEmail,
     editors,
     resolveUserEmail: async (sub) => EMAILS[sub] ?? null,
+    assistantName: "Assistant",
     repo: unused<AgentsDeps["repo"]>({
       list: async (owner) => AGENTS.filter((a) => a.owner === owner),
       get: async (id, owner) =>

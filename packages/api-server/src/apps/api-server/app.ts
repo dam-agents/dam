@@ -85,10 +85,10 @@ export function startApiServerApp(deps: ApiServerDeps) {
     });
     return standing && { role: "editor" as const, email, ...standing };
   };
-  const { contextFor, ensureAssistant } = createApiContextFactory(deps);
+  const contextFor = createApiContextFactory(deps);
   const composeApiContext = async (user: UserIdentity, surface: string) => {
     const ctx = contextFor(user, surface);
-    await ensureAssistant(ctx, user);
+    await ctx.provisionAssistant();
     return ctx;
   };
 

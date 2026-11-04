@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 
 import {
-  useAssistantNotice,
+  useAssistantState,
   useDismissAssistantNotice,
-} from "../api/assistant-notice.js";
+} from "../api/assistant-state.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The one-time news that an Agent the owner already
@@ -14,9 +14,10 @@ import {
  * assistant's. It is shown on Home until they dismiss it.
  */
 export function AssistantRenameNotice() {
-  const { data } = useAssistantNotice();
+  const { data: state } = useAssistantState();
   const dismiss = useDismissAssistantNotice();
-  if (!data) return null;
+  const notice = state?.notice ?? null;
+  if (!notice) return null;
   return (
     <Callout
       tone="info"
@@ -28,10 +29,10 @@ export function AssistantRenameNotice() {
       <Information size={16} className="mt-0.5 shrink-0 text-accent" />
       <p className="min-w-0 flex-1">
         <strong className="font-semibold text-foreground">
-          Your agent “{data.renamedFrom}” is now “{data.renamedTo}”.
+          Your agent “{notice.renamedFrom}” is now “{notice.renamedTo}”.
         </strong>{" "}
         <span className="text-muted-foreground">
-          {data.renamedFrom} is your assistant now, and that name is its own.
+          {notice.renamedFrom} is your assistant now, and that name is its own.
         </span>
       </p>
       <Button

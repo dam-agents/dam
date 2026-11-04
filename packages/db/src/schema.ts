@@ -1000,12 +1000,17 @@ export const avatarUnlocks = pgTable(
 
 export const assistants = pgTable("assistants", {
   owner: text("owner").primaryKey(),
-  agentId: text("agent_id"),
+  agentId: text("agent_id").notNull(),
+  state: text("state").notNull().default("creating"),
+  usedAt: timestamp("used_at", { withTimezone: true }),
   renamedAgentId: text("renamed_agent_id"),
   renamedFrom: text("renamed_from"),
   renamedTo: text("renamed_to"),
   noticeSeenAt: timestamp("notice_seen_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
 });

@@ -15,7 +15,11 @@ export const featuresRouter = t.router({
 
   setFlag: browserOnlyProcedure
     .input(featureSetFlagInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.features.setFlag(input.feature, input.enabled),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const flags = await ctx.features.setFlag(input.feature, input.enabled);
+      // UNIT_BOUNDARY_DESCRIPTION: switching the assistant on provisions it now; the caller's context is not made again, so nothing else would.
+      if (input.feature === "assistant" && input.enabled)
+        await ctx.provisionAssistant();
+      return flags;
+    }),
 });

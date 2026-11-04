@@ -15,24 +15,30 @@ The name is **reserved**: no other Agent may be created or renamed to it, and th
 
 The install decides whether people get one at all through the `assistant` [feature](features.md) mode: `off` provisions nothing, `experimental` provisions for whoever switches the flag on, and `on` for everyone.
 Switching the mode off later stops provisioning and leaves the existing assistants where they are.
+An install whose mode is off reads nothing for this: the mode decides before any stored flag or record is read.
 
-Provisioning is **lazy and idempotent**, at a person's first authenticated request — the same moment the [Getting Started](getting-started.md) checklist first meets them: the api-server asks whether the caller already has one, and creates it if not.
-A row per owner is the record and the lock: it names the assistant's Agent, and provisioning for one owner runs under a per-owner advisory lock, so two tabs signing in at once still produce one Agent.
-The row is emptied when its Agent is deleted, and a row whose Agent is missing — an operator deleted it, a create failed — is filled again at the next request.
+Provisioning is **lazy**, at a person's first authenticated request the install admits — the same moment the [Getting Started](getting-started.md) checklist first meets them — and again after they accept the Terms of Use or switch the flag on, since neither makes a new request context.
+A person who has not accepted the Terms of Use, or whose acceptance a closed sign-up refuses, gets nothing: the admission is read before anything is created.
 No batch job provisions dormant accounts: an install of any age gives each person their assistant the next time they sign in.
 
-An assistant runs on the owner's [default for new agents](profiles.md#the-default-for-new-agents), at the install's smallest size, with ordinary hibernation and on the owner's budget.
+The context is **durable and idempotent**.
+One row per owner is the record: it names the assistant's Agent, chosen before anything else happens, and it is written before that Agent is created.
+A retry therefore finishes *that* Agent — after a crash, a refused create or an operator's delete — instead of making a second one, and two replicas that race converge because one wins the claim and the other adopts the Agent already there.
+Nothing waits on another request: a claim left behind by a replica that died is taken over once it is stale, and a claim that is still fresh is left to the request that holds it.
+
+An assistant runs on the owner's [default for new agents](profiles.md#the-default-for-new-agents), at the size that default gives every new Agent, with ordinary hibernation and on the owner's budget.
 An install with no [CurveBender](platform-topology.md) still creates it: the composer's own provider notice explains what to connect, which is the same answer every other Agent gives.
 
 **Ordering with the checklist.** The checklist decides once, at first meeting, whether a person used the platform before the checklist existed (`Create` in [getting-started](getting-started.md)).
 That decision reads the Agents a person already owns, so provisioning enrols them *before* it creates the assistant; the assistant is then what makes their first checklist task done rather than evidence they were here before.
 
 **A name already taken.** A person who already owns an Agent under the reserved name is not refused their assistant: that Agent is renamed once, to the reserved name marked `(yours)` and a number when that is taken too, and the news is written on the row as a one-time notice the UI shows on [Home](home-feed.md) until it is dismissed.
-Both the rename and the notice happen inside the same per-owner lock as the create, so it happens once per person and never to the assistant.
+The news is recorded before the rename happens, so a create that fails afterwards cannot lose it, and a retry finishes a rename the record already describes instead of renaming again.
+It never touches the assistant.
 
 ## What its owner may not do
 
-Agent Permissions are per role *and* kind ([agent-editors](agent-editors.md)): the assistant's owner holds every permission except the four that would make it something other than the person's own constant companion.
+Agent Permissions are per role *and* kind ([agent-editors](agent-editors.md)): nobody holds the four that would make the assistant something other than the person's own constant companion — not its owner, and not an editor, whose standing on an assistant is refused outright.
 Those four are enforced in the api-server's permission layer, so the UI, the CLI and any Agent driving the platform API are refused by the same check with the same message, which names the assistant:
 
 - **delete** — it cannot be deleted; the platform recreates it anyway.
@@ -40,18 +46,25 @@ Those four are enforced in the api-server's permission layer, so the UI, the CLI
 - **disable** — it cannot be turned off.
 - **binding to a channel** — it cannot be added to a Slack or Telegram conversation.
 
-Everything else is the owner's, exactly as for any Agent: model and provider, sleep and wake, restart, image upgrade, skills, schedules, connections, environment variables, egress rules, spend limits, chat forms, terminal, avatar, whispers, and the owner's own Slack account connection.
-Channel *binding* rather than channels as a whole is refused, so the assistant keeps whispers, keeps its Slack account connection and can still disconnect a binding it should never have.
-
-The UI reads the same permissions: no Delete in its Manage list, no Disable, no People section, and its Channels section explains why there is no Connect control.
+Everything else is the owner's, exactly as for any Agent: model and provider, sleep and wake, restart, image upgrade, skills, schedules, connections, environment variables, egress rules, spend limits, chat forms, terminal, avatar, and whispers.
+Binding is what is refused, not messaging as a whole: connecting the assistant to a Slack or Telegram conversation is refused, and linking the person's own Slack account — what `/dam login` does — is a separate operation that stays available.
+The UI reads the same permissions: no Delete in its Manage list, no Disable, no People section, no control that adds the assistant to a conversation, and its Channels section says why.
+A conversation it was already bound to is still listed and can still be released, which needs no refused permission.
 Its name is shown rather than edited.
 That is presentation on top of the server's refusal, never a substitute for it.
 
 ## Where it appears
 
 The assistant is visible in the agent list like any other Agent, and nothing hides it from lists or from the API.
-A person whose assistant has no sessions yet lands in its chat rather than on Home; once it has a session, Home is where they land again.
+A person whose assistant has never been used lands in its chat rather than on Home; once it has been used, Home is where they land again.
+That answer is the row's own mark, set when the first Session is reported, so a sleeping assistant is decided without waking it.
 Its first message, and anything it knows beyond what every Agent knows, is not part of this subsystem.
+
+## Rolling it out
+
+Those refusals rest on the kind, and a replica older than this page reads an unknown kind as no kind at all: it would let the assistant be deleted, renamed, disabled, shared or bound like any Agent.
+The mode therefore stays `off` until every replica runs a version that knows the kind.
+Rolling back below that version withdraws the protections, not the Agents: the assistants stay, unprotected, until a newer version returns — and because an editor's standing on an assistant is refused outright, an editor row that predates the rollback grants nothing when the protections come back.
 
 ## Boundaries
 

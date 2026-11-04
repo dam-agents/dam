@@ -41,6 +41,10 @@ import type { AgentServiceStatusClient } from "../infrastructure/agent-service-s
 import type { AgentEditorsRepository } from "../infrastructure/agent-editors-repository.js";
 import { accessTo, namesOwner } from "../domain/agent-access.js";
 import { permissionsOf } from "../domain/agent-permissions.js";
+import {
+  assertNameNotReserved,
+  assertRenameAllowed,
+} from "../domain/reserved-name.js";
 import { minutesToDuration } from "../../../duration.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -666,6 +670,7 @@ export function createAgentsService(deps: {
   editors: AgentEditorsRepository;
   editorEmail: string | null;
   resolveUserEmail: (sub: string) => Promise<string | null>;
+  assistantName: string;
 }): AgentsService {
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
@@ -1404,6 +1409,7 @@ export function createAgentsService(deps: {
       }
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
+      assertNameNotReserved(input.name, input.kind, deps.assistantName);
       await assertNameFree(input.name, owner);
       const agentId = input.id ?? generateK8sName("agent");
 
@@ -1569,6 +1575,8 @@ export function createAgentsService(deps: {
         await assertOwnSecretRef(input.secretRef, current.owner, input.id);
         if (input.name !== undefined && input.name !== current.name) {
           renamed = true;
+          assertRenameAllowed(current.kind, deps.assistantName);
+          assertNameNotReserved(input.name, current.kind, deps.assistantName);
           await assertNameFree(input.name, current.owner, input.id);
           if (input.avatar === undefined && !current.spec.avatar)
             keptAvatar = avatarCharacter(

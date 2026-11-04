@@ -218,6 +218,7 @@ export {
 export type {
   AssistantNotice,
   AssistantsService,
+  AssistantState,
 } from "./modules/assistants/types.js";
 export {
   budgetCpuSchema,

@@ -1,5 +1,5 @@
 {
-  "id": "98b2b9a7-3802-49d4-9db8-2767d9acfb2f",
+  "id": "18af4070-027d-4b18-b84d-13818db9836c",
   "prevId": "ea3ed6bc-9282-40dd-ad63-82545e4827b9",
   "version": "7",
   "dialect": "postgresql",
@@ -1402,6 +1402,19 @@
           "name": "agent_id",
           "type": "text",
           "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'creating'"
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
           "notNull": false
         },
         "renamed_agent_id": {
@@ -1430,6 +1443,13 @@
         },
         "created_at": {
           "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,

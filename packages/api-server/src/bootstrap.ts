@@ -1433,6 +1433,7 @@ export async function bootstrap() {
     owner: undefined,
     editorEmail: null,
     resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
+    assistantName: config.brand.assistantName,
     db,
     readTemplateSpec: async () => null,
     runtimeMutator: runtimeDelivery.runtimeMutator,
@@ -1519,8 +1520,9 @@ export async function bootstrap() {
   const payerOf = async (agentId: string) =>
     (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
+  const assistantsRepo = createAssistantsRepository(db);
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
-    composeSessionDirectory(db);
+    composeSessionDirectory(db, (agentId) => assistantsRepo.markUsed(agentId));
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,
@@ -2106,7 +2108,6 @@ export async function bootstrap() {
     store: artifacts,
   });
 
-  const assistantsRepo = createAssistantsRepository(db);
   const agentCleanupSources: AgentCleanupSource[] = [
     environments.cleanupSource,
     {
@@ -2321,6 +2322,7 @@ export async function bootstrap() {
       owner,
       editorEmail: null,
       resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
+      assistantName: config.brand.assistantName,
       db,
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,

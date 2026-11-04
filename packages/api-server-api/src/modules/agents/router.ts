@@ -39,10 +39,6 @@ import {
 import type { ApiContext } from "../../context.js";
 import type { AgentUpdateInput } from "./types.js";
 import { AGENT_PERMISSIONS } from "./permissions.js";
-import {
-  assertAssistantNameAvailable,
-  assertRenameable,
-} from "./reserved-name.js";
 import { listedAgents, toAgentView, toListedAgentView } from "./view.js";
 
 async function updated(ctx: ApiContext, patch: AgentUpdateInput) {
@@ -138,7 +134,6 @@ export const agentsRouter = t.router({
   create: manageAgentsProcedure
     .input(agentCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
-      assertAssistantNameAvailable(input.name, ctx.assistantName);
       const agent = await ctx.agents.create(input);
       return {
         ...toListedAgentView({
@@ -158,19 +153,7 @@ export const agentsRouter = t.router({
   update: manageAgentsProcedure
     .input(agentUpdateInputSchema)
     .use(agentPermission("settings", (input) => agentTarget(input.id)))
-    .mutation(async ({ ctx, input }) => {
-      if (input.name !== undefined) {
-        const agent = await ctx.agents.get(input.id);
-        assertRenameable(
-          agent?.kind,
-          input.name,
-          agent?.name,
-          ctx.assistantName,
-        );
-        assertAssistantNameAvailable(input.name, ctx.assistantName);
-      }
-      return updated(ctx, input);
-    }),
+    .mutation(({ ctx, input }) => updated(ctx, input)),
 
   setEnv: manageAgentsProcedure
     .input(agentSetEnvInputSchema)
@@ -273,7 +256,7 @@ export const agentsRouter = t.router({
 
   connectSlack: manageAgentsProcedure
     .input(agentConnectSlackInputSchema)
-    .use(agentPermission("channels", (input) => agentTarget(input.id)))
+    .use(agentPermission("channelBinding", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack)
         throw new TRPCError({

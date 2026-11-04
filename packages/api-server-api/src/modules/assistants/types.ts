@@ -8,7 +8,18 @@ export interface AssistantNotice {
   renamedTo: string;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What the UI needs to know about the owner's
+ * assistant without waking it: which Agent it is, whether it has ever been used
+ * — the first landing in its chat rests on that — and the notice above.
+ */
+export interface AssistantState {
+  agentId: string;
+  used: boolean;
+  notice: AssistantNotice | null;
+}
+
 export interface AssistantsService {
-  notice(): Promise<AssistantNotice | null>;
+  state(): Promise<AssistantState | null>;
   dismissNotice(): Promise<void>;
 }

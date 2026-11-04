@@ -31,6 +31,7 @@ function setup(signUps: SignUps, acceptedVersions: string[] = []) {
   });
   const ctx = {
     terms,
+    provisionAssistant: async () => undefined,
     user: { sub: "user-1", preferredUsername: "u", scopes: [], agentIds: "*" },
   } as unknown as ApiContext;
   return { caller: appRouter.createCaller(ctx), terms };

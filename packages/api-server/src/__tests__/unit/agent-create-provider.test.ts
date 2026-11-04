@@ -165,11 +165,11 @@ function setup(
     editors: unused<AgentsDeps["editors"]>(),
     editorEmail: null,
     resolveUserEmail: async () => null,
+    assistantName: "Assistant",
   });
   const ctx = unused<ApiContext>({
     agents,
     connections,
-    assistantName: "Assistant",
     user: {
       sub: "owner-1",
       preferredUsername: "test",

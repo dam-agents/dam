@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The assistant is the one Agent the platform provisions for a person, so its owner holds every Agent Permission except the four that would remove it, share it, disable it or bind it to a conversation. Each of those procedures is refused with a message naming the assistant, and the service is never reached; every permission the plan allows still runs. The reserved name is refused on create and on rename, and the assistant itself cannot be renamed.
+// TEST_OVERVIEW: The assistant is the one Agent the platform provisions for a person, so nobody holds the four Agent Permissions that would remove it, share it, disable it or bind it to a conversation — not its owner, and not an editor, whose standing on an assistant grants nothing at all. Each procedure that needs one is refused with a message naming the assistant, and the service is never reached; every permission the plan allows, including releasing a binding it already has, still runs.
 import { describe, expect, it, vi } from "vitest";
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { appRouter } from "api-server-api/router";
@@ -8,7 +8,6 @@ import { createActOnAgent } from "../../apps/api-server/trpc/act-on-agent.js";
 
 const OWNER = "alice";
 const ASSISTANT = "agent-00000000000000a1";
-const OTHER = "agent-00000000000000b2";
 const ASSISTANT_NAME = "Dambledore";
 
 const person = (): UserIdentity => ({
@@ -28,7 +27,7 @@ const reached = (name: string) =>
     throw new Error(`reached ${name}`);
   });
 
-function world(opts: { kind: "assistant" | "plain" } = { kind: "assistant" }) {
+function world() {
   const agents = {
     delete: reached("delete"),
     update: reached("update"),
@@ -40,11 +39,6 @@ function world(opts: { kind: "assistant" | "plain" } = { kind: "assistant" }) {
     sleep: reached("sleep"),
     restart: reached("restart"),
     upgrade: reached("upgrade"),
-    get: vi.fn(async (id: string) => ({
-      id,
-      name: opts.kind === "assistant" ? ASSISTANT_NAME : "other",
-      kind: opts.kind === "assistant" ? "assistant" : undefined,
-    })),
     bindSlackChannel: reached("bindSlackChannel"),
     bindTelegramChat: reached("bindTelegramChat"),
   };
@@ -52,7 +46,6 @@ function world(opts: { kind: "assistant" | "plain" } = { kind: "assistant" }) {
     user: person(),
     agents,
     channels: { available: { slack: true, telegram: true } },
-    assistantName: ASSISTANT_NAME,
     actOnAgent: createActOnAgent({
       user: person(),
       self: () => ctx as unknown as ApiContext,
@@ -88,6 +81,10 @@ describe("the assistant's Agent Permissions", () => {
         agentId: ASSISTANT,
         flowId: "flow-1",
       }),
+      w.caller.agents.connectSlack({
+        id: ASSISTANT,
+        slackChannelId: "C1",
+      }),
     ];
     for (const call of cases) {
       await expect(call).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -98,17 +95,14 @@ describe("the assistant's Agent Permissions", () => {
     expect(w.agents.setDisabled).not.toHaveBeenCalled();
     expect(w.agents.bindSlackChannel).not.toHaveBeenCalled();
     expect(w.agents.bindTelegramChat).not.toHaveBeenCalled();
+    expect(w.agents.connectSlack).not.toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: what the plan allows on the assistant still runs: whispers, the owner's own Slack account, sleep and wake, restart, the image upgrade, its settings and its model providers.
-  it("allows whispers, the Slack account, lifecycle, settings and providers", async () => {
+  // TEST_SCENARIO: what the plan allows on the assistant still runs: whispers, releasing a binding it already has, sleep and wake, restart, the image upgrade, its settings and its model providers.
+  it("allows whispers, releasing a binding, lifecycle, settings and providers", async () => {
     const w = world();
     const allowed: [string, Promise<unknown>][] = [
       ["update", w.caller.agents.setWhisper({ id: ASSISTANT, whisper: false })],
-      [
-        "connectSlack",
-        w.caller.agents.connectSlack({ id: ASSISTANT, slackChannelId: "C1" }),
-      ],
       ["disconnectSlack", w.caller.agents.disconnectSlack({ id: ASSISTANT })],
       ["sleep", w.caller.agents.sleep({ id: ASSISTANT })],
       ["restart", w.caller.agents.restart({ id: ASSISTANT })],
@@ -121,44 +115,18 @@ describe("the assistant's Agent Permissions", () => {
     for (const [name, call] of allowed)
       await expect(call).rejects.toThrow(`reached ${name}`);
   });
-
-  // TEST_SCENARIO: the assistant's name is the reserved one, so renaming it, and renaming or creating another Agent to that name, are refused.
-  it("refuses renaming the assistant and taking its name", async () => {
-    const w = world();
-    await expect(
-      w.caller.agents.update({ id: ASSISTANT, name: "Something else" }),
-    ).rejects.toThrow(/cannot change/);
-    await expect(
-      w.caller.agents.update({ id: OTHER, name: ASSISTANT_NAME }),
-    ).rejects.toThrow(/cannot take it/);
-    await expect(
-      w.caller.agents.create({ name: ASSISTANT_NAME }),
-    ).rejects.toThrow(/cannot take it/);
-    expect(w.agents.update).not.toHaveBeenCalled();
-  });
-
-  // TEST_SCENARIO: another Agent is renamed freely, so the reserved name is the only one refused.
-  it("lets another Agent be renamed", async () => {
-    const w = world({ kind: "plain" });
-    await expect(
-      w.caller.agents.update({ id: OTHER, name: "Release helper" }),
-    ).rejects.toThrow("reached update");
-    expect(w.agents.update).toHaveBeenCalledWith({
-      id: OTHER,
-      name: "Release helper",
-    });
-  });
 });
 
 describe("permissionsOf on the assistant", () => {
-  // TEST_SCENARIO: the owner's set keeps everything but the four refused permissions, and an editor's set is untouched, since the assistant has no editors.
+  // TEST_SCENARIO: the owner's set keeps everything but the four refused permissions; an editor's set on an assistant loses the one nobody holds there, while an editor of any other Agent keeps every permission it had.
   it("leaves out exactly the four refused permissions", () => {
     const refused = ["delete", "editors", "disable", "channelBinding"];
     const assistant: readonly string[] = permissionsOf("owner", "assistant");
     expect(refused.filter((p) => assistant.includes(p))).toEqual([]);
     expect(permissionsOf("owner", "knowledge-base")).toContain("delete");
     expect(permissionsOf("owner", undefined)).toContain("delete");
+    expect(permissionsOf("editor", "assistant")).not.toContain("disable");
     expect(permissionsOf("editor", "assistant")).toContain("lifecycle");
-    expect(permissionsOf("editor", "assistant")).toContain("disable");
+    expect(permissionsOf("editor", "knowledge-base")).toContain("disable");
   });
 });

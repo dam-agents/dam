@@ -121,7 +121,8 @@ export interface ApiContext {
   providerStatus: ProviderStatusService;
   user: UserIdentity;
   assistants: AssistantsService;
-  assistantName: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: gives this person their assistant if the install offers one and they have accepted the Terms of Use. Called when a transport attaches, and again after a first acceptance or after the experimental switch is turned on, because neither of those re-creates the context. */
+  provisionAssistant: () => Promise<void>;
   e2eEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;

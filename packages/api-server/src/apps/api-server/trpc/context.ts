@@ -7,6 +7,7 @@ import {
 } from "../../../modules/agents/index.js";
 import { permissionsOf } from "../../../modules/agents/domain/agent-permissions.js";
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
+import { generateK8sName } from "../../../modules/agents/infrastructure/configmap-mappers.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -110,6 +111,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telemetryReader,
     sessionDirectory,
     terms,
+    isTermsAccepted,
     e2e,
     artifacts,
     delegationFrames,
@@ -236,6 +238,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       actor: user.actingEditor ?? user.sub,
       editorEmail: editorEmailOf(user),
       resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
+      assistantName: config.brand.assistantName,
       db,
       telegramBinding: telegramBindFlows
         ? {
@@ -319,15 +322,24 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
       modes: config.featureModes,
     });
-    const { assistants } = composeAssistantsForOwner({
-      db,
-      owner: user.sub,
-      assistantName: config.brand.assistantName,
-      enabled: async () => (await features.flags()).assistant,
-      agentExists: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
-      agents,
-      enrolled: () => gettingStarted.ensureEnrolled(user.sub),
-    });
+    const { assistants, provisioner: assistantProvisioner } =
+      composeAssistantsForOwner({
+        db,
+        owner: user.sub,
+        assistantName: config.brand.assistantName,
+        admitted: () => isTermsAccepted(user.sub),
+        enabled: async () =>
+          config.featureModes.assistant === "on" ||
+          (config.featureModes.assistant === "experimental" &&
+            (await features.flags()).assistant),
+        agentOf: async (agentId) => {
+          const infra = await agentsRepo.get(agentId);
+          return infra?.owner === user.sub ? infra : null;
+        },
+        agents,
+        enrolled: () => gettingStarted.ensureEnrolled(user.sub),
+        newAgentId: () => generateK8sName("agent"),
+      });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
       agentStore: { authority: config.agentStore },
@@ -498,6 +510,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is provisioned only for a person who has accepted the Terms of Use: sign-ups closed for them means no Agent appears, and the call after a successful acceptance is what gives them one. */
+    const provisionAssistant = async () => {
+      if (config.featureModes.assistant === "off") return;
+      if (user.keyId !== undefined || user.agentIds !== "*") return;
+      if (user.actingEditor !== undefined) return;
+      await assistantProvisioner.ensure();
+    };
+
     const ctx: ApiContext = {
       templates: templatesRepo,
       harnesses,
@@ -576,7 +596,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       providerStatus,
       user,
       assistants,
-      assistantName: config.brand.assistantName,
+      provisionAssistant,
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
@@ -585,20 +605,5 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     return ctx;
   };
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the assistant is provisioned for a person, at the first request that person makes: the row settles it once, so every later request reads it and stops. An API key, an editor's context and a browser that is acting for someone else provision nothing. */
-  const ensureAssistant = async (ctx: ApiContext, user: UserIdentity) => {
-    if (user.keyId !== undefined) return;
-    if (user.agentIds !== "*" || user.actingEditor !== undefined) return;
-    await composeAssistantsForOwner({
-      db,
-      owner: user.sub,
-      assistantName: config.brand.assistantName,
-      enabled: async () => (await ctx.features.flags()).assistant,
-      agentExists: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
-      agents: ctx.agents,
-      enrolled: () => gettingStarted.ensureEnrolled(user.sub),
-    }).provisioner.ensure();
-  };
-
-  return { contextFor, ensureAssistant };
+  return contextFor;
 }

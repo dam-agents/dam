@@ -70,8 +70,10 @@ sequenceDiagram
 ### Create
 
 Creation is per-purpose: the plain create picks an image, and a [starter kit](starter-kits.md) apply is the entry for anything preconfigured.
-The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
-Two kinds exist: `knowledge-base` and the [assistant](assistant.md) the platform provisions for each person, whose kind is what holds back its owner's delete, editors, disable and channel binding.
+The **Agent Kind** marker is what a create stamps, and it is immutable afterwards.
+A knowledge base is no longer stamped afresh: it is a kit that declares one capability, and the `knowledge-base` kind survives only on agents created before kits.
+The one kind a create still stamps today is the [assistant](assistant.md) the platform provisions for each person, whose kind is what holds back delete, editors, disable and channel binding on it.
+A marker the platform no longer knows reads as no kind at all, which is why the assistant feature waits for every replica to run a version that knows it.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's mounts, storage size and the trusted egress preset — or, for a kit that declares any of them, the kit's — and shares its owner's [memory pool](vm-memory.md) instead of holding a size of its own.
 A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-machine)): it boots the default Template on the harness of the owner's [default for new agents](profiles.md#the-default-for-new-agents), else the install's default harness, and grants one provider Connection of the caller's that the harness runs on: the default's provider when the caller holds an active one the harness runs on, else the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.

@@ -1,6 +1,7 @@
 import type { AgentsService, AssistantsService } from "api-server-api";
 import type { Db } from "db";
 
+import type { InfraAgent } from "../agents/infrastructure/agent-mappers.js";
 import { createAssistantsRepository } from "./infrastructure/assistants-repository.js";
 import {
   type AssistantProvisioner,
@@ -12,10 +13,12 @@ export function composeAssistantsForOwner(deps: {
   db: Db;
   owner: string;
   assistantName: string;
+  admitted: () => Promise<boolean>;
   enabled: () => Promise<boolean>;
-  agentExists: (agentId: string) => Promise<boolean>;
+  agentOf: (agentId: string) => Promise<InfraAgent | null>;
   agents: Pick<AgentsService, "list" | "create" | "update">;
   enrolled: () => Promise<void>;
+  newAgentId: () => string;
 }): { assistants: AssistantsService; provisioner: AssistantProvisioner } {
   const repo = createAssistantsRepository(deps.db);
   return {
@@ -24,10 +27,12 @@ export function composeAssistantsForOwner(deps: {
       repo,
       ownName: deps.owner,
       assistantName: deps.assistantName,
+      admitted: deps.admitted,
       enabled: deps.enabled,
-      agentExists: deps.agentExists,
+      agentOf: deps.agentOf,
       agents: deps.agents,
       enrolled: deps.enrolled,
+      newAgentId: deps.newAgentId,
     }),
   };
 }

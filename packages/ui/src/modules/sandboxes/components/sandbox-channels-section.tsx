@@ -20,7 +20,8 @@ export function SandboxChannelsSection({
   const agent = findAgent(data, agentId) ?? undefined;
   const available = data?.availableChannels ?? {};
   const readOnly = agent ? !holds(agent.access, "channels") : false;
-  const bindingBlocked = agent ? !holds(agent.access, "channelBinding") : false;
+  const canBind = agent ? holds(agent.access, "channelBinding") : true;
+  const bindingBlocked = !canBind;
   const assistantName = getBrand().assistantName;
 
   const missing = [
@@ -73,7 +74,8 @@ export function SandboxChannelsSection({
         >
           {assistantName} is yours alone, so it cannot be added to a Slack or
           Telegram conversation. Make another agent if you want one that people
-          can talk to from a channel.
+          can talk to from a channel. A conversation it was added to before can
+          still be released below.
         </p>
       )}
       {available.slack && !compact && agent && (
@@ -81,17 +83,19 @@ export function SandboxChannelsSection({
           <WhisperCard agent={agent} />
         </div>
       )}
-      {available.slack && !bindingBlocked && (
+      {available.slack && (
         <SlackChannelCard
           agent={agent}
           withWhisper={compact}
           readOnly={readOnly}
+          canAdd={canBind}
         />
       )}
-      {available.telegram && !bindingBlocked && (
+      {available.telegram && (
         <TelegramChannelCard
           agentId={agentId}
           readOnly={readOnly}
+          canAdd={canBind}
           compact={compact}
         />
       )}
