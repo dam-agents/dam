@@ -75,10 +75,7 @@ import {
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { DetachProviderMessage } from "./detach-provider-message.js";
 import { SessionModelPicker } from "./session-model-picker.js";
-import {
-  SessionPairRowTrigger,
-  SessionPairTrigger,
-} from "./session-pair-trigger.js";
+import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
@@ -658,24 +655,6 @@ export function SessionPairPicker(props: Props) {
   /* UNIT_BOUNDARY_DESCRIPTION: neither primary slot set is this pick following the agent's default. */
   const following =
     agentDefault !== undefined && referenceProfile === null && pair === null;
-  const rowTitle =
-    agentDefault && following
-      ? "Use agent default"
-      : (primary?.name ??
-        (pair?.model
-          ? (prettyModelLabel(pair.model) ?? pair.model)
-          : "Choose a model"));
-  /* UNIT_BOUNDARY_DESCRIPTION: one that follows the default names the whole default, model and provider together; a profile's row names its values under the profile's name, and a model of the page's own names the provider under the model. */
-  const rowSubtitle =
-    agentDefault && following
-      ? agentDefault.detail
-      : primary
-        ? (label ?? "")
-        : (findModel(groups, pair?.model ?? null)?.group.displayName ??
-          provider?.name ??
-          harnessName(pair?.harness ?? "") ??
-          "");
-
   const pickProfile = (profile: ProfileWithUsage, connectionId?: string) => {
     setFromProfile(profile);
     const profileCapability = carried.find((h) => h.name === profile.harness);
@@ -811,28 +790,15 @@ export function SessionPairPicker(props: Props) {
       {saveAs.dialog}
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
-          {row ? (
-            <SessionPairRowTrigger
-              label={target?.label}
-              harness={
-                (agentDefault && following
-                  ? agentDefault.harness
-                  : pair?.harness) ?? defaultHarness
-              }
-              title={rowTitle}
-              subtitle={rowSubtitle}
-            />
-          ) : (
-            <SessionPairTrigger
-              harness={pair?.harness}
-              label={
-                catalog &&
-                (pair
-                  ? triggerLabel
-                  : (target?.placeholder ?? "Choose a harness and model"))
-              }
-            />
-          )}
+          <SessionPairTrigger
+            harness={pair?.harness}
+            label={
+              catalog &&
+              (pair
+                ? triggerLabel
+                : (target?.placeholder ?? "Choose a harness and model"))
+            }
+          />
         </PopoverTrigger>
         <PopoverContent
           side={row ? "bottom" : "top"}

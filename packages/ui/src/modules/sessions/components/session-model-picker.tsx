@@ -8,7 +8,14 @@ import {
 import type { HarnessCapability } from "agent-runtime-api";
 import { modelConstraintsFor } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
-import { Fragment, type ReactNode, useId, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import { HARNESS_ORDER, HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
@@ -150,6 +157,22 @@ export function SessionModelPicker({
   );
   const [more, setMore] = useState<boolean | null>(null);
   const pair = pairProp;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const backRef = useRef<HTMLButtonElement>(null);
+  const harnessTrigger = useRef<HTMLButtonElement>(null);
+  const modelTrigger = useRef<HTMLButtonElement>(null);
+  const lastView = useRef(view);
+  /* UNIT_BOUNDARY_DESCRIPTION: switching between the custom fields and the profiles view unmounts the button that switched, so focus moves to the first control of the view that appears. */
+  useEffect(() => {
+    if (lastView.current === view) return;
+    lastView.current = view;
+    if (view === "profiles") return backRef.current?.focus();
+    (
+      harnessTrigger.current ??
+      modelTrigger.current ??
+      bodyRef.current?.querySelector<HTMLButtonElement>("button")
+    )?.focus();
+  }, [view]);
 
   const harness = pair?.harness ?? defaultHarness;
   const capability = carried.find((h) => h.name === harness);
@@ -564,7 +587,7 @@ export function SessionModelPicker({
     ));
 
   return (
-    <div className="flex flex-col gap-0.5 text-sm">
+    <div ref={bodyRef} className="flex flex-col gap-0.5 text-sm">
       {!onProfiles && (
         <>
           {note && (
@@ -654,6 +677,7 @@ export function SessionModelPicker({
                         })),
                       },
                     ]}
+                    triggerRef={harnessTrigger}
                     onPick={changeHarness}
                     width="w-[270px]"
                   />
@@ -667,6 +691,7 @@ export function SessionModelPicker({
                   currentKey={currentEntry?.key ?? model ?? ""}
                   sections={modelSections(currentEntry)}
                   foot={olderFoot}
+                  triggerRef={modelTrigger}
                   onPick={pickEntry}
                 />
               </MenuField>
@@ -888,6 +913,7 @@ export function SessionModelPicker({
       ) : (
         <div className="flex flex-col gap-1">
           <button
+            ref={backRef}
             type="button"
             onClick={() => {
               setView("custom");
@@ -1005,6 +1031,7 @@ export function ValueMenu({
   foot,
   leading,
   onPick,
+  triggerRef,
   width = "w-[270px]",
 }: {
   labelId: string;
@@ -1016,15 +1043,25 @@ export function ValueMenu({
   foot?: { label: string; onSelect: () => void };
   leading?: ReactNode;
   onPick: (key: string) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the caller focuses the trigger when a view switch lands on this field. */
+  triggerRef?: React.Ref<HTMLButtonElement>;
   width?: string;
 }) {
+  const valueId = useId();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" aria-labelledby={labelId} className={CONTROL}>
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-labelledby={`${labelId} ${valueId}`}
+          className={CONTROL}
+        >
           <span className="flex min-w-0 items-center gap-2 truncate">
             {leading}
-            <span className="truncate">{display}</span>
+            <span id={valueId} className="truncate">
+              {display}
+            </span>
           </span>
           <ChevronDown
             size={14}
@@ -1144,7 +1181,7 @@ function ProviderMenu({
       : "No provider");
   const pick = (value: string) => {
     if (value === "") return none?.onPick();
-    onPick(value);
+    if (enabled(value)) onPick(value);
   };
   return (
     <DropdownMenu>
@@ -1189,21 +1226,35 @@ function ProviderMenu({
                 aria-disabled={!usable || undefined}
                 aria-describedby={why === null ? undefined : reasonId}
                 onSelect={(event) => {
-                  if (!usable) return event.preventDefault();
-                  onPick(p.id);
+                  if (!usable) event.preventDefault();
                 }}
-                className={
-                  usable ? undefined : "cursor-default text-muted-foreground"
-                }
-              >
-                <Tooltip content={why ?? ""}>
-                  <span className="truncate">{p.name}</span>
-                </Tooltip>
-                {why !== null && (
-                  <span id={reasonId} className="sr-only">
-                    {why}
-                  </span>
+                className={cn(
+                  "group",
+                  usable ? undefined : "cursor-default text-muted-foreground",
                 )}
+              >
+                <span className="flex min-w-0 flex-col">
+                  {why === null ? (
+                    <span className="truncate">{p.name}</span>
+                  ) : (
+                    <Tooltip content={why}>
+                      <span className="truncate">{p.name}</span>
+                    </Tooltip>
+                  )}
+                  {why !== null && (
+                    <span id={reasonId} className="sr-only">
+                      {why}
+                    </span>
+                  )}
+                  {why !== null && (
+                    <span
+                      aria-hidden
+                      className="hidden whitespace-normal text-xs text-muted-foreground group-focus:block"
+                    >
+                      {why}
+                    </span>
+                  )}
+                </span>
               </DropdownMenuRadioItem>
             );
           })}

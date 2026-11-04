@@ -229,6 +229,11 @@ vi.mock("@radix-ui/react-dropdown-menu", async (importOriginal) => {
       createElement(actual.Root, { ...props, defaultOpen: true }),
     Portal: ({ children }: PropsWithChildren) =>
       createElement(Fragment, null, children),
+    Content: (props: Record<string, unknown>) =>
+      createElement(actual.Content, {
+        ...props,
+        onOpenAutoFocus: (event: Event) => event.preventDefault(),
+      } as never),
   };
 });
 
@@ -490,15 +495,15 @@ const lastCall = <T extends unknown[]>(mock: { mock: { calls: T[] } }) =>
   mock.mock.calls[mock.mock.calls.length - 1]!;
 const menu = (node: ParentNode, label: string) =>
   node.querySelector(`[role="menu"][aria-label="${label}"]`);
+const labelOf = (node: ParentNode, button: Element) => {
+  const [first] = (button.getAttribute("aria-labelledby") ?? "").split(" ");
+  return node.querySelector(`#${first}`)?.textContent ?? "";
+};
 const openMenu = (node: ParentNode, label: string) => {
   if (menu(node, label)) return menu(node, label)!;
   const trigger = [
     ...node.querySelectorAll<HTMLElement>("button[aria-labelledby]"),
-  ].find(
-    (button) =>
-      node.querySelector(`#${button.getAttribute("aria-labelledby")}`)
-        ?.textContent === label,
-  );
+  ].find((button) => labelOf(node, button) === label);
   expect(trigger, `the ${label} trigger`).toBeDefined();
   act(() => {
     trigger!.dispatchEvent(
@@ -524,7 +529,7 @@ const pickEffort = (node: ParentNode, text: string) =>
   pickMenu(node, menu(node, "Thinking") ? "Thinking" : "Effort", text);
 const menuTrigger = (node: ParentNode, suffix: string) =>
   node
-    .querySelector(`button[aria-labelledby$="-${suffix}-label"]`)
+    .querySelector(`button[aria-labelledby*="-${suffix}-label"]`)
     ?.textContent?.trim();
 const menuItem = (node: ParentNode, text: string) => {
   const item = [
@@ -584,6 +589,64 @@ describe("the new session panel", () => {
     expect(menuItem(node, "Manage providers")).toBeDefined();
   });
 
+  /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it changes no chat default and saves nothing; an enabled provider is applied exactly once. */
+  it("picks a provider once, and never a greyed one", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    state.chosenModel.mockReset();
+    state.remember.mockReset();
+    const node = mount(picker());
+    act(() => menuItem(node, "Curve").click());
+    expect(state.chosenModel).not.toHaveBeenCalled();
+    expect(state.remember).not.toHaveBeenCalled();
+
+    act(() => menuItem(node, "IBM").click());
+    expect(state.chosenModel).toHaveBeenCalledTimes(1);
+    expect(state.remember).toHaveBeenCalledTimes(1);
+  });
+
+  /** TEST_SCENARIO: each field's trigger announces its label and its value; a disabled provider announces the reason when focused, and no enabled provider carries an empty tooltip or reason. */
+  it("announces the value and the disabled reason", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    const node = mount(
+      picker({
+        carried: [...carried, { ...carried[0]!, name: "codex" }],
+      }),
+    );
+    const harness = node.querySelector(
+      'button[aria-labelledby*="-harness-label"]',
+    )!;
+    const labelIds = harness.getAttribute("aria-labelledby")!.split(" ");
+    expect(labelIds).toHaveLength(2);
+    expect(
+      labelIds.map((id) => node.querySelector(`#${id}`)?.textContent).join(" "),
+    ).toContain("Harness");
+    expect(harness.textContent).toContain("Pi");
+
+    const curve = menuItem(node, "Curve");
+    expect(curve.getAttribute("aria-disabled")).toBe("true");
+    const described = node.querySelector(
+      `#${curve.getAttribute("aria-describedby")}`,
+    );
+    expect(described?.textContent).toContain("Doesn't offer");
+    expect(
+      curve.querySelector(".group-focus\\:block")?.textContent ??
+        curve.textContent,
+    ).toContain("Doesn't offer");
+    expect(
+      menuItem(node, "IBM").querySelector(
+        ":scope > span [aria-describedby], .group-focus\\:block",
+      ),
+    ).toBeNull();
+  });
+
   /** TEST_SCENARIO: picking a model from another provider takes that provider too, and a model every provider offers stays on the one already picked. */
   it("takes the provider a picked model comes from", () => {
     const node = mount(picker());
@@ -613,10 +676,10 @@ describe("the new session panel", () => {
       }),
     );
     const trigger = node.querySelector(
-      'button[aria-labelledby$="-harness-label"]',
+      'button[aria-labelledby*="-harness-label"]',
     );
     expect(trigger).not.toBeNull();
-    const labelId = trigger!.getAttribute("aria-labelledby")!;
+    const labelId = trigger!.getAttribute("aria-labelledby")!.split(" ")[0]!;
     expect(node.querySelector(`#${labelId}`)?.textContent).toBe("Harness");
     expect(
       trigger!.querySelector('[role="img"][aria-label="Pi"]'),
@@ -920,6 +983,33 @@ describe("the saved profiles behind Use a profile", () => {
     expect(state.navigateSettings).toHaveBeenCalledWith("profiles", {
       profileId: "p1",
     });
+  });
+
+  /** TEST_SCENARIO: switching between the custom fields and the profiles view lands focus on the first control of the new view, so keyboard users keep their place. */
+  it("moves focus when the view switches", () => {
+    profilesState = [
+      profile({ name: "Deep review", model: "ibm/aws/claude-opus-5-5" }),
+    ];
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    const node = mount(picker());
+    act(() =>
+      [...node.querySelectorAll<HTMLElement>("button")]
+        .find((b) => b.textContent?.includes("Back to custom"))
+        ?.click(),
+    );
+    expect(document.activeElement).toBe(
+      node.querySelector('button[aria-labelledby*="-harness-label"]'),
+    );
+    act(() =>
+      [...node.querySelectorAll<HTMLElement>("button")]
+        .find((b) => b.textContent?.includes("Using profile"))
+        ?.click(),
+    );
+    expect(document.activeElement?.textContent).toContain("Back to custom");
   });
 
   /** TEST_SCENARIO: a non-default effort is not hidden: More options opens by itself so the changed setting is visible, while a default pick leaves it closed. */
