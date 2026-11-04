@@ -3,11 +3,10 @@ import { expect, test } from "@playwright/test";
 import { readChatMessages, setMockLongTurnReply } from "../../../lib/agents.js";
 import { createApiClient } from "../../../lib/api-client.js";
 import { getAccessToken } from "../../../lib/auth.js";
+import { mockDefaultReply } from "../../../lib/fixtures.js";
 import {
   bubbleImage,
-  LONG_TURN_MS,
   openMockAgentChat,
-  QUEUE_PARK_MS,
   queuedIndicator,
   reopenMockAgentChat,
   restoreMockDefaultReply,
@@ -18,16 +17,16 @@ import {
   undeliveredMarker,
 } from "./delivery.js";
 
-const PARK_MARGIN_MS = 7_000;
+const EXIT_AFTER_MS = 20_000;
 
-const promptA = "undelivered-a-long-turn";
+const promptWarmup = "undelivered-warmup";
+const promptA = `undelivered-a-harness-exits __EXIT_MIDTURN__ ${String(EXIT_AFTER_MS)}`;
 const promptB = "undelivered-b-queued-text";
 const promptC = "undelivered-c-queued-with-image";
-const replyHead = "Taking a while. ";
-const replyTail = "Long turn finished.";
+const replyHead = "partial reply before the harness exits";
 const replyC = "Answer to the resent prompt.";
 
-test(`queued prompts outlive an abandoned tab and can be sent again, image and all (#3264)`, async ({
+test(`prompts queued when the harness goes down come back undelivered and can be sent again, image and all (#3264)`, async ({
   page,
   context,
 }) => {
@@ -38,14 +37,17 @@ test(`queued prompts outlive an abandoned tab and can be sent again, image and a
 
   const agentId = await openMockAgentChat(page, api);
 
-  await test.step("queue two prompts behind a long turn, one carrying an image", async () => {
-    await setMockLongTurnReply(api, agentId, {
-      head: replyHead,
-      holdMs: LONG_TURN_MS,
-      tail: replyTail,
+  await test.step("a first answered turn stores the session in the harness", async () => {
+    await restoreMockDefaultReply(api, agentId);
+    await sendPrompt(page, promptWarmup);
+    await expect(page.getByText(mockDefaultReply)).toBeVisible({
+      timeout: 60_000,
     });
+  });
+
+  await test.step("queue two prompts behind a turn whose harness exits, one carrying an image", async () => {
     await sendPrompt(page, promptA);
-    await expect(page.getByText(replyHead.trim())).toBeVisible({
+    await expect(page.getByText(replyHead)).toBeVisible({
       timeout: 60_000,
     });
 
@@ -57,11 +59,9 @@ test(`queued prompts outlive an abandoned tab and can be sent again, image and a
     await expect(queuedIndicator(page)).toHaveCount(2, { timeout: 15_000 });
   });
 
-  await test.step("close the tab and stay away past the park window", async () => {
+  await test.step("close the tab and stay away while the harness exits", async () => {
     await page.close();
-    await new Promise((resolve) =>
-      setTimeout(resolve, QUEUE_PARK_MS + PARK_MARGIN_MS),
-    );
+    await new Promise((resolve) => setTimeout(resolve, EXIT_AFTER_MS + 10_000));
   });
 
   const revisit = await context.newPage();

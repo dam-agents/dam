@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-11-02
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -170,6 +170,7 @@ The classification distinguishes transient causes (progressing, worth waiting or
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
 The primitive also records wake begin/success/timeout with duration and the condition snapshot, so wake latency and failures are diagnosable from the log store.
 Callers can additionally register for a cold-start signal, fired when a call enters (or joins) a wake wait, to tell their user a wake is underway.
+A call that joins one already running hears it only once that call found the Agent not ready, never while it only refreshes a running Agent's activity: a page loading many assets at once would otherwise read a running Agent as starting.
 The schedule-driven poke is the exception: it doesn't wait, so there is no bounded wait to fail.
 
 The UI holds a start to the same budget: past it, it offers Restart and the controller's not-ready message, timed from when it first saw the Agent starting.

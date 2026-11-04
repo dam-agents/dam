@@ -317,7 +317,10 @@ import {
   composeEnvironments,
   createEgressIdentityResolver,
   environmentNameLookup,
+  environmentsDomainOf,
+  environmentsPortOf,
 } from "./modules/environments/index.js";
+import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
   composeApprovalsSystem,
   composeEgressProposals,
@@ -827,6 +830,21 @@ export async function bootstrap() {
       : []),
   ];
   const { auth: shareAuth, cookie: shareCookie } = publicShareSignIn;
+  const agentKeys = composeAgentKeys({
+    db,
+    k8s: k8sClient,
+    hmacKey: config.apiKeyHmacKey,
+    domain: environmentsDomainOf(config.environmentsUrl),
+    port: environmentsPortOf(config.environmentsUrl),
+    listAgents: async () =>
+      (await agentsRepo.list()).flatMap((a) =>
+        a.owner
+          ? [{ id: a.id, owner: a.owner, environmentOf: a.spec.environmentOf }]
+          : [],
+      ),
+    identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
+    log: (m) => getLogger().warn(`[agent-keys] ${m}`),
+  });
   const { gate: environmentGate, frontDoor: environmentFrontDoor } =
     composeEnvironmentGate({
       db,
@@ -871,6 +889,10 @@ export async function bootstrap() {
         ),
       namespace: config.namespace,
       brandName: config.brand.name,
+      agentOfKey: async (key) => {
+        const found = await agentKeys.access.resolve(key);
+        return found ? { agentId: found.agentId } : null;
+      },
     });
   await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
     const agents = await agentsRepo.list();
@@ -1226,6 +1248,15 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[public-agent-profile] ${m}`),
   });
   const publicAgentProfileSub = publicAgentPage.startSaga();
+  const agentKeysSub = agentKeys.startSaga();
+  await periodicJobs.register("agent-keys-issue", 30 * 60_000, async () => {
+    const issued = await agentKeys.issueAll();
+    if (issued > 0)
+      getLogger().info(
+        { issued },
+        "agent-keys: Agents checked for their Environments access",
+      );
+  });
   const attachFirstProviderSub = startAttachFirstProviderSaga(
     async (owner, connectionId) =>
       attachProviderToBareAgents(
@@ -2136,6 +2167,17 @@ export async function bootstrap() {
       ),
     runtimeMutator: runtimeDelivery.runtimeMutator,
     editorsOf: composeAgentEditors(db).editorsOf,
+    describeAgent: async (agentId) => {
+      const agent = await agentsRepo.get(agentId).catch(() => null);
+      if (!agent?.owner) return null;
+      return {
+        name: agent.name,
+        ownerName: await userDirectory
+          .resolveDisplayNameBySub(agent.owner)
+          .catch(() => null),
+        environment: Boolean(agent.spec.environmentOf),
+      };
+    },
     config: {
       urlTemplate: config.environmentsUrl,
       maxPerAgent: config.environmentsMaxPerAgent,
@@ -2152,6 +2194,7 @@ export async function bootstrap() {
 
   const agentCleanupSources: AgentCleanupSource[] = [
     environments.cleanupSource,
+    agentKeys.cleanupSource,
     {
       name: "egress-rules",
       listAgentIds: () => listEgressRuleAgentIds(db),
@@ -2554,6 +2597,7 @@ export async function bootstrap() {
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
+    platformAccess: agentKeys.access,
     trustedHosts,
     agentCleanupHooks,
     environmentsFor: environments.environmentsFor,
@@ -2672,6 +2716,7 @@ export async function bootstrap() {
     artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
     environmentsFor: environments.environmentsFor,
+    servesEnvironments: environmentsDomainOf(config.environmentsUrl) !== null,
     connectionsServiceFor,
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,
@@ -2718,6 +2763,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
+    agentKeysSub.unsubscribe();
     attachFirstProviderSub.unsubscribe();
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();

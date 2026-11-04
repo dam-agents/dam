@@ -38,6 +38,9 @@ export interface AgentWake {
  * breaks one breaks this: a cached read sees what the controller last wrote, a
  * live read is not stale when a timeout is decided, and a change subscription
  * wakes on the Agent it names.
+ * A call that joins one already running hears `onWaking` only once that call
+ * found the Agent not ready, never while it only stamps a running Agent's
+ * activity.
  */
 export function createAgentWake(deps: {
   readCached(id: string): Promise<KubeObject | null>;
@@ -46,15 +49,31 @@ export function createAgentWake(deps: {
   bumpLastActivity(id: string): Promise<void>;
   whenChanged(id: string): AgentChangeSubscription;
 }): AgentWake {
-  const inflight = new Map<string, Promise<void>>();
+  const inflight = new Map<
+    string,
+    { work: Promise<void>; waking: boolean; joiners: Array<() => void> }
+  >();
 
   const ensureReady: AgentWake["ensureReady"] = async (id, opts) => {
     const existing = inflight.get(id);
     if (existing) {
-      opts?.onWaking?.();
-      return existing;
+      if (opts?.onWaking) {
+        if (existing.waking) opts.onWaking();
+        else existing.joiners.push(opts.onWaking);
+      }
+      return existing.work;
     }
     const waitOnly = opts?.waitOnly ?? false;
+    const entry = {
+      work: Promise.resolve(),
+      waking: false,
+      joiners: [] as Array<() => void>,
+    };
+    const notifyWaking = () => {
+      opts?.onWaking?.();
+      entry.waking = true;
+      for (const joiner of entry.joiners.splice(0)) joiner();
+    };
 
     const work = (async () => {
       const current = await deps.readCached(id);
@@ -76,7 +95,7 @@ export function createAgentWake(deps: {
         if (!waitOnly) await deps.bumpLastActivity(id);
         return;
       }
-      opts?.onWaking?.();
+      notifyWaking();
       const startedAt = Date.now();
       getLogger().info({ agentId: id }, "agent.wake.begin");
       try {
@@ -184,9 +203,9 @@ export function createAgentWake(deps: {
       if (!waitOnly) await deps.bumpLastActivity(id);
     })();
     if (waitOnly) return work;
-    const tracked = work.finally(() => inflight.delete(id));
-    inflight.set(id, tracked);
-    return tracked;
+    entry.work = work.finally(() => inflight.delete(id));
+    inflight.set(id, entry);
+    return entry.work;
   };
 
   return { ensureReady };

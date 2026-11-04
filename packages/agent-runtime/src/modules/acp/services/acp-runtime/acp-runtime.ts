@@ -223,7 +223,6 @@ export interface AcpRuntimeDeps {
   backgroundWorkRecheckMs?: number;
   harnessState?: HarnessStatePort;
   presumeIdleMs?: number;
-  queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
   continuedFrom: ContinuedFromStore;
   activeTurns: ActiveTurnStore;
@@ -320,7 +319,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     };
   };
   const openToolCalls = new Map<string, Set<string>>();
-  const toolsSettledAt = new Map<string, number>();
+  const steerQuietWindows = new Map<string, number>();
+  let steerQuietWindowSeq = 0;
   const generating = new Set<string>();
   const turnSenders = new Map<string, Sender>();
   let sessionForkSupported = false;
@@ -499,9 +499,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     atSteerPoint: (sessionId) =>
       !generating.has(sessionId) &&
       !(openToolCalls.get(sessionId)?.size ?? 0) &&
-      (!steersByInterrupt() ||
-        Date.now() - (toolsSettledAt.get(sessionId) ?? 0) >=
-          INTERRUPT_QUIET_MS),
+      !steerQuietWindows.has(sessionId),
     steer: (entry, batch) =>
       steersByInterrupt()
         ? interruptSteers.steer(entry, batch)
@@ -557,8 +555,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
       recordRun(sessionId, turn.promptId, null);
     },
-    canStart: ({ sessionId, unattended }) =>
-      (unattended === true || hasEngagedChannel(sessionId)) &&
+    canStart: ({ sessionId }) =>
       !harnessColdSessions.has(sessionId) &&
       !registeringSessions.has(sessionId),
     sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
@@ -579,24 +576,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
       );
-      if (
-        harnessGone ||
-        (cause === "park-expired" &&
-          !promptScheduler.hasTurnInFlight(sessionId))
-      )
+      if (harnessGone)
         deps.onTurnOutcome?.(sessionId, {
           stopReason: null,
-          error: harnessGone
-            ? `${harnessGone} before it took the prompt`
-            : "the prompt was never taken: the harness did not start the turn",
+          error: `${harnessGone} before it took the prompt`,
         });
-      if (cause !== "park-expired") return;
-      maybeCloseIdleSession(sessionId);
-      lease.maybeRecycle();
     },
-    ...(deps.queueParkMs !== undefined
-      ? { queueParkMs: deps.queueParkMs }
-      : {}),
   });
 
   const interruptSteers = createInterruptSteers({
@@ -1481,15 +1466,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!open.delete(call.toolCallId) && !call.started) return;
     if (open.size > 0) return;
     openToolCalls.delete(sessionId);
-    toolsSettledAt.set(sessionId, Date.now());
     if (!steersByInterrupt()) {
       promptScheduler.onSteerPoint(sessionId);
       return;
     }
-    setTimeout(
-      () => promptScheduler.onSteerPoint(sessionId),
-      INTERRUPT_QUIET_MS,
-    );
+    const window = ++steerQuietWindowSeq;
+    steerQuietWindows.set(sessionId, window);
+    setTimeout(() => {
+      if (steerQuietWindows.get(sessionId) === window)
+        steerQuietWindows.delete(sessionId);
+      promptScheduler.onSteerPoint(sessionId);
+    }, INTERRUPT_QUIET_MS);
   }
 
   function requestFromHarness(

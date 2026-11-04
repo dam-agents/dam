@@ -11,6 +11,7 @@ import {
   appSetCookie,
   cookieValue,
   decideAccess,
+  decideAgentAccess,
   effectiveAccess,
   environmentOrigins,
   isSignInToken,
@@ -27,9 +28,11 @@ import {
   SIGNIN_COOKIE_PLAIN,
   SIGNIN_COOKIE_SECURE,
   SIGNIN_TTL_MS,
+  type AgentVisitor,
   type EnvironmentSession,
   type PlatformCredentials,
 } from "../domain/gate.js";
+import { AGENT_KEY_HEADER, isAgentKey } from "../../agent-keys/index.js";
 import type { EnvironmentRecord } from "../domain/environment.js";
 import type { EnvironmentsRepository } from "../infrastructure/environments-repository.js";
 import type { EnvironmentSignIn } from "../services/environment-signin.js";
@@ -47,6 +50,7 @@ const PROBE_TIMEOUT_MS = 5_000;
 const RETRY_AFTER_S = 5;
 const SLOW_AFTER_MS = 5 * 60_000;
 const NO_STORE = "private, no-store";
+const PROXY_WAITING_STATUSES = new Set([502, 503, 504]);
 const HOP_BY_HOP = [
   "transfer-encoding",
   "keep-alive",
@@ -79,6 +83,12 @@ export interface EnvironmentGateDeps {
   agentMembers: (owningAgentId: string) => Promise<string[]>;
   environmentMembers: (environmentId: string) => Promise<string[]>;
   editorsOf: (owningAgentId: string) => Promise<string[]>;
+  // UNIT_BOUNDARY_DESCRIPTION: the Agents that may open an Environment: those its own list and its Owning Agent's list name.
+  memberAgents: (record: EnvironmentRecord) => Promise<string[]>;
+  // UNIT_BOUNDARY_DESCRIPTION: the Agent an Agent Key names, or null.
+  agentOfKey: (key: string) => Promise<AgentVisitor | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: records that an Agent opened an Environment; the gate calls it at most once a minute per pair.
+  recordAgentVisit: (environmentId: string, agentId: string) => Promise<void>;
   signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "signOut">;
   platform: PlatformCredentials;
   ensureReady: (
@@ -115,6 +125,10 @@ interface ProbeTarget {
   publicHost: string;
 }
 
+function isProxyWaiting(status: number): boolean {
+  return PROXY_WAITING_STATUSES.has(status);
+}
+
 export const noEnvironmentGate: EnvironmentGate = {
   middleware: (_c, next) => next(),
   handleUpgrade: () => false,
@@ -126,12 +140,16 @@ export const noEnvironmentGate: EnvironmentGate = {
  * Ingress sends here. It finds the Environment and endpoint from the host
  * name, admits the visitor by the session the share host's front door handed
  * it (the owner, or a verified email on the effective list, checked again on
- * every request, while the share host's session it came from lasts), wakes a
+ * every request, while the share host's session it came from lasts), or the
+ * Agent whose key its gateway sent (the Owning Agent, or an Agent a list
+ * names; that request's cookie counts for nothing), wakes a
  * sleeping Environment without waiting for it, and relays HTTP and WebSocket
  * to the Environment runtime's forward, which reaches only the declared port
- * on the Environment's loopback, once the endpoint's app is ready. Until then
- * a page load gets a loading page that opens the app by itself, and any other
- * request a 503 to try again. Any other host passes on untouched. A request
+ * on the Environment's loopback. While the machine wakes, a page load gets a
+ * loading page that opens the app by itself, and any other request a 503 to
+ * try again. Once it runs, every request but a page load goes to the app
+ * as it is; a page load waits on the loading page only while nothing behind
+ * the endpoint answers it, or while a declared readiness path does not. Any other host passes on untouched. A request
  * that another origin's page makes in the visitor's name is refused before
  * any of that, whatever cookie it carries. The relay never passes the
  * platform's own cookies or credentials to the app, never lets the app set
@@ -162,6 +180,67 @@ export function createEnvironmentGate(
     void deps.stampActivity(agentId).catch(() => {});
   }
 
+  const lastAgentVisit = new Map<string, number>();
+
+  // UNIT_BOUNDARY_DESCRIPTION: an admitted Agent's request, recorded at most once a minute per Agent and Environment: a test suite sends thousands, and the owner needs to know that the Agent opens it and when it last did, not each request.
+  function agentVisited(
+    record: EnvironmentRecord,
+    agent: AgentVisitor,
+    address: string,
+  ) {
+    const key = `${record.agentId}\n${agent.agentId}`;
+    const now = Date.now();
+    if (now - (lastAgentVisit.get(key) ?? 0) < ACTIVITY_INTERVAL_MS) return;
+    lastAgentVisit.set(key, now);
+    if (lastAgentVisit.size > 10_000) lastAgentVisit.clear();
+    securityLog("info", "environment.agent_access", {
+      category: "authz",
+      actor: agent.agentId,
+      actorKind: "agent",
+      agentId: record.agentId,
+      decision: "allow",
+      detail: { address },
+    });
+    void deps.recordAgentVisit(record.agentId, agent.agentId).catch(() => {});
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: whether a request came from an Agent's gateway, by the header only a gateway sets; such a request is the Agent's, whatever cookie it carries, so a person's sign-in in the Agent's browser never opens more than the Agent's own lists do.
+  function agentKeyOf(
+    value: string | string[] | undefined,
+  ): string | null | undefined {
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (raw === undefined) return undefined;
+    return isAgentKey(raw) ? raw : null;
+  }
+
+  async function agentAccess(record: EnvironmentRecord, key: string | null) {
+    const visitor = key === null ? null : await deps.agentOfKey(key);
+    return {
+      visitor,
+      access: decideAgentAccess(
+        record,
+        await deps.memberAgents(record),
+        visitor,
+      ),
+    };
+  }
+
+  function denyAgent(
+    record: EnvironmentRecord,
+    visitor: AgentVisitor | null,
+    address: string,
+  ) {
+    securityLog("warn", "environment.access_deny", {
+      category: "authz",
+      actor: visitor?.agentId ?? null,
+      actorKind: "agent",
+      agentId: record.agentId,
+      decision: "deny",
+      reason: visitor ? "not-allowed" : "unknown-agent-key",
+      detail: { address },
+    });
+  }
+
   async function resolve(
     hostHeader: string | undefined,
   ): Promise<Resolved | "none" | null> {
@@ -178,7 +257,7 @@ export function createEnvironmentGate(
     };
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: whether an endpoint's app answers: its readiness path with 2xx or 3xx, or, without one, anything at all on its port. The runtime marks its own answer when nothing listens there, so an app's own 502 still counts as an answer.
+  // UNIT_BOUNDARY_DESCRIPTION: whether an endpoint's app answers: its readiness path with 2xx or 3xx, or, without one, anything on its port but a proxy's "nothing behind me yet" (502, 503, 504), which a bridge or an ingress in front of a starting app answers at once. The runtime marks its own answer when nothing listens there; an app's own 500 counts as an answer.
   async function probe(target: ProbeTarget): Promise<boolean> {
     const runtime = deps.upstream(target.agentId);
     const answer = await fetch(
@@ -196,7 +275,7 @@ export function createEnvironmentGate(
     );
     void answer.body?.cancel().catch(() => {});
     if (answer.headers.has(UNREACHABLE_HEADER)) return false;
-    if (target.ready === undefined) return true;
+    if (target.ready === undefined) return !isProxyWaiting(answer.status);
     return answer.status >= 200 && answer.status < 400;
   }
 
@@ -251,19 +330,28 @@ export function createEnvironmentGate(
     });
   }
 
+  // UNIT_BOUNDARY_DESCRIPTION: what the loading page's status says: the machine's state, and once it runs, whether the endpoint's app is ready.
   async function startState(
     resolved: Resolved,
+    machineState: MachineState,
     publicHost: string | undefined,
   ): Promise<"ready" | "starting" | "failed"> {
-    const state = await machine(resolved.record.agentId);
-    if (state === "failed") return "failed";
-    if (state === "waking") return "starting";
+    if (machineState === "failed") return "failed";
+    if (machineState === "waking") return "starting";
     return (await readiness.ready(probeTarget(resolved, publicHost)))
       ? "ready"
       : "starting";
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: the gate's answer while an Environment's app is not ready: a page load gets the loading page, which checks the gate's status and opens the app once it answers, or says it did not start; anything else, a script's call or an API client, gets a plain 503, never a page or a 200 a monitor would read as up. Both ask to be tried again after a few seconds.
+  // UNIT_BOUNDARY_DESCRIPTION: whether a page load waits on the loading page although the machine runs: only for an endpoint that declared a readiness path, until that path answers. Without one, the page load goes to the app, and its own answer decides (see relay).
+  async function pageWaits(c: Context, resolved: Resolved) {
+    if (!isPageLoad(c) || resolved.ready === undefined) return false;
+    return !(await readiness.ready(
+      probeTarget(resolved, c.req.header("host")),
+    ));
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: the gate's answer when nothing behind an endpoint can answer yet: a page load gets the loading page, which checks the gate's status and opens the app once it answers, or says it did not start; anything else, a script's call or an API client, gets a plain 503, never a page or a 200 a monitor would read as up. Both ask to be tried again after a few seconds.
   function notReady(
     c: Context,
     record: EnvironmentRecord,
@@ -272,7 +360,7 @@ export function createEnvironmentGate(
     gateHeaders(c);
     c.header("Retry-After", String(RETRY_AFTER_S));
     siblingCors(c, record);
-    if (!isNavigation(c))
+    if (!isPageLoad(c))
       return c.text(
         state === "failed"
           ? "The Environment could not be started."
@@ -322,6 +410,17 @@ export function createEnvironmentGate(
       (c.req.header("sec-fetch-mode") === "navigate" ||
         (c.req.header("accept") ?? "").includes("text/html"))
     );
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: a request the loading page may stand in for: a browser opening a page. A browser names every request's kind in Sec-Fetch-Mode, so a script's fetch that accepts HTML is never taken for one; only a client that sends no such header is judged by what it accepts.
+  function isPageLoad(c: Context) {
+    const mode = c.req.header("sec-fetch-mode");
+    if (mode !== undefined)
+      return (
+        mode === "navigate" &&
+        (c.req.method === "GET" || c.req.method === "HEAD")
+      );
+    return isNavigation(c);
   }
 
   // UNIT_BOUNDARY_DESCRIPTION: the browser's sign-in secret for this address: the one it holds, or a new one; either way set again for the next ten minutes, so a sign-in in another tab of the same browser keeps working.
@@ -493,7 +592,12 @@ export function createEnvironmentGate(
       readiness.failed(probeTarget(resolved, c.req.header("host")));
       return notReady(c, resolved.record, "starting");
     }
-    if (answer.headers.has(UNREACHABLE_HEADER)) {
+    if (
+      answer.headers.has(UNREACHABLE_HEADER) ||
+      (isPageLoad(c) &&
+        resolved.ready === undefined &&
+        isProxyWaiting(answer.status))
+    ) {
       void answer.body?.cancel().catch(() => {});
       readiness.failed(probeTarget(resolved, c.req.header("host")));
       return notReady(c, resolved.record, "starting");
@@ -513,6 +617,11 @@ export function createEnvironmentGate(
 
   const middleware: MiddlewareHandler = async (c, next) => {
     const resolved = await resolve(c.req.header("host"));
+    // UNIT_BOUNDARY_DESCRIPTION: an Agent Key is for the Environment gate alone; a request that carries one to any other host of the api-server is refused before any route reads it.
+    if (resolved === null && c.req.header(AGENT_KEY_HEADER) !== undefined) {
+      gateHeaders(c);
+      return c.text("An agent key opens Environment addresses only.", 421);
+    }
     if (resolved === null) return next();
     if (resolved === "none")
       return page(
@@ -536,11 +645,20 @@ export function createEnvironmentGate(
         "A page of another site asked for this in your name, so the Environment did not answer it.",
       );
     }
+    const agentKey = agentKeyOf(c.req.header(AGENT_KEY_HEADER));
+    const startPath = c.req.path === STATUS_PATH || c.req.path === START_PATH;
     if (
+      agentKey !== undefined &&
       c.req.path.startsWith(RESERVED_PREFIX) &&
-      c.req.path !== STATUS_PATH &&
-      c.req.path !== START_PATH
+      !startPath
     )
+      return page(
+        c,
+        403,
+        "Refused",
+        "An agent opens an Environment without signing in.",
+      );
+    if (c.req.path.startsWith(RESERVED_PREFIX) && !startPath)
       return reserved(c, address, record);
     const preflight = siblingPreflight(
       {
@@ -556,6 +674,24 @@ export function createEnvironmentGate(
       for (const [name, value] of Object.entries(preflight))
         c.header(name, value);
       return c.body(null, 204);
+    }
+
+    if (agentKey !== undefined) {
+      const agent = await agentAccess(record, agentKey);
+      if (!agent.access.allow) {
+        denyAgent(record, agent.visitor, address);
+        siblingCors(c, record);
+        return page(
+          c,
+          403,
+          "You don't have access",
+          agent.visitor
+            ? "This agent is not on this Environment's list. Ask its owner to add the agent's id in its Share dialog."
+            : "This agent's key is not known here.",
+        );
+      }
+      agentVisited(record, agent.visitor!, address);
+      return admitted(c, resolved);
     }
 
     const visitor = await session(getCookie(c, cookieName));
@@ -597,20 +733,34 @@ export function createEnvironmentGate(
       );
     }
 
+    return admitted(c, resolved);
+  };
+
+  // UNIT_BOUNDARY_DESCRIPTION: what a visitor the gate let in gets, a person or an Agent alike: the start and status paths of the loading page, the loading page itself while the app is not ready, and the app once it is.
+  async function admitted(c: Context, resolved: Resolved): Promise<Response> {
+    const { record } = resolved;
     if (c.req.path === START_PATH) {
       wakeFailedAt.delete(record.agentId);
       gateHeaders(c);
       return c.redirect(safeNext(c.req.query("next")), 302);
     }
-    const state = await startState(resolved, c.req.header("host"));
-    if (state !== "failed") stamp(record.agentId);
+    const machineState = await machine(record.agentId);
+    if (machineState !== "failed") stamp(record.agentId);
     if (c.req.path === STATUS_PATH) {
       gateHeaders(c);
-      return c.json({ state });
+      return c.json({
+        state: await startState(resolved, machineState, c.req.header("host")),
+      });
     }
-    if (state !== "ready") return notReady(c, record, state);
+    if (machineState !== "ready")
+      return notReady(
+        c,
+        record,
+        machineState === "failed" ? "failed" : "starting",
+      );
+    if (await pageWaits(c, resolved)) return notReady(c, record, "starting");
     return relay(c, resolved);
-  };
+  }
 
   function refuseUpgrade(socket: Duplex, status: string) {
     const retry = status.startsWith("503")
@@ -667,7 +817,12 @@ export function createEnvironmentGate(
     socket: Duplex,
     head: Buffer,
   ): boolean {
-    if (parseAddress(req.headers.host, deps.domain) === null) return false;
+    if (parseAddress(req.headers.host, deps.domain) === null) {
+      if (req.headers[AGENT_KEY_HEADER] === undefined) return false;
+      socket.on("error", () => socket.destroy());
+      refuseUpgrade(socket, "421 Misdirected Request");
+      return true;
+    }
     socket.on("error", () => socket.destroy());
     void (async () => {
       const resolved = await resolve(req.headers.host);
@@ -686,29 +841,38 @@ export function createEnvironmentGate(
         deny(resolved.record, null, resolved.address, "cross-origin");
         return refuseUpgrade(socket, "403 Forbidden");
       }
-      const cookie = cookieValue(req.headers.cookie, cookieName);
-      const visitor = await session(cookie);
-      const access = decideAccess(
-        resolved.record,
-        effectiveAccess(
-          await deps.agentMembers(resolved.record.owningAgentId),
-          await deps.environmentMembers(resolved.record.agentId),
-          await deps.editorsOf(resolved.record.owningAgentId),
-        ),
-        visitor,
-        resolved.address,
-      );
-      if (!access.allow) {
-        deny(resolved.record, visitor, resolved.address, access.reason);
-        return refuseUpgrade(
-          socket,
-          access.reason === "not-signed-in"
-            ? "401 Unauthorized"
-            : "403 Forbidden",
+      const agentKey = agentKeyOf(req.headers[AGENT_KEY_HEADER]);
+      if (agentKey !== undefined) {
+        const agent = await agentAccess(resolved.record, agentKey);
+        if (!agent.access.allow) {
+          denyAgent(resolved.record, agent.visitor, resolved.address);
+          return refuseUpgrade(socket, "403 Forbidden");
+        }
+        agentVisited(resolved.record, agent.visitor!, resolved.address);
+      } else {
+        const cookie = cookieValue(req.headers.cookie, cookieName);
+        const visitor = await session(cookie);
+        const access = decideAccess(
+          resolved.record,
+          effectiveAccess(
+            await deps.agentMembers(resolved.record.owningAgentId),
+            await deps.environmentMembers(resolved.record.agentId),
+            await deps.editorsOf(resolved.record.owningAgentId),
+          ),
+          visitor,
+          resolved.address,
         );
+        if (!access.allow) {
+          deny(resolved.record, visitor, resolved.address, access.reason);
+          return refuseUpgrade(
+            socket,
+            access.reason === "not-signed-in"
+              ? "401 Unauthorized"
+              : "403 Forbidden",
+          );
+        }
       }
-      const state = await startState(resolved, req.headers.host);
-      if (state !== "ready")
+      if ((await machine(resolved.record.agentId)) !== "ready")
         return refuseUpgrade(socket, "503 Service Unavailable");
       stamp(resolved.record.agentId);
 

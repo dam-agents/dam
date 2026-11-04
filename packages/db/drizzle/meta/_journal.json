@@ -908,8 +908,15 @@
     {
       "idx": 129,
       "version": "7",
-      "when": 1793792325036,
-      "tag": "0129_assistants",
+      "when": 1793792310718,
+      "tag": "0129_agent_environment_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1793799095500,
+      "tag": "0130_assistants",
       "breakpoints": true
     }
   ]

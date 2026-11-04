@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-30
+Last verified: 2026-11-01
 
 ## Overview
 
@@ -127,8 +127,8 @@ sequenceDiagram
   It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows its tabs and the one on screen ([Tabs](#tabs)): their addresses, titles, whether they are loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back, forward and new tab and the tab bar's select and close run on the tab they name directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue.
   Words typed into the address bar that are not an address search DuckDuckGo.
   A dropped DevTools connection means the browser is gone, and the supervisor launches it again.
-  A health check that times out finds the browser busy — a heavy page, or the agent keeping it busy — not gone, so it is left alone; agent-browser's own "no response came back" from its daemon counts as such a timeout, and the launch and the CDP address asked for right after it each get a minute, as a cold guest starts Chromium slowly; when the browser fails to start, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay.
-  The panels stay connected through all of it and show the browser starting, or the failure with a Restart button.
+  A health check that times out finds the browser busy — a heavy page, or the agent keeping it busy — not gone, so it is left alone; agent-browser's own "no response came back" from its daemon counts as such a timeout — a launch that gets it is retried against the same Chromium and is not counted as a failure, until it has had no answer for a minute, counted from when the first panel opened — and the launch and the CDP address asked for right after it each get a minute, as a cold guest starts Chromium slowly; when the browser fails to start, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay.
+  The panels stay connected through all of it and show the browser starting, or the failure with a Restart button; a browser still starting after 20 seconds shows that the machine is busy, with a Restart button too.
   Only http and https addresses open.
 - **The stream socket** is one more agent relay beside chat, terminal and SSH, with the same admission ([cli](cli.md)) plus the named-connections gate; it is relayed as it is to the runtime's `/api/browser/display`, which hands it to Selkies.
   A socket that arrives before Selkies answers is held, with what its client sent up to a cap, until it does.

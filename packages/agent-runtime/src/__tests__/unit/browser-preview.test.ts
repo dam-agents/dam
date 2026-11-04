@@ -34,6 +34,9 @@ let lastBrowser: { alive: boolean } | null = null;
 const launched = () => lastBrowser?.alive === true;
 const isLaunch = (c: string[]) => c[0] === LAUNCH[0] && c[1] === LAUNCH[1];
 
+const UNANSWERED =
+  "agent-browser get exited 1: ✗ Failed to read: Resource temporarily unavailable (os error 11) (the command reached the daemon but no response came back; it may or may not have run, so it was not retried)";
+
 function fakeBrowser() {
   const calls: string[][] = [];
   const browser = {
@@ -509,8 +512,7 @@ describe("recovery", () => {
   it("lets a browser that is slow to answer its launch finish starting", async () => {
     const fake = fakeBrowser();
     fake.browser.launchFailures = 3;
-    fake.browser.launchError =
-      "agent-browser get exited 1: ✗ Failed to read: Resource temporarily unavailable (os error 11) (the command reached the daemon but no response came back; it may or may not have run, so it was not retried)";
+    fake.browser.launchError = UNANSWERED;
     let stops = 0;
     const browser = preview(fake, {
       stopBrowser: async () => {
@@ -522,6 +524,52 @@ describe("recovery", () => {
     await until(() => panel.states().at(-1) === "ready");
     expect(fake.calls.filter(isLaunch)).toHaveLength(4);
     expect(stops).toBe(0);
+    expect(panel.states()).not.toContain("failed");
+  });
+
+  // TEST_SCENARIO: a launch that gets no answer for longer than the silence limit is a stuck browser, not a slow one: it is stopped and launched again.
+  it("restarts a launch that got no answer past the silence limit", async () => {
+    const fake = fakeBrowser();
+    fake.browser.launchFailures = 1_000;
+    fake.browser.launchError = UNANSWERED;
+    let stops = 0;
+    const browser = preview(fake, {
+      unresponsiveRestartMs: 50,
+      stopBrowser: async () => {
+        stops++;
+        fake.browser.launchFailures = 0;
+      },
+    });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => stops === 1);
+    await until(() => panel.states().at(-1) === "ready");
+  });
+
+  // TEST_SCENARIO: a launch that got no answer, then a panel closed for longer than the silence limit: the panel opened later starts a wait of its own, so its first unanswered launch is retried, not taken for a stuck browser and stopped.
+  it("counts a launch's silence from the panel that reopened", async () => {
+    const fake = fakeBrowser();
+    fake.browser.launchFailures = 2;
+    fake.browser.launchError = UNANSWERED;
+    let stops = 0;
+    const browser = preview(fake, {
+      unresponsiveRestartMs: 150,
+      retryDelaysMs: [1_000],
+      stopBrowser: async () => {
+        stops++;
+      },
+    });
+    closers.push(() => browser.close());
+    const first = watching(browser);
+    await until(() => fake.calls.filter(isLaunch).length === 1);
+    first.stop();
+    await until(() => browser.viewers() === 0);
+    await pause(200);
+    const second = watching(browser);
+    await until(() => fake.calls.filter(isLaunch).length === 2);
+    await pause(20);
+    expect(stops).toBe(0);
+    second.stop();
   });
 
   // TEST_SCENARIO: the browser can die under an open panel — the agent closed it, Chrome crashed. Its CDP connection drops at once; the panel is told the browser is starting, and the supervisor launches it again.

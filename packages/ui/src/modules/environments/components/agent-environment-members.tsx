@@ -10,6 +10,13 @@ import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
 import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
 import { useSetAgentEnvironmentMembers } from "../api/mutations.js";
 import { useAgentEnvironmentMembers } from "../api/queries.js";
+import {
+  AgentMembersEditor,
+  type ListedAgent,
+  useAgentEdits,
+} from "./agent-members-editor.js";
+
+const NO_AGENTS: ListedAgent[] = [];
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Environments section of an agent's page: the
@@ -62,8 +69,8 @@ export function AgentEnvironmentsSection({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The agent's Environment Members, by the email
- * they sign in with. The owner and the agent's editors always may open its
+ * UNIT_BOUNDARY_DESCRIPTION: The agent's Environment Members: people, by the
+ * email they sign in with, and Agents of any owner, by their id. The owner and the agent's editors always may open its
  * Environments; the owner adds a person to one Environment in its Share
  * dialog. The list is edited only once it loaded, so a Save never replaces a
  * list the page could not read, and its edits belong to one agent: moving to
@@ -74,6 +81,8 @@ function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
   const save = useSetAgentEnvironmentMembers();
   const [edited, setEdited] = useState<string[] | null>(null);
   const [draft, setDraft] = useState("");
+  const [agentDraft, setAgentDraft] = useState("");
+  const agentEdits = useAgentEdits(saved.data?.agents ?? NO_AGENTS);
 
   return (
     <div className="mb-6 flex flex-col gap-2" data-testid="environment-access">
@@ -89,16 +98,24 @@ function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
         </p>
       ) : (
         <MembersForm
-          savedEmails={saved.data}
+          savedEmails={saved.data.emails}
           edited={edited}
           setEdited={setEdited}
+          agentEdits={agentEdits}
           draft={draft}
           setDraft={setDraft}
+          agentDraft={agentDraft}
+          setAgentDraft={setAgentDraft}
           saving={save.isPending}
-          onSave={(emails) =>
+          onSave={(emails, agentIds) =>
             save.mutate(
-              { owningAgentId: agentId, emails },
-              { onSuccess: () => setEdited(null) },
+              { owningAgentId: agentId, emails, agentIds },
+              {
+                onSuccess: () => {
+                  setEdited(null);
+                  agentEdits.reset();
+                },
+              },
             )
           }
         />
@@ -107,26 +124,35 @@ function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the loaded list, its edits and their Save. The shared editor says how full the list is, and the empty list says who may open them without it.
+// UNIT_BOUNDARY_DESCRIPTION: the loaded list, its edits and their Save. The shared editor says how full the list is, and the empty list says who may open them without it. Save waits while an email or an agent id is typed but not added, as the Share dialog's does, so nothing typed is dropped unseen.
 function MembersForm({
   savedEmails,
   edited,
   setEdited,
+  agentEdits,
   draft,
   setDraft,
+  agentDraft,
+  setAgentDraft,
   saving,
   onSave,
 }: {
   savedEmails: string[];
   edited: string[] | null;
   setEdited: (emails: string[] | null) => void;
+  agentEdits: ReturnType<typeof useAgentEdits>;
   draft: string;
   setDraft: (draft: string) => void;
+  agentDraft: string;
+  setAgentDraft: (draft: string) => void;
   saving: boolean;
-  onSave: (emails: string[]) => void;
+  onSave: (emails: string[], agentIds: string[]) => void;
 }) {
   const emails = edited ?? savedEmails;
-  const dirty = edited !== null && !sameViewers(edited, savedEmails);
+  const agents = agentEdits.agents;
+  const pendingDraft = draft.trim().length > 0 || agentDraft.trim().length > 0;
+  const dirty =
+    (edited !== null && !sameViewers(edited, savedEmails)) || agentEdits.dirty;
 
   return (
     <>
@@ -142,20 +168,53 @@ function MembersForm({
             "Only you and the agent's editors can open this agent's Environments.",
         })}
       />
+      <p className="mt-2 text-sm font-medium text-foreground">Agents</p>
+      <p className="text-xs text-muted-foreground">
+        An agent named here opens every Environment this agent creates, from its
+        own sandbox, as itself — another user&apos;s too. This agent always
+        opens its own.
+      </p>
+      <AgentMembersEditor
+        agents={agents}
+        onAdd={agentEdits.onAdd}
+        onRemove={agentEdits.onRemove}
+        disabled={saving}
+        draft={agentDraft}
+        onDraftChange={setAgentDraft}
+      />
       {dirty && (
         <div className="flex gap-2">
-          <Button size="sm" disabled={saving} onClick={() => onSave(emails)}>
+          <Button
+            size="sm"
+            disabled={saving || pendingDraft}
+            onClick={() =>
+              onSave(
+                emails,
+                agents.map((a) => a.agentId),
+              )
+            }
+          >
             Save
           </Button>
           <Button
             size="sm"
             variant="ghost"
             disabled={saving}
-            onClick={() => setEdited(null)}
+            onClick={() => {
+              setEdited(null);
+              agentEdits.reset();
+              setDraft("");
+              setAgentDraft("");
+            }}
           >
             Cancel
           </Button>
         </div>
+      )}
+      {dirty && pendingDraft && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Add what you typed to its list or clear it before saving.
+        </p>
       )}
     </>
   );

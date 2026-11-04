@@ -38,9 +38,14 @@ import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
+  useRestorePlatformRule,
   useRevokeEgressRule,
 } from "../api/mutations.js";
-import { useCurrentPreset, useEgressRulesForAgent } from "../api/queries.js";
+import {
+  useCurrentPreset,
+  useEgressRulesForAgent,
+  usePlatformRule,
+} from "../api/queries.js";
 import {
   confirmStagedGatewayRestart,
   describeGatewayRestart,
@@ -87,6 +92,7 @@ export function AgentEgressEditor({
     isError,
   } = useEgressRulesForAgent(agentId);
   const { data: currentPreset = null } = useCurrentPreset(agentId);
+  const { data: platformRule } = usePlatformRule(agentId);
   const revokeRule = useRevokeEgressRule();
   const showConfirm = useStore((s) => s.showConfirm);
   const [adding, setAdding] = useState(false);
@@ -168,7 +174,7 @@ export function AgentEgressEditor({
         className={compact ? "mb-0" : undefined}
         loading={isLoading}
         error={isError && "Couldn't load the rules."}
-        isEmpty={rules.length === 0}
+        isEmpty={rules.length === 0 && platformRule?.state !== "removed"}
         empty="No rules yet. Every outbound request will need your approval."
       >
         {(rules.length > 10 || query !== "") && (
@@ -183,11 +189,12 @@ export function AgentEgressEditor({
             />
           </div>
         )}
-        {groups.length === 0 && (
+        {groups.length === 0 && (rules.length > 0 || query !== "") && (
           <p className="px-4 py-6 text-center text-sm text-muted-foreground">
             No rule matches “{query.trim()}”.
           </p>
         )}
+        {!query.trim() && <RemovedPlatformRule agentId={agentId} />}
         {groups.map((g) => {
           // UNIT_BOUNDARY_DESCRIPTION: only the groups whose rules come from somewhere else fold — a connection's rules repeat what the Connections section already lists, and a preset's are a hundred lines of someone else's defaults — while the reader's own rules and a kit's stay open; a search shows every match.
           const collapsible =
@@ -228,6 +235,17 @@ export function AgentEgressEditor({
                 </div>
               }
             >
+              {g.key === "platform" && (
+                <p
+                  className="px-4 pt-1 text-xs text-muted-foreground"
+                  data-testid="egress-platform-note"
+                >
+                  Lets this agent open the Environments shared with it, from its
+                  sandbox. Its gateway sends its key with these requests, and
+                  each Environment decides whether to let it in. Remove it to
+                  turn that off; you can restore it here.
+                </p>
+              )}
               {open &&
                 g.rules.map((r) => (
                   <RuleRow
@@ -530,7 +548,9 @@ function RuleRow({
       ? connectionName && `from ${connectionName}`
       : rule.source === "inbox"
         ? formatEgressRuleSource(rule.source)
-        : null;
+        : group === "platform"
+          ? "for Environments"
+          : null;
   return (
     <div className="@container flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
       <Badge
@@ -573,5 +593,35 @@ function RuleRow({
         disabled={disabled}
       />
     </div>
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the platform's Environments rule after its owner removed it: one line in its own group, with a Restore, so the owner can turn the access back on where they turned it off. The platform never restores it by itself.
+function RemovedPlatformRule({ agentId }: { agentId: string }) {
+  const { data: platform } = usePlatformRule(agentId);
+  const restore = useRestorePlatformRule();
+  if (platform?.state !== "removed") return null;
+  return (
+    <ListGroup
+      title={RULE_GROUP_TITLE.platform}
+      testId="egress-group-platform-removed"
+      accessory={
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          disabled={restore.isPending}
+          onClick={() => restore.mutate({ agentId })}
+          data-testid="egress-platform-restore"
+        >
+          Restore
+        </Button>
+      }
+    >
+      <p className="px-4 py-2.5 text-sm text-muted-foreground">
+        Removed: this agent cannot open Environments shared with it (
+        {platform.host}).
+      </p>
+    </ListGroup>
   );
 }
