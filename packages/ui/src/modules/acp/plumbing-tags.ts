@@ -6,6 +6,7 @@
  */
 export const PLUMBING_TAGS = [
   "continued-from",
+  "assistant-greeting",
   "how-to-respond",
   "addressed-to-you",
   "reading-along",

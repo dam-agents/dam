@@ -1,6 +1,6 @@
 # Assistant
 
-Last verified: 2026-11-02
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -70,7 +70,20 @@ That is presentation on top of the server's refusal, never a substitute for it.
 The assistant is visible in the agent list like any other Agent, and nothing hides it from lists or from the API.
 A person whose assistant has never been used lands in its chat rather than on Home; once it has been used, Home is where they land again.
 That answer is the row's own mark, set when the first Session is reported — and only while the install offers assistants — so a sleeping assistant is decided without waking it and an install that offers none writes nothing.
-Its first message, and anything it knows beyond what every Agent knows, is not part of this subsystem.
+
+## The first chat
+
+While the assistant has had no Session, its chat opens with a **greeting** from the assistant rather than an empty transcript: its avatar and name, `Hi <given name>! I'm <assistant name>, your new personal <brand> agent!`, and the ask to hear about the owner's role.
+The code writes none of those names: the given name is the signed-in person's `given_name` claim (no claim, no name — `Hi!`), and the assistant's and the brand's names come from the brand, so an install renames itself without a UI change.
+
+Under the message it offers a few **first tasks** — `Explain what you can do`, `Draft a weekly status template`, `Summarize a long text I paste`, `Remember I like answers short and technical` — each one needing neither a connection nor any personal context, and the composer's empty placeholder shows the last of them.
+A click puts the task's text in the composer and sends nothing: no turn, no model call, no token is spent until the person acts.
+
+Everything here is behind the `assistant` feature and the row's own `used` mark: a person the feature is off for, any other Agent, and an assistant that has already had a Session all open on the ordinary new-chat page, with the ordinary placeholder.
+
+**What the agent receives.** The platform wrote the opening of the conversation, so the person's first turn carries it: the prompt is sent with an `<assistant-greeting>` block holding the greeting it showed, in the assistant's voice, and the tasks it offered.
+The block is prompt **plumbing** — a tag the session view hides by name ([platform-topology](platform-topology.md), where a framed turn is rendered) — so the transcript shows the person's own words and nothing of the frame.
+There is no platform-composed first turn for the assistant — an `initialization` event would open a Session and run the model before the owner asked anything — so this is the only channel it has, and it costs nothing until the first message.
 
 ## Rolling it out
 

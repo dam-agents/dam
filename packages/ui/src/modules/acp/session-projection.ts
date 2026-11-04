@@ -33,7 +33,7 @@ const PLUMBING_RE = new RegExp(
   `<(${PLUMBING_TAGS.join("|")})(?:\\s[^>]*(?<!/))?>[\\s\\S]*?<\\/\\1>`,
   "g",
 );
-function stripPlumbing(raw: string): string {
+export function stripPlumbing(raw: string): string {
   return raw.replace(PLUMBING_RE, "").trim();
 }
 

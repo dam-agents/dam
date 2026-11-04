@@ -46,6 +46,7 @@ export interface ChatInputProps {
   onBlockedClick?: () => void;
   stopBlockedReason?: string | null;
   harness?: string | null;
+  emptyPlaceholder?: string | null;
 }
 
 export function ChatInput({
@@ -59,6 +60,7 @@ export function ChatInput({
   onBlockedClick,
   stopBlockedReason,
   harness = null,
+  emptyPlaceholder = null,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -255,7 +257,8 @@ export function ChatInput({
   };
 
   const placeholder =
-    blockedReason ?? (isComputing ? "Queue a message…" : "Message…");
+    blockedReason ??
+    (isComputing ? "Queue a message…" : (emptyPlaceholder ?? "Message…"));
   useAutoResize(textareaRef, input, placeholder);
 
   return (

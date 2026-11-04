@@ -79,6 +79,9 @@ import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
+import { useAssistantGreeting } from "../../assistants/hooks/use-assistant-greeting.js";
+import { greetingPrompt } from "../../assistants/lib/greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
@@ -416,6 +419,7 @@ export function ChatView() {
   const copyInView = copy !== null && shown[0]?.loadOlderBefore === undefined;
   const chatIdle =
     !sessionId && messages.length === 0 && continuesInvocation === undefined;
+  const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
 
   const {
     messagesRef,
@@ -577,9 +581,13 @@ export function ChatView() {
       }
       if (plan.pair) setNextSessionPair(agentId, plan.pair);
       if (plan.model) await chooseSessionModel(plan.model);
-      await sendWithA2uiData(text, attachments);
+      await sendWithA2uiData(
+        greeting === null ? text : greetingPrompt(text, greeting.context),
+        attachments,
+      );
     },
     [
+      greeting,
       selectedAgent,
       sessionId,
       currentSession,
@@ -837,6 +845,13 @@ export function ChatView() {
     </>
   );
 
+  const emptyChat =
+    !loadingSession &&
+    !sessionError &&
+    conversationEmpty(messages, queuedPrompts) &&
+    continuesInvocation === undefined &&
+    copy === null;
+
   const conversation =
     sessionMode === SessionMode.Terminal && selectedAgent && sessionId ? (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -889,49 +904,55 @@ export function ChatView() {
                   }}
                 />
               )}
-              {!loadingSession &&
-                !sessionError &&
-                conversationEmpty(messages, queuedPrompts) &&
-                continuesInvocation === undefined &&
-                copy === null && (
-                  <div className="flex flex-1 flex-col items-center justify-center text-center">
-                    <h2 aria-label={selectedAgentName ?? undefined}>
-                      <button
-                        type="button"
-                        onClick={handleConfigureSandbox}
-                        aria-label={`Configure ${selectedAgentName ?? "agent"}`}
-                        className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {agentView && (
-                          <AgentAvatar
-                            name={agentView.name}
-                            avatar={agentView.avatar}
-                            size={96}
-                            mood={avatarMood(agentDisplay?.state, agentView)}
-                            className="transition-opacity group-hover:opacity-80"
-                          />
-                        )}
-                        <span className="mt-3 flex items-center gap-2">
-                          <span className="text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
-                            {selectedAgentName}
-                          </span>
+              {emptyChat && greeting !== null && selectedAgent !== null && (
+                <AssistantGreeting
+                  greeting={greeting}
+                  avatar={agentView?.avatar ?? null}
+                  agentId={selectedAgent}
+                  sessionId={sessionId}
+                  onConfigure={handleConfigureSandbox}
+                  onPicked={() => textareaRef.current?.focus()}
+                />
+              )}
+              {emptyChat && greeting === null && (
+                <div className="flex flex-1 flex-col items-center justify-center text-center">
+                  <h2 aria-label={selectedAgentName ?? undefined}>
+                    <button
+                      type="button"
+                      onClick={handleConfigureSandbox}
+                      aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                      className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {agentView && (
+                        <AgentAvatar
+                          name={agentView.name}
+                          avatar={agentView.avatar}
+                          size={96}
+                          mood={avatarMood(agentDisplay?.state, agentView)}
+                          className="transition-opacity group-hover:opacity-80"
+                        />
+                      )}
+                      <span className="mt-3 flex items-center gap-2">
+                        <span className="text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
+                          {selectedAgentName}
                         </span>
-                      </button>
-                    </h2>
-                    <p className="text-sm text-muted-foreground">
-                      {sessionsElsewhere
-                        ? "Send a message to begin or open a new session in:"
-                        : "Send a message to begin."}
-                    </p>
-                    {agentView && (
-                      <NewSessionOptions
-                        agent={agentView}
-                        onNewTerminal={handleNewTerminal}
-                      />
-                    )}
-                    {startNotice && <div className="mt-6">{startNotice}</div>}
-                  </div>
-                )}
+                      </span>
+                    </button>
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {sessionsElsewhere
+                      ? "Send a message to begin or open a new session in:"
+                      : "Send a message to begin."}
+                  </p>
+                  {agentView && (
+                    <NewSessionOptions
+                      agent={agentView}
+                      onNewTerminal={handleNewTerminal}
+                    />
+                  )}
+                  {startNotice && <div className="mt-6">{startNotice}</div>}
+                </div>
+              )}
               {copyInView && (
                 <ContinuedFromPrelude
                   copy={copy}
@@ -1130,6 +1151,7 @@ export function ChatView() {
             }
             channelLive={channelLive}
             harness={sendHarness ?? null}
+            emptyPlaceholder={greeting?.placeholder ?? null}
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)

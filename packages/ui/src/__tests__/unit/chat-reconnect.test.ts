@@ -369,6 +369,7 @@ mockModule("../../modules/sessions/api/background-work.js", {
 });
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
+  useInstallCapabilities: () => ({ data: undefined, isSuccess: false }),
 });
 mockModule("../../modules/profiles/api/queries.js", {
   useProfiles: () => ({ data: [] }),
