@@ -1,5 +1,5 @@
 ---
-id: 127
+id: 128
 title: An owner's artifact prompt may open a Session of its own when no chat is docked
 status: accepted
 supersedes:
@@ -8,7 +8,7 @@ tags: [artifacts, postmessage, sessions]
 summary: Outside a chat with its publishing Agent, an interactive page's prompt that asks for it starts or continues the owner's own Session for that page, the way a viewer's prompt does; a plain prompt still goes nowhere there, and in a docked chat the open chat stays the destination.
 ---
 
-# ADR-127: An owner's artifact prompt may open a Session of its own when no chat is docked
+# ADR-128: An owner's artifact prompt may open a Session of its own when no chat is docked
 
 **Date:** 2026-10-30
 **Status:** Accepted
