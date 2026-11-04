@@ -538,6 +538,32 @@ describe("fetch_message_attachment MCP tool", () => {
   });
 });
 
+describe("outbound MCP tools — post and its old name", () => {
+  // TEST_SCENARIO: post is send_channel_message renamed; the old name stays for one release, does the same, and says it is deprecated.
+  it("posts through both names, and marks the old one deprecated", async () => {
+    const { client, posts } = await mcpHarness();
+    const { tools } = await client.listTools();
+
+    expect(tools.find((t) => t.name === "post")?.description).toContain(
+      "start_thread",
+    );
+    expect(
+      tools.find((t) => t.name === "send_channel_message")?.description,
+    ).toMatch(/^Deprecated: .*call post instead/);
+
+    await client.callTool({
+      name: "post",
+      arguments: { channel: "slack", text: "new name" },
+    });
+    await client.callTool({
+      name: "send_channel_message",
+      arguments: { channel: "slack", text: "old name" },
+    });
+
+    expect(posts.map((p) => p.text)).toEqual(["new name", "old name"]);
+  });
+});
+
 describe("outbound MCP tools — activity", () => {
   it("records each post and reply against the agent's owner", async () => {
     const { client } = await mcpHarness();

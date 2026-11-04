@@ -7234,7 +7234,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             error:
               "no active thread to reply to — if you are answering a thread, pass " +
               "the threadTs shown in that turn's instructions; for a top-level " +
-              "post use send_channel_message",
+              "post use post",
           };
         }
         threadTs = resolved.ref.threadTs;
