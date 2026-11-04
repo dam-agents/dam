@@ -74,7 +74,6 @@ export function ChatInput({
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useAutoResize(textareaRef, input);
   useEffect(() => {
     // UNIT_BOUNDARY_DESCRIPTION: skipped on mobile, where focusing pops the keyboard over the transcript.
     if (key && !blockedReason && !isMobile()) textareaRef.current?.focus();
@@ -257,6 +256,7 @@ export function ChatInput({
 
   const placeholder =
     blockedReason ?? (isComputing ? "Queue a message…" : "Message…");
+  useAutoResize(textareaRef, input, placeholder);
 
   return (
     <div
