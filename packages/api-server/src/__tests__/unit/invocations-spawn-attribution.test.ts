@@ -22,6 +22,8 @@ function makeService(opts: {
     },
     get: async () => null,
     complete: async () => true,
+    markStarted: async () => null,
+    failExpired: async () => false,
     fail: async () => {},
     listExpiredRunning: async () => [],
     listRunning: async () => [],

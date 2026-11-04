@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -87,7 +87,7 @@ That wait lasts the minute after the last agent a reclaim hibernated for the sta
 A parked agent **starts by itself** once room frees, whatever woke it, the Start button included: a runner roll, a controller restart or a schedule retry brings many of an owner's agents back at once with no fresh activity bump, the runner admits as many as the warm-up floor lets warm up together ([vm-memory](vm-memory.md)), and nobody presses Start again for the rest.
 A dedicated retry tick re-enqueues parked agents every ~30 s, and starts the first ones that fit once others have warmed up or idle agents have been hibernated, as its message tells the owner.
 A start waiting for the node is retried before the parked tick reaches it, so it comes back as soon as the node grants the room ([above](#enforcement)).
-An over-budget Invocation spawn therefore simply queues until room frees (e.g. earlier invocations completing), bounded by the Invocation's own liveness deadline.
+An over-budget Invocation spawn therefore simply queues until room frees (e.g. earlier invocations completing); it may wait as long as its liveness deadline, which starts only once it has started ([invocations](invocations.md#outcomes)).
 If a parked agent's activity window lapses, the idle checker's sweep restamps plain `Hibernated` and it becomes an ordinary sleeping agent.
 Already-running machines are never re-checked by resyncs or pool changes: a pool that falls is the target of admission and reclaim, never an eviction ([vm-memory](vm-memory.md)).
 

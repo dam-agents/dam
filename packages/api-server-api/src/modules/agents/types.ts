@@ -164,6 +164,7 @@ export interface Agent {
   disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  startWaitMessage?: string;
   reclaimed?: AgentReclaim;
   podTerminationReason?: string;
   podTerminationCode?: string;

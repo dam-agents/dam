@@ -14,7 +14,7 @@ INSERT INTO agents VALUES
   ('profile', NULL, 'p1', '{"modelRouter":true}', NULL),
   ('nothing', NULL, NULL, '{"modelRouter":true}', NULL);
 SQL
-  cat "$repo/packages/db/drizzle/0130_reconvert_unset_default_models.sql"
+  cat "$repo/packages/db/drizzle/0131_reconvert_unset_default_models.sql"
   cat <<'SQL'
 DO $$
 BEGIN

@@ -45,6 +45,7 @@ function row(patch: Partial<InvocationRow> = {}): InvocationRow {
     exitCode: null,
     output: null,
     outputExpiresAt: null,
+    startedAt: null,
     harnessConfig: null,
     driverSessionId: null,
     ...patch,
