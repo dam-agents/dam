@@ -27,4 +27,10 @@ describe("displayLabel", () => {
     expect(label).toBe(`${"a".repeat(199)}😀`);
     expect([...label]).toHaveLength(200);
   });
+
+  // TEST_SCENARIO: JSON.parse keeps a lone surrogate that a hostile host sends as `\\ud800`, and iteration hands it on as its own character, so a cap alone would store text PostgreSQL jsonb rejects.
+  it("drops an unpaired surrogate", () => {
+    expect(displayLabel("a\ud800b\udfffc")).toBe("abc");
+    expect(displayLabel("\ud800")).toBe("");
+  });
 });

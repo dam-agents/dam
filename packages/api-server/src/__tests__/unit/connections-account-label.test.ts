@@ -118,6 +118,19 @@ describe("connection account label", () => {
     expect(await lookupGoogleAccount("ya29.token")).toBe("jan@example.com");
   });
 
+  // TEST_SCENARIO: the OpenID userinfo endpoint can answer with a hostile email, and the label is stored and shown, so it is stripped of control bytes and capped like every other provider label.
+  it("strips control bytes and caps a hostile Google email", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        json({ email: `\u001b[31m${"e".repeat(5000)}@example.com` }),
+      ),
+    );
+    expect(await lookupGoogleAccount("ya29.token")).toBe(
+      `[31m${"e".repeat(196)}`,
+    );
+  });
+
   // TEST_SCENARIO: the label lands on the Connection as a platform-derived input and is what the view reads back.
   it("records the label on the connection", async () => {
     vi.stubGlobal("fetch", slackFetch({ userInfoOk: true }));
