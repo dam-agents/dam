@@ -15,11 +15,7 @@ import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
 import { useSetEnvironmentMembers } from "../api/mutations.js";
 import { sharedThroughAgent } from "../lib/environment-list.js";
-import {
-  AgentMembersEditor,
-  type ListedAgent,
-  sameAgents,
-} from "./agent-members-editor.js";
+import { AgentMembersEditor, useAgentEdits } from "./agent-members-editor.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The owner's Share dialog for one Environment. It
@@ -28,9 +24,9 @@ import {
  * Environment's own members, people and Agents, who open this one Environment
  * only. The lists only add: nobody here narrows the agent's. An Environment is never
  * public, so there is no link to copy beyond its addresses. It holds the
- * owner's edits as people added and removed, applied to the members the list
- * polls, so a member added elsewhere while it is open shows up and stays
- * through a Save.
+ * owner's edits as people and Agents added and removed, applied to the members
+ * the list polls, so a member added elsewhere while it is open shows up and
+ * stays through a Save.
  */
 export function EnvironmentShareDialog({
   environment,
@@ -44,13 +40,11 @@ export function EnvironmentShareDialog({
   const save = useSetEnvironmentMembers();
   const [edits, setEdits] = useState<MemberEdits>(NO_EDITS);
   const [draft, setDraft] = useState("");
-  const [agentEdits, setAgentEdits] = useState<ListedAgent[] | null>(null);
+  const agentEdits = useAgentEdits(environment.memberAgents);
   const [agentDraft, setAgentDraft] = useState("");
   const members = applyEdits(environment.members, edits);
-  const memberAgents = agentEdits ?? environment.memberAgents;
-  const dirty =
-    !sameViewers(members, environment.members) ||
-    !sameAgents(memberAgents, environment.memberAgents);
+  const memberAgents = agentEdits.agents;
+  const dirty = !sameViewers(members, environment.members) || agentEdits.dirty;
   const pendingDraft = draft.trim().length > 0 || agentDraft.trim().length > 0;
   const agentName = agent?.name ?? "its agent";
 
@@ -64,7 +58,7 @@ export function EnvironmentShareDialog({
       {
         onSuccess: (saved) => {
           setEdits(NO_EDITS);
-          setAgentEdits(null);
+          agentEdits.reset();
           emitToast({
             kind: "success",
             message: `Sharing updated — ${saved.members.length === 0 ? "nobody of its own may open" : `${saved.members.length} of its own may open`} ${environment.name}.`,
@@ -142,7 +136,8 @@ export function EnvironmentShareDialog({
             </p>
             <AgentMembersEditor
               agents={memberAgents}
-              onChange={setAgentEdits}
+              onAdd={agentEdits.onAdd}
+              onRemove={agentEdits.onRemove}
               disabled={save.isPending}
               draft={agentDraft}
               onDraftChange={setAgentDraft}

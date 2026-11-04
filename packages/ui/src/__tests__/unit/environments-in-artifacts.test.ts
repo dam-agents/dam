@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 
 const state = vi.hoisted(() => ({
+  lookup: null as null | ((id: string) => Promise<unknown>),
   agentMembers: [] as string[],
   agentMemberAgents: [] as {
     agentId: string;
@@ -61,6 +62,23 @@ vi.mock("../../modules/agents/api/queries.js", () => {
 });
 vi.mock("../../modules/agents/components/avatar/agent-avatar.js", () => ({
   AgentAvatar: () => null,
+}));
+vi.mock("../../query-client.js", () => ({
+  queryClient: {
+    fetchQuery: (options: { queryKey: unknown }) =>
+      state.lookup!(JSON.stringify(options.queryKey)),
+  },
+}));
+vi.mock("../../trpc.js", () => ({
+  trpc: {
+    environments: {
+      lookupAgent: {
+        queryOptions: (input: { agentId: string }) => ({
+          queryKey: input.agentId,
+        }),
+      },
+    },
+  },
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
@@ -389,6 +407,116 @@ describe("an Environment's Share dialog", () => {
     );
     expect(state.saveMembers).toEqual([
       { id: demo.id, emails: [], agentIds: [] },
+    ]);
+  });
+
+  // TEST_SCENARIO: someone else adds an agent while the owner's dialog is open. It shows up at the next poll and stays through the owner's Save, as a person added elsewhere does.
+  it("keeps an agent added elsewhere through the owner's Save", () => {
+    state.saveMembers = [];
+    const onClose = vi.fn();
+    const bob = {
+      agentId: "agent-bob",
+      name: "bob",
+      ownerName: "Bob",
+      lastOpenedAt: null,
+    };
+    const carol = {
+      agentId: "agent-carol",
+      name: "carol",
+      ownerName: "Carol",
+      lastOpenedAt: null,
+    };
+    const render = (memberAgents: (typeof bob)[]) =>
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(EnvironmentShareDialog, {
+          environment: { ...demo, memberAgents },
+          onClose,
+        }),
+      );
+    const doc = mount(
+      createElement(EnvironmentShareDialog, {
+        environment: { ...demo, memberAgents: [bob] },
+        onClose,
+      }),
+    );
+    act(() =>
+      (
+        doc.querySelector('[aria-label="Remove bob"]') as HTMLButtonElement
+      ).click(),
+    );
+    act(() => root!.render(render([bob, carol])));
+    expect(
+      doc.querySelector('[data-testid="agent-member-list"]')?.textContent,
+    ).toContain("carol");
+    act(() =>
+      [...doc.querySelectorAll("button")]
+        .find((b) => b.textContent === "Save")!
+        .click(),
+    );
+    expect(state.saveMembers).toEqual([
+      { id: demo.id, emails: [], agentIds: ["agent-carol"] },
+    ]);
+  });
+
+  // TEST_SCENARIO: the owner adds an agent by id and, while its lookup is still running, removes another. When the lookup lands the new agent is added and the removed one stays removed.
+  it("applies a lookup that lands after another edit to the list as it stands", async () => {
+    state.saveMembers = [];
+    let land: (v: unknown) => void = () => {};
+    state.lookup = () => new Promise((resolve) => (land = resolve));
+    const bob = {
+      agentId: "agent-bob",
+      name: "bob",
+      ownerName: "Bob",
+      lastOpenedAt: null,
+    };
+    const doc = mount(
+      createElement(EnvironmentShareDialog, {
+        environment: { ...demo, memberAgents: [bob] },
+        onClose: vi.fn(),
+      }),
+    );
+    const input = doc.querySelector(
+      '[data-testid="agent-member-input"]',
+    ) as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(input, "agent-qa1");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() =>
+      [...doc.querySelectorAll("button")]
+        .find(
+          (b) =>
+            b.textContent?.trim() === "Add" &&
+            b.closest('[data-testid="agent-members"]'),
+        )!
+        .click(),
+    );
+    act(() =>
+      (
+        doc.querySelector('[aria-label="Remove bob"]') as HTMLButtonElement
+      ).click(),
+    );
+    await act(async () => {
+      land({ found: true, agentId: "agent-qa1", name: "qa", ownerName: "Ann" });
+      await Promise.resolve();
+    });
+    const list =
+      doc.querySelector('[data-testid="agent-member-list"]')?.textContent ?? "";
+    expect(list).toContain("qa · Ann");
+    expect(list).not.toContain("bob");
+    act(() =>
+      [...doc.querySelectorAll("button")]
+        .find((b) => b.textContent === "Save")!
+        .click(),
+    );
+    expect(state.saveMembers).toEqual([
+      { id: demo.id, emails: [], agentIds: ["agent-qa1"] },
     ]);
   });
 

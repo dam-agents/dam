@@ -13,8 +13,10 @@ import { useAgentEnvironmentMembers } from "../api/queries.js";
 import {
   AgentMembersEditor,
   type ListedAgent,
-  sameAgents,
+  useAgentEdits,
 } from "./agent-members-editor.js";
+
+const NO_AGENTS: ListedAgent[] = [];
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Environments section of an agent's page: the
@@ -79,8 +81,8 @@ function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
   const save = useSetAgentEnvironmentMembers();
   const [edited, setEdited] = useState<string[] | null>(null);
   const [draft, setDraft] = useState("");
-  const [editedAgents, setEditedAgents] = useState<ListedAgent[] | null>(null);
   const [agentDraft, setAgentDraft] = useState("");
+  const agentEdits = useAgentEdits(saved.data?.agents ?? NO_AGENTS);
 
   return (
     <div className="mb-6 flex flex-col gap-2" data-testid="environment-access">
@@ -97,11 +99,9 @@ function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
       ) : (
         <MembersForm
           savedEmails={saved.data.emails}
-          savedAgents={saved.data.agents}
           edited={edited}
           setEdited={setEdited}
-          editedAgents={editedAgents}
-          setEditedAgents={setEditedAgents}
+          agentEdits={agentEdits}
           draft={draft}
           setDraft={setDraft}
           agentDraft={agentDraft}
@@ -113,7 +113,7 @@ function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
               {
                 onSuccess: () => {
                   setEdited(null);
-                  setEditedAgents(null);
+                  agentEdits.reset();
                 },
               },
             )
@@ -127,11 +127,9 @@ function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
 // UNIT_BOUNDARY_DESCRIPTION: the loaded list, its edits and their Save. The shared editor says how full the list is, and the empty list says who may open them without it.
 function MembersForm({
   savedEmails,
-  savedAgents,
   edited,
   setEdited,
-  editedAgents,
-  setEditedAgents,
+  agentEdits,
   draft,
   setDraft,
   agentDraft,
@@ -140,11 +138,9 @@ function MembersForm({
   onSave,
 }: {
   savedEmails: string[];
-  savedAgents: ListedAgent[];
   edited: string[] | null;
   setEdited: (emails: string[] | null) => void;
-  editedAgents: ListedAgent[] | null;
-  setEditedAgents: (agents: ListedAgent[] | null) => void;
+  agentEdits: ReturnType<typeof useAgentEdits>;
   draft: string;
   setDraft: (draft: string) => void;
   agentDraft: string;
@@ -153,10 +149,9 @@ function MembersForm({
   onSave: (emails: string[], agentIds: string[]) => void;
 }) {
   const emails = edited ?? savedEmails;
-  const agents = editedAgents ?? savedAgents;
+  const agents = agentEdits.agents;
   const dirty =
-    (edited !== null && !sameViewers(edited, savedEmails)) ||
-    (editedAgents !== null && !sameAgents(editedAgents, savedAgents));
+    (edited !== null && !sameViewers(edited, savedEmails)) || agentEdits.dirty;
 
   return (
     <>
@@ -180,7 +175,8 @@ function MembersForm({
       </p>
       <AgentMembersEditor
         agents={agents}
-        onChange={setEditedAgents}
+        onAdd={agentEdits.onAdd}
+        onRemove={agentEdits.onRemove}
         disabled={saving}
         draft={agentDraft}
         onDraftChange={setAgentDraft}
@@ -205,7 +201,7 @@ function MembersForm({
             disabled={saving}
             onClick={() => {
               setEdited(null);
-              setEditedAgents(null);
+              agentEdits.reset();
             }}
           >
             Cancel

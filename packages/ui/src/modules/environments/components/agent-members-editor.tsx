@@ -1,7 +1,7 @@
 import { Add } from "@carbon/icons-react";
 import type { EnvironmentMemberAgent } from "api-server-api";
 import { VIEWER_ALLOWLIST_MAX } from "api-server-api";
-import { useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,17 +23,21 @@ export type ListedAgent = Pick<
  * owner, beside its people. An Agent is added by its id, which the server
  * looks up first, so the list shows whose Agent it is before it is saved and
  * an id that names no Agent is never added. Each row says the Agent's name,
- * its owner and when it last opened what the list covers.
+ * its owner and when it last opened what the list covers. It reports one
+ * addition or removal at a time, never a whole list, so a lookup that
+ * resolves after another edit, or a list polled meanwhile, loses nothing.
  */
 export function AgentMembersEditor({
   agents,
-  onChange,
+  onAdd,
+  onRemove,
   disabled,
   draft,
   onDraftChange,
 }: {
   agents: ListedAgent[];
-  onChange: (agents: ListedAgent[]) => void;
+  onAdd: (agent: ListedAgent) => void;
+  onRemove: (agentId: string) => void;
   disabled: boolean;
   draft: string;
   onDraftChange: (draft: string) => void;
@@ -59,14 +63,11 @@ export function AgentMembersEditor({
         setError("That id names no agent that can open an Environment");
         return;
       }
-      onChange([
-        ...agents,
-        {
-          agentId: found.agentId,
-          name: found.name,
-          ownerName: found.ownerName,
-        },
-      ]);
+      onAdd({
+        agentId: found.agentId,
+        name: found.name,
+        ownerName: found.ownerName,
+      });
       onDraftChange("");
       setError(null);
     } catch {
@@ -148,9 +149,7 @@ export function AgentMembersEditor({
                 label={`Remove ${a.name}`}
                 tooltip="Remove"
                 disabled={disabled}
-                onClick={() =>
-                  onChange(agents.filter((x) => x.agentId !== a.agentId))
-                }
+                onClick={() => onRemove(a.agentId)}
               />
             </li>
           ))}
@@ -174,4 +173,52 @@ export function sameAgents(
   if (a.length !== b.length) return false;
   const ids = new Set(a.map((x) => x.agentId));
   return b.every((x) => ids.has(x.agentId));
+}
+
+interface AgentEdits {
+  added: readonly ListedAgent[];
+  removed: readonly string[];
+}
+
+const NO_AGENT_EDITS: AgentEdits = { added: [], removed: [] };
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A person's edits to an Agent list, held as
+ * Agents added and removed and applied to the list as last polled, so an
+ * Agent someone else added while the editor is open shows up and stays
+ * through a Save. Each edit is applied to the edits as they stand, never to a
+ * copy taken before a lookup.
+ */
+export function useAgentEdits(live: readonly ListedAgent[]) {
+  const [edits, setEdits] = useState<AgentEdits>(NO_AGENT_EDITS);
+  const agents = [
+    ...live.filter((a) => !edits.removed.includes(a.agentId)),
+    ...edits.added.filter((a) => !live.some((l) => l.agentId === a.agentId)),
+  ];
+  const onAdd = useCallback(
+    (agent: ListedAgent) =>
+      setEdits((e) => ({
+        added: [...e.added.filter((a) => a.agentId !== agent.agentId), agent],
+        removed: e.removed.filter((id) => id !== agent.agentId),
+      })),
+    [],
+  );
+  const onRemove = useCallback(
+    (agentId: string) =>
+      setEdits((e) => ({
+        added: e.added.filter((a) => a.agentId !== agentId),
+        removed: e.removed.includes(agentId)
+          ? e.removed
+          : [...e.removed, agentId],
+      })),
+    [],
+  );
+  const reset = useCallback(() => setEdits(NO_AGENT_EDITS), []);
+  return {
+    agents,
+    dirty: !sameAgents(agents, live),
+    onAdd,
+    onRemove,
+    reset,
+  };
 }
