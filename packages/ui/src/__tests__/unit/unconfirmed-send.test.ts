@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: until the runtime confirms it has a sent message (platform/promptAccepted or platform/promptStarted), the chat says the message is on its way, never that the agent is working. The words sit under the person's own message: "Sending…", or "Waking the agent…" when the send woke the agent, shown only after a second so a fast send goes straight to the working dots. The agent's slot, the session's row in the sidebar and the quiet-turn line show nothing of the agent's until then.
+// TEST_OVERVIEW: until the runtime confirms it has a sent message (platform/promptAccepted or platform/promptStarted), the chat says the message is on its way, never that the agent is working. The words sit under the person's own message: "Sending", or "Waking the agent" when the send woke the agent, shown only after a second so a fast send goes straight to the working dots. The agent's slot, the session's row in the sidebar and the quiet-turn line show nothing of the agent's until then.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
@@ -55,15 +55,15 @@ function render(message: Message): string {
 }
 
 describe("a send the runtime has not confirmed", () => {
-  // TEST_SCENARIO: the agent is running and the message is on the wire. The words belong to the person's send, so "Sending…" sits under their own message, and the agent's slot shows nothing yet: no name, no working dots.
+  // TEST_SCENARIO: the agent is running and the message is on the wire. The words belong to the person's send, so "Sending" sits under their own message, and the agent's slot shows nothing yet: no name, no working dots.
   test("says Sending under the person's message, not in the agent's slot", () => {
     const html = render({ ...sent, unconfirmed: "sending" });
     expect(html).toContain('data-testid="send-unconfirmed"');
-    expect(html).toContain("Sending…");
+    expect(html).toContain("Sending");
     expect(render(pendingReply("sending"))).toBe("");
   });
 
-  // TEST_SCENARIO: a fast send is confirmed in milliseconds. The line fades in only after a second, so a fast send never flashes "Sending…" before the working dots.
+  // TEST_SCENARIO: a fast send is confirmed in milliseconds. The line fades in only after a second, so a fast send never flashes "Sending" before the working dots.
   test("shows the words only after a delay", () => {
     const html = render({ ...sent, unconfirmed: "sending" });
     expect(html).toContain("anim-in-late");
@@ -72,7 +72,7 @@ describe("a send the runtime has not confirmed", () => {
   // TEST_SCENARIO: the send woke a sleeping agent, which takes up to a couple of minutes. The person's message says the agent is waking, which is what they wait for.
   test("says Waking the agent when the send woke it", () => {
     const html = render({ ...sent, unconfirmed: "waking" });
-    expect(html).toContain("Waking the agent…");
+    expect(html).toContain("Waking the agent");
     expect(html).not.toContain('data-testid="working-dots"');
   });
 

@@ -120,8 +120,8 @@ function LoadOlderMarker({
 }
 
 const UNCONFIRMED_LABEL: Record<NonNullable<Message["unconfirmed"]>, string> = {
-  sending: "Sending…",
-  waking: "Waking the agent…",
+  sending: "Sending",
+  waking: "Waking the agent",
 };
 
 export const ChatMessage = memo(function ChatMessage({
@@ -307,10 +307,10 @@ export const ChatMessage = memo(function ChatMessage({
         <span
           role="status"
           data-testid="send-unconfirmed"
-          className="anim-in-late inline-flex items-center gap-1.5 text-2xs text-muted-foreground"
+          className="anim-in-late flex items-center gap-2 text-xs leading-none text-muted-foreground"
         >
-          <Spinner size={10} className="text-inherit" />
-          {UNCONFIRMED_LABEL[unconfirmedSend]}
+          <Spinner size={12} className="text-inherit" />
+          <span>{UNCONFIRMED_LABEL[unconfirmedSend]}</span>
         </span>
       )}
       {isAssistant && showModel && !streaming && message.model && (
