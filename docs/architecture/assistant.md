@@ -26,7 +26,8 @@ One row per owner names the incarnation of its assistant, and the Agent's id is 
 Nothing waits and nothing is fenced: there is no claim to take over and no lease to expire.
 When the Agent is deleted after it was ready, the row moves to its next incarnation, so the replacement has a **new id**: nothing still keyed by the old one — an artifacts sweep, an outbox entry — can reach it.
 The row records `ready` only after the Agent and every initialization step behind it returned, so a request that dies half-way leaves a record the next request finishes; a step that fails is logged, recorded as not ready, and retried on the next one.
-Whoever finishes it re-runs the initialization as an addition, never as a replacement: it inserts the environment variables, the trusted egress preset and the first providers the Agent is missing and leaves its chat default alone if it has one, so nothing the owner changed in between is undone.
+The row records each initialization step as it lands — the environment variables, the trusted egress preset and the first providers — and a retry applies only the ones it has not recorded.
+Nothing is re-applied "if absent", because an empty set is exactly what an owner leaves behind by choosing no network access or detaching every provider: that choice stands, and the chat default is left alone when the Agent has one.
 An Agent recovered this way is announced once, when it first becomes ready, so the checklist and the live hints learn of it exactly once.
 
 One owner's provisioning runs under **that owner's advisory lock**, taken on a connection of its own so the shared pool never waits on the holder; a request that finds the lock taken leaves the work to whoever holds it.

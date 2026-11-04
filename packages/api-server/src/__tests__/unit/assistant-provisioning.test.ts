@@ -1,6 +1,6 @@
 // TEST_OVERVIEW: Provisioning gives each person one assistant whose Agent id is derived from the owner and the row's incarnation, so the store's create is the mutex: two replicas converge on one Agent, a retry finishes the same one, and only a genuine deletion moves to a new id so nothing keyed by the old one can reach the replacement. `ready` is written only after the Agent and its initialization returned, so a failure is retried rather than hidden. An Agent of the owner's already holding the reserved name is renamed once, the rename is recorded before it happens and completed only when it lands, and an Agent renamed since is left alone. Before the first create the owner is enrolled in the Getting Started checklist, so the assistant counts as their first Agent rather than as proof they were here before.
 import { describe, expect, it, vi } from "vitest";
-import type { Agent } from "api-server-api";
+import type { Agent, AgentInitStep } from "api-server-api";
 import { EventType, events$ } from "../../events.js";
 import type { InfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { assistantAgentId } from "../../modules/assistants/domain/agent-id.js";
@@ -74,6 +74,7 @@ function rowStore() {
         incarnation: 1,
         agentId,
         state: "creating",
+        steps: [],
         used: false,
         renamed: null,
         noticeSeen: false,
@@ -95,6 +96,15 @@ function rowStore() {
         used: false,
       });
       return true;
+    },
+    markInitStep: async (
+      owner: string,
+      agentId: string,
+      step: AgentInitStep,
+    ) => {
+      const row = rows.get(owner);
+      if (!row || row.agentId !== agentId) return;
+      if (!row.steps.includes(step)) row.steps = [...row.steps, step];
     },
     markReady: async (owner: string, agentId: string) => {
       const row = rows.get(owner);
@@ -227,7 +237,7 @@ describe("assistant provisioning", () => {
 
     expect(w.state.enrolled).toHaveBeenCalledTimes(1);
     expect(w.state.created).toEqual([
-      { id: FIRST, name: NAME, kind: "assistant" },
+      expect.objectContaining({ id: FIRST, name: NAME, kind: "assistant" }),
     ]);
     expect(w.store.rows.get(ALICE)).toMatchObject({
       agentId: FIRST,
@@ -261,7 +271,12 @@ describe("assistant provisioning", () => {
       await w.provisioner.ensure();
       expect(events.agents).toEqual([]);
       expect(w.state.created).toEqual([
-        { id: FIRST, name: NAME, kind: "assistant", resume: true },
+        expect.objectContaining({
+          id: FIRST,
+          name: NAME,
+          kind: "assistant",
+          resume: true,
+        }),
       ]);
       expect(w.store.rows.get(ALICE)?.state).toBe("creating");
 

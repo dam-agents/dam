@@ -1,4 +1,4 @@
-import type { AgentsService } from "api-server-api";
+import type { AgentInitStep, AgentsService } from "api-server-api";
 import { avatarCharacter } from "api-server-api/avatar/svg";
 import type { LockOutcome, OwnerLock } from "db";
 import { emit, EventType } from "../../../events.js";
@@ -98,6 +98,13 @@ export function createAssistantProvisioner(deps: {
     await deps.repo.completeRename(row.owner, row.agentId);
   };
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the row's recorded steps are what a retry skips, and each step is recorded as it lands — before the next one runs — so a create that dies half-way never re-applies an initialization the owner may have changed since. */
+  const initOf = (row: AssistantRow) => ({
+    initDone: row.steps,
+    onInitStep: (step: AgentInitStep) =>
+      deps.repo.markInitStep(row.owner, row.agentId, step),
+  });
+
   const ensureAgent = async (row: AssistantRow, exists: boolean) => {
     if (exists) {
       await rename(row);
@@ -106,6 +113,7 @@ export function createAssistantProvisioner(deps: {
         name: deps.assistantName,
         kind: "assistant",
         resume: true,
+        ...initOf(row),
       });
       return;
     }
@@ -116,15 +124,18 @@ export function createAssistantProvisioner(deps: {
         id: row.agentId,
         name: deps.assistantName,
         kind: "assistant",
+        ...initOf(row),
       });
     } catch (err) {
       // UNIT_BOUNDARY_DESCRIPTION: a replica that raced this one may have made the very same Agent, which is adoption rather than failure — but a create that failed for another reason must not be reported as done.
       if ((await deps.agentOf(row.agentId)) === null) throw err;
+      const current = await deps.repo.find(row.owner);
       await deps.agents.create({
         id: row.agentId,
         name: deps.assistantName,
         kind: "assistant",
         resume: true,
+        ...initOf(current ?? row),
       });
     }
   };

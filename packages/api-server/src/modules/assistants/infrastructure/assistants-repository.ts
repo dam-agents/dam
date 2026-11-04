@@ -1,5 +1,7 @@
 import { and, assistants, eq, sql, type Db } from "db";
 
+import type { AgentInitStep } from "api-server-api";
+
 import type { AssistantRename } from "../domain/types.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: how far provisioning has got with the owner's assistant: its Agent still has steps to run, or it is initialized, or it was deleted. */
@@ -10,6 +12,7 @@ export interface AssistantRow {
   incarnation: number;
   agentId: string;
   state: AssistantRowState;
+  steps: readonly AgentInitStep[];
   used: boolean;
   renamed: AssistantRename | null;
   noticeSeen: boolean;
@@ -25,6 +28,12 @@ export interface AssistantsRepository {
     fromAgentId: string,
     toAgentId: string,
   ): Promise<boolean>;
+  /** UNIT_BOUNDARY_DESCRIPTION: records that one initialization step landed, before anything else runs, so a retry skips it and never re-applies what the owner may have changed since. */
+  markInitStep(
+    owner: string,
+    agentId: string,
+    step: AgentInitStep,
+  ): Promise<void>;
   markReady(owner: string, agentId: string): Promise<void>;
   recordRename(
     owner: string,
@@ -44,6 +53,7 @@ const COLUMNS = {
   incarnation: assistants.incarnation,
   agentId: assistants.agentId,
   state: assistants.state,
+  initSteps: assistants.initSteps,
   usedAt: assistants.usedAt,
   renamedAgentId: assistants.renamedAgentId,
   renamedFrom: assistants.renamedFrom,
@@ -57,6 +67,7 @@ type Row = {
   incarnation: number;
   agentId: string;
   state: string;
+  initSteps: string[];
   usedAt: Date | null;
   renamedAgentId: string | null;
   renamedFrom: string | null;
@@ -65,6 +76,10 @@ type Row = {
   noticeSeenAt: Date | null;
 };
 
+const INIT_STEPS: readonly AgentInitStep[] = ["env", "egress", "grants"];
+const isInitStep = (value: string): value is AgentInitStep =>
+  (INIT_STEPS as readonly string[]).includes(value);
+
 function toRow(row: Row): AssistantRow {
   return {
     owner: row.owner,
@@ -72,6 +87,7 @@ function toRow(row: Row): AssistantRow {
     agentId: row.agentId,
     state:
       row.state === "ready" || row.state === "gone" ? row.state : "creating",
+    steps: row.initSteps.filter(isInitStep),
     used: row.usedAt !== null,
     renamed:
       row.renamedAgentId && row.renamedFrom && row.renamedTo
@@ -120,6 +136,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
           incarnation: sql`${assistants.incarnation} + 1`,
           agentId: toAgentId,
           state: "creating",
+          initSteps: [],
           usedAt: null,
           updatedAt: sql`now()`,
         })
@@ -128,6 +145,22 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         )
         .returning({ owner: assistants.owner });
       return moved.length > 0;
+    },
+
+    async markInitStep(owner, agentId, step) {
+      await db
+        .update(assistants)
+        .set({
+          initSteps: sql`array_append(${assistants.initSteps}, ${step})`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(assistants.owner, owner),
+            eq(assistants.agentId, agentId),
+            sql`NOT (${step} = ANY(${assistants.initSteps}))`,
+          ),
+        );
     },
 
     async markReady(owner, agentId) {

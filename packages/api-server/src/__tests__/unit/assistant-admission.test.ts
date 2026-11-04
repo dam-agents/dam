@@ -95,6 +95,7 @@ describe("provisioning before admission", () => {
               ...row,
               incarnation: 1,
               state: "ready" as const,
+              steps: [],
               used: false,
               renamed: null,
               noticeSeen: false,
@@ -107,6 +108,7 @@ describe("provisioning before admission", () => {
         return true;
       },
       nextIncarnation: async () => false,
+      markInitStep: async () => undefined,
       markReady: async () => undefined,
       recordRename: async () => undefined,
       completeRename: async () => undefined,

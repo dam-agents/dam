@@ -142,6 +142,10 @@ export {
   type ProviderChoice,
 } from "./modules/harness-config/default-provider.js";
 
+export {
+  AGENT_INIT_STEPS,
+  type AgentInitStep,
+} from "./modules/agents/types.js";
 export type {
   Agent,
   AgentReclaim,

@@ -5,17 +5,20 @@
 -- by the primary key and adopts what is there. `state` says whether that Agent
 -- is initialized (`ready`) or still has steps to run (`creating`), and `gone`
 -- says its Agent was deleted, which bumps `incarnation` so the replacement gets
--- a new id — nothing keyed by the old one can then reach it. `used_at` marks the
--- assistant as used once it has a session, which is what decides the first
--- landing without waking it. The `renamed_*` columns are the one-time news that
--- an Agent the owner already had was renamed to free the reserved name,
--- recorded before the rename and completed when it lands; `notice_seen_at` says
--- when they dismissed it.
+-- a new id — nothing keyed by the old one can then reach it. `init_steps` names
+-- the initialization steps that have landed, recorded as each one does: a retry
+-- applies only the rest, so nothing the owner revoked since is restored.
+-- `used_at` marks the assistant as used once it has a session, which is what
+-- decides the first landing without waking it. The `renamed_*` columns are the
+-- one-time news that an Agent the owner already had was renamed to free the
+-- reserved name, recorded before the rename and completed when it lands;
+-- `notice_seen_at` says when they dismissed it.
 CREATE TABLE "assistants" (
 	"owner" text PRIMARY KEY NOT NULL,
 	"incarnation" integer DEFAULT 1 NOT NULL,
 	"agent_id" text NOT NULL,
 	"state" text DEFAULT 'creating' NOT NULL,
+	"init_steps" text[] DEFAULT '{}' NOT NULL,
 	"used_at" timestamp with time zone,
 	"renamed_agent_id" text,
 	"renamed_from" text,

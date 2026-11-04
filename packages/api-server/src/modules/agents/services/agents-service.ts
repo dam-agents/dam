@@ -10,6 +10,7 @@ import {
   type AgentsService,
   type AgentWithAccess,
   type AgentCreateInput,
+  type AgentInitStep,
   type EgressPreset,
   type AgentUpdateInput,
   type EnvVar,
@@ -1276,6 +1277,13 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
+      // UNIT_BOUNDARY_DESCRIPTION: a resumed create must say which initialization steps already landed. Guessing from an empty current set is exactly how a retry would restore network access or a provider its owner removed.
+      if (input.resume && input.initDone === undefined)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "a resumed agent create must name the initialization steps that already landed",
+        });
       if (input.vm === false)
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -1494,20 +1502,32 @@ export function createAgentsService(deps: {
         throw e;
       }
 
-      // UNIT_BOUNDARY_DESCRIPTION: a resumed create adds what is missing instead of replacing it, so a retry cannot undo an environment variable, an egress rule, a granted provider or a chat default its owner set in between.
+      // UNIT_BOUNDARY_DESCRIPTION: a resumed create adds what is missing instead of replacing it, and a step the caller has recorded as landed is skipped outright — an empty current set is not proof that the step never ran, since the owner may have emptied it on purpose.
+      const done = new Set<AgentInitStep>(input.initDone ?? []);
+      const step = async (
+        name: AgentInitStep,
+        run: () => Promise<void>,
+      ): Promise<void> => {
+        if (done.has(name)) return;
+        await run();
+        await input.onInitStep?.(name);
+      };
+
       const userEnv = dropProtectedEnvs([...templateEnv, ...(input.env ?? [])]);
-      if (userEnv.length > 0) {
+      await step("env", async () => {
+        if (userEnv.length === 0) return;
         if (input.resume)
           await deps.agentEnvRepo.insertMissing(infra.id, userEnv);
         else await deps.agentEnvRepo.replace(infra.id, userEnv);
-      }
+      });
 
-      if (deps.presetSeeder) {
+      await step("egress", async () => {
+        if (!deps.presetSeeder) return;
         const preset = input.egressPreset ?? "trusted";
         if (input.resume)
           await deps.presetSeeder.seedIfAbsent(infra.id, preset, owner);
         else await deps.presetSeeder.seed(infra.id, preset, owner);
-      }
+      });
 
       const createdAt = new Date();
       await deps.runtimeMutator.bump(infra.id, [
@@ -1532,14 +1552,15 @@ export function createAgentsService(deps: {
           : []),
       ]);
 
-      if (deps.grantProvisioner && hasInitialGrants) {
+      await step("grants", async () => {
+        if (!deps.grantProvisioner || !hasInitialGrants) return;
         if (input.resume)
           await deps.grantProvisioner.applyAfterCreateIfNone(
             infra.id,
             grantSel,
           );
         else await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
-      }
+      });
 
       if (startsOnProfile) {
         const missed = await startsOnProfile

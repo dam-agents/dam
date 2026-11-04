@@ -1,5 +1,5 @@
 {
-  "id": "380c613e-bc9e-44c2-befb-9794f75f4a68",
+  "id": "f0c8b6a0-e491-4e94-bfae-550da5e84ae0",
   "prevId": "ea3ed6bc-9282-40dd-ad63-82545e4827b9",
   "version": "7",
   "dialect": "postgresql",
@@ -1417,6 +1417,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'creating'"
+        },
+        "init_steps": {
+          "name": "init_steps",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
         },
         "used_at": {
           "name": "used_at",

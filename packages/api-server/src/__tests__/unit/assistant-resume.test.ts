@@ -124,6 +124,7 @@ describe("resuming a create", () => {
       name: NAME,
       kind: "assistant",
       resume: true,
+      initDone: [],
       env: [{ name: "A", value: "1" }],
     });
 
@@ -150,11 +151,26 @@ describe("resuming a create", () => {
         name: NAME,
         kind: "assistant",
         resume: true,
+        initDone: [],
       });
       expect(events.seen.filter((e) => e.type === "AgentCreated")).toEqual([]);
     } finally {
       events.stop();
     }
+  });
+
+  // TEST_SCENARIO: a resume must say which steps already landed; one that does not is refused rather than guessing from an empty current set, which is how a retry would restore what its owner removed.
+  it("refuses a resume that does not name its steps", async () => {
+    const { agents, calls } = setup();
+    await expect(
+      agents.create({
+        id: ASSISTANT,
+        name: NAME,
+        kind: "assistant",
+        resume: true,
+      }),
+    ).rejects.toThrow(/must name the initialization steps/);
+    expect(calls.getLive).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: a plain create still writes the store, asserts the storage gate and replaces the initialization it names.

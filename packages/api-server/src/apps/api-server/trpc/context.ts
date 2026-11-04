@@ -6,12 +6,12 @@ import {
   composeEditorStanding,
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
-import { permissionsOf } from "../../../modules/agents/domain/agent-permissions.js";
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
 import { createActOnAgent } from "./act-on-agent.js";
+import { createOwnerPermissions } from "./owner-permissions.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
 import { TRPCError } from "@trpc/server";
@@ -141,11 +141,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   const readChatFormPreferences = createChatFormPreferencesReader(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
-  const ownerPermissions = async (agentId: string, sub: string) => {
-    const infra = await agentsRepo.get(agentId);
-    if (!infra || infra.owner !== sub) return null;
-    return permissionsOf("owner", infra.kind);
-  };
+  const ownerPermissions = createOwnerPermissions({ repo: agentsRepo });
   const agentOfTarget = createAgentTargetResolver({
     schedules: schedulesBoot.repo,
     egressRules: createEgressRulesRepository(db),
