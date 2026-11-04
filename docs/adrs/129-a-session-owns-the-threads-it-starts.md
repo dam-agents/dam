@@ -2,7 +2,7 @@
 id: 129
 title: A Session owns the Slack threads it starts
 status: accepted
-subsystem: channel-turns
+subsystem: slack-threads
 tags: [slack, sessions, threads]
 summary: A Session that starts a Slack thread with start_thread owns it, and every later message there, from a person or an agent, becomes a turn of that Session; a plain post stays one-way, and the ownership record lives in the platform.
 ---

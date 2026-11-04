@@ -175,7 +175,10 @@ function harness(
     async start() {
       await worker.start(ASKER);
     },
-    async startThread(text = "Which region do we deploy to?", sessionId = WEB_SESSION) {
+    async startThread(
+      text = "Which region do we deploy to?",
+      sessionId = WEB_SESSION,
+    ) {
       await worker.start(ASKER);
       const started = await worker.startThread(ASKER, {
         sessionId,
@@ -247,7 +250,11 @@ describe("a reply under a thread a session started", () => {
     const started = await h.startThread();
     expect(started.conversationId).toBe(OTHER);
 
-    await h.replyInThread(started.threadTs, after(started.threadTs, 1), "eu-west, please");
+    await h.replyInThread(
+      started.threadTs,
+      after(started.threadTs, 1),
+      "eu-west, please",
+    );
 
     expect(await settled(() => h.prompts.length === 1)).toBe(true);
     const [turn] = h.prompts;
@@ -291,16 +298,26 @@ describe("a reply under a thread a session started", () => {
     const h = harness({ peer: true });
     const started = await h.startThread();
 
-    await h.replyInThread(started.threadTs, after(started.threadTs, 3), "my own note", {
-      kind: "agent",
-      agentId: ASKER,
-      ambientRound: false,
-    });
-    await h.replyInThread(started.threadTs, after(started.threadTs, 4), "staging is free", {
-      kind: "agent",
-      agentId: PEER,
-      ambientRound: false,
-    });
+    await h.replyInThread(
+      started.threadTs,
+      after(started.threadTs, 3),
+      "my own note",
+      {
+        kind: "agent",
+        agentId: ASKER,
+        ambientRound: false,
+      },
+    );
+    await h.replyInThread(
+      started.threadTs,
+      after(started.threadTs, 4),
+      "staging is free",
+      {
+        kind: "agent",
+        agentId: PEER,
+        ambientRound: false,
+      },
+    );
 
     expect(await settled(() => h.prompts.length === 1)).toBe(true);
     for (let i = 0; i < 20; i++) await tick();
@@ -352,7 +369,11 @@ describe("a reply under a thread a session started", () => {
     });
     if ("error" in posted) throw new Error(posted.error);
 
-    await h.mentionInThread(posted.ts!, after(posted.ts!, 6), "<@U-BOT> nice, thanks");
+    await h.mentionInThread(
+      posted.ts!,
+      after(posted.ts!, 6),
+      "<@U-BOT> nice, thanks",
+    );
 
     expect(await settled(() => h.prompts.length === 1)).toBe(true);
     expect(h.prompts[0]!.resumed).toBeNull();
@@ -406,7 +427,11 @@ describe("a reply under a thread a session started", () => {
         threadTs: started.threadTs,
       }),
     ).toEqual({ ok: true });
-    await h.replyInThread(started.threadTs, after(started.threadTs, 8), "eu-west");
+    await h.replyInThread(
+      started.threadTs,
+      after(started.threadTs, 8),
+      "eu-west",
+    );
 
     for (let i = 0; i < 40; i++) await tick();
     expect(h.prompts).toEqual([]);
@@ -456,7 +481,11 @@ describe("a reply under a thread a session started", () => {
 
     await h.replyInThread(first.threadTs, after(first.threadTs, 9), "eu-west");
     expect(await settled(() => h.prompts.length === 1)).toBe(true);
-    await h.replyInThread(second.threadTs, after(second.threadTs, 10), "team blue");
+    await h.replyInThread(
+      second.threadTs,
+      after(second.threadTs, 10),
+      "team blue",
+    );
     for (let i = 0; i < 20; i++) await tick();
     expect(h.prompts).toHaveLength(1);
 
@@ -475,7 +504,11 @@ describe("a reply under a thread a session started", () => {
   it("shows the replies the session missed since its last turn", async () => {
     const h = harness();
     const started = await h.startThread();
-    await h.replyInThread(started.threadTs, after(started.threadTs, 11), "eu-west");
+    await h.replyInThread(
+      started.threadTs,
+      after(started.threadTs, 11),
+      "eu-west",
+    );
     expect(await settled(() => h.prompts.length === 1)).toBe(true);
     await settled(() => false);
 
@@ -530,7 +563,11 @@ describe("a reply under a thread a session started", () => {
     const started = await h.startThread();
     h.sessions.clear();
 
-    await h.mentionInThread(started.threadTs, after(started.threadTs, 14), "<@U-BOT> hello?");
+    await h.mentionInThread(
+      started.threadTs,
+      after(started.threadTs, 14),
+      "<@U-BOT> hello?",
+    );
 
     expect(await settled(() => h.prompts.length === 1)).toBe(true);
     expect(h.prompts[0]!.resumed).toBeNull();
@@ -556,7 +593,11 @@ describe("a reply under a thread a session started", () => {
     const h = harness({ ambient: true });
     const started = await h.startThread();
 
-    await h.replyInThread(started.threadTs, after(started.threadTs, 15), "eu-west");
+    await h.replyInThread(
+      started.threadTs,
+      after(started.threadTs, 15),
+      "eu-west",
+    );
 
     expect(await settled(() => h.prompts.length === 1)).toBe(true);
     for (let i = 0; i < 20; i++) await tick();
@@ -568,7 +609,11 @@ describe("a reply under a thread a session started", () => {
   it("reads an owned thread with read_thread", async () => {
     const h = harness();
     const started = await h.startThread("Which region?");
-    await h.replyInThread(started.threadTs, after(started.threadTs, 16), "eu-west");
+    await h.replyInThread(
+      started.threadTs,
+      after(started.threadTs, 16),
+      "eu-west",
+    );
 
     const read = await h.worker.readThread(ASKER, {
       threadTs: started.threadTs,

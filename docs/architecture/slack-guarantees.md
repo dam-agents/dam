@@ -2,7 +2,7 @@
 
 Last verified: 2026-11-04
 
-Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
+Companion to [channels](channels.md), [channel-turns](channel-turns.md) and [slack-threads](slack-threads.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
 A change to Slack behavior updates all three in the same PR.
 It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.

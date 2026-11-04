@@ -119,7 +119,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 
 - **Thread-session binding.** A thread maps to one resumable session, so the agent gets real conversational continuity.
   The binding is carried on the session itself, resolved by listing sessions over ACP and matching — there is no server-side session store.
-  The one exception is a thread a Session started with `start_thread`: the platform records that Session as its owner, so a reply there reaches it without a session of its own ([channel-turns](channel-turns.md#threading-model)).
+  The one exception is a thread a Session started with `start_thread`: the platform records that Session as its owner, so a reply there reaches it without a session of its own ([slack-threads](slack-threads.md)).
 
 ## Topology
 
