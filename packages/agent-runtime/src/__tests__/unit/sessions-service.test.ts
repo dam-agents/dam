@@ -381,3 +381,122 @@ describe("adoptHarnessTitle", () => {
     }
   });
 });
+
+describe("title backfill", () => {
+  function untitledStore() {
+    const entries: Record<string, SessionMetaEntry> = {
+      old: { meta: { mode: "chat" }, createdAt: "2026-10-01T00:00:00.000Z" },
+      bob: {
+        meta: { mode: "chat", harness: "bob" },
+        createdAt: "2026-10-02T00:00:00.000Z",
+      },
+      named: {
+        meta: { mode: "chat", title: "Kept title" },
+        createdAt: "2026-10-03T00:00:00.000Z",
+      },
+    };
+    return {
+      entries,
+      store: {
+        ...fakeStore(),
+        all: () => entries,
+        get: (id: string) => entries[id],
+        set: (id: string, meta: SessionMetaEntry["meta"]) => {
+          entries[id] = { ...entries[id]!, meta };
+        },
+      },
+    };
+  }
+
+  // TEST_SCENARIO: a runtime before 0.2.24 kept no title, so after the upgrade every older Session lists as "(no title)"; the first list read asks each harness with such Sessions for its own listing, once per boot, and keeps the title it gives.
+  it("keeps the harness's title for Sessions the platform holds none for", async () => {
+    const { entries, store } = untitledStore();
+    const asked: unknown[] = [];
+    const caller: InProcessCaller = {
+      request: async <T>(method: string, params: unknown): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        asked.push(params);
+        const harness = (
+          params as { _meta?: { platform?: { harness?: string } } }
+        )._meta?.platform?.harness;
+        if (harness === "claude-code")
+          return {
+            sessions: [
+              { sessionId: "named", title: "Harness title" },
+              { sessionId: "old", title: "fix the login\nmore" },
+            ],
+          } as T;
+        if (harness === "bob")
+          return { sessions: [{ sessionId: "bob", title: "Bob's task" }] } as T;
+        return { sessions: [] } as T;
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const service = createSessionsService({
+      defaultHarness: "claude-code",
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => caller,
+      sessionMetadata: store,
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+
+    await service.list();
+    await vi.waitFor(() => expect(entries.bob?.meta.title).toBe("Bob's task"));
+    expect(entries.old?.meta.title).toBe("fix the login");
+    expect(entries.named?.meta.title).toBe("Kept title");
+    expect(asked).toEqual([
+      { cwd: "." },
+      { cwd: ".", _meta: { platform: { harness: "claude-code" } } },
+      { cwd: ".", _meta: { platform: { harness: "bob" } } },
+    ]);
+
+    entries.later = { meta: { mode: "chat" }, createdAt: "2026-10-04" };
+    await service.list();
+    expect(asked.filter((p) => (p as { _meta?: unknown })._meta)).toHaveLength(
+      2,
+    );
+  });
+
+  // TEST_SCENARIO: the harness cannot be read yet, say it fails to start; the Sessions stay untitled for now, and the next list read asks again.
+  it("asks again after a harness listing failed", async () => {
+    const { entries, store } = untitledStore();
+    delete entries.bob;
+    let failing = true;
+    const caller: InProcessCaller = {
+      request: async <T>(method: string, params: unknown): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        if ((params as { _meta?: unknown })._meta === undefined)
+          return { sessions: [] } as T;
+        if (failing) throw new Error("harness did not start");
+        return { sessions: [{ sessionId: "old", title: "Late title" }] } as T;
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const logged: string[] = [];
+    const service = createSessionsService({
+      defaultHarness: "claude-code",
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => caller,
+      sessionMetadata: store,
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: (msg) => logged.push(msg),
+    });
+
+    await service.list();
+    await vi.waitFor(() => expect(logged).toHaveLength(1));
+    expect(entries.old?.meta.title).toBeUndefined();
+
+    failing = false;
+    await service.list();
+    await vi.waitFor(() => expect(entries.old?.meta.title).toBe("Late title"));
+  });
+});

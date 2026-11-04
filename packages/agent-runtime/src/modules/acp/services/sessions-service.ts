@@ -20,6 +20,7 @@ import type { InProcessCaller } from "../infrastructure/in-process-request.js";
 import type { PlatformSessionOf } from "../infrastructure/terminal-session-pins.js";
 import type {
   PlatformSessionMeta,
+  SessionMetaEntry,
   SessionMetadataStore,
 } from "../infrastructure/session-metadata-store.js";
 import type { SessionChanges } from "./session-changes.js";
@@ -115,6 +116,7 @@ export function createSessionsService(deps: {
 }): RuntimeSessionsService {
   const now = deps.now ?? Date.now;
   const adopting = new Set<string>();
+  const backfilled = new Set<string>();
   let listing:
     | {
         readAt: number;
@@ -179,6 +181,72 @@ export function createSessionsService(deps: {
     return { listed: lastListed, complete: false };
   }
 
+  async function initialize(caller: InProcessCaller): Promise<void> {
+    await caller.request("initialize", {
+      protocolVersion: 1,
+      clientCapabilities: { fs: {} },
+      clientInfo: { name: "platform-sessions", version: "1.0.0" },
+    });
+  }
+
+  // Keeps the first line of the title the harness lists for each wanted Session.
+  async function adoptListedTitles(
+    caller: InProcessCaller,
+    harness: string,
+    wanted: Set<string>,
+  ): Promise<void> {
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_HARNESS_PAGES && wanted.size > 0; page++) {
+      const result = await caller.request<HarnessListPage>("session/list", {
+        cwd: ".",
+        _meta: { platform: { harness } },
+        ...(cursor !== undefined && { cursor }),
+      });
+      for (const listed of result.sessions ?? []) {
+        const title = firstLine(listed.title);
+        if (!title || !wanted.delete(listed.sessionId)) continue;
+        const fresh = deps.sessionMetadata.get(listed.sessionId);
+        if (fresh && !fresh.meta.title && !fresh.meta.customTitle)
+          deps.sessionMetadata.set(listed.sessionId, { ...fresh.meta, title });
+      }
+      cursor = result.nextCursor ?? undefined;
+      if (cursor === undefined) break;
+    }
+  }
+
+  /**
+   * A Session started before the runtime kept a title has none in the
+   * platform's records, and the list read answers from those records alone;
+   * only its harness knows the title. So the first list read of a boot asks
+   * each harness that has such Sessions, once, and keeps what it lists. A
+   * failed read is asked again on the next list read.
+   */
+  function backfillTitles(entries: Record<string, SessionMetaEntry>): void {
+    const untitled = new Map<string, Set<string>>();
+    for (const [sessionId, entry] of Object.entries(entries)) {
+      if (entry.meta.title || entry.meta.customTitle) continue;
+      if (deps.sessionMetadata.isTombstoned(sessionId)) continue;
+      const harness = entry.meta.harness ?? deps.defaultHarness;
+      if (harness === undefined || backfilled.has(harness)) continue;
+      const ids = untitled.get(harness) ?? new Set<string>();
+      ids.add(sessionId);
+      untitled.set(harness, ids);
+    }
+    for (const [harness, wanted] of untitled) {
+      backfilled.add(harness);
+      const caller = deps.openCaller();
+      void initialize(caller)
+        .then(() => adoptListedTitles(caller, harness, wanted))
+        .catch((error: unknown) => {
+          backfilled.delete(harness);
+          deps.log(
+            `session list: the ${harness} titles could not be read: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        })
+        .finally(() => caller.close());
+    }
+  }
+
   function withRepositories(page: SessionPage): SessionPage {
     const repositoriesOf = deps.sessionRepositories;
     if (!repositoriesOf) return page;
@@ -195,7 +263,9 @@ export function createSessionsService(deps: {
     async list(query?: SessionListQuery): Promise<SessionPage> {
       const platformSessionOf = deps.terminalSessionPins?.();
       const { listed, complete } = await listedWithinGrace();
-      const composed = composeSessionList(listed, deps.sessionMetadata.all(), {
+      const entries = deps.sessionMetadata.all();
+      backfillTitles(entries);
+      const composed = composeSessionList(listed, entries, {
         isTombstoned: (sessionId) =>
           deps.sessionMetadata.isTombstoned(sessionId),
         isRunning: deps.isRunning,
@@ -244,30 +314,10 @@ export function createSessionsService(deps: {
       adopting.add(sessionId);
       const caller = deps.openCaller();
       try {
-        await caller.request("initialize", {
-          protocolVersion: 1,
-          clientCapabilities: { fs: {} },
-          clientInfo: { name: "platform-sessions", version: "1.0.0" },
-        });
+        await initialize(caller);
         const harness = entry.meta.harness ?? deps.defaultHarness;
         if (harness === undefined) return;
-        let cursor: string | undefined;
-        let title = "";
-        for (let page = 0; page < MAX_HARNESS_PAGES && !title; page++) {
-          const result = await caller.request<HarnessListPage>("session/list", {
-            cwd: ".",
-            _meta: { platform: { harness } },
-            ...(cursor !== undefined && { cursor }),
-          });
-          title = firstLine(
-            result.sessions?.find((s) => s.sessionId === sessionId)?.title,
-          );
-          cursor = result.nextCursor ?? undefined;
-          if (cursor === undefined) break;
-        }
-        const fresh = deps.sessionMetadata.get(sessionId);
-        if (title && fresh && !fresh.meta.title && !fresh.meta.customTitle)
-          deps.sessionMetadata.set(sessionId, { ...fresh.meta, title });
+        await adoptListedTitles(caller, harness, new Set([sessionId]));
       } catch (error) {
         deps.log(
           `session ${sessionId}: the harness title could not be read: ${error instanceof Error ? error.message : String(error)}`,
