@@ -320,7 +320,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     };
   };
   const openToolCalls = new Map<string, Set<string>>();
-  const toolsSettledAt = new Map<string, number>();
+  const steerQuietWindows = new Map<string, number>();
+  let steerQuietWindowSeq = 0;
   const generating = new Set<string>();
   const turnSenders = new Map<string, Sender>();
   let sessionForkSupported = false;
@@ -499,9 +500,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     atSteerPoint: (sessionId) =>
       !generating.has(sessionId) &&
       !(openToolCalls.get(sessionId)?.size ?? 0) &&
-      (!steersByInterrupt() ||
-        Date.now() - (toolsSettledAt.get(sessionId) ?? 0) >=
-          INTERRUPT_QUIET_MS),
+      !steerQuietWindows.has(sessionId),
     steer: (entry, batch) =>
       steersByInterrupt()
         ? interruptSteers.steer(entry, batch)
@@ -1481,15 +1480,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!open.delete(call.toolCallId) && !call.started) return;
     if (open.size > 0) return;
     openToolCalls.delete(sessionId);
-    toolsSettledAt.set(sessionId, Date.now());
     if (!steersByInterrupt()) {
       promptScheduler.onSteerPoint(sessionId);
       return;
     }
-    setTimeout(
-      () => promptScheduler.onSteerPoint(sessionId),
-      INTERRUPT_QUIET_MS,
-    );
+    const window = ++steerQuietWindowSeq;
+    steerQuietWindows.set(sessionId, window);
+    setTimeout(() => {
+      if (steerQuietWindows.get(sessionId) === window)
+        steerQuietWindows.delete(sessionId);
+      promptScheduler.onSteerPoint(sessionId);
+    }, INTERRUPT_QUIET_MS);
   }
 
   function requestFromHarness(
