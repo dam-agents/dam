@@ -92,6 +92,7 @@ export function AgentEgressEditor({
     isError,
   } = useEgressRulesForAgent(agentId);
   const { data: currentPreset = null } = useCurrentPreset(agentId);
+  const { data: platformRule } = usePlatformRule(agentId);
   const revokeRule = useRevokeEgressRule();
   const showConfirm = useStore((s) => s.showConfirm);
   const [adding, setAdding] = useState(false);
@@ -173,7 +174,7 @@ export function AgentEgressEditor({
         className={compact ? "mb-0" : undefined}
         loading={isLoading}
         error={isError && "Couldn't load the rules."}
-        isEmpty={rules.length === 0}
+        isEmpty={rules.length === 0 && platformRule?.state !== "removed"}
         empty="No rules yet. Every outbound request will need your approval."
       >
         {(rules.length > 10 || query !== "") && (
@@ -188,7 +189,7 @@ export function AgentEgressEditor({
             />
           </div>
         )}
-        {groups.length === 0 && (
+        {groups.length === 0 && (rules.length > 0 || query !== "") && (
           <p className="px-4 py-6 text-center text-sm text-muted-foreground">
             No rule matches “{query.trim()}”.
           </p>

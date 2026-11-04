@@ -61,7 +61,7 @@ export function EnvironmentShareDialog({
           agentEdits.reset();
           emitToast({
             kind: "success",
-            message: `Sharing updated — ${saved.members.length === 0 ? "nobody of its own may open" : `${saved.members.length} of its own may open`} ${environment.name}.`,
+            message: `Sharing updated — ${ownMembersPhrase(saved.members.length, saved.memberAgents.length)} ${environment.name}.`,
           });
           onClose();
         },
@@ -188,4 +188,14 @@ function applyEdits(live: readonly string[], edits: MemberEdits): string[] {
     ...live.filter((e) => !edits.removed.includes(e)),
     ...edits.added.filter((e) => !live.includes(e)),
   ];
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: who of the Environment's own may open it after a save, its people and its agents counted apart.
+export function ownMembersPhrase(people: number, agents: number): string {
+  if (people === 0 && agents === 0) return "nobody of its own may open";
+  const parts = [
+    ...(people > 0 ? [`${people} ${people === 1 ? "person" : "people"}`] : []),
+    ...(agents > 0 ? [`${agents} ${agents === 1 ? "agent" : "agents"}`] : []),
+  ];
+  return `${parts.join(" and ")} of its own may open`;
 }

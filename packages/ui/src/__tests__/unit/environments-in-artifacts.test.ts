@@ -78,7 +78,7 @@ const { visibleEnvironments, environmentStateLabel, sharedThroughAgent } =
   await import("../../modules/environments/lib/environment-list.js");
 const { EnvironmentsGroup } =
   await import("../../modules/environments/components/environments-group.js");
-const { EnvironmentShareDialog } =
+const { EnvironmentShareDialog, ownMembersPhrase } =
   await import("../../modules/environments/components/environment-share-dialog.js");
 const { AgentEnvironmentsSection } =
   await import("../../modules/environments/components/agent-environment-members.js");
@@ -502,6 +502,15 @@ describe("an Environment's Share dialog", () => {
     expect(state.saveMembers).toEqual([
       { id: demo.id, emails: [], agentIds: ["agent-qa1"] },
     ]);
+  });
+
+  // TEST_SCENARIO: the toast after a save counts the Environment's own people and agents apart, so an Environment shared only with an agent never reads as shared with nobody.
+  it("counts its own people and agents in the toast", () => {
+    expect(ownMembersPhrase(0, 0)).toBe("nobody of its own may open");
+    expect(ownMembersPhrase(0, 1)).toBe("1 agent of its own may open");
+    expect(ownMembersPhrase(2, 1)).toBe(
+      "2 people and 1 agent of its own may open",
+    );
   });
 
   // TEST_SCENARIO: the summary names only the parts that open it, joined as a sentence.
