@@ -98,10 +98,6 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   }): Promise<boolean>;
 }
 
-/**
- * Which of the owner's artifacts a library sees: the owner sees the whole
- * library, an agent's own tools only what that agent published.
- */
 export type ArtifactScope =
   { kind: "library" } | { kind: "agent"; agentId: string };
 
