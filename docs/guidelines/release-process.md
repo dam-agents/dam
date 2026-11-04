@@ -49,6 +49,8 @@ The dot before the number is load-bearing.
 Semver reads `rc.2` as two identifiers and compares the second as a number, so `rc.9` sorts below `rc.10`.
 Without the dot the whole `rcN` is one alphanumeric identifier, which semver compares as text: `rc9` sorts above `rc10`, and a GitOps source that tracks a semver range stays on the older candidate.
 The branches cut before this rule carry `-rcN`; the tooling still reads that spelling and counts it up, so a branch mid-release does not break.
+Never change the spelling inside one core version: at the same core version `rc.10` sorts below `rc9`, so a rewrite moves a semver-tracking consumer backwards.
+The spelling changes with the core version, when a new release branch is cut.
 
 Repeat as needed — cherry-pick fixes onto the release branch and publish another RC.
 
@@ -67,11 +69,12 @@ A hotfix ships a fix on top of the release in production, without the rest of `m
 Run from a clean working directory.
 The task:
 
-1. Takes the tag of the latest published GitHub Release (e.g. `v0.3.0-rc.2`), or the tag given as `base`.
-   A published Release is what production runs; a stable tag alone is not.
+1. Takes the tag of the latest published GitHub Release (e.g. `v0.3.0`), or the tag given as `base`.
+   A published Release is what production runs; a stable tag alone is not, and the query skips pre-releases, so a hotfix starts from a stable one.
 2. Takes the next patch above every existing version tag and `release-v*` branch (e.g. `0.3.1`, or `0.3.2` when `0.3.1` is tagged but never published).
    It warns when it skips versions, because the hotfix does not contain them.
-3. Creates `release-v0.3.1` from the base tag, not from `main`, bumps it to `0.3.1-rc.1`, pushes.
+3. Creates `release-v0.3.1` from the base tag, not from `main`, and bumps it to `0.3.1-rc.1`, pushes.
+   A base tag cut before the `-rc.N` rule predates the tooling that stamps that spelling, so such a hotfix is stamped `-rc1` and the task says so.
 4. If `main` is at `0.3.1` or lower, opens a PR bumping `main` to `0.3.2` and closes any older bump PR, so the next regular release does not reuse the hotfix version.
 
 Then merge the fix to `main` first, cherry-pick it onto the hotfix branch with `git cherry-pick -x <sha>`, push, and publish with `release:publish-rc` or `release:publish-stable` as for any release.

@@ -58,7 +58,17 @@ if [[ "$highest_version" != "$base_version" ]]; then
   echo -e "  - \x1b[33m$highest_version is the highest version already tagged or branched, so the hotfix is $hotfix_version.\x1b[0m"
   echo -e "    \x1b[33mThe hotfix does not contain the versions tagged after $base_version.\x1b[0m"
 fi
-echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be set to ${hotfix_version}-rc.1."
+# The release tasks are read from the tree this tag carries, so a base tag cut
+# before the `-rc.N` rule can only stamp `-rcN`. Ask that tree which spelling it
+# reads rather than assuming main's.
+if [[ "$(git show "$base_tag:.mise/tasks/release/set-version" | rc_spelling_of)" == "dotted" ]]; then
+  initial_rc="${hotfix_version}-rc.1"
+else
+  initial_rc="${hotfix_version}-rc1"
+  echo -e "  - \x1b[33m$base_tag predates the -rc.N spelling, so this hotfix branch is stamped ${initial_rc} and its GitOps source orders it as the legacy spelling does.\x1b[0m"
+fi
+
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be set to ${initial_rc}."
 if $bump_main; then
   echo -e "  - \x1b[36mmain\x1b[0m is at $main_version, so a PR bumping it to $next_main_version will be opened. It needs one approval, then merge it."
 fi
@@ -66,10 +76,10 @@ gum confirm "Proceed?"
 
 set -x
 git checkout -B "$release_branch" "$base_tag"
-mise run release:set-version "${hotfix_version}-rc.1"
+mise run release:set-version "${initial_rc}"
 git push --set-upstream origin "$release_branch"
 set +x
-echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${hotfix_version}-rc.1 created."
+echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${initial_rc} created."
 
 if $bump_main; then
   open_main_bump_pr "$next_main_version" "after opening hotfix \`$release_branch\`"

@@ -23,7 +23,11 @@ describe("compareVersions", () => {
     ["0.2.24-rc.9", "0.2.24-rc.10", -1],
     ["0.2.24-rc.10", "0.2.24-rc.9", 1],
     ["0.2.25-rc.1", "0.2.25-rc.10", -1],
+    ["0.2.24-rc.10", "0.2.25-rc.1", -1],
     ["0.2.24-rc.10", "0.2.24", -1],
+    // TEST_SCENARIO: the two spellings are not aliases at the same core version: `rc.10` sorts below `rc9`, because a dotted identifier compares below an alphanumeric one. That is why a branch never changes spelling mid-release, and why the core version, not the candidate, carries the migration.
+    ["0.2.24-rc.10", "0.2.24-rc9", -1],
+    ["0.2.24-rc.1", "0.2.24-rc9", -1],
   ])("compareVersions(%j, %j) = %d", (a, b, expected) => {
     expect(compareVersions(a, b)).toBe(expected);
   });

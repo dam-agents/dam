@@ -391,7 +391,14 @@ export function agentsInstallSettings(config: Config) {
   };
 }
 
-const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc\.?\d+)?$/;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the forms a tagged release reports — `X.Y.Z`, a
+ * `-rc.N` candidate, or the legacy `-rcN` one. A dotted number is a numeric
+ * identifier, which semver forbids to start with a zero, so `-rc.01` is not a
+ * release version. A build from `main` reports `X.Y.Z-dev-<sha>` and matches
+ * none of them.
+ */
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc([0-9]+|\.(0|[1-9]\d*)))?$/;
 
 function recommendedClientCliVersion(appVersion: string): string | undefined {
   return RELEASE_VERSION.test(appVersion) ? appVersion : undefined;
