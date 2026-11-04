@@ -126,11 +126,11 @@ export function GettingStartedNavItem({
         className={cn(SIDEBAR_ITEM, "relative", sidebarItemTone(open))}
       >
         <span className="relative flex">
-          <ProgressRing done={done} total={total} />
+          <ProgressRing done={done} total={total} className="size-4" />
           {unseen > 0 && (
             <span
               data-testid="getting-started-unseen"
-              className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-white"
+              className="absolute -top-1.5 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-white"
             >
               {unseen > 9 ? "9+" : unseen}
             </span>

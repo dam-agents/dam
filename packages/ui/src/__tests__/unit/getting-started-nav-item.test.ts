@@ -163,6 +163,35 @@ it("names the item with its progress in both states", () => {
   );
 });
 
+// TEST_SCENARIO: the ring is drawn in the same 16px box as the icons it sits among, so the collapsed rail keeps one column and the expanded label starts where Documentation's does; the count rides over it instead of pushing it.
+it("draws the ring at the sidebar icons' size", () => {
+  fake.progress = { unlocks: everything(1), dismissed: false };
+  render();
+  expect(
+    inDocument("getting-started-item")
+      ?.querySelector("svg")
+      ?.getAttribute("class"),
+  ).toContain("size-4");
+  expect(inDocument("getting-started-unseen")?.getAttribute("class")).toContain(
+    "absolute",
+  );
+});
+
+// TEST_SCENARIO: the popover keeps the larger ring, where there is room for it.
+it("draws the popover ring large", () => {
+  fake.progress = {
+    unlocks: [unlock("create-agent", "lens", true)],
+    dismissed: false,
+  };
+  fake.expanded = true;
+  render();
+  expect(
+    inDocument("getting-started-checklist")
+      ?.querySelector("svg")
+      ?.getAttribute("class"),
+  ).toContain("size-7");
+});
+
 // TEST_SCENARIO: an open checklist lists the tasks and the eight slots, and its close button shuts it again.
 it("lists the tasks and closes from the header", () => {
   fake.expanded = true;
