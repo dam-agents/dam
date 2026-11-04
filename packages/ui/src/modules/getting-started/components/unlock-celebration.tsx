@@ -78,7 +78,7 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
         if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
       }}
       className={cn(
-        "flex items-center",
+        "flex max-w-[calc(100vw-2rem)] items-center",
         collecting && "animate-[unlock-collect_0.45s_ease-in_forwards]",
       )}
     >

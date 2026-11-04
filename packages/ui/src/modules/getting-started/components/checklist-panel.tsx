@@ -32,7 +32,7 @@ export function ChecklistPanel({ rows, onClose, onDismiss, onStart }: Props) {
     <section
       aria-label="Get started"
       data-testid="getting-started-checklist"
-      className="flex max-h-[min(80vh,600px)] w-[340px] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-xl"
+      className="flex max-h-[min(80vh,600px)] w-[340px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-xl"
     >
       <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
         <ProgressRing done={done} total={total} />

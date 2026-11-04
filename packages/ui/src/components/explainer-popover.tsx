@@ -1,4 +1,4 @@
-import { Help } from "@carbon/icons-react";
+import { type CarbonIconType, Help } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import {
@@ -12,6 +12,8 @@ const HOVER_CLOSE_DELAY_MS = 120;
 
 export function ExplainerPopover({
   label,
+  describedBy,
+  icon: Icon = Help,
   side = "top",
   align = "start",
   className,
@@ -19,6 +21,8 @@ export function ExplainerPopover({
   children,
 }: {
   label: string;
+  describedBy?: string;
+  icon?: CarbonIconType;
   side?: "top" | "bottom" | "left" | "right";
   align?: "start" | "center" | "end";
   className?: string;
@@ -43,6 +47,7 @@ export function ExplainerPopover({
       <PopoverTrigger
         type="button"
         aria-label={label}
+        aria-describedby={describedBy}
         onMouseEnter={openNow}
         onMouseLeave={closeSoon}
         className={cn(
@@ -51,7 +56,7 @@ export function ExplainerPopover({
           className,
         )}
       >
-        <Help size={16} />
+        <Icon size={16} />
       </PopoverTrigger>
       <PopoverContent
         side={side}

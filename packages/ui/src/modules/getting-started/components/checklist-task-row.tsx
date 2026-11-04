@@ -1,7 +1,8 @@
 import { CheckmarkFilled, Information } from "@carbon/icons-react";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
+import { useId } from "react";
 
-import { Tooltip } from "@/components/ui/tooltip";
+import { ExplainerPopover } from "@/components/explainer-popover";
 import { cn } from "@/lib/utils";
 
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
@@ -17,11 +18,14 @@ interface Props {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One checklist task: what to do, one line on why,
  * and the character it unlocks, an egg while it is locked. The row opens the
- * place where the task is done; the info mark beside the title is its own
- * button, so a keyboard user reads the line without leaving the checklist.
+ * place where the task is done. The info mark beside the title is its own
+ * button, not a hover-only tooltip: a tap, a click or Enter opens the line, so
+ * a touch user reads it too, and its always-present description carries it to
+ * a screen reader on focus.
  */
 export function ChecklistTaskRow({ title, hint, reward, onStart }: Props) {
   const done = reward !== null;
+  const hintId = useId();
   return (
     <li className="list-none">
       <div className="flex items-center gap-1 pr-3 transition-colors hover:bg-muted/40">
@@ -46,15 +50,19 @@ export function ChecklistTaskRow({ title, hint, reward, onStart }: Props) {
             {title}
           </span>
         </button>
-        <Tooltip content={hint} side="right">
-          <button
-            type="button"
-            aria-label={`About ${title}`}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Information size={14} />
-          </button>
-        </Tooltip>
+        <span id={hintId} className="sr-only">
+          {hint}
+        </span>
+        <ExplainerPopover
+          label={`About ${title}`}
+          describedBy={hintId}
+          icon={Information}
+          side="right"
+          align="start"
+          className="size-6 rounded-md hover:bg-muted"
+        >
+          {hint}
+        </ExplainerPopover>
         <span className="flex size-6 shrink-0 items-center justify-center">
           {reward ? (
             <AgentAvatar name="" avatar={reward} size={24} />
