@@ -12,7 +12,10 @@ import { createSchedulerRunner } from "../../modules/schedules/services/schedule
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../../modules/schedules/infrastructure/schedule-queue.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
-import type { FirePair } from "../../modules/harness-config/index.js";
+import type {
+  FirePair,
+  RunBoundary,
+} from "../../modules/harness-config/index.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import type { AgentActivityStamp } from "../../modules/agents/index.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
@@ -96,6 +99,7 @@ function makeDeps(opts?: {
   /** UNIT_BOUNDARY_DESCRIPTION: a schedule as the repository hands it back, for a shape the parameters cannot express. */
   schedule?: Schedule;
   firePair?: FirePair;
+  boundary?: RunBoundary;
   ensureDefault?: (agentId: string) => Promise<AgentActivityStamp | null>;
   defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
   choices?: {
@@ -235,6 +239,7 @@ function makeDeps(opts?: {
 
   const runner = createSchedulerRunner({
     ...(opts?.firePair ? { firePair: opts.firePair } : {}),
+    ...(opts?.boundary ? { boundary: opts.boundary } : {}),
     ensureDefault: opts?.ensureDefault ?? (async () => null),
     defaultPendingAfterMove:
       opts?.defaultPendingAfterMove ?? (async () => false),
@@ -424,7 +429,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
   /** TEST_SCENARIO: The early wake for a moved agent comes before the
    * session check and the pair, so both see the new runtime; it is asked for
    * whether or not the schedule names its own model. */
-  it("asks for the early wake before checking the schedule's choices", async () => {
+  it("asks for the early wake before resolving the pair and checking the choices", async () => {
     const order: string[] = [];
     const { runner } = makeDeps({
       choices: { model: "ibm/gpt-5.5" },
@@ -449,7 +454,104 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
       SCHEDULE_ID,
       new Date("2026-06-12T10:30:00Z"),
     );
-    expect(order).toEqual(["wake", "check", "pair"]);
+    expect(order).toEqual(["wake", "pair", "check"]);
+  });
+
+  /** TEST_SCENARIO: a fire's payload is where the native subagent settings are derived (D193B), against the pair the fire resolves rather than a default it may not run on: a schedule naming no harness derives from the inherited one. */
+  it("derives the subagent's native settings against the pair the fire resolves", async () => {
+    const seen: { pair: unknown; settings: unknown }[] = [];
+    const { runner, payloads } = makeDeps({
+      choices: {
+        settings: {
+          "platformSubagent.harness": "codex",
+          "platformSubagent.model": "openai/gpt-6.1-sol",
+        },
+      },
+      firePair: async () => ({
+        harness: "codex",
+        provider: "oai",
+        model: "openai/gpt-6.1-sol",
+      }),
+      boundary: {
+        inputs: async () => ({ capabilities: null, catalog: null }),
+        settle: () => ({ pair: (ofRun) => ofRun, settings: (_, held) => held }),
+        pair: async (_agentId, ofRun) => ofRun,
+        resolve: async () => undefined,
+        settings: async (_agentId, pair, settings) => {
+          seen.push({ pair, settings });
+          return { ...settings, subagentModel: "openai/gpt-6.1-sol" };
+        },
+      },
+    });
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(seen).toEqual([
+      {
+        pair: {
+          harness: "codex",
+          provider: "oai",
+          model: "openai/gpt-6.1-sol",
+        },
+        settings: {
+          "platformSubagent.harness": "codex",
+          "platformSubagent.model": "openai/gpt-6.1-sol",
+        },
+      },
+    ]);
+    expect(payloads[0]?.settings).toMatchObject({
+      "platformSubagent.harness": "codex",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+      subagentModel: "openai/gpt-6.1-sol",
+    });
+  });
+
+  /** TEST_SCENARIO: a schedule holding no choices of its own follows its default, and the payload it fires with is settled from that default's settings: the native subagent keys are derived there too, so a following fire runs on the sub-agent its default names (D193B). */
+  it("settles an inheriting fire's settings from its default", async () => {
+    const seen: { pair: unknown; settings: unknown }[] = [];
+    const inherited = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-haiku-5",
+    };
+    const { runner, payloads } = makeDeps({
+      firePair: async () => ({
+        harness: "claude-code",
+        provider: "conn-1",
+        model: "anthropic/claude-opus-5",
+        settings: inherited,
+      }),
+      boundary: {
+        inputs: async () => ({ capabilities: null, catalog: null }),
+        settle: () => ({ pair: (ofRun) => ofRun, settings: (_, held) => held }),
+        pair: async (_agentId, ofRun) => ofRun,
+        resolve: async () => undefined,
+        settings: async (_agentId, pair, settings) => {
+          seen.push({ pair, settings });
+          return { ...settings, subagentModel: "anthropic/claude-haiku-5" };
+        },
+      },
+    });
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(seen).toEqual([
+      {
+        pair: {
+          harness: "claude-code",
+          provider: "conn-1",
+          model: "anthropic/claude-opus-5",
+          settings: inherited,
+        },
+        settings: inherited,
+      },
+    ]);
+    expect(payloads[0]?.settings).toMatchObject({
+      ...inherited,
+      subagentModel: "anthropic/claude-haiku-5",
+    });
+    expect(payloads[0]?.onDefault).toBe(true);
   });
 
   /** TEST_SCENARIO: Run now never waits for an agent that is still setting up
@@ -568,9 +670,11 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     const { runner, stampedResults, events } = makeDeps({
       choices: { model: "openai/gpt-5.5" },
       validateSessionChoices: async () => "this agent holds no openai provider",
-      firePair: async () => {
-        throw new Error("the pair resolver must not run");
-      },
+      firePair: async () => ({
+        harness: "claude-code",
+        provider: null,
+        model: "openai/gpt-5.5",
+      }),
     });
     await expect(
       runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),

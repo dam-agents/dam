@@ -23,8 +23,11 @@ import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { keepAlive } from "./heartbeat.js";
 import { emit, EventType } from "../../../events.js";
 import { getLogger } from "../../../core/logger.js";
-import type { FirePair } from "../../../modules/harness-config/index.js";
-import { fillSavedDefault } from "./saved-default.js";
+import type {
+  FirePair,
+  RunBoundary,
+} from "../../../modules/harness-config/index.js";
+import { prepareRunFrame } from "./saved-default.js";
 import { stampSender } from "./sender-stamp.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
@@ -77,6 +80,7 @@ export function createAcpRelay(
   approvals: ApprovalsRelayService,
   presence: SessionPresence,
   firePair: FirePair,
+  boundary?: RunBoundary,
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
@@ -277,15 +281,18 @@ export function createAcpRelay(
             isBinary: boolean,
             parsed: unknown,
           ) => {
-            const filled = fillSavedDefault(parsed, agentId, firePair)?.catch(
-              (err: unknown) => {
-                getLogger().warn(
-                  { err, agentId },
-                  "acp relay: saved default lookup failed",
-                );
-                return null;
-              },
-            );
+            const filled = prepareRunFrame(
+              parsed,
+              agentId,
+              firePair,
+              boundary,
+            )?.catch((err: unknown) => {
+              getLogger().warn(
+                { err, agentId },
+                "acp relay: saved default lookup failed",
+              );
+              return null;
+            });
             if (!filled && !held) {
               send(data, isBinary);
               return;

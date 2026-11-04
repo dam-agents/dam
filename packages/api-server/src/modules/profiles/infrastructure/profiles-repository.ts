@@ -32,7 +32,11 @@ export type ProfileRow = Omit<typeof profiles.$inferSelect, "settings"> & {
 export type ProfileWrite = Pick<
   ProfileRow,
   "name" | "harness" | "providerTemplate" | "model" | "settings"
->;
+> & {
+  /* UNIT_BOUNDARY_DESCRIPTION: the sub-agent a profile names, absent where it names none, so a seed or a new-agent default writes no sub-agent. */
+  subagentProviderTemplate?: string | null;
+  subagentModel?: string | null;
+};
 
 /** UNIT_BOUNDARY_DESCRIPTION: every row that points at a profile, which is both the usage a list counts and what refuses a delete; `profileId` lets one query serve one profile or all of them. */
 export interface ProfileReferences {

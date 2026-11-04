@@ -77,60 +77,68 @@ function channelRow(
   });
 }
 
+const LENT = {
+  "platformSubagent.harness": "pi",
+  "platformSubagent.model": "cb/haiku",
+};
+
+/* UNIT_BOUNDARY_DESCRIPTION: what a profile answers its channel, with the platform sub-agent it hands a slot that holds none and why that one cannot run, kept apart from the primary's own availability. */
+const resolvedProfile = (
+  pair: SessionPair,
+  overrides: Partial<
+    Pick<
+      ResolvedProfile,
+      "unavailable" | "subagent" | "subagentUnavailable" | "attachable"
+    >
+  > = {},
+  name = "Fast review",
+): ResolvedProfile => ({
+  profile: { name } as ResolvedProfile["profile"],
+  pair,
+  unavailable: null,
+  subagent: null,
+  subagentUnavailable: null,
+  attachable: false,
+  ...overrides,
+});
+
 describe("a channel's turn", () => {
   /** TEST_SCENARIO: the row's profile resolves to a pair, and a profile that cannot run is a refusal, never the agent's default in its place. */
   it("resolves the row's profile, and refuses one that cannot run", async () => {
-    const profile = { name: "Fast review" } as ResolvedProfile["profile"];
+    await expect(channelRow("p1", resolvedProfile(PAIR))).resolves.toEqual(
+      PAIR,
+    );
     await expect(
-      channelRow("p1", {
-        profile,
-        pair: PAIR,
-        unavailable: null,
-        attachable: false,
-      }),
-    ).resolves.toEqual(PAIR);
-    await expect(
-      channelRow("p1", {
-        profile,
-        pair: PAIR,
-        unavailable: "CurveBender isn't attached to this agent",
-        attachable: true,
-      }),
+      channelRow(
+        "p1",
+        resolvedProfile(PAIR, {
+          unavailable: "CurveBender isn't attached to this agent",
+          attachable: true,
+        }),
+      ),
     ).rejects.toThrow(ChannelProfileRefusedError);
     await expect(channelRow(null, null)).resolves.toBeNull();
   });
 
   /** TEST_SCENARIO: a channel's turn runs on both slots, as a chat start does: the primary profile's pair with the subagent profile's harness and model, or the subagent values the channel keeps; a subagent profile that cannot run leaves the subagent to the agent. */
   it("runs on both slots of the channel's pick", async () => {
-    const profile = (name: string, pair: SessionPair): ResolvedProfile => ({
-      profile: { name } as ResolvedProfile["profile"],
-      pair,
-      unavailable: null,
-      attachable: false,
-    });
     const haiku = { harness: "pi", provider: "conn-2", model: "cb/haiku" };
     await expect(
       channelRow(
         "p-primary",
         (id) =>
           id === "p-primary"
-            ? profile("Primary", PAIR)
-            : profile("Subagent", haiku),
+            ? resolvedProfile(PAIR, {}, "Primary")
+            : resolvedProfile(haiku, {}, "Subagent"),
         { platformSubagentProfileId: "p-subagent" },
       ),
-    ).resolves.toEqual({
-      ...PAIR,
-      settings: {
-        "platformSubagent.harness": "pi",
-        "platformSubagent.model": "cb/haiku",
-      },
-    });
+    ).resolves.toEqual({ ...PAIR, settings: LENT });
     const own = {
       "platformSubagent.harness": "codex",
       "platformSubagent.model": "openai/gpt-6.1-sol",
     };
     await expect(
-      channelRow("p-primary", profile("Primary", PAIR), {
+      channelRow("p-primary", resolvedProfile(PAIR, {}, "Primary"), {
         platformSubagentSettings: own,
       }),
     ).resolves.toEqual({ ...PAIR, settings: own });
@@ -139,8 +147,62 @@ describe("a channel's turn", () => {
         "p-primary",
         (id) =>
           id === "p-primary"
-            ? profile("Primary", PAIR)
-            : { ...profile("Subagent", haiku), unavailable: "not connected" },
+            ? resolvedProfile(PAIR, {}, "Primary")
+            : resolvedProfile(
+                haiku,
+                { unavailable: "not connected" },
+                "Subagent",
+              ),
+        { platformSubagentProfileId: "p-subagent" },
+      ),
+    ).resolves.toEqual(PAIR);
+  });
+
+  /** TEST_SCENARIO: a channel that follows a profile naming a platform sub-agent spawns it, and its own subagent slot wins over the profile's whole slot rather than leaving half of it beside its own (D193B). */
+  it("lets the channel's own subagent slot win over the profile's", async () => {
+    const profile = resolvedProfile(PAIR, { subagent: LENT });
+    await expect(channelRow("p1", profile)).resolves.toEqual({
+      ...PAIR,
+      settings: LENT,
+    });
+    const own = { "platformSubagent.harness": "codex" };
+    await expect(
+      channelRow("p1", profile, { platformSubagentSettings: own }),
+    ).resolves.toEqual({ ...PAIR, settings: own });
+  });
+
+  /** TEST_SCENARIO: the profile's sub-agent runs on a provider this agent does not hold, but the channel's own sub-agent slot runs instead, so the turn is never refused for a sub-agent it does not use (D193B). */
+  it("runs a channel whose own sub-agent replaces an unreachable lent one", async () => {
+    const profile = resolvedProfile(PAIR, {
+      subagent: LENT,
+      subagentUnavailable:
+        "Anthropic, its sub-agent's provider, isn't attached to this agent",
+    });
+    const own = {
+      "platformSubagent.harness": "codex",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+    };
+    await expect(
+      channelRow("p1", profile, { platformSubagentSettings: own }),
+    ).resolves.toEqual({ ...PAIR, settings: own });
+    await expect(channelRow("p1", profile)).rejects.toThrow(
+      ChannelProfileRefusedError,
+    );
+  });
+
+  /** TEST_SCENARIO: the channel names a subagent profile that can no longer run, which clears the slot for the agent to pick rather than falling back to the sub-agent the primary profile lends (D193B). */
+  it("clears the slot when its own subagent profile cannot run", async () => {
+    await expect(
+      channelRow(
+        "p-primary",
+        (id) =>
+          id === "p-primary"
+            ? resolvedProfile(PAIR, { subagent: LENT })
+            : resolvedProfile(
+                { harness: "pi", provider: null, model: null },
+                { unavailable: "Pi isn't attached to this agent" },
+                "Subagent",
+              ),
         { platformSubagentProfileId: "p-subagent" },
       ),
     ).resolves.toEqual(PAIR);

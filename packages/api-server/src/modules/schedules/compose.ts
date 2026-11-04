@@ -26,7 +26,7 @@ import {
 import type { SpendHoldGate } from "../spend/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { startResumeHeldOnceSaga } from "./sagas/resume-held-once.js";
-import type { FirePair } from "../harness-config/index.js";
+import type { FirePair, RunBoundary } from "../harness-config/index.js";
 import type { ProfileResolver } from "../profiles/index.js";
 
 const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
@@ -53,6 +53,7 @@ export interface ComposeSchedulesAtBootOpts {
   db: Db;
   resolveProfile: ProfileResolver;
   firePair?: FirePair;
+  boundary?: RunBoundary;
   agentOnceLimits?: AgentOnceLimits;
   validateSessionChoices?: SessionChoicesValidator;
   bullConnection: ConnectionOptions;
@@ -82,6 +83,7 @@ export function composeSchedulesAtBoot(
   const queue = createScheduleQueue(opts.bullConnection);
   const runner = createSchedulerRunner({
     ...(opts.firePair ? { firePair: opts.firePair } : {}),
+    ...(opts.boundary ? { boundary: opts.boundary } : {}),
     repo,
     queue,
     runtimeMutator: opts.runtimeMutator,
