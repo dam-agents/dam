@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* dark: follows the page's own light/dark choice (the .dark class the theme
+   script sets), as in packages/ui, not the operating system's setting. */
+@custom-variant dark (&:is(.dark *));
+
 @font-face {
   font-family: "IBM Plex Sans";
   font-weight: 300;
