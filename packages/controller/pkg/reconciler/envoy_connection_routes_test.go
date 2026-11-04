@@ -995,3 +995,23 @@ func TestBuildChainForwardRoutes_DotSegmentsCannotReachAManagementRouteKeyed(t *
 	_, accepted := normalizeRequestPath("/v1/..%2Fkey%2Fgenerate")
 	assert.False(t, accepted)
 }
+
+func TestContestedAt_HeaderNamesIgnoreCase(t *testing.T) {
+	chains := connectionChain("github.com",
+		connectionCredential("conn-aaa", "platform-conn-aaa", "Authorization", "github.com"),
+		connectionCredential("conn-bbb", "platform-conn-bbb", "authorization", "github.com"),
+	)
+
+	assert.True(t, chains.ContestedAt("/"), "two spellings of one header name land in one header")
+	assert.True(t, chains.RefusesUnaddressedAt("/"))
+}
+
+func TestRefusesUnaddressedAt_RequireAddressMatchesANoConnectionCredentialWhateverItsCase(t *testing.T) {
+	chains := requiringAddress(connectionChain("github.com",
+		connectionCredential("", "legacy-secret", "authorization", "github.com"),
+		connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "github.com"),
+	))
+
+	assert.True(t, chains[0].RefusesUnaddressedAt("/"),
+		"the credential with no connection still lands in the header the connection claims")
+}
