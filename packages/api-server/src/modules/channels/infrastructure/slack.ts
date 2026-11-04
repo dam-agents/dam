@@ -5462,6 +5462,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             return;
           }
           outcome = "success";
+          await steersSettled();
           await markOwnedDelivered([
             ...batch,
             ...steeredRefs.map((ref) => ({
@@ -5565,6 +5566,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return { owner: null };
     }
     if (!owned) return { owner: null };
+    const connected = await channelRegistry
+      .resolveSlackChannelsByInstance(owned.agentId)
+      .catch(() => []);
+    if (connected.length === 0) return { owner: null };
     const sender = event.sender;
     const { agentId, sessionId } = owned;
     if (await isIgnoredApp(sender, event.channel))

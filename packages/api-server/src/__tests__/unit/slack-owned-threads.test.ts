@@ -63,6 +63,7 @@ function harness(
   opts: {
     peer?: boolean;
     ambient?: boolean;
+    connected?: () => boolean;
     sessions?: string[];
     onPrompt?: (prompt: Prompt) => Promise<void> | void;
   } = {},
@@ -135,10 +136,13 @@ function harness(
     ownerDisplayName: async () => null,
     channelRegistry: {
       resolveSlackBindings: async () => bindings,
-      resolveSlackChannelsByInstance: async () => [
-        { id: HOME, teamId: "" },
-        { id: OTHER, teamId: "" },
-      ],
+      resolveSlackChannelsByInstance: async () =>
+        (opts.connected?.() ?? true)
+          ? [
+              { id: HOME, teamId: "" },
+              { id: OTHER, teamId: "" },
+            ]
+          : [],
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
@@ -532,6 +536,19 @@ describe("a reply under a thread a session started", () => {
     expect(h.prompts[0]!.resumed).toBeNull();
     expect(h.created).toHaveLength(1);
     expect(await h.ownedThreads.find(OTHER, started.threadTs)).toBeNull();
+  });
+
+  // TEST_SCENARIO: an agent whose Slack connection was removed is no longer reached through the threads it started.
+  it("drops an owned thread's reply once the agent has no Slack connection", async () => {
+    let connected = true;
+    const h = harness({ connected: () => connected });
+    const started = await h.startThread();
+    connected = false;
+
+    await h.replyInThread(started.threadTs, after(started.threadTs, 17), "hi");
+
+    for (let i = 0; i < 40; i++) await tick();
+    expect(h.prompts).toEqual([]);
   });
 
   // TEST_SCENARIO: an ambient binding does not read an owned thread a second time through the read-along road.
