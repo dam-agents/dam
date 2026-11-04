@@ -6,12 +6,22 @@ export interface AgentEnvRepository {
   list(agentId: string): Promise<EnvVar[]>;
   listMany(agentIds: string[]): Promise<Map<string, EnvVar[]>>;
   replace(agentId: string, env: EnvVar[]): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: adds only the variables the Agent does not already hold, so a re-run of a create cannot undo an edit its owner made since. */
+  insertMissing(agentId: string, env: EnvVar[]): Promise<void>;
   deleteForAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
 }
 
 export function createAgentEnvRepository(db: Db): AgentEnvRepository {
   return {
+    async insertMissing(agentId, env) {
+      if (env.length === 0) return;
+      await db
+        .insert(agentEnv)
+        .values(env.map((e) => ({ agentId, name: e.name, value: e.value })))
+        .onConflictDoNothing();
+    },
+
     async list(agentId) {
       const rows = await db
         .select({ name: agentEnv.name, value: agentEnv.value })

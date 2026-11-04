@@ -243,6 +243,7 @@ type ProvisionerConnections = Pick<
   | "validateProviderConnection"
   | "validateGrantSet"
   | "setAgentConnections"
+  | "getAgentConnections"
   | "defaultProviderConnections"
   | "listConnections"
 >;
@@ -326,6 +327,12 @@ export function connectionGrantProvisioner(
     async applyAfterCreate(agentId, sel) {
       if (sel.connectionIds.length)
         await connections.setAgentConnections(agentId, sel.connectionIds);
+    },
+    async applyAfterCreateIfNone(agentId, sel) {
+      if (sel.connectionIds.length === 0) return;
+      const held = await connections.getAgentConnections(agentId);
+      if (held.connections.length > 0) return;
+      await connections.setAgentConnections(agentId, sel.connectionIds);
     },
   };
 }

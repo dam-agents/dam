@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { controlAgents, createDb, runMigrations } from "db";
+import { controlAgents, createDb, createOwnerLock, runMigrations } from "db";
 import {
   type TriggerEventPayload,
   workspaceMutationEventKinds,
@@ -208,7 +208,10 @@ import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
 } from "./modules/usage/index.js";
-import { createAssistantsRepository } from "./modules/assistants/index.js";
+import {
+  ASSISTANT_LOCK_NAMESPACE,
+  createAssistantsRepository,
+} from "./modules/assistants/index.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import {
   composeTelemetryReader,
@@ -1521,6 +1524,12 @@ export async function bootstrap() {
     (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
   const assistantsRepo = createAssistantsRepository(db);
+  /* UNIT_BOUNDARY_DESCRIPTION: provisioning one owner runs under that owner's advisory lock, on a connection of this lock's own, so the shared pool never waits on the holder and a worker that pauses blocks only that owner. */
+  const assistantOwnerLock = createOwnerLock({
+    url: config.databaseUrl,
+    tls: dbTls,
+    namespace: ASSISTANT_LOCK_NAMESPACE,
+  });
   /* UNIT_BOUNDARY_DESCRIPTION: the assistant's "used" mark follows the install's mode, so an install that offers no assistants writes nothing for any session report. */
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
     composeSessionDirectory(
@@ -2483,6 +2492,7 @@ export async function bootstrap() {
     config,
     api,
     db,
+    assistantOwnerLock,
     outboxRepo: runtimeDelivery.outboxRepo,
     channelManager,
     identityLinkService,
@@ -2695,6 +2705,7 @@ export async function bootstrap() {
     audit.stop();
     gettingStarted.stop();
     await agentStateCache.stop();
+    await assistantOwnerLock.stop();
     await leaderLease.stop();
     liveEventsModule.stop();
     resourceAlerts.stop();

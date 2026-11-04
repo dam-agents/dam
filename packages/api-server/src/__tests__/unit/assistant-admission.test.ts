@@ -129,6 +129,9 @@ describe("provisioning before admission", () => {
         update: async () => null,
       },
       enrolled: async () => undefined,
+      provisioned: async () => undefined,
+      withLock: (_owner, work) =>
+        work().then((value) => ({ ran: true as const, value })),
     });
 
     await provisioner.ensure();

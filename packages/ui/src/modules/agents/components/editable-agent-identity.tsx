@@ -152,16 +152,21 @@ export function EditableIdentity({
         {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
       </AvatarPicker>
       {onRename === undefined ? (
-        <NameTag className={cn("flex min-w-0", nameClassName)}>
-          <Tooltip content={whyReadOnly ?? "This name is fixed"}>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <NameTag className={cn("flex min-w-0", nameClassName)}>
             <span
               className="flex min-w-0 items-center gap-1.5"
               data-testid="agent-name-read-only"
             >
               <span className="truncate">{name}</span>
             </span>
-          </Tooltip>
-        </NameTag>
+          </NameTag>
+          {whyReadOnly !== undefined && (
+            <span className="text-xs font-normal text-muted-foreground">
+              {whyReadOnly}
+            </span>
+          )}
+        </span>
       ) : draft === null ? (
         <NameTag className={cn("flex min-w-0", nameClassName)}>
           <Tooltip content="Rename">

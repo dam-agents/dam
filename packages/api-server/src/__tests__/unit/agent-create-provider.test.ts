@@ -150,6 +150,7 @@ function setup(
       },
       defaultProviders,
       applyAfterCreate: applyGrants,
+      applyAfterCreateIfNone: applyGrants,
     },
     defaultProfile,
     listChannelsByOwner: async () => new Map(),

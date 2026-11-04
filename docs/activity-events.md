@@ -17,7 +17,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | Event | Stored as | Fired from |
 | --- | --- | --- |
 | `UserAuthenticated` | `auth` | admission/auth |
-| `AgentCreated` | _elsewhere_ | agents |
+| `AgentCreated` | _elsewhere_ | agents, assistants |
 | `AgentUpdated` | _elsewhere_ | agents, runtime-delivery, starter-kits |
 | `AgentDeleted` | _elsewhere_ | agents, agent-artifacts-sweeper |
 | `AgentEditorsChanged` | _elsewhere_ | agents |

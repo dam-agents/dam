@@ -1,5 +1,5 @@
 import type { AgentsService, AssistantsService } from "api-server-api";
-import type { Db } from "db";
+import type { Db, OwnerLock } from "db";
 
 import type { InfraAgent } from "../agents/infrastructure/agent-mappers.js";
 import { createAssistantsRepository } from "./infrastructure/assistants-repository.js";
@@ -18,6 +18,8 @@ export function composeAssistantsForOwner(deps: {
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
   agents: Pick<AgentsService, "list" | "create" | "update">;
   enrolled: () => Promise<void>;
+  provisioned: (agent: InfraAgent) => Promise<void>;
+  withLock: OwnerLock["withLock"];
 }): { assistants: AssistantsService; provisioner: AssistantProvisioner } {
   const repo = createAssistantsRepository(deps.db);
   return {
@@ -31,6 +33,8 @@ export function composeAssistantsForOwner(deps: {
       agentOf: deps.agentOf,
       agents: deps.agents,
       enrolled: deps.enrolled,
+      provisioned: deps.provisioned,
+      withLock: deps.withLock,
     }),
   };
 }

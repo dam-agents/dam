@@ -9,3 +9,6 @@ export interface AssistantRename {
   to: string;
   done: boolean;
 }
+
+/** UNIT_BOUNDARY_DESCRIPTION: the advisory-lock namespace the assistant's per-owner lock lives in, spelled out so it is not confused with any other lock in the deployment. */
+export const ASSISTANT_LOCK_NAMESPACE = 0x4153_5354;

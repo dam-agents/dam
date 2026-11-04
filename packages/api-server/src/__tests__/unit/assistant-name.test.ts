@@ -82,6 +82,7 @@ function setup(opts: { assistant?: boolean } = {}) {
       },
       defaultProviders: async () => ({ ids: [], source: "harness" }),
       applyAfterCreate: async () => undefined,
+      applyAfterCreateIfNone: async () => undefined,
     },
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],

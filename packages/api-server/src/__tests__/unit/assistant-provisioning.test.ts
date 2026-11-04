@@ -1,6 +1,7 @@
 // TEST_OVERVIEW: Provisioning gives each person one assistant whose Agent id is derived from the owner and the row's incarnation, so the store's create is the mutex: two replicas converge on one Agent, a retry finishes the same one, and only a genuine deletion moves to a new id so nothing keyed by the old one can reach the replacement. `ready` is written only after the Agent and its initialization returned, so a failure is retried rather than hidden. An Agent of the owner's already holding the reserved name is renamed once, the rename is recorded before it happens and completed only when it lands, and an Agent renamed since is left alone. Before the first create the owner is enrolled in the Getting Started checklist, so the assistant counts as their first Agent rather than as proof they were here before.
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "api-server-api";
+import { EventType, events$ } from "../../events.js";
 import type { InfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { assistantAgentId } from "../../modules/assistants/domain/agent-id.js";
 import type {
@@ -23,7 +24,43 @@ function agent(id: string, name: string, kind?: Agent["kind"]): Agent {
 }
 
 const infra = (a: Agent): InfraAgent =>
-  ({ id: a.id, name: a.name, owner: ALICE, kind: a.kind }) as InfraAgent;
+  ({
+    id: a.id,
+    name: a.name,
+    owner: ALICE,
+    kind: a.kind,
+    spec: {},
+  }) as unknown as InfraAgent;
+
+async function until(reached: () => boolean): Promise<void> {
+  while (!reached()) await new Promise((resolve) => setImmediate(resolve));
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the AgentCreated announcements this test's provisioning makes, so it can tell a recovered Agent's single announcement from a duplicate. */
+function announced(): { agents: string[]; stop: () => void } {
+  const agents: string[] = [];
+  const subscription = events$().subscribe((e) => {
+    if (e.type === EventType.AgentCreated) agents.push(e.agentId);
+  });
+  return { agents, stop: () => subscription.unsubscribe() };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the per-owner advisory lock as Postgres behaves — one holder per owner, and a caller that finds it taken returns at once instead of waiting. */
+function ownerLock() {
+  const held = new Set<string>();
+  return {
+    held,
+    withLock: async <T>(owner: string, work: () => Promise<T>) => {
+      if (held.has(owner)) return { ran: false as const };
+      held.add(owner);
+      try {
+        return { ran: true as const, value: await work() };
+      } finally {
+        held.delete(owner);
+      }
+    },
+  };
+}
 
 /** UNIT_BOUNDARY_DESCRIPTION: the row store as PostgreSQL behaves — the primary key settles `start`, `nextIncarnation` is a compare-and-set on the Agent id, and no call waits for another. */
 function rowStore() {
@@ -108,8 +145,10 @@ function world(
       resume?: boolean;
     }[],
     renamed: [] as { id: string; name: string }[],
+    recorded: [] as string[],
     failCreate: false,
     failResume: false,
+    onCreate: undefined as (() => Promise<void>) | undefined,
   };
   const agents = {
     list: async () => state.agents,
@@ -126,6 +165,7 @@ function world(
         return (state.agents.find((a) => a.id === input.id) ?? null) as never;
       }
       state.order.push("created");
+      await state.onCreate?.();
       if (state.failCreate) throw new Error("the storage gate refused");
       const made = agent(
         input.id ?? `agent-new-${state.created.length}`,
@@ -144,6 +184,7 @@ function world(
       return state.agents.find((a) => a.id === patch.id) ?? null;
     },
   };
+  const lock = ownerLock();
   const provisioner = createAssistantProvisioner({
     repo: store.repo,
     ownName: ALICE,
@@ -156,8 +197,12 @@ function world(
     },
     agents,
     enrolled: state.enrolled,
+    provisioned: async (agent) => {
+      state.recorded.push(agent.id);
+    },
+    withLock: lock.withLock,
   });
-  return { provisioner, state, store };
+  return { provisioner, state, store, lock };
 }
 
 describe("assistant provisioning", () => {
@@ -207,19 +252,67 @@ describe("assistant provisioning", () => {
     );
   });
 
-  // TEST_SCENARIO: a create that died after the store write is repaired by re-running its initialization, and only a complete initialization marks it ready.
+  // TEST_SCENARIO: a create that died after the store write is repaired by re-running its initialization, and only a complete initialization marks it ready — and the Agent it recovers is announced once, so the checklist and the live hint learn about it.
   it("initializes an Agent that was made but not finished", async () => {
-    const w = world({ agents: [agent(FIRST, NAME, "assistant")] });
-    w.state.failResume = true;
-    await w.provisioner.ensure();
-    expect(w.state.created).toEqual([
-      { id: FIRST, name: NAME, kind: "assistant", resume: true },
-    ]);
-    expect(w.store.rows.get(ALICE)?.state).toBe("creating");
+    const events = announced();
+    try {
+      const w = world({ agents: [agent(FIRST, NAME, "assistant")] });
+      w.state.failResume = true;
+      await w.provisioner.ensure();
+      expect(events.agents).toEqual([]);
+      expect(w.state.created).toEqual([
+        { id: FIRST, name: NAME, kind: "assistant", resume: true },
+      ]);
+      expect(w.store.rows.get(ALICE)?.state).toBe("creating");
 
-    w.state.failResume = false;
-    await w.provisioner.ensure();
+      w.state.failResume = false;
+      await w.provisioner.ensure();
+      expect(w.store.rows.get(ALICE)?.state).toBe("ready");
+      expect(events.agents).toEqual([FIRST]);
+
+      await w.provisioner.ensure();
+      expect(events.agents).toEqual([FIRST]);
+    } finally {
+      events.stop();
+    }
+  });
+
+  // TEST_SCENARIO: a plain create announces its own Agent, so provisioning adds no second announcement for it.
+  it("announces only a recovered create", async () => {
+    const events = announced();
+    try {
+      const w = world();
+      await w.provisioner.ensure();
+      expect(events.agents).toEqual([]);
+    } finally {
+      events.stop();
+    }
+  });
+
+  // TEST_SCENARIO: two workers reach the same owner at once: the lock admits one, the other returns without creating, initializing or recording a rename, and the next request finds the work done.
+  it("runs one worker at a time per owner", async () => {
+    const w = world({ agents: [agent("agent-old", NAME)] });
+    let release!: () => void;
+    w.state.onCreate = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const first = w.provisioner.ensure();
+    const second = w.provisioner.ensure();
+    await until(() => release !== undefined);
+    // TEST_SCENARIO: the second worker has already been refused the lock by now; let it finish.
+    await second;
+    release();
+    await first;
+
+    expect(w.state.created).toHaveLength(1);
+    expect(w.state.renamed).toHaveLength(1);
+    expect(w.state.enrolled).toHaveBeenCalledTimes(1);
     expect(w.store.rows.get(ALICE)?.state).toBe("ready");
+
+    await w.provisioner.ensure();
+    expect(w.state.created).toHaveLength(1);
+    expect(w.state.renamed).toHaveLength(1);
   });
 
   // TEST_SCENARIO: two replicas provisioning the same new owner make one Agent: both compute the same id, the store refuses the second create, and it initializes the Agent already there instead of making another.
@@ -251,6 +344,10 @@ describe("assistant provisioning", () => {
         update: async () => null,
       },
       enrolled: w.state.enrolled,
+      provisioned: async (agent) => {
+        w.state.recorded.push(agent.id);
+      },
+      withLock: w.lock.withLock,
     });
 
     await Promise.all([w.provisioner.ensure(), other.ensure()]);

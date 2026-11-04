@@ -129,6 +129,12 @@ export interface OnboardingChecklistReader {
 
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: seeds the preset only for an Agent that holds no rule yet, so re-running a create cannot replace what its owner changed since. */
+  seedIfAbsent(
+    agentId: string,
+    preset: EgressPreset,
+    decidedBy: string,
+  ): Promise<void>;
 }
 
 export interface TelegramBindingPort {
@@ -606,6 +612,11 @@ export function createAgentsService(deps: {
       source: Exclude<AgentDefaultProvider["source"], "profile">;
     }>;
     applyAfterCreate(
+      agentId: string,
+      sel: { connectionIds: string[] },
+    ): Promise<void>;
+    /** UNIT_BOUNDARY_DESCRIPTION: grants the first providers only to an Agent that holds none, so re-running a create cannot take back a grant or a detach its owner chose since. */
+    applyAfterCreateIfNone(
       agentId: string,
       sel: { connectionIds: string[] },
     ): Promise<void>;
@@ -1483,16 +1494,19 @@ export function createAgentsService(deps: {
         throw e;
       }
 
+      // UNIT_BOUNDARY_DESCRIPTION: a resumed create adds what is missing instead of replacing it, so a retry cannot undo an environment variable, an egress rule, a granted provider or a chat default its owner set in between.
       const userEnv = dropProtectedEnvs([...templateEnv, ...(input.env ?? [])]);
-      if (userEnv.length > 0)
-        await deps.agentEnvRepo.replace(infra.id, userEnv);
+      if (userEnv.length > 0) {
+        if (input.resume)
+          await deps.agentEnvRepo.insertMissing(infra.id, userEnv);
+        else await deps.agentEnvRepo.replace(infra.id, userEnv);
+      }
 
       if (deps.presetSeeder) {
-        await deps.presetSeeder.seed(
-          infra.id,
-          input.egressPreset ?? "trusted",
-          owner,
-        );
+        const preset = input.egressPreset ?? "trusted";
+        if (input.resume)
+          await deps.presetSeeder.seedIfAbsent(infra.id, preset, owner);
+        else await deps.presetSeeder.seed(infra.id, preset, owner);
       }
 
       const createdAt = new Date();
@@ -1519,7 +1533,12 @@ export function createAgentsService(deps: {
       ]);
 
       if (deps.grantProvisioner && hasInitialGrants) {
-        await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
+        if (input.resume)
+          await deps.grantProvisioner.applyAfterCreateIfNone(
+            infra.id,
+            grantSel,
+          );
+        else await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
 
       if (startsOnProfile) {
@@ -1528,7 +1547,8 @@ export function createAgentsService(deps: {
           .catch((err: unknown) =>
             err instanceof Error ? err.message : String(err),
           );
-        if (missed)
+        // UNIT_BOUNDARY_DESCRIPTION: a resumed create normally finds the default already bound, which is what it wanted; only a create that made the Agent reports it as news.
+        if (missed && !input.resume)
           getLogger().warn(
             { agentId: infra.id, reason: missed },
             "agent create: the new agent does not start on the default profile; its first hello converts the default instead",

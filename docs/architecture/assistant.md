@@ -24,14 +24,20 @@ No batch job provisions dormant accounts: an install of any age gives each perso
 Provisioning is **an idempotent ensure over a durable record**.
 One row per owner names the incarnation of its assistant, and the Agent's id is derived from the owner and that number: every replica computes the same id, so the store's own uniqueness is what makes one Agent — a create that loses is refused and its caller adopts what is there.
 Nothing waits and nothing is fenced: there is no claim to take over and no lease to expire.
-The row records `ready` only after the Agent and every initialization step behind it returned, so a request that dies half-way leaves a record the next request finishes; a step that fails is logged, recorded as not ready, and retried on the next one.
 When the Agent is deleted after it was ready, the row moves to its next incarnation, so the replacement has a **new id**: nothing still keyed by the old one — an artifacts sweep, an outbox entry — can reach it.
+The row records `ready` only after the Agent and every initialization step behind it returned, so a request that dies half-way leaves a record the next request finishes; a step that fails is logged, recorded as not ready, and retried on the next one.
+Whoever finishes it re-runs the initialization as an addition, never as a replacement: it inserts the environment variables, the trusted egress preset and the first providers the Agent is missing and leaves its chat default alone if it has one, so nothing the owner changed in between is undone.
+An Agent recovered this way is announced once, when it first becomes ready, so the checklist and the live hints learn of it exactly once.
+
+One owner's provisioning runs under **that owner's advisory lock**, taken on a connection of its own so the shared pool never waits on the holder; a request that finds the lock taken leaves the work to whoever holds it.
+A worker paused while holding the lock blocks only that owner's provisioning, and only until its connection drops.
 
 An assistant runs on the owner's [default for new agents](profiles.md#the-default-for-new-agents), at the size that default gives every new Agent, with ordinary hibernation and on the owner's budget.
 An install with no [CurveBender](platform-topology.md) still creates it: the composer's own provider notice explains what to connect, which is the same answer every other Agent gives.
 
 **Ordering with the checklist.** The checklist decides once, at first meeting, whether a person used the platform before the checklist existed (`Create` in [getting-started](getting-started.md)).
 That decision reads the Agents a person already owns, so provisioning enrols them *before* it creates the assistant; the assistant is then what makes their first checklist task done rather than evidence they were here before.
+That task is recorded as seen, since the person did not make this Agent by hand: the checklist counts it at once rather than holding a celebration for it.
 
 **A name already taken.** A person who already owns an Agent under the reserved name is not refused their assistant: that Agent is renamed once, to the reserved name marked `(yours)` and a number when that is taken too, and the news is written on the row as a one-time notice the UI shows on [Home](home-feed.md) until it is dismissed.
 The news is recorded before the rename happens, as pending, and completed only once the Agent carries its new name — a create that fails afterwards cannot lose it, and the notice waits for the rename to land.

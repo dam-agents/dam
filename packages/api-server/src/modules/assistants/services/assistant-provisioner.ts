@@ -1,4 +1,7 @@
 import type { AgentsService } from "api-server-api";
+import { avatarCharacter } from "api-server-api/avatar/svg";
+import type { LockOutcome, OwnerLock } from "db";
+import { emit, EventType } from "../../../events.js";
 import type { InfraAgent } from "../../agents/infrastructure/agent-mappers.js";
 import { getLogger } from "../../../core/logger.js";
 import { assistantAgentId } from "../domain/agent-id.js";
@@ -50,6 +53,9 @@ export function createAssistantProvisioner(deps: {
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
   agents: Pick<AgentsService, "list" | "create" | "update">;
   enrolled: () => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: what the checklist learns from this Agent the platform made, before it is announced like any other. */
+  provisioned: (agent: InfraAgent) => Promise<void>;
+  withLock: OwnerLock["withLock"];
 }): AssistantProvisioner {
   const rename = async (row: AssistantRow): Promise<void> => {
     const recorded = row.renamed;
@@ -92,7 +98,7 @@ export function createAssistantProvisioner(deps: {
     await deps.repo.completeRename(row.owner, row.agentId);
   };
 
-  const provisioned = async (row: AssistantRow, exists: boolean) => {
+  const ensureAgent = async (row: AssistantRow, exists: boolean) => {
     if (exists) {
       await rename(row);
       await deps.agents.create({
@@ -123,35 +129,51 @@ export function createAssistantProvisioner(deps: {
     }
   };
 
+  /* UNIT_BOUNDARY_DESCRIPTION: everything one owner's provisioning does happens under that owner's lock, so no second worker can rewrite the initialization behind this one, and a lock held elsewhere means this request simply leaves it to that worker. */
+  const once = async (): Promise<LockOutcome<void>> => {
+    let row = await deps.repo.find(deps.ownName);
+    if (row === null) {
+      const started = await deps.repo.start(
+        deps.ownName,
+        assistantAgentId(deps.ownName, 1),
+      );
+      if (!started) return { ran: true, value: undefined };
+      row = await deps.repo.find(deps.ownName);
+      if (row === null) return { ran: true, value: undefined };
+    }
+    const exists = (await deps.agentOf(row.agentId)) !== null;
+    if (exists && row.state === "ready") return { ran: true, value: undefined };
+    if (!exists && row.state !== "creating") {
+      const moved = await deps.repo.nextIncarnation(
+        deps.ownName,
+        row.agentId,
+        assistantAgentId(deps.ownName, row.incarnation + 1),
+      );
+      if (!moved) return { ran: true, value: undefined };
+      row = await deps.repo.find(deps.ownName);
+      if (row === null) return { ran: true, value: undefined };
+    }
+    await ensureAgent(row, exists);
+    await deps.repo.markReady(deps.ownName, row.agentId);
+    const agent = await deps.agentOf(row.agentId);
+    if (agent === null) return { ran: true, value: undefined };
+    await deps.provisioned(agent);
+    if (exists)
+      emit({
+        type: EventType.AgentCreated,
+        agentId: agent.id,
+        ownerSub: agent.owner ?? deps.ownName,
+        character: avatarCharacter(agent.spec.avatar, deps.ownName, agent.name),
+      });
+    return { ran: true, value: undefined };
+  };
+
   return {
     async ensure() {
+      if (!(await deps.admitted())) return;
+      if (!(await deps.enabled())) return;
       try {
-        if (!(await deps.admitted())) return;
-        if (!(await deps.enabled())) return;
-        let row = await deps.repo.find(deps.ownName);
-        if (row === null) {
-          const started = await deps.repo.start(
-            deps.ownName,
-            assistantAgentId(deps.ownName, 1),
-          );
-          if (!started) return;
-          row = await deps.repo.find(deps.ownName);
-          if (row === null) return;
-        }
-        const exists = (await deps.agentOf(row.agentId)) !== null;
-        if (exists && row.state === "ready") return;
-        if (!exists && row.state !== "creating") {
-          const moved = await deps.repo.nextIncarnation(
-            deps.ownName,
-            row.agentId,
-            assistantAgentId(deps.ownName, row.incarnation + 1),
-          );
-          if (!moved) return;
-          row = await deps.repo.find(deps.ownName);
-          if (row === null) return;
-        }
-        await provisioned(row, exists);
-        await deps.repo.markReady(deps.ownName, row.agentId);
+        await deps.withLock(deps.ownName, once);
       } catch (err) {
         getLogger().warn(
           { err, owner: deps.ownName },

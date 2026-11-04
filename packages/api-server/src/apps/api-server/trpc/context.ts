@@ -1,5 +1,6 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType, editorEmailOf } from "api-server-api";
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import {
   composeAgentsModule,
   composeEditorStanding,
@@ -111,6 +112,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     sessionDirectory,
     terms,
     isTermsAccepted,
+    assistantOwnerLock,
     e2e,
     artifacts,
     delegationFrames,
@@ -334,6 +336,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
         agents,
         enrolled: () => gettingStarted.ensureEnrolled(user.sub),
+        provisioned: (agent) =>
+          gettingStarted.recordProvisionedAssistant(user.sub, {
+            agentId: agent.id,
+            character: avatarCharacter(agent.spec.avatar, user.sub, agent.name),
+          }),
+        withLock: assistantOwnerLock.withLock,
       });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
