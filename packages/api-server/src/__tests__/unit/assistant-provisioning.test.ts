@@ -156,6 +156,7 @@ function world(
     }[],
     renamed: [] as { id: string; name: string }[],
     recorded: [] as string[],
+    ran: [] as string[],
     failCreate: false,
     failResume: false,
     onCreate: undefined as (() => Promise<void>) | undefined,
@@ -167,6 +168,8 @@ function world(
       name: string;
       kind?: Agent["kind"];
       resume?: boolean;
+      initDone?: readonly AgentInitStep[];
+      onInitStep?: (step: AgentInitStep) => Promise<void>;
     }) => {
       state.created.push(input);
       if (input.resume) {
@@ -177,6 +180,12 @@ function world(
       state.order.push("created");
       await state.onCreate?.();
       if (state.failCreate) throw new Error("the storage gate refused");
+      // UNIT_BOUNDARY_DESCRIPTION: the step runner the real create has, so the test sees which initialization a store write performs.
+      for (const step of ["env", "egress", "grants"] as const)
+        if (!(input.initDone ?? []).includes(step)) {
+          state.ran.push(step);
+          await input.onInitStep?.(step);
+        }
       const made = agent(
         input.id ?? `agent-new-${state.created.length}`,
         input.name,
@@ -386,6 +395,25 @@ describe("assistant provisioning", () => {
       agentId: SECOND,
       incarnation: 2,
       state: "ready",
+    });
+  });
+
+  // TEST_SCENARIO: a row that still says creating, with steps recorded for the Agent it lost, is a store write that makes a new Agent: it is told that nothing is initialized, so the replacement gets its network rules and its provider instead of skipping them.
+  it("initializes a replaced Agent from the start", async () => {
+    const w = world();
+    await w.store.repo.start(ALICE, FIRST);
+    for (const step of ["env", "egress", "grants"] as const)
+      await w.store.repo.markInitStep(ALICE, FIRST, step);
+    w.store.rows.get(ALICE)!.state = "creating";
+
+    await w.provisioner.ensure();
+    expect(w.state.created).toEqual([
+      expect.objectContaining({ id: FIRST, initDone: [] }),
+    ]);
+    expect(w.state.ran).toEqual(["env", "egress", "grants"]);
+    expect(w.store.rows.get(ALICE)).toMatchObject({
+      state: "ready",
+      steps: ["env", "egress", "grants"],
     });
   });
 

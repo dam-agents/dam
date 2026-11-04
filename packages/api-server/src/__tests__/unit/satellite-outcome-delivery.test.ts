@@ -32,6 +32,7 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     agentId: "agent-1",
     tool: "run",
     args: { cmd: ["./process.sh", "sales.db"] },
+    transferDirection: null,
     status: "done",
     isError: false,
     exitCode: 0,

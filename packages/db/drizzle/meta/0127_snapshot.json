@@ -1,5 +1,5 @@
 {
-  "id": "b26b4162-e1b8-4982-92aa-07e60e65e66d",
+  "id": "499f2fcc-f86d-4671-8ff9-79ea7a5e9446",
   "prevId": "da4567c8-4c8e-4ee7-9a91-6f26e2e49c3e",
   "version": "7",
   "dialect": "postgresql",
@@ -1381,102 +1381,6 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.assistants": {
-      "name": "assistants",
-      "schema": "",
-      "columns": {
-        "owner": {
-          "name": "owner",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "incarnation": {
-          "name": "incarnation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'creating'"
-        },
-        "init_steps": {
-          "name": "init_steps",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "renamed_agent_id": {
-          "name": "renamed_agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "renamed_from": {
-          "name": "renamed_from",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "renamed_to": {
-          "name": "renamed_to",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "renamed_done_at": {
-          "name": "renamed_done_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "notice_seen_at": {
-          "name": "notice_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -4635,6 +4539,18 @@
         "cancel_sent_at": {
           "name": "cancel_sent_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transfer_token_hash": {
+          "name": "transfer_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transfer_direction": {
+          "name": "transfer_direction",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

@@ -33,24 +33,39 @@ const existing = parseInfraAgent({
   spec: { name: NAME, image: "quay.io/example/agent:latest" },
 });
 
-/** UNIT_BOUNDARY_DESCRIPTION: the egress rules table, as the real seeder and its repository see it — `revokePresetRowsForAgent` clears what the assistant holds, and only active rows are listed. */
+/** UNIT_BOUNDARY_DESCRIPTION: the egress rules table, as the real seeder and its repository see it — a preset revokes its rows rather than deleting them, so what it ever wrote outlives the owner's choice to hold no rule at all. */
 function egressWorld() {
-  let active: { host: string; source: string }[] = [];
+  let rows: { host: string; source: string; status: "active" | "revoked" }[] =
+    [];
+  const active = () => rows.filter((r) => r.status === "active");
   const seeder = createPresetSeeder({
     repo: unused<EgressRulesRepository>({
       revokePresetRowsForAgent: async () => {
-        active = [];
+        rows = rows.map((r) =>
+          r.source.startsWith("preset:")
+            ? { ...r, status: "revoked" as const }
+            : r,
+        );
       },
       insert: async (row) => {
-        active.push({ host: row.host, source: row.source ?? "" });
+        rows.push({
+          host: row.host,
+          source: row.source ?? "",
+          status: "active",
+        });
         return { ...row } as never;
       },
-      insertAll: async (rows) => {
-        for (const row of rows)
-          active.push({ host: row.host, source: row.source ?? "" });
+      insertAll: async (inserted) => {
+        for (const row of inserted)
+          rows.push({
+            host: row.host,
+            source: row.source ?? "",
+            status: "active",
+          });
       },
       markPresetUnderConnections: async () => undefined,
-      listForAgent: async () => active as never,
+      listForAgent: async () => active() as never,
+      hasPresetRowsForAgent: async () => rows.length > 0,
     }),
     trustedHosts: ["github.com"],
   });
@@ -60,7 +75,7 @@ function egressWorld() {
       seedIfAbsent: vi.fn(seeder.seedIfAbsent),
     },
     get active() {
-      return active;
+      return active().map(({ host, source }) => ({ host, source }));
     },
     /** UNIT_BOUNDARY_DESCRIPTION: the owner choosing no network access, through the same seeder the app uses. */
     ownerSelectsNone: () => seeder.seed(ASSISTANT, "none", OWNER),
@@ -269,6 +284,47 @@ describe("resuming a create that already initialized", () => {
     expect(egress.active).toEqual([
       { host: "github.com", source: "preset:trusted" },
     ]);
+  });
+
+  // TEST_SCENARIO: the round-1 repro at the level it was written — `seedIfAbsent` called directly on an agent whose preset rows were revoked by its owner's choice of none. Revoked rows count as a preset that already ran, so nothing comes back.
+  it("does not re-seed an agent that chose no network access", async () => {
+    const egress = egressWorld();
+    await egress.seeder.seed(ASSISTANT, "trusted", OWNER);
+    await egress.ownerSelectsNone();
+    expect(egress.active).toEqual([]);
+
+    await egress.seeder.seedIfAbsent(ASSISTANT, "trusted", OWNER);
+    expect(egress.active).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the residual window — the egress step landed but its record did not (the pod died between the two writes), then the owner chose no network access. The retry has no record to skip on, and still must not restore the preset: the revoked rows prove the step ran.
+  it("does not restore egress when the step landed without its record", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const recorded: AgentInitStep[] = [];
+    const recordEnvOnly = async (step: AgentInitStep) => {
+      if (step === "egress") throw new Error("the record was lost");
+      recorded.push(step);
+    };
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: recordEnvOnly,
+    });
+
+    await expect(agents.create(fresh(recordEnvOnly))).rejects.toThrow(
+      "the record was lost",
+    );
+    expect(recorded).toEqual(["env"]);
+    expect(egress.active).toEqual([
+      { host: "github.com", source: "preset:trusted" },
+    ]);
+
+    await egress.ownerSelectsNone();
+    expect(egress.active).toEqual([]);
+
+    await agents.create(resumedWith(recorded, async () => undefined));
+    expect(egress.active).toEqual([]);
   });
 
   // TEST_SCENARIO: a step the caller says is done is not run at all — not even its "apply if absent" form — so the safest reading of an empty set is never taken.

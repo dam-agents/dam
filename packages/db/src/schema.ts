@@ -809,6 +809,8 @@ export const satelliteJobs = pgTable(
     reason: text("reason"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),
     cancelSentAt: timestamp("cancel_sent_at", { withTimezone: true }),
+    transferTokenHash: text("transfer_token_hash"),
+    transferDirection: text("transfer_direction"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     wokeAt: timestamp("woke_at", { withTimezone: true }),
     awaitedUntil: timestamp("awaited_until", { withTimezone: true }),

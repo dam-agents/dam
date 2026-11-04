@@ -120,11 +120,13 @@ export function createAssistantProvisioner(deps: {
     await deps.enrolled();
     await rename(row);
     try {
+      // UNIT_BOUNDARY_DESCRIPTION: a store write that makes the Agent has initialized nothing, whatever the row recorded for the Agent it replaces: the steps start empty.
       await deps.agents.create({
         id: row.agentId,
         name: deps.assistantName,
         kind: "assistant",
-        ...initOf(row),
+        initDone: [],
+        onInitStep: initOf(row).onInitStep,
       });
     } catch (err) {
       // UNIT_BOUNDARY_DESCRIPTION: a replica that raced this one may have made the very same Agent, which is adoption rather than failure — but a create that failed for another reason must not be reported as done.

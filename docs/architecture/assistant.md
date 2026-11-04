@@ -28,6 +28,7 @@ When the Agent is deleted after it was ready, the row moves to its next incarnat
 The row records `ready` only after the Agent and every initialization step behind it returned, so a request that dies half-way leaves a record the next request finishes; a step that fails is logged, recorded as not ready, and retried on the next one.
 The row records each initialization step as it lands — the environment variables, the trusted egress preset and the first providers — and a retry applies only the ones it has not recorded.
 Nothing is re-applied "if absent", because an empty set is exactly what an owner leaves behind by choosing no network access or detaching every provider: that choice stands, and the chat default is left alone when the Agent has one.
+A preset the owner emptied is not even re-seeded when a step's record was lost before it was written: the rows a preset revokes stay behind, and their presence is what says the step ran.
 An Agent recovered this way is announced once, when it first becomes ready, so the checklist and the live hints learn of it exactly once.
 
 One owner's provisioning runs under **that owner's advisory lock**, taken on a connection of its own so the shared pool never waits on the holder; a request that finds the lock taken leaves the work to whoever holds it.

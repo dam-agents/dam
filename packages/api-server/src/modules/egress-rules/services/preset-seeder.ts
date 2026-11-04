@@ -4,7 +4,7 @@ import type { EgressRulesRepository } from "../infrastructure/egress-rules-repos
 
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
-  /** UNIT_BOUNDARY_DESCRIPTION: seeds the preset only for an Agent that holds no rule yet, so re-running a create cannot replace what its owner changed since. */
+  /** UNIT_BOUNDARY_DESCRIPTION: seeds the preset only for an Agent no preset ever wrote a rule for. Revoked preset rows count, so a create that re-runs after its record of this step was lost still leaves an owner's choice of no network access standing. */
   seedIfAbsent(
     agentId: string,
     preset: EgressPreset,
@@ -58,7 +58,7 @@ export function createPresetSeeder(deps: {
   return {
     seed,
     async seedIfAbsent(agentId, preset, decidedBy) {
-      if ((await deps.repo.listForAgent(agentId)).length > 0) return;
+      if (await deps.repo.hasPresetRowsForAgent(agentId)) return;
       await seed(agentId, preset, decidedBy);
     },
   };

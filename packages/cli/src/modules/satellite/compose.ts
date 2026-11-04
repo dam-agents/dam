@@ -2,6 +2,7 @@ import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
+import type { TokenProvider } from "../auth/index.js";
 import {
   buildCancelCommand,
   buildGrantCommand,
@@ -11,12 +12,14 @@ import {
 } from "./commands/manage.js";
 import { buildShellCommand } from "./commands/shell.js";
 import { buildMcpCommand } from "./commands/mcp.js";
+import { buildFilesCommand } from "./commands/files.js";
 
 export interface SatelliteModuleOptions {
   buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
+  tokenProvider: TokenProvider;
 }
 
 export function composeSatelliteModule(opts: SatelliteModuleOptions): {
@@ -27,6 +30,7 @@ export function composeSatelliteModule(opts: SatelliteModuleOptions): {
     configService: opts.configService,
     createAgentService: opts.createAgentService,
     createTrpc: opts.buildTrpc,
+    tokenProvider: opts.tokenProvider,
   };
 
   const parent = new Command("satellite")
@@ -41,6 +45,7 @@ export function composeSatelliteModule(opts: SatelliteModuleOptions): {
     );
   parent.addCommand(buildMcpCommand(shared));
   parent.addCommand(buildShellCommand(shared));
+  parent.addCommand(buildFilesCommand(shared));
   parent.addCommand(buildListCommand(shared));
   parent.addCommand(buildJobsCommand(shared));
   parent.addCommand(buildGrantCommand(shared, false));
