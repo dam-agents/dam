@@ -1,21 +1,19 @@
-import { CheckmarkFilled, ErrorFilled, Misuse } from "@carbon/icons-react";
-import type { HarnessFamily, ProviderKeyCheck } from "api-server-api";
-import type { ReactNode } from "react";
+import type { ProviderKeyCheck } from "api-server-api";
+import { type ReactNode, useId } from "react";
+import { match, P } from "ts-pattern";
 
-import { HarnessIcons } from "@/components/harness-icons";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
-import { providerName } from "../lib/provider-rows.js";
+import { providerDescription, providerName } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
 
 interface Props {
   type: ProviderPresetType;
   templateId?: string;
   name?: string;
-  harnesses?: readonly HarnessFamily[];
   connected: boolean;
   degraded?: boolean;
   keyCheck?: ProviderKeyCheck | null;
@@ -27,15 +25,14 @@ interface Props {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: one provider in Settings, on a single line as on
+ * UNIT_BOUNDARY_DESCRIPTION: one provider in Settings, a card of its own as on
  * an agent's page: a small icon, its name, its balance and spend pills, and the
- * badge that says where it stands. The icon and name open it.
+ * words that say where it stands. The icon and name open it.
  */
 export function ProviderRow({
   type,
   templateId,
   name: givenName,
-  harnesses,
   connected,
   degraded = false,
   keyCheck,
@@ -46,8 +43,11 @@ export function ProviderRow({
   connectedAction = "Edit",
 }: Props) {
   const name = givenName ?? providerName(type);
+  const id = useId();
   const problem =
-    connected && keyCheck && keyCheck.result !== "ok" ? keyCheck : null;
+    connected && !checking && keyCheck && keyCheck.result !== "ok"
+      ? keyCheck
+      : null;
   const problemText = problem
     ? `${
         problem.result === "refused"
@@ -65,22 +65,17 @@ export function ProviderRow({
         onOpen && "hover:bg-muted/50",
       )}
     >
-      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included. Whatever has a title or an action of its own sits above the button: the spend pill keeps its dialog, and the harness icons, the balance and the status icon show their tooltips and pass a click on. */}
+      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included. Whatever has a title or an action of its own sits above the button: the spend pill keeps its dialog, and the balance and the status show their tooltips and pass a click on. */}
       {onOpen && (
         <button
           type="button"
           onClick={onOpen}
           aria-label={label}
+          aria-describedby={`${id}-description ${id}-status`}
           className="absolute inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         />
       )}
-      <ProviderHead
-        type={type}
-        templateId={templateId}
-        name={name}
-        harnesses={harnesses}
-        onOpen={onOpen}
-      />
+      <ProviderHead type={type} templateId={templateId} name={name} id={id} />
       {balance && (
         <span onClick={onOpen} className="relative min-w-0" data-layer="raised">
           {balance}
@@ -93,6 +88,8 @@ export function ProviderRow({
       )}
       <span onClick={onOpen} className="relative flex" data-layer="raised">
         <ConnectionBadge
+          id={`${id}-status`}
+          name={name}
           connected={connected}
           degraded={degraded}
           keyCheck={keyCheck}
@@ -105,102 +102,104 @@ export function ProviderRow({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a provider row's small icon, its name, and the
- * harnesses it runs as small muted icons after the name, each named for a
- * screen reader and saying "Supports <harness>" on hover.
+ * UNIT_BOUNDARY_DESCRIPTION: a provider row's mark, its name, and the one-line
+ * description of the provider under it.
  */
 export function ProviderHead({
   type,
   templateId,
   name,
-  harnesses,
-  onOpen,
+  id,
 }: {
   type: ProviderPresetType;
   templateId?: string | undefined;
   name: string;
-  harnesses: readonly string[] | undefined;
-  onOpen?: (() => void) | undefined;
+  id?: string;
 }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-3">
-      <CardIcon provider={type} templateId={templateId} size="tile-sm" />
-      <span className="min-w-0 truncate text-sm font-medium text-foreground">
-        {name}
-      </span>
-      {harnesses && (
-        <span
-          onClick={onOpen}
-          className={cn("relative flex shrink-0", onOpen && "cursor-pointer")}
-          data-layer="raised"
-        >
-          <HarnessIcons
-            harnesses={harnesses}
-            size="xs"
-            tooltip={(harness) => `Supports ${harness}`}
-            className="gap-1 text-muted-foreground opacity-70"
-          />
+      <CardIcon provider={type} size="tile-md" />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-md font-medium text-foreground">
+          {name}
         </span>
-      )}
+        <span
+          id={id && `${id}-description`}
+          className="text-sm text-muted-foreground"
+        >
+          {providerDescription(type, templateId)}
+        </span>
+      </span>
     </span>
   );
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the one icon that says where a provider row
- * stands, its state as its accessible name: not configured, the key being
- * verified, working, or, configured and in trouble (rejected, unverified, or
- * its template having an outage), with the reason in its title.
+ * UNIT_BOUNDARY_DESCRIPTION: the words that say where a provider row stands:
+ * not connected, the key being checked, connected, or connected and in trouble
+ * (rejected, unverified, or its template having an outage), with the reason in
+ * its title. Colour only repeats what the words say, and a screen reader hears
+ * the result of a check as it lands, with the provider's name.
  */
 function ConnectionBadge({
+  id,
+  name,
   connected,
   degraded,
   keyCheck,
   checking,
   reason,
 }: {
+  id: string;
+  name: string;
   connected: boolean;
   degraded: boolean;
   keyCheck: ProviderKeyCheck | null | undefined;
   checking: boolean;
   reason: string | null;
 }) {
-  const [state, Icon, tone] = !connected
-    ? (["Not configured", ErrorFilled, "text-muted-foreground"] as const)
-    : checking
-      ? (["Configured · Verifying", null, ""] as const)
-      : keyCheck?.result === "refused"
-        ? (["Configured · Key rejected", Misuse, "text-danger"] as const)
-        : degraded
-          ? (["Configured · Degraded", Misuse, "text-danger"] as const)
-          : keyCheck?.result === "unverified"
-            ? (["Configured · Unverified", Misuse, "text-danger"] as const)
-            : ([
-                "Configured · Connected",
-                CheckmarkFilled,
-                "text-success",
-              ] as const);
+  const [state, tone] = match({ connected, checking, degraded, keyCheck })
+    .with({ connected: false }, () => [
+      "Not connected",
+      "text-muted-foreground",
+    ])
+    .with({ checking: true }, () => ["Checking…", "text-muted-foreground"])
+    .with({ keyCheck: { result: "refused" } }, () => [
+      "Key rejected",
+      "text-danger",
+    ])
+    .with({ degraded: true }, () => ["Outage", "text-danger"])
+    .with({ keyCheck: { result: "unverified" } }, () => [
+      "Could not verify",
+      "text-danger",
+    ])
+    .with({ keyCheck: P.union({ result: "ok" }, P.nullish) }, () => [
+      "Connected",
+      "text-green-700 dark:text-success",
+    ])
+    .exhaustive();
   return (
     <span
-      role="img"
-      aria-label={state}
-      title={reason ?? state}
+      id={id}
+      role="status"
+      title={reason ?? undefined}
       data-testid={
         degraded && connected && !checking
           ? "provider-degraded-badge"
           : undefined
       }
-      className={cn("flex shrink-0", tone)}
-    >
-      {Icon ? (
-        <Icon size={16} aria-hidden />
-      ) : (
-        <Spinner size={14} className="text-muted-foreground" />
+      className={cn(
+        "flex shrink-0 items-center gap-1.5 text-xs font-medium",
+        tone,
       )}
+    >
+      {checking && connected && <Spinner size={12} />}
+      <span className="sr-only">{name}: </span>
+      {state}
     </span>
   );
 }
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
-  return <div className="h-[49px] animate-pulse bg-muted/40" />;
+  return <div className="h-[69px] animate-pulse bg-muted/40" />;
 };

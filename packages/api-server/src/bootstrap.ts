@@ -186,6 +186,7 @@ import {
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
   createInitializationPairResolver,
+  createRunBoundary,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -390,7 +391,10 @@ import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js
 import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
-import { composeProfileResolver } from "./modules/profiles/index.js";
+import {
+  composeProfileResolver,
+  composeProfileResolverOn,
+} from "./modules/profiles/index.js";
 import {
   composeSatellitesModule,
   createOutcomeDelivery,
@@ -941,15 +945,31 @@ export async function bootstrap() {
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
   const resolveProfile = composeProfileResolver(db, subPseudonymizer);
 
+  const capabilitiesOf = async (agentId: string) =>
+    (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+      ?.runtimeCapabilities ?? null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's catalog for one agent's Connections, the same listing the picker offers, and the settings a run's payload carries: the one place the server derives the native subagent keys (D193B). */
+  const ownerCatalogOf = async (agentId: string) => {
+    const owner = await resolveAgentOwner(agentId);
+    return owner === null
+      ? { providers: [] }
+      : connectionsServiceFor(owner).modelCatalog(agentId);
+  };
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
     resolveProfile,
-    getCapabilities: async (agentId) =>
-      (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
-        ?.runtimeCapabilities ?? null,
+    getCapabilities: capabilitiesOf,
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
+  });
+  /* UNIT_BOUNDARY_DESCRIPTION: the one helper every path that builds a run's payload uses, so a channel fallback, a schedule following its default and the defaults event cannot skip the derivation (D193B). */
+  const runBoundary = createRunBoundary({
+    inputsOf: async (agentId) => ({
+      capabilities: await capabilitiesOf(agentId).catch(() => null),
+      catalog: await ownerCatalogOf(agentId).catch(() => null),
+    }),
+    resolvePair: firePair,
   });
   let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
   const resolveInitializationPair = createInitializationPairResolver({
@@ -1327,6 +1347,8 @@ export async function bootstrap() {
       namespace: config.namespace,
       catalog: harnessCatalog,
       resolveProfile,
+      resolveProfileOn: composeProfileResolverOn(subPseudonymizer),
+      boundary: runBoundary,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
@@ -1665,7 +1687,11 @@ export async function bootstrap() {
       : undefined;
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
-  const channelPair = createChannelProfiles(db, resolveProfile).pair;
+  const channelPair = createChannelProfiles(
+    db,
+    resolveProfile,
+    runBoundary,
+  ).pair;
   const grantedTemplates = createGrantedConnectionTemplates(db);
   const channelProviderOutage = createChannelProviderOutage({
     channelPair,
@@ -1683,6 +1709,7 @@ export async function bootstrap() {
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
       firePair: (agentId) => channelFirePair(agentId, "channel"),
+      runBoundary,
     });
 
   const agentApiClient = createAgentApiClient(config.namespace);
@@ -1983,11 +2010,11 @@ export async function bootstrap() {
       db,
       catalog: harnessCatalog,
       resolveProfile,
-      getCapabilities: async (agentId) =>
-        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
-          ?.runtimeCapabilities ?? null,
+      getCapabilities: capabilitiesOf,
+      ownerCatalog: ownerCatalogOf,
       firePair,
     }),
+    boundary: runBoundary,
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
@@ -2569,6 +2596,7 @@ export async function bootstrap() {
     kitUpstream,
     linkedKits,
     firePair,
+    runBoundary,
     reposService,
     apiKeysModule,
     satellitesBoot,

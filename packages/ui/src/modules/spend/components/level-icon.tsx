@@ -70,11 +70,7 @@ export function LevelIcon({
   return (
     <span aria-hidden className={cn("relative flex shrink-0", size)}>
       {type ? (
-        <CardIcon
-          provider={type}
-          templateId={level.connection?.templateId}
-          size={small ? "tile-xs" : "tile-sm"}
-        />
+        <CardIcon provider={type} size={small ? "tile-xs" : "tile-sm"} />
       ) : (
         <span className={cn(TILE, size, "bg-muted")} />
       )}

@@ -143,6 +143,7 @@ const profile = (
   harness: "claude-code",
   providerTemplate: "curve-bender-deployment",
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  subagent: null,
   settings: {},
   newAgentDefault: true,
   usage: { agents: 0, channels: 0, schedules: 0 },

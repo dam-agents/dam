@@ -11,10 +11,7 @@ import { Card } from "@/components/ui/card";
 import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
 import { useGrantProvider, useHarnessCatalog } from "../api/session-pair.js";
 import { attachableProviders } from "../lib/catalog-groups.js";
-import {
-  type ProviderConnectionRef,
-  providerHarnesses,
-} from "../lib/session-pair-options.js";
+import type { ProviderConnectionRef } from "../lib/session-pair-options.js";
 
 interface Request {
   harness: string;
@@ -106,7 +103,6 @@ function AttachProvidersDialog({
               key={p.id}
               agentId={null}
               provider={p}
-              harnesses={catalog && providerHarnesses(catalog, p)}
               showSpend={false}
               checked={selected.includes(p.id)}
               disabled={pending || blocked(p)}

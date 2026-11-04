@@ -203,6 +203,8 @@ export interface ProviderPreset {
   id: ProviderPresetType;
   alias: ProviderAlias;
   displayName: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: the name a compact label (the model chip under the chat input) uses; a preset without one shows its display name. */
+  shortName?: string;
   modes: readonly ProviderPresetMode[];
   /**
    * UNIT_BOUNDARY_DESCRIPTION: the provider's own service answers Claude
@@ -239,6 +241,7 @@ export const PROVIDERS = {
     id: "ibm-litellm",
     alias: "ibm",
     displayName: "IBM ETE LiteLLM Proxy",
+    shortName: "IBM proxy",
     serverAutoMode: true,
     modes: [{ key: "api-key", label: "API token", templateId: "ibm-litellm" }],
   },
@@ -246,6 +249,7 @@ export const PROVIDERS = {
     id: "curve-bender",
     alias: "cb",
     displayName: "CurveBender (own key)",
+    shortName: "CurveBender",
     modes: [
       { key: "api-key", label: "API token", templateId: "curve-bender" },
       {
@@ -367,6 +371,13 @@ export function displayNameForTemplate(templateId: string): string | null {
   const type = providerTypeForTemplateId(templateId);
   if (type === null) return null;
   return TEMPLATE_DISPLAY_NAMES[templateId] ?? PROVIDERS[type].displayName;
+}
+
+export function shortNameForTemplate(templateId: string): string | null {
+  const type = providerTypeForTemplateId(templateId);
+  if (type === null) return null;
+  const preset: ProviderPreset = PROVIDERS[type];
+  return preset.shortName ?? displayNameForTemplate(templateId);
 }
 
 export function templateIdsForAlias(alias: ProviderAlias): string[] {

@@ -12,7 +12,10 @@ import {
   type DbTx,
   schedules as schedulesTable,
 } from "db";
-import { resolvedSubagent } from "../../harness-config/domain/session-pair.js";
+import {
+  composedSubagent,
+  type LentSubagent,
+} from "../../harness-config/domain/session-pair.js";
 import type { ProfileResolver } from "../../profiles/index.js";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
@@ -135,42 +138,60 @@ export function createSchedulesRepository(
   db: Db,
   resolveProfile: ProfileResolver,
 ): SchedulesRepository {
-  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile is read with the values the profile resolves to now, so the fire, the panel and the CLI all see them; one that cannot run carries none, and why. Its subagent slot is resolved beside them, as a chat start resolves it. A write stores the references alone. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names a profile is read with the values the profile resolves to now, so the fire, the panel and the CLI all see them; one that cannot run carries none, and why. Its subagent slot is composed as a chat start composes it, so a slot of its own never inherits the profile's sub-agent and a lent one that cannot run is the schedule's issue. A write stores the references alone. */
   async function effective(row: InternalRow): Promise<Schedule> {
-    const primary = await withProfile(rowToSchedule(row));
-    const subagentSettings = await resolvedSubagent(
+    const { schedule: primary, lent } = await withProfile(rowToSchedule(row));
+    if (primary.profileIssue !== undefined) return primary;
+    const subagent = await composedSubagent(
       {
         platformSubagentProfileId: primary.spec.platformSubagentProfile ?? null,
         platformSubagentSettings: primary.spec.platformSubagentSettings ?? null,
       },
+      lent,
       resolveProfile,
       primary.agentId,
     );
-    return subagentSettings ? { ...primary, subagentSettings } : primary;
+    if (subagent.refused) return { ...primary, profileIssue: subagent.refused };
+    /* UNIT_BOUNDARY_DESCRIPTION: a schedule is read platform-level, its own settings beside the platform slot; the native keys a run takes are derived where the fire builds its payload (D193B). */
+    return subagent.settings
+      ? { ...primary, subagentSettings: subagent.settings }
+      : primary;
   }
 
-  async function withProfile(schedule: Schedule): Promise<Schedule> {
+  async function withProfile(
+    schedule: Schedule,
+  ): Promise<{ schedule: Schedule; lent: LentSubagent | null }> {
     const profileId = schedule.spec.profile;
-    if (profileId === undefined) return schedule;
+    if (profileId === undefined) return { schedule, lent: null };
     const resolved = await resolveProfile({
       profileId,
       agentId: schedule.agentId,
     });
     const { harness: _h, model: _m, settings: _s, ...spec } = schedule.spec;
-    if (resolved && !resolved.unavailable)
+    if (resolved && !resolved.unavailable) {
       return {
-        ...schedule,
-        spec: {
-          ...spec,
-          harness: resolved.pair.harness,
-          model: resolved.profile.model,
-          ...(resolved.pair.settings && { settings: resolved.pair.settings }),
+        schedule: {
+          ...schedule,
+          spec: {
+            ...spec,
+            harness: resolved.pair.harness,
+            model: resolved.profile.model,
+            ...(resolved.pair.settings && { settings: resolved.pair.settings }),
+          },
+        },
+        lent: {
+          settings: resolved.subagent,
+          unavailable: resolved.subagentUnavailable,
         },
       };
+    }
     return {
-      ...schedule,
-      spec,
-      profileIssue: resolved?.unavailable ?? "its profile is gone",
+      schedule: {
+        ...schedule,
+        spec,
+        profileIssue: resolved?.unavailable ?? "its profile is gone",
+      },
+      lent: null,
     };
   }
 
