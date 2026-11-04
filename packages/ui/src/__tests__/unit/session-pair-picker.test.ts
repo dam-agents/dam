@@ -472,6 +472,13 @@ beforeEach(() => {
   state.grant.mockClear();
 });
 
+const openMore = (node: ParentNode) => {
+  const button = [...node.querySelectorAll<HTMLElement>("button")].find((b) =>
+    b.textContent?.includes("More options"),
+  );
+  if (button?.getAttribute("aria-expanded") === "false")
+    act(() => button.click());
+};
 const click = (node: ParentNode, text: string) => {
   const button = [...node.querySelectorAll("button")].find((b) =>
     b.textContent?.includes(text),
@@ -544,7 +551,7 @@ describe("the new session panel", () => {
     const html = renderToStaticMarkup(picker());
     expect(html.indexOf(">Harness<")).toBeLessThan(html.indexOf(">Model<"));
     expect(html.indexOf(">Model<")).toBeLessThan(html.indexOf(">Provider<"));
-    expect(html.indexOf(">Provider<")).toBeLessThan(html.indexOf(">Thinking<"));
+    expect(html).not.toContain(">Thinking<");
     expect(html).toContain("More options");
     expect(html).not.toContain("Custom selection");
     expect(html).not.toContain("Primary model");
@@ -707,6 +714,8 @@ describe("the new session panel", () => {
       model: "ibm/azure/gpt-5.5",
     };
     const node = mount(picker());
+    expect(node.textContent).not.toContain("Thinking");
+    openMore(node);
     expect(node.textContent).toContain("Thinking");
     expect(
       menuItems(node, "Thinking").map((row) => row.textContent?.trim()),
@@ -728,6 +737,7 @@ describe("the new session panel", () => {
     root = null;
     container.remove();
     const greyed = mount(picker());
+    openMore(greyed);
     expect(greyed.textContent).toContain("Not available for Claude Haiku 5.5");
     expect(
       greyed.querySelector('button[aria-labelledby$="-effort-label"]'),
@@ -775,7 +785,7 @@ describe("the new session panel", () => {
       model: "ibm/azure/gpt-5.5",
     };
     const node = mount(picker());
-    click(node, "More options");
+    openMore(node);
     expect(node.textContent).toContain("Save as profile");
 
     profilesState = [profile()];
@@ -790,7 +800,7 @@ describe("the new session panel", () => {
     const picked = mount(picker());
     profileRow(picked, "Fast review");
     click(picked, "Back to custom");
-    click(picked, "More options");
+    openMore(picked);
     expect(picked.textContent).toContain("Update “Fast review”");
   });
 
@@ -910,6 +920,56 @@ describe("the saved profiles behind Use a profile", () => {
     expect(state.navigateSettings).toHaveBeenCalledWith("profiles", {
       profileId: "p1",
     });
+  });
+
+  /** TEST_SCENARIO: a non-default effort is not hidden: More options opens by itself so the changed setting is visible, while a default pick leaves it closed. */
+  it("opens More options while a setting differs from its default", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/azure/gpt-5.5",
+    };
+    const plain = mount(picker());
+    expect(
+      plain
+        .querySelector('[aria-controls$="-more"]')
+        ?.getAttribute("aria-expanded"),
+    ).toBe("false");
+    act(() => root!.unmount());
+    root = null;
+    container.remove();
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/azure/gpt-5.5",
+      settings: { mode: "high" },
+    };
+    const changed = mount(picker());
+    expect(
+      changed
+        .querySelector('[aria-controls$="-more"]')
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(changed.textContent).toContain("Thinking");
+  });
+
+  /** TEST_SCENARIO: with a profile selected, the bottom entry names it ("Using profile “…”") and still opens the profiles view; without one it reads "Use a profile". */
+  it("names the selected profile on the bottom entry", () => {
+    profilesState = [profile({ name: "Deep review" })];
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    const node = mount(picker());
+    click(node, "Back to custom");
+    expect(node.textContent).toContain("Using profile “Deep review”");
+    act(() =>
+      [...node.querySelectorAll<HTMLElement>("button")]
+        .find((b) => b.textContent?.includes("Using profile"))
+        ?.click(),
+    );
+    expect(node.textContent).toContain("Saved profiles");
   });
 
   /** TEST_SCENARIO: "Use a profile" at the bottom opens that view; Back to custom returns to the dropdowns; the panel reopens on the profiles while a profile is in use. */
@@ -1290,7 +1350,7 @@ describe("an open session's picker", () => {
         onConfigure,
       }),
     );
-    click(node, "More options");
+    openMore(node);
     pickMenu(node, "Subagent model", "GLM 5.3");
     expect(onConfigure).toHaveBeenCalledWith({
       "platformSubagent.harness": "claude-code",
@@ -1329,7 +1389,7 @@ describe("an open session's picker", () => {
     const node = mount(session({ model: "ibm/aws/claude-opus-5-5" }));
     profileRow(node, "Fast review");
     click(node, "Back to custom");
-    click(node, "More options");
+    openMore(node);
     expect(node.textContent).toContain("Update “Fast review”");
     act(() => root!.unmount());
     root = null;
@@ -1337,7 +1397,7 @@ describe("an open session's picker", () => {
     const other = mount(
       session({ sessionId: "s2", model: "ibm/aws/claude-haiku-5-5" }),
     );
-    click(other, "More options");
+    openMore(other);
     expect(other.textContent).toContain("Save as profile");
     expect(other.textContent).not.toContain("Update “Fast review”");
   });
@@ -1468,7 +1528,7 @@ describe("the slots a pick stores", () => {
       model: "ibm/azure/gpt-5.5",
     };
     const node = mount(picker());
-    click(node, "More options");
+    openMore(node);
     pickMenu(node, "Subagent model", "Claude Haiku 5.5");
     const [, pair, , , references] = lastCall(state.remember);
     expect(pair.settings).toMatchObject({
@@ -1520,7 +1580,7 @@ describe("the slots a pick stores", () => {
     };
     const node = mount(picker());
     click(node, "Back to custom");
-    click(node, "More options");
+    openMore(node);
     pickMenu(node, "Subagent model", "Claude Opus 5.5");
     const [, , , , references] = lastCall(state.remember);
     expect(references).toEqual({
@@ -1794,7 +1854,7 @@ describe("references kept apart from effective values", () => {
     state.chosen = customPair;
     state.saved = { chatProfileId: null };
     const second = mount(picker());
-    click(second, "More options");
+    openMore(second);
     pickMenu(second, "Subagent model", "Claude Opus 5.5");
     const [, pair, , , references] = lastCall(state.remember);
     expect(pair.model).toBe("ibm/aws/claude-haiku-5-5");
@@ -1975,7 +2035,7 @@ describe("a real harness's subagent slot", () => {
     const node = mount(
       picker({ carried: claude(), defaultHarness: "claude-code" }),
     );
-    click(node, "More options");
+    openMore(node);
     pickMenu(node, "Subagent model", "Claude Haiku 5.5");
     const [, stored, , , , effective] = lastCall(state.remember);
     const platform = {
@@ -2268,7 +2328,7 @@ describe("a value-only default replaced elsewhere", () => {
         }),
       }),
     );
-    click(node, "More options");
+    openMore(node);
     pickMenu(node, "Subagent model", "Claude Haiku 5.5");
 
     act(() =>

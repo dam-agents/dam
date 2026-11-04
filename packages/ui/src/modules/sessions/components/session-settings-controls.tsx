@@ -1,6 +1,6 @@
 import type { HarnessCapability } from "agent-runtime-api";
 import { modelConstraintsFor, SUBAGENT_MODEL_SETTING } from "agent-runtime-api";
-import { Fragment, useId } from "react";
+import { useId } from "react";
 
 import { Select } from "@/components/ui/select";
 
@@ -59,41 +59,38 @@ export function SessionSettingsControls({
         );
     return { option: o, value, choices };
   });
-  const grid =
-    "grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-4 text-[13px]";
   return (
-    <div
-      role="group"
-      aria-label="Session settings"
-      className="flex flex-col gap-1"
-    >
-      <div className={grid}>
-        {rows.map(({ option: o, value, choices }) => (
-          <Fragment key={o.id}>
-            <label htmlFor={`${id}-${o.id}`} className="text-muted-foreground">
-              {o.name}
-            </label>
-            <Select
-              id={`${id}-${o.id}`}
-              size="xs"
-              variant="ghost"
-              disabled={disabled}
-              value={value ?? ""}
-              onChange={(e) => onChange({ [o.id]: e.target.value })}
-            >
-              {value !== undefined &&
-                !choices.some((c) => c.value === value) && (
-                  <option value={value}>{value}</option>
-                )}
-              {choices.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </Fragment>
-        ))}
-      </div>
+    <div role="group" aria-label="Session settings" className="flex flex-col">
+      {rows.map(({ option: o, value, choices }) => (
+        <div
+          key={o.id}
+          className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-3 px-4 py-1.5"
+        >
+          <label
+            htmlFor={`${id}-${o.id}`}
+            className="text-[13px] text-muted-foreground"
+          >
+            {o.name}
+          </label>
+          <Select
+            id={`${id}-${o.id}`}
+            size="sm"
+            disabled={disabled}
+            className="h-[38px] pl-3 text-sm"
+            value={value ?? ""}
+            onChange={(e) => onChange({ [o.id]: e.target.value })}
+          >
+            {value !== undefined && !choices.some((c) => c.value === value) && (
+              <option value={value}>{value}</option>
+            )}
+            {choices.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ))}
     </div>
   );
 }

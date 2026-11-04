@@ -60,6 +60,7 @@ import {
 } from "../lib/session-pair-options.js";
 import {
   applySettingChanges,
+  isModelOption,
   sessionSettingOptions,
   settingDefaults,
   settingsForModel,
@@ -461,7 +462,16 @@ export function SessionModelPicker({
     );
   };
 
-  const expanded = more ?? subagent !== null;
+  const settingDiffers = sessionSettingOptions(capability).some(
+    (option) =>
+      !option.subagents &&
+      option.category !== "mode" &&
+      option.category !== "approvals" &&
+      !isModelOption(option) &&
+      settings[option.id] !== undefined &&
+      settings[option.id] !== defaults[option.id],
+  );
+  const expanded = more ?? (subagent !== null || settingDiffers);
   const moreId = `${uid}-more`;
   const pickProfile = (profile: ProfileWithUsage) => {
     const { available, attachable } = profile.availability ?? {
@@ -505,6 +515,53 @@ export function SessionModelPicker({
         (profile.availability?.available ?? true),
     ),
   );
+
+  const effortField =
+    effort &&
+    (effortChoices.length === 0 ? (
+      <div className={ROW}>
+        <span className={LABEL}>{effort.name}</span>
+        <span className="text-[13px] text-muted-foreground">
+          Not available for {modelName}
+        </span>
+      </div>
+    ) : (
+      <MenuField id={`${uid}-effort-label`} label={effort.name}>
+        <ValueMenu
+          labelId={`${uid}-effort-label`}
+          menuLabel={effort.name}
+          display={choiceName(effort, effortValue) ?? ""}
+          currentKey={effortValue ?? ""}
+          sections={[
+            {
+              title: "",
+              entries: [
+                ...(effortValue !== undefined &&
+                !effortChoices.some((c) => c.value === effortValue)
+                  ? [{ key: effortValue, label: effortValue }]
+                  : []),
+                ...effortChoices.map((c) => ({
+                  key: c.value,
+                  label: c.name,
+                })),
+              ],
+            },
+          ]}
+          onPick={(value) =>
+            choose({
+              harness,
+              provider: provider?.id ?? null,
+              model,
+              ...keepSettings(
+                applySettingChanges(settings, {
+                  [effort.id]: value,
+                }),
+              ),
+            })
+          }
+        />
+      </MenuField>
+    ));
 
   return (
     <div className="flex flex-col gap-0.5 text-sm">
@@ -681,51 +738,6 @@ export function SessionModelPicker({
                   </button>
                 </div>
               )}
-              {effort &&
-                (effortChoices.length === 0 ? (
-                  <div className={ROW}>
-                    <span className={LABEL}>{effort.name}</span>
-                    <span className="text-[13px] text-muted-foreground">
-                      Not available for {modelName}
-                    </span>
-                  </div>
-                ) : (
-                  <MenuField id={`${uid}-effort-label`} label={effort.name}>
-                    <ValueMenu
-                      labelId={`${uid}-effort-label`}
-                      menuLabel={effort.name}
-                      display={choiceName(effort, effortValue) ?? ""}
-                      currentKey={effortValue ?? ""}
-                      sections={[
-                        {
-                          title: "",
-                          entries: [
-                            ...(effortValue !== undefined &&
-                            !effortChoices.some((c) => c.value === effortValue)
-                              ? [{ key: effortValue, label: effortValue }]
-                              : []),
-                            ...effortChoices.map((c) => ({
-                              key: c.value,
-                              label: c.name,
-                            })),
-                          ],
-                        },
-                      ]}
-                      onPick={(value) =>
-                        choose({
-                          harness,
-                          provider: provider?.id ?? null,
-                          model,
-                          ...keepSettings(
-                            applySettingChanges(settings, {
-                              [effort.id]: value,
-                            }),
-                          ),
-                        })
-                      }
-                    />
-                  </MenuField>
-                ))}
             </>
           )}
           <div className="flex items-center justify-between gap-2 px-4 pt-1">
@@ -754,18 +766,22 @@ export function SessionModelPicker({
           </div>
           {expanded && (
             <div id={moreId} className="flex flex-col">
-              {follow?.active
-                ? followSubagent && (
+              {follow?.active ? (
+                <>
+                  {followingEffort && (
+                    <div className={ROW}>
+                      <span className={LABEL}>{followingEffort.name}</span>
+                      <span className="truncate text-sm">
+                        {choiceName(followingEffort, followingEffortValue) ??
+                          "—"}
+                      </span>
+                    </div>
+                  )}
+                  {followSubagent && (
                     <>
-                      <h3 className={cn("px-4 pt-1", labelVariants())}>
+                      <h3 className={cn("px-4 pt-2", labelVariants())}>
                         Subagents
                       </h3>
-                      <div className={ROW}>
-                        <span className={LABEL}>Provider</span>
-                        <span className="truncate text-sm">
-                          {followingProvider?.name ?? "—"}
-                        </span>
-                      </div>
                       <div className={ROW}>
                         <span className={LABEL}>Model</span>
                         <span className="truncate text-sm">
@@ -773,75 +789,77 @@ export function SessionModelPicker({
                             followSubagent.model}
                         </span>
                       </div>
-                    </>
-                  )
-                : pair && (
-                    <>
-                      <h3 className={cn("px-4 pt-2", labelVariants())}>
-                        Subagents
-                      </h3>
-                      <MenuField
-                        id={`${uid}-subagent-model-label`}
-                        label="Model"
-                      >
-                        <ValueMenu
-                          labelId={`${uid}-subagent-model-label`}
-                          menuLabel="Subagent model"
-                          display={subagentDisplay}
-                          currentKey={subEntry?.key ?? subagent?.model ?? ""}
-                          top={{ key: "", label: "Same as agent" }}
-                          sections={modelSections(subEntry)}
-                          foot={olderFoot}
-                          onPick={changeSubagentModel}
-                        />
-                      </MenuField>
-                      {owned.length > 1 && (
-                        <div className={ROW}>
-                          <span className="text-muted-foreground">
-                            Provider
-                          </span>
-                          <div className="min-w-0">
-                            <ProviderMenu
-                              label="Subagent provider"
-                              providers={owned}
-                              currentId={subagentProvider?.id}
-                              enabled={(id) => providerUsable(subEntry, id)}
-                              reason={(id) =>
-                                providerReason(subEntry, id, harness)
-                              }
-                              none={{
-                                label: "Same as agent",
-                                onPick: () => changeSubagentProvider(""),
-                              }}
-                              onPick={changeSubagentProvider}
-                            />
-                          </div>
-                        </div>
-                      )}
-                      <div className="px-4 pt-2 empty:hidden">
-                        <hr className="mb-2 border-border" />
-                        <SessionSettingsControls
-                          agentId={agentId}
-                          carried={carried}
-                          capability={capability}
-                          model={model}
-                          settings={settings}
-                          defaults={defaults}
-                          skip={effort ? [effort.id] : []}
-                          onChange={(changes) =>
-                            choose({
-                              harness,
-                              provider: provider?.id ?? null,
-                              model,
-                              ...keepSettings(
-                                applySettingChanges(settings, changes),
-                              ),
-                            })
-                          }
-                        />
+                      <div className={ROW}>
+                        <span className={LABEL}>Provider</span>
+                        <span className="truncate text-sm">
+                          {followingProvider?.name ?? "—"}
+                        </span>
                       </div>
                     </>
                   )}
+                </>
+              ) : (
+                pair && (
+                  <>
+                    {effortField}
+                    <SessionSettingsControls
+                      agentId={agentId}
+                      carried={carried}
+                      capability={capability}
+                      model={model}
+                      settings={settings}
+                      defaults={defaults}
+                      skip={effort ? [effort.id] : []}
+                      onChange={(changes) =>
+                        choose({
+                          harness,
+                          provider: provider?.id ?? null,
+                          model,
+                          ...keepSettings(
+                            applySettingChanges(settings, changes),
+                          ),
+                        })
+                      }
+                    />
+                    <h3 className={cn("px-4 pt-2", labelVariants())}>
+                      Subagents
+                    </h3>
+                    <MenuField id={`${uid}-subagent-model-label`} label="Model">
+                      <ValueMenu
+                        labelId={`${uid}-subagent-model-label`}
+                        menuLabel="Subagent model"
+                        display={subagentDisplay}
+                        currentKey={subEntry?.key ?? subagent?.model ?? ""}
+                        top={{ key: "", label: "Same as agent" }}
+                        sections={modelSections(subEntry)}
+                        foot={olderFoot}
+                        onPick={changeSubagentModel}
+                      />
+                    </MenuField>
+                    {owned.length > 1 && (
+                      <div className={ROW}>
+                        <span className={LABEL}>Provider</span>
+                        <div className="min-w-0">
+                          <ProviderMenu
+                            label="Subagent provider"
+                            providers={owned}
+                            currentId={subagentProvider?.id}
+                            enabled={(id) => providerUsable(subEntry, id)}
+                            reason={(id) =>
+                              providerReason(subEntry, id, harness)
+                            }
+                            none={{
+                              label: "Same as agent",
+                              onPick: () => changeSubagentProvider(""),
+                            }}
+                            onPick={changeSubagentProvider}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              )}
             </div>
           )}
         </>
@@ -855,7 +873,11 @@ export function SessionModelPicker({
               onClick={() => setView("profiles")}
               className="mx-4 flex min-h-[38px] items-center gap-2 rounded px-1 py-2 text-left text-sm hover:bg-muted"
             >
-              <span className="min-w-0 flex-1">Use a profile</span>
+              <span className="min-w-0 flex-1 truncate">
+                {selectedProfileId
+                  ? `Using profile “${profiles.find((p) => p.id === selectedProfileId)?.name ?? ""}”`
+                  : "Use a profile"}
+              </span>
               <span className="text-[13px] text-muted-foreground">
                 {profiles.length}
               </span>
