@@ -3,7 +3,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentEnvironmentView } from "api-server-api";
+import type {
+  AgentEnvironmentView,
+  SharedEnvironmentView,
+} from "api-server-api";
 import { registerEnvironmentTools } from "../../modules/environments/mcp-tools.js";
 import type { OwningAgentEnvironments } from "../../modules/environments/services/environments-service.js";
 
@@ -18,8 +21,23 @@ const view: AgentEnvironmentView = {
   state: "running",
 };
 
-async function tools() {
+const shared: SharedEnvironmentView = {
+  id: "agent-env9",
+  name: "pr-9",
+  sharedWithYou: true,
+  owningAgentName: "bob's dev",
+  ownerName: "Bob",
+  endpoints: [
+    { name: "app", port: 4444, url: "https://app-pr-9-abc.env.example" },
+  ],
+  expiresAt: new Date().toISOString(),
+  state: "sleeping",
+};
+
+async function tools(manage = true) {
   const environments = {
+    manage,
+    shared: vi.fn(async () => [shared]),
     create: vi.fn(async () => view),
     list: vi.fn(async () => [view]),
     update: vi.fn(async () => view),
@@ -77,7 +95,7 @@ describe("who may open an Environment, from the agent's tools", () => {
       endpoints,
     });
     const listed = await call("list_environments", {});
-    expect(JSON.parse(listed.text)).toEqual([view]);
+    expect(JSON.parse(listed.text)).toEqual([view, shared]);
     expect(listed.text).not.toContain("@");
   });
 });
@@ -110,5 +128,20 @@ describe("an endpoint's readiness path, from the agent's tools", () => {
     });
     expect(refused.isError).toBe(true);
     expect(environments.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Environments shared with an agent", () => {
+  // TEST_SCENARIO: an agent whose owner does not have Environments is listed on another user's Environment. It gets only the list, marked shared, and none of the tools that create or change one.
+  it("lists only what is shared when the agent may not own Environments", async () => {
+    const { call, environments } = await tools(false);
+    const listed = await call("list_environments", {});
+    expect(JSON.parse(listed.text)).toEqual([shared]);
+    expect(environments.list).not.toHaveBeenCalled();
+    const create = await call("create_environment", {
+      name: "pr-1",
+      endpoints,
+    });
+    expect(create.isError).toBe(true);
   });
 });

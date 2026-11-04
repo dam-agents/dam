@@ -1,4 +1,7 @@
-import type { EgressRuleSource } from "api-server-api";
+import {
+  PLATFORM_ENVIRONMENTS_SOURCE,
+  type EgressRuleSource,
+} from "api-server-api";
 import type {
   EgressRulesRepository,
   NewEgressRule,
@@ -20,6 +23,7 @@ export interface EgressRuleWriter {
   insert(input: NewEgressRule): Promise<EgressRuleWriteOutcome>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a person's rule that repeats one the platform or a preset wrote takes that row over, except the platform's Environments rule: its row is what tells the platform its owner removed it, so it stays the platform's, and the person's rule is that row.
 export function createEgressRuleWriter(deps: {
   repo: EgressRulesRepository;
   l7Hosts: AgentL7HostsPort;
@@ -36,6 +40,7 @@ export function createEgressRuleWriter(deps: {
       } else if (
         row.source !== "manual" &&
         row.source !== "inbox" &&
+        row.source !== PLATFORM_ENVIRONMENTS_SOURCE &&
         (input.source === "manual" || input.source === "inbox")
       ) {
         const promoted = await deps.repo.updateTakeOwnership({

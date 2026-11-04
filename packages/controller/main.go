@@ -433,12 +433,23 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	)
 	secretInformer := secretFactory.Core().V1().Secrets()
 	secretInformer.TypedInformer().AddTypedEventHandler(cache.TypedResourceEventHandlerDetailedFuncs[*corev1.Secret]{
+		// UNIT_BOUNDARY_DESCRIPTION: an Agent Key Secret comes and goes with its Agent's Environments rule, so its gateway is reconciled when one is written or removed, not only when one changes; any other credential Secret is reconciled when a grant names it, which the Agent's own spec change already does.
+		AddFunc: func(s *corev1.Secret, isInInitialList bool) {
+			if agent := reconciler.AgentKeyAgent(s.Labels); agent != "" && !isInInitialList {
+				agentQueue.add(false, agent)
+			}
+		},
 		UpdateFunc: func(oldSecret, newSecret *corev1.Secret) {
 			if oldSecret.ResourceVersion == newSecret.ResourceVersion {
 				return
 			}
 			for _, a := range agentReconciler.OwnerAgents(reconciler.AgentOwner(newSecret.Labels)) {
 				agentQueue.add(false, a.GetName())
+			}
+		},
+		DeleteFunc: func(deleted coreinformers.DeletedSecret) {
+			if deleted.OptionalObj != nil {
+				agentQueue.add(false, reconciler.AgentKeyAgent(deleted.OptionalObj.Labels))
 			}
 		},
 	})

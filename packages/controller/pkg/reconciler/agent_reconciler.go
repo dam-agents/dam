@@ -887,6 +887,14 @@ func AgentOwner(labels map[string]string) string {
 	return labels[envoyOwnerLabel]
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the Agent an Agent Key Secret belongs to, or "" for any other Secret.
+func AgentKeyAgent(labels map[string]string) string {
+	if labels[envoySecretTypeLabel] != envoySecretTypeAgentKey {
+		return ""
+	}
+	return labels[LabelAgent]
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the resources a release-namespace delete cannot cascade, because owner references do not cross namespaces. The errors are the caller's: with anchors, the anchor is the durable delete marker and one that is removed while these survive is a delete nobody retries.
 func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, agentName string) error {
 	var errs []error

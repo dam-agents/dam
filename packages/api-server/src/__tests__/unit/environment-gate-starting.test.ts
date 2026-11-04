@@ -91,6 +91,10 @@ async function world(opts: { ready?: string } = {}) {
     agentMembers: async () => [],
     environmentMembers: async () => [],
     editorsOf: async () => [],
+    memberAgents: async () => [],
+    agentOfKey: async (key) =>
+      key === OWNING_KEY ? { agentId: record.owningAgentId } : null,
+    recordAgentVisit: async () => {},
     signIn: {
       redeemHandoff: async () => null,
       session: async (id) => (id === "s1" ? session : null),
@@ -188,6 +192,9 @@ async function world(opts: { ready?: string } = {}) {
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
+
+// UNIT_BOUNDARY_DESCRIPTION: the key the Environment's Owning Agent's gateway sends.
+const OWNING_KEY = `ak_${"o".repeat(43)}`;
 
 describe("the gate while an Environment starts", () => {
   // TEST_SCENARIO: a page load to a sleeping Environment starts its wake and gets the loading page at once, not a request that hangs until the machine runs; the page is a 503 with Retry-After and no caching, and carries the script that asks the gate's status.
@@ -371,5 +378,24 @@ describe("the gate while an Environment starts", () => {
 
     const anonymous = await w.request("/.platform/status");
     expect(anonymous.status).toBe(401);
+  });
+
+  // TEST_SCENARIO: the Owning Agent's test suite calls the Environment while its app is still starting. It gets the same plain 503 a person's script does and reads the same status, then the app once it listens: an agent is let in at the gate, and waits for the app like anyone else.
+  it("answers an agent's call the same way while the app starts", async () => {
+    const w = await world();
+    const keyed = {
+      "x-platform-agent-key": OWNING_KEY,
+      accept: "application/json",
+    };
+
+    const early = await w.request("/api/items", keyed);
+    expect(early.status).toBe(503);
+    expect(early.headers["retry-after"]).toBe("5");
+    const state = await w.request("/.platform/status", keyed);
+    expect(JSON.parse(state.body)).toEqual({ state: "starting" });
+
+    w.app.listening = true;
+    const ready = await w.request("/api/items", keyed);
+    expect(ready.status).toBe(200);
   });
 });
