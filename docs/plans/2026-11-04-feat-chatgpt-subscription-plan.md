@@ -19,7 +19,7 @@ The target is an explicit subscription provider mode that runs Codex natively, w
 ## Scope
 
 Add an OpenAI subscription mode, a native Connection template, named native models, consistent launch configuration and device-login instructions.
-Authorization happens once per agent, in its web terminal or over SSH; subsequent web chat and channel turns reuse that login.
+Authorization happens once per agent over SSH; subsequent web chat and channel turns reuse that login.
 Codex owns token acquisition, storage, refresh and logout in its persistent home.
 Do not turn a Codex token into an API key or implement an independent OpenAI OAuth client.
 Do not change other harnesses or make subscription credentials reusable across agents.

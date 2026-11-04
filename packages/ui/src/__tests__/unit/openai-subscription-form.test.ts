@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: Switching from API-key mode to a subscription submits only the native Connection choice. Viewing a configured subscription never attempts to replace a platform-held credential.
+// TEST_OVERVIEW: Separate API and subscription forms keep their credential paths distinct. Subscription setup submits only the native Connection choice, and viewing it never replaces a platform-held credential.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -23,7 +23,12 @@ afterEach(() => {
   root = undefined;
   vi.clearAllMocks();
 });
-const mount = (item?: ProviderItem) => {
+const mount = (
+  item?: ProviderItem,
+  provider: "openai" | "chatgpt" = item?.conn.templateId === "openai-chatgpt"
+    ? "chatgpt"
+    : "openai",
+) => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -34,7 +39,7 @@ const mount = (item?: ProviderItem) => {
         TooltipProvider,
         null,
         createElement(ProviderConnectDialog, {
-          provider: "openai",
+          provider,
           item,
           onConnected: connected,
           onClose: () => {},
@@ -45,15 +50,11 @@ const mount = (item?: ProviderItem) => {
   return connected;
 };
 
-// TEST_SCENARIO: A subscription needs no API-key value, and an API-key tab visited first must not leave a validation error that prevents native setup.
+// TEST_SCENARIO: Subscription setup has its own provider entry and needs no API-key value or authentication-mode switch.
 it("enables subscription mode through the actual provider form", async () => {
   calls.create.mockResolvedValue({ id: "subscription" });
-  const connected = mount();
-  expect(document.querySelector('input[type="password"]')).not.toBeNull();
-  const tab = [
-    ...document.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-  ].find((button) => button.textContent === "ChatGPT subscription")!;
-  await act(async () => tab.click());
+  const connected = mount(undefined, "chatgpt");
+  expect(document.querySelector('[role="tab"]')).toBeNull();
   expect(document.querySelector('input[type="password"]')).toBeNull();
   await act(async () =>
     document
@@ -67,6 +68,16 @@ it("enables subscription mode through the actual provider form", async () => {
   });
   expect(calls.update).not.toHaveBeenCalled();
   expect(connected).toHaveBeenCalledWith({ id: "subscription" });
+});
+
+// TEST_SCENARIO: The OpenAI API-key form cannot create a subscription that later appears under a different provider row.
+it("keeps API-key setup separate from subscriptions", () => {
+  mount();
+  expect(document.querySelector('input[type="password"]')).not.toBeNull();
+  expect(document.querySelector('[role="tab"]')).toBeNull();
+  expect(document.body.textContent).not.toContain(
+    "Enable ChatGPT subscription",
+  );
 });
 
 // TEST_SCENARIO: The native login lives on the agent. Closing the configured provider's instructions must not invoke the generic key-rotation operation, which accepts no credential for this mode.

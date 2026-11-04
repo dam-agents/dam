@@ -137,7 +137,6 @@ export function ProviderConnectDialog({
               ? "chatgpt"
               : "api-key"
           }
-          lockMode={!!item || provider === "chatgpt"}
           onCancel={dismiss}
           onSave={async ({ mode, value }) => {
             if (mode === "chatgpt") {

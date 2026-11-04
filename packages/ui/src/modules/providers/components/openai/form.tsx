@@ -1,9 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import { type TabDef, Tabs } from "@/components/ui/tabs";
 
 import { PROVIDERS } from "../../../../types.js";
 import {
@@ -28,30 +27,23 @@ const openaiCredentialSchema = z.discriminatedUnion("mode", [
 
 type FormValues = z.infer<typeof openaiCredentialSchema>;
 type Mode = FormValues["mode"];
-const MODE_TABS: readonly TabDef<Mode>[] = [
-  { value: "api-key", label: "API key" },
-  { value: "chatgpt", label: "ChatGPT subscription" },
-];
 
 export function OpenAIForm({
   variant,
   initialMode = "api-key",
-  lockMode = false,
   onSave,
   onCancel,
 }: {
   variant: "wizard" | "edit";
   initialMode?: Mode;
-  lockMode?: boolean;
   onSave: (input: FormValues) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const { register, handleSubmit, control, watch, formState } =
-    useForm<FormValues>({
-      resolver: zodResolver(openaiCredentialSchema),
-      mode: "onChange",
-      defaultValues: { mode: initialMode, value: "" },
-    });
+  const { register, handleSubmit, watch, formState } = useForm<FormValues>({
+    resolver: zodResolver(openaiCredentialSchema),
+    mode: "onChange",
+    defaultValues: { mode: initialMode, value: "" },
+  });
   const { errors, isSubmitting, isValid } = formState;
 
   const isEdit = variant === "edit";
@@ -83,34 +75,16 @@ export function OpenAIForm({
       onCancel={onCancel}
       closeDisabled={isSubmitting}
     >
-      {!lockMode && (
-        <Controller
-          control={control}
-          name="mode"
-          render={({ field }) => (
-            <Tabs
-              tabs={MODE_TABS}
-              value={field.value}
-              onValueChange={field.onChange}
-              ariaLabel="OpenAI authentication method"
-            />
-          )}
-        />
-      )}
       {mode === "chatgpt" ? (
         <>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              After attaching this provider to an agent, open its Codex web
-              terminal and choose ChatGPT sign-in. Approve the device code in
-              your browser.
-            </p>
-            <p>
-              For sign-in over SSH, run{" "}
+              After attaching this provider to an agent, sign in over SSH: run{" "}
               <code>codex-chatgpt login --device-auth</code>. That login also
               powers the agent's web chat and Slack sessions when you select a
               subscription model.
             </p>
+            <p>Approve the device code in your own browser.</p>
             <p>
               Restart the agent after reauthorizing an expired login, signing
               out or switching ChatGPT accounts so existing sessions use the new

@@ -30,7 +30,7 @@ The launch scripts fall back to `dummy-placeholder` only when nothing sets it.
 In Settings → Providers, enable **ChatGPT subscription**, then attach that Connection to the agent.
 It can coexist with an OpenAI API-key Connection: subscription models start with `chatgpt/`, while API models start with `openai/`.
 Removing one Connection leaves its saved model choices unavailable, rather than moving their calls to the other billing account.
-Open the agent's Codex web terminal and complete ChatGPT sign-in with a device code, or sign in over SSH:
+Sign in over SSH so authorization works even when API providers are also attached:
 
 ```sh
 codex-chatgpt login --device-auth
@@ -40,6 +40,7 @@ codex-chatgpt login status
 Approve the URL and code in your own browser; device-code login must be enabled in your ChatGPT security settings or workspace permissions.
 Select a subscription model in web chat and save it in the agent's chat or channel default before asking it to work in Slack.
 Codex stores and refreshes this login on the agent, shared by its native terminal and ACP sessions.
+Each platform sub-agent needs its own authorization too; inheriting the Connection does not copy the login to a new agent.
 MCP configuration, instructions, history and resume use the existing Codex home.
 Native launches discard API-key and endpoint variables, select Codex's OpenAI provider, and turn off the router catalog; the API launch path never forces a login method or clears the native cache.
 Model choices follow [OpenAI's current Codex model guidance](https://learn.chatgpt.com/docs/models); a completed turn proves that the account and pinned client can use the chosen model.

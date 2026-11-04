@@ -160,7 +160,8 @@ Cross- owner leakage is structurally prevented by the label selector — a missi
 An owner can enable a ChatGPT subscription Connection and grant it to an agent alongside other provider Connections.
 Subscription model names have a distinct provider identity, so replacing Connections cannot silently change a saved model's billing path.
 The Connection configures Codex's native mode and permits its authentication and inference hosts; it stores no subscription token in the platform.
-The owner authorizes the agent in its Codex web terminal or over SSH, and Codex stores, refreshes and removes its login in the persistent home.
+The owner authorizes the agent over SSH, and Codex stores, refreshes and removes its login in the persistent home.
+Connection inheritance does not authorize a platform sub-agent: its own persistent home needs its own login.
 That login serves terminal, web and channel sessions selecting the subscription's native models.
 The harness and its tools can read the account's tokens, so everyone allowed to run work on the agent uses that subscription; a channel binding lends this account access to the channel too.
 Native requests still leave through the gateway and its network gate, but bypass the Model Router and its provider metering and spend limits.
