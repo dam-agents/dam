@@ -199,6 +199,53 @@ describe("convertedDefaultModel", () => {
   });
 });
 
+describe("convertedDefaultModel on Bob's own gateway", () => {
+  const BOB = ["background", "explorer", "fast", "gpt-oss-20b", "premium-ide"];
+
+  // TEST_SCENARIO: 20 of 22 Bob agents converted to "not set" on 0.2.24: they named no model and ran on Bob's built-in default, which the preference list does not know, so they convert to the Bob model owners run on (`fast`, else `explorer`) — and the preference list still wins where another provider lists its model, and no other provider's `fast` is taken for Bob's.
+  it("takes Bob's built-in default for an agent that named no model", () => {
+    const bob = { alias: "bob", listed: BOB };
+    expect(
+      convertedDefaultModel({ setting: null, providers: [bob], ran: [] }),
+    ).toBe("bob/fast");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["aws/claude-opus-5-5"] }, bob],
+        ran: [],
+      }),
+    ).toBe("ibm/aws/claude-opus-5-5");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "bob", listed: ["background", "explorer"] }],
+        ran: [],
+      }),
+    ).toBe("bob/explorer");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["xai/grok-4-fast"] }, bob],
+        ran: [],
+      }),
+    ).toBe("bob/fast");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["xai/grok-4-fast"] }],
+        ran: [],
+      }),
+    ).toBeNull();
+    expect(
+      convertedDefaultModel({
+        setting: "codestral-2508",
+        providers: [bob],
+        ran: [],
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("convertedDefaultModel on several fitting providers", () => {
   const both = (setting: string | null, ran: string[] = []) =>
     convertedDefaultModel({
@@ -333,6 +380,7 @@ describe("the one-time default conversion", () => {
     const wakes: string[] = [];
     let catalogReads = 0;
     let moved = opts.moved ?? false;
+    let awake = opts.running ?? true;
     let clock = 0;
     const c = createDefaultConverter({
       pairRepo: {
@@ -345,7 +393,7 @@ describe("the one-time default conversion", () => {
         write: async () => {},
         clear: async () => {},
         writeIfEmpty: async (_id, pair, note) => {
-          if (saved) return false;
+          if (saved?.model) return false;
           saved = pair;
           writes.push(pair);
           if (note) notes.push(note);
@@ -367,6 +415,7 @@ describe("the one-time default conversion", () => {
       specHarness: async () => undefined,
       catalogView: async () => {
         catalogReads++;
+        if (!awake) throw new Error("runtime asleep");
         return opts.catalog === undefined
           ? view("listed", ["claude-opus-4-8", "claude-opus-5-5"])
           : opts.catalog;
@@ -380,6 +429,7 @@ describe("the one-time default conversion", () => {
       isRunning: async () => opts.running ?? true,
       wake: async (id) => {
         wakes.push(id);
+        awake = true;
         if (opts.helloAfterWake !== false) moved = false;
         return { previous: "T0", written: "T1" };
       },
@@ -600,6 +650,71 @@ describe("the one-time default conversion", () => {
       name: "NoDefaultModelError",
       pending: true,
     });
+  });
+
+  // TEST_SCENARIO: 0.2.24 saved "not set" for Bob agents whose provider listed no model the conversion knew; once the runtime lists one, the next hello converts the default instead of leaving every schedule failing for good.
+  it("converts again over a saved not set", async () => {
+    const notSet = { harness: "claude-code", provider: "anth", model: null };
+    const { c, writes } = converter({ saved: notSet });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes).toEqual([
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-5-5",
+      },
+    ]);
+
+    const still = converter({
+      saved: notSet,
+      setting: "claude-opus-3",
+      catalog: view("listed", ["claude-opus-4-8"]),
+    });
+    expect(await still.c.convert("a")).toBe("not-set");
+    expect(still.writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a schedule of an asleep Agent whose default is "not set" wakes it and converts before the fire is checked, since nothing else would ever wake it to try again; an Agent nothing can convert fails its fire without being woken each time.
+  it("wakes an agent whose default is not set before a fire", async () => {
+    const notSet = { harness: "claude-code", provider: "anth", model: null };
+    const { c, wakes, writes } = converter({ running: false, saved: notSet });
+    await c.ensureForFire("a");
+    expect(wakes).toEqual(["a"]);
+    expect(writes[0]?.model).toBe("anthropic/claude-opus-5-5");
+
+    const none = converter({ running: false, saved: notSet, granted: [] });
+    expect(await none.c.ensureForFire("a")).toBeNull();
+    expect(none.wakes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: "Run now" on an Agent whose default is "not set" converts it first, as a fire does: a running one is converted at once and runs, an asleep one is pending while it wakes for its listing, and one nothing can convert answers at once instead of waking.
+  it("converts a not set before Run now", async () => {
+    const notSet = { harness: "claude-code", provider: "anth", model: null };
+    const running = converter({ saved: notSet });
+    expect(await running.c.pendingAfterMove("a")).toBe(false);
+    expect(running.writes[0]?.model).toBe("anthropic/claude-opus-5-5");
+
+    const asleep = converter({ running: false, saved: notSet });
+    expect(await asleep.c.pendingAfterMove("a")).toBe(true);
+    expect(asleep.wakes).toEqual([]);
+
+    const none = converter({ running: false, saved: notSet, granted: [] });
+    expect(await none.c.pendingAfterMove("a")).toBe(false);
+  });
+
+  // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM is not filled from Anthropic.
+  it("keeps the harness and provider of a not set", async () => {
+    const codex = converter({
+      saved: { harness: "codex", provider: null, model: null },
+    });
+    expect(await codex.c.convert("a")).toBe("not-set");
+    expect(codex.writes).toEqual([]);
+
+    const ibm = converter({
+      saved: { harness: "claude-code", provider: "lite", model: null },
+    });
+    expect(await ibm.c.convert("a")).toBe("not-set");
+    expect(ibm.writes).toEqual([]);
   });
 
   // TEST_SCENARIO: a hello, a fire and a channel turn arriving together share one conversion instead of each polling the runtime.
