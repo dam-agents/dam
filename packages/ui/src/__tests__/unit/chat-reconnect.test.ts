@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: A running Agent whose connection dropped keeps its chat on screen: the takeover overlay is only for an Agent with no chat to keep, the chat shows a one-line reconnecting notice, and the chat refuses the two actions that need the live channel (a send and a permission answer) until the Agent answers again.
+// TEST_OVERVIEW: A running Agent whose connection dropped keeps its chat on screen: the takeover overlay is only for an Agent with no chat to keep, the chat shows a one-line reconnecting notice, and the chat refuses the two actions that need the live channel (a send and a permission answer) until the Agent answers again. The same chat is where an unused assistant's greeting appears: the message and its tasks replace the empty page, the composer hints one of them, and a click on one fills the composer without sending.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionMode } from "api-server-api";
 import { act, createElement, type ReactNode } from "react";
@@ -15,6 +15,10 @@ const fake = vi.hoisted(() => ({
   loadingSession: false,
   sendPrompt: vi.fn(async () => {}),
   stopAgent: vi.fn(async () => {}),
+  greeting: { kind: "none" } as
+    | { kind: "none" }
+    | { kind: "loading" }
+    | { kind: "greeting"; copy: unknown },
 }));
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -367,6 +371,9 @@ mockModule("../../modules/sessions/api/session-pair.js", {
 mockModule("../../modules/sessions/api/background-work.js", {
   useSessionBackgroundWork: () => [],
 });
+mockModule("../../modules/assistants/hooks/use-assistant-greeting.js", {
+  useAssistantGreeting: () => fake.greeting,
+});
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
   useInstallCapabilities: () => ({ data: undefined, isSuccess: false }),
@@ -526,8 +533,74 @@ afterEach(() => {
   fake.busy = false;
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
+  fake.greeting = { kind: "none" };
   useStore.setState({ pendingPermissions: [] });
   vi.clearAllMocks();
+});
+
+function openNewChat(): HTMLElement {
+  fake.state = "running";
+  fake.operable = true;
+  fake.connectionState = "live";
+  useStore.setState({
+    selectedAgent: "a-1",
+    sessionId: null,
+    sessionMode: SessionMode.Chat,
+    messages: [],
+    drafts: {},
+    queuedPrompts: [],
+  });
+  return render();
+}
+
+function greetingCopy() {
+  return {
+    assistantName: "Dambledore",
+    paragraphs: [
+      "Hi Jenna! I'm Dambledore, your new personal DAM agent!",
+      "The more I know about you, the more I can help.",
+    ],
+    suggestions: [
+      "Explain what you can do",
+      "Remember I like answers short and technical",
+    ],
+    placeholder: "Remember I like answers short and technical",
+  };
+}
+
+function chip(el: HTMLElement, text: string): HTMLButtonElement | undefined {
+  return [...el.querySelectorAll("button")].find((b) => b.textContent === text);
+}
+
+// TEST_SCENARIO: an assistant whose chat has never had a session opens on its greeting — not on the empty page with a big avatar — and the composer hints one of the tasks it offers.
+it("opens an unused assistant's chat on its greeting", () => {
+  fake.greeting = { kind: "greeting", copy: greetingCopy() };
+  const el = openNewChat();
+  expect(el.querySelector('[data-testid="assistant-greeting"]')).not.toBeNull();
+  expect(el.textContent).not.toContain("Send a message to begin.");
+  expect(placeholder(el)).toBe("Remember I like answers short and technical");
+});
+
+// TEST_SCENARIO: a click on one of its tasks puts the text in the composer of this chat and sends nothing, so no turn runs before the person acts.
+it("fills the composer from a greeting task without sending", () => {
+  fake.connectionState = "live";
+  fake.greeting = { kind: "greeting", copy: greetingCopy() };
+  const el = openNewChat();
+  const task = chip(el, "Explain what you can do");
+  expect(task).toBeDefined();
+  act(() => task!.click());
+  expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
+    "Explain what you can do",
+  );
+  expect(fake.sendPrompt).not.toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: while the greeting's own answers are still on their way the chat shows neither it nor the empty page, so neither flashes and is taken back a moment later.
+it("shows a blank page while it is unknown whether to greet", () => {
+  fake.greeting = { kind: "loading" };
+  const el = openNewChat();
+  expect(el.querySelector('[data-testid="assistant-greeting"]')).toBeNull();
+  expect(el.textContent).not.toContain("Send a message to begin.");
 });
 
 // TEST_SCENARIO: the Agent runs and its connection drops; the chat, its composer and the notice stay, and the takeover does not appear.

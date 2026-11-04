@@ -1,4 +1,5 @@
 import type { AgentInitStep, AgentsService } from "api-server-api";
+import { assistantInstructions } from "api-server-api";
 import { avatarCharacter } from "api-server-api/avatar/svg";
 import type { LockOutcome, OwnerLock } from "db";
 import { emit, EventType } from "../../../events.js";
@@ -48,6 +49,7 @@ export function createAssistantProvisioner(deps: {
   repo: AssistantsRepository;
   ownName: string;
   assistantName: string;
+  brandName: string;
   admitted: () => Promise<boolean>;
   enabled: () => Promise<boolean>;
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
@@ -105,6 +107,11 @@ export function createAssistantProvisioner(deps: {
       deps.repo.markInitStep(row.owner, row.agentId, step),
   });
 
+  const instructions = assistantInstructions({
+    assistantName: deps.assistantName,
+    brandName: deps.brandName,
+  });
+
   const ensureAgent = async (row: AssistantRow, exists: boolean) => {
     if (exists) {
       await rename(row);
@@ -112,6 +119,7 @@ export function createAssistantProvisioner(deps: {
         id: row.agentId,
         name: deps.assistantName,
         kind: "assistant",
+        instructions,
         resume: true,
         ...initOf(row),
       });
@@ -125,6 +133,7 @@ export function createAssistantProvisioner(deps: {
         id: row.agentId,
         name: deps.assistantName,
         kind: "assistant",
+        instructions,
         initDone: [],
         onInitStep: initOf(row).onInitStep,
       });
@@ -136,6 +145,7 @@ export function createAssistantProvisioner(deps: {
         id: row.agentId,
         name: deps.assistantName,
         kind: "assistant",
+        instructions,
         resume: true,
         ...initOf(current ?? row),
       });

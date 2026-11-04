@@ -81,7 +81,6 @@ import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
 import { useAssistantGreeting } from "../../assistants/hooks/use-assistant-greeting.js";
-import { greetingPrompt } from "../../assistants/lib/greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
@@ -581,13 +580,9 @@ export function ChatView() {
       }
       if (plan.pair) setNextSessionPair(agentId, plan.pair);
       if (plan.model) await chooseSessionModel(plan.model);
-      await sendWithA2uiData(
-        greeting === null ? text : greetingPrompt(text, greeting.context),
-        attachments,
-      );
+      await sendWithA2uiData(text, attachments);
     },
     [
-      greeting,
       selectedAgent,
       sessionId,
       currentSession,
@@ -904,9 +899,9 @@ export function ChatView() {
                   }}
                 />
               )}
-              {emptyChat && greeting !== null && selectedAgent !== null && (
+              {emptyChat && greeting.kind === "greeting" && selectedAgent && (
                 <AssistantGreeting
-                  greeting={greeting}
+                  greeting={greeting.copy}
                   avatar={agentView?.avatar ?? null}
                   agentId={selectedAgent}
                   sessionId={sessionId}
@@ -914,7 +909,10 @@ export function ChatView() {
                   onPicked={() => textareaRef.current?.focus()}
                 />
               )}
-              {emptyChat && greeting === null && (
+              {emptyChat && greeting.kind === "loading" && (
+                <div className="flex-1" />
+              )}
+              {emptyChat && greeting.kind === "none" && (
                 <div className="flex flex-1 flex-col items-center justify-center text-center">
                   <h2 aria-label={selectedAgentName ?? undefined}>
                     <button
@@ -1151,7 +1149,9 @@ export function ChatView() {
             }
             channelLive={channelLive}
             harness={sendHarness ?? null}
-            emptyPlaceholder={greeting?.placeholder ?? null}
+            emptyPlaceholder={
+              greeting.kind === "greeting" ? greeting.copy.placeholder : null
+            }
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)

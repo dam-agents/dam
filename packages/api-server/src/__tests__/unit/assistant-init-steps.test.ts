@@ -117,6 +117,7 @@ function createAgent(deps: {
   provisioner: ReturnType<typeof grantsWorld>["provisioner"];
   onInitStep: (step: AgentInitStep) => Promise<void>;
   failGrants?: () => boolean;
+  bump?: AgentsDeps["runtimeMutator"]["bump"];
 }) {
   return createAgentsService({
     defaultHarness: "claude-code",
@@ -145,7 +146,7 @@ function createAgent(deps: {
       spec: { image: "quay.io/example/agent:latest" } as TemplateSpec,
     }),
     runtimeMutator: unused<AgentsDeps["runtimeMutator"]>({
-      bump: async () => 1,
+      bump: deps.bump ?? (async () => 1),
     }),
     contributionsProgress: unused(),
     agentServiceStatus: unused(),
@@ -211,6 +212,26 @@ const resumedWith = (
   initDone: steps,
   onInitStep,
 });
+
+type Bump = AgentsDeps["runtimeMutator"]["bump"];
+
+const INSTRUCTIONS =
+  "You are Dambledore, the personal assistant this DAM install gave you.";
+
+/** UNIT_BOUNDARY_DESCRIPTION: the events a create queues for the runtime, as the runtime would apply them. */
+function outboxEvents() {
+  const queued: Parameters<Bump>[1] = [];
+  return {
+    bump: (async (_agentId: string, events: Parameters<Bump>[1]) => {
+      queued.push(...events);
+      return 1;
+    }) as Bump,
+    instructions: () =>
+      queued
+        .filter((event) => event.kind === "agent-instructions")
+        .map((event) => (event.payload as { content: string }).content),
+  };
+}
 
 describe("resuming a create that already initialized", () => {
   // TEST_SCENARIO: the egress step landed, then the owner chose no network access, then a retry arrives. The recorded step is skipped, so the owner's empty rule set stands.
@@ -346,5 +367,68 @@ describe("resuming a create that already initialized", () => {
     expect(grants.held).toEqual([]);
     expect(egress.seeder.seedIfAbsent).not.toHaveBeenCalled();
     expect(grants.provisioner.applyAfterCreateIfNone).not.toHaveBeenCalled();
+  });
+});
+
+describe("the assistant's standing instructions", () => {
+  // TEST_SCENARIO: the assistant is created with the instructions that tell it what the platform greeted its owner with, queued once as a step of its own — and the plain template of a hand-made Agent is not among them.
+  it("queues the instructions it was created with, once", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const steps = recordingSteps();
+    const outbox = outboxEvents();
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: steps.onInitStep,
+      bump: outbox.bump,
+    });
+
+    await agents.create({
+      ...fresh(steps.onInitStep),
+      instructions: INSTRUCTIONS,
+    });
+
+    expect(outbox.instructions()).toEqual([INSTRUCTIONS]);
+    expect(steps.done).toEqual(["env", "egress", "instructions", "grants"]);
+  });
+
+  // TEST_SCENARIO: a retry after the instructions landed must not write them again — the owner may have rewritten the file since — and a create that names none, like any hand-made Agent, never records the step.
+  it("sends them once, and only for a create that names them", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const steps = recordingSteps();
+    const outbox = outboxEvents();
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: steps.onInitStep,
+      bump: outbox.bump,
+    });
+
+    await agents.create({
+      ...fresh(steps.onInitStep),
+      instructions: INSTRUCTIONS,
+    });
+    await agents.create({
+      ...resumedWith(steps.done, steps.onInitStep),
+      instructions: INSTRUCTIONS,
+    });
+
+    expect(outbox.instructions()).toEqual([INSTRUCTIONS]);
+
+    const handmade = recordingSteps();
+    const agentsForHandmade = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: handmade.onInitStep,
+      bump: outbox.bump,
+    });
+    await agentsForHandmade.create({
+      ...fresh(handmade.onInitStep),
+      name: "another-agent",
+      kind: undefined,
+    });
+    expect(handmade.done).not.toContain("instructions");
   });
 });

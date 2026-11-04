@@ -13,6 +13,7 @@ export function composeAssistantsForOwner(deps: {
   db: Db;
   owner: string;
   assistantName: string;
+  brandName: string;
   admitted: () => Promise<boolean>;
   enabled: () => Promise<boolean>;
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
@@ -28,6 +29,7 @@ export function composeAssistantsForOwner(deps: {
       repo,
       ownName: deps.owner,
       assistantName: deps.assistantName,
+      brandName: deps.brandName,
       admitted: deps.admitted,
       enabled: deps.enabled,
       agentOf: deps.agentOf,

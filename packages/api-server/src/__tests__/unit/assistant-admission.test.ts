@@ -7,6 +7,7 @@ import { createAssistantProvisioner } from "../../modules/assistants/services/as
 import type { AssistantsRepository } from "../../modules/assistants/infrastructure/assistants-repository.js";
 
 const OWNER = "alice";
+const BRAND = "DAM";
 
 const person = (): UserIdentity => ({
   sub: OWNER,
@@ -122,6 +123,7 @@ describe("provisioning before admission", () => {
       repo,
       ownName: OWNER,
       assistantName: "Dambledore",
+      brandName: BRAND,
       admitted: async () => false,
       enabled: async () => true,
       agentOf: async () => null,

@@ -73,17 +73,22 @@ That answer is the row's own mark, set when the first Session is reported — an
 
 ## The first chat
 
-While the assistant has had no Session, its chat opens with a **greeting** from the assistant rather than an empty transcript: its avatar and name, `Hi <given name>! I'm <assistant name>, your new personal <brand> agent!`, and the ask to hear about the owner's role.
+While the assistant has had no Session, its chat opens with a **greeting** rather than an empty transcript: the assistant's avatar and name, `Hi <given name>! I'm <assistant name>, your new personal <brand> agent!`, and the ask to hear about the owner's role.
 The code writes none of those names: the given name is the signed-in person's `given_name` claim (no claim, no name — `Hi!`), and the assistant's and the brand's names come from the brand, so an install renames itself without a UI change.
+The text lives once, in `api-server-api`, because two readers need it: the UI that renders the greeting and the assistant that must know it wrote it.
 
 Under the message it offers a few **first tasks** — `Explain what you can do`, `Draft a weekly status template`, `Summarize a long text I paste`, `Remember I like answers short and technical` — each one needing neither a connection nor any personal context, and the composer's empty placeholder shows the last of them.
 A click puts the task's text in the composer and sends nothing: no turn, no model call, no token is spent until the person acts.
 
-Everything here is behind the `assistant` feature and the row's own `used` mark: a person the feature is off for, any other Agent, and an assistant that has already had a Session all open on the ordinary new-chat page, with the ordinary placeholder.
+Everything here is behind the `assistant` feature and the row's own `used` mark, and it needs the Agent's own answer too: the greeting is shown only while the row says the assistant is unused **and** the Agent lists no Session, since the mark follows the session report and lags the Session that just started.
+A Session appearing sets the cached mark at once, so a New chat after the first message does not bring the greeting back.
+Until both answers are in, the chat shows neither the greeting nor the ordinary new-chat page — a blank rather than a page that would be taken back a moment later.
+A person the feature is off for, and any other Agent, open on the ordinary new-chat page with the ordinary placeholder.
 
-**What the agent receives.** The platform wrote the opening of the conversation, so the person's first turn carries it: the prompt is sent with an `<assistant-greeting>` block holding the greeting it showed, in the assistant's voice, and the tasks it offered.
-The block is prompt **plumbing** — a tag the session view hides by name ([platform-topology](platform-topology.md), where a framed turn is rendered) — so the transcript shows the person's own words and nothing of the frame.
-There is no platform-composed first turn for the assistant — an `initialization` event would open a Session and run the model before the owner asked anything — so this is the only channel it has, and it costs nothing until the first message.
+**What the agent receives.** The platform opened the conversation, so the assistant is told what it said: its `~/AGENTS.md` carries the greeting it opens with, the first tasks it offers, and what to do about them — learn the person's role and work while it does not know them, say what it could do for them, and remember what they share.
+That file is written once, as one more **initialization step** of provisioning ([agent-lifecycle](agent-lifecycle.md)): the step is recorded as it lands, so a retry never writes it again and an owner's own edits afterwards stand.
+The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
+Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
 
 ## Rolling it out
 

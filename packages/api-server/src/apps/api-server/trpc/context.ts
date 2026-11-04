@@ -334,6 +334,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         db,
         owner: user.sub,
         assistantName: config.brand.assistantName,
+        brandName: config.brand.name,
         admitted: () => isTermsAccepted(user.sub),
         enabled: async () => {
           const mode = config.featureModes.assistant;

@@ -225,6 +225,13 @@ export type {
   AssistantState,
 } from "./modules/assistants/types.js";
 export {
+  ASSISTANT_FIRST_TASKS,
+  ASSISTANT_ROLE_ASK,
+  type AssistantNames,
+  assistantGreetingOpening,
+  assistantInstructions,
+} from "./modules/assistants/greeting.js";
+export {
   budgetCpuSchema,
   budgetSizeSchema,
   storageFullSchema,

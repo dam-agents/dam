@@ -16,6 +16,7 @@ import {
 
 const ALICE = "alice";
 const NAME = "Dambledore";
+const BRAND = "DAM";
 const FIRST = assistantAgentId(ALICE, 1);
 const SECOND = assistantAgentId(ALICE, 2);
 
@@ -153,6 +154,7 @@ function world(
       name: string;
       kind?: Agent["kind"];
       resume?: boolean;
+      instructions?: string;
     }[],
     renamed: [] as { id: string; name: string }[],
     recorded: [] as string[],
@@ -169,6 +171,7 @@ function world(
       name: string;
       kind?: Agent["kind"];
       resume?: boolean;
+      instructions?: string;
       initDone?: readonly AgentInitStep[];
       onInitStep?: (step: AgentInitStep) => Promise<void>;
     }) => {
@@ -209,6 +212,7 @@ function world(
     repo: store.repo,
     ownName: ALICE,
     assistantName: NAME,
+    brandName: BRAND,
     admitted: async () => initial.admitted ?? true,
     enabled: async () => state.enabled,
     agentOf: async (agentId) => {
@@ -224,6 +228,16 @@ function world(
   });
   return { provisioner, state, store, lock };
 }
+
+// TEST_SCENARIO: the Agent is created with the standing instructions that tell it what the platform greeted its owner with, naming the assistant and the install's brand and no person, so the assistant that receives the first reply knows the platform opened the conversation.
+it("hands the Agent its standing instructions", async () => {
+  const w = world();
+  await w.provisioner.ensure();
+  const instructions = w.state.created[0]?.instructions ?? "";
+  expect(instructions).toContain(NAME);
+  expect(instructions).toContain(BRAND);
+  expect(instructions).toContain("Explain what you can do");
+});
 
 describe("assistant provisioning", () => {
   // TEST_SCENARIO: with the mode off, or before the person is admitted, nothing is created, nothing is enrolled and no row is written.
@@ -376,6 +390,7 @@ describe("assistant provisioning", () => {
       repo: w.store.repo,
       ownName: ALICE,
       assistantName: NAME,
+      brandName: BRAND,
       admitted: async () => true,
       enabled: async () => true,
       agentOf: async (agentId) => {

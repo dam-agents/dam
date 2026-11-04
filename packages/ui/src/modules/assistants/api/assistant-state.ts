@@ -35,6 +35,19 @@ export function useAssistantState() {
   });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a Session that just appeared is the fact the
+ * assistant's row learns only when the session report reaches the api-server.
+ * Marking it here closes that window, so a New chat in the same page load does
+ * not bring the greeting back. The Agent's own session list is the other half of
+ * the same gate.
+ */
+export function markAssistantUsed(agentId: string): void {
+  queryClient.setQueryData(trpc.assistants.state.queryKey(), (prev) =>
+    prev?.agentId === agentId && !prev.used ? { ...prev, used: true } : prev,
+  );
+}
+
 export function useDismissAssistantNotice() {
   return useMutation(
     trpc.assistants.dismissNotice.mutationOptions({

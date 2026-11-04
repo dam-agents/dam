@@ -42,6 +42,10 @@ Builds published before these accounts were added have only `qa-owner`; there an
   It follows the install's `featureDefault` like every other experimental feature: on the QA install that is `experimental`, so no account has one until it turns the assistant on under Settings → Experimental features.
   With `on`, a fresh account gets one at sign-in; with `off`, nobody does.
   An account that never opts in has no assistant, no rename of an agent named Dambledore, and lands on Home as usual.
+  An assistant that has never sent anything opens its chat with a **greeting** in its own voice — the person's first name, its reserved name and the install's brand, e.g. *Hi Jenna!
+  I'm Dambledore, your new personal DAM agent!* — and under it a few **first tasks** (*Explain what you can do*, *Draft a weekly status template*, *Summarize a long text I paste*, *Remember I like answers short and technical*).
+  A click on a first task fills the message box and sends nothing; the box itself hints one of them while it is empty.
+  The greeting is gone once the assistant has a conversation, so a renamed or second chat opens on the ordinary new-chat page.
 
 ## What the nested install cannot do
 

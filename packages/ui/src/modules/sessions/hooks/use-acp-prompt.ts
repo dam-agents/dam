@@ -18,7 +18,6 @@ import {
   finalizeRunningReply,
   hasAgentContent,
   sendWaits,
-  stripPlumbing,
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { untilAgentOperable } from "../../agents/api/queries.js";
@@ -156,7 +155,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           userParts.push(fileChipOf(block));
       }
       if (attachments?.length) for (const a of attachments) userParts.push(a);
-      if (text) userParts.push({ kind: "text", text: stripPlumbing(text) });
+      if (text) userParts.push({ kind: "text", text });
 
       const aId = crypto.randomUUID();
       const promptId = crypto.randomUUID();

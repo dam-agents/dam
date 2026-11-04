@@ -1552,6 +1552,14 @@ export function createAgentsService(deps: {
           : []),
       ]);
 
+      const homeInstructions = input.instructions;
+      if (homeInstructions !== undefined)
+        await step("instructions", async () => {
+          await deps.runtimeMutator.bump(infra.id, [
+            agentInstructionsEvent(infra.id, homeInstructions, createdAt),
+          ]);
+        });
+
       await step("grants", async () => {
         if (!deps.grantProvisioner || !hasInitialGrants) return;
         if (input.resume)

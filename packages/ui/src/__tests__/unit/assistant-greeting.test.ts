@@ -3,25 +3,27 @@
 // TEST_OVERVIEW: and which brand it belongs to, said to the signed-in person by
 // TEST_OVERVIEW: name, the ask to hear about their role, and tasks that need
 // TEST_OVERVIEW: neither a connection nor personal context. It belongs to the
-// TEST_OVERVIEW: owner's own assistant, only while that assistant has never had
-// TEST_OVERVIEW: a session; a task goes into the composer and sends nothing; and
-// TEST_OVERVIEW: the owner's first turn carries the greeting to the agent as
-// TEST_OVERVIEW: context the transcript hides.
+// TEST_OVERVIEW: owner's own assistant, only while neither the row's used mark
+// TEST_OVERVIEW: nor the Agent's own session list says it ever had a session — a
+// TEST_OVERVIEW: mark a Session that just appeared sets at once, so a New chat
+// TEST_OVERVIEW: does not bring the greeting back. A task goes into the composer
+// TEST_OVERVIEW: and sends nothing.
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { stripPlumbing } from "../../modules/acp/session-projection.js";
+import { markAssistantUsed } from "../../modules/assistants/api/assistant-state.js";
 import { AssistantGreeting } from "../../modules/assistants/components/assistant-greeting.js";
 import {
   GREETING_PLACEHOLDER,
   GREETING_SUGGESTIONS,
   greetingCopy,
-  greetingPrompt,
   greetingShown,
 } from "../../modules/assistants/lib/greeting.js";
 import { draftKey } from "../../modules/sessions/lib/draft-key.js";
+import { queryClient } from "../../query-client.js";
 import { useStore } from "../../store.js";
+import { trpc } from "../../trpc.js";
 
 const ASSISTANT = "agent-00000000000000a1";
 const ON = {
@@ -29,6 +31,7 @@ const ON = {
   assistantId: ASSISTANT,
   selectedAgent: ASSISTANT,
   used: false,
+  sessionsListed: 0,
 };
 
 const copy = greetingCopy({
@@ -38,7 +41,7 @@ const copy = greetingCopy({
 });
 
 describe("when the greeting is shown", () => {
-  // TEST_SCENARIO: the owner's own assistant, never used, with the feature on for them: the chat opens with the greeting.
+  // TEST_SCENARIO: the owner's own assistant, never used and listing no session, with the feature on for them: the chat opens with the greeting.
   it("is shown to an unused assistant of the owner, with the feature on", () => {
     expect(greetingShown(ON)).toBe(true);
   });
@@ -51,6 +54,12 @@ describe("when the greeting is shown", () => {
     expect(greetingShown({ ...ON, selectedAgent: null })).toBe(false);
     expect(greetingShown({ ...ON, used: true })).toBe(false);
     expect(greetingShown({ ...ON, used: undefined })).toBe(false);
+  });
+
+  // TEST_SCENARIO: the row's mark can lag the Session that just started, and the Agent's own list is the answer that does not: one session listed hides the greeting, and so does a list that has not answered.
+  it("is hidden by a session the Agent already lists", () => {
+    expect(greetingShown({ ...ON, sessionsListed: 1 })).toBe(false);
+    expect(greetingShown({ ...ON, sessionsListed: undefined })).toBe(false);
   });
 });
 
@@ -91,22 +100,28 @@ describe("what the greeting says", () => {
   });
 });
 
-describe("what the agent receives", () => {
-  // TEST_SCENARIO: the platform wrote the opening of the chat, not the person, so the agent is told what it said and what it offered; the transcript shows none of it.
-  it("carries the greeting and the tasks as hidden context", () => {
-    expect(copy.context).toContain(copy.paragraphs[0]);
-    expect(copy.context).toContain(copy.paragraphs[1]);
-    for (const task of GREETING_SUGGESTIONS)
-      expect(copy.context).toContain(task);
-    expect(stripPlumbing(copy.context)).toBe("");
+describe("the assistant's used mark", () => {
+  // TEST_SCENARIO: the first Session of the chat appears before the api-server has learned of it, so the cached row learns it here — and the greeting's own gate then stays shut for a New chat in the same page load.
+  it("closes the gate the moment a session exists", () => {
+    const key = trpc.assistants.state.queryKey();
+    const row = { agentId: ASSISTANT, used: false, notice: null };
+    queryClient.setQueryData(key, row);
+    markAssistantUsed(ASSISTANT);
+    expect(queryClient.getQueryData(key)).toEqual({ ...row, used: true });
+
+    const marked = queryClient.getQueryData<typeof row>(key);
+    expect(
+      greetingShown({ ...ON, used: marked?.used, sessionsListed: 0 }),
+    ).toBe(false);
   });
 
-  // TEST_SCENARIO: a first turn that is only an attachment has nothing to join, so the context is the whole prompt rather than a block under blank lines.
-  it("joins the person's own text, and stands alone when there is none", () => {
-    expect(greetingPrompt("Remember I like answers short", copy.context)).toBe(
-      `Remember I like answers short\n\n${copy.context}`,
-    );
-    expect(greetingPrompt("", copy.context)).toBe(copy.context);
+  // TEST_SCENARIO: a session on another Agent is not the assistant's, so the row it does not name is left alone.
+  it("leaves a row that names another agent alone", () => {
+    const key = trpc.assistants.state.queryKey();
+    const row = { agentId: ASSISTANT, used: false, notice: null };
+    queryClient.setQueryData(key, row);
+    markAssistantUsed("agent-2");
+    expect(queryClient.getQueryData(key)).toEqual(row);
   });
 });
 

@@ -1,6 +1,6 @@
 import { and, assistants, eq, sql, type Db } from "db";
 
-import type { AgentInitStep } from "api-server-api";
+import { AGENT_INIT_STEPS, type AgentInitStep } from "api-server-api";
 
 import type { AssistantRename } from "../domain/types.js";
 
@@ -76,9 +76,8 @@ type Row = {
   noticeSeenAt: Date | null;
 };
 
-const INIT_STEPS: readonly AgentInitStep[] = ["env", "egress", "grants"];
 const isInitStep = (value: string): value is AgentInitStep =>
-  (INIT_STEPS as readonly string[]).includes(value);
+  (AGENT_INIT_STEPS as readonly string[]).includes(value);
 
 function toRow(row: Row): AssistantRow {
   return {

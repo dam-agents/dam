@@ -24,6 +24,7 @@ import {
   useAgentLacksLiveUpdates,
 } from "../../agents/api/queries.js";
 import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
+import { markAssistantUsed } from "../../assistants/api/assistant-state.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { nextSessionCursor } from "../lib/sidebar-session-window.js";
 import {
@@ -158,6 +159,7 @@ export function optimisticInsertSession(
   mode: SessionMode,
   running = false,
 ): void {
+  markAssistantUsed(agentId);
   const stub = sessionStub(agentId, sessionId, mode, running);
   queryClient.setQueriesData<SessionPages>(
     { queryKey: acpSessionsKeys.pages(agentId) },
