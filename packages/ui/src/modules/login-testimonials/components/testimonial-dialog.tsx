@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "react";
 
+import { FormError } from "@/components/form-error";
 import { FormField } from "@/components/form-field";
 import {
   DialogActions,
@@ -9,24 +10,27 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Textarea } from "@/components/ui/textarea";
 
 import { uploadAvatarImage } from "../../../lib/upload-avatar-image.js";
-import type { DraftTestimonial } from "../lib/draft.js";
+import type { TestimonialFields } from "../lib/draft.js";
 import { TestimonialPhoto } from "./testimonial-photo.js";
 
-type Fields = Omit<DraftTestimonial, "key">;
+type Fields = TestimonialFields;
 
 const EMPTY: Fields = { name: "", role: "", quote: "", photoId: null };
 
-// UNIT_BOUNDARY_DESCRIPTION: adds or edits one testimonial of the operator's unsaved list. A photo uploads as soon as it is picked, through the avatar upload, which crops it to a square; its refusal shows under the photo. Done only changes the list on the card: the card's own Save publishes it.
+// UNIT_BOUNDARY_DESCRIPTION: adds or edits one testimonial. A photo uploads as soon as it is picked, through the avatar upload, which crops it to a square; its refusal shows under the photo. Save stores the testimonial at once, and the dialog closes once it is stored.
 export function TestimonialDialog({
   testimonial,
-  onDone,
+  saving,
+  onSave,
   onClose,
 }: {
-  testimonial: DraftTestimonial | null;
-  onDone: (fields: Fields) => void;
+  testimonial: TestimonialFields | null;
+  saving: boolean;
+  onSave: (fields: Fields) => void;
   onClose: () => void;
 }) {
   const [fields, setFields] = useState<Fields>(testimonial ?? EMPTY);
@@ -37,7 +41,10 @@ export function TestimonialDialog({
   const set = (patch: Partial<Fields>) =>
     setFields((f) => ({ ...f, ...patch }));
   const canSave =
-    fields.name.trim() !== "" && fields.quote.trim() !== "" && !uploading;
+    fields.name.trim() !== "" &&
+    fields.quote.trim() !== "" &&
+    !uploading &&
+    !saving;
 
   async function pickPhoto(file: File) {
     setUploading(true);
@@ -52,13 +59,13 @@ export function TestimonialDialog({
   }
 
   return (
-    <Modal size="sm" onClose={onClose}>
+    <Modal size="sm" onClose={saving ? undefined : onClose}>
       <form
         className="contents"
         onSubmit={(event) => {
           event.preventDefault();
           if (!canSave) return;
-          onDone({
+          onSave({
             name: fields.name.trim(),
             role: fields.role.trim(),
             quote: fields.quote.trim(),
@@ -68,11 +75,13 @@ export function TestimonialDialog({
       >
         <DialogHeader
           title={testimonial ? "Edit testimonial" : "Add testimonial"}
-          subtitle="Shown on the login page once you save the list."
+          subtitle="Shown on the login page within a minute of saving."
           onClose={onClose}
+          closeDisabled={saving}
         />
         <DialogBody className="flex flex-col gap-4">
-          <FormField label="Photo" error={photoError}>
+          <div className="flex flex-col gap-2">
+            <SectionLabel>Photo</SectionLabel>
             <div className="flex items-center gap-3">
               <TestimonialPhoto
                 name={fields.name}
@@ -114,7 +123,8 @@ export function TestimonialDialog({
                 }}
               />
             </div>
-          </FormField>
+            <FormError message={photoError} />
+          </div>
           <FormField label="Name">
             <Input
               autoFocus
@@ -145,9 +155,10 @@ export function TestimonialDialog({
         </DialogBody>
         <DialogActions
           onCancel={onClose}
-          label={testimonial ? "Done" : "Add"}
-          pendingLabel="Uploading…"
-          pending={uploading}
+          cancelDisabled={saving}
+          label="Save"
+          pendingLabel={uploading ? "Uploading…" : "Saving…"}
+          pending={uploading || saving}
           disabled={!canSave}
         />
       </form>

@@ -2,7 +2,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { LIST_ROW } from "@/components/ui/list-section";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 
-import type { DraftTestimonial } from "../lib/draft.js";
+import type { TestimonialFields } from "../lib/draft.js";
 import { TestimonialPhoto } from "./testimonial-photo.js";
 
 export function TestimonialRow({
@@ -14,7 +14,7 @@ export function TestimonialRow({
   onMove,
   onRemove,
 }: {
-  testimonial: DraftTestimonial;
+  testimonial: TestimonialFields;
   first: boolean;
   last: boolean;
   disabled: boolean;
