@@ -13,7 +13,6 @@ import type {
   HarnessCatalog,
   LiveEventsService,
   ProviderStatusService,
-  ReposService,
   TermsService,
 } from "api-server-api";
 import type {
@@ -172,7 +171,6 @@ export interface ApiServerDeps {
   starterKitsRepo: StarterKitsRepository;
   kitUpstream: KitUpstream;
   linkedKits: LinkedKits;
-  reposService: ReposService;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
   satellitesBoot: SatellitesComposition;
   auth: ReturnType<typeof createAuth>;

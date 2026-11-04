@@ -300,7 +300,6 @@ import {
 } from "./modules/artifact-library/index.js";
 import { withChannelArtifactLinks } from "./modules/artifact-library/channel-links.js";
 import type { LinkOutboundArtifacts } from "./modules/channels/infrastructure/outbound-artifact-links.js";
-import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
@@ -814,7 +813,6 @@ export async function bootstrap() {
         storeAvatarImage(createAvatarImagesRepository(db), bytes, ownerSub),
     },
   });
-  const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
     keycloakRealm: config.keycloakRealm,
@@ -2972,7 +2970,6 @@ export async function bootstrap() {
     linkedKits,
     firePair,
     runBoundary,
-    reposService,
     apiKeysModule,
     satellitesBoot,
     auth,
