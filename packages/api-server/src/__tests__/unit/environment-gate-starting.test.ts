@@ -7,7 +7,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
 import type { EnvironmentRecord } from "../../modules/environments/domain/environment.js";
 import type { EnvironmentSession } from "../../modules/environments/domain/gate.js";
-import { createEnvironmentGate } from "../../modules/environments/gate/environment-gate.js";
+import {
+  createEnvironmentGate,
+  type EnvironmentGateDeps,
+} from "../../modules/environments/gate/environment-gate.js";
+import { createAgentWake } from "../../modules/agents/infrastructure/agent-wake.js";
+import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 
 const DOMAIN = "env.test";
 const HOST = `app-pr-1-abcdef.${DOMAIN}`;
@@ -24,8 +29,13 @@ afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
 });
 
-// UNIT_BOUNDARY_DESCRIPTION: a gate in front of one Environment whose machine and app the test drives: `sleeping` makes the next wake wait until `wake()` or `failWake()`, `listening` says whether anything answers on the endpoint's port, `proxyWaiting` makes what answers there a proxy with nothing behind it yet, and `healthy` whether its readiness path answers 200.
-async function world(opts: { ready?: string } = {}) {
+// UNIT_BOUNDARY_DESCRIPTION: a gate in front of one Environment whose machine and app the test drives: `sleeping` makes the next wake wait until `wake()` or `failWake()`, `listening` says whether anything answers on the endpoint's port, `proxyWaiting` makes what answers there a proxy with nothing behind it yet, and `healthy` whether its readiness path answers 200. `ensureReady` puts another wake in place of the driven one.
+async function world(
+  opts: {
+    ready?: string;
+    ensureReady?: EnvironmentGateDeps["ensureReady"];
+  } = {},
+) {
   const app = {
     listening: false,
     healthy: false,
@@ -101,14 +111,16 @@ async function world(opts: { ready?: string } = {}) {
       signOut: async () => {},
     },
     platform: { issuers: [], isApiKey: () => false },
-    ensureReady: async (_id, { onWaking }) => {
-      if (!machine.sleeping) return;
-      machine.wakes += 1;
-      onWaking();
-      await new Promise<void>((resolve, reject) => {
-        machine.pending = { resolve, reject };
-      });
-    },
+    ensureReady:
+      opts.ensureReady ??
+      (async (_id, { onWaking }) => {
+        if (!machine.sleeping) return;
+        machine.wakes += 1;
+        onWaking();
+        await new Promise<void>((resolve, reject) => {
+          machine.pending = { resolve, reject };
+        });
+      }),
     stampActivity: async (id) => void stamped.push(id),
     upstream: () => ({ host: "127.0.0.1", port: runtimePort }),
     brandName: "Test",
@@ -397,5 +409,36 @@ describe("the gate while an Environment starts", () => {
     w.app.listening = true;
     const ready = await w.request("/api/items", keyed);
     expect(ready.status).toBe(200);
+  });
+
+  // TEST_SCENARIO: a page whose app is up loads many scripts at once while the Agent's wake check still writes its activity; each script joins that check and gets the app's own answer, never a 503 "starting" for a machine that runs.
+  it("relays parallel requests to a running Environment that join one wake check", async () => {
+    const running = {
+      metadata: { name: "agent-pr-1", annotations: {} },
+      status: { conditions: [{ type: "Ready", status: "True" }] },
+    } as KubeObject;
+    let writes = 0;
+    const wake = createAgentWake({
+      readCached: async () => running,
+      readLive: async () => running,
+      isReady: async () => true,
+      bumpLastActivity: () => {
+        writes += 1;
+        return new Promise<void>((resolve) => setTimeout(resolve, 50));
+      },
+      whenChanged: () => ({ changed: new Promise(() => {}), cancel() {} }),
+    });
+    const w = await world({ ensureReady: wake.ensureReady });
+    w.app.listening = true;
+
+    const scripts = await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        w.request(`/assets/chunk-${i}.js`, { cookie: COOKIE }),
+      ),
+    );
+
+    expect(writes).toBeGreaterThan(0);
+    expect(scripts.map((r) => r.status)).toEqual(Array(12).fill(200));
+    expect(scripts.every((r) => r.body === "from the app")).toBe(true);
   });
 });
