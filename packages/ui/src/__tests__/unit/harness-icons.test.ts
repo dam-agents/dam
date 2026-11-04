@@ -278,8 +278,28 @@ describe("harness icons on provider and preset cards", () => {
     expect(html).toContain(">0 of 100 Bc this month<");
     expect(html).toContain("rounded-full bg-muted");
     expect(pill({ ...bob, used: 100, limit: 100 })).toMatch(
-      /text-danger[^>]*>Budget used up: 100 of 100 Bc this month</,
+      /text-danger-fg[^>]*>Budget used up: 100 of 100 Bc this month</,
     );
     balance.data = { unit: "usd", used: 12, limit: 100, resetsAt: null };
+  });
+
+  // TEST_SCENARIO: the used-up balance's small red text keeps 4.5:1 on the muted pill in both themes.
+  it("keeps the used-up balance legible on its pill", () => {
+    const css = readFileSync(new URL("../../App.css", import.meta.url), "utf8");
+    const theme = (selector: string, name: string) =>
+      css
+        .slice(css.indexOf(`${selector} {`))
+        .match(new RegExp(`--${name}: #([0-9a-f]{6});`))![1]!;
+    const rgb = (hex: string) =>
+      [0, 2, 4].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+    for (const selector of [":root", ".dark"]) {
+      const [a, b] = [
+        luminance(rgb(theme(selector, "c-danger-fg"))),
+        luminance(rgb(theme(selector, "muted"))),
+      ];
+      expect(
+        (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

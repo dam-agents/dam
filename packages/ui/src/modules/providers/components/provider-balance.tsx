@@ -40,9 +40,9 @@ export function ProviderBalance({ connectionId }: { connectionId: string }) {
 
   if (isError) {
     return (
-      <p className="truncate text-xs text-muted-foreground">
+      <span className="block shrink-0 truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
         Balance unavailable
-      </p>
+      </span>
     );
   }
   if (!balance) return null;
@@ -56,7 +56,7 @@ export function ProviderBalance({ connectionId }: { connectionId: string }) {
     <span
       className={cn(
         "block shrink-0 truncate rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground",
-        exhausted && "text-danger",
+        exhausted && "text-danger-fg",
       )}
       title={label}
     >
