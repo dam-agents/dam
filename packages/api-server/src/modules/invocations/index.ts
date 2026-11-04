@@ -13,6 +13,7 @@ export {
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
+  createInvocationStartAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
   composeScriptOutputs,

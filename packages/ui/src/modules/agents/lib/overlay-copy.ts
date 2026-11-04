@@ -7,7 +7,7 @@ import { workspaceFailureSentence } from "./workspace-failure.js";
 
 export const AGENT_ENABLE_ANCHOR = "enable-agent";
 
-const VM_MEMORY_FULL =
+export const VM_MEMORY_FULL =
   "Your VM agents' memory is full. It starts once room frees up — or disable an agent you aren't using.";
 const OVERLAY_DESCRIPTION: Record<AgentDisplayState, string> = {
   running: "",

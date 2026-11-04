@@ -19,6 +19,7 @@ export interface DelegationRecord {
   errorReason: string | null;
   result: unknown;
   createdAt: Date;
+  startedAt: Date | null;
   completedAt: Date | null;
   transcriptCaptured: boolean;
 }
@@ -42,6 +43,7 @@ function toNode(
     connections: row.connections,
     requestedModel: row.harnessConfig?.model ?? null,
     createdAt: row.createdAt.toISOString(),
+    started: row.startedAt !== null,
     completedAt: row.completedAt?.toISOString() ?? null,
     transcriptAvailable: row.transcriptCaptured,
     children,

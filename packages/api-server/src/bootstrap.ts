@@ -89,6 +89,7 @@ import {
   MAX_AVATAR_BYTES,
   storeAvatarImage,
   sweepAvatarImages,
+  startWaitOf,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -300,6 +301,7 @@ import {
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
+  createInvocationStartAdapter,
   createInvocationsCleanupHook,
   createDelegationFramesClient,
   createInvocationSetupFailure,
@@ -954,7 +956,10 @@ export async function bootstrap() {
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     resolveAgentName,
-    resolveEvent: (agentId, event) => resolveInitializationPair(agentId, event),
+    resolveEvent: async (agentId, event) => {
+      const paired = await resolveInitializationPair(agentId, event);
+      return paired && resolveInvocationStart(agentId, paired);
+    },
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   deliverOnReady = async (agentId) => {
@@ -991,6 +996,9 @@ export async function bootstrap() {
     resolvePair: firePair,
   });
   let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
+  const resolveInvocationStart = createInvocationStartAdapter(db, (msg) =>
+    getLogger().warn(msg),
+  );
   const resolveInitializationPair = createInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
@@ -2431,6 +2439,8 @@ export async function bootstrap() {
           }
         : null;
     },
+    readStartWait: async (agentId) =>
+      startWaitOf(agentsRepo.peekCached(agentId)),
     hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,

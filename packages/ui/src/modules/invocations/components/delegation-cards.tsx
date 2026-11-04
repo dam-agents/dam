@@ -1,11 +1,10 @@
 import type { DelegationNode } from "api-server-api";
 import { useMemo } from "react";
 
-import type { AgentState } from "../../../types.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useInvocationTurns } from "../api/queries.js";
-import { flattenIds } from "../lib/delegation-state.js";
+import { type DelegationTarget, flattenIds } from "../lib/delegation-state.js";
 import { DelegationCard } from "./delegation-card.js";
 
 interface Props {
@@ -24,8 +23,8 @@ export function DelegationCards({ nodes, driverAgentId }: Props) {
     nodes,
   );
   const turns = telemetry?.available ? telemetry.turns : undefined;
-  const agentStates = useMemo(
-    () => new Map<string, AgentState>(agents.map((a) => [a.id, a.state])),
+  const targets = useMemo(
+    () => new Map<string, DelegationTarget>(agents.map((a) => [a.id, a])),
     [agents],
   );
 
@@ -36,7 +35,7 @@ export function DelegationCards({ nodes, driverAgentId }: Props) {
           key={node.id}
           node={node}
           driverAgentId={driverAgentId}
-          agentStates={agentStates}
+          targets={targets}
           turns={turns}
         />
       ))}

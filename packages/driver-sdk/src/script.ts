@@ -12,7 +12,12 @@ import type {
 } from "api-server-api";
 
 import { log, req } from "./http.js";
-import { awaitInvocation, InvocationFailed, type Setup } from "./spawn.js";
+import {
+  awaitInvocation,
+  defaultTimeoutMs,
+  InvocationFailed,
+  type Setup,
+} from "./spawn.js";
 
 export interface SpawnScriptOptions extends Setup {
   script: string;
@@ -151,7 +156,7 @@ export async function spawnScript(
     label,
     ttlMs,
     pollMs = 5000,
-    timeoutMs = (ttlMs ?? 60 * 60 * 1000) + 5 * 60 * 1000,
+    timeoutMs = defaultTimeoutMs(ttlMs),
     seed,
     install,
     env,
