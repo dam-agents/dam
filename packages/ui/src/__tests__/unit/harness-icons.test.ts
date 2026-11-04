@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { type HarnessFamily, PROVIDER_PRESET_TYPES } from "api-server-api";
+import { PROVIDER_PRESET_TYPES } from "api-server-api";
 import { Window } from "happy-dom";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
@@ -12,7 +12,7 @@ import {
   CodexIcon,
   OpenAIIcon,
 } from "../../components/brand-icons.js";
-import { HARNESS_ORDER, HarnessIcons } from "../../components/harness-icons.js";
+import { HarnessIcons } from "../../components/harness-icons.js";
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { CardIcon } from "../../modules/providers/components/card-icon.js";
 import { ProviderBalance } from "../../modules/providers/components/provider-balance.js";
@@ -24,15 +24,6 @@ vi.mock("../../modules/providers/api/queries.js", () => ({
     isError: false,
   }),
 }));
-
-const ALL: HarnessFamily[] = [
-  "bob",
-  "claude-code",
-  "codex",
-  "copilot",
-  "hermes",
-  "pi",
-];
 
 function renderToStaticMarkup(element: ReactElement) {
   return renderMarkup(createElement(TooltipProvider, null, element));
@@ -111,14 +102,18 @@ describe("harness icons on provider and preset cards", () => {
       const html = renderToStaticMarkup(
         createElement(CardIcon, { provider: "bob", size }),
       );
-      const Icon = size === "sm" ? BobFilledIcon : BobIcon;
-      expect(html).toContain(
-        renderToStaticMarkup(
-          createElement(Icon, {
-            className: size === "sm" ? "size-full" : "size-3/5",
-          }),
-        ),
-      );
+      if (size === "sm")
+        expect(html).toContain(
+          renderToStaticMarkup(
+            createElement(BobFilledIcon, { className: "size-full" }),
+          ),
+        );
+      else {
+        expect(html).toContain("#1361FE");
+        expect(html).not.toContain(
+          renderToStaticMarkup(createElement(BobIcon)),
+        );
+      }
     },
   );
 
@@ -148,20 +143,19 @@ describe("harness icons on provider and preset cards", () => {
     expect(html.match(/fill="currentColor"/g)).toHaveLength(6);
   });
 
+  // TEST_SCENARIO: a tile carries the vendor's full-colour mark, in its SVG or through a logo colour token, while the untiled small size stays a one-colour glyph.
   it.each(PROVIDER_PRESET_TYPES)(
-    "uses colored tiles only for large %s icons",
+    "uses the vendor's colours only on %s tiles",
     (provider) => {
       for (const size of ["sm", "md", "lg"] as const) {
         const html = renderToStaticMarkup(
           createElement(CardIcon, { provider, size }),
         );
         expect(html).toContain("<svg");
-        expect(html).not.toMatch(/<img|<mask|gradient|🚅|fill="#|stroke="#/);
-        if (size === "sm") expect(html).not.toMatch(/bg-|text-white/);
-        else {
-          expect(html).toContain("bg-white");
-          expect(html).toMatch(/text-logo-[a-z-]+/);
-        }
+        expect(html).not.toMatch(/<img|<mask|🚅/);
+        if (size === "sm")
+          expect(html).not.toMatch(/bg-|text-white|fill="#|gradient/);
+        else expect(html).toMatch(/fill="#|-logo-[a-z]+/);
       }
     },
   );
@@ -173,7 +167,6 @@ describe("harness icons on provider and preset cards", () => {
         createElement(ProviderRow, {
           type: "ibm-litellm",
           connected,
-          harnesses: ALL,
           balance: connected
             ? createElement(ProviderBalance, { connectionId: "proxy" })
             : undefined,
@@ -197,7 +190,6 @@ describe("harness icons on provider and preset cards", () => {
       createElement(ProviderRow, {
         type: "ibm-litellm",
         connected: true,
-        harnesses: ALL,
         keyCheck: {
           result: "unverified",
           detail: "HTTP 503",
@@ -225,41 +217,43 @@ describe("harness icons on provider and preset cards", () => {
     ).not.toBeNull();
   });
 
-  it.each<[HarnessFamily[], string]>([
-    [[...HARNESS_ORDER], "All harnesses"],
-    [["bob"], "Bob only"],
-    [["codex", "pi", "copilot", "hermes"], "Codex, Pi, Copilot, and Hermes"],
-    [["claude-code", "pi"], "Claude and Pi"],
-  ])("names the harnesses %j in words: %s", (harnesses, text) => {
+  // TEST_SCENARIO: a row describes its provider in one line from the provider definitions, the own-key and deployment CurveBender alike, and its button points only at elements that exist.
+  it.each([
+    ["anthropic", undefined, "Claude models straight from the source"],
+    ["openai", undefined, "GPT models straight from the source"],
+    ["bedrock", undefined, "Amazon Web Services inference engine"],
+    ["bob", undefined, "IBM Bob&#x27;s backend, usable by the Bob harness"],
+    [
+      "ibm-litellm",
+      undefined,
+      "IBM Research&#x27;s gateway to external model providers",
+    ],
+    [
+      "curve-bender",
+      "curve-bender",
+      "IBM&#x27;s internal inference on open-source models",
+    ],
+    [
+      "curve-bender",
+      "curve-bender-deployment",
+      "IBM&#x27;s internal inference on open-source models",
+    ],
+  ] as const)("describes %s (%s)", (type, templateId, text) => {
     const html = renderToStaticMarkup(
       createElement(ProviderRow, {
-        type: "ibm-litellm",
-        connected: true,
-        harnesses,
+        type,
+        ...(templateId && { templateId }),
+        connected: false,
+        onOpen() {},
       }),
     );
-    expect(html.replace(/<!-- -->/g, "")).toContain(`>${text}<`);
+    expect(html).toContain(`>${text}<`);
+    const doc = new Window().document;
+    doc.body.innerHTML = html;
+    for (const ref of doc
+      .querySelector("button")!
+      .getAttribute("aria-describedby")!
+      .split(" "))
+      expect(doc.getElementById(ref)).not.toBeNull();
   });
-
-  it.each([{ harnesses: undefined }, { harnesses: [] }])(
-    "does not invent compatibility when the catalog is missing or empty (%s)",
-    ({ harnesses }) => {
-      const html = renderToStaticMarkup(
-        createElement(ProviderRow, {
-          type: "anthropic",
-          connected: false,
-          harnesses,
-          onOpen() {},
-        }),
-      );
-      expect(html).not.toMatch(/>All harnesses<|Claude|>Pi/);
-      const doc = new Window().document;
-      doc.body.innerHTML = html;
-      for (const ref of doc
-        .querySelector("button")!
-        .getAttribute("aria-describedby")!
-        .split(" "))
-        expect(doc.getElementById(ref)).not.toBeNull();
-    },
-  );
 });

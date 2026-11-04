@@ -1,22 +1,19 @@
-import type { HarnessFamily, ProviderKeyCheck } from "api-server-api";
+import type { ProviderKeyCheck } from "api-server-api";
 import { type ReactNode, useId } from "react";
 import { match, P } from "ts-pattern";
 
-import { HARNESS_ICONS, HARNESS_ORDER } from "@/components/harness-icons";
-import { InlineList } from "@/components/inline-list";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
-import { providerName } from "../lib/provider-rows.js";
+import { providerDescription, providerName } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
 
 interface Props {
   type: ProviderPresetType;
   templateId?: string;
   name?: string;
-  harnesses?: readonly HarnessFamily[];
   connected: boolean;
   degraded?: boolean;
   keyCheck?: ProviderKeyCheck | null;
@@ -36,7 +33,6 @@ export function ProviderRow({
   type,
   templateId,
   name: givenName,
-  harnesses,
   connected,
   degraded = false,
   keyCheck,
@@ -75,19 +71,11 @@ export function ProviderRow({
           type="button"
           onClick={onOpen}
           aria-label={label}
-          aria-describedby={
-            harnesses?.length ? `${id}-harnesses ${id}-status` : `${id}-status`
-          }
+          aria-describedby={`${id}-description ${id}-status`}
           className="absolute inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         />
       )}
-      <ProviderHead
-        type={type}
-        templateId={templateId}
-        name={name}
-        harnesses={harnesses}
-        id={id}
-      />
+      <ProviderHead type={type} templateId={templateId} name={name} id={id} />
       {balance && (
         <span onClick={onOpen} className="relative min-w-0" data-layer="raised">
           {balance}
@@ -114,51 +102,36 @@ export function ProviderRow({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a provider row's small icon, its name, and the
- * harnesses it runs named in words under it: "All harnesses", "Bob only", or a
- * list.
+ * UNIT_BOUNDARY_DESCRIPTION: a provider row's mark, its name, and the one-line
+ * description of the provider under it.
  */
 export function ProviderHead({
   type,
   templateId,
   name,
-  harnesses,
   id,
 }: {
   type: ProviderPresetType;
   templateId?: string | undefined;
   name: string;
-  harnesses: readonly string[] | undefined;
   id?: string;
 }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-3">
-      <CardIcon provider={type} templateId={templateId} size="tile-sm" />
+      <CardIcon provider={type} size="tile-md" />
       <span className="flex min-w-0 flex-col">
-        <span className="truncate text-sm font-medium text-foreground">
+        <span className="truncate text-md font-medium text-foreground">
           {name}
         </span>
-        {!!harnesses?.length && (
-          <span
-            id={id && `${id}-harnesses`}
-            className="text-xs text-muted-foreground"
-          >
-            {HARNESS_ORDER.every((h) => harnesses.includes(h)) ? (
-              "All harnesses"
-            ) : harnesses.length === 1 ? (
-              `${harnessLabel(harnesses[0]!)} only`
-            ) : (
-              <InlineList items={harnesses.map(harnessLabel)} />
-            )}
-          </span>
-        )}
+        <span
+          id={id && `${id}-description`}
+          className="text-sm text-muted-foreground"
+        >
+          {providerDescription(type, templateId)}
+        </span>
       </span>
     </span>
   );
-}
-
-function harnessLabel(name: string): string {
-  return HARNESS_ICONS[name as HarnessFamily]?.label ?? name;
 }
 
 /**
@@ -228,5 +201,5 @@ function ConnectionBadge({
 }
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
-  return <div className="h-[49px] animate-pulse bg-muted/40" />;
+  return <div className="h-[69px] animate-pulse bg-muted/40" />;
 };

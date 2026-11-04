@@ -13,12 +13,10 @@ import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
 import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
 import {
   useGrantProvider,
-  useHarnessCatalog,
   useProviderConnections,
 } from "../../sessions/api/session-pair.js";
 import { DetachProviderMessage } from "../../sessions/components/detach-provider-message.js";
 import { useProviderUsage } from "../../sessions/hooks/use-provider-usage.js";
-import { providerHarnesses } from "../../sessions/lib/session-pair-options.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 import { AgentModelPicker } from "./agent-model-picker.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
@@ -35,7 +33,6 @@ export function SandboxProvidersSection({
   const { owned, granted, loaded } = useProviderConnections(agentId);
   const { grant, revoke, pending } = useGrantProvider(agentId);
   const root = useRootDriver(agentId);
-  const catalog = useHarnessCatalog().data?.harnesses;
   const usage = useProviderUsage(agentId);
   const access = useAgent(agentId)?.access;
   const managesProviders = !access || holds(access, "connections");
@@ -80,7 +77,6 @@ export function SandboxProvidersSection({
                 <ProviderSpendRow
                   agentId={agentId}
                   provider={p}
-                  harnesses={catalog && providerHarnesses(catalog, p)}
                   checked={attached}
                   disabled={pending || !managesProviders}
                   showSpend={attached && root === null}

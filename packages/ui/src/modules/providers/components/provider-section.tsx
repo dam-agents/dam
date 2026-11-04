@@ -1,7 +1,6 @@
 import {
   BALANCE_PROVIDER_TYPES,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  harnessFits,
   hasKeyCheck,
 } from "api-server-api";
 import { useState } from "react";
@@ -12,7 +11,6 @@ import type { ProviderPresetType } from "../../../types.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useDisconnectConnection } from "../../connections/hooks/use-disconnect-connection.js";
 import { useProviderStatus } from "../../provider-status/api/queries.js";
-import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { AllAgentsSpendBadge } from "../../spend/components/all-agents-provider-limit.js";
 import { useRecheckProviderKeys } from "../api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
@@ -34,7 +32,6 @@ export function ProviderSection({
   onConnected?: (connectionId: string) => void;
 } = {}) {
   const { itemByType, itemByTemplateId, isPending } = useProviderItems();
-  const { data: catalog, isPending: catalogPending } = useHarnessCatalog();
   const { data: templates, isPending: templatesPending } =
     useConnectionTemplates();
   const itemOf = (row: ProviderRowDef) =>
@@ -58,7 +55,7 @@ export function ProviderSection({
       status.outages.some((o) => o.templateId === templateId));
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const recheck = useRecheckProviderKeys({ silent: true });
-  const loading = isPending || catalogPending || templatesPending;
+  const loading = isPending || templatesPending;
   const checkable = rows.some((row) => {
     const item = itemOf(row);
     return !!item && hasKeyCheck(item.conn.templateId);
@@ -104,16 +101,6 @@ export function ProviderSection({
                     type={row.type}
                     templateId={row.templateId}
                     name={providerRowName(row)}
-                    harnesses={catalog?.harnesses
-                      .filter((h) =>
-                        harnessFits(
-                          catalog,
-                          h.name,
-                          row.type,
-                          item?.conn.templateId,
-                        ),
-                      )
-                      .map((h) => h.name)}
                     connected={!!item}
                     degraded={!!item && degradedTemplate(item.conn.templateId)}
                     keyCheck={
