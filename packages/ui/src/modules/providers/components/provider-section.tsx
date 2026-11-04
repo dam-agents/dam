@@ -17,8 +17,8 @@ import { useProviderItems } from "../hooks/use-provider-items.js";
 import { useRecheckOnOpen } from "../hooks/use-recheck-on-open.js";
 import {
   PROVIDER_ROWS,
+  providerEntries,
   type ProviderRowDef,
-  providerRowName,
 } from "../lib/provider-rows.js";
 import { CurveBenderInfoDialog } from "./curve-bender-info-dialog.js";
 import { ProviderBalance } from "./provider-balance.js";
@@ -31,23 +31,28 @@ export function ProviderSection({
 }: {
   onConnected?: (connectionId: string) => void;
 } = {}) {
-  const { itemByType, itemByTemplateId, isPending } = useProviderItems();
+  const { itemsByType, itemsByTemplateId, isPending } = useProviderItems();
   const { data: templates, isPending: templatesPending } =
     useConnectionTemplates();
-  const itemOf = (row: ProviderRowDef) =>
-    row.templateId
-      ? itemByTemplateId.get(row.templateId)
-      : itemByType.get(row.type);
+  const itemsOf = (row: ProviderRowDef) =>
+    (row.templateId
+      ? itemsByTemplateId.get(row.templateId)
+      : itemsByType.get(row.type)) ?? [];
   const configured = (templateId: string) =>
     !!templates?.some((t) => t.id === templateId);
   const rows = PROVIDER_ROWS.filter((row) => {
-    const item = itemOf(row);
     if (row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)
-      return configured(row.templateId) && (!onConnected || item !== undefined);
+      return (
+        configured(row.templateId) && (!onConnected || itemsOf(row).length > 0)
+      );
     if (row.templateId === "curve-bender")
-      return !configured(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID) || !!item;
+      return (
+        !configured(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID) ||
+        itemsOf(row).length > 0
+      );
     return true;
   });
+  const entries = rows.flatMap((row) => providerEntries(row, itemsOf(row)));
   const { data: status } = useProviderStatus();
   const degradedTemplate = (templateId: string | undefined) =>
     !!status &&
@@ -56,10 +61,9 @@ export function ProviderSection({
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const recheck = useRecheckProviderKeys({ silent: true });
   const loading = isPending || templatesPending;
-  const checkable = rows.some((row) => {
-    const item = itemOf(row);
-    return !!item && hasKeyCheck(item.conn.templateId);
-  });
+  const checkable = entries.some(
+    ({ item }) => !!item && hasKeyCheck(item.conn.templateId),
+  );
   /* UNIT_BOUNDARY_DESCRIPTION: keys are checked again on every visit, so the page offers no button for it. */
   useRecheckOnOpen(() => recheck.mutate(), !loading && checkable);
   const checking = recheck.isPending;
@@ -80,27 +84,20 @@ export function ProviderSection({
     <>
       <div className="flex flex-col gap-3">
         {loading
-          ? rows.map((row) => (
-              <Card
-                key={`${row.type}:${row.templateId ?? ""}`}
-                className="overflow-hidden"
-              >
+          ? entries.map((entry) => (
+              <Card key={entry.key} className="overflow-hidden">
                 <ProviderRow.Skeleton />
               </Card>
             ))
-          : rows.map((row) => {
-              const item = itemOf(row);
+          : entries.map(({ key, row, item, name }) => {
               const managed =
                 row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
               return (
-                <Card
-                  key={`${row.type}:${row.templateId ?? ""}`}
-                  className="overflow-hidden"
-                >
+                <Card key={key} className="overflow-hidden">
                   <ProviderRow
                     type={row.type}
                     templateId={row.templateId}
-                    name={providerRowName(row)}
+                    name={name}
                     connected={!!item}
                     degraded={!!item && degradedTemplate(item.conn.templateId)}
                     keyCheck={

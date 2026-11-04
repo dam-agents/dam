@@ -61,8 +61,8 @@ export type ClassicDockToggle = "reveal" | "close" | "open";
  * changes) reads what the slot shows. Its item shown in the slot is pressed and
  * closes; its item hidden on a phone is not pressed and comes back to view; an
  * item not docked, or covered by a docked item, opens in front. Approvals is a
- * drawer over the chat and Get started a dock below the top bar, so neither
- * takes the slot and the docked item stays in view.
+ * drawer over the chat, so it never takes the slot and the docked item stays in
+ * view.
  */
 export function classicDockToggle({
   docked,

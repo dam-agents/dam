@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -94,7 +94,7 @@ The api-server names the declared ports on every request, so a port the Environm
   Each step is a page that moves on by itself, not a redirect, so an Environment with many endpoints never reaches a browser's limit on redirects in a row.
 - **The address checks again on every request**, by its session and the lists as they stand, so a person taken off either list is refused at their next request.
   The session lasts only while the share host's session it came from does; signing out of an address ends both and the identity provider's session, and comes back to the share host's sign-in.
-  Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out, which never reach the app.
+  Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out and the loading page's status and retry, which never reach the app.
 - **Only the visitor's own pages act in their name.** Every page under the platform's parent domain is the same site as an address, so the browser sends the session cookie with a request any of them makes, an artifact or another Environment's app included.
   The address refuses every request whose `Origin` is not one of its own Environment's endpoints — a script's call, a form post, a WebSocket — before it reaches the app; a link, a typed address, a frame and an image carry no origin and pass.
   A page whose `Referrer-Policy` is `no-referrer` sends its own form posts with the opaque origin `null`, which passes only when the browser also marks the request `Sec-Fetch-Site: same-origin`, a header no page can set.
@@ -104,8 +104,17 @@ The api-server names the declared ports on every request, so a port the Environm
   An `Authorization` header reaches the app unless it is a platform credential: a platform API key, a bearer token that names the platform's identity provider as its issuer or names none, or a bearer value that is not one token, so an app that signs its own users in gets their tokens.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
-- **Wake.** A request to a sleeping Environment wakes it and waits until its runtime answers, not until the app does: a request that comes before the app listens gets the gate's "not answering" page, and the visitor tries again.
-  Requests refresh its activity at most once a minute, and no open connection holds it awake, so a forgotten tab lets it sleep.
+- **Wake and readiness.** A request to a sleeping Environment starts its wake and never waits for it.
+  The gate relays to an endpoint only once its app is **ready**: its readiness path, if the endpoint declares one (`ready: "/healthz"` on create, or set by endpoint name on update), answers 2xx or 3xx; without one, anything answers on its port, an app's own error included.
+  The runtime marks its own 502 when nothing listens on the port, so the gate tells an app that has not started from one that answers with an error.
+  A readiness path matters where something answers before the app does, such as a k3s ingress in front of it.
+  The gate keeps a "not ready" for a few seconds, so a burst of requests costs one probe; a "ready" it keeps until a relay finds nothing listening or the Environment wakes again, so a running app costs no probe per request.
+- **The loading page.** Until the endpoint is ready, a page load (a `GET` navigation) gets the gate's "Starting…" page, with status 503, `Retry-After` and no caching.
+  The page shows a working indicator and asks the gate's status at `/.platform/status` every few seconds; it reloads once the status says ready, into the app, or failed, into the gate's "did not start" page, which offers one "Try again" (`/.platform/start`, which wakes it again at once and returns to the page).
+  A start that takes longer than five minutes, such as an install, is not a failure: the page says it is still starting and asks every fifteen seconds.
+  Every other request — a script's call, an API client, a WebSocket — gets a plain 503 with `Retry-After`, never the page and never a 200, so a health check or a monitor does not read the Environment as up and a client that expects JSON gets no HTML.
+- **Activity.** Requests refresh its activity at most once a minute, the loading page's status checks included, so a visitor waiting on the page does not let it fall asleep again.
+  No open connection holds it awake, so a forgotten tab lets it sleep.
 - **Every response is uncacheable**, and the security log records each new session and each refusal.
 
 ## An install inside an Environment
@@ -136,11 +145,12 @@ Nothing in the create asks for nesting: the Environment's machine nests through 
 An install that turns either off gives its Environments no `/dev/kvm`.
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
-Beside the chart it installs two pieces the gate needs, and one the Environment's disk needs:
+Beside the chart it installs two pieces the gate needs, and two the Environment's disk needs:
 
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
 - **No image garbage collection** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full and delete the images the install just put in; nothing there pulls one back.
+- **The VM runner's node directories on its home disk, after every restart too**: its root is an overlay, where the runner pod cannot mount them, so the install bind-mounts them from the home disk and leaves a boot service that mounts them again before k3s starts, so a VM agent starts after the Environment sleeps and wakes with no new install.
 
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
 

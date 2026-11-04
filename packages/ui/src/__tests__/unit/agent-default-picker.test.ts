@@ -17,7 +17,7 @@ type Target = {
   label: string;
   placeholder: string;
   agentDefault?: {
-    summary: string;
+    detail: string;
     harness?: string | undefined;
     onClear: () => void;
   };
@@ -30,6 +30,11 @@ const state = vi.hoisted(() => ({
   close: null as (() => void) | null,
   saved: undefined as Record<string, unknown> | undefined,
   owned: true,
+  access: { role: "owner", editors: [], permissions: [] } as {
+    role: string;
+    editors: string[];
+    permissions: string[];
+  },
   remember: vi.fn(),
   clear: vi.fn(),
   navigate: vi.fn(),
@@ -95,7 +100,7 @@ vi.mock("../../modules/agents/api/harness-config.js", () => ({
 }));
 
 vi.mock("../../modules/agents/api/queries.js", () => ({
-  useAgent: () => ({ access: { role: "owner", editors: [], permissions: [] } }),
+  useAgent: () => ({ access: state.access }),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -121,8 +126,16 @@ const mount = (kind: "chat" | "channel" | "scheduled") => {
   );
 };
 
+const disabledFieldset = (): boolean | undefined =>
+  container.querySelector("fieldset")?.disabled;
+
 beforeEach(() => {
   state.owned = true;
+  state.access = {
+    role: "owner",
+    editors: [],
+    permissions: ["view", "settings"],
+  };
   state.saved = {
     chat: opus,
     channel: null,
@@ -150,8 +163,8 @@ describe("a channel's and a schedule's model", () => {
     mount(kind);
     expect(state.target!.slots.pair).toBeNull();
     expect(state.target!.label).toBe(label);
-    expect(state.target!.agentDefault?.summary).toBe(
-      "Claude Opus 5.5 · Medium (Anthropic)",
+    expect(state.target!.agentDefault?.detail).toBe(
+      "Follows Claude Opus 5.5 · Medium (Anthropic)",
     );
     expect(state.target!.agentDefault?.harness).toBe("claude-code");
     expect(state.row).toBe(true);
@@ -159,6 +172,13 @@ describe("a channel's and a schedule's model", () => {
     expect(container.textContent).toContain(
       "that pick nothing of their own run on this.",
     );
+  });
+
+  /** TEST_SCENARIO: with no chat default there is nothing to follow, so the row says so in words instead of naming a default that does not exist. */
+  it("says no default is set yet without a chat default", () => {
+    state.saved = { ...state.saved, chat: null };
+    mount("channel");
+    expect(state.target!.agentDefault?.detail).toBe("No default set yet");
   });
 
   /** TEST_SCENARIO: the row that follows the default clears the kind's own pick, so a later change of the default model reaches it. */
@@ -261,5 +281,33 @@ describe("the default model itself", () => {
     mount("chat");
     expect(state.target).toBeNull();
     expect(container.textContent).toBe("");
+  });
+});
+
+describe("who may pick", () => {
+  /** TEST_SCENARIO: an Agent Editor holds the agent's settings permission, so the picker is live on their page and a pick saves the default like the owner's. */
+  it("lets an editor holding settings pick", () => {
+    state.access = {
+      role: "editor",
+      editors: [],
+      permissions: ["view", "settings"],
+    };
+    mount("channel");
+    expect(disabledFieldset()).toBe(false);
+    act(() => state.target!.onChoose(opus, {}));
+    expect(state.remember).toHaveBeenCalledWith(
+      "a1",
+      opus,
+      "channel",
+      undefined,
+      undefined,
+    );
+  });
+
+  /** TEST_SCENARIO: a person without the agent's settings permission sees the picker read-only, since the server would refuse their save. */
+  it("disables the picker without settings", () => {
+    state.access = { role: "editor", editors: [], permissions: ["view"] };
+    mount("chat");
+    expect(disabledFieldset()).toBe(true);
   });
 });

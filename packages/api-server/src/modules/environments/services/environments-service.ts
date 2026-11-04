@@ -37,6 +37,8 @@ export interface CreateEnvironmentInput {
 
 export interface UpdateEnvironmentInput {
   expiresAt?: Date;
+  // UNIT_BOUNDARY_DESCRIPTION: readiness paths by endpoint name; null removes one, so the endpoint is ready once its port answers.
+  ready?: Record<string, string | null>;
 }
 
 export interface EnvironmentsDeps {
@@ -71,6 +73,23 @@ export interface EnvironmentsServiceImpl {
   extend(id: string, expiresAt: Date): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
   remove(record: EnvironmentRecord, actor: string): Promise<void>;
+}
+
+function withReadyPaths(
+  endpoints: EnvironmentEndpoint[],
+  ready: Record<string, string | null>,
+): EnvironmentEndpoint[] {
+  const unknown = Object.keys(ready).filter(
+    (name) => !endpoints.some((e) => e.name === name),
+  );
+  if (unknown.length > 0)
+    refuse(`ready: no endpoint named ${unknown.join(", ")}`);
+  return endpoints.map(({ ready: kept, ...endpoint }) => {
+    const path = Object.hasOwn(ready, endpoint.name)
+      ? ready[endpoint.name]
+      : kept;
+    return path ? { ...endpoint, ready: path } : endpoint;
+  });
 }
 
 function refuse(
@@ -288,14 +307,20 @@ export function createEnvironmentsService(
       },
 
       async update(name, input) {
-        if (input.expiresAt === undefined)
-          refuse("nothing to change: give an expiry");
+        if (input.expiresAt === undefined && input.ready === undefined)
+          refuse("nothing to change: give an expiry or readiness paths");
         const record = await byName(name);
-        const expiresAt = expiry(input.expiresAt);
-        await deps.repo.update(record.agentId, { expiresAt });
+        const patch: Partial<
+          Pick<EnvironmentRecord, "expiresAt" | "endpoints">
+        > = {};
+        if (input.expiresAt !== undefined)
+          patch.expiresAt = expiry(input.expiresAt);
+        if (input.ready !== undefined)
+          patch.endpoints = withReadyPaths(record.endpoints, input.ready);
+        await deps.repo.update(record.agentId, patch);
         return forAgent(
           await viewOf(
-            { ...record, expiresAt },
+            { ...record, ...patch },
             await deps.agents.get(record.agentId),
           ),
         );

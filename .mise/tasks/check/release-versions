@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+#MISE description="The release version forms, the candidate arithmetic and the hotfix spelling cover both pre-release spellings"
+set -euo pipefail
+
+. "$MISE_CONFIG_ROOT/.mise/lib/release.sh"
+
+# TEST_OVERVIEW: a release version is `X.Y.Z`, a candidate in the `-rc.N`
+# spelling, or the legacy `-rcN` one. A dotted number is a numeric identifier,
+# which semver forbids to start with a zero, so `-rc.01` is refused before it is
+# committed and published. The next candidate keeps the spelling it was given,
+# counting in decimal. A hotfix stamps the tree of the tag it starts from, so
+# the spelling it uses is the one that tag's own task reads.
+fail=0
+error() {
+  echo "ERROR: $*" >&2
+  fail=1
+}
+
+accept() { is_version_form "$1" || error "rejected valid version $1"; }
+reject() { ! is_version_form "$1" || error "accepted invalid version $1"; }
+
+accept 0.3.0
+accept 0.3.0-rc.1
+accept 0.3.0-rc.10
+accept 0.3.0-rc.0
+accept 0.3.0-rc1
+accept 0.3.0-rc09
+reject 0.3.0-rc.01
+reject 0.3.0-rc.09
+reject 0.3.0-rc
+reject 0.3.0-rc.
+reject 0.3.0.1
+reject v0.3.0
+reject 0.3
+
+next() {
+  local got
+  got=$(next_rc_version "$1") || got="<rejected>"
+  [[ "$got" == "$2" ]] ||
+    error "next_rc_version $1 gave '$got', expected $2"
+}
+
+next 0.3.0-rc.1 0.3.0-rc.2
+next 0.3.0-rc.9 0.3.0-rc.10
+next 0.3.0-rc.10 0.3.0-rc.11
+next 0.2.24-rc9 0.2.24-rc10
+next 0.2.24-rc09 0.2.24-rc10
+for bad in 0.3.0 0.3.0-rc 0.3.0-rc.01 0.3.0-rc.09; do
+  next "$bad" "<rejected>"
+done
+
+spelling() {
+  local got
+  got=$(printf '%s\n' "$2" | rc_spelling_of)
+  [[ "$got" == "$3" ]] ||
+    error "rc_spelling_of $1 gave '$got', expected $3"
+}
+
+spelling "this branch's task" \
+  'if ! is_version_form "$usage_version"; then' dotted
+spelling "a task from before the rule" \
+  'if ! [[ "$usage_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc\.?[0-9]+)?$ ]]; then' dotted
+spelling "a legacy task" \
+  'if ! [[ "$usage_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then' legacy
+
+[[ $fail -eq 0 ]] || exit 1
+echo "OK: release version forms and candidate arithmetic"

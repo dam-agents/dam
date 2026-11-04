@@ -14,9 +14,14 @@ import type { SatelliteBackend } from "../services/backend.js";
 import type { McpServerSpec } from "../services/mcp-backend.js";
 import {
   createWorker,
+  FenceUnsupportedError,
   SatelliteRemovedError,
   type WorkerTransport,
 } from "../services/worker.js";
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 export interface ConnectDeps {
   compatService: CompatService;
@@ -169,22 +174,125 @@ export async function activeHost(
   return resolveActiveHost(deps, opts.server);
 }
 
-function transportFor(trpc: TrpcClient): WorkerTransport {
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: NOT_FOUND is the platform saying this Satellite is
+ * not there, which is a removal or a name another machine registered, and the
+ * worker stops on it. Every other failure is a drop, which the worker retries.
+ */
+function throwIfRemoved(err: unknown, satellite: string): never {
+  if (
+    err instanceof TRPCClientError &&
+    (err.data as { code?: string } | undefined)?.code === "NOT_FOUND"
+  )
+    throw new SatelliteRemovedError(satellite);
+  throw err;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a server that has no fenced procedure answers:
+ * the call it does not have. tRPC says so as a NOT_FOUND whose message names the
+ * missing path, and the newer key spells it METHOD_NOT_FOUND, so both are read.
+ * It says nothing about the Satellite, which is why it may never be answered
+ * with an unfenced call.
+ */
+function rejectsAsUnknownProcedure(err: unknown): boolean {
+  if (!(err instanceof TRPCClientError)) return false;
+  const code = (err.data as { code?: string } | undefined)?.code;
+  if (code === "METHOD_NOT_FOUND") return true;
+  return code === "NOT_FOUND" && /No procedure found on path/.test(err.message);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How the worker's calls reach the platform. A call
+ * that names its registration goes to a procedure of its own, so the fence is
+ * enforced by the endpoint that performs the write: an older server has no such
+ * procedure and refuses the call instead of reading it and ignoring the
+ * identity, which a rolling deployment can otherwise do behind a connect that
+ * was answered by a newer replica. A refusal is reported as `FenceUnsupported`
+ * and never answered with an unfenced call; the plain procedures are left to
+ * the identity-free legacy case.
+ */
+export function transportFor(trpc: TrpcClient): WorkerTransport {
   return {
-    connect: (manifest, host) =>
-      trpc.satellites.connect.mutate({ manifest, host }),
-    claim: (input) =>
-      trpc.satellites.claim.mutate(input).catch((err: unknown) => {
-        if (
-          err instanceof TRPCClientError &&
-          (err.data as { code?: string } | undefined)?.code === "NOT_FOUND"
-        )
-          throw new SatelliteRemovedError(input.satellite);
+    connect: async ({ manifest, host, resume }) => {
+      if (resume === undefined)
+        return trpc.satellites.connect
+          .mutate({ manifest, host })
+          .catch((err: unknown) => throwIfRemoved(err, manifest.name));
+      try {
+        return await trpc.satellites.connectFenced.mutate({
+          manifest,
+          host,
+          resume,
+        });
+      } catch (err) {
+        if (rejectsAsUnknownProcedure(err))
+          throw new FenceUnsupportedError(manifest.name);
+        return throwIfRemoved(err, manifest.name);
+      }
+    },
+    claim: async (input) => {
+      if (input.incarnation === undefined)
+        return trpc.satellites.claim
+          .mutate(input)
+          .catch((err: unknown) => throwIfRemoved(err, input.satellite));
+      try {
+        return await trpc.satellites.claimFenced.mutate({
+          ...input,
+          incarnation: input.incarnation,
+        });
+      } catch (err) {
+        if (rejectsAsUnknownProcedure(err))
+          throw new FenceUnsupportedError(input.satellite);
+        return throwIfRemoved(err, input.satellite);
+      }
+    },
+    heartbeat: async (input) => {
+      if (input.incarnation === undefined) {
+        await trpc.satellites.heartbeat.mutate(input);
+        return;
+      }
+      try {
+        await trpc.satellites.heartbeatFenced.mutate({
+          ...input,
+          incarnation: input.incarnation,
+        });
+      } catch (err) {
+        if (rejectsAsUnknownProcedure(err))
+          throw new FenceUnsupportedError(input.satellite);
         throw err;
-      }),
-    heartbeat: (input) => trpc.satellites.heartbeat.mutate(input),
-    report: (input) => trpc.satellites.report.mutate(input),
-    drain: (satellite) => trpc.satellites.drain.mutate(satellite),
+      }
+    },
+    report: async (input) => {
+      if (input.incarnation === undefined) {
+        await trpc.satellites.report.mutate(input);
+        return;
+      }
+      try {
+        await trpc.satellites.reportFenced.mutate({
+          ...input,
+          incarnation: input.incarnation,
+        });
+      } catch (err) {
+        if (!rejectsAsUnknownProcedure(err)) throw err;
+        throw new FenceUnsupportedError(input.satellite);
+      }
+    },
+    drain: async (input) => {
+      if (input.incarnation === undefined) {
+        await trpc.satellites.drain.mutate(input.satellite);
+        return;
+      }
+      try {
+        await trpc.satellites.drainFenced.mutate({
+          satellite: input.satellite,
+          incarnation: input.incarnation,
+        });
+      } catch (err) {
+        if (!rejectsAsUnknownProcedure(err)) throw err;
+        throw new FenceUnsupportedError(input.satellite);
+      }
+    },
   };
 }
 
@@ -214,7 +322,12 @@ export async function serve(
   identity: { name: string; description?: string; maxConcurrent: number },
   startupLines: string[] = [],
 ): Promise<never> {
-  const host = await activeHost(deps, opts);
+  const host = await resolveActiveHost(deps, opts.server, {
+    onWait: (reason, delay) =>
+      log.line(
+        `offline: cannot reach the server (${reason}) — retrying in ${seconds(delay)}`,
+      ),
+  });
   let interrupted = false;
   const worker = createWorker({
     name: identity.name,

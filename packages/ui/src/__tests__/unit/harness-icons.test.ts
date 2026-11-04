@@ -18,11 +18,17 @@ import { CardIcon } from "../../modules/providers/components/card-icon.js";
 import { ProviderBalance } from "../../modules/providers/components/provider-balance.js";
 import { ProviderRow } from "../../modules/providers/components/provider-row.js";
 
+const balance = vi.hoisted(() => ({
+  data: { unit: "usd", used: 12, limit: 100, resetsAt: null } as {
+    unit: "usd" | "bobcoins";
+    used: number;
+    limit: number | null;
+    resetsAt: string | null;
+  },
+}));
+
 vi.mock("../../modules/providers/api/queries.js", () => ({
-  useProviderBalance: () => ({
-    data: { unit: "usd", used: 12, limit: 100, resetsAt: null },
-    isError: false,
-  }),
+  useProviderBalance: () => ({ data: balance.data, isError: false }),
 }));
 
 function renderToStaticMarkup(element: ReactElement) {
@@ -212,7 +218,7 @@ describe("harness icons on provider and preset cards", () => {
         el.textContent.includes(text),
       );
     expect(raised(doc.querySelector('[title*="HTTP 503"]'))).toBe(true);
-    expect(raised(withText("p", "$12.00 of $100.00 used"))).toBe(true);
+    expect(raised(withText("span", "$12.00 of $100.00 used"))).toBe(true);
     expect(raised(withText("button", "$0.00 today"))).toBe(true);
     expect(
       html.match(/<button[^>]*aria-label="Edit [^"]*"[^>]*><\/button>/),
@@ -224,7 +230,7 @@ describe("harness icons on provider and preset cards", () => {
     ["anthropic", undefined, "Claude models straight from the source"],
     ["openai", undefined, "GPT models straight from the source"],
     ["bedrock", undefined, "Amazon Web Services inference engine"],
-    ["bob", undefined, "IBM Bob&#x27;s backend, usable by the Bob harness"],
+    ["bob", undefined, "IBM Bob&#x27;s backend"],
     [
       "ibm-litellm",
       undefined,
@@ -257,5 +263,23 @@ describe("harness icons on provider and preset cards", () => {
       .getAttribute("aria-describedby")!
       .split(" "))
       expect(doc.getElementById(ref)).not.toBeNull();
+  });
+
+  // TEST_SCENARIO: Bob's balance is a pill like the spend pill, in Bobcoins' short unit and for the month, with no reset date; a used-up budget says so in red.
+  it("shows Bob's balance as a monthly pill in Bc", () => {
+    const pill = (data: typeof balance.data) => {
+      balance.data = data;
+      return renderToStaticMarkup(
+        createElement(ProviderBalance, { connectionId: "bob" }),
+      );
+    };
+    const bob = { unit: "bobcoins", resetsAt: "2026-12-01T00:00:00Z" } as const;
+    const html = pill({ ...bob, used: 0, limit: 100 });
+    expect(html).toContain(">0 of 100 Bc this month<");
+    expect(html).toContain("rounded-full bg-muted");
+    expect(pill({ ...bob, used: 100, limit: 100 })).toMatch(
+      /text-danger[^>]*>Budget used up: 100 of 100 Bc this month</,
+    );
+    balance.data = { unit: "usd", used: 12, limit: 100, resetsAt: null };
   });
 });

@@ -132,6 +132,23 @@ describe("the budgets read's vm figures", () => {
       ).cpu,
     ).toMatchObject({ pressurePercent: 25, congestion: "moderate" });
   });
+
+  it("carries the owner's CPU pool and a machine's vCPUs beside the runner's figures", () => {
+    // TEST_SCENARIO: the pool and the machine size are published when known and left out when unread or unset, so the UI falls back to the runner's limit.
+    const runner = usage({
+      cpu: { limitMilli: 9000, usedMilli: 6200, throttledPercent: 0 },
+    });
+    expect(
+      vmUsageView(runner, new Set(), { poolMilli: 8000, machineMilli: 4000 })
+        .cpu,
+    ).toMatchObject({ limitMilli: 9000, poolMilli: 8000, machineMilli: 4000 });
+    const unknown = vmUsageView(runner, new Set(), {
+      poolMilli: null,
+      machineMilli: null,
+    }).cpu;
+    expect(unknown).not.toHaveProperty("poolMilli");
+    expect(unknown).not.toHaveProperty("machineMilli");
+  });
 });
 
 describe("the Slack invite on the budgets read", () => {
@@ -139,6 +156,8 @@ describe("the Slack invite on the budgets read", () => {
     createBudgetsService({
       listAgentIds: async () => [],
       readVmUsage: async () => vm,
+      readCpuPoolMilli: async () => 8000,
+      machineMilli: null,
       isSlackUnlinked: async () => unlinked,
     }).reserved();
 
@@ -154,11 +173,34 @@ describe("the Slack invite on the budgets read", () => {
     const view = await createBudgetsService({
       listAgentIds: async () => [],
       readVmUsage: async () => usage(),
+      readCpuPoolMilli: async () => 8000,
+      machineMilli: null,
       isSlackUnlinked: async () => {
         throw new Error("db down");
       },
     }).reserved();
     expect(view.vm).toBeDefined();
     expect(view.vm).not.toHaveProperty("slackUnlinked");
+  });
+
+  it("still answers when the budget read fails, without the pool", async () => {
+    // TEST_SCENARIO: an unreadable UserBudget drops the CPU pool, not the whole read.
+    const view = await createBudgetsService({
+      listAgentIds: async () => [],
+      readVmUsage: async () =>
+        usage({
+          cpu: { limitMilli: 9000, usedMilli: 10, throttledPercent: 0 },
+        }),
+      readCpuPoolMilli: async () => {
+        throw new Error("store down");
+      },
+      machineMilli: 4000,
+      isSlackUnlinked: async () => false,
+    }).reserved();
+    expect(view.vm?.cpu).toMatchObject({
+      limitMilli: 9000,
+      machineMilli: 4000,
+    });
+    expect(view.vm?.cpu).not.toHaveProperty("poolMilli");
   });
 });

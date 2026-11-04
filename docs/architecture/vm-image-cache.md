@@ -53,6 +53,9 @@ Every registry read names the host's platform, so a tag resolves to that platfor
 A fetch does not flush its tree, since a flush of the whole filesystem stalls every machine disk on it: the tree records the host boot it was written in, the writer flushes once as it closes, and a tree an earlier boot wrote and never flushed is fetched again rather than booted.
 After a host crash, every image fetched since the writer last closed is therefore fetched again.
 A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which the next open reclaims, never a partial tree a lookup would take as complete.
+A tree an earlier layout of the directory nested under a subdirectory of it is reclaimed at the same open: every path the writer builds is `<dir>/sha256_<digest>`, so a tree below a subdirectory is one it serves, counts and evicts nothing of, and nothing else would ever free it.
+That is bounded to the directory this install's service owns.
+The trees the layouts before dam#5374 left *beside* it — directly under the root, and directly under the install's own `<hostPath>` — are not: the root is shared by every install on the node, and nothing in a pod tells one install's old trees from another's, so the administrator removes them by hand, as the migration runbook says.
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.
 A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack, or one larger than the cache reserved for it — is reported as an unavailable image, and a disk that fills, or has less room than the image takes unpacked before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
@@ -70,6 +73,8 @@ A runner holds the digests its running machines boot by naming them again every 
 A runner names every machine its runtime finds running from the moment it starts, so one that took the machines over in a hand-off or a restart holds their trees before the controller has sent it a spec.
 A stopped machine holds nothing, so a hibernated agent never keeps an image a deploy retired; its start fetches the tree again when it is gone, and holds it before it checks it is there.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
+That budget is not a quota: it bounds what the cache takes from the node's disk, and once every tree it holds is pinned or held by a running machine, no pass ends inside it.
+The budget is therefore the pin plus what the install's machines concurrently run, and a budget below the pins alone is a configuration error the service says once, per figure, at an error; a preload pass then stops adding pins, because a pin cannot be evicted and the next one would only take more of the node's disk.
 Each fetch under way counts toward that ceiling at that unpacked size, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.
 

@@ -4,7 +4,7 @@ import type {
   CredentialProbe,
   CredentialProbeOutcome,
 } from "../domain/credential-check.js";
-import { stripControlChars } from "./github-identity.js";
+import { displayLabel, stripControlChars } from "./github-identity.js";
 import { probeKubernetesToken } from "./kubernetes-token-probe.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -73,7 +73,7 @@ async function probeGitHubToken(
     const scopes = githubScopes(res.headers.get("x-oauth-scopes"));
     return {
       status: "passed",
-      ...(user.success ? { account: stripControlChars(user.data.login) } : {}),
+      ...(user.success ? { account: displayLabel(user.data.login) } : {}),
       ...(expiresAt ? { expiresAt } : {}),
       ...(scopes ? { scopes } : {}),
     };

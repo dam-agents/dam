@@ -9,6 +9,8 @@ export interface SatelliteRow {
   tools: SatelliteTool[];
   draining: boolean;
   lastSeenAt: Date | null;
+  incarnation: string;
+  createdAt: Date;
 }
 
 export interface JobRow {
