@@ -4,6 +4,7 @@ export {
   type ModelCatalogDeps,
 } from "./services/model-catalog.js";
 export { VENDORED_PRICE_TABLE } from "api-server-api/model-prices";
+export { selectNativeConnection } from "./domain/native-selection.js";
 export {
   ANTHROPIC_OAUTH_BETA,
   ANTHROPIC_OAUTH_TEMPLATE,

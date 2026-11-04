@@ -157,7 +157,8 @@ Cross- owner leakage is structurally prevented by the label selector — a missi
 
 ## Native Codex subscription login
 
-An owner can enable a ChatGPT subscription Connection and grant it to an agent instead of an OpenAI API-key Connection.
+An owner can enable a ChatGPT subscription Connection and grant it to an agent alongside other provider Connections.
+Subscription model names have a distinct provider identity, so replacing Connections cannot silently change a saved model's billing path.
 The Connection configures Codex's native mode and permits its authentication and inference hosts; it stores no subscription token in the platform.
 The owner authorizes the agent in its Codex web terminal or over SSH, and Codex stores, refreshes and removes its login in the persistent home.
 That login serves terminal, web and channel sessions selecting the subscription's native models.

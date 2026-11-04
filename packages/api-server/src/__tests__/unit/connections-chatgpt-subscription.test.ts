@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A ChatGPT Connection enables native Codex without a platform-held token. Its native models enter the owner catalog for Codex alone, while API keys retain their existing mode and one OpenAI alias prevents ambiguous selection.
+// TEST_OVERVIEW: A ChatGPT Connection enables native Codex without a platform-held token. Its distinct model alias preserves subscription billing when OpenAI API-key connections change or coexist.
 import { describe, expect, it } from "vitest";
 import {
   harnessFits,
@@ -22,7 +22,7 @@ const harnesses: HarnessCatalog = {
   harnesses: (["codex", "pi", "claude-code"] as const).map((name) => ({
     name,
     displayName: name,
-    providers: ["openai"],
+    providers: name === "codex" ? ["openai", "chatgpt"] : ["openai"],
     tags: [],
     experimental: false,
   })),
@@ -69,9 +69,9 @@ describe("ChatGPT subscription Connection", () => {
       status: "listed",
     });
     expect(owner.providers[0]!.models.map((m) => m.name)).toEqual([
-      "openai/gpt-6.1-sol",
-      "openai/gpt-6-astra",
-      "openai/gpt-6-luna",
+      "chatgpt/gpt-6.1-sol",
+      "chatgpt/gpt-6-astra",
+      "chatgpt/gpt-6-luna",
     ]);
     expect(owner.providers[0]!.models.every((m) => m.prices === null)).toBe(
       true,
@@ -84,16 +84,16 @@ describe("ChatGPT subscription Connection", () => {
   // TEST_SCENARIO: A subscription belongs to Codex's native login, while an API key still works for other compatible harnesses and remains the default API credential mode.
   it("restricts subscriptions to Codex and preserves API-key compatibility", () => {
     expect(
-      harnessFits(harnesses, "codex", "openai", OPENAI_CHATGPT_TEMPLATE_ID),
+      harnessFits(harnesses, "codex", "chatgpt", OPENAI_CHATGPT_TEMPLATE_ID),
     ).toBe(true);
     expect(
-      harnessFits(harnesses, "pi", "openai", OPENAI_CHATGPT_TEMPLATE_ID),
+      harnessFits(harnesses, "pi", "chatgpt", OPENAI_CHATGPT_TEMPLATE_ID),
     ).toBe(false);
     expect(
       harnessFits(
         harnesses,
         "claude-code",
-        "openai",
+        "chatgpt",
         OPENAI_CHATGPT_TEMPLATE_ID,
       ),
     ).toBe(false);
@@ -107,7 +107,7 @@ describe("ChatGPT subscription Connection", () => {
           name: "Subscription",
           templateId: OPENAI_CHATGPT_TEMPLATE_ID,
         },
-      )?.held.id,
-    ).toBe("api");
+      ),
+    ).toBeNull();
   });
 });

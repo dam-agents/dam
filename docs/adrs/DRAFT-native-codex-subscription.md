@@ -1,7 +1,6 @@
 ---
 title: Native Codex subscription credentials
 status: proposed
-supersedes: "005"
 subsystem: security-and-credentials
 tags: [codex, credentials]
 summary: Permit explicit per-agent native Codex subscription login while keeping platform-managed credentials in the gateway.
@@ -20,6 +19,7 @@ Codex holds and refreshes that subscription's credentials in the agent's persist
 This is a narrow exception to the existing prohibition on agents holding upstream credentials.
 Managed web, terminal and channel sessions select this mode explicitly through a subscription Connection.
 The platform does not import native tokens into its API-key or gateway credential store.
+Subscription models have their own provider identity, distinct from OpenAI API-key models, so changing Connections cannot change a saved choice's billing account.
 
 ## Context
 

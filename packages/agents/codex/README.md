@@ -27,8 +27,9 @@ The launch scripts fall back to `dummy-placeholder` only when nothing sets it.
 
 ### ChatGPT subscription
 
-In Settings → Providers → OpenAI, choose **ChatGPT subscription** and enable it, then attach that Connection to the agent.
-An agent holds either this mode or an OpenAI API-key Connection; other provider families can coexist.
+In Settings → Providers, enable **ChatGPT subscription**, then attach that Connection to the agent.
+It can coexist with an OpenAI API-key Connection: subscription models start with `chatgpt/`, while API models start with `openai/`.
+Removing one Connection leaves its saved model choices unavailable, rather than moving their calls to the other billing account.
 Open the agent's Codex web terminal and complete ChatGPT sign-in with a device code, or sign in over SSH:
 
 ```sh

@@ -19,6 +19,7 @@ describe("provider row order", () => {
       "bedrock:",
       "anthropic:",
       "openai:",
+      "chatgpt:",
     ]);
   });
 });

@@ -45,6 +45,7 @@ import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
+  selectNativeConnection,
   servesHarness,
   VENDORED_PRICE_TABLE,
 } from "./modules/model-catalog/index.js";
@@ -112,11 +113,7 @@ import {
   PROVIDER_REMOVED_REASON,
   type SessionChoice,
 } from "./modules/acp/services/lease-router.js";
-import {
-  aliasForTemplateId,
-  HARNESS_HOME_PROVIDERS,
-  parseQualifiedModel,
-} from "api-server-api";
+import { aliasForTemplateId, parseQualifiedModel } from "api-server-api";
 import {
   PROVIDER_DIALECTS,
   renderName,
@@ -441,23 +438,12 @@ const nativeConnectionOf = (
   harness: string,
   model: string | null,
 ): string | null => {
-  const templates = harnessManifests[harness]?.modelRouter?.native?.templates;
-  if (!templates) return null;
-  const native = (alias: string) =>
-    envStore
-      .state()
-      .providers.find(
-        (l) =>
-          l.template !== undefined &&
-          templates.includes(l.template) &&
-          aliasForTemplateId(l.template) === alias,
-      )?.id ?? null;
-  if (model) {
-    const alias = parseQualifiedModel(model)?.alias;
-    return alias ? native(alias) : null;
-  }
-  const home = HARNESS_HOME_PROVIDERS[harness]?.[0];
-  return home ? native(home) : null;
+  return selectNativeConnection({
+    harness,
+    model,
+    templates: harnessManifests[harness]?.modelRouter?.native?.templates,
+    providers: envStore.state().providers,
+  });
 };
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a harness whose sessions reach their models

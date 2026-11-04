@@ -21,6 +21,7 @@ export const PROVIDER_DIALECTS: Record<ProviderAlias, readonly ModelDialect[]> =
     cb: ALL_DIALECTS,
     anthropic: ["anthropic-messages"],
     openai: ["openai-chat", "openai-responses"],
+    chatgpt: [],
     bedrock: [],
     bob: ["openai-chat"],
   };

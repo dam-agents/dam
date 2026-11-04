@@ -34,7 +34,7 @@ There is no fallback to a paid API credential.
 ## Approach and rationale
 
 Reuse the native-provider path already used by Bedrock: a provider Connection, a native model list in the harness manifest, and a separate native Harness Lease selected by the session's qualified model.
-Keep the OpenAI alias, so an agent chooses one OpenAI credential mode at a time, under the existing provider-alias rule.
+Use a separate ChatGPT provider identity and `chatgpt` model alias so subscription and API-key Connections can coexist without a saved model switching billing paths.
 The subscription Connection carries a mode marker and network permissions, not a pasted token.
 Codex's native login remains in its existing home so MCP configuration, instructions, history and terminal resume continue working.
 Remove the global API-only login restriction; the router provider explicitly uses its environment credential and never requires a native OpenAI login.

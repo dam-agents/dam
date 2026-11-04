@@ -68,8 +68,10 @@ export function OpenAIForm({
 
   return (
     <ProviderFormShell
-      provider="openai"
-      title={OPENAI_DISPLAY_NAME}
+      provider={mode === "chatgpt" ? "chatgpt" : "openai"}
+      title={
+        mode === "chatgpt" ? PROVIDERS.chatgpt.displayName : OPENAI_DISPLAY_NAME
+      }
       description={
         mode === "chatgpt"
           ? "Use your ChatGPT subscription with Codex. Sign in separately on each agent."

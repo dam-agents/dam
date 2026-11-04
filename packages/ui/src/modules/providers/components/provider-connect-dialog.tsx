@@ -128,15 +128,16 @@ export function ProviderConnectDialog({
           }
         />
       )}
-      {provider === "openai" && (
+      {(provider === "openai" || provider === "chatgpt") && (
         <OpenAIForm
           variant={variant}
           initialMode={
+            provider === "chatgpt" ||
             item?.conn.templateId === OPENAI_CHATGPT_TEMPLATE_ID
               ? "chatgpt"
               : "api-key"
           }
-          lockMode={!!item}
+          lockMode={!!item || provider === "chatgpt"}
           onCancel={dismiss}
           onSave={async ({ mode, value }) => {
             if (mode === "chatgpt") {

@@ -47,6 +47,12 @@ const STYLES: Record<
     tile: "bg-white text-black",
     mark: "size-4/5",
   },
+  chatgpt: {
+    Icon: OpenAIIcon,
+    Mark: OpenAIIcon,
+    tile: "bg-white text-black",
+    mark: "size-4/5",
+  },
   "ibm-litellm": {
     Icon: LiteLLMIcon,
     Mark: LiteLLMIcon,

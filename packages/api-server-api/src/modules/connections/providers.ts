@@ -1,7 +1,13 @@
 import type { HarnessView } from "../templates/types.js";
 
 export type ProviderPresetType =
-  "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
+  | "anthropic"
+  | "ibm-litellm"
+  | "curve-bender"
+  | "openai"
+  | "chatgpt"
+  | "bob"
+  | "bedrock";
 
 export interface EnvMapping {
   envName: string;
@@ -191,13 +197,14 @@ export interface ProviderPresetMode {
 }
 
 export type ProviderAlias =
-  "ibm" | "cb" | "anthropic" | "openai" | "bedrock" | "bob";
+  "ibm" | "cb" | "anthropic" | "openai" | "chatgpt" | "bedrock" | "bob";
 
 export const PROVIDER_ALIASES: readonly ProviderAlias[] = [
   "ibm",
   "cb",
   "anthropic",
   "openai",
+  "chatgpt",
   "bedrock",
   "bob",
 ];
@@ -273,10 +280,18 @@ export const PROVIDERS = {
         templateId: "openai",
         isDefault: true,
       },
+    ],
+  },
+  chatgpt: {
+    id: "chatgpt",
+    alias: "chatgpt",
+    displayName: "ChatGPT subscription",
+    modes: [
       {
         key: "chatgpt",
         label: "ChatGPT subscription",
         templateId: OPENAI_CHATGPT_TEMPLATE_ID,
+        isDefault: true,
       },
     ],
   },

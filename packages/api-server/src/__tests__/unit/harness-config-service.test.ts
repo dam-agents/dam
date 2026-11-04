@@ -127,7 +127,7 @@ function makeService(opts?: {
         {
           name: "codex",
           displayName: "Codex",
-          providers: ["openai"],
+          providers: ["openai", "chatgpt"],
           tags: [],
           experimental: false,
         },
@@ -1077,13 +1077,13 @@ describe("native Codex subscription defaults", () => {
       harnesses: [capability],
     },
     granted: [
-      { id: "subscription", type: "openai", templateId: "openai-chatgpt" },
+      { id: "subscription", type: "chatgpt", templateId: "openai-chatgpt" },
     ] as GrantedProvider[],
     snapshot: {
       model: null,
       mode: null,
       configOptions: {},
-      availableModels: [{ value: "openai/gpt-6.1-sol", name: "Sol" }],
+      availableModels: [{ value: "chatgpt/gpt-6.1-sol", name: "Sol" }],
       capturedAt: new Date(0).toISOString(),
       confirmed: true,
     },
@@ -1095,14 +1095,14 @@ describe("native Codex subscription defaults", () => {
       await service.rememberSessionPair("a1", kind, {
         harness: "codex",
         provider: null,
-        model: "openai/gpt-6.1-sol",
+        model: "chatgpt/gpt-6.1-sol",
         settings: { effort: "high" },
       });
       expect(calls.pairs).toEqual([
         {
           harness: "codex",
           provider: "subscription",
-          model: "openai/gpt-6.1-sol",
+          model: "chatgpt/gpt-6.1-sol",
           settings: { effort: "high" },
         },
       ]);
@@ -1113,7 +1113,7 @@ describe("native Codex subscription defaults", () => {
       makeService(native).service.rememberSessionPair("a1", "channel", {
         harness: "codex",
         provider: null,
-        model: "openai/gpt-6.1-sol",
+        model: "chatgpt/gpt-6.1-sol",
         settings: { subagentEffort: "high" },
       }),
     ).rejects.toThrow(/requires the Model Router/);
@@ -1122,6 +1122,10 @@ describe("native Codex subscription defaults", () => {
     const { service, calls } = makeService({
       ...native,
       granted: [{ id: "api", type: "openai", templateId: "openai" }],
+      snapshot: {
+        ...native.snapshot,
+        availableModels: [{ value: "openai/gpt-6.1-sol", name: "Sol" }],
+      },
     });
     await service.rememberSessionPair("a1", "chat", {
       harness: "codex",

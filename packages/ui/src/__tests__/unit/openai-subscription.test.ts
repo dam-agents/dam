@@ -61,21 +61,21 @@ describe("OpenAI subscription setup", () => {
       {
         harness: "codex",
         provider: "subscription",
-        model: "openai/gpt-6.1-sol",
+        model: "chatgpt/gpt-6.1-sol",
         settings: { effort: "high" },
       },
       {
         harness: "codex",
-        model: "openai/gpt-6-luna",
+        model: "chatgpt/gpt-6-luna",
         settings: { effort: "high" },
       },
       capability,
-      [{ name: "openai/gpt-6.1-sol", native: true }],
+      [{ name: "chatgpt/gpt-6.1-sol", native: true }],
     );
     expect(result.settings).toEqual({
       effort: "high",
       "platformSubagent.harness": "codex",
-      "platformSubagent.model": "openai/gpt-6-luna",
+      "platformSubagent.model": "chatgpt/gpt-6-luna",
       "platformSubagent.effort": "high",
     });
   });

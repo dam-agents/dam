@@ -12,12 +12,12 @@ const capability = harnessCapabilityOf(loadShippedHarnessFacts().codex!);
 const pair = {
   harness: "codex",
   provider: "subscription",
-  model: "openai/gpt-6.1-sol",
+  model: "chatgpt/gpt-6.1-sol",
 };
 const settings = {
   effort: "high",
   "platformSubagent.harness": "codex",
-  "platformSubagent.model": "openai/gpt-6.1-sol",
+  "platformSubagent.model": "chatgpt/gpt-6.1-sol",
   "platformSubagent.effort": "medium",
 };
 const catalog = (template: string): OwnerModelCatalogView => ({
@@ -27,7 +27,7 @@ const catalog = (template: string): OwnerModelCatalogView => ({
   providers: [
     {
       connectionId: "subscription",
-      alias: "openai",
+      alias: template === "openai" ? "openai" : "chatgpt",
       template,
       displayName: "OpenAI",
       status: "listed",
@@ -35,7 +35,7 @@ const catalog = (template: string): OwnerModelCatalogView => ({
       harnesses: ["codex"],
       models: [
         {
-          name: pair.model,
+          name: template === "openai" ? "openai/gpt-6.1-sol" : pair.model,
           upstreamId: "gpt-6.1-sol",
           harnesses: ["codex"],
           contextWindow: null,
@@ -62,10 +62,19 @@ describe("subscription platform subagents", () => {
       ),
     ).toEqual(settings);
     expect(
-      runSubagentSettings(capability, catalog("openai"), pair, settings),
+      runSubagentSettings(
+        capability,
+        catalog("openai"),
+        { ...pair, model: "openai/gpt-6.1-sol" },
+        {
+          ...settings,
+          "platformSubagent.model": "openai/gpt-6.1-sol",
+        },
+      ),
     ).toEqual({
       ...settings,
-      subagentModel: pair.model,
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+      subagentModel: "openai/gpt-6.1-sol",
       subagentEffort: "medium",
     });
   });

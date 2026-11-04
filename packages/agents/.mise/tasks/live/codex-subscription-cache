@@ -108,6 +108,9 @@ try {
   });
   assert.equal(signedInLater.account, null, "the pinned client keeps its cached missing account");
   execFileSync(cli, ["-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "login", "status"], { env, stdio: ["ignore", "pipe", "pipe"] });
+  // TEST_SCENARIO: The shipped helper appends global configuration after the login subcommand, so prove that exact argument order with the pinned client rather than a stub.
+  execFileSync(cli, ["login", "status", "-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "-c", 'developer_instructions="test"'], { env, stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync(cli, ["login", "--device-auth", "--help", "-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"'], { env, stdio: ["ignore", "pipe", "pipe"] });
   const afterRetry = await configuration(["-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "-c", "features.api_key_model_discovery=false"]);
   assert.equal(afterRetry.model_provider, "openai");
   const version = execFileSync(cli, ["--version"], { env, encoding: "utf8" }).trim();
