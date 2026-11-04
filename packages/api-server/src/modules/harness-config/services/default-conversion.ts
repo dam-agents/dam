@@ -215,7 +215,14 @@ export function createDefaultConverter(deps: {
     convert,
     ensure,
     async pendingAfterMove(agentId) {
-      if (!(await deps.movedToNewImage(agentId))) return false;
+      /** UNIT_BOUNDARY_DESCRIPTION: a "not set" is pending for "Run now" only
+       * while its conversion waits on the runtime's listing, as for a fire; one
+       * that converts or stays not set answers at once. */
+      if (!(await deps.movedToNewImage(agentId)))
+        return (
+          (await deps.pairRepo.read(agentId, "chat"))?.model === null &&
+          (await convert(agentId)) === "waiting"
+        );
       return (
         !(await deps.isRunning(agentId)) ||
         !(await deps.pairRepo.read(agentId, "chat"))
