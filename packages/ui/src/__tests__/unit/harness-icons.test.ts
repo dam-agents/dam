@@ -109,7 +109,7 @@ describe("harness icons on provider and preset cards", () => {
           ),
         );
       else {
-        expect(html).toContain("#1361FE");
+        expect(html).toContain('src="/icons/bob-head.png"');
         expect(html).not.toContain(
           renderToStaticMarkup(createElement(BobIcon)),
         );
@@ -143,7 +143,7 @@ describe("harness icons on provider and preset cards", () => {
     expect(html.match(/fill="currentColor"/g)).toHaveLength(6);
   });
 
-  // TEST_SCENARIO: a tile carries the vendor's full-colour mark, in its SVG, through a logo colour token or as black on white, while the untiled small size stays a one-colour glyph.
+  // TEST_SCENARIO: a tile carries the vendor's full-colour mark, in its SVG or image, through a logo colour token or as black on white, while the untiled small size stays a one-colour glyph.
   it.each(PROVIDER_PRESET_TYPES)(
     "uses the vendor's colours only on %s tiles",
     (provider) => {
@@ -151,11 +151,13 @@ describe("harness icons on provider and preset cards", () => {
         const html = renderToStaticMarkup(
           createElement(CardIcon, { provider, size }),
         );
-        expect(html).toContain("<svg");
-        expect(html).not.toMatch(/<img|<mask|🚅/);
+        expect(html).toMatch(
+          size !== "sm" && provider === "bob" ? /<img[^>]*alt=""/ : /<svg/,
+        );
+        expect(html).not.toMatch(/<mask|🚅/);
         if (size === "sm")
           expect(html).not.toMatch(/bg-|text-white|fill="#|gradient/);
-        else expect(html).toMatch(/fill="#|-logo-[a-z]+|text-black/);
+        else expect(html).toMatch(/fill="#|-logo-[a-z]+|text-black|<img/);
       }
     },
   );

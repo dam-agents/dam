@@ -1,4 +1,4 @@
-import { type SVGProps, useId } from "react";
+import type { SVGProps } from "react";
 
 export function LiteLLMIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -255,44 +255,6 @@ export function CurveBenderColorIcon(props: SVGProps<SVGSVGElement>) {
       <polygon points="24,476 241.7,76 302,183 142.5,476" fill="#2D4ED0" />
       <polygon points="241.7,76 360,76 302,183" fill="#448A5C" />
       <polygon points="360,76 497,322 379.4,322 302,183" fill="#5AB379" />
-    </svg>
-  );
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the head of IBM Bob's full-colour mascot, drawn
- * from the brand artwork: the blue-to-violet helmet over the grey face.
- */
-export function BobHeadColorIcon(props: SVGProps<SVGSVGElement>) {
-  const helmet = useId();
-  return (
-    <svg
-      viewBox="86 24 340 300"
-      fill="none"
-      stroke="#000"
-      strokeWidth="14"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      xmlns="http://www.w3.org/2000/svg"
-      {...props}
-    >
-      <defs>
-        <linearGradient id={helmet} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#1361FE" />
-          <stop offset="1" stopColor="#8840FC" />
-        </linearGradient>
-      </defs>
-      <rect x="100" y="205" width="32" height="72" rx="12" fill="#DDE1E6" />
-      <rect x="380" y="205" width="32" height="72" rx="12" fill="#DDE1E6" />
-      <rect x="128" y="176" width="256" height="136" rx="40" fill="#F2F4F8" />
-      <circle cx="200" cy="240" r="22" fill="#000" stroke="none" />
-      <circle cx="312" cy="240" r="22" fill="#000" stroke="none" />
-      <path d="M228 286q28 14 56 0" />
-      <path
-        d="M110 186v-14q20-78 112-98V44q0-8 8-8h52q8 0 8 8v30q92 20 112 98v14z"
-        fill={`url(#${helmet})`}
-      />
-      <path d="M150 156h212M234 44v72M278 44v72" strokeWidth="10" />
     </svg>
   );
 }

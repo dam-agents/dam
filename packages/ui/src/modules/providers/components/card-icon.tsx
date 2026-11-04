@@ -5,7 +5,6 @@ import {
   AnthropicIcon,
   BedrockColorIcon,
   BobFilledIcon,
-  BobHeadColorIcon,
   BobIcon,
   CurveBenderColorIcon,
   CurveBenderIcon,
@@ -18,6 +17,10 @@ import type { ProviderPresetType } from "../../../types.js";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
+function BobHead({ className }: { className?: string }) {
+  return <img src="/icons/bob-head.png" alt="" className={className} />;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a tile shows the vendor's own full-colour mark,
  * the same in both themes; `Icon` is the one-colour glyph for the untiled
@@ -25,19 +28,24 @@ type Icon = ComponentType<SVGProps<SVGSVGElement>>;
  */
 const STYLES: Record<
   ProviderPresetType,
-  { Icon: Icon; Mark: Icon; tile: string; mark: string }
+  {
+    Icon: Icon;
+    Mark: ComponentType<{ className?: string }>;
+    tile: string;
+    mark: string;
+  }
 > = {
   anthropic: {
     Icon: AnthropicIcon,
     Mark: AnthropicIcon,
     tile: "bg-white text-black",
-    mark: "size-3/5",
+    mark: "size-4/5",
   },
   openai: {
     Icon: OpenAIIcon,
     Mark: OpenAIIcon,
     tile: "bg-white text-black",
-    mark: "size-3/5",
+    mark: "size-4/5",
   },
   "ibm-litellm": {
     Icon: LiteLLMIcon,
@@ -49,13 +57,13 @@ const STYLES: Record<
     Icon: CurveBenderIcon,
     Mark: CurveBenderColorIcon,
     tile: "bg-white",
-    mark: "size-3/5",
+    mark: "size-4/5",
   },
   bob: {
     Icon: BobIcon,
-    Mark: BobHeadColorIcon,
+    Mark: BobHead,
     tile: "bg-white",
-    mark: "size-4/5",
+    mark: "size-full",
   },
   bedrock: { Icon: Cloud, Mark: BedrockColorIcon, tile: "", mark: "size-full" },
 };
@@ -91,7 +99,7 @@ export function CardIcon({
     <div
       aria-hidden="true"
       className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden ring-1 ring-border",
+        "flex shrink-0 items-center justify-center overflow-hidden",
         TILE_SIZE_CLASS[size],
         tile,
       )}
