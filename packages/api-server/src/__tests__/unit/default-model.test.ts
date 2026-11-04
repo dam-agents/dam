@@ -687,6 +687,21 @@ describe("the one-time default conversion", () => {
     expect(none.wakes).toEqual([]);
   });
 
+  // TEST_SCENARIO: "Run now" on an Agent whose default is "not set" converts it first, as a fire does: a running one is converted at once and runs, an asleep one is pending while it wakes for its listing, and one nothing can convert answers at once instead of waking.
+  it("converts a not set before Run now", async () => {
+    const notSet = { harness: "claude-code", provider: "anth", model: null };
+    const running = converter({ saved: notSet });
+    expect(await running.c.pendingAfterMove("a")).toBe(false);
+    expect(running.writes[0]?.model).toBe("anthropic/claude-opus-5-5");
+
+    const asleep = converter({ running: false, saved: notSet });
+    expect(await asleep.c.pendingAfterMove("a")).toBe(true);
+    expect(asleep.wakes).toEqual([]);
+
+    const none = converter({ running: false, saved: notSet, granted: [] });
+    expect(await none.c.pendingAfterMove("a")).toBe(false);
+  });
+
   // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM is not filled from Anthropic.
   it("keeps the harness and provider of a not set", async () => {
     const codex = converter({
