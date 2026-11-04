@@ -91,6 +91,27 @@ async function readHarnessListing(
 
 export interface RuntimeSessionsService extends SessionsService {
   adoptHarnessTitle(sessionId: string): Promise<void>;
+  adoptHarnessTitles(): Promise<void>;
+}
+
+async function readHarnessPages(
+  caller: InProcessCaller,
+  harness: string,
+  onPage: (
+    sessions: NonNullable<HarnessListPage["sessions"]>,
+  ) => boolean | void,
+): Promise<void> {
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_HARNESS_PAGES; page++) {
+    const result = await caller.request<HarnessListPage>("session/list", {
+      cwd: ".",
+      _meta: { platform: { harness } },
+      ...(cursor !== undefined && { cursor }),
+    });
+    if (onPage(result.sessions ?? []) === false) return;
+    cursor = result.nextCursor ?? undefined;
+    if (cursor === undefined) return;
+  }
 }
 
 const firstLine = (title: string | null | undefined): string =>
@@ -251,20 +272,13 @@ export function createSessionsService(deps: {
         });
         const harness = entry.meta.harness ?? deps.defaultHarness;
         if (harness === undefined) return;
-        let cursor: string | undefined;
         let title = "";
-        for (let page = 0; page < MAX_HARNESS_PAGES && !title; page++) {
-          const result = await caller.request<HarnessListPage>("session/list", {
-            cwd: ".",
-            _meta: { platform: { harness } },
-            ...(cursor !== undefined && { cursor }),
-          });
+        await readHarnessPages(caller, harness, (sessions) => {
           title = firstLine(
-            result.sessions?.find((s) => s.sessionId === sessionId)?.title,
+            sessions.find((s) => s.sessionId === sessionId)?.title,
           );
-          cursor = result.nextCursor ?? undefined;
-          if (cursor === undefined) break;
-        }
+          return title === "";
+        });
         const fresh = deps.sessionMetadata.get(sessionId);
         if (title && fresh && !fresh.meta.title && !fresh.meta.customTitle)
           deps.sessionMetadata.set(sessionId, { ...fresh.meta, title });
@@ -275,6 +289,75 @@ export function createSessionsService(deps: {
       } finally {
         caller.close();
         adopting.delete(sessionId);
+      }
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: a Session made by a runtime before the Model
+     * Router keeps no title on the platform, and an older runtime wrote
+     * neither `title` nor `customTitle`, so the list shows it untitled after
+     * the upgrade. At boot the runtime asks each harness once for its own
+     * listing and keeps the title it gives, skipping Sessions that already
+     * have one. The ceiling: the scan runs at every boot while any untitled
+     * entry remains — one the harness no longer lists never clears — and it
+     * starts that harness once per boot.
+     */
+    async adoptHarnessTitles() {
+      const untitled = new Map<string, Set<string>>();
+      for (const [sessionId, entry] of Object.entries(
+        deps.sessionMetadata.all(),
+      )) {
+        if (
+          entry.meta.title ||
+          entry.meta.customTitle ||
+          deps.sessionMetadata.isTombstoned(sessionId)
+        )
+          continue;
+        const harness = entry.meta.harness ?? deps.defaultHarness;
+        if (harness === undefined) continue;
+        const ids = untitled.get(harness) ?? new Set<string>();
+        ids.add(sessionId);
+        untitled.set(harness, ids);
+      }
+      if (untitled.size === 0) return;
+      const caller = deps.openCaller();
+      try {
+        await caller.request("initialize", {
+          protocolVersion: 1,
+          clientCapabilities: { fs: {} },
+          clientInfo: { name: "platform-sessions", version: "1.0.0" },
+        });
+        let kept = false;
+        for (const [harness, ids] of untitled) {
+          try {
+            await readHarnessPages(caller, harness, (sessions) => {
+              for (const { sessionId, title } of sessions) {
+                if (!ids.has(sessionId)) continue;
+                const fresh = deps.sessionMetadata.get(sessionId);
+                if (!fresh || fresh.meta.title || fresh.meta.customTitle)
+                  continue;
+                const line = firstLine(title);
+                if (!line) continue;
+                deps.sessionMetadata.set(sessionId, {
+                  ...fresh.meta,
+                  title: line,
+                });
+                kept = true;
+              }
+            });
+          } catch (error) {
+            deps.log(
+              `session titles: the ${harness} listing could not be read: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+        if (kept) deps.changes.announce();
+      } catch (error) {
+        deps.log(
+          `session titles: the harness listings could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        caller.close();
       }
     },
 
