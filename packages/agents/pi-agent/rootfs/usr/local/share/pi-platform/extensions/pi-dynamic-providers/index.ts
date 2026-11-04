@@ -329,7 +329,7 @@ function stampSession(pi: ExtensionAPI, everyCall = false): void {
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: with the Model Router, Pi holds one provider, "platform", whose models are the router's catalog, each on the API the model speaks best among the dialects its provider serves. The key is a placeholder that satisfies pi-acp's auth gate only. Pi's built-in openai and anthropic providers are turned off, since the keys in the machine's env are placeholders of Connections the router already serves.
+// UNIT_BOUNDARY_DESCRIPTION: with the Model Router, Pi holds one provider, "platform", whose models are the router's catalog, each on the API the model speaks best among the dialects its provider serves. The key is a placeholder that satisfies pi-acp's auth gate only. Pi's built-in openai and anthropic providers are turned off, since the keys in the machine's env are placeholders of Connections the router already serves. Pi starts on the session's model, else the saved default, else the platform's preferred work model the runtime names, and the catalog's first model only when the router lists none of those; the pick is saved as the default, so a fallback to the first model would stick for every later terminal.
 async function activateRouter(
   pi: ExtensionAPI,
   router: string,
@@ -381,11 +381,12 @@ async function activateRouter(
     typeof state.settings.defaultModel === "string"
       ? state.settings.defaultModel.toLowerCase()
       : undefined;
+  const preferred = env("PLATFORM_PREFERRED_MODEL")?.toLowerCase();
   const pick = (wanted: string | undefined) =>
     wanted ? listed.find((m) => m.id.toLowerCase() === wanted) : undefined;
   return {
     name: ROUTER_PROVIDER,
-    model: (pick(requested) ?? pick(saved) ?? listed[0]).id,
+    model: (pick(requested) ?? pick(saved) ?? pick(preferred) ?? listed[0]).id,
   };
 }
 

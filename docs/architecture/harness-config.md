@@ -84,7 +84,7 @@ The `session-defaults` event carries the automatic model too.
 The relay holds the frames after it until the default is read, so they reach the runtime in the order the client sent them.
 A session from before the Model Router carries no model, and it ran on the agent's one provider and its default model, so a channel turn or an api-server trigger that continues it pins the agent's default of that kind on it first, and a one-time task or a sub-agent result that continues it pins the model the event names.
 A chat prompt in a session with no model takes its kind's default first; with none, it is refused, as is a scheduled run or such a task naming no model.
-A web terminal is the exception: the person sees its model in the harness's own screen and can switch it there, so a new terminal starts with no model and no session settings, on the harness's own default.
+A web terminal is the exception: the person sees its model in the harness's own screen and can switch it there, so a new terminal starts with no session settings, on the chat default's model when that default is on its harness and its provider is granted, else with no model, on the harness's own default.
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.
 The runtime sends it again whenever the session is loaded or resumed into a harness process.
@@ -258,6 +258,7 @@ A harness without a `modelRouter` section (a custom template's or a kit image's 
 Routed harnesses answer from the [model catalog](#the-model-catalog) instead.
 Nothing is seeded into a harness's config file; a run with no choice gets the agent's default ([session settings](#session-settings)).
 A routed harness that refuses to start without a model names a variable in its manifest's `defaultModelEnv` (Copilot's `COPILOT_MODEL`), and the runtime sets it to the first model of the default provider that serves the harness; the session's own model then reaches it over ACP.
+A routed harness whose own default is just whatever the router lists first names a variable in its manifest's `preferredModelEnv` (Pi's `PLATFORM_PREFERRED_MODEL`), and the runtime sets it to the platform's preferred work model across the providers that serve the harness; Pi starts on it when neither `PLATFORM_MODEL` nor its saved router default names a model the router lists, and the router's first model is left only for a listing with no preferred model.
 A model the provider does not list fails the turn with the router's reason rather than being replaced.
 
 A harness process switches to the router only when the runtime marks a granted provider as routed for it, so Pi on Bedrock alone runs its own Bedrock provider.

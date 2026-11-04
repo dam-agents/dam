@@ -1,0 +1,97 @@
+#!/usr/bin/env node
+//MISE description="Test that Pi with no session model and no saved router default starts on the platform's preferred work model, not the router's first listed one, and saves it"
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/**", ".mise/tasks/test/pi-router-preferred-model", "../../pnpm-lock.yaml"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
+const extension = join(root, "rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts");
+const cli = join(dirname(extension), "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+const home = mkdtempSync(join(tmpdir(), "pi-router-preferred-model-"));
+
+const HAIKU = "ibm/aws/claude-haiku-5-5";
+const OPUS = "ibm/aws/claude-opus-5-5";
+const entry = (id, upstreamId) => ({
+  id, object: "model", owned_by: "ibm", display_name: upstreamId, description: "ibm",
+  metadata: { alias: "ibm", upstreamId, dialects: ["anthropic-messages", "openai-chat", "openai-responses"], contextWindow: 200000, maxOutputTokens: 8192, reasoning: true, vision: true, cacheControl: "anthropic", thinkingFormat: null, prices: null },
+});
+const catalog = [entry(HAIKU, "aws/claude-haiku-5-5"), entry(OPUS, "aws/claude-opus-5-5")];
+const router = createServer((req, res) => {
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(req.url.endsWith("/v1/models") ? { data: catalog, has_more: false } : {}));
+});
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+const routerUrl = `http://127.0.0.1:${router.address().port}`;
+
+const shared = join(home, ".pi/agent");
+mkdirSync(shared, { recursive: true });
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
+writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("extensions=/usr/local/share/pi-platform/extensions", `extensions=${dirname(dirname(extension))}`);
+writeFileSync(join(home, "pi-platform"), wrapper);
+
+// One Pi process as a web terminal starts it: the router's env, and no PLATFORM_MODEL.
+async function startedModel(settings, extraEnv) {
+  writeFileSync(join(shared, "settings.json"), JSON.stringify({ packages: [], ...settings }));
+  const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates"], {
+    cwd: home,
+    env: { PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost", PLATFORM_MODEL_ROUTER_URL: routerUrl, PLATFORM_MODEL_ROUTER_SERVES: "1", ...extraEnv },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let errors = "";
+  child.stderr.on("data", (d) => { errors += d; });
+  let output = "";
+  const state = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`get_state timed out: ${errors.slice(-800)}`)), 60_000);
+    child.stdout.on("data", (data) => {
+      output += data;
+      const lines = output.split("\n");
+      output = lines.pop() ?? "";
+      for (const line of lines) {
+        let message;
+        try { message = JSON.parse(line); } catch { continue; }
+        if (message.type === "response" && message.id === "state") { clearTimeout(timer); resolve(message); }
+      }
+    });
+    child.once("exit", (code) => { clearTimeout(timer); reject(new Error(`pi exited ${code}: ${errors.slice(-800)}`)); });
+  });
+  child.stdin.write(`${JSON.stringify({ type: "get_state", id: "state" })}\n`);
+  try {
+    const answer = await state;
+    assert.equal(answer.success, true, JSON.stringify(answer).slice(0, 500));
+    return { model: `${answer.data.model?.provider}:${answer.data.model?.id}`, saved: JSON.parse(readFileSync(join(shared, "settings.json"), "utf8")) };
+  } finally {
+    if (child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  }
+}
+
+try {
+  // TEST_SCENARIO: A terminal with no model, on a fresh home and on one whose saved default is not the router's, starts on the preferred work model the runtime names and saves it, so the next terminal does not start on the router's first model (Haiku) either.
+  for (const settings of [{}, { defaultProvider: "anthropic", defaultModel: "claude-sonnet-4-6" }]) {
+    const preferred = await startedModel(settings, { PLATFORM_PREFERRED_MODEL: OPUS });
+    assert.equal(preferred.model, `platform:${OPUS}`, JSON.stringify(settings));
+    assert.equal(preferred.saved.defaultProvider, "platform");
+    assert.equal(preferred.saved.defaultModel, OPUS);
+  }
+
+  // TEST_SCENARIO: A saved router default the router lists still wins over the preferred model: it is what the person last picked in a terminal.
+  const saved = await startedModel({ defaultProvider: "platform", defaultModel: HAIKU }, { PLATFORM_PREFERRED_MODEL: OPUS });
+  assert.equal(saved.model, `platform:${HAIKU}`);
+
+  // TEST_SCENARIO: With no preferred model listed, the router's first model is still the last resort, so Pi always starts on something.
+  const first = await startedModel({}, {});
+  assert.equal(first.model, `platform:${HAIKU}`);
+  console.log("pi-router-preferred-model: a terminal with no model starts on the preferred work model, after the saved default, before the router's first");
+} finally {
+  router.close();
+  rmSync(home, { recursive: true, force: true });
+}
