@@ -391,7 +391,7 @@ export function agentsInstallSettings(config: Config) {
   };
 }
 
-const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc\d+)?$/;
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc\.?\d+)?$/;
 
 function recommendedClientCliVersion(appVersion: string): string | undefined {
   return RELEASE_VERSION.test(appVersion) ? appVersion : undefined;

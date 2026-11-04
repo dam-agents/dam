@@ -10,14 +10,14 @@ The `mise run check:version` task enforces they stay in sync.
 main (0.3.0)
   │
   ├─ mise run release:new
-  │    creates release-v0.3.0 branch (0.3.0-rc1)
+  │    creates release-v0.3.0 branch (0.3.0-rc.1)
   │    opens PR bumping main to 0.3.1
   │
   │  release-v0.3.0
   │  │
-  │  ├─ mise run release:publish-rc     → tags v0.3.0-rc1, CD publishes, bumps to 0.3.0-rc2
+  │  ├─ mise run release:publish-rc     → tags v0.3.0-rc.1, CD publishes, bumps to 0.3.0-rc.2
   │  ├─ (cherry-pick fixes, repeat)
-  │  ├─ mise run release:publish-rc     → tags v0.3.0-rc2, CD publishes, bumps to 0.3.0-rc3
+  │  ├─ mise run release:publish-rc     → tags v0.3.0-rc.2, CD publishes, bumps to 0.3.0-rc.3
   │  └─ mise run release:publish-stable → tags v0.3.0, CD publishes
   │
   v
@@ -31,7 +31,7 @@ The task:
 
 1. Checks out and pulls `main`.
 2. Reads the current version (e.g. `0.3.0`) from Chart.yaml.
-3. Creates `release-v0.3.0` from `main`, bumps it to `0.3.0-rc1`, pushes.
+3. Creates `release-v0.3.0` from `main`, bumps it to `0.3.0-rc.1`, pushes.
 4. Opens a PR bumping `main` to `0.3.1`, with auto-merge enabled (`main` is protected and requires one approval, so direct pushes don't work).
 
 To release a different version than what's on main, run `mise run release:set-version <version>` on `main` first.
@@ -41,9 +41,14 @@ To release a different version than what's on main, run `mise run release:set-ve
 Run from the release branch.
 The task:
 
-1. Tags the current commit (e.g. `v0.3.0-rc1`) and pushes tag + branch atomically.
+1. Tags the current commit (e.g. `v0.3.0-rc.1`) and pushes tag + branch atomically.
 2. The `v*` tag starts a [`cd.yml`](../../.github/workflows/cd.yml) run: [`build.yml`](../../.github/workflows/build.yml) builds the images, then `cd.yml`'s `publish release` job pushes the Helm chart and publishes the CLI to npm with `--tag rc`.
-3. Bumps the branch to the next RC (`0.3.0-rc2`).
+3. Bumps the branch to the next RC (`0.3.0-rc.2`).
+
+The dot before the number is load-bearing.
+Semver reads `rc.2` as two identifiers and compares the second as a number, so `rc.9` sorts below `rc.10`.
+Without the dot the whole `rcN` is one alphanumeric identifier, which semver compares as text: `rc9` sorts above `rc10`, and a GitOps source that tracks a semver range stays on the older candidate.
+The branches cut before this rule carry `-rcN`; the tooling still reads that spelling and counts it up, so a branch mid-release does not break.
 
 Repeat as needed — cherry-pick fixes onto the release branch and publish another RC.
 
@@ -52,7 +57,7 @@ Repeat as needed — cherry-pick fixes onto the release branch and publish anoth
 Run from the release branch when the latest RC is validated.
 The task:
 
-1. Strips the `-rcN` suffix (e.g. `0.3.0-rc3` → `0.3.0`), commits.
+1. Strips the `-rc.N` suffix (e.g. `0.3.0-rc.3` → `0.3.0`), commits.
 2. Tags `v0.3.0` and pushes.
 3. CD publishes everything as a stable release (images tagged `latest`, npm `--tag latest`).
 
@@ -62,11 +67,11 @@ A hotfix ships a fix on top of the release in production, without the rest of `m
 Run from a clean working directory.
 The task:
 
-1. Takes the tag of the latest published GitHub Release (e.g. `v0.3.0-rc2`), or the tag given as `base`.
+1. Takes the tag of the latest published GitHub Release (e.g. `v0.3.0-rc.2`), or the tag given as `base`.
    A published Release is what production runs; a stable tag alone is not.
 2. Takes the next patch above every existing version tag and `release-v*` branch (e.g. `0.3.1`, or `0.3.2` when `0.3.1` is tagged but never published).
    It warns when it skips versions, because the hotfix does not contain them.
-3. Creates `release-v0.3.1` from the base tag, not from `main`, bumps it to `0.3.1-rc1`, pushes.
+3. Creates `release-v0.3.1` from the base tag, not from `main`, bumps it to `0.3.1-rc.1`, pushes.
 4. If `main` is at `0.3.1` or lower, opens a PR bumping `main` to `0.3.2` and closes any older bump PR, so the next regular release does not reuse the hotfix version.
 
 Then merge the fix to `main` first, cherry-pick it onto the hotfix branch with `git cherry-pick -x <sha>`, push, and publish with `release:publish-rc` or `release:publish-stable` as for any release.

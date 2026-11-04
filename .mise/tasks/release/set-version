@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Update version fields in all release-participating packages and commit"
-#USAGE arg "<version>" help="The new version to set (format: X.Y.Z or X.Y.Z-rcW)"
+#USAGE arg "<version>" help="The new version to set (format: X.Y.Z or X.Y.Z-rc.N)"
 set -euo pipefail
 
 if [[ -n "$(git status --porcelain)" ]]; then
@@ -8,9 +8,9 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
-if ! [[ "$usage_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then
+if ! [[ "$usage_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc\.?[0-9]+)?$ ]]; then
   echo "ERROR: Invalid version format: $usage_version"
-  echo "Expected format: X.Y.Z or X.Y.Z-rcW (e.g., 1.2.3 or 1.2.3-rc1)"
+  echo "Expected format: X.Y.Z or X.Y.Z-rc.N (e.g., 1.2.3 or 1.2.3-rc.1)"
   exit 1
 fi
 
