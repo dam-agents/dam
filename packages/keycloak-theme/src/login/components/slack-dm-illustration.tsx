@@ -43,14 +43,19 @@ function useAnimationStep(paused: boolean, reduceMotion: boolean) {
       setStep(4);
       return;
     }
-    if (paused || hasPlayed.current) return;
+    if (hasPlayed.current) {
+      setStep(BEATS.length - 1);
+      return;
+    }
+    if (paused) return;
 
     hasPlayed.current = true;
 
     const offset = 300;
-    for (let i = 0; i < BEATS.length; i++) {
-      setTimeout(() => setStep(i), BEATS[i] + offset);
-    }
+    const timers = BEATS.map((beat, i) =>
+      setTimeout(() => setStep(i), beat + offset),
+    );
+    return () => timers.forEach(clearTimeout);
   }, [paused, reduceMotion]);
 
   return step;
