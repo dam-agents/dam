@@ -96,6 +96,7 @@ export const invocationViewSchema = z.object({
   errorReason: z.string().optional(),
   exitCode: z.number().int().optional(),
   output: invocationOutputSchema.optional(),
+  waiting: z.string().optional(),
 });
 
 export const invocationOutputLinkSchema = invocationOutputBlobSchema.extend({

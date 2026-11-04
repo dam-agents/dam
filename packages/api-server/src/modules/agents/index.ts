@@ -19,6 +19,7 @@ export {
   type AgentsRepository,
   type AgentActivityStamp,
 } from "./infrastructure/agents-repository.js";
+export { startWaitOf } from "./domain/start-wait.js";
 export { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 export { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 export {

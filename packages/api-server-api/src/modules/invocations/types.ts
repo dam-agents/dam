@@ -70,6 +70,7 @@ export interface DelegationNode {
   connections: string[];
   requestedModel: string | null;
   createdAt: string;
+  started: boolean;
   completedAt: string | null;
   transcriptAvailable: boolean;
   children: DelegationNode[];
