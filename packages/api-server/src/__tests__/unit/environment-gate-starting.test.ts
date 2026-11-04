@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The Environment gate while an Environment is asleep, waking or its app not ready yet. A page load wakes a sleeping Environment and gets the "Starting…" loading page at once, with status 503, `Retry-After` and no caching; the page asks the gate's status under `/.platform/`, which says starting until the endpoint is ready and refreshes the Environment's activity as any request does. Every other request, a script's call or a WebSocket, gets a plain 503 with `Retry-After`, never HTML or a 200. An endpoint is ready once its readiness path answers 2xx or 3xx, or without one once anything answers on its port; an app's own error still counts as an answer. A wake that fails ends on "did not start", with one button that tries again. Once ready the gate relays without probing again, until a relay finds nothing listening or the Environment wakes again.
+// TEST_OVERVIEW: The Environment gate while an Environment is asleep, waking or its app not ready yet. A page load wakes a sleeping Environment and gets the "Starting…" loading page at once, with status 503, `Retry-After` and no caching; the page asks the gate's status under `/.platform/`, which says starting until the endpoint is ready and refreshes the Environment's activity as any request does. Every other request, a script's call or a WebSocket, gets a plain 503 with `Retry-After`, never HTML or a 200. An endpoint is ready once its readiness path answers 2xx or 3xx, or without one once anything but a proxy's 502, 503 or 504 answers on its port, as a bridge or an ingress answers in front of an app still starting; an app's own 500 still counts as an answer. A wake that fails ends on "did not start", with one button that tries again. Once ready the gate relays without probing again, until a relay finds nothing listening or the Environment wakes again.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -24,9 +24,13 @@ afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
 });
 
-// UNIT_BOUNDARY_DESCRIPTION: a gate in front of one Environment whose machine and app the test drives: `sleeping` makes the next wake wait until `wake()` or `failWake()`, `listening` says whether anything answers on the endpoint's port, and `healthy` whether its readiness path answers 200.
+// UNIT_BOUNDARY_DESCRIPTION: a gate in front of one Environment whose machine and app the test drives: `sleeping` makes the next wake wait until `wake()` or `failWake()`, `listening` says whether anything answers on the endpoint's port, `proxyWaiting` makes what answers there a proxy with nothing behind it yet, and `healthy` whether its readiness path answers 200.
 async function world(opts: { ready?: string } = {}) {
-  const app = { listening: false, healthy: false };
+  const app = {
+    listening: false,
+    healthy: false,
+    proxyWaiting: null as null | 502 | 503 | 504,
+  };
   const probes: string[] = [];
   const relayed: string[] = [];
   const runtime = http.createServer((req, res) => {
@@ -42,6 +46,10 @@ async function world(opts: { ready?: string } = {}) {
     }
     if (req.method === "HEAD") probes.push(`HEAD ${path}`);
     else relayed.push(path);
+    if (app.proxyWaiting !== null) {
+      res.writeHead(app.proxyWaiting).end("no available server");
+      return;
+    }
     res.writeHead(path === "/broken" ? 500 : 200).end("from the app");
   });
   new WebSocketServer({ server: runtime });
@@ -230,6 +238,27 @@ describe("the gate while an Environment starts", () => {
     expect(await w.status()).toBe("ready");
     expect((await w.request("/", PAGE)).status).toBe(200);
     expect(w.probes.every((p) => p === "GET /healthz")).toBe(true);
+  });
+
+  // TEST_SCENARIO: an endpoint with no readiness path, behind a proxy that answers 502, 503 or 504 while the app behind it starts, as a DAM install inside an Environment does, shows the loading page rather than the proxy's error, and lets the visitor through once the app answers.
+  it("waits behind a proxy that has nothing to send to yet", async () => {
+    const w = await world();
+    w.app.listening = true;
+
+    for (const status of [502, 503, 504] as const) {
+      w.app.proxyWaiting = status;
+      const res = await w.request("/", PAGE);
+      expect(res.status).toBe(503);
+      expect(res.body).toContain("Starting…");
+      expect(await w.status()).toBe("starting");
+    }
+    expect(w.relayed).toEqual([]);
+
+    w.app.proxyWaiting = null;
+    expect(await w.status()).toBe("ready");
+    const res = await w.request("/", PAGE);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("from the app");
   });
 
   // TEST_SCENARIO: an API call, a script request or a WebSocket while the app starts gets a plain 503 with Retry-After: never the HTML page, and never a 200 a health check would read as up.

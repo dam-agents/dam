@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -105,7 +105,7 @@ The api-server names the declared ports on every request, so a port the Environm
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
 - **Wake and readiness.** A request to a sleeping Environment starts its wake and never waits for it.
-  The gate relays to an endpoint only once its app is **ready**: its readiness path, if the endpoint declares one (`ready: "/healthz"` on create, or set by endpoint name on update), answers 2xx or 3xx; without one, anything answers on its port, an app's own error included.
+  The gate relays to an endpoint only once its app is **ready**: its readiness path, if the endpoint declares one (`ready: "/healthz"` on create, or set by endpoint name on update), answers 2xx or 3xx; without one, anything answers on its port but a proxy's 502, 503 or 504, which a bridge or an ingress in front of an app still starting answers at once; an app's own 500 counts as an answer.
   The runtime marks its own 502 when nothing listens on the port, so the gate tells an app that has not started from one that answers with an error.
   A readiness path matters where something answers before the app does, such as a k3s ingress in front of it.
   The gate keeps a "not ready" for a few seconds, so a burst of requests costs one probe; a "ready" it keeps until a relay finds nothing listening or the Environment wakes again, so a running app costs no probe per request.

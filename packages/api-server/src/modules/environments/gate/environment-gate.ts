@@ -47,6 +47,7 @@ const PROBE_TIMEOUT_MS = 5_000;
 const RETRY_AFTER_S = 5;
 const SLOW_AFTER_MS = 5 * 60_000;
 const NO_STORE = "private, no-store";
+const PROXY_WAITING_STATUSES = new Set([502, 503, 504]);
 const HOP_BY_HOP = [
   "transfer-encoding",
   "keep-alive",
@@ -115,6 +116,10 @@ interface ProbeTarget {
   publicHost: string;
 }
 
+function isProxyWaiting(status: number): boolean {
+  return PROXY_WAITING_STATUSES.has(status);
+}
+
 export const noEnvironmentGate: EnvironmentGate = {
   middleware: (_c, next) => next(),
   handleUpgrade: () => false,
@@ -178,7 +183,7 @@ export function createEnvironmentGate(
     };
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: whether an endpoint's app answers: its readiness path with 2xx or 3xx, or, without one, anything at all on its port. The runtime marks its own answer when nothing listens there, so an app's own 502 still counts as an answer.
+  // UNIT_BOUNDARY_DESCRIPTION: whether an endpoint's app answers: its readiness path with 2xx or 3xx, or, without one, anything on its port but a proxy's "nothing behind me yet" (502, 503, 504), which a bridge or an ingress in front of a starting app answers at once. The runtime marks its own answer when nothing listens there; an app's own 500 counts as an answer.
   async function probe(target: ProbeTarget): Promise<boolean> {
     const runtime = deps.upstream(target.agentId);
     const answer = await fetch(
@@ -196,7 +201,7 @@ export function createEnvironmentGate(
     );
     void answer.body?.cancel().catch(() => {});
     if (answer.headers.has(UNREACHABLE_HEADER)) return false;
-    if (target.ready === undefined) return true;
+    if (target.ready === undefined) return !isProxyWaiting(answer.status);
     return answer.status >= 200 && answer.status < 400;
   }
 
