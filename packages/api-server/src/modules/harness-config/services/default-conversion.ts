@@ -49,10 +49,10 @@ const LISTING_WAIT_MS = 120_000;
  * Agent still on an older runtime, or whose providers have not listed, or are
  * unsupported only because an older runtime's env names no template for them,
  * is left for a later try. A fire
- * wakes an Agent first only while it is moved to a new image or its default is
- * "not set", and it is asleep, so the fire is checked and resolved against the
- * running runtime, not the one its last hello came from; that start ends the
- * move. When the new runtime does
+ * wakes an Agent first only while it is moved to a new image, or its default
+ * is "not set" and waits on the runtime's listing, and it is asleep, so the
+ * fire is checked and resolved against the running runtime, not the one its
+ * last hello came from; that start ends the move. When the new runtime does
  * not say hello in time, the fire fails as still setting up rather than go
  * out with the old runtime's view.
  */
@@ -111,12 +111,18 @@ export function createDefaultConverter(deps: {
     if (saved?.model) return "saved";
     const capabilities = await deps.getCapabilities(agentId);
     if (!routesByModelName(capabilities)) return "old-runtime";
+    /** UNIT_BOUNDARY_DESCRIPTION: a "not set" keeps the harness and the
+     * provider it names, so converting it again never moves the agent's runs
+     * to another harness or provider. */
     const harness =
+      saved?.harness ??
       defaultHarnessOf(capabilities) ??
       (await deps.specHarness(agentId)) ??
       deps.catalog.default;
     const fitting = (await deps.pairRepo.grantedProviders(agentId)).filter(
-      (p) => harnessFits(deps.catalog, harness, p.type, p.templateId),
+      (p) =>
+        harnessFits(deps.catalog, harness, p.type, p.templateId) &&
+        (!saved?.provider || p.id === saved.provider),
     );
     if (fitting.length === 0)
       return save(agentId, saved, { harness, provider: null, model: null });
@@ -218,7 +224,14 @@ export function createDefaultConverter(deps: {
     async ensureForFire(agentId) {
       const notSet =
         (await deps.pairRepo.read(agentId, "chat"))?.model === null;
-      if (!notSet && !(await deps.movedToNewImage(agentId))) return null;
+      /** UNIT_BOUNDARY_DESCRIPTION: a "not set" wakes the agent only when the
+       * conversion waits on its runtime's listing, so an agent nothing can
+       * convert fails its fire without being woken each time. */
+      if (
+        !(await deps.movedToNewImage(agentId)) &&
+        (!notSet || (await convert(agentId)) !== "waiting")
+      )
+        return null;
       let stamp: WakeStamp | null = null;
       if (!(await deps.isRunning(agentId))) {
         const since = now();

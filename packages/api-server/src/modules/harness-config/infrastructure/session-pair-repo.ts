@@ -113,7 +113,7 @@ export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
             eq(agentsTable.id, agentId),
             or(
               isNull(agentsTable.sessionPair),
-              sql`${agentsTable.sessionPair}->'model' = 'null'::jsonb`,
+              sql`${agentsTable.sessionPair}->>'model' IS NULL`,
             ),
           ),
         )
