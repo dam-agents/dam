@@ -20,6 +20,10 @@ export type NewSlackOwnedThread = Omit<
 export interface SlackOwnedThreads {
   own(thread: NewSlackOwnedThread): Promise<void>;
   find(channelId: string, threadTs: string): Promise<SlackOwnedThread | null>;
+  findForAgent(
+    agentId: string,
+    threadTs: string,
+  ): Promise<SlackOwnedThread | null>;
   listForSession(
     agentId: string,
     sessionId: string,
@@ -71,6 +75,19 @@ export function createSlackOwnedThreadsRepository(db: Db): SlackOwnedThreads {
             eq(slackOwnedThreads.threadTs, threadTs),
           ),
         );
+      return row ?? null;
+    },
+    async findForAgent(agentId, threadTs) {
+      const [row] = await db
+        .select()
+        .from(slackOwnedThreads)
+        .where(
+          and(
+            eq(slackOwnedThreads.agentId, agentId),
+            eq(slackOwnedThreads.threadTs, threadTs),
+          ),
+        )
+        .limit(1);
       return row ?? null;
     },
     async listForSession(agentId, sessionId) {
@@ -152,6 +169,13 @@ export function createMemorySlackOwnedThreads(): SlackOwnedThreads {
     },
     async find(channelId, threadTs) {
       return rows.get(key(channelId, threadTs)) ?? null;
+    },
+    async findForAgent(agentId, threadTs) {
+      return (
+        [...rows.values()].find(
+          (r) => r.agentId === agentId && r.threadTs === threadTs,
+        ) ?? null
+      );
     },
     async listForSession(agentId, sessionId) {
       return [...rows.values()]

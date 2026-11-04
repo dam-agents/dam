@@ -2253,20 +2253,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ttlMs: OFFERED_THREAD_TTL_MS,
   });
 
-  async function ownedThreadOf(
-    instanceName: string,
-    threadTs: string,
-    bound: SlackBoundConversation[],
-  ): Promise<{ channel: string } | null> {
-    for (const conversation of bound) {
-      const owned = await ownedThreads
-        .find(conversation.id, threadTs)
-        .catch(() => null);
-      if (owned?.agentId === instanceName) return { channel: conversation.id };
-    }
-    return null;
-  }
-
   function noteOfferedThreads(
     instanceName: string,
     channel: string,
@@ -7558,9 +7544,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
-      const offered =
-        readOfferedThread(instanceName, query.threadTs) ??
-        (await ownedThreadOf(instanceName, query.threadTs, bound));
+      const owned = await ownedThreads
+        .findForAgent(instanceName, query.threadTs)
+        .catch(() => null);
+      const offered = owned
+        ? { channel: owned.channelId }
+        : readOfferedThread(instanceName, query.threadTs);
       if (!offered) {
         return {
           error:
@@ -7571,7 +7560,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             "with its full history",
         };
       }
-      const target = bound.find((c) => c.id === offered.channel);
+      const target = owned
+        ? { id: owned.channelId, teamId: owned.teamId }
+        : bound.find((c) => c.id === offered.channel);
       if (!target) {
         return {
           error:

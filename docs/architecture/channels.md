@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -119,6 +119,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 
 - **Thread-session binding.** A thread maps to one resumable session, so the agent gets real conversational continuity.
   The binding is carried on the session itself, resolved by listing sessions over ACP and matching — there is no server-side session store.
+  The one exception is a thread a Session started with `start_thread`: the platform records that Session as its owner, so a reply there reaches it without a session of its own ([channel-turns](channel-turns.md#threading-model)).
 
 ## Topology
 
@@ -143,6 +144,7 @@ flowchart LR
 
   subgraph DB[Postgres]
     LNK[(identity_links<br/>provider=slack)]
+    OWN[(slack_owned_threads<br/>thread → session)]
   end
 
   POD[machine]
@@ -152,9 +154,10 @@ flowchart LR
   CM --> SW
   SW --> IL
   IL --> LNK
+  SW -- owned thread? --> OWN
   SW -- ACP session/list + relay frames --> REL
   REL <--> POD
-  POD -- send_channel_message --> MCP
+  POD -- post / reply --> MCP
   MCP --> CM
 ```
 
@@ -188,7 +191,7 @@ flowchart LR
   TW -- resolve binding --> BND
   TW -- ACP session/list + relay frames --> REL
   REL <--> POD
-  POD -- send_channel_message --> MCP
+  POD -- post / reply --> MCP
   MCP --> CM
 ```
 
@@ -321,7 +324,7 @@ Which of two strategies an optional scope gets follows from what its absence mea
 - **Degrade to a smaller result**, when a partial answer is still useful: attempted reactively, with a missing-scope failure caught and turned into a narrower result rather than an outright failure.
   `describe_channel` without the channel-list scopes still returns the bound conversations; a user profile without `users:read.email` still resolves, minus its `email` field; a bound conversation's label, shown beside the binding in the UI, is the channel's name, the person a 1:1 DM is with, or a group DM's members; it falls back to the raw conversation id when Slack refuses the lookup or does not answer within a short budget, and a conversation Slack no longer knows (deleted, or private with the bot removed) is marked unavailable so its binding can be disconnected — the agent list is a core read and never waits on Slack for long, and names are cached briefly so it rarely asks at all.
 - **Agent persona on posts** is the one optional scope read proactively.
-  With `chat:write.customize`, an agent's own posts (`send_channel_message`, `reply`) carry its name as the username and its avatar as the icon, so a conversation with several Agents shows who said what.
+  With `chat:write.customize`, an agent's own posts (`post`, `start_thread`, `reply`) carry its name as the username and its avatar as the icon, so a conversation with several Agents shows who said what.
   Slack does not say whether it refuses or ignores those fields without the scope, so the override is sent only where the granted set is **known** to include it; an unknown set posts under the app's identity, the same message as before.
   Slack fetches the icon from the public internet and an install has no public URL of its own, so the api-server draws the [avatar](agent-avatars.md) — the one the owner sees in the UI: the one stored on the Agent, or else the character picked from the owner and the Agent name — to a PNG, or reads the uploaded one, and uploads it to ImgBB, named by a hash.
   An emoji avatar is not uploaded: the icon is the public Twemoji PNG for it.
