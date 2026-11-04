@@ -19,8 +19,11 @@ tools=$MISE_SYSTEM_DATA_DIR
 # either, the install fails and the kubelet restarts it.
 # The npm tools are aube's, against the image's npm setting: `mise exec` below
 # takes them for missing without it.
+# No skill fetch: aube's declared skill comes from api.github.com, unpinned,
+# and one failed fetch fails aube's install and every npm tool behind it.
 export MISE_HTTP_RETRIES=6 MISE_HTTP_DOWNLOAD_TIMEOUT=5m \
-  MISE_CACHE_DIR="$tools/cache" MISE_LOCKFILE=1 MISE_NPM_PACKAGE_MANAGER=aube MISE_GITHUB_SLSA=false
+  MISE_CACHE_DIR="$tools/cache" MISE_LOCKFILE=1 MISE_NPM_PACKAGE_MANAGER=aube MISE_GITHUB_SLSA=false \
+  MISE_SKILLS_FETCH=false
 mise install --system
 # aube unpacks agent-browser's native binaries without their exec bit, and its
 # launcher's chmod fails on the volume agents mount read-only: set it here.
