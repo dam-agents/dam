@@ -38,6 +38,9 @@ export interface AgentWake {
  * breaks one breaks this: a cached read sees what the controller last wrote, a
  * live read is not stale when a timeout is decided, and a change subscription
  * wakes on the Agent it names.
+ * A call that joins one already running hears `onWaking` only once that call
+ * found the Agent not ready, never while it only stamps a running Agent's
+ * activity.
  */
 export function createAgentWake(deps: {
   readCached(id: string): Promise<KubeObject | null>;
@@ -46,8 +49,6 @@ export function createAgentWake(deps: {
   bumpLastActivity(id: string): Promise<void>;
   whenChanged(id: string): AgentChangeSubscription;
 }): AgentWake {
-  // A call joined while it runs tells its joiners it wakes the Agent only once
-  // it found the Agent not ready, never for one that runs.
   const inflight = new Map<
     string,
     { work: Promise<void>; waking: boolean; joiners: Array<() => void> }
