@@ -42,7 +42,6 @@ import {
   sameModel,
   sameSideGroups,
 } from "../lib/catalog-groups.js";
-import { prettyModelLabel } from "../lib/model-families.js";
 import {
   harnessDisplayName,
   modelProviderLabel,
@@ -255,9 +254,7 @@ export function ModelIndicator({
               harnessName &&
               [
                 routed
-                  ? primary && model
-                    ? `${primary.name} · ${prettyModelLabel(model) ?? model}`
-                    : modelName
+                  ? modelName
                   : modelProviderLabel(
                       modelName,
                       activeProvider?.name,

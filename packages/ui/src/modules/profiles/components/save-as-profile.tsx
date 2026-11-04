@@ -18,15 +18,15 @@ import { prettyModelLabel } from "../../sessions/lib/model-families.js";
 import { harnessDisplayName } from "../../sessions/lib/session-pair-options.js";
 import { sessionSettingOptions } from "../../sessions/lib/session-settings.js";
 import { profileSettings } from "../../sessions/lib/subagent-choice.js";
-import { useCreateProfile, useUpdateProfile } from "../api/mutations.js";
+import { useCreateProfile } from "../api/mutations.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the More options header of the picker: "Save as
- * a profile" names the pick, and on a pick that came from a profile "Update
- * {name}" writes it back to that profile beside "Save as a new profile" (D95
- * B), subagent included (D193B). Not offered on a shared agent, whose editor
- * uses the owner's profiles and never changes them. The dialog renders
- * outside the picker's popover, which an outside click closes.
+ * profile" names the pick, or "Save as a new profile" when the pick came from
+ * or matches an existing one, subagent included (D193B). It always creates a
+ * profile; the picker has no Update action. Not offered on a shared agent,
+ * whose editor uses the owner's profiles and never changes them. The dialog
+ * renders outside the picker's popover, which an outside click closes.
  */
 export function useSaveAsProfile({
   agentId,
@@ -50,11 +50,10 @@ export function useSaveAsProfile({
   const { data: catalog } = useHarnessCatalog();
   const nameId = useId();
   const create = useCreateProfile();
-  const update = useUpdateProfile();
-  const [open, setOpen] = useState<"create" | "update" | null>(null);
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const saving = create.isPending || update.isPending;
+  const saving = create.isPending;
   if (
     !agentId ||
     !pair?.model ||
@@ -63,7 +62,6 @@ export function useSaveAsProfile({
   )
     return { row: null, dialog: null };
 
-  const updating = open === "update" ? from : null;
   const effort = sessionSettingOptions(capability).find(
     (o) => o.category === "thought_level" && !o.subagents,
   );
@@ -99,52 +97,32 @@ export function useSaveAsProfile({
       settings: profileSettings(pair, capability),
       subagent,
     };
-    const done = {
+    create.mutate(body, {
       onSuccess: (saved: { id: string; name: string }) => {
-        setOpen(null);
+        setOpen(false);
         onSaved(saved);
       },
       onError: (err: { message: string }) => setError(err.message),
-    };
-    if (updating)
-      update.mutate(
-        { id: updating.id, ...body },
-        {
-          ...done,
-          onSuccess: () => done.onSuccess({ id: updating.id, name: trimmed }),
-        },
-      );
-    else create.mutate(body, done);
+    });
   };
-  const ask = (mode: "create" | "update") => {
-    setName(mode === "update" ? (from?.name ?? "") : "");
+  const ask = () => {
+    setName("");
     setError(null);
-    setOpen(mode);
+    setOpen(true);
   };
   const action =
     "text-left text-[13px] text-accent underline-offset-2 hover:underline";
 
   return {
     row: (
-      <div className="flex flex-col">
-        {from && (
-          <button
-            type="button"
-            onClick={() => ask("update")}
-            className={action}
-          >
-            {`Update “${from.name}”`}
-          </button>
-        )}
-        <button type="button" onClick={() => ask("create")} className={action}>
-          {from ? "Save as a new profile" : "Save as profile"}
-        </button>
-      </div>
+      <button type="button" onClick={ask} className={action}>
+        {from ? "Save as a new profile" : "Save as profile"}
+      </button>
     ),
     dialog: open && (
-      <Modal onClose={() => !saving && setOpen(null)}>
+      <Modal onClose={() => !saving && setOpen(false)}>
         <DialogHeader
-          onClose={() => setOpen(null)}
+          onClose={() => setOpen(false)}
           closeDisabled={saving}
           title="Save as profile"
         />
@@ -172,9 +150,9 @@ export function useSaveAsProfile({
           </p>
         </DialogBody>
         <DialogActions
-          onCancel={() => setOpen(null)}
+          onCancel={() => setOpen(false)}
           cancelDisabled={saving}
-          label={updating ? "Update profile" : "Save profile"}
+          label="Save profile"
           pendingLabel="Saving…"
           pending={saving}
           onSubmit={save}

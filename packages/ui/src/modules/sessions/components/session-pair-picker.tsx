@@ -52,7 +52,6 @@ import {
   modelGroups,
   sameModel,
 } from "../lib/catalog-groups.js";
-import { prettyModelLabel } from "../lib/model-families.js";
 import {
   harnessDisplayName,
   harnessOptions,
@@ -75,7 +74,10 @@ import {
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { DetachProviderMessage } from "./detach-provider-message.js";
 import { SessionModelPicker } from "./session-model-picker.js";
-import { SessionPairTrigger } from "./session-pair-trigger.js";
+import {
+  SessionPairRowTrigger,
+  SessionPairTrigger,
+} from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 import { ToolApprovalPicker } from "./tool-approval-picker.js";
 
@@ -646,15 +648,19 @@ export function SessionPairPicker(props: Props) {
     agentId
       ? navigateToSandboxHome(agentId, "providers")
       : onConnectProviders();
-  /* UNIT_BOUNDARY_DESCRIPTION: a named profile in use reads first on the trigger, so the pick says where it came from. */
-  const triggerLabel =
-    !edit && !target && primary && pair?.model
-      ? `${primary.name} · ${prettyModelLabel(pair.model) ?? pair.model}`
-      : label;
   const agentDefault = target?.agentDefault;
   /* UNIT_BOUNDARY_DESCRIPTION: neither primary slot set is this pick following the agent's default. */
   const following =
     agentDefault !== undefined && referenceProfile === null && pair === null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a config page's card reads the pair by its values, never the profile's name, or the default it follows; the profile's name shows only inside the panel. */
+  const rowTitle =
+    agentDefault && following
+      ? "Use agent default"
+      : (label ?? target?.placeholder ?? "Choose a model");
+  const rowSubtitle =
+    agentDefault && following
+      ? agentDefault.detail
+      : (harnessDisplayName(pair?.harness ?? defaultHarness, views) ?? "");
   const pickProfile = (profile: ProfileWithUsage, connectionId?: string) => {
     setFromProfile(profile);
     const profileCapability = carried.find((h) => h.name === profile.harness);
@@ -774,31 +780,34 @@ export function SessionPairPicker(props: Props) {
     />
   );
 
-  /* UNIT_BOUNDARY_DESCRIPTION: a config page shows the panel's body inline, with no panel, trigger or popover around it; the chat input keeps its popover. */
-  if (row)
-    return (
-      <div className="flex min-w-0 flex-col gap-2">
-        {attachDialog.dialog}
-        {saveAs.dialog}
-        {body}
-      </div>
-    );
-
   return (
     <div className="flex min-w-0 items-center gap-3">
       {attachDialog.dialog}
       {saveAs.dialog}
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
-          <SessionPairTrigger
-            harness={pair?.harness}
-            label={
-              catalog &&
-              (pair
-                ? triggerLabel
-                : (target?.placeholder ?? "Choose a harness and model"))
-            }
-          />
+          {row ? (
+            <SessionPairRowTrigger
+              label={target?.label}
+              harness={
+                (agentDefault && following
+                  ? agentDefault.harness
+                  : pair?.harness) ?? defaultHarness
+              }
+              title={rowTitle}
+              subtitle={rowSubtitle}
+            />
+          ) : (
+            <SessionPairTrigger
+              harness={pair?.harness}
+              label={
+                catalog &&
+                (pair
+                  ? label
+                  : (target?.placeholder ?? "Choose a harness and model"))
+              }
+            />
+          )}
         </PopoverTrigger>
         <PopoverContent
           side={row ? "bottom" : "top"}

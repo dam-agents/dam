@@ -27,7 +27,7 @@ const carried: HarnessCapability[] = [
     sessionModel: true,
     sessionSettings: ["mode"],
     harnessConfigCatalog: {
-      modelConstraints: { haiku: { mode: [] } },
+      modelConstraints: { "gpt-5.5": { mode: [] } },
       options: [
         {
           id: "model",
@@ -112,6 +112,7 @@ const claudeCode: HarnessCapability = {
   sessionModel: true,
   sessionSettings: ["effort", "subagentModel", "subagentEffort"],
   harnessConfigCatalog: {
+    modelConstraints: { haiku: { effort: [], subagentEffort: [] } },
     options: [
       {
         id: "model",
@@ -769,12 +770,12 @@ describe("the new session panel", () => {
     expect(menuTrigger(node, "model")).toBe("Claude Opus 5.1");
   });
 
-  /** TEST_SCENARIO: Effort (Thinking on a harness that names it so) sits on the main view, not behind More options, and a model that cannot use it says so instead of offering a value the harness would refuse. */
-  it("puts the effort row on the main view and greys it out for a model without one", () => {
+  /** TEST_SCENARIO: Effort (Thinking on a harness that names it so) sits in More options, and a model constrained by its exact name says so instead of offering a value the harness would refuse. */
+  it("puts the effort row in More options and greys it out for a model without one", () => {
     state.chosen = {
       harness: "pi",
       provider: "ibm",
-      model: "ibm/azure/gpt-5.5",
+      model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
     expect(node.textContent).not.toContain("Thinking");
@@ -794,17 +795,65 @@ describe("the new session panel", () => {
     state.chosen = {
       harness: "pi",
       provider: "ibm",
-      model: "ibm/aws/claude-haiku-5-5",
+      model: "ibm/azure/gpt-5.5",
     };
     act(() => root!.unmount());
     root = null;
     container.remove();
     const greyed = mount(picker());
     openMore(greyed);
-    expect(greyed.textContent).toContain("Not available for Claude Haiku 5.5");
+    expect(greyed.textContent).toContain("GPT 5.5 has no thinking levels");
     expect(
-      greyed.querySelector('button[aria-labelledby$="-effort-label"]'),
+      greyed.querySelector('button[aria-labelledby*="-effort-label"]'),
     ).toBeNull();
+  });
+
+  /** TEST_SCENARIO: the gateway's six-model listing yields six distinct entries, only the same name on two providers merging: nothing is dropped or collapsed, and GPT's mini is named as a variant. */
+  it("lists every distinct model of a multi-provider listing once", () => {
+    const names = [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "gpt-5-5",
+      "gpt-5-5-mini",
+      "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    ];
+    state.catalog = {
+      harness: "pi",
+      routed: true,
+      providers: [
+        {
+          connectionId: "ibm",
+          alias: "ibm",
+          template: "ibm-litellm",
+          displayName: "IBM",
+          status: "listed" as const,
+          listedAt: null,
+          models: names.map((name) => modelView("ibm", name)),
+        },
+        {
+          connectionId: "curve",
+          alias: "cb",
+          template: "curve-bender",
+          displayName: "Curve",
+          status: "listed" as const,
+          listedAt: null,
+          models: names.map((name) => modelView("cb", name)),
+        },
+      ],
+    };
+    const node = mount(picker());
+    clickMenu(node, "Show older versions");
+    expect(
+      menuItems(node, "Model").map((row) => row.textContent?.trim()),
+    ).toEqual([
+      "Claude Opus 5.5",
+      "Claude Sonnet 5.5",
+      "Claude Haiku 5.5",
+      "GPT 5.5",
+      "GPT 5.5 mini",
+      "DeepSeek Flash 4.1",
+    ]);
   });
 
   /** TEST_SCENARIO: More options starts collapsed and opens by itself while the pair already holds a subagent, so a carried choice is visible without a click; Subagents picks a provider and a model, and "Same as agent" is the empty slot. */
@@ -864,7 +913,7 @@ describe("the new session panel", () => {
     profileRow(picked, "Fast review");
     click(picked, "Back to custom");
     openMore(picked);
-    expect(picked.textContent).toContain("Update “Fast review”");
+    expect(picked.textContent).toContain("Save as a new profile");
   });
 
   /** TEST_SCENARIO: a harness picked without a model clears it, and the pair waits for a model there instead of saving a chat default the server would refuse. */
@@ -1126,33 +1175,6 @@ describe("the saved profiles behind Use a profile", () => {
 });
 
 describe("a config page's picker", () => {
-  /** TEST_SCENARIO: a config page renders the picker body inline, with no popover trigger or row card, while the chat input keeps its popover. */
-  it("renders the fields inline, without a popover trigger", () => {
-    const node = mount(
-      picker({
-        row: true,
-        target: {
-          slots: {
-            profileId: null,
-            pair: null,
-            platformSubagentProfileId: null,
-            platformSubagentSettings: null,
-          },
-          label: "Default model",
-          placeholder: "Choose a model",
-          onChoose: vi.fn(),
-        },
-      }),
-    );
-    expect(
-      node.querySelector('[data-testid="session-pair-row-picker"]'),
-    ).toBeNull();
-    expect(
-      node.querySelector('[data-testid="session-pair-picker"]'),
-    ).toBeNull();
-    expect(menuTrigger(node, "model")).toBeDefined();
-  });
-
   const emptySlots = {
     profileId: null,
     pair: null,
@@ -1170,13 +1192,91 @@ describe("a config page's picker", () => {
     label: "Model for schedules",
     placeholder: "Use agent default",
     agentDefault: {
-      summary: "GPT 5.5",
+      detail: "Follows GPT 5.5 · High · IBM proxy",
       harness: "pi",
       pair: defaultPair,
       onClear: vi.fn(),
     },
     onChoose: vi.fn(),
     ...overrides,
+  });
+
+  /** TEST_SCENARIO: a config page shows the pick as a card whose title is the pair's summary (never a profile's name) or the default it follows, and the same body opens from it. */
+  it("reads the pick on a card that opens the same body", () => {
+    const emptySlots = {
+      profileId: null,
+      pair: null,
+      platformSubagentProfileId: null,
+      platformSubagentSettings: null,
+    };
+    const node = mount(
+      picker({
+        row: true,
+        target: {
+          slots: {
+            ...emptySlots,
+            pair: {
+              harness: "pi",
+              provider: "ibm",
+              model: "ibm/aws/claude-opus-5-5",
+            },
+          },
+          label: "Default model",
+          placeholder: "Choose a model",
+          onChoose: vi.fn(),
+        },
+      }),
+    );
+    const card = node.querySelector('[data-testid="session-pair-row-picker"]');
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain("Claude Opus 5.5 · Low · IBM proxy");
+    expect(card?.textContent).toContain("Pi");
+    expect(menuTrigger(node, "model")).toBeDefined();
+    expect(
+      node.querySelector('[data-testid="session-pair-picker"]'),
+    ).toBeNull();
+  });
+
+  /** TEST_SCENARIO: a page following the agent's default reads "Use agent default" over what it follows on its card; one with no default says so. */
+  it("reads the agent's default on the card", () => {
+    const target = (detail: string) => ({
+      slots: {
+        profileId: null,
+        pair: null,
+        platformSubagentProfileId: null,
+        platformSubagentSettings: null,
+      },
+      label: "Model for channels",
+      placeholder: "Use agent default",
+      agentDefault: {
+        detail,
+        harness: "pi",
+        pair: null,
+        onClear: vi.fn(),
+      },
+      onChoose: vi.fn(),
+    });
+    const following = mount(
+      picker({
+        row: true,
+        target: target("Follows GPT 5.5 · High · IBM proxy"),
+      }),
+    );
+    const card = following.querySelector(
+      '[data-testid="session-pair-row-picker"]',
+    );
+    expect(card?.textContent).toContain("Use agent default");
+    expect(card?.textContent).toContain("Follows GPT 5.5 · High · IBM proxy");
+    act(() => root!.unmount());
+    root = null;
+    container.remove();
+    const none = mount(
+      picker({ row: true, target: target("No default set yet") }),
+    );
+    expect(
+      none.querySelector('[data-testid="session-pair-row-picker"]')
+        ?.textContent,
+    ).toContain("No default set yet");
   });
 
   /** TEST_SCENARIO: a channel or a schedule follows the agent's default until its switch is turned off: its values read-only while on, and copied into its own pick when it is turned off. */
@@ -1480,7 +1580,7 @@ describe("an open session's picker", () => {
     profileRow(node, "Fast review");
     click(node, "Back to custom");
     openMore(node);
-    expect(node.textContent).toContain("Update “Fast review”");
+    expect(node.textContent).toContain("Save as a new profile");
     act(() => root!.unmount());
     root = null;
     container.remove();
@@ -1489,7 +1589,7 @@ describe("an open session's picker", () => {
     );
     openMore(other);
     expect(other.textContent).toContain("Save as profile");
-    expect(other.textContent).not.toContain("Update “Fast review”");
+    expect(other.textContent).not.toContain("Save as a new profile");
   });
 });
 
@@ -1723,8 +1823,8 @@ describe("the subagent a page inherits from its profile", () => {
     });
   });
 
-  /** TEST_SCENARIO: reopening a page that follows a profile with a subagent and updating that profile saves the subagent it lends, rather than writing null over it. */
-  it("saves the lent subagent when the profile is updated untouched", () => {
+  /** TEST_SCENARIO: saving a page's pick as a new profile carries the subagent its profile lends, rather than writing null over it. There is no Update action in the picker. */
+  it("saves the lent subagent with a new profile", () => {
     profilesState = [profile({ name: "Deep review", subagent: lent })];
     const target = targetOf({
       slots: { ...emptySlots, profileId: "p1" },
@@ -1732,10 +1832,20 @@ describe("the subagent a page inherits from its profile", () => {
     const node = mount(picker({ row: true, target }));
     profileRow(node, "Deep review");
     click(node, "Back to custom");
-    click(node, "Update “Deep review”");
-    click(document.body, "Update profile");
+    click(node, "Save as a new profile");
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Profile name"]',
+    )!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "Saved");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click(document.body, "Save profile");
     expect(state.profileMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "p1", subagent: lent }),
+      expect.objectContaining({ name: "Saved", subagent: lent }),
       expect.anything(),
     );
   });
@@ -2008,7 +2118,7 @@ describe("references kept apart from effective values", () => {
       model: "ibm/aws/claude-opus-5-5",
       settings: {
         effort: "high",
-        subagentModel: "ibm/aws/claude-haiku-5-5",
+        subagentModel: "ibm/aws/claude-opus-5-5",
         subagentEffort: "low",
       },
     };
@@ -2018,10 +2128,11 @@ describe("references kept apart from effective values", () => {
         defaultHarness: "claude-code",
       }),
     );
-    pickMenu(node, "Model", "Claude Haiku 5.5");
+    clickMenu(node, "Show older versions");
+    pickMenu(node, "Model", "GPT 5.5");
     const [, stored] = lastCall(state.remember);
     expect(stored.settings).toMatchObject({
-      subagentModel: "ibm/aws/claude-haiku-5-5",
+      subagentModel: "ibm/aws/claude-opus-5-5",
       subagentEffort: "low",
     });
   });

@@ -545,7 +545,7 @@ export function SessionModelPicker({
       <div className={ROW}>
         <span className={LABEL}>{effort.name}</span>
         <span className="text-[13px] text-muted-foreground">
-          Not available for {modelName}
+          {modelName} has no {effort.name.toLowerCase()} levels
         </span>
       </div>
     ) : (
