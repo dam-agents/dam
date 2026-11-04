@@ -46,7 +46,7 @@ try {
   const slow = join(dir, "slow-chromium");
   writeFileSync(
     slow,
-    '#!/bin/sh\nfor a; do case "$a" in --user-data-dir=*) p="${a#--user-data-dir=}";; esac; done\necho started >> "$p/starts"\nsleep 1; printf "4242\\n/devtools/browser/x\\n" > "$p/DevToolsActivePort"\nexec sleep 120\n',
+    '#!/bin/sh\nfor a; do case "$a" in --user-data-dir=*) p="${a#--user-data-dir=}";; esac; done\necho started >> "$p/starts"\nsleep 1; printf "4242\\n/devtools/browser/x\\n" > "$p/DevToolsActivePort"\nsleep 30\n',
     { mode: 0o755 },
   );
   writeFileSync(join(dir, "slow-browser"), readFileSync(launcher, "utf8").replaceAll("/opt/ms-playwright/chromium", slow));
@@ -61,7 +61,7 @@ try {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const until = async (cond, what) => {
     for (let waited = 0; !cond(); waited += 50) {
-      assert.ok(waited < 30_000, `waited 30 s for ${what}`);
+      assert.ok(waited < 10_000, `waited 10 s for ${what}`);
       await sleep(50);
     }
   };
