@@ -19,6 +19,7 @@ import type {
   FolderRow,
 } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import type { AgentApiClient } from "../../modules/artifact-library/infrastructure/agent-api-client.js";
+import type { ViewerPromptDelivery } from "../../modules/artifact-library/services/share-bridge-service.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 
 describe("share-crypto — slugs", () => {
@@ -253,11 +254,17 @@ const fakeArtifacts = stubArtifacts();
 function idleAgentApiDeps(): {
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
+  featureOn: () => Promise<boolean>;
+  prompts: ViewerPromptDelivery;
 } {
   return {
     ensureReady: () => Promise.resolve(),
     agentApi: {
       request: () => Promise.reject(new Error("agent api not expected")),
+    },
+    featureOn: () => Promise.resolve(true),
+    prompts: {
+      deliver: () => Promise.reject(new Error("prompt not expected")),
     },
   };
 }

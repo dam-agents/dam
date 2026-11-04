@@ -11,6 +11,7 @@ export { createContentApp } from "./viewer/content-app.js";
 export { createByLinkHostGate } from "./viewer/by-link-host-gate.js";
 export { createArtifactLibraryRoutes } from "./library-routes.js";
 export {
+  composeArtifactPromptDelivery,
   composeShareAuth,
   composeShareBridge,
   composeShareRelayTokens,

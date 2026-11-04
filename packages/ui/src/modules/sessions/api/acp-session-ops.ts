@@ -136,6 +136,7 @@ const SESSION_TYPE: Record<Session["type"], SessionType> = {
   schedule_once: SessionType.ScheduleOnce,
   cli_run: SessionType.CliRun,
   invocation: SessionType.Invocation,
+  artifact: SessionType.Artifact,
 };
 
 const SESSION_MODE: Record<Session["mode"], SessionMode> = {
