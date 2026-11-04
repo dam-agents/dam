@@ -1533,13 +1533,15 @@ apiServer:
     - pypi.org
     - files.pythonhosted.org
     - conda.anaconda.org
-    # GitHub
+    # GitHub. `cafe.github.com` is where gh posts its own telemetry, from the
+    # hidden `send-telemetry` command it runs after another command.
     - github.com
     - api.github.com
     - codeload.github.com
     - objects.githubusercontent.com
     - raw.githubusercontent.com
     - release-assets.githubusercontent.com
+    - cafe.github.com
     # Container registries. The registry host alone never pulls: Docker Hub
     # first hands out an anonymous token from auth.docker.io, then 307s the
     # blob off to whichever CDN serves the caller's region. ghcr.io redirects
