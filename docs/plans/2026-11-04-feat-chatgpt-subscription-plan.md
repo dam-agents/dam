@@ -27,7 +27,7 @@ Deployment and a real subscription inference turn require a separate live valida
 
 ## Structural preview
 
-Settings → OpenAI → ChatGPT subscription → enable provider → attach to agent → authorize in agent terminal → select a native Codex model → save the agent/channel default → send a web or Slack turn.
+Settings → Providers → ChatGPT subscription → enable provider → attach to agent → authorize over SSH → select a native Codex model → save the agent/channel default → send a web or Slack turn.
 Expired or missing login fails visibly; the owner signs in again on the same agent.
 There is no fallback to a paid API credential.
 
