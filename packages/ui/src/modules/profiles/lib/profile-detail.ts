@@ -1,17 +1,24 @@
 import type { HarnessCapability } from "agent-runtime-api";
+import { modelConstraintsFor } from "agent-runtime-api";
 import type { ProfileWithUsage } from "api-server-api";
-import { displayNameForTemplate } from "api-server-api";
+import { displayNameForTemplate, shortNameForTemplate } from "api-server-api";
 
-import { pairSummary } from "../../sessions/lib/session-settings.js";
+import { prettyModelLabel } from "../../sessions/lib/model-families.js";
+import {
+  pairSummary,
+  sessionSettingOptions,
+} from "../../sessions/lib/session-settings.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: the provider a profile runs on, by the name Settings gives it. */
-export function profileProviderName(profile: ProfileWithUsage): string {
+export function profileProviderName(profile: {
+  providerTemplate: string;
+}): string {
   return (
     displayNameForTemplate(profile.providerTemplate) ?? profile.providerTemplate
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a profile as the one pick summary, `Model · Effort (Provider)`, beside its harness icon; the effort needs the harness's capability. */
+/** UNIT_BOUNDARY_DESCRIPTION: a profile as the one pick summary, `Model · Effort · Provider`, beside its harness icon; the effort needs the harness's capability and the provider reads shortly. */
 export function profileSummary(
   profile: ProfileWithUsage,
   capability: HarnessCapability | undefined,
@@ -19,8 +26,55 @@ export function profileSummary(
   return pairSummary(profile.model, {
     settings: profile.settings,
     capability,
-    provider: profileProviderName(profile),
+    provider:
+      shortNameForTemplate(profile.providerTemplate) ??
+      profileProviderName(profile),
   });
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a profile's own values, one row each, as the chat picker's expanded profile shows them: its provider, harness, model, effort and subagents ("Same as agent" when the profile carries none). */
+export function profileDetailRows(
+  profile: ProfileWithUsage,
+  capability: HarnessCapability | undefined,
+  harnessName: string,
+): { label: string; value: string }[] {
+  const effort = sessionSettingOptions(capability).find(
+    (o) => o.category === "thought_level" && !o.subagents,
+  );
+  const allowed =
+    effort &&
+    modelConstraintsFor(capability?.harnessConfigCatalog, profile.model)?.[
+      effort.id
+    ];
+  const effortValue = effort
+    ? (profile.settings[effort.id] ?? effort.default)
+    : undefined;
+  const effortName =
+    effortValue === undefined
+      ? null
+      : !allowed || allowed.includes(effortValue)
+        ? (effort!.choices.find((c) => c.value === effortValue)?.name ??
+          effortValue)
+        : "Not available";
+  const subagent = profile.subagent;
+  return [
+    { label: "Provider", value: profileProviderName(profile) },
+    { label: "Harness", value: harnessName },
+    {
+      label: "Model",
+      value: prettyModelLabel(profile.model) ?? profile.model,
+    },
+    ...(effort && effortName
+      ? [{ label: effort.name, value: effortName }]
+      : []),
+    {
+      label: "Subagents",
+      value:
+        subagent === null
+          ? "Same as agent"
+          : `${prettyModelLabel(subagent.model) ?? subagent.model} · ${profileProviderName(subagent)}`,
+    },
+  ];
 }
 
 const list = (names: readonly string[]): string =>

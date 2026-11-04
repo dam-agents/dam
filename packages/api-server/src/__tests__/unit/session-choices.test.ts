@@ -52,7 +52,7 @@ const ROUTED = {
             ],
           },
         ],
-        modelConstraints: { mini: { effort: ["low"] } },
+        modelConstraints: { "gpt-5-mini": { effort: ["low"] } },
       },
     },
     { name: "codex", harnessConfig: true, sessionModel: true },

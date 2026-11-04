@@ -8,9 +8,10 @@ A **profile** is one owner's named harness, provider template, model, platform s
 It names the kind of provider, not one Connection, so it runs on whatever Connection of that template the agent holds; a rival Connection of the same alias never stands in for it.
 Profiles are saved from a chat's model picker (Save as a profile, or on a pick that came from or matches one Update beside Save as a new profile) or made with New profile in Settings › Providers › Profiles, and edited in a chat or in that list, whose rows open the same picker on its Custom selection, listing models from the [owner catalog](owner-model-catalog.md).
 Every list of profiles, in Settings and in each picker, shows the default for new agents first, then the most used (the agents, channels and schedules that name one), then by name.
-Custom selection is one screen wherever a pick is made: a new or running chat's primary model and subagent slot, a channel's and a schedule's, and a profile in Settings; none of them holds tool approval.
+Custom selection is one screen wherever a pick is made: a new or running chat's primary model, a channel's and a schedule's, and a profile in Settings; none of them holds tool approval.
 A channel and a schedule pick in the chat's own picker, both slots in it.
-A running chat's subagent slot offers every profile, as a new chat's does; its primary offers only the profiles on the session's harness, which it keeps.
+A subagent is a model and the provider it runs on, under **More options**, or **Same as agent**, which lets the harness pick; a profile carries a subagent the same way, and its picker offers it beside the model.
+A running chat's primary offers only the profiles on the session's harness, which it keeps.
 
 ## What follows a profile
 

@@ -26,7 +26,7 @@ Folder names in the code are internal: `sandboxes` is an agent's configuration p
 - **An agent's configuration** — its harness, model, connections, schedules, skills, login items and environments.
 - **Artifacts** — the library of published work, with sharing.
 - **Starter kits** — ready setups an agent is created from.
-- **Settings** — providers, connections, API keys, usage, appearance.
+- **Settings** — providers, profiles, connections, API keys, usage, appearance.
 
 ## Design rules the code does not state
 

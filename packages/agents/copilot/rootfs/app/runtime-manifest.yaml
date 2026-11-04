@@ -91,4 +91,4 @@ drivers:
             - value: high
               name: "High"
             - value: xhigh
-              name: "Extra High"
+              name: "Extra high"
