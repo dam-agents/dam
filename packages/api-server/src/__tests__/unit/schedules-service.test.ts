@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
+import { getTableColumns } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/pg-proxy";
+import { schedules as schedulesTable, type Db } from "db";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { createSchedulesService } from "../../modules/schedules/services/schedules-service.js";
-import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
+import {
+  createSchedulesRepository,
+  type SchedulesRepository,
+} from "../../modules/schedules/infrastructure/schedules-repository.js";
 import type {
   RunNowResult,
   SchedulerRunner,
@@ -54,6 +60,7 @@ function makeDeps(
       settings?: Record<string, string>;
     },
   ) => Promise<string | undefined>,
+  resolveProfile: ProfileResolver = runs,
 ) {
   let savedSpec: ScheduleSpec | undefined;
   let cleared = 0;
@@ -71,6 +78,10 @@ function makeDeps(
     async clearPrecheckStatus() {
       cleared += 1;
     },
+    async create(input: { spec: ScheduleSpec }) {
+      savedSpec = input.spec;
+      return { ...current, spec: input.spec };
+    },
   } as unknown as SchedulesRepository;
   const runner = { async sync() {} } as unknown as SchedulerRunner;
   const service = createSchedulesService({
@@ -78,7 +89,7 @@ function makeDeps(
     runner,
     owner: OWNER,
     agentBinding: "*",
-    resolveProfile: runs,
+    resolveProfile,
     ...(validateSessionChoices ? { validateSessionChoices } : {}),
   });
   return { service, getSavedSpec: () => savedSpec, getCleared: () => cleared };
@@ -688,6 +699,87 @@ describe("a schedule's profile", () => {
     },
   });
 
+  /* UNIT_BOUNDARY_DESCRIPTION: a profile whose lent sub-agent this agent cannot run, kept apart from its own availability (D193B). */
+  const withLentSubagent = (
+    subagentUnavailable: string | null,
+    subagent: Record<string, string> | null = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-haiku-5",
+    },
+  ): ProfileResolver =>
+    (async () =>
+      ({
+        unavailable: null,
+        pair: {
+          harness: "claude-code",
+          provider: null,
+          model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+          settings: { effort: "high" },
+        },
+        subagent,
+        subagentUnavailable,
+        attachable: false,
+      }) as unknown as ResolvedProfile) as ProfileResolver;
+
+  const createOnCustom = {
+    name: "daily",
+    agentId: "agent-1",
+    rrule: RRULE,
+    timezone: TIMEZONE,
+    task: "do the thing",
+    harness: "claude-code",
+    model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  };
+
+  const createOnProfile = {
+    name: "daily",
+    agentId: "agent-1",
+    rrule: RRULE,
+    timezone: TIMEZONE,
+    task: "do the thing",
+    profile: "profile-1",
+  };
+
+  /** TEST_SCENARIO: a new schedule is composed as its fires are, so one on a profile whose lent sub-agent cannot run is refused at save naming the reason rather than saving to fail every fire (D193B). */
+  it("refuses a schedule whose profile lends a sub-agent that cannot run", async () => {
+    const { service } = makeDeps(
+      makeCurrent(),
+      undefined,
+      withLentSubagent(
+        "Anthropic, its sub-agent's provider, isn't attached to this agent",
+      ),
+    );
+    await expect(service.createRRule(createOnProfile)).rejects.toThrow(
+      /its sub-agent's provider, isn't attached/,
+    );
+  });
+
+  /** TEST_SCENARIO: the same profile saves fine with a sub-agent of the schedule's own, which replaces the lent one whole, and with a lent one the agent can run. */
+  it("accepts a schedule whose own sub-agent replaces an unreachable lent one", async () => {
+    const unavailable =
+      "Anthropic, its sub-agent's provider, isn't attached to this agent";
+    const own = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-sonnet-5",
+    };
+    const replaced = makeDeps(
+      makeCurrent(),
+      undefined,
+      withLentSubagent(unavailable),
+    );
+    await expect(
+      replaced.service.createRRule({ ...createOnProfile, settings: own }),
+    ).resolves.toMatchObject({
+      spec: expect.objectContaining({ platformSubagentSettings: own }),
+    });
+    const runnable = makeDeps(makeCurrent(), undefined, withLentSubagent(null));
+    await expect(
+      runnable.service.createRRule(createOnProfile),
+    ).resolves.toMatchObject({
+      spec: expect.objectContaining({ profile: "profile-1" }),
+    });
+  });
+
   /** TEST_SCENARIO: a new schedule names a profile (D92 B), so the values a create also sent are not stored beside it. */
   it("records the profile a create names, and no values", async () => {
     let created: ScheduleSpec | undefined;
@@ -753,6 +845,27 @@ describe("a schedule's profile", () => {
     expect(getSavedSpec()).toMatchObject({
       settings: { effort: "high" },
       platformSubagentSettings: own,
+    });
+  });
+
+  /** TEST_SCENARIO: a custom schedule keeps its native subagent values where they belong, in the primary's settings, while the slot holds the platform keys alone (D193B). */
+  it("stores a custom schedule's native subagent beside its platform slot", async () => {
+    const { service, getSavedSpec } = makeDeps(makeCurrent());
+    await service.createRRule({
+      ...createOnCustom,
+      settings: {
+        subagentModel: "anthropic/claude-sonnet-5",
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": "anthropic/claude-sonnet-5",
+      },
+    });
+    expect(getSavedSpec()).toMatchObject({
+      harness: "claude-code",
+      settings: { subagentModel: "anthropic/claude-sonnet-5" },
+      platformSubagentSettings: {
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": "anthropic/claude-sonnet-5",
+      },
     });
   });
 
@@ -899,5 +1012,83 @@ describe("a schedule's quiet hours at save", () => {
       { startTime: "22:00", endTime: "06:00", enabled: true },
     ]);
     expect(await save({ quietHours: [] })).toBeUndefined();
+  });
+});
+
+describe("a stored schedule as its fire reads it", () => {
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule row, answered as the read asks for it (D193B). */
+  function stored(spec: ScheduleSpec): Promise<Schedule | null> {
+    const columns = Object.keys(getTableColumns(schedulesTable));
+    const values: Record<string, unknown> = {
+      id: SCHEDULE_ID,
+      agentId: "agent-1",
+      owner: OWNER,
+      name: "daily",
+      spec,
+      enabled: true,
+      declinedCount: 0,
+      precheckFailedCount: 0,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    };
+    const row = columns.map((column) => values[column] ?? null);
+    const db = drizzle(async () => ({ rows: [row] })) as unknown as Db;
+    return createSchedulesRepository(db, async () => null).get(
+      SCHEDULE_ID,
+      OWNER,
+    );
+  }
+
+  /** TEST_SCENARIO: a schedule is answered platform-level, its own native values beside the platform slot it stores, since a run derives the native keys where it builds its payload (D193B). */
+  it("answers a custom schedule as it is stored", async () => {
+    const schedule = await stored({
+      version: "1",
+      type: "rrule",
+      rrule: RRULE,
+      timezone: TIMEZONE,
+      task: "do the thing",
+      enabled: true,
+      createdBy: "user",
+      harness: "claude-code",
+      model: "anthropic/claude-opus-5",
+      settings: { subagentModel: "anthropic/claude-sonnet-5" },
+      platformSubagentSettings: {
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": "anthropic/claude-sonnet-5",
+        "platformSubagent.effort": "high",
+      },
+    });
+    expect(schedule?.spec.settings).toEqual({
+      subagentModel: "anthropic/claude-sonnet-5",
+    });
+    expect(schedule?.subagentSettings).toEqual({
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-sonnet-5",
+      "platformSubagent.effort": "high",
+    });
+  });
+
+  /** TEST_SCENARIO: a schedule that names no sub-agent and no native value carries neither, so its fire runs on the harness's own defaults (D193B). */
+  it("carries no subagent for a schedule that names none", async () => {
+    const schedule = await stored({
+      version: "1",
+      type: "rrule",
+      rrule: RRULE,
+      timezone: TIMEZONE,
+      task: "do the thing",
+      enabled: true,
+      createdBy: "user",
+      harness: "claude-code",
+      model: "bedrock/anthropic.claude-sonnet-5",
+      platformSubagentSettings: {
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": "openai/gpt-6.1-sol",
+      },
+    });
+    expect(schedule?.spec.settings).toBeUndefined();
+    expect(schedule?.subagentSettings).toEqual({
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+    });
   });
 });

@@ -25,6 +25,7 @@ import { resolveOnceMoment } from "../domain/once.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
 import type { ProfileResolver } from "../../profiles/index.js";
+import { composedSubagent } from "../../harness-config/domain/session-pair.js";
 
 const RUN_NOW_REFUSAL: Record<Exclude<RunNowResult, "started">, string> = {
   "onboarding-pending": "the agent has not finished onboarding yet",
@@ -127,6 +128,7 @@ function applyProfile(
 /* UNIT_BOUNDARY_DESCRIPTION: the subagent slot as a chat default keeps it (D124): a named profile, or the platform sub-agent values a pick's settings carry, kept apart from the primary's settings; neither is the agent picking. An omitted reference whose settings carry no such values leaves the slot as it is. */
 function applySubagent(
   spec: {
+    profile?: string;
     settings?: Record<string, string>;
     platformSubagentProfile?: string;
     platformSubagentSettings?: Record<string, string>;
@@ -175,6 +177,7 @@ type SpecChoices = {
   harness?: string;
   model?: string;
   settings?: Record<string, string>;
+  platformSubagentProfile?: string;
   platformSubagentSettings?: Record<string, string>;
 };
 
@@ -262,7 +265,7 @@ export function createSchedulesService(deps: {
     if (refusal) throw badRequest(refusal);
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the composed choices checked as the fire checks them: a profile primary alone is ensureProfileRuns's, and its subagent values are checked on the pair the profile resolves to. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the composed choices checked as the fire checks them, from the same composition: a profile primary is ensureProfileRuns's, and the sub-agent slot is composed as a run composes it, so a lent sub-agent that cannot run is refused here rather than failing every fire, while a schedule whose own sub-agent replaces it is accepted (D193B). */
   async function ensureSpecChoices(
     agentId: string,
     spec: SpecChoices,
@@ -270,22 +273,36 @@ export function createSchedulesService(deps: {
   ): Promise<void> {
     if (!spec.profile)
       return ensureSessionChoices(agentId, composedChoices(spec), origin);
-    if (!spec.platformSubagentSettings) return;
-    const resolved = await deps.resolveProfile?.({
+    const resolveProfile = deps.resolveProfile;
+    if (!resolveProfile) return;
+    const resolved = await resolveProfile({
       profileId: spec.profile,
       agentId,
       owner: deps.owner,
     });
     if (!resolved) return;
+    const subagent = await composedSubagent(
+      {
+        platformSubagentProfileId: spec.platformSubagentProfile ?? null,
+        platformSubagentSettings: spec.platformSubagentSettings ?? null,
+      },
+      {
+        settings: resolved.subagent,
+        unavailable: resolved.subagentUnavailable,
+      },
+      resolveProfile,
+      agentId,
+      deps.owner,
+    );
+    if (subagent.refused)
+      throw badRequest(`that profile cannot run: ${subagent.refused}`);
+    if (!subagent.settings) return;
     await ensureSessionChoices(
       agentId,
       {
         harness: resolved.pair.harness,
         ...(resolved.pair.model ? { model: resolved.pair.model } : {}),
-        settings: {
-          ...resolved.pair.settings,
-          ...spec.platformSubagentSettings,
-        },
+        settings: { ...resolved.pair.settings, ...subagent.settings },
       },
       origin,
     );

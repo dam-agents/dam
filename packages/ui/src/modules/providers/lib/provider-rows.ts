@@ -4,6 +4,8 @@ import {
 } from "api-server-api";
 
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
+import { connectionLabel } from "../../connections/lib/connection-label.js";
+import type { ProviderItem } from "../components/provider-item.js";
 
 export interface ProviderRowDef {
   type: ProviderPresetType;
@@ -12,10 +14,10 @@ export interface ProviderRowDef {
 }
 
 export const IBM_LITELLM_DESCRIPTION =
-  "IBM's LiteLLM proxy for Claude, GPT and other models — Anthropic, OpenAI Chat and Responses APIs.";
+  "IBM Research's gateway to external model providers";
 
 export const CURVE_BENDER_DESCRIPTION =
-  "Open-source models hosted internally in IBM.";
+  "IBM's internal inference on open-source models";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one preset can offer a user-keyed template and
@@ -53,21 +55,57 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   },
   {
     type: "bob",
-    description: "IBM's model endpoint for Bob Shell.",
+    description: "IBM Bob's backend",
   },
   {
     type: "bedrock",
-    description:
-      "Models available in your AWS region for Claude and Pi, using a Bedrock API key.",
+    description: "Amazon Web Services inference engine",
   },
   {
     type: "anthropic",
-    description:
-      "Claude models for Claude and Pi. API keys also support OpenAI Chat Completions; OAuth is Claude-only.",
+    description: "Claude models straight from the source",
   },
   {
     type: "openai",
-    description:
-      "OpenAI models for Codex and Pi via Chat Completions and Responses APIs.",
+    description: "GPT models straight from the source",
   },
 ];
+
+export function providerDescription(
+  type: ProviderPresetType,
+  templateId?: string,
+): string | undefined {
+  return (
+    PROVIDER_ROWS.find(
+      (row) => row.templateId === templateId && row.type === type,
+    ) ?? PROVIDER_ROWS.find((row) => row.type === type)
+  )?.description;
+}
+
+export interface ProviderEntry {
+  key: string;
+  row: ProviderRowDef;
+  item: ProviderItem | undefined;
+  name: string;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a provider row stands once for each connection the
+ * owner holds of it, or once to connect it when they hold none. Several
+ * connections of one provider each take the connection's own name after the
+ * provider's, so each row says which one it is.
+ */
+export function providerEntries(
+  row: ProviderRowDef,
+  items: readonly ProviderItem[],
+): ProviderEntry[] {
+  const base = `${row.type}:${row.templateId ?? ""}`;
+  const name = providerRowName(row);
+  if (items.length === 0) return [{ key: base, row, item: undefined, name }];
+  return items.map((item) => ({
+    key: `${base}:${item.id}`,
+    row,
+    item,
+    name: items.length > 1 ? `${name} (${connectionLabel(item.conn)})` : name,
+  }));
+}

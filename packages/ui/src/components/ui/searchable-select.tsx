@@ -129,7 +129,7 @@ export function SearchableSelect({
               aria-activedescendant={
                 filtered[highlight] ? optionId(highlight) : undefined
               }
-              className="h-8 w-full rounded border border-input bg-background px-2 text-sm outline-hidden"
+              className="h-8 w-full rounded border border-input bg-background px-2 text-sm pointer-coarse:text-base outline-hidden"
             />
           </div>
           <ul

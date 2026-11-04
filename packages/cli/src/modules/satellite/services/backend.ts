@@ -8,10 +8,18 @@ import type { SatelliteImage, SatelliteTool } from "api-server-api";
  */
 export interface SatelliteBackend {
   readonly tools: SatelliteTool[];
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: The tools this backend offers now, starting the
+   * MCP server behind it again if that server exited. One that is still up is
+   * left alone: restarting it on every reconnect would kill whatever it was
+   * running and change the tool list for no reason.
+   */
+  ensureReady(): Promise<{ restarted: boolean; livedMs?: number }>;
   call(input: {
     sequence: number;
     tool: string;
     args: Record<string, unknown>;
+    transferToken?: string;
   }): Promise<CallOutcome>;
   describeCall(tool: string, args: Record<string, unknown>): string;
   cancel(sequence: number): void;

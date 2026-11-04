@@ -169,7 +169,7 @@ The cluster tasks load the tools' PATH from the image's mise themselves; in a sh
 Iterate with `e2e:loop`; use `e2e` after helm/realm/infra changes.
 
 **Suite tiers.** **Smoke** (`src/tests/smoke/`) is what CI (both jobs, see [VM runner](#vm-runner-kvm)) and plain `e2e` / `e2e:loop` run.
-**Full** adds the slow scenario specs under `src/tests/full/`, on demand only: `mise run e2e:loop -- --full` (fresh cluster: `mise run e2e -- --full`).
+**Full** adds the slow scenario specs under `src/tests/full/`: locally on demand, `mise run e2e:loop -- --full` (fresh cluster: `mise run e2e -- --full`), and in CI on the nightly run alone, in the default lane.
 `src/tests/full/` specs: one `<area>-full` Playwright project per area, self-contained (own agents, own token via `getAccessToken` + `acceptTerms`, no smoke-chain fixtures), motivating ticket in the test title.
 
 ### The e2e suite in an Environment
@@ -245,7 +245,8 @@ Everywhere else, and in the e2e install, the runner pods need a usable `/dev/kvm
 The e2e install keeps the runner pods on a Mac too, since the suite restarts the runner by deleting its pod.
 In a sandbox or an Environment whose machine root is an overlay (the platform's own agent images), the runner pod, which runs in a user namespace, cannot idmap a volume on that root and stays in `StartError: ... MOUNT_ATTR_IDMAP ... invalid argument`.
 `cluster:install` therefore moves the kubelet's root to `~/.local/share/kubelet` (the drop-in `/etc/rancher/k3s/config.yaml.d/60-kubelet-root.yaml`, written once k3s has stopped, so it restarts k3s once and a stop that failed is tried again) and bind-mounts `~/.local/share/host-<name>` over each node directory the install's values name (`virtualization.imageCache.hostPath`, `.legacyPath`, `virtualization.runner.releaseHostPath`).
-A bind mount does not outlive a restart, so every install makes it again and deletes the pods that started on the overlay directory; run `cluster:install` (or `e2e:install`) after a restart before anything that boots an agent.
+A bind mount does not outlive a restart, so the install also writes the openrc service `/etc/init.d/platform-host-dirs`, in the default runlevel and before k3s, which makes those mounts again at every boot; a node with no OpenRC has none, and there `cluster:install` (or `e2e:install`) after a restart comes before anything that boots an agent.
+Every install makes the mounts again too, and deletes the pods that started on the overlay directory.
 A host where those paths are no overlay keeps them as they are.
 `mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) stages the mock image for the VM runners and runs the smoke suite; `E2E_GATEWAY_PER_OWNER=1` installs with one gateway pod per owner (`virtualization.gateway.perOwner`) instead of the default gateway pod per agent.
 Boot waits are four minutes for a boot and five for a smoke test, so a guest that stops answering fails the run in minutes.

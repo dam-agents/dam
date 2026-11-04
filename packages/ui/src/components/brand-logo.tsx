@@ -7,7 +7,7 @@ import { getBrand } from "../brand.js";
 export function BrandLogo({ className, ...props }: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 32 32"
+      viewBox="-1.04 0 32 32"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-label={getBrand().name}

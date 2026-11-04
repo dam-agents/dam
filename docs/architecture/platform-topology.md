@@ -77,6 +77,8 @@ It serves unauthenticated on the assumption that the runner's NetworkPolicy, adm
 See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
 
 The public port also accepts streamed bundled file imports per agent and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
+The same port carries a satellite's file transfer: one file in per request, streamed both ways without buffering, authorised by the Job whose claim holds the token, and counted at the relay so the cap holds even when the workspace understates a file.
+That route is the only one that writes bytes a machine outside the cluster sent into an Agent's workspace, so it is the runtime, not the proxy, that decides where a file lands and refuses a path it will not open ([satellites](satellites.md)).
 
 Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent.
 Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, activity retention, agent and invocation reapers) run this way, and each replica re-asserts its scheduler registrations periodically so a Redis dataset loss cannot silently stop the sweeps.

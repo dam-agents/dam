@@ -12,6 +12,7 @@ const profile = (id: string, name: string): ProfileWithUsage => ({
   harness: "claude-code",
   providerTemplate: "bedrock",
   model: "bedrock/opus",
+  subagent: null,
   settings: {},
   newAgentDefault: false,
   usage: { agents: 1, channels: 0, schedules: 0 },

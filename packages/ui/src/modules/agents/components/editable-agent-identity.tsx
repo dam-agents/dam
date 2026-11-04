@@ -149,7 +149,12 @@ export function EditableIdentity({
           </Tooltip>
         </NameTag>
       ) : (
-        <span className="relative flex min-w-0 items-center gap-1.5">
+        <span
+          className={cn(
+            "relative flex min-w-0 items-center gap-1.5",
+            nameClassName,
+          )}
+        >
           <input
             autoFocus
             aria-label="Agent name"
@@ -167,9 +172,8 @@ export function EditableIdentity({
               if (e.key === "Escape") cancelEdit();
             }}
             className={cn(
-              "min-w-0 flex-1 rounded-sm bg-transparent px-1 -mx-1 outline-hidden ring-1 ring-border focus-visible:ring-ring",
+              "min-w-0 flex-1 rounded-sm bg-transparent px-1 -mx-1 pointer-coarse:text-[length:max(1em,16px)] outline-hidden ring-1 ring-border focus-visible:ring-ring",
               error && "ring-danger focus-visible:ring-danger",
-              nameClassName,
             )}
           />
           <Tooltip content="Save name">

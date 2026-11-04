@@ -92,6 +92,7 @@ struct Memory {
     measured: bool,
     unflushed: Vec<PathBuf>,
     preload_failures: HashMap<String, (u32, Instant)>,
+    pins_over_budget: Option<(u64, i64)>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a machine of a reference boots: the digest its tree is stored under, and what the image says to run.
@@ -186,10 +187,11 @@ struct Prepared {
 }
 
 impl ImageCache {
-    // UNIT_BOUNDARY_DESCRIPTION: opens the directory as its only writer. A scratch tree already there was left by a writer that died, mid-fetch or mid-eviction, so it is removed now. A directory mounted read-only, as the staged trees are, opens too: nothing is written there until a fetch, and that fetch fails with a message naming the directory.
+    // UNIT_BOUNDARY_DESCRIPTION: opens the directory as its only writer. A scratch tree already there was left by a writer that died, mid-fetch or mid-eviction, so it is removed now, and so is every tree an earlier layout nested in a subdirectory, which this writer counts and evicts nothing of. A directory mounted read-only, as the staged trees are, opens too: nothing is written there until a fetch, and that fetch fails with a message naming the directory.
     pub fn open(config: CacheConfig) -> Self {
         let _ = fs::create_dir_all(&config.dir);
         cache::reclaim_scratch(&config.dir);
+        cache::reclaim_old_layout(&config.dir);
         Self {
             config,
             opened: Instant::now(),
@@ -775,6 +777,54 @@ impl ImageCache {
         held
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: what the pins resolved so far weigh, once each has its tree in the directory, and whether that is more than the budget. A pin is spared from eviction for as long as the cache is open, so a budget below their total is one no pass can end inside: the trees stay, and the cache takes more of the node's disk on every deploy that moves a pin. Says so once per figure; the figure is forgotten by a whole pass that ends inside the budget, not by a prefix of one, since every pass starts again at the first pin.
+    fn pins_outweigh_budget(&self, pinned: &HashSet<String>) -> bool {
+        if self.config.budget <= 0 {
+            return false;
+        }
+        self.measure();
+        let bytes: u64 = {
+            let memory = locked(&self.memory);
+            pinned
+                .iter()
+                .filter_map(|digest| memory.entries.get(&self.digest_entry(digest)))
+                .map(|entry| entry.size)
+                .sum()
+        };
+        if bytes <= self.config.budget as u64 {
+            return false;
+        }
+        self.say_pins_over_budget(bytes);
+        true
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: says the over-budget figure the first time it is given and not again, so a pass that ends at the same figure as the last one says nothing. Returns whether it said it.
+    fn say_pins_over_budget(&self, bytes: u64) -> bool {
+        let mut memory = locked(&self.memory);
+        if memory.pins_over_budget == Some((bytes, self.config.budget)) {
+            return false;
+        }
+        memory.pins_over_budget = Some((bytes, self.config.budget));
+        tracing::error!(
+            bytes,
+            budget = self.config.budget,
+            "image cache: the pinned images alone are larger than the budget, so no pass can end inside it; raise virtualization.imageCache.budget above the pinned set"
+        );
+        true
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: forgets the figure the over-budget report last gave, so a pass that ends inside the budget lets a later one say it again. Only a complete pass may call this: a pass that stopped at the first pin it could not hold weighed a prefix of the pins, not their total.
+    fn forget_pins_over_budget(&self) {
+        locked(&self.memory).pins_over_budget = None;
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what a complete pass leaves behind: the remembered figure goes only when every pin the pass resolved fits inside the budget. A pass can complete while the cache is over it — a pin waiting out its fetch retry is skipped, and its tree is still on disk — so what fits is weighed over every pin the pass resolved, not over the ones it happened to weigh on the way through.
+    fn forget_if_pins_fit(&self, pinned: &HashSet<String>) {
+        if !self.pins_outweigh_budget(pinned) {
+            self.forget_pins_over_budget();
+        }
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: weighs every entry already in the directory, once, the first time the cache needs its size. The trees are walked outside the memory lock, so a hold or a resolve never waits on the walk; an entry written since opening was weighed as it was written and keeps that weight.
     fn measure(&self) {
         if locked(&self.memory).measured {
@@ -879,9 +929,10 @@ impl ImageCache {
         true
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one preload pass over the pins. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the pin moves with it; the old digest's tree is then held only by the machines still running it. A digest whose fetch failed is not fetched again until its retry wait is over; a fetch refused before it started, for lack of room, waits for nothing, since it downloaded nothing; the wait belongs to the digest, so a tag that moves to a fixed image is fetched on the next pass. The directory is trimmed every pass, not only after a fetch, because the cache outlives every runner that fetched into it.
+    // UNIT_BOUNDARY_DESCRIPTION: one preload pass over the pins. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the pin moves with it; the old digest's tree is then held only by the machines still running it. The pass stops as soon as the pins it has are larger than the budget, because a pin cannot be evicted and fetching the rest would only take more of the node's disk; the service says so and names the value that fixes it. A pass that stops that way retires nothing: a pin it never reached keeps the retry wait its own last fetch earned, and the reported figure stays remembered. A digest whose fetch failed is not fetched again until its retry wait is over; a fetch refused before it started, for lack of room, waits for nothing, since it downloaded nothing; the wait belongs to the digest, so a tag that moves to a fixed image is fetched on the next pass. The directory is trimmed every pass, not only after a fetch, because the cache outlives every runner that fetched into it.
     pub fn preload(&self, auths: &[String]) {
         let mut pinned = HashSet::new();
+        let mut stopped = false;
         for reference in &self.config.pins {
             if self.config.lifetime.is_cancelled() {
                 return;
@@ -925,10 +976,18 @@ impl ImageCache {
                     tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), failures, retry_s = preload_retry(failures).as_secs(), "image cache: preloading an image this install ships");
                 }
             }
+            drop(memory);
+            if self.pins_outweigh_budget(&pinned) {
+                stopped = true;
+                break;
+            }
         }
-        locked(&self.memory)
-            .preload_failures
-            .retain(|digest, _| pinned.contains(digest));
+        if !stopped {
+            self.forget_if_pins_fit(&pinned);
+            locked(&self.memory)
+                .preload_failures
+                .retain(|digest, _| pinned.contains(digest));
+        }
         self.evict(None);
     }
 }

@@ -2,6 +2,8 @@
 #MISE description="Publish the current release branch as a release candidate"
 set -euo pipefail
 
+. "$MISE_CONFIG_ROOT/.mise/lib/release.sh"
+
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "ERROR: Working directory not clean"
   exit 1
@@ -18,13 +20,15 @@ git pull
 set +x
 
 current_version=$(yq -r '.version' helm/Chart.yaml)
-if ! [[ "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc([0-9]+)$ ]]; then
-  echo "ERROR: Current version must be an RC version (X.Y.Z-rcN)"
+# The next candidate keeps the spelling this branch already carries: `-rc.N`
+# on a branch cut after the spelling rule, `-rcN` on an older one. Rewriting
+# the spelling here would move a semver-tracking consumer backwards, because
+# `rc.10` sorts below `rc9` at the same core version.
+if ! next_version=$(next_rc_version "$current_version"); then
+  echo "ERROR: Current version must be an RC version (X.Y.Z-rc.N, or the legacy X.Y.Z-rcN)"
   echo "Current version: $current_version"
   exit 1
 fi
-
-next_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}-rc$((${BASH_REMATCH[4]} + 1))"
 
 echo ""
 echo "What will happen:"

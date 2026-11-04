@@ -2,8 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
+  environmentEndpointNameSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
+  environmentReadyPathSchema,
 } from "api-server-api";
 import { json, run } from "../../core/mcp-tool-result.js";
 import type { OwningAgentEnvironments } from "./services/environments-service.js";
@@ -60,6 +62,10 @@ export function registerEnvironmentTools(
   deps: { environments: OwningAgentEnvironments },
 ): void {
   const envs = deps.environments;
+  if (!deps.environments.manage) {
+    registerSharedEnvironmentsTool(server, envs);
+    return;
+  }
 
   server.tool(
     "create_environment",
@@ -69,7 +75,7 @@ export function registerEnvironmentTools(
         "Unique among your Environments, e.g. pr-42.",
       ),
       endpoints: environmentEndpointsSchema.describe(
-        "What it serves: [{name, port}], a name of lowercase letters and digits.",
+        "What it serves: [{name, port, ready?}], a name of lowercase letters and digits. `ready` is a path that answers 2xx or 3xx once the app is up, e.g. /healthz; until it does, a visitor sees a loading page. Without it, the endpoint is ready once its port answers.",
       ),
       start: z
         .string()
@@ -101,17 +107,27 @@ export function registerEnvironmentTools(
 
   server.tool(
     "list_environments",
-    "List your Environments: name, endpoints and their addresses, how many people may open each besides your owner, when they expire, and whether each runs or sleeps.",
+    "List your Environments — name, endpoints and their addresses, how many people may open each besides your owner, when they expire, and whether each runs or sleeps — and after them the Environments other agents' owners shared with you, each marked `sharedWithYou: true`, with whose agent it is and its addresses. Open a shared one at its addresses, as any visitor does; you cannot change, wake, delete or SSH into it.",
     {},
-    () => run(async () => json(await envs.list())),
+    () =>
+      run(async () => json([...(await envs.list()), ...(await envs.shared())])),
   );
 
   server.tool(
     "update_environment",
-    "Change one of your Environments: extend or shorten its expiry. Who may open it is not yours to change: only people share it, in the app.",
+    "Change one of your Environments: extend or shorten its expiry, or set its endpoints' readiness paths. Who may open it is not yours to change: only people share it, in the app.",
     {
       name: environmentNameSchema,
       expires: expiresInput,
+      ready: z
+        .record(
+          environmentEndpointNameSchema,
+          environmentReadyPathSchema.nullable(),
+        )
+        .optional()
+        .describe(
+          'Readiness paths by endpoint name, e.g. {"app": "/healthz"}: a visitor sees a loading page until the path answers 2xx or 3xx. null removes one, so the endpoint is ready once its port answers.',
+        ),
       access: noAccessInput,
     },
     (args) =>
@@ -120,6 +136,7 @@ export function registerEnvironmentTools(
         return json(
           await envs.update(args.name, {
             ...(args.expires ? { expiresAt: parseExpiry(args.expires)! } : {}),
+            ...(args.ready ? { ready: args.ready } : {}),
           }),
         );
       }),
@@ -145,5 +162,18 @@ export function registerEnvironmentTools(
         await envs.delete(args.name);
         return json({ deleted: args.name });
       }),
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the one tool an Agent whose owner does not have Environments gets: the Environments other agents' owners shared with it, so a listed agent finds them whatever its own owner turned on.
+function registerSharedEnvironmentsTool(
+  server: McpServer,
+  envs: Pick<OwningAgentEnvironments, "shared">,
+): void {
+  server.tool(
+    "list_environments",
+    "List the Environments other agents' owners shared with you, each marked `sharedWithYou: true`, with whose agent it is and its addresses. Open one at its addresses, as any visitor does; you cannot change, wake, delete or SSH into it.",
+    {},
+    () => run(async () => json(await envs.shared())),
   );
 }

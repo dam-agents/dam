@@ -59,6 +59,12 @@ try {
       stdio: ["ignore", "ignore", "pipe"],
     });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const until = async (cond, what) => {
+    for (let waited = 0; !cond(); waited += 50) {
+      assert.ok(waited < 10_000, `waited 10 s for ${what}`);
+      await sleep(50);
+    }
+  };
   const pidOf = () => Number(readFileSync(join(profile, ".platform-browser.pid"), "utf8"));
   const alive = (pid) => {
     try {
@@ -70,9 +76,15 @@ try {
   };
 
   const first = start();
-  await sleep(300);
+  await until(
+    () => existsSync(join(profile, ".platform-browser.pid")),
+    "the launcher to write Chromium's pid",
+  );
   process.kill(-first.pid, "SIGKILL");
-  await sleep(1500);
+  await until(
+    () => existsSync(join(profile, ".platform-browser.port")),
+    "Chromium to write its DevTools port",
+  );
   const chromiumPid = pidOf();
   assert.ok(alive(chromiumPid), "Chromium outlives the kill of the launcher's process group");
   assert.ok(existsSync(join(profile, ".platform-browser.port")), "the launcher keeps the port Chromium wrote");
@@ -81,7 +93,10 @@ try {
   const second = start();
   let said = "";
   second.stderr.on("data", (d) => (said += d));
-  await sleep(1000);
+  await until(
+    () => /DevTools listening/.test(said),
+    "the adopting launcher to say where DevTools listens",
+  );
   assert.equal(pidOf(), chromiumPid, "a second launch adopts the running Chromium");
   assert.equal(readFileSync(join(profile, "starts"), "utf8"), "started\n", "Chromium was started once");
   assert.equal(readFileSync(join(profile, "DevToolsActivePort"), "utf8"), "4242\n/devtools/browser/x\n", "the adopted Chromium's port is put back");
@@ -89,8 +104,7 @@ try {
 
   // TEST_SCENARIO: stopping the launcher agent-browser watches stops the Chromium it adopted, so agent-browser's close leaves no browser behind.
   process.kill(second.pid, "SIGTERM");
-  await sleep(500);
-  assert.ok(!alive(chromiumPid), "a stopped launcher stops its Chromium");
+  await until(() => !alive(chromiumPid), "the stopped launcher to stop its Chromium");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 
+import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -118,6 +119,11 @@ function LoadOlderMarker({
   );
 }
 
+const UNCONFIRMED_LABEL: Record<NonNullable<Message["unconfirmed"]>, string> = {
+  sending: "Sending",
+  waking: "Waking the agent",
+};
+
 export const ChatMessage = memo(function ChatMessage({
   message,
   avatarAgent,
@@ -189,6 +195,17 @@ export const ChatMessage = memo(function ChatMessage({
     hasAgentContent(message) &&
     !errorOnly;
   if (isAssistant && streaming && queued && parts.length === 0) return null;
+  const unconfirmedReply =
+    isAssistant &&
+    streaming &&
+    parts.length === 0 &&
+    message.unconfirmed !== undefined;
+  if (unconfirmedReply)
+    return pendingNotice ? (
+      <div className="flex flex-col items-start">{pendingNotice}</div>
+    ) : null;
+  const unconfirmedSend =
+    !isAssistant && error === undefined ? message.unconfirmed : undefined;
   const working = isAssistant && streaming && !queued && !hasPendingPermission;
   const speaker = isAssistant ? (
     <AgentSpeaker agent={avatarAgent} />
@@ -285,6 +302,16 @@ export const ChatMessage = memo(function ChatMessage({
             />
           )}
         </div>
+      )}
+      {unconfirmedSend !== undefined && (
+        <span
+          role="status"
+          data-testid="send-unconfirmed"
+          className="anim-in-late flex items-center gap-2 text-xs leading-none text-muted-foreground"
+        >
+          <Spinner size={12} className="text-inherit" />
+          <span>{UNCONFIRMED_LABEL[unconfirmedSend]}</span>
+        </span>
       )}
       {isAssistant && showModel && !streaming && message.model && (
         <Tooltip side="top" content={message.model}>

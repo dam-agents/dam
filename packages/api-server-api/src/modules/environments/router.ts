@@ -8,6 +8,7 @@ import {
   requireWildcardBinding,
 } from "../../auth-procedures.js";
 import {
+  environmentAgentLookupInputSchema,
   environmentAgentMembersInputSchema,
   environmentExtendInputSchema,
   environmentIdInputSchema,
@@ -51,10 +52,10 @@ export const environmentsRouter = t.router({
     )
     .mutation(({ ctx, input }) => {
       checkAgentBinding(ctx, input.owningAgentId);
-      return ctx.environments.setAgentMembers(
-        input.owningAgentId,
-        input.emails,
-      );
+      return ctx.environments.setAgentMembers(input.owningAgentId, {
+        emails: input.emails,
+        ...(input.agentIds ? { agentIds: input.agentIds } : {}),
+      });
     }),
 
   setMembers: manageAgentsProcedure
@@ -63,8 +64,17 @@ export const environmentsRouter = t.router({
       agentPermission("environments", (input) => environmentTarget(input.id)),
     )
     .mutation(({ ctx, input }) =>
-      ctx.environments.setMembers(input.id, input.emails),
+      ctx.environments.setMembers(input.id, {
+        emails: input.emails,
+        ...(input.agentIds ? { agentIds: input.agentIds } : {}),
+      }),
     ),
+
+  // UNIT_BOUNDARY_DESCRIPTION: names the Agent an id a person typed into a list stands for, before they save it. An id is unguessable, so its holder already knew it; the answer says no more than the Public Agent Page does for the same id.
+  lookupAgent: readAgentProcedure
+    .use(requireWildcardBinding)
+    .input(environmentAgentLookupInputSchema)
+    .query(({ ctx, input }) => ctx.environments.lookupAgent(input.agentId)),
 
   extend: manageAgentsProcedure
     .input(environmentExtendInputSchema)

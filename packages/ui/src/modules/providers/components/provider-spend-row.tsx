@@ -7,13 +7,12 @@ import { ProviderHead } from "./provider-row.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one provider for an agent, wherever an agent's
  * providers are listed (its Providers page and panel, the attach dialog): a
- * single line of a small icon, its name, the spend badge that opens its limit
+ * row of its mark, its name over its description, the spend badge that opens its limit
  * and the switch that decides whether this agent uses it.
  */
 export function ProviderSpendRow({
   agentId,
   provider,
-  harnesses,
   checked,
   disabled,
   showSpend,
@@ -21,7 +20,6 @@ export function ProviderSpendRow({
 }: {
   agentId: string | null;
   provider: ProviderConnectionRef;
-  harnesses: readonly string[] | undefined;
   checked: boolean;
   disabled?: boolean;
   showSpend: boolean;
@@ -33,7 +31,6 @@ export function ProviderSpendRow({
         type={provider.type}
         templateId={provider.templateId}
         name={provider.name}
-        harnesses={harnesses}
       />
       {showSpend && agentId && provider.templateId && (
         <ProviderSpendBadge

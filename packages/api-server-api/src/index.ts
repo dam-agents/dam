@@ -556,6 +556,7 @@ export {
   CURVE_BENDER_WORK_MODEL,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   displayNameForTemplate,
+  shortNameForTemplate,
   BOB_HOST,
   BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,
@@ -864,7 +865,9 @@ export type {
   EgressRuleCreateInput,
   EgressRuleUpdateInput,
   EgressRulesService,
+  PlatformRuleState,
 } from "./modules/egress-rules/types.js";
+export { PLATFORM_ENVIRONMENTS_SOURCE } from "./modules/egress-rules/types.js";
 export {
   EGRESS_HOST,
   egressRuleCreateInputSchema,
@@ -1105,23 +1108,38 @@ export {
   DEFAULT_MAX_CONCURRENT,
   INLINE_OUTPUT_LIMIT,
   MAX_JOB_IMAGES,
+  claimFencedInputSchema,
+  claimInputSchema,
+  connectFencedInputSchema,
+  drainFencedInputSchema,
+  heartbeatFencedInputSchema,
+  heartbeatInputSchema,
+  drainInputSchema,
+  reportFencedInputSchema,
   MAX_JOB_OUTPUT_BYTES,
   PAYLOAD_ENVELOPE_BYTES,
+  SATELLITE_FILE_MAX_BYTES,
   SATELLITE_IMAGE_MIME_TYPES,
+  SATELLITE_TRANSFER_CLAIM_HEADER,
   escapedTextBytes,
   formatJobRef,
   isBase64,
   reportInputSchema,
+  satelliteFileNameSchema,
+  satelliteFileWrittenSchema,
   satelliteImageOf,
+  satelliteConnectInputSchema,
   satelliteImageSchema,
   satelliteImagesSchema,
   satelliteNameSchema,
+  satelliteTransferTokenSchema,
   storedPayloadBytes,
   RESERVED_TOOL_NAMES,
   satelliteToolNameSchema,
   satelliteToolSchema,
   toolArgsSchema,
 } from "./modules/satellites/schemas.js";
+export type { SatelliteFileWritten } from "./modules/satellites/schemas.js";
 export type {
   ClaimInput,
   HeartbeatInput,
@@ -1144,13 +1162,20 @@ export {
   separateRendererBlocks,
 } from "./modules/chat-forms/renderer-blocks.js";
 export type {
+  AgentEnvironmentMembersView,
   AgentEnvironmentView,
+  EnvironmentAgentLookup,
   EnvironmentEndpoint,
+  EnvironmentMemberAgent,
   EnvironmentView,
+  MembersUpdate,
+  SharedEnvironmentView,
 } from "./modules/environments/types.js";
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
   ENVIRONMENT_EXPIRY_MAX_DAYS,
+  environmentEndpointNameSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
+  environmentReadyPathSchema,
 } from "./modules/environments/schemas.js";

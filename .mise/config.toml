@@ -171,7 +171,11 @@ deny_net = true
 [task_templates."ts:test"]
 description = "Run the package's vitest suite"
 depends = ["^check:tsc"]
-run = "pnpm exec vitest run"
+# CI runs several suites beside each other, one per core (build.yml's
+# `--jobs`), and each suite's own workers would then claim every core a second
+# and a third time. One worker per suite leaves the rest to the tasks beside it,
+# and vitest's 5s test timeout the time it means.
+run = 'pnpm exec vitest run ${CI:+--maxWorkers=1}'
 sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
 cache.enabled = true
