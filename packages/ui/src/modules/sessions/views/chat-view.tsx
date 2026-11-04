@@ -90,7 +90,6 @@ import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
 import { useContinuedFrom } from "../../invocations/api/queries.js";
 import {
   DelegationOwnersProvider,
@@ -1097,7 +1096,6 @@ export function ChatView() {
             </ChatColumn>
           </div>
 
-          <GettingStartedDock placement="chat" />
           {showJump && (
             <button
               onClick={scrollToBottom}

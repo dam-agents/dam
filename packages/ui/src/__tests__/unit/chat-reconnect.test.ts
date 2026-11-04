@@ -123,10 +123,6 @@ for (const [path, names] of [
     ["ProcessesIndicator"],
   ],
   [
-    "../../modules/getting-started/components/getting-started-dock.js",
-    ["GettingStartedDock"],
-  ],
-  [
     "../../modules/changes/components/session-pull-requests.js",
     ["SessionPullRequests"],
   ],
