@@ -13,6 +13,7 @@ import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useAgent } from "../../agents/api/queries.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
+import { shortProviderName } from "../../providers/lib/provider-rows.js";
 import {
   clearSessionDefault,
   rememberSessionPair,
@@ -88,7 +89,10 @@ export function AgentModelPicker({
     ? pairSummary(chat.model, {
         settings: chat.settings,
         capability: status?.harnesses?.find((h) => h.name === chat.harness),
-        provider: owned.find((p) => p.id === chat.provider)?.name,
+        provider: (() => {
+          const connection = owned.find((p) => p.id === chat.provider);
+          return connection ? shortProviderName(connection) : undefined;
+        })(),
       })
     : null;
   /* UNIT_BOUNDARY_DESCRIPTION: only the chat default names a primary profile; a channel's and a schedule's hold the values their profiles resolve to, while the subagent slot's own values reach every kind. */

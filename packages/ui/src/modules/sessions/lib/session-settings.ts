@@ -160,8 +160,8 @@ export function pairSummary(
     effort
       ? `${name} · ${effort.charAt(0).toUpperCase()}${effort.slice(1)}`
       : name,
-    provider ? `(${provider})` : null,
+    provider,
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(" · ");
 }

@@ -1,7 +1,7 @@
 import type { HarnessCapability } from "agent-runtime-api";
 import { modelConstraintsFor } from "agent-runtime-api";
 import type { ProfileWithUsage } from "api-server-api";
-import { displayNameForTemplate } from "api-server-api";
+import { displayNameForTemplate, shortNameForTemplate } from "api-server-api";
 
 import { prettyModelLabel } from "../../sessions/lib/model-families.js";
 import {
@@ -18,7 +18,7 @@ export function profileProviderName(profile: {
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a profile as the one pick summary, `Model · Effort (Provider)`, beside its harness icon; the effort needs the harness's capability. */
+/** UNIT_BOUNDARY_DESCRIPTION: a profile as the one pick summary, `Model · Effort · Provider`, beside its harness icon; the effort needs the harness's capability and the provider reads shortly. */
 export function profileSummary(
   profile: ProfileWithUsage,
   capability: HarnessCapability | undefined,
@@ -26,7 +26,9 @@ export function profileSummary(
   return pairSummary(profile.model, {
     settings: profile.settings,
     capability,
-    provider: profileProviderName(profile),
+    provider:
+      shortNameForTemplate(profile.providerTemplate) ??
+      profileProviderName(profile),
   });
 }
 

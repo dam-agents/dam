@@ -17,6 +17,7 @@ import type {
   SessionPair,
 } from "api-server-api";
 
+import { shortProviderName } from "../../providers/lib/provider-rows.js";
 import {
   type ProviderConnectionRef,
   providerOfModel,
@@ -144,10 +145,11 @@ export function subagentSummary(
 ): string | null {
   const sub = subagentPair(pair);
   if (!sub?.model) return null;
+  const connection = providerOfModel(sub.model, providers);
   return pairSummary(sub.model, {
     settings: sub.settings,
     capability: carried.find((h) => h.name === sub.harness),
-    provider: providerOfModel(sub.model, providers)?.name,
+    provider: connection ? shortProviderName(connection) : undefined,
   });
 }
 

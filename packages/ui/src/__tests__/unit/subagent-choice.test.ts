@@ -228,7 +228,7 @@ describe("a subagent choice", () => {
         [],
         [{ id: "conn-a", name: "Anthropic", type: "anthropic" }],
       ),
-    ).toBe("Claude Sonnet 5.5 (Anthropic)");
+    ).toBe("Claude Sonnet 5.5 · Anthropic");
   });
 });
 

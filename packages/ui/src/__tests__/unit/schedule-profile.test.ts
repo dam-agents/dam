@@ -420,7 +420,7 @@ describe("the schedule form's Runs on field", () => {
       createElement(Field, { profile: "", inheritChoice: true }),
     );
     state.fallback = undefined;
-    expect(follows).toContain("fable · Low (AWS Bedrock)");
+    expect(follows).toContain("fable · Low · AWS Bedrock");
     expect(follows).toContain("follows the agent&#x27;s model for schedules");
     expect(follows).not.toContain("The agent&#x27;s chat default");
     expect(
@@ -496,7 +496,7 @@ describe("what a schedule's details say it runs on", () => {
           },
         }),
       );
-      expect(custom).toContain("fable · Low (AWS Bedrock)");
+      expect(custom).toContain("fable · Low · AWS Bedrock");
       expect(custom).not.toContain("chat default");
     } finally {
       state.fallback = undefined;

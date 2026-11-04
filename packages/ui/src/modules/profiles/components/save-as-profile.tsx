@@ -1,6 +1,6 @@
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
-import { displayNameForTemplate } from "api-server-api";
+import { shortNameForTemplate } from "api-server-api";
 import { useId, useState } from "react";
 
 import {
@@ -79,7 +79,7 @@ export function useSaveAsProfile({
     prettyModelLabel(pair.model) ?? pair.model,
     effortLabel,
     providerTemplate
-      ? (displayNameForTemplate(providerTemplate) ?? providerTemplate)
+      ? (shortNameForTemplate(providerTemplate) ?? providerTemplate)
       : undefined,
   ]
     .filter((part): part is string => !!part)

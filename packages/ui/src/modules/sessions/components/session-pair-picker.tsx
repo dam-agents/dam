@@ -32,6 +32,7 @@ import {
   usePickedProfile,
   useSaveAsProfile,
 } from "../../profiles/components/save-as-profile.js";
+import { shortProviderName } from "../../providers/lib/provider-rows.js";
 import {
   rememberSessionPair,
   useGrantProvider,
@@ -622,6 +623,12 @@ export function SessionPairPicker(props: Props) {
     );
 
   const provider = providers.granted.find((p) => p.id === pair?.provider);
+  const chipProvider = providers.owned.find(
+    (p) =>
+      p.id ===
+      (findModel(groups, pair?.model ?? null)?.group.connectionId ??
+        pair?.provider),
+  );
   const label = !pair
     ? undefined
     : routed
@@ -629,10 +636,9 @@ export function SessionPairPicker(props: Props) {
           settings,
           defaults,
           capability,
-          provider:
-            findModel(groups, pair.model)?.group.displayName ??
-            provider?.name ??
-            edit?.providerName,
+          provider: chipProvider
+            ? shortProviderName(chipProvider)
+            : edit?.providerName,
         })
       : modelProviderLabel(
           pair.model,

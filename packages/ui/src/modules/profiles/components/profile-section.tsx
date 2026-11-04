@@ -1,6 +1,7 @@
 import { Add } from "@carbon/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
+import { shortNameForTemplate } from "api-server-api";
 import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
@@ -286,7 +287,9 @@ function ProfileValues({
           disabled
           label={pairSummary(profile.model, {
             settings: profile.settings,
-            provider: profileProviderName(profile),
+            provider:
+              shortNameForTemplate(profile.providerTemplate) ??
+              profileProviderName(profile),
           })}
         />
       )}

@@ -26,6 +26,7 @@ import {
   usePickedProfile,
   useSaveAsProfile,
 } from "../../profiles/components/save-as-profile.js";
+import { shortProviderName } from "../../providers/lib/provider-rows.js";
 import {
   useGrantProvider,
   useHarnessCatalog,
@@ -224,8 +225,16 @@ export function ModelIndicator({
         settings,
         defaults,
         capability,
-        provider:
-          findModel(groups, model)?.group.displayName ?? activeProvider?.name,
+        provider: (() => {
+          const connection = owned.find(
+            (p) =>
+              p.id ===
+              (findModel(groups, model)?.group.connectionId ?? provider),
+          );
+          return connection
+            ? shortProviderName(connection)
+            : activeProvider?.name;
+        })(),
       })
     : (models.find((m) => m.value === model)?.name ?? model);
   const unlisted =
