@@ -499,4 +499,42 @@ describe("title backfill", () => {
     await service.list();
     await vi.waitFor(() => expect(entries.old?.meta.title).toBe("Late title"));
   });
+
+  // TEST_SCENARIO: the runtime cannot open a channel to the harness at all; the list still answers, and the next list read asks again.
+  it("still lists when no channel to the harness opens, and asks again", async () => {
+    const { entries, store } = untitledStore();
+    delete entries.bob;
+    let opened = 0;
+    const caller: InProcessCaller = {
+      request: async <T>(method: string): Promise<T> =>
+        (method === "session/list"
+          ? { sessions: [{ sessionId: "old", title: "Late title" }] }
+          : {}) as T,
+      notify: () => {},
+      close: () => {},
+    };
+    const logged: string[] = [];
+    const service = createSessionsService({
+      defaultHarness: "claude-code",
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => {
+        opened++;
+        if (opened === 2) throw new Error("no channel");
+        return caller;
+      },
+      sessionMetadata: store,
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: (msg) => logged.push(msg),
+    });
+
+    const first = await service.list();
+    expect(first.sessions.map((s) => s.sessionId)).toContain("old");
+    await vi.waitFor(() => expect(logged).toHaveLength(1));
+
+    await service.list();
+    await vi.waitFor(() => expect(entries.old?.meta.title).toBe("Late title"));
+  });
 });

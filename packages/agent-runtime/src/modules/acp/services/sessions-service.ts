@@ -231,18 +231,27 @@ export function createSessionsService(deps: {
       ids.add(sessionId);
       untitled.set(harness, ids);
     }
-    for (const [harness, wanted] of untitled) {
-      backfilled.add(harness);
-      const caller = deps.openCaller();
-      void initialize(caller)
-        .then(() => adoptListedTitles(caller, harness, wanted))
-        .catch((error: unknown) => {
-          backfilled.delete(harness);
-          deps.log(
-            `session list: the ${harness} titles could not be read: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        })
-        .finally(() => caller.close());
+    for (const [harness, wanted] of untitled)
+      void backfillHarness(harness, wanted);
+  }
+
+  async function backfillHarness(
+    harness: string,
+    wanted: Set<string>,
+  ): Promise<void> {
+    backfilled.add(harness);
+    let caller: InProcessCaller | undefined;
+    try {
+      caller = deps.openCaller();
+      await initialize(caller);
+      await adoptListedTitles(caller, harness, wanted);
+    } catch (error) {
+      backfilled.delete(harness);
+      deps.log(
+        `session list: the ${harness} titles could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      caller?.close();
     }
   }
 
@@ -311,8 +320,9 @@ export function createSessionsService(deps: {
       )
         return;
       adopting.add(sessionId);
-      const caller = deps.openCaller();
+      let caller: InProcessCaller | undefined;
       try {
+        caller = deps.openCaller();
         await initialize(caller);
         const harness = entry.meta.harness ?? deps.defaultHarness;
         if (harness === undefined) return;
@@ -322,7 +332,7 @@ export function createSessionsService(deps: {
           `session ${sessionId}: the harness title could not be read: ${error instanceof Error ? error.message : String(error)}`,
         );
       } finally {
-        caller.close();
+        caller?.close();
         adopting.delete(sessionId);
       }
     },
