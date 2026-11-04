@@ -266,6 +266,23 @@ spec:
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           {{- if .Values.probes.enabled }}
+          # Each start, until Postgres first answers — initdb on a first boot,
+          # recovery after a kill — holds off both checks below. A liveness
+          # check that fires before that answer kills Postgres mid-write, and
+          # the recovery the kill leaves is longer than liveness waits.
+          startupProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.postgres.apiserverUser }}
+                - -d
+                - postgres
+            {{- with .Values.postgres.startupProbe }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+            {{- end }}
           readinessProbe:
             exec:
               command:

@@ -176,9 +176,9 @@ describe("dam version (integration)", () => {
   it("BehindCurrent to a pre-release: names the exact version, not dam update alone", async () => {
     fixture.setResponse({
       body: {
-        serverVersion: "0.2.25-rc1",
+        serverVersion: "99.0.0-rc1",
         minClientVersion: "0.2.24-rc1",
-        recommendedClientVersion: "0.2.25-rc1",
+        recommendedClientVersion: "99.0.0-rc1",
       },
     });
     await configureServer(fixture.url);
@@ -186,9 +186,9 @@ describe("dam version (integration)", () => {
     const r = await runDam(["version"], env());
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toContain(
-      "behind the server's recommended CLI 0.2.25-rc1",
+      "behind the server's recommended CLI 99.0.0-rc1",
     );
-    expect(r.stderr).toContain("npm install -g @dam-agents/cli@0.2.25-rc1");
+    expect(r.stderr).toContain("npm install -g @dam-agents/cli@99.0.0-rc1");
     expect(r.stderr).toContain("dam update` installs only the latest stable");
   });
 
