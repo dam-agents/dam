@@ -1151,6 +1151,8 @@ export type {
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
   ENVIRONMENT_EXPIRY_MAX_DAYS,
+  environmentEndpointNameSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
+  environmentReadyPathSchema,
 } from "./modules/environments/schemas.js";

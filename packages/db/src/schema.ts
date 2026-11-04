@@ -568,7 +568,7 @@ export const environments = pgTable(
     name: text("name").notNull(),
     host: text("host").notNull(),
     endpoints: jsonb("endpoints")
-      .$type<{ name: string; port: number }[]>()
+      .$type<{ name: string; port: number; ready?: string }[]>()
       .notNull(),
     access: jsonb("access").$type<string[] | null>(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
