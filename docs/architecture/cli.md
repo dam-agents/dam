@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -43,7 +43,7 @@ Two persistence concerns split across the XDG directories: editable configuratio
 ## Compatibility negotiation
 
 Before any networked verb runs, the CLI hits the api-server's unauthenticated version endpoint (plain HTTP, outside the tRPC surface) to learn the server's version, the minimum CLI version it accepts, and the CLI version it recommends.
-The server's version is the release it was built from, the chart's `appVersion`: a tagged release reports `X.Y.Z` or `X.Y.Z-rcN`, and a build from `main` reports `X.Y.Z-dev-<sha>`.
+The server's version is the release it was built from, the chart's `appVersion`: a tagged release reports `X.Y.Z` or `X.Y.Z-rc.N`, a release cut before that spelling reports `X.Y.Z-rcN`, and a build from `main` reports `X.Y.Z-dev-<sha>`.
 A tagged release recommends the CLI of its own version, which CD publishes to npm with it; a build from `main` recommends none, because no CLI is published at its version.
 Three verdicts:
 

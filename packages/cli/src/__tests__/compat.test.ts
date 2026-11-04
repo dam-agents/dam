@@ -19,6 +19,15 @@ describe("compareVersions", () => {
     ["0.2.24-rc10", "0.2.24-rc9", 1],
     ["0.2.24-rc10", "0.2.24-rc10", 0],
     ["0.2.24-rc10", "0.2.24", -1],
+    // TEST_SCENARIO: the same candidates spelled `-rc.N`, which a release branch cut after the spelling change carries. Two identifiers give the number its own field, so this already compares by value; the rows pin it beside the legacy spelling.
+    ["0.2.24-rc.9", "0.2.24-rc.10", -1],
+    ["0.2.24-rc.10", "0.2.24-rc.9", 1],
+    ["0.2.25-rc.1", "0.2.25-rc.10", -1],
+    ["0.2.24-rc.10", "0.2.25-rc.1", -1],
+    ["0.2.24-rc.10", "0.2.24", -1],
+    // TEST_SCENARIO: the two spellings are not aliases at the same core version: `rc.10` sorts below `rc9`, because a dotted identifier compares below an alphanumeric one. That is why a branch never changes spelling mid-release, and why the core version, not the candidate, carries the migration.
+    ["0.2.24-rc.10", "0.2.24-rc9", -1],
+    ["0.2.24-rc.1", "0.2.24-rc9", -1],
   ])("compareVersions(%j, %j) = %d", (a, b, expected) => {
     expect(compareVersions(a, b)).toBe(expected);
   });
@@ -148,6 +157,27 @@ describe("verdictFor", () => {
     expect(v.serverMinClient).toBe(inputs.serverMinClient);
     expect(v.serverRecommendedClient).toBe(inputs.serverRecommendedClient);
   });
+
+  // TEST_SCENARIO: what a user sees follows the same ordering on either spelling: a client on the candidate the server recommends is current, and the one before it is told to upgrade, in `dam version`, `dam ping` and the command preflight.
+  it.each([
+    ["0.2.24-rc9", "0.2.24-rc10", "behind-current"],
+    ["0.2.24-rc10", "0.2.24-rc10", "ok"],
+    ["0.2.24-rc10", "0.2.24-rc9", "ok"],
+    ["0.2.25-rc.9", "0.2.25-rc.10", "behind-current"],
+    ["0.2.25-rc.10", "0.2.25-rc.10", "ok"],
+  ])(
+    "verdictFor(local %s, recommended %s) = %s",
+    (localCli, serverRecommendedClient, kind) => {
+      expect(
+        verdictFor({
+          localCli,
+          serverVersion: serverRecommendedClient,
+          serverMinClient: "0.2.0",
+          serverRecommendedClient,
+        }).kind,
+      ).toBe(kind);
+    },
+  );
 
   // TEST_SCENARIO: a build from main reports `<version>-dev-<sha>` and recommends no CLI. The verdict must not compare the CLI with the server's own version: no CLI release carries it, so the check would pass every old CLI or fail every current one.
   it("Ok when the server recommends no CLI, whatever its own version", () => {
