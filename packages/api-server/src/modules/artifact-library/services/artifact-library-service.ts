@@ -49,6 +49,7 @@ import type {
   ArtifactLibraryRepository,
   ArtifactRow,
   FolderRow,
+  FolderWrite,
   SharingPatch,
 } from "../infrastructure/artifact-library-repository.js";
 import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
@@ -98,10 +99,14 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   }): Promise<boolean>;
 }
 
+export type ArtifactScope =
+  { kind: "library" } | { kind: "agent"; agentId: string };
+
 export interface ArtifactLibraryDeps {
   repo: ArtifactLibraryRepository;
   artifacts: ArtifactService;
   owner: string;
+  scope?: ArtifactScope;
   surface: ArtifactSurface;
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
@@ -207,6 +212,37 @@ export function createArtifactLibraryService(
   deps: ArtifactLibraryDeps,
 ): ArtifactLibraryServiceImpl {
   const { repo, artifacts, owner, shareBaseUrl, surface } = deps;
+  const scope: ArtifactScope = deps.scope ?? { kind: "library" };
+
+  function inScope(row: ArtifactRow): boolean {
+    return match(scope)
+      .with({ kind: "library" }, () => true)
+      .with({ kind: "agent" }, ({ agentId }) => row.agentId === agentId)
+      .exhaustive();
+  }
+
+  async function findArtifact(id: string): Promise<ArtifactRow | null> {
+    const row = await repo.getArtifact(id, owner);
+    return row && inScope(row) ? row : null;
+  }
+
+  const onlyAgentId = scope.kind === "agent" ? scope.agentId : undefined;
+
+  function folderWritten<T>(write: FolderWrite<T>): T {
+    return match(write)
+      .with({ outcome: "done" }, ({ value }) => value)
+      .with({ outcome: "missing" }, () => {
+        throw new TRPCError({ code: "NOT_FOUND", message: "folder not found" });
+      })
+      .with({ outcome: "holds-others" }, () => {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "This folder holds artifacts you did not publish. Rename or delete it in the app.",
+        });
+      })
+      .exhaustive();
+  }
 
   async function ensureAgent(agentId: string): Promise<void> {
     if (!deps.agentExists) return;
@@ -225,7 +261,7 @@ export function createArtifactLibraryService(
   }
 
   async function requireArtifact(id: string): Promise<ArtifactRow> {
-    const row = await repo.getArtifact(id, owner);
+    const row = await findArtifact(id);
     if (!row)
       throw new TRPCError({ code: "NOT_FOUND", message: "artifact not found" });
     return row;
@@ -263,8 +299,14 @@ export function createArtifactLibraryService(
     id: string,
     version?: number,
   ): Promise<ContentRef | null> {
-    const row = await repo.getArtifact(id, owner);
-    if (!row) return null;
+    const row = await findArtifact(id);
+    return row ? refFor(row, version) : null;
+  }
+
+  async function refFor(
+    row: ArtifactRow,
+    version?: number,
+  ): Promise<ContentRef | null> {
     if (version === undefined || version === row.version) {
       return {
         storageRef: row.storageRef,
@@ -274,7 +316,7 @@ export function createArtifactLibraryService(
         version: row.version,
       };
     }
-    const past = await repo.getVersion(id, version);
+    const past = await repo.getVersion(row.id, version);
     if (!past) return null;
     return {
       storageRef: past.storageRef,
@@ -320,10 +362,16 @@ export function createArtifactLibraryService(
 
   return {
     async list(filter?: ArtifactListFilter) {
+      const agentId = match(scope)
+        .with({ kind: "library" }, () => filter?.agentId)
+        .with({ kind: "agent" }, (s) => s.agentId)
+        .exhaustive();
+      if (filter?.agentId !== undefined && filter.agentId !== agentId)
+        return [];
       const rows = await repo.listArtifacts({
         owner,
         folderId: filter?.folderId,
-        agentId: filter?.agentId,
+        agentId,
         search: filter?.search,
         limit: LIST_LIMIT,
       });
@@ -334,15 +382,16 @@ export function createArtifactLibraryService(
     },
 
     async get(id) {
-      const row = await repo.getArtifact(id, owner);
+      const row = await findArtifact(id);
       return row ? withViewers(row) : null;
     },
 
     async getContent(id, version) {
-      const ref = await resolveRef(id, version);
+      const row = await findArtifact(id);
+      if (!row) return null;
+      const ref = await refFor(row, version);
       if (!ref) return null;
-      const row = await repo.getArtifact(id, owner);
-      const kind = (row?.kind ?? "binary") as ArtifactKind;
+      const kind = row.kind as ArtifactKind;
       const binary = !isTextKind(kind);
       if (ref.sizeBytes > PREVIEW_MAX_BYTES) {
         return {
@@ -369,9 +418,9 @@ export function createArtifactLibraryService(
     },
 
     async getPreviewHtml(id, version) {
-      const row = await repo.getArtifact(id, owner);
+      const row = await findArtifact(id);
       if (!row || row.kind === "binary") return null;
-      const ref = await resolveRef(id, version);
+      const ref = await refFor(row, version);
       if (!ref || ref.sizeBytes > PREVIEW_MAX_BYTES) return null;
       const blob = await artifacts.get(ref.storageRef);
       if (!blob) return null;
@@ -576,6 +625,11 @@ export function createArtifactLibraryService(
         patch,
         parsed.viewers,
         (before) => {
+          if (!inScope(before))
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "artifact not found",
+            });
           requireSharingPermission(before, parsed);
           if (before.interactive && parsed.visibility === "public") {
             throw new TRPCError({
@@ -607,6 +661,7 @@ export function createArtifactLibraryService(
     },
 
     async delete(id) {
+      await requireArtifact(id);
       const deleted = await repo.deleteArtifactWithVersions(id, owner);
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND" });
       emit({
@@ -648,7 +703,7 @@ export function createArtifactLibraryService(
     },
 
     async listFolders() {
-      const rows = await repo.listFolders(owner);
+      const rows = await repo.listFolders(owner, onlyAgentId);
       return rows.map(toFolder);
     },
 
@@ -668,11 +723,11 @@ export function createArtifactLibraryService(
     },
 
     async updateFolder(id, input: FolderUpdateInput) {
-      await requireOwnedFolder(id);
       const patch: Parameters<typeof repo.updateFolder>[2] = {};
       if (input.name !== undefined) patch.name = input.name;
-      const updated = await repo.updateFolder(id, owner, patch);
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      const updated = folderWritten(
+        await repo.updateFolder(id, owner, patch, onlyAgentId),
+      );
       emit({
         type: EventType.ArtifactFolderChanged,
         folderId: id,
@@ -683,8 +738,7 @@ export function createArtifactLibraryService(
     },
 
     async deleteFolder(id) {
-      const deleted = await repo.deleteFolder(id, owner);
-      if (!deleted) throw new TRPCError({ code: "NOT_FOUND" });
+      folderWritten(await repo.deleteFolder(id, owner, onlyAgentId));
       emit({
         type: EventType.ArtifactFolderChanged,
         folderId: id,
@@ -735,7 +789,7 @@ export function createArtifactLibraryService(
       { artifactId, ...request },
       { agentIds, email },
     ): Promise<ArtifactCallAgentApiResult> {
-      const row = await repo.getArtifact(artifactId, owner);
+      const row = await findArtifact(artifactId);
       const access = agentApiAccess(row, agentIds);
       if (!access.allowed) {
         securityLog("warn", "authz.artifact_api_denied", {
@@ -769,7 +823,7 @@ export function createArtifactLibraryService(
       { artifactId, prompt },
       { agentIds },
     ): Promise<ArtifactSendPromptResult> {
-      const row = await repo.getArtifact(artifactId, owner);
+      const row = await findArtifact(artifactId);
       const access = agentApiAccess(row, agentIds);
       const denial = !access.allowed
         ? access.denial
@@ -804,7 +858,7 @@ export function createArtifactLibraryService(
     },
 
     async recordTouch({ agentId, sessionId, artifactId, version }) {
-      const artifact = await repo.getArtifact(artifactId, owner);
+      const artifact = await findArtifact(artifactId);
       if (!artifact || artifact.agentId !== agentId) return false;
       return repo.attributeVersion({ artifactId, version, owner, sessionId });
     },

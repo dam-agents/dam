@@ -2142,6 +2142,7 @@ export async function bootstrap() {
       surface,
       shareBaseUrl: config.shareBaseUrl,
       agentExists: opts?.agentExists,
+      scope: opts?.scope,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
       featureOn: interactiveArtifactsOn,

@@ -1539,7 +1539,10 @@ export interface MountMcpDeps {
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
   kitUpdateReporter: KitUpdateReporter;
-  artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  artifactLibraryFor: (
+    owner: string,
+    agentId: string,
+  ) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   driverOpsFor: DriverOpsFor;
   subAgentAwaitsFor: (driverAgentId: string) => SubAgentAwaitMarks;
@@ -1588,7 +1591,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
 
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
-    const artifactLibrary = deps.artifactLibraryFor(verified.owner);
+    const artifactLibrary = deps.artifactLibraryFor(verified.owner, agentId);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const [ownerIsInspector, chatForms, grantedSatellites, environments] =
       await Promise.all([

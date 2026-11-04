@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-30
+Last verified: 2026-11-04
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -228,7 +228,7 @@ Text after an opening fence moves below it, unless the text is one lowercase lan
 The renderer works line by line, so a fence pair inside one line of prose stays as it is; tools request separate fence lines.
 
 An artifact's in-app link (`platform://artifacts/<id>`) opens only in the app's chat, so before a `reply` or `send_channel_message` posts, the endpoint puts the artifact's share URL in place of each such link, on Slack and Telegram alike.
-An artifact with no share URL, a private one, or an id the owner has no artifact for refuses the whole message, and the error tells the Agent to say the artifact must be shared first and to send the message without the link.
+An artifact with no share URL, a private one, or an id the Agent published no artifact under refuses the whole message, and the error tells the Agent to say the artifact must be shared first and to send the message without the link.
 
 What the agent sees:
 
