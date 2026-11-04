@@ -263,8 +263,9 @@ export function createSessionsService(deps: {
       )
         return;
       adopting.add(sessionId);
-      const caller = deps.openCaller();
+      let caller: InProcessCaller | undefined;
       try {
+        caller = deps.openCaller();
         await caller.request("initialize", {
           protocolVersion: 1,
           clientCapabilities: { fs: {} },
@@ -287,7 +288,7 @@ export function createSessionsService(deps: {
           `session ${sessionId}: the harness title could not be read: ${error instanceof Error ? error.message : String(error)}`,
         );
       } finally {
-        caller.close();
+        caller?.close();
         adopting.delete(sessionId);
       }
     },
@@ -320,8 +321,9 @@ export function createSessionsService(deps: {
         untitled.set(harness, ids);
       }
       if (untitled.size === 0) return;
-      const caller = deps.openCaller();
+      let caller: InProcessCaller | undefined;
       try {
+        caller = deps.openCaller();
         await caller.request("initialize", {
           protocolVersion: 1,
           clientCapabilities: { fs: {} },
@@ -332,7 +334,7 @@ export function createSessionsService(deps: {
           try {
             await readHarnessPages(caller, harness, (sessions) => {
               for (const { sessionId, title } of sessions) {
-                if (!ids.has(sessionId)) continue;
+                if (!ids.delete(sessionId)) continue;
                 const fresh = deps.sessionMetadata.get(sessionId);
                 if (!fresh || fresh.meta.title || fresh.meta.customTitle)
                   continue;
@@ -344,6 +346,7 @@ export function createSessionsService(deps: {
                 });
                 kept = true;
               }
+              return ids.size > 0;
             });
           } catch (error) {
             deps.log(
@@ -357,7 +360,7 @@ export function createSessionsService(deps: {
           `session titles: the harness listings could not be read: ${error instanceof Error ? error.message : String(error)}`,
         );
       } finally {
-        caller.close();
+        caller?.close();
       }
     },
 
