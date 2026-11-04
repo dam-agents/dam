@@ -108,6 +108,11 @@ export type ArtifactPatch = Partial<
 
 export type SharingPatch = Pick<ArtifactPatch, "visibility" | "expiresAt">;
 
+export type FolderWrite<T> =
+  | { outcome: "done"; value: T }
+  | { outcome: "missing" }
+  | { outcome: "holds-others" };
+
 export interface SharingChange {
   before: ArtifactRow;
   after: ArtifactRow;
@@ -176,15 +181,48 @@ export interface ArtifactLibraryRepository {
     owner: string,
     countAgentId?: string,
   ): Promise<Array<FolderRow & { artifactCount: number }>>;
-  folderHoldsOthersThan(folderId: string, agentId: string): Promise<boolean>;
   updateFolder(
     id: string,
     owner: string,
     patch: Partial<Pick<FolderRow, "name">>,
-  ): Promise<FolderRow | null>;
-  deleteFolder(id: string, owner: string): Promise<boolean>;
+    onlyAgentId?: string,
+  ): Promise<FolderWrite<FolderRow>>;
+  deleteFolder(
+    id: string,
+    owner: string,
+    onlyAgentId?: string,
+  ): Promise<FolderWrite<true>>;
 
   listExpiredBefore(cutoff: Date, limit: number): Promise<ArtifactRow[]>;
+}
+
+async function lockFolderFor(
+  tx: DbTx,
+  id: string,
+  owner: string,
+  onlyAgentId: string | undefined,
+): Promise<{ outcome: "missing" } | { outcome: "holds-others" } | null> {
+  const [folder] = await tx
+    .select({ id: foldersTable.id })
+    .from(foldersTable)
+    .where(and(eq(foldersTable.id, id), eq(foldersTable.owner, owner)))
+    .for("update");
+  if (!folder) return { outcome: "missing" };
+  if (onlyAgentId === undefined) return null;
+  const [other] = await tx
+    .select({ id: artifactsTable.id })
+    .from(artifactsTable)
+    .where(
+      and(
+        eq(artifactsTable.folderId, id),
+        or(
+          isNull(artifactsTable.agentId),
+          ne(artifactsTable.agentId, onlyAgentId),
+        ),
+      ),
+    )
+    .limit(1);
+  return other ? { outcome: "holds-others" } : null;
 }
 
 export function createArtifactLibraryRepository(
@@ -583,46 +621,29 @@ export function createArtifactLibraryRepository(
       return rows;
     },
 
-    async folderHoldsOthersThan(folderId, agentId) {
-      const [row] = await db
-        .select({ id: artifactsTable.id })
-        .from(artifactsTable)
-        .where(
-          and(
-            eq(artifactsTable.folderId, folderId),
-            or(
-              isNull(artifactsTable.agentId),
-              ne(artifactsTable.agentId, agentId),
-            ),
-          ),
-        )
-        .limit(1);
-      return row !== undefined;
-    },
-
-    async updateFolder(id, owner, patch) {
-      const [row] = await db
-        .update(foldersTable)
-        .set({ ...patch, updatedAt: new Date() })
-        .where(and(eq(foldersTable.id, id), eq(foldersTable.owner, owner)))
-        .returning();
-      return row ?? null;
-    },
-
-    async deleteFolder(id, owner) {
+    async updateFolder(id, owner, patch, onlyAgentId) {
       return db.transaction(async (tx) => {
-        const [folder] = await tx
-          .select({ id: foldersTable.id })
-          .from(foldersTable)
-          .where(and(eq(foldersTable.id, id), eq(foldersTable.owner, owner)))
-          .for("update");
-        if (!folder) return false;
+        const blocked = await lockFolderFor(tx, id, owner, onlyAgentId);
+        if (blocked) return blocked;
+        const [row] = await tx
+          .update(foldersTable)
+          .set({ ...patch, updatedAt: new Date() })
+          .where(eq(foldersTable.id, id))
+          .returning();
+        return { outcome: "done" as const, value: row! };
+      });
+    },
+
+    async deleteFolder(id, owner, onlyAgentId) {
+      return db.transaction(async (tx) => {
+        const blocked = await lockFolderFor(tx, id, owner, onlyAgentId);
+        if (blocked) return blocked;
         await tx
           .update(artifactsTable)
           .set({ folderId: null, updatedAt: new Date() })
           .where(eq(artifactsTable.folderId, id));
-        await tx.delete(foldersTable).where(eq(foldersTable.id, folder.id));
-        return true;
+        await tx.delete(foldersTable).where(eq(foldersTable.id, id));
+        return { outcome: "done" as const, value: true as const };
       });
     },
 

@@ -49,6 +49,7 @@ import type {
   ArtifactLibraryRepository,
   ArtifactRow,
   FolderRow,
+  FolderWrite,
   SharingPatch,
 } from "../infrastructure/artifact-library-repository.js";
 import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
@@ -225,14 +226,22 @@ export function createArtifactLibraryService(
     return row && inScope(row) ? row : null;
   }
 
-  async function requireFolderInScope(folderId: string): Promise<void> {
-    if (scope.kind === "library") return;
-    if (await repo.folderHoldsOthersThan(folderId, scope.agentId))
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message:
-          "This folder holds artifacts you did not publish. Rename or delete it in the app.",
-      });
+  const onlyAgentId = scope.kind === "agent" ? scope.agentId : undefined;
+
+  function folderWritten<T>(write: FolderWrite<T>): T {
+    return match(write)
+      .with({ outcome: "done" }, ({ value }) => value)
+      .with({ outcome: "missing" }, () => {
+        throw new TRPCError({ code: "NOT_FOUND", message: "folder not found" });
+      })
+      .with({ outcome: "holds-others" }, () => {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "This folder holds artifacts you did not publish. Rename or delete it in the app.",
+        });
+      })
+      .exhaustive();
   }
 
   async function ensureAgent(agentId: string): Promise<void> {
@@ -291,7 +300,13 @@ export function createArtifactLibraryService(
     version?: number,
   ): Promise<ContentRef | null> {
     const row = await findArtifact(id);
-    if (!row) return null;
+    return row ? refFor(row, version) : null;
+  }
+
+  async function refFor(
+    row: ArtifactRow,
+    version?: number,
+  ): Promise<ContentRef | null> {
     if (version === undefined || version === row.version) {
       return {
         storageRef: row.storageRef,
@@ -301,7 +316,7 @@ export function createArtifactLibraryService(
         version: row.version,
       };
     }
-    const past = await repo.getVersion(id, version);
+    const past = await repo.getVersion(row.id, version);
     if (!past) return null;
     return {
       storageRef: past.storageRef,
@@ -372,10 +387,11 @@ export function createArtifactLibraryService(
     },
 
     async getContent(id, version) {
-      const ref = await resolveRef(id, version);
-      if (!ref) return null;
       const row = await findArtifact(id);
-      const kind = (row?.kind ?? "binary") as ArtifactKind;
+      if (!row) return null;
+      const ref = await refFor(row, version);
+      if (!ref) return null;
+      const kind = row.kind as ArtifactKind;
       const binary = !isTextKind(kind);
       if (ref.sizeBytes > PREVIEW_MAX_BYTES) {
         return {
@@ -404,7 +420,7 @@ export function createArtifactLibraryService(
     async getPreviewHtml(id, version) {
       const row = await findArtifact(id);
       if (!row || row.kind === "binary") return null;
-      const ref = await resolveRef(id, version);
+      const ref = await refFor(row, version);
       if (!ref || ref.sizeBytes > PREVIEW_MAX_BYTES) return null;
       const blob = await artifacts.get(ref.storageRef);
       if (!blob) return null;
@@ -687,10 +703,7 @@ export function createArtifactLibraryService(
     },
 
     async listFolders() {
-      const rows = await repo.listFolders(
-        owner,
-        scope.kind === "agent" ? scope.agentId : undefined,
-      );
+      const rows = await repo.listFolders(owner, onlyAgentId);
       return rows.map(toFolder);
     },
 
@@ -710,12 +723,11 @@ export function createArtifactLibraryService(
     },
 
     async updateFolder(id, input: FolderUpdateInput) {
-      await requireOwnedFolder(id);
-      await requireFolderInScope(id);
       const patch: Parameters<typeof repo.updateFolder>[2] = {};
       if (input.name !== undefined) patch.name = input.name;
-      const updated = await repo.updateFolder(id, owner, patch);
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      const updated = folderWritten(
+        await repo.updateFolder(id, owner, patch, onlyAgentId),
+      );
       emit({
         type: EventType.ArtifactFolderChanged,
         folderId: id,
@@ -726,10 +738,7 @@ export function createArtifactLibraryService(
     },
 
     async deleteFolder(id) {
-      await requireOwnedFolder(id);
-      await requireFolderInScope(id);
-      const deleted = await repo.deleteFolder(id, owner);
-      if (!deleted) throw new TRPCError({ code: "NOT_FOUND" });
+      folderWritten(await repo.deleteFolder(id, owner, onlyAgentId));
       emit({
         type: EventType.ArtifactFolderChanged,
         folderId: id,

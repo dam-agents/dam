@@ -151,6 +151,9 @@ function fakeRepo(
     throw new Error("not implemented in fake");
   };
   const viewers = new Map<string, string[]>();
+  const holdsOthers = (folderId: string, onlyAgentId: string | undefined) =>
+    onlyAgentId !== undefined &&
+    artifacts.some((a) => a.folderId === folderId && a.agentId !== onlyAgentId);
   return {
     insertArtifact: notImplemented,
     attributeVersion: () => Promise.resolve(true),
@@ -241,21 +244,24 @@ function fakeRepo(
             ).length,
           })),
       ),
-    folderHoldsOthersThan: (folderId, agentId) =>
-      Promise.resolve(
-        artifacts.some((a) => a.folderId === folderId && a.agentId !== agentId),
-      ),
-    updateFolder: (id, owner, patch) => {
+    updateFolder: (id, owner, patch, onlyAgentId) => {
       const folder = folders.find((f) => f.id === id && f.owner === owner);
-      if (!folder) return Promise.resolve(null);
+      if (!folder) return Promise.resolve({ outcome: "missing" as const });
+      if (holdsOthers(id, onlyAgentId))
+        return Promise.resolve({ outcome: "holds-others" as const });
       Object.assign(folder, patch, { updatedAt: new Date() });
-      return Promise.resolve(folder);
+      return Promise.resolve({ outcome: "done" as const, value: folder });
     },
-    deleteFolder: (id, owner) => {
+    deleteFolder: (id, owner, onlyAgentId) => {
       const index = folders.findIndex((f) => f.id === id && f.owner === owner);
-      if (index === -1) return Promise.resolve(false);
+      if (index === -1) return Promise.resolve({ outcome: "missing" as const });
+      if (holdsOthers(id, onlyAgentId))
+        return Promise.resolve({ outcome: "holds-others" as const });
       folders.splice(index, 1);
-      return Promise.resolve(true);
+      return Promise.resolve({
+        outcome: "done" as const,
+        value: true as const,
+      });
     },
     listExpiredBefore: (cutoff, limit) =>
       Promise.resolve(
