@@ -239,7 +239,7 @@ drivers:
             - value: 1h
               name: "1 hour"
               description: "Survives long pauses between turns · Cache writes cost more"
-      # Haiku supports neither "auto" mode nor effort levels.
+      # The Haiku 4.5 tier alias supports neither "auto" mode nor effort levels; a concrete model such as claude-haiku-5-5 is unconstrained.
       modelConstraints:
         haiku:
           mode: ["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"]

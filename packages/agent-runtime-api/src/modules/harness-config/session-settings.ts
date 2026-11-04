@@ -20,9 +20,12 @@ export const isNativeSubagentSetting = (id: string): boolean =>
   id === SUBAGENT_MODEL_SETTING || id === SUBAGENT_EFFORT_SETTING;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a catalog keys its model constraints by a tier
- * word (haiku), while a session names a provider-qualified model, so the
- * constraints of the key the model's upstream id carries apply to it.
+ * UNIT_BOUNDARY_DESCRIPTION: a catalog keys its model constraints either by a
+ * session's model name, provider-qualified or not, or by a tier alias
+ * (`haiku`) that a session names alone or under a provider (`claude/haiku`,
+ * `anthropic/haiku`). Only those names take a key: a concrete model that
+ * happens to contain the tier word, such as `claude-haiku-5-5`, is a model of
+ * its own and takes only a key it matches exactly.
  */
 export function modelConstraintsFor(
   catalog: HarnessConfigCatalog | undefined,
@@ -30,15 +33,14 @@ export function modelConstraintsFor(
 ): Record<string, string[]> | undefined {
   const constraints = catalog?.modelConstraints;
   if (!constraints || !model) return undefined;
-  if (constraints[model]) return constraints[model];
-  const unprefixed = model.replace(/^claude\//i, "");
-  const slash = unprefixed.indexOf("/");
-  const upstream = (
-    slash === -1 ? unprefixed : unprefixed.slice(slash + 1)
-  ).toLowerCase();
-  const key = Object.keys(constraints).find((k) =>
-    upstream.includes(k.toLowerCase()),
-  );
+  const stripped = model.replace(/^claude\//i, "");
+  const last = stripped.split("/").pop() ?? stripped;
+  const key = Object.keys(constraints).find((k) => {
+    const name = k.toLowerCase();
+    return [model, stripped, last].some(
+      (candidate) => candidate.toLowerCase() === name,
+    );
+  });
   return key === undefined ? undefined : constraints[key];
 }
 

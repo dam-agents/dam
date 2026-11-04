@@ -87,7 +87,7 @@ Settings are sent one at a time, in the order the runtime lists them, each after
 A prompt waits for all of them.
 A setting always holds a value: one that neither the session nor its default names runs on the manifest's `default` for the option, which the runtime applies to the session or its process, never on what the harness's own settings file holds.
 A setting whose manifest default a person must approve stays the harness's own, since such a default would stall every unattended turn; its picker starts on the agent's configured value, else the manifest's `default`.
-A default the session's model does not take, such as an effort on Haiku, is not sent.
+A default the model does not take is not sent, e.g. an effort on Haiku 4.5; Haiku 5.5 takes it.
 The picker offers no unset choice, so a change always names a value the harness applies.
 The Config panel shows only the settings a harness keeps for all its sessions, such a setting among them; the others are chosen in a session or in its default.
 The platform MCP server tells the agent so, and that editing its settings file does not change its model or effort.

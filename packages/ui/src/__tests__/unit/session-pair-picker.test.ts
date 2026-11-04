@@ -2,7 +2,7 @@
 // TEST_OVERVIEW: The harness and model panel is provider first: Provider, Harness, Model and Effort are dropdowns, Subagents and the profile save sit behind More options, "Use a profile" opens the saved profiles, and the same body serves a new session, an open session, a config page's default and a profile in Settings. A pick always leaves the panel as a whole pair.
 import type * as DropdownPrimitive from "@radix-ui/react-dropdown-menu";
 import type { HarnessCapability } from "agent-runtime-api";
-import { lentSubagentOfProfile } from "agent-runtime-api";
+import { lentSubagentOfProfile, modelConstraintsFor } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import {
   act,
@@ -2666,5 +2666,67 @@ describe("the older-versions toggle", () => {
     expect(onPick).not.toHaveBeenCalled();
     act(() => root.unmount());
     container.remove();
+  });
+});
+
+describe("a model's effort availability", () => {
+  /** TEST_SCENARIO: a tier constraint (`haiku`) applies to the alias and its qualified forms, never to a concrete model that merely contains the word, so Claude Haiku 5.5 offers its effort. */
+  it("matches a tier alias but not a concrete model", () => {
+    const catalog = claudeCode.harnessConfigCatalog!;
+    expect(modelConstraintsFor(catalog, "haiku")).toBeDefined();
+    expect(modelConstraintsFor(catalog, "claude/haiku")).toBeDefined();
+    expect(modelConstraintsFor(catalog, "anthropic/haiku")).toBeDefined();
+    expect(
+      modelConstraintsFor(catalog, "ibm/aws/claude-haiku-5-5"),
+    ).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: a concrete model of its own still takes a constraint keyed by its exact id, qualified or not. */
+  it("matches a concrete key by its name", () => {
+    const catalog = {
+      options: [],
+      modelConstraints: { "claude-haiku-4-5": { effort: [] } },
+    };
+    expect(modelConstraintsFor(catalog, "ete/claude-haiku-4-5")).toEqual({
+      effort: [],
+    });
+    expect(modelConstraintsFor(catalog, "claude-haiku-4-5")).toEqual({
+      effort: [],
+    });
+    expect(modelConstraintsFor(catalog, "claude-haiku-5-5")).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: every harness that has a thought-level setting leaves Claude Haiku 5.5 unconstrained; Hermes and Bob have none, so they show no Effort row at all. */
+  it.each([
+    ["claude-code", claudeCode],
+    ["codex", claudeCode],
+    ["pi", carried[0]!],
+    ["copilot", claudeCode],
+    ["hermes", claudeCode],
+    ["bob", claudeCode],
+  ])("leaves Claude Haiku 5.5 unconstrained on %s", (_name, capability) => {
+    expect(
+      modelConstraintsFor(
+        capability.harnessConfigCatalog,
+        "ibm/aws/claude-haiku-5-5",
+      ),
+    ).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: the picker offers Effort on Claude Haiku 5.5 for the harnesses that have a thought-level setting, and only a model constrained by its exact name shows the note. */
+  it("offers effort on Claude Haiku 5.5", () => {
+    state.catalog = claudeCatalog;
+    state.chosen = {
+      harness: "claude-code",
+      provider: "ibm",
+      model: "ibm/aws/claude-haiku-5-5",
+    };
+    const node = mount(
+      picker({ carried: [claudeCode], defaultHarness: "claude-code" }),
+    );
+    openMore(node);
+    expect(node.textContent).not.toContain("has no");
+    expect(node.textContent).toContain("Effort");
+    expect(menuItems(node, "Effort").length).toBeGreaterThan(0);
   });
 });
