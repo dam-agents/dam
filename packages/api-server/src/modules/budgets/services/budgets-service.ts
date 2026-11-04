@@ -9,6 +9,8 @@ import {
 interface BudgetsServiceDeps {
   listAgentIds(): Promise<string[]>;
   readVmUsage(): Promise<RunnerUsage | null>;
+  readCpuPoolMilli(): Promise<number>;
+  machineMilli: number | null;
   isSlackUnlinked(): Promise<boolean>;
 }
 
@@ -30,9 +32,13 @@ export function createStorageGate(deps: {
 export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
   return {
     async reserved(): Promise<BudgetReserved> {
-      const [agentIds, vmUsage] = await Promise.all([
+      const [agentIds, vmUsage, poolMilli] = await Promise.all([
         deps.listAgentIds(),
         deps.readVmUsage(),
+        deps.readCpuPoolMilli().catch((error: unknown) => {
+          getLogger().warn({ error }, "budgets.cpu-pool.failed");
+          return null;
+        }),
       ]);
       if (!vmUsage) return {};
       const slackUnlinked = await deps
@@ -43,7 +49,10 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         });
       return {
         vm: {
-          ...vmUsageView(vmUsage, new Set(agentIds)),
+          ...vmUsageView(vmUsage, new Set(agentIds), {
+            poolMilli,
+            machineMilli: deps.machineMilli,
+          }),
           ...(slackUnlinked ? { slackUnlinked } : {}),
         },
       };

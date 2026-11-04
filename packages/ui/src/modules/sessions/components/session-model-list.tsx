@@ -1,4 +1,4 @@
-import { Add, ChevronDown } from "@carbon/icons-react";
+import { Add, ChevronDown, Plug } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -347,7 +347,7 @@ function ProviderChoice({
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a provider's name in the model list, read the same whether or not the agent is connected to it; a pick that connects it says so in its dialog. */
+/** UNIT_BOUNDARY_DESCRIPTION: a provider's name in the model list, marked when the agent is not connected to it, so the connect dialog its pick opens is no surprise. */
 function ProviderName({ group }: { group: ModelGroup }) {
   return (
     <>
@@ -357,7 +357,15 @@ function ProviderName({ group }: { group: ModelGroup }) {
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a pick on a provider the agent is not connected to, said to a screen reader only: it looks like any other, and the connect dialog its pick opens is where a person learns of it. */
+/** UNIT_BOUNDARY_DESCRIPTION: a pick on a provider the agent is not connected to: a plug, seen, and its words for a screen reader; the pick connects the provider first. */
 export function NotConnectedMark() {
-  return <span className="sr-only">, not connected</span>;
+  return (
+    <span
+      title="Not connected to this agent: picking connects it"
+      className="inline-flex shrink-0 items-center text-muted-foreground"
+    >
+      <Plug size={12} aria-hidden data-not-connected />
+      <span className="sr-only">, not connected</span>
+    </span>
+  );
 }

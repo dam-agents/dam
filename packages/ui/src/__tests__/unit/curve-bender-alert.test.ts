@@ -4,6 +4,10 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "../../modules/links/api/queries.js",
+  () => import("./support/fake-links.js"),
+);
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
 }));
@@ -11,6 +15,8 @@ vi.mock("@/components/ui/tooltip", () => ({
 const { CurveBenderAlert } =
   await import("../../modules/sessions/components/curve-bender-alert.js");
 const { getBrand } = await import("../../brand.js");
+const { CHART_DEFAULT_LINKS, fakeLinks } =
+  await import("./support/fake-links.js");
 
 const COMMUNITY_URL = "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1";
 const DOCS_URL =
@@ -47,6 +53,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  fakeLinks.current = { ...CHART_DEFAULT_LINKS };
 });
 
 describe("the CurveBender notice", () => {
@@ -78,6 +85,17 @@ describe("the CurveBender notice", () => {
       (a) => a.textContent === "#curvebender-community",
     );
     expect(community?.getAttribute("href")).toBe(COMMUNITY_URL);
+  });
+
+  // TEST_SCENARIO: an install that names no community channel thanks the person without inviting them anywhere.
+  it("thanks without a channel when the install names none", async () => {
+    fakeLinks.current = { ...CHART_DEFAULT_LINKS, curveBenderCommunity: null };
+    render(true, true);
+    await clickTry();
+    expect(document.body.textContent).toContain(
+      "Thank you for trying CurveBender!",
+    );
+    expect(document.body.textContent).not.toContain("#curvebender-community");
   });
 
   // TEST_SCENARIO: a Try that could not apply CurveBender says nothing about the agent being set to it.

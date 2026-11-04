@@ -8,6 +8,7 @@ import { INERT_GITHUB_TOKEN } from "../../skills/infrastructure/github-token.js"
 
 const GITHUB_GRAPHQL = "https://api.github.com/graphql";
 export const PULL_REQUEST_TTL_MS = 60_000;
+const NO_PULL_REQUEST_TTL_MS = 20_000;
 
 export interface PullRequestFinder {
   find(
@@ -102,6 +103,7 @@ function coordinatesOf(
 interface Cached {
   at: number;
   link: Promise<PullRequestLink | null>;
+  none?: boolean;
 }
 
 export function createPullRequestFinder(deps: {
@@ -186,10 +188,18 @@ export function createPullRequestFinder(deps: {
     lookUp: () => Promise<PullRequestLink | null>,
   ): Promise<PullRequestLink | null> {
     const entry = cache.get(key);
-    const fresh = entry && now() - entry.at < PULL_REQUEST_TTL_MS;
+    const ttl = entry?.none ? NO_PULL_REQUEST_TTL_MS : PULL_REQUEST_TTL_MS;
+    const fresh = entry && now() - entry.at < ttl;
     const at = fresh ? entry.at : now();
     const link = fresh ? entry.link : lookUp();
-    if (!fresh) cache.set(key, { at, link });
+    if (!fresh) {
+      const stored: Cached = { at, link };
+      cache.set(key, stored);
+      void link.then(
+        (found) => (stored.none = found === null),
+        () => undefined,
+      );
+    }
     return link.then((found) => found && newest(at, found));
   }
 

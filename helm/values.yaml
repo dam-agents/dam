@@ -85,10 +85,16 @@ signUps: open
 # -- Outbound links surfaced in the UI, changeable per install without a
 # rebuild (the api-server serves them over `links.all`).
 links:
+  # The documentation site, also on the sign-in page. Complete URL of its
+  # root: the UI builds the CLI reference, MCP and LiteLLM key pages under it.
+  # Empty string hides every documentation link.
+  docs: "https://pages.github.ibm.com/dam-agents/docs/"
   # Where "Request more" next to the compute meter points — a chat channel,
-  # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
-  # default, which is install-specific and slated for removal — set this.
-  computeRequest: ""
+  # form, or ticket queue. Complete URL. Empty string hides the link.
+  computeRequest: "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759"
+  # The #curvebender-community channel the CurveBender thank-you dialog
+  # invites people to. Complete URL. Empty string drops that sentence.
+  curveBenderCommunity: "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1"
   # Where "Request it" on the Slack setup surfaces points — the form people
   # use to ask for the Slack app in a workspace that does not have it yet.
   # Complete URL. Empty string hides that line; there is no bundled default.

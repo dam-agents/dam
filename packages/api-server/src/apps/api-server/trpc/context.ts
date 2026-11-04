@@ -190,6 +190,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { budgets, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
       owner: user.sub,
+      cpuPool: {
+        defaultCpu: config.defaultUserCpuBudget,
+        machineCpus: config.vmMachineCpus,
+        agentStore: { authority: config.agentStore, db },
+      },
       listAgentIds: async () =>
         (await agentsRepo.list(user.sub)).map((a) => a.id),
       isSlackUnlinked: async () =>

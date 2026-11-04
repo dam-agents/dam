@@ -86,9 +86,36 @@ async function standing(
   return { ownerSub: OWNER, permissions: editorPermissions };
 }
 
+const STATUS = {
+  supported: true,
+  catalog: null,
+  sessionModel: true,
+  modelRouter: true,
+  followsDefaults: true,
+  defaultHarness: "claude-code",
+  harnesses: [],
+};
+
+const SAVED = {
+  chat: null,
+  channel: null,
+  scheduled: null,
+  chatProfileId: null,
+  platformSubagentProfileId: null,
+  platformSubagentSettings: null,
+};
+
 function world(user: UserIdentity) {
   const madeFor: UserIdentity[] = [];
+  const harnessConfig = () => ({
+    status: vi.fn(async () => STATUS),
+    sessionDefaults: vi.fn(async () => SAVED),
+    sessionPair: vi.fn(async () => null),
+    rememberSessionPair: vi.fn(async () => undefined),
+    clearSessionDefault: vi.fn(async () => undefined),
+  });
   const ownerServices = {
+    harnessConfig: harnessConfig(),
     schedules: { runNow: vi.fn(async () => ({ queued: true })) },
     egressRules: { revoke: vi.fn(async () => undefined) },
     agents: { delete: vi.fn(async () => undefined) },
@@ -98,6 +125,7 @@ function world(user: UserIdentity) {
     },
   };
   const callerServices = {
+    harnessConfig: harnessConfig(),
     schedules: { runNow: vi.fn(async () => ({ queued: true })) },
     egressRules: { revoke: vi.fn(async () => undefined) },
     agents: { delete: vi.fn(async () => undefined), update: vi.fn() },
@@ -490,5 +518,79 @@ describe("an editor on the runtime's tRPC socket", () => {
     );
     expect(screened.forward).toBeNull();
     expect(screened.refusals).toHaveLength(1);
+  });
+});
+
+describe("an editor and the agent's saved defaults", () => {
+  // TEST_SCENARIO: An editor holds the settings permission, so the agent's Providers, Channels and Schedules pages read and save its defaults on their behalf: each call runs against the owner's harness config, bound to that one agent and naming the editor, and none of the editor's own defaults are touched.
+  it("reads and saves the agent's defaults as the owner's", async () => {
+    const w = world(BOB);
+    expect(
+      await w.caller.harnessConfig.sessionDefaults({ agentId: "alice-bot" }),
+    ).toEqual(SAVED);
+    await w.caller.harnessConfig.rememberSessionPair({
+      agentId: "alice-bot",
+      kind: "channel",
+      harness: "claude-code",
+      provider: "conn-1",
+      model: "anthropic/claude-opus-5-5",
+    });
+    await w.caller.harnessConfig.clearSessionDefault({
+      agentId: "alice-bot",
+      kind: "scheduled",
+    });
+
+    expect(w.ownerServices.harnessConfig.sessionDefaults).toHaveBeenCalledWith(
+      "alice-bot",
+    );
+    expect(
+      w.ownerServices.harnessConfig.rememberSessionPair,
+    ).toHaveBeenCalledWith(
+      "alice-bot",
+      "channel",
+      {
+        harness: "claude-code",
+        provider: "conn-1",
+        model: "anthropic/claude-opus-5-5",
+      },
+      {},
+    );
+    expect(
+      w.ownerServices.harnessConfig.clearSessionDefault,
+    ).toHaveBeenCalledWith("alice-bot", "scheduled");
+    expect(
+      w.callerServices.harnessConfig.sessionDefaults,
+    ).not.toHaveBeenCalled();
+    expect(
+      w.callerServices.harnessConfig.rememberSessionPair,
+    ).not.toHaveBeenCalled();
+    expect(w.madeFor).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sub: OWNER, agentIds: ["alice-bot"] }),
+      ]),
+    );
+  });
+
+  // TEST_SCENARIO: The reads need view and the writes need settings. An editor without settings is refused a default change before the owner's harness config is reached, and still reads the agent's defaults.
+  it("refuses a default change without settings, and still reads", async () => {
+    editorPermissions = ["view"];
+    const w = world(BOB);
+    await expect(
+      w.caller.harnessConfig.rememberSessionPair({
+        agentId: "alice-bot",
+        harness: "claude-code",
+        provider: "conn-1",
+        model: "anthropic/claude-opus-5-5",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(
+      w.ownerServices.harnessConfig.rememberSessionPair,
+    ).not.toHaveBeenCalled();
+
+    await w.caller.harnessConfig.status({ agentId: "alice-bot" });
+    expect(w.ownerServices.harnessConfig.status).toHaveBeenCalledWith(
+      "alice-bot",
+    );
+    editorPermissions = EDITS;
   });
 });

@@ -114,6 +114,9 @@ vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
 vi.mock("../../modules/sessions/components/detach-provider-message.js", () => ({
   DetachProviderMessage: () => "Revoke this agent's grant",
 }));
+vi.mock("../../modules/sandboxes/components/agent-model-picker.js", () => ({
+  AgentModelPicker: () => null,
+}));
 vi.mock("../../modules/providers/components/provider-spend-row.js", () => ({
   ProviderSpendRow: ({
     onCheckedChange,

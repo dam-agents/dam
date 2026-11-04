@@ -10,7 +10,7 @@ import type {
 export type PoolLevel = "ok" | "warning" | "critical";
 export type CpuCongestion = "low" | "moderate" | "high" | "severe";
 
-// UNIT_BOUNDARY_DESCRIPTION: what the caller's vm agents use of their pools, read from their runner on demand. A level is "warning" from 75% of a pool and "critical" from 90%. `cpu` is absent when the runner reports neither a CPU limit nor a CPU pressure; its pressure is the share of the last minute the agents waited for a CPU, shown as a congestion word and a 0–1 fill of the bar. An agent's storage is the blocks its disk takes, and storage's `seedBytes` the blocks the disk copies a machine still holds take of the same storage; its CPU the average over the runner's last probe of it; either is 0 when unmeasured. `slackUnlinked` is true when the install has Slack and the caller has not linked their Slack account, so they would get no alert there.
+// UNIT_BOUNDARY_DESCRIPTION: what the caller's vm agents use of their pools, read from their runner on demand. A level is "warning" from 75% of a pool and "critical" from 90%. `cpu` is absent when the runner reports neither a CPU limit nor a CPU pressure; `usedMilli` is what the runner's machines used over its last probe and `poolMilli` the owner's CPU pool it is shown against, their UserBudget's `cpu` else the install's default, absent when the budget could not be read; `machineMilli` is the vCPUs every machine gets, absent when the install does not say; its pressure is the share of the last minute the agents waited for a CPU, named as a congestion word, with a 0–1 fill of the slowdown. An agent's storage is the blocks its disk takes, and storage's `seedBytes` the blocks the disk copies a machine still holds take of the same storage; its CPU the average over the runner's last probe of it; either is 0 when unmeasured. `slackUnlinked` is true when the install has Slack and the caller has not linked their Slack account, so they would get no alert there.
 export interface BudgetVmUsage {
   memory: { usedBytes: number; limitBytes: number; level: PoolLevel };
   storage: {
@@ -22,6 +22,8 @@ export interface BudgetVmUsage {
   cpu?: {
     limitMilli: number;
     usedMilli: number;
+    poolMilli?: number;
+    machineMilli?: number;
     throttledPercent: number;
     pressurePercent: number;
     congestion: CpuCongestion;

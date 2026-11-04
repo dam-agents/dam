@@ -83,9 +83,11 @@ export interface SlackLoopGuardDrop {
   name: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the bot and app posts the loop guard dropped in one Slack conversation in the day since its last drop; `recent` holds the newest few, newest first.
+// UNIT_BOUNDARY_DESCRIPTION: the bot and app posts the loop guard dropped in one Slack conversation in the day since its last drop; `recent` holds the newest few, newest first. `limit` bot posts per `windowMs` start turns, and the first one over pauses them for `cooldownMs`.
 export interface SlackLoopGuardDrops {
   limit: number;
+  windowMs: number;
+  cooldownMs: number;
   dropped: number;
   lastDroppedAt: string;
   recent: SlackLoopGuardDrop[];

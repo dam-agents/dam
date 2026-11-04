@@ -8,9 +8,8 @@ import { Label } from "../../components/label";
 import { SocialProviderButton } from "../components/social-provider-button";
 import type { I18n } from "../i18n";
 import type { KcContext } from "../KcContext";
+import { safeDocsUrl } from "../lib/docs-url";
 import { BRAND_FALLBACK } from "../Template";
-
-const LOGIN_DOCS_URL = "https://ibm.biz/dam-docs";
 
 export default function Login(
   props: PageProps<Extract<KcContext, { pageId: "login.ftl" }>, I18n>,
@@ -36,6 +35,7 @@ export default function Login(
   const isShareSignIn =
     kcContext.client.clientId === kcContext.properties.PLATFORM_SHARE_CLIENT_ID;
   const brand = realm.displayName || BRAND_FALLBACK;
+  const docsUrl = safeDocsUrl(kcContext.properties.PLATFORM_DOCS_URL);
   const providerButtons = providers.map((p) => (
     <SocialProviderButton key={p.alias} provider={p} />
   ));
@@ -58,15 +58,20 @@ export default function Login(
           <>
             Run AI-driven experiments with the harness and model you choose,
             connected to your tools. Governed access, auditable execution, built
-            to repeat.{" "}
-            <a
-              href={LOGIN_DOCS_URL}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="text-accent hover:underline"
-            >
-              Read the docs to learn more.
-            </a>
+            to repeat.
+            {docsUrl && (
+              <>
+                {" "}
+                <a
+                  href={docsUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-accent hover:underline"
+                >
+                  Read the docs to learn more.
+                </a>
+              </>
+            )}
           </>
         )}
       </p>
