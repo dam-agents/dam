@@ -205,7 +205,7 @@ drivers:
             - value: high
               name: "High"
             - value: xhigh
-              name: "Extra High"
+              name: "Extra high"
               description: "May use excessive tokens. Use sparingly for the hardest tasks."
         # The router writes it over the effort of each call Claude Code marks as
         # a subagent's, and only where Claude Code sent one.
@@ -222,7 +222,7 @@ drivers:
             - value: high
               name: "High"
             - value: xhigh
-              name: "Extra High"
+              name: "Extra high"
               description: "May use excessive tokens. Use sparingly for the hardest tasks."
         # promptCacheTtl and subagentPromptCacheTtl need Claude Code 2.1.242+.
         # Unset, Claude Code picks 1h only for a subscription's main conversation;

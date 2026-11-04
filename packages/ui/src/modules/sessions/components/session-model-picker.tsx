@@ -10,12 +10,13 @@ import { modelConstraintsFor } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import { Fragment, type ReactNode, useId, useState } from "react";
 
-import { HarnessIcons } from "@/components/harness-icons";
+import { HARNESS_ORDER, HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -28,10 +29,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useProfileAttach } from "../../profiles/hooks/use-profile-attach.js";
@@ -67,7 +66,16 @@ import {
 import { subagentOf, withSubagent } from "../lib/subagent-choice.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 
-const OLDER_VERSIONS = "__older_versions__";
+const ROW =
+  "grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-3 px-4 py-1.5";
+const LABEL = "text-[13px] text-muted-foreground";
+const CONTROL =
+  "flex h-[38px] w-full min-w-0 items-center justify-between gap-2 rounded-md border border-input bg-background px-3 text-sm text-foreground";
+
+interface MenuSection {
+  title: string;
+  entries: { key: string; label: string; harness?: string }[];
+}
 
 interface Entry extends MenuEntry {
   family?: string;
@@ -81,15 +89,16 @@ export function SessionModelPicker({
   agentId,
   carried,
   harnesses,
-  pair,
+  pair: pairProp,
   defaultHarness,
   locked,
   note,
   profiles = [],
   selectedProfileId = null,
   onPickProfile,
-  onEditProfile,
   onManageProfiles,
+  onEditProfile,
+  profileHarness,
   agentDefault,
   saveAsProfile,
   onLeaveProfiles,
@@ -108,7 +117,10 @@ export function SessionModelPicker({
   profiles?: readonly ProfileWithUsage[];
   selectedProfileId?: string | null;
   onPickProfile?: (profile: ProfileWithUsage, connectionId?: string) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: opens that profile's editor on the Settings › Profiles page. */
   onEditProfile?: (profile: ProfileWithUsage) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: an open session offers only the profiles that run on its harness, and says so when none does. */
+  profileHarness?: string;
   onManageProfiles?: () => void;
   /** UNIT_BOUNDARY_DESCRIPTION: a channel or a schedule follows the agent's default until it is switched off, which copies the default's values into its own pick. */
   agentDefault?: {
@@ -135,6 +147,7 @@ export function SessionModelPicker({
     profiles.length > 0 && selectedProfileId ? "profiles" : "custom",
   );
   const [more, setMore] = useState<boolean | null>(null);
+  const pair = pairProp;
 
   const harness = pair?.harness ?? defaultHarness;
   const capability = carried.find((h) => h.name === harness);
@@ -168,10 +181,6 @@ export function SessionModelPicker({
     entry.family ? `${entry.family} ${entry.label}` : entry.label;
   const allEntries: Entry[] = [
     ...familyEntries(true),
-    ...catalogEntries.other.models,
-  ];
-  const shownEntries: Entry[] = [
-    ...familyEntries(older),
     ...catalogEntries.other.models,
   ];
   const entryOf = (name: string | null): Entry | null =>
@@ -266,6 +275,58 @@ export function SessionModelPicker({
       ? undefined
       : (settings[effort.id] ?? defaults[effort.id] ?? effort.default);
   const modelName = model ? (prettyModelLabel(model) ?? model) : "";
+  const orderedHarnessNames = [
+    ...HARNESS_ORDER.filter((name) => harnessNames.includes(name)),
+    ...harnessNames.filter((name) => !HARNESS_ORDER.includes(name as never)),
+  ];
+  /* UNIT_BOUNDARY_DESCRIPTION: one family section of the model menus, the current entry kept visible when the older versions are collapsed, and Other last. */
+  const modelSections = (current: Entry | null): MenuSection[] => {
+    const sections: MenuSection[] = catalogEntries.families.flatMap(
+      (section) => {
+        const list = older ? section.expanded : section.newest;
+        const entries = list.map((entry) => ({
+          key: entry.key,
+          label: `${section.family.name} ${entry.label}`,
+        }));
+        if (
+          current?.family === section.family.name &&
+          !entries.some((entry) => entry.key === current.key)
+        )
+          entries.push({ key: current.key, label: entryLabel(current) });
+        return entries.length === 0
+          ? []
+          : [{ title: section.family.name, entries }];
+      },
+    );
+    if (catalogEntries.other.models.length > 0)
+      sections.push({
+        title: "Other",
+        entries: catalogEntries.other.models.map((entry) => ({
+          key: entry.key,
+          label: entry.label,
+        })),
+      });
+    return sections;
+  };
+  const olderAvailable = catalogEntries.families.some(
+    (section) => section.more.length > 0,
+  );
+  const olderFoot = olderAvailable
+    ? {
+        label: older ? "Hide older versions" : "Show older versions",
+        onSelect: () => setOlder(!older),
+      }
+    : undefined;
+  const modelDisplay = currentEntry
+    ? entryLabel(currentEntry)
+    : model
+      ? (prettyModelLabel(model) ?? model)
+      : "Choose a model";
+  const subagentDisplay = subagent
+    ? subEntry
+      ? entryLabel(subEntry)
+      : (prettyModelLabel(subagent.model) ?? subagent.model)
+    : "Same as agent";
 
   const choose = (next: SessionPair, intent: PickerIntent = "primary") =>
     onChoose(next, intent);
@@ -304,13 +365,55 @@ export function SessionModelPicker({
       return choose({ harness, provider: providerId, model: null });
     pickOption(first.options.find((o) => o.group.connectionId === providerId)!);
   };
+  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
   const changeHarness = (name: string) => {
     const fit = providerOptions(name, views, granted, owned);
-    const next =
+    const nextProvider =
       fit.granted.find((p) => p.id === provider?.id) ??
       fit.granted[0] ??
       fit.addable[0];
-    choose({ harness: name, provider: next?.id ?? null, model: null });
+    const nextGroups = catalogModels.forHarness(name) ?? [];
+    const nextEntries = familyModelGroups(nextGroups);
+    const offered = [
+      ...nextEntries.families.flatMap((section) => section.expanded),
+      ...nextEntries.other.models,
+    ];
+    const kept =
+      model === null
+        ? null
+        : (offered.find((entry) =>
+            entry.options.some((o) => sameModel(o.model.name, model)),
+          ) ?? null);
+    const keptOption =
+      kept?.options.find((o) => o.group.connectionId === nextProvider?.id) ??
+      kept?.options[0];
+    const providerGroup = nextGroups.find(
+      (g) => g.connectionId === nextProvider?.id,
+    );
+    const firstOfProvider = providerGroup
+      ? (familyModelGroups([providerGroup]).families[0]?.newest[0] ??
+        familyModelGroups([providerGroup]).other.models[0])
+      : undefined;
+    const firstOfHarness =
+      nextEntries.families[0]?.newest[0] ?? nextEntries.other.models[0];
+    const fallback =
+      firstOfProvider?.options[0] ?? firstOfHarness?.options[0] ?? null;
+    const nextModel = keptOption ?? fallback;
+    const nextCapability = carried.find((h) => h.name === name);
+    const keptSettings = nextModel
+      ? settingsForModel(
+          nextCapability,
+          nextGroups,
+          nextModel.model.name,
+          settings,
+        )
+      : settings;
+    choose({
+      harness: name,
+      provider: nextModel?.group.connectionId ?? nextProvider?.id ?? null,
+      model: nextModel?.model.name ?? null,
+      ...keepSettings(keptSettings),
+    });
   };
   const changeSubagentModel = (key: string) => {
     if (!pair) return;
@@ -372,6 +475,7 @@ export function SessionModelPicker({
   };
   const follow = agentDefault;
   const followingPair = follow?.active ? follow.pair : null;
+  const followSubagent = followingPair ? subagentOf(followingPair) : null;
   const followingProvider = followingPair
     ? (owned.find((p) => p.id === followingPair.provider) ??
       providerOfModel(followingPair.model, owned))
@@ -393,14 +497,23 @@ export function SessionModelPicker({
       ? undefined
       : (option?.choices.find((c) => c.value === value)?.name ?? value);
   const onProfiles = view === "profiles" && profiles.length > 0;
+  const fitProfiles = sortProfiles(
+    profiles.filter(
+      (profile) =>
+        (profileHarness === undefined || profile.harness === profileHarness) &&
+        (profile.availability?.available ?? true),
+    ),
+  );
 
   return (
-    <div className="flex flex-col gap-1 p-1 text-sm">
+    <div className="flex flex-col gap-0.5 text-sm">
       {!onProfiles && (
         <>
-          {note && <p className="px-1 text-xs text-muted-foreground">{note}</p>}
+          {note && (
+            <p className="px-4 text-[13px] text-muted-foreground">{note}</p>
+          )}
           {follow && (
-            <div className="flex items-center justify-between gap-2 px-1 py-1">
+            <div className="flex items-center justify-between gap-2 px-4 py-1.5">
               <span id={`${uid}-follow`}>Use agent default</span>
               <Switch
                 checked={follow.active}
@@ -414,11 +527,11 @@ export function SessionModelPicker({
           )}
           {follow?.active ? (
             followingPair === null ? (
-              <p className="px-1 py-1 text-muted-foreground">
+              <p className="px-4 py-1.5 text-muted-foreground">
                 No default set yet.
               </p>
             ) : (
-              <dl className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-1 text-sm">
+              <dl className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-4 text-sm">
                 <dt className="text-muted-foreground">Harness</dt>
                 <dd className="m-0 truncate">
                   {harnessDisplayName(followingPair.harness, views) ??
@@ -449,117 +562,77 @@ export function SessionModelPicker({
           ) : (
             <>
               {harnessNames.length === 0 ? (
-                <p className="px-1 py-1 text-muted-foreground">
+                <p className="px-4 py-1.5 text-muted-foreground">
                   No provider you hold runs any harness this agent carries.
                 </p>
               ) : locked ? (
-                <div className="flex items-center gap-3 px-1 py-1">
-                  <span className="w-[84px] shrink-0 text-muted-foreground">
+                <div className="flex items-center gap-3 px-4 py-1.5">
+                  <span className={cn(LABEL, "w-[84px] shrink-0")}>
                     Harness
                   </span>
-                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <HarnessIcons harnesses={[harness]} size="xs" />
-                    {harnessDisplayName(harness, views) ?? harness}
+                    <span className="truncate">
+                      {harnessDisplayName(harness, views) ?? harness}
+                    </span>
+                    <HarnessLock onNewSession={locked.onNewSession} />
                   </span>
-                  <HarnessLock onNewSession={locked.onNewSession} />
                 </div>
               ) : (
-                <div className={ROW}>
-                  <span
-                    id={`${uid}-harness-label`}
-                    className="text-muted-foreground"
-                  >
-                    Harness
-                  </span>
-                  <div className="min-w-0">
-                    <HarnessMenu
-                      label={`${uid}-harness-label`}
-                      options={harnessNames.map((name) => ({
-                        name,
-                        displayName: harnessDisplayName(name, views) ?? name,
-                      }))}
-                      current={harness}
-                      onPick={changeHarness}
-                    />
-                  </div>
-                </div>
+                <MenuField id={`${uid}-harness-label`} label="Harness">
+                  <ValueMenu
+                    labelId={`${uid}-harness-label`}
+                    menuLabel="Harness"
+                    display={harnessDisplayName(harness, views) ?? harness}
+                    currentKey={harness}
+                    leading={<HarnessIcons harnesses={[harness]} size="xs" />}
+                    sections={[
+                      {
+                        title: "",
+                        entries: orderedHarnessNames.map((name) => ({
+                          key: name,
+                          label: harnessDisplayName(name, views) ?? name,
+                          harness: name,
+                        })),
+                      },
+                    ]}
+                    onPick={changeHarness}
+                    width="w-[270px]"
+                  />
+                </MenuField>
               )}
-              <Field id={`${uid}-model`} label="Model">
-                <Select
-                  id={`${uid}-model`}
-                  size="sm"
-                  value={currentEntry?.key ?? model ?? ""}
-                  onChange={(e) => {
-                    if (e.target.value === OLDER_VERSIONS)
-                      return setOlder((shown) => !shown);
-                    pickEntry(e.target.value);
-                  }}
-                >
-                  {model === null && <option value="">Choose a model</option>}
-                  {model !== null && currentEntry === null && (
-                    <option value={model}>
-                      {prettyModelLabel(model) ?? model}
-                    </option>
-                  )}
-                  {currentEntry !== null &&
-                    !shownEntries.some((e) => e.key === currentEntry.key) && (
-                      <option value={currentEntry.key}>
-                        {entryLabel(currentEntry)}
-                      </option>
-                    )}
-                  {catalogEntries.families.map((section) => {
-                    const list = older ? section.expanded : section.newest;
-                    if (list.length === 0) return null;
-                    return (
-                      <optgroup
-                        key={section.family.token}
-                        label={section.family.name}
-                      >
-                        {list.map((entry) => (
-                          <option key={entry.key} value={entry.key}>
-                            {`${section.family.name} ${entry.label}`}
-                          </option>
-                        ))}
-                      </optgroup>
-                    );
-                  })}
-                  {catalogEntries.other.models.length > 0 && (
-                    <optgroup label="Other">
-                      {catalogEntries.other.models.map((entry) => (
-                        <option key={entry.key} value={entry.key}>
-                          {entry.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {catalogEntries.families.some((s) => s.more.length > 0) && (
-                    <option value={OLDER_VERSIONS}>
-                      {older ? "Hide older versions" : "Show older versions"}
-                    </option>
-                  )}
-                </Select>
-              </Field>
+              <MenuField id={`${uid}-model-label`} label="Model">
+                <ValueMenu
+                  labelId={`${uid}-model-label`}
+                  menuLabel="Model"
+                  display={modelDisplay}
+                  currentKey={currentEntry?.key ?? model ?? ""}
+                  sections={modelSections(currentEntry)}
+                  foot={olderFoot}
+                  onPick={pickEntry}
+                />
+              </MenuField>
               {modelStatus === "loading" && (
-                <p className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+                <p className="flex items-center gap-1.5 px-4 text-[13px] text-muted-foreground">
                   <Spinner size={12} />
                   Loading models…
                 </p>
               )}
               {modelStatus === "failed" && (
-                <p className="px-1 text-xs text-muted-foreground">
+                <p className="px-4 text-[13px] text-muted-foreground">
                   Couldn't load the models.
                   <RetryModels onRetry={() => void catalogModels.refetch()} />
                 </p>
               )}
               {modelStatus === "empty" && (
-                <p className="px-1 text-xs text-muted-foreground">
+                <p className="px-4 text-[13px] text-muted-foreground">
                   No models available.
                 </p>
               )}
               {failedListings.map((group) => (
                 <p
                   key={group.connectionId}
-                  className="px-1 text-xs text-muted-foreground"
+                  className="px-4 text-[13px] text-muted-foreground"
                 >
                   {group.displayName}: Couldn't list this provider's models.
                   <RetryModels onRetry={() => void catalogModels.refetch()} />
@@ -568,7 +641,7 @@ export function SessionModelPicker({
               {staleListings.map((group) => (
                 <p
                   key={group.connectionId}
-                  className="px-1 text-xs text-muted-foreground"
+                  className="px-4 text-[13px] text-muted-foreground"
                 >
                   {group.displayName}: Couldn't refresh its models; showing its
                   last listing.
@@ -585,23 +658,26 @@ export function SessionModelPicker({
                       currentId={provider?.id}
                       enabled={(id) => providerUsable(currentEntry, id)}
                       reason={(id) => providerReason(currentEntry, id, harness)}
+                      count={(id) =>
+                        groups.find((g) => g.connectionId === id)?.models.length
+                      }
                       onPick={changeProvider}
                       onManage={onManageProviders}
                     />
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-3 px-1 py-1">
-                  <span className="w-[84px] shrink-0 text-muted-foreground">
+                <div className="flex items-center gap-3 px-4 py-1.5">
+                  <span className={cn(LABEL, "w-[84px] shrink-0")}>
                     Provider
                   </span>
-                  <span className="min-w-0 flex-1 truncate">
+                  <span className="min-w-0 flex-1 truncate text-sm">
                     {provider?.name ?? "No provider"}
                   </span>
                   <button
                     type="button"
                     onClick={onManageProviders}
-                    className="shrink-0 text-xs text-accent underline-offset-2 hover:underline"
+                    className="shrink-0 text-[13px] text-accent underline-offset-2 hover:underline"
                   >
                     Change
                   </button>
@@ -610,151 +686,168 @@ export function SessionModelPicker({
               {effort &&
                 (effortChoices.length === 0 ? (
                   <div className={ROW}>
-                    <span className="text-muted-foreground">{effort.name}</span>
-                    <span className="text-muted-foreground">
+                    <span className={LABEL}>{effort.name}</span>
+                    <span className="text-[13px] text-muted-foreground">
                       Not available for {modelName}
                     </span>
                   </div>
                 ) : (
-                  <Field id={`${uid}-effort`} label={effort.name}>
-                    <Select
-                      id={`${uid}-effort`}
-                      size="sm"
-                      value={effortValue ?? ""}
-                      onChange={(e) =>
+                  <MenuField id={`${uid}-effort-label`} label={effort.name}>
+                    <ValueMenu
+                      labelId={`${uid}-effort-label`}
+                      menuLabel={effort.name}
+                      display={choiceName(effort, effortValue) ?? ""}
+                      currentKey={effortValue ?? ""}
+                      sections={[
+                        {
+                          title: "",
+                          entries: [
+                            ...(effortValue !== undefined &&
+                            !effortChoices.some((c) => c.value === effortValue)
+                              ? [{ key: effortValue, label: effortValue }]
+                              : []),
+                            ...effortChoices.map((c) => ({
+                              key: c.value,
+                              label: c.name,
+                            })),
+                          ],
+                        },
+                      ]}
+                      onPick={(value) =>
                         choose({
                           harness,
                           provider: provider?.id ?? null,
                           model,
                           ...keepSettings(
                             applySettingChanges(settings, {
-                              [effort.id]: e.target.value,
+                              [effort.id]: value,
                             }),
                           ),
                         })
                       }
-                    >
-                      {effortValue !== undefined &&
-                        !effortChoices.some((c) => c.value === effortValue) && (
-                          <option value={effortValue}>{effortValue}</option>
-                        )}
-                      {effortChoices.map((c) => (
-                        <option key={c.value} value={c.value}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
+                    />
+                  </MenuField>
                 ))}
             </>
           )}
-          <div className="flex items-center justify-between gap-2 px-1 pt-1">
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-controls={moreId}
-              onClick={() => setMore(!expanded)}
-              className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
-            >
-              <ChevronDown
-                size={14}
-                aria-hidden
-                className={cn("transition-transform", expanded && "rotate-180")}
-              />
-              More options
-            </button>
+          <div className="flex items-center justify-between gap-2 px-4 pt-1">
+            {!(follow?.active && followSubagent === null) && (
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-controls={moreId}
+                onClick={() => setMore(!expanded)}
+                className="flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
+              >
+                <ChevronDown
+                  size={14}
+                  aria-hidden
+                  className={cn(
+                    "transition-transform",
+                    expanded && "rotate-180",
+                  )}
+                />
+                More options
+              </button>
+            )}
             {expanded && (
               <div className="flex flex-col items-end">{saveAsProfile}</div>
             )}
           </div>
           {expanded && (
             <div id={moreId} className="flex flex-col">
-              {pair && (
-                <>
-                  <h3 className={cn("px-1 pt-1", labelVariants())}>
-                    Subagents
-                  </h3>
-                  <Field id={`${uid}-subagent-model`} label="Model">
-                    <Select
-                      id={`${uid}-subagent-model`}
-                      size="sm"
-                      value={subEntry?.key ?? subagent?.model ?? ""}
-                      onChange={(e) => {
-                        if (e.target.value === OLDER_VERSIONS)
-                          return setOlder((shown) => !shown);
-                        changeSubagentModel(e.target.value);
-                      }}
-                    >
-                      <option value="">Same as agent</option>
-                      {subagent && subEntry === null && (
-                        <option value={subagent.model}>
-                          {prettyModelLabel(subagent.model) ?? subagent.model}
-                        </option>
+              {follow?.active
+                ? followSubagent && (
+                    <>
+                      <h3 className={cn("px-4 pt-1", labelVariants())}>
+                        Subagents
+                      </h3>
+                      <div className={ROW}>
+                        <span className={LABEL}>Provider</span>
+                        <span className="truncate text-sm">
+                          {followingProvider?.name ?? "—"}
+                        </span>
+                      </div>
+                      <div className={ROW}>
+                        <span className={LABEL}>Model</span>
+                        <span className="truncate text-sm">
+                          {prettyModelLabel(followSubagent.model) ??
+                            followSubagent.model}
+                        </span>
+                      </div>
+                    </>
+                  )
+                : pair && (
+                    <>
+                      <h3 className={cn("px-4 pt-2", labelVariants())}>
+                        Subagents
+                      </h3>
+                      <MenuField
+                        id={`${uid}-subagent-model-label`}
+                        label="Model"
+                      >
+                        <ValueMenu
+                          labelId={`${uid}-subagent-model-label`}
+                          menuLabel="Subagent model"
+                          display={subagentDisplay}
+                          currentKey={subEntry?.key ?? subagent?.model ?? ""}
+                          top={{ key: "", label: "Same as agent" }}
+                          sections={modelSections(subEntry)}
+                          foot={olderFoot}
+                          onPick={changeSubagentModel}
+                        />
+                      </MenuField>
+                      {owned.length > 1 && (
+                        <div className={ROW}>
+                          <span className="text-muted-foreground">
+                            Provider
+                          </span>
+                          <div className="min-w-0">
+                            <ProviderMenu
+                              label="Subagent provider"
+                              providers={owned}
+                              currentId={subagentProvider?.id}
+                              enabled={(id) => providerUsable(subEntry, id)}
+                              reason={(id) =>
+                                providerReason(subEntry, id, harness)
+                              }
+                              count={(id) =>
+                                groups.find((g) => g.connectionId === id)
+                                  ?.models.length
+                              }
+                              none={{
+                                label: "Same as agent",
+                                onPick: () => changeSubagentProvider(""),
+                              }}
+                              onPick={changeSubagentProvider}
+                            />
+                          </div>
+                        </div>
                       )}
-                      {subEntry !== null &&
-                        !shownEntries.some((e) => e.key === subEntry.key) && (
-                          <option value={subEntry.key}>
-                            {entryLabel(subEntry)}
-                          </option>
-                        )}
-                      {shownEntries.map((entry) => (
-                        <option key={entry.key} value={entry.key}>
-                          {entryLabel(entry)}
-                        </option>
-                      ))}
-                      {catalogEntries.families.some(
-                        (s) => s.more.length > 0,
-                      ) && (
-                        <option value={OLDER_VERSIONS}>
-                          {older
-                            ? "Hide older versions"
-                            : "Show older versions"}
-                        </option>
-                      )}
-                    </Select>
-                  </Field>
-                  {owned.length > 1 && (
-                    <div className={ROW}>
-                      <span className="text-muted-foreground">Provider</span>
-                      <div className="min-w-0">
-                        <ProviderMenu
-                          label="Subagent provider"
-                          providers={owned}
-                          currentId={subagentProvider?.id}
-                          enabled={(id) => providerUsable(subEntry, id)}
-                          reason={(id) => providerReason(subEntry, id, harness)}
-                          none={{
-                            label: "Same as agent",
-                            onPick: () => changeSubagentProvider(""),
-                          }}
-                          onPick={changeSubagentProvider}
+                      <div className="px-4 pt-2 empty:hidden">
+                        <hr className="mb-2 border-border" />
+                        <SessionSettingsControls
+                          agentId={agentId}
+                          carried={carried}
+                          capability={capability}
+                          model={model}
+                          settings={settings}
+                          defaults={defaults}
+                          skip={effort ? [effort.id] : []}
+                          onChange={(changes) =>
+                            choose({
+                              harness,
+                              provider: provider?.id ?? null,
+                              model,
+                              ...keepSettings(
+                                applySettingChanges(settings, changes),
+                              ),
+                            })
+                          }
                         />
                       </div>
-                    </div>
+                    </>
                   )}
-                  <div className="px-1 pt-1 empty:hidden">
-                    <SessionSettingsControls
-                      agentId={agentId}
-                      carried={carried}
-                      capability={capability}
-                      model={model}
-                      settings={settings}
-                      defaults={defaults}
-                      skip={effort ? [effort.id] : []}
-                      onChange={(changes) =>
-                        choose({
-                          harness,
-                          provider: provider?.id ?? null,
-                          model,
-                          ...keepSettings(
-                            applySettingChanges(settings, changes),
-                          ),
-                        })
-                      }
-                    />
-                  </div>
-                </>
-              )}
             </div>
           )}
         </>
@@ -762,14 +855,14 @@ export function SessionModelPicker({
       {!onProfiles ? (
         profiles.length > 0 && (
           <>
-            <hr className="mx-1 border-border" />
+            <hr className="mx-4 border-border" />
             <button
               type="button"
               onClick={() => setView("profiles")}
-              className="flex items-center gap-2 rounded px-1 py-1 text-left hover:bg-muted"
+              className="mx-4 flex min-h-[38px] items-center gap-2 rounded px-1 py-2 text-left text-sm hover:bg-muted"
             >
               <span className="min-w-0 flex-1">Use a profile</span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-[13px] text-muted-foreground">
                 {profiles.length}
               </span>
               <ChevronRight size={14} aria-hidden className="shrink-0" />
@@ -794,13 +887,18 @@ export function SessionModelPicker({
             <button
               type="button"
               onClick={onManageProfiles}
-              className="text-xs text-accent underline-offset-2 hover:underline"
+              className="text-[13px] text-accent underline-offset-2 hover:underline"
             >
               Manage
             </button>
           </div>
+          {fitProfiles.length === 0 && (
+            <p className="px-4 py-2 text-[13px] text-muted-foreground">
+              No profiles fit this session.
+            </p>
+          )}
           <ul className="flex flex-col">
-            {sortProfiles(profiles).map((profile) => {
+            {fitProfiles.map((profile) => {
               const selected = profile.id === selectedProfileId;
               const availability = profile.availability ?? {
                 available: true,
@@ -818,13 +916,13 @@ export function SessionModelPicker({
                     disabled={!availability.available}
                     title={availability.reason ?? undefined}
                     onClick={() => pickProfile(profile)}
-                    className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-60"
+                    className="flex min-h-[38px] w-full min-w-0 items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-60"
                   >
                     <HarnessIcons harnesses={[profile.harness]} size="xs" />
                     <span className={cn("truncate", selected && "font-medium")}>
                       {profile.name}
                     </span>
-                    <span className="ml-auto flex min-w-0 shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                    <span className="ml-auto flex min-w-0 shrink-0 items-center gap-1 text-[13px] text-muted-foreground">
                       {availability.available &&
                         !selected &&
                         (prettyModelLabel(profile.model) ?? profile.model)}
@@ -847,7 +945,7 @@ export function SessionModelPicker({
                   )}
                   {selected && (
                     <div className="pb-2 pl-8 pr-2">
-                      <dl className="grid grid-cols-[84px_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+                      <dl className="grid grid-cols-[84px_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[13px]">
                         {profileDetailRows(
                           profile,
                           carried.find((h) => h.name === profile.harness),
@@ -865,7 +963,7 @@ export function SessionModelPicker({
                       <button
                         type="button"
                         onClick={() => onEditProfile?.(profile)}
-                        className="mt-1 text-xs text-accent underline-offset-2 hover:underline"
+                        className="mt-1 text-[13px] text-accent underline-offset-2 hover:underline"
                       >
                         Edit profile
                       </button>
@@ -881,31 +979,36 @@ export function SessionModelPicker({
   );
 }
 
-const ROW = "grid grid-cols-[84px_minmax(0,1fr)] items-center gap-3 px-1 py-1";
-
-function HarnessMenu({
-  label,
-  options,
-  current,
+function ValueMenu({
+  labelId,
+  menuLabel,
+  display,
+  currentKey,
+  sections,
+  top,
+  foot,
+  leading,
   onPick,
+  width = "w-[270px]",
 }: {
-  label: string;
-  options: readonly { name: string; displayName: string }[];
-  current: string;
-  onPick: (name: string) => void;
+  labelId: string;
+  menuLabel: string;
+  display: string;
+  currentKey: string;
+  sections: readonly MenuSection[];
+  top?: { key: string; label: string };
+  foot?: { label: string; onSelect: () => void };
+  leading?: ReactNode;
+  onPick: (key: string) => void;
+  width?: string;
 }) {
-  const selected = options.find((option) => option.name === current);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-labelledby={label}
-          className="flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-input bg-background px-3 text-xs text-foreground"
-        >
+        <button type="button" aria-labelledby={labelId} className={CONTROL}>
           <span className="flex min-w-0 items-center gap-2 truncate">
-            <HarnessIcons harnesses={[current]} size="xs" />
-            <span className="truncate">{selected?.displayName ?? current}</span>
+            {leading}
+            <span className="truncate">{display}</span>
           </span>
           <ChevronDown
             size={14}
@@ -914,17 +1017,53 @@ function HarnessMenu({
           />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
-        <DropdownMenuRadioGroup value={current} onValueChange={onPick}>
-          {options.map((option) => (
-            <DropdownMenuRadioItem key={option.name} value={option.name}>
-              <span className="flex items-center gap-2">
-                <HarnessIcons harnesses={[option.name]} size="xs" />
-                <span>{option.displayName}</span>
-              </span>
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        aria-label={menuLabel}
+        className={cn("max-h-[340px] overflow-y-auto", width)}
+      >
+        <DropdownMenuRadioGroup value={currentKey} onValueChange={onPick}>
+          {top && (
+            <DropdownMenuRadioItem value={top.key} indicator="check">
+              {top.label}
             </DropdownMenuRadioItem>
+          )}
+          {sections.map((section) => (
+            <Fragment key={section.title || "none"}>
+              {section.title !== "" && (
+                <DropdownMenuLabel className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[1.4px] text-muted-foreground">
+                  {section.title}
+                </DropdownMenuLabel>
+              )}
+              {section.entries.map((entry) => (
+                <DropdownMenuRadioItem
+                  key={entry.key}
+                  value={entry.key}
+                  indicator="check"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {entry.harness && (
+                      <HarnessIcons harnesses={[entry.harness]} size="xs" />
+                    )}
+                    <span className="truncate">{entry.label}</span>
+                  </span>
+                </DropdownMenuRadioItem>
+              ))}
+            </Fragment>
           ))}
         </DropdownMenuRadioGroup>
+        {foot && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={foot.onSelect}
+              className="text-[13px] text-accent"
+            >
+              {foot.label}
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -938,12 +1077,32 @@ function RetryModels({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+function MenuField({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={ROW}>
+      <span id={id} className={LABEL}>
+        {label}
+      </span>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
 function ProviderMenu({
   label,
   providers,
   currentId,
   enabled,
   reason,
+  count,
   onPick,
   onManage,
   none,
@@ -953,6 +1112,7 @@ function ProviderMenu({
   currentId: string | undefined;
   enabled: (id: string) => boolean;
   reason: (id: string) => string | null;
+  count?: (id: string) => number | undefined;
   onPick: (id: string) => void;
   onManage?: () => void;
   /** UNIT_BOUNDARY_DESCRIPTION: the empty choice a subagent slot has, "Same as agent", which no provider id stands for. */
@@ -964,13 +1124,17 @@ function ProviderMenu({
     (none !== undefined && currentId === undefined
       ? none.label
       : "No provider");
+  const pick = (value: string) => {
+    if (value === "") return none?.onPick();
+    onPick(value);
+  };
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           aria-label={`${label}: ${shown}`}
-          className="flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-input bg-background px-3 text-xs text-foreground"
+          className={CONTROL}
         >
           <span className="truncate">{shown}</span>
           <ChevronDown
@@ -980,32 +1144,49 @@ function ProviderMenu({
           />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-72">
-        {none && (
-          <DropdownMenuItem onSelect={none.onPick}>
-            {none.label}
-          </DropdownMenuItem>
-        )}
-        {providers.map((p) => {
-          const usable = enabled(p.id);
-          const why = reason(p.id);
-          return (
-            <DropdownMenuItem
-              key={p.id}
-              disabled={!usable}
-              onSelect={() => onPick(p.id)}
-            >
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate">{p.name}</span>
-                {why !== null && (
-                  <span className="whitespace-normal text-xs text-muted-foreground">
-                    {why}
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        aria-label={label}
+        className="w-[270px]"
+      >
+        <DropdownMenuRadioGroup
+          value={currentId ?? (none !== undefined ? "" : "")}
+          onValueChange={pick}
+        >
+          {none && (
+            <DropdownMenuRadioItem value="" indicator="check">
+              {none.label}
+            </DropdownMenuRadioItem>
+          )}
+          {providers.map((p) => {
+            const usable = enabled(p.id);
+            const why = reason(p.id);
+            const models = count?.(p.id);
+            return (
+              <DropdownMenuRadioItem
+                key={p.id}
+                value={p.id}
+                indicator="check"
+                disabled={!usable}
+              >
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate">{p.name}</span>
+                  {why !== null && (
+                    <span className="whitespace-normal text-[13px] text-muted-foreground">
+                      {why}
+                    </span>
+                  )}
+                </span>
+                {models !== undefined && (
+                  <span className="ml-auto shrink-0 text-[13px] text-muted-foreground">
+                    {models} {models === 1 ? "model" : "models"}
                   </span>
                 )}
-              </span>
-            </DropdownMenuItem>
-          );
-        })}
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
         {onManage && (
           <>
             <DropdownMenuSeparator />
@@ -1019,40 +1200,24 @@ function ProviderMenu({
   );
 }
 
-function Field({
-  id,
-  label,
-  children,
-}: {
-  id: string;
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className={ROW}>
-      <label htmlFor={id} className="text-muted-foreground">
-        {label}
-      </label>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
 function HarnessLock({ onNewSession }: { onNewSession: () => void }) {
   return (
     <Popover>
-      <Tooltip content="Why can't I change the harness?">
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label="Why can't I change the harness?"
-            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Information size={14} />
-          </button>
-        </PopoverTrigger>
-      </Tooltip>
-      <PopoverContent side="bottom" align="end" className="w-60 p-3 text-sm">
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Why can't I change the harness?"
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Information size={14} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        tail={false}
+        className="w-60 border-transparent bg-foreground p-3 text-[13px] text-background shadow-[0_8px_24px_rgba(0,0,0,0.2)]"
+      >
         <p>
           The harness is set when a session starts. To use a different one,{" "}
           <PopoverClose asChild>

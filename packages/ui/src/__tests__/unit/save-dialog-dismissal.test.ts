@@ -54,6 +54,9 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useProviderConnections: () => ({
     owned: [{ id: "c1", templateId: "anthropic" }],
   }),
+  useHarnessCatalog: () => ({
+    data: { harnesses: [{ name: "claude-code", displayName: "Claude" }] },
+  }),
 }));
 vi.mock("../../modules/sessions/components/session-model-picker.js", () => ({
   SessionModelPicker: ({

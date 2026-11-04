@@ -1,9 +1,8 @@
-import { Add, Save } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
-import { useState } from "react";
+import { displayNameForTemplate } from "api-server-api";
+import { useId, useState } from "react";
 
-import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -14,6 +13,10 @@ import { Input } from "@/components/ui/input";
 
 import { useAgent } from "../../agents/api/queries.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
+import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
+import { prettyModelLabel } from "../../sessions/lib/model-families.js";
+import { harnessDisplayName } from "../../sessions/lib/session-pair-options.js";
+import { sessionSettingOptions } from "../../sessions/lib/session-settings.js";
 import { profileSettings } from "../../sessions/lib/subagent-choice.js";
 import { useCreateProfile, useUpdateProfile } from "../api/mutations.js";
 
@@ -44,6 +47,8 @@ export function useSaveAsProfile({
   onSaved: (profile: { id: string; name: string }) => void;
 }) {
   const agent = useAgent(agentId);
+  const { data: catalog } = useHarnessCatalog();
+  const nameId = useId();
   const create = useCreateProfile();
   const update = useUpdateProfile();
   const [open, setOpen] = useState<"create" | "update" | null>(null);
@@ -59,6 +64,29 @@ export function useSaveAsProfile({
     return { row: null, dialog: null };
 
   const updating = open === "update" ? from : null;
+  const effort = sessionSettingOptions(capability).find(
+    (o) => o.category === "thought_level" && !o.subagents,
+  );
+  const effortValue = effort
+    ? (pair.settings?.[effort.id] ?? effort.default)
+    : undefined;
+  const effortLabel = effortValue
+    ? (effort?.choices.find((c) => c.value === effortValue)?.name ??
+      effortValue)
+    : undefined;
+  const summary = [
+    harnessDisplayName(pair.harness, catalog?.harnesses) ?? pair.harness,
+    prettyModelLabel(pair.model) ?? pair.model,
+    effortLabel,
+    providerTemplate
+      ? (displayNameForTemplate(providerTemplate) ?? providerTemplate)
+      : undefined,
+  ]
+    .filter((part): part is string => !!part)
+    .join(" · ");
+  const subagentSummary = subagent
+    ? `subagents on ${prettyModelLabel(subagent.model) ?? subagent.model}`
+    : null;
   const save = () => {
     const trimmed = name.trim();
     if (trimmed === "") return setError("Give the profile a name.");
@@ -94,7 +122,7 @@ export function useSaveAsProfile({
     setOpen(mode);
   };
   const action =
-    "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground";
+    "text-left text-[13px] text-accent underline-offset-2 hover:underline";
 
   return {
     row: (
@@ -105,17 +133,11 @@ export function useSaveAsProfile({
             onClick={() => ask("update")}
             className={action}
           >
-            <Save size={14} aria-hidden />
             {`Update “${from.name}”`}
           </button>
         )}
         <button type="button" onClick={() => ask("create")} className={action}>
-          {from ? (
-            <Add size={14} aria-hidden />
-          ) : (
-            <Save size={14} aria-hidden />
-          )}
-          {from ? "Save as a new profile" : "Save as a profile"}
+          {from ? "Save as a new profile" : "Save as profile"}
         </button>
       </div>
     ),
@@ -124,24 +146,30 @@ export function useSaveAsProfile({
         <DialogHeader
           onClose={() => setOpen(null)}
           closeDisabled={saving}
-          title={updating ? `Update “${updating.name}”` : "Save as a profile"}
+          title="Save as profile"
         />
         <DialogBody>
-          <p className="mb-3 text-sm text-muted-foreground">
-            {updating
-              ? "Every chat default, channel and schedule that uses this profile takes these values."
-              : "Name this harness, model and settings, then point your defaults, channels and schedules at it."}
+          <label htmlFor={nameId} className="mb-2 block text-sm">
+            Name
+          </label>
+          <Input
+            id={nameId}
+            autoFocus
+            aria-label="Profile name"
+            placeholder="e.g. Deep review"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+          />
+          {error && (
+            <p role="alert" className="mt-1 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <p className="mt-3 text-[13px] text-muted-foreground">
+            {summary}
+            {subagentSummary ? ` · ${subagentSummary}` : ""}
           </p>
-          <FormField label="Name" error={error ?? undefined}>
-            <Input
-              autoFocus
-              aria-label="Profile name"
-              placeholder="e.g. Fast review"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && save()}
-            />
-          </FormField>
         </DialogBody>
         <DialogActions
           onCancel={() => setOpen(null)}

@@ -60,7 +60,7 @@ export function SessionSettingsControls({
     return { option: o, value, choices };
   });
   const grid =
-    "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-xs";
+    "grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-4 text-[13px]";
   return (
     <div
       role="group"

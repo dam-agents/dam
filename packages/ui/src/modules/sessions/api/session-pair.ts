@@ -24,7 +24,7 @@ import {
 import { useAgentPageConnections } from "../../connections/api/queries.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
-import { sameModel } from "../lib/catalog-groups.js";
+import { modelGroups, sameModel } from "../lib/catalog-groups.js";
 import {
   fittingProviders,
   grantedProviderRefs,
@@ -170,6 +170,14 @@ export function useHarnessCatalogModels(
     ...query,
     data:
       query.data && harness ? harnessCatalogOf(query.data, harness) : undefined,
+    /** UNIT_BOUNDARY_DESCRIPTION: the model groups the owner catalog lists for any harness, so a harness change can keep or choose a model from the same catalog without another fetch. */
+    forHarness: (name: string) =>
+      query.data
+        ? modelGroups(
+            harnessCatalogOf(query.data, name),
+            agentId === null ? null : grantedIds,
+          )
+        : undefined,
     /** UNIT_BOUNDARY_DESCRIPTION: how many models the catalog lists for any harness, none until it has loaded. */
     modelCount: (name: string) =>
       query.data

@@ -50,7 +50,12 @@ import {
 } from "../lib/profile-detail.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: the owner's profiles in Settings: what each runs, edited with the chat picker's Custom screen, how often it is used, rename, and a delete that names what still uses it. */
-export function ProfileSection() {
+export function ProfileSection({
+  openProfileId = null,
+}: {
+  /** UNIT_BOUNDARY_DESCRIPTION: a deep link to one profile opens that row's editor. */
+  openProfileId?: string | null;
+} = {}) {
   const { data: profiles = [], isPending } = useProfiles();
   const update = useUpdateProfile();
   const remove = useDeleteProfile();
@@ -158,7 +163,10 @@ export function ProfileSection() {
                     )}
                   </p>
                 )}
-                <ProfileValues profile={profile} />
+                <ProfileValues
+                  profile={profile}
+                  defaultOpen={profile.id === openProfileId}
+                />
               </div>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {profileUses(profile) === 0
@@ -212,12 +220,19 @@ export function ProfileSection() {
  * open picker until one is, and closing the picker drops it, so the row never
  * shows an unsaved harness as the profile's.
  */
-function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
+function ProfileValues({
+  profile,
+  defaultOpen = false,
+}: {
+  profile: ProfileWithUsage;
+  defaultOpen?: boolean;
+}) {
   const { data: status } = useQuery(trpc.connections.catalog.queryOptions());
   const providers = useProviderConnections(null);
   const update = useUpdateProfile();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const [draft, setDraft] = useState<SessionPair | null>(null);
+  const [open, setOpen] = useState(defaultOpen);
   const pair: SessionPair =
     draft ??
     profileEditPair(
@@ -254,8 +269,10 @@ function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
           defaultHarness={status.defaultHarness ?? profile.harness}
           routed={status.modelRouter}
           onConnectProviders={() => navigateToSettings("providers")}
-          onOpenChange={(open) => {
-            if (!open && draft?.model === null) setDraft(null);
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (!next && draft?.model === null) setDraft(null);
           }}
           edit={{
             pair,

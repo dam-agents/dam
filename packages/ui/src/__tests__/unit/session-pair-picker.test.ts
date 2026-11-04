@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelIndicator } from "../../modules/sessions/components/model-indicator.js";
 import { SessionPairPicker } from "../../modules/sessions/components/session-pair-picker.js";
+import { modelGroups } from "../../modules/sessions/lib/catalog-groups.js";
 
 const carried: HarnessCapability[] = [
   {
@@ -357,6 +358,15 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessConfigured: () => state.configured,
   useSessionDefaults: () => ({ data: state.saved }),
   useHarnessCatalogModels: (agentId: string | null) => ({
+    forHarness: () =>
+      state.catalog
+        ? modelGroups(
+            state.catalog as never,
+            agentId === null
+              ? null
+              : ["ibm", "curve", ...state.granted.map((g) => g.id)],
+          )
+        : undefined,
     granted:
       agentId === null
         ? null
@@ -455,17 +465,6 @@ beforeEach(() => {
   state.grant.mockClear();
 });
 
-const field = (node: ParentNode, suffix: string) =>
-  node.querySelector<HTMLElement>(`[id$="-${suffix}"]`)!;
-const select = (node: ParentNode, suffix: string) =>
-  field(node, suffix) as HTMLSelectElement;
-const options = (element: HTMLSelectElement) =>
-  [...element.options].map((o) => o.textContent);
-const set = (element: HTMLSelectElement, value: string) =>
-  act(() => {
-    element.value = value;
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  });
 const click = (node: ParentNode, text: string) => {
   const button = [...node.querySelectorAll("button")].find((b) =>
     b.textContent?.includes(text),
@@ -475,19 +474,48 @@ const click = (node: ParentNode, text: string) => {
 };
 const lastCall = <T extends unknown[]>(mock: { mock: { calls: T[] } }) =>
   mock.mock.calls[mock.mock.calls.length - 1]!;
-const optionValue = (element: HTMLSelectElement, text: string) => {
-  const option = [...element.options].find((o) =>
-    o.textContent?.includes(text),
+const menu = (node: ParentNode, label: string) =>
+  node.querySelector(`[role="menu"][aria-label="${label}"]`);
+const openMenu = (node: ParentNode, label: string) => {
+  if (menu(node, label)) return menu(node, label)!;
+  const trigger = [
+    ...node.querySelectorAll<HTMLElement>("button[aria-labelledby]"),
+  ].find(
+    (button) =>
+      node.querySelector(`#${button.getAttribute("aria-labelledby")}`)
+        ?.textContent === label,
   );
-  expect(option, `an option reading ${text}`).toBeDefined();
-  return option!.value;
+  expect(trigger, `the ${label} trigger`).toBeDefined();
+  act(() => {
+    trigger!.dispatchEvent(
+      new MouseEvent("pointerdown", { bubbles: true, button: 0 }),
+    );
+    trigger!.click();
+  });
+  return menu(node, label)!;
 };
-const pickOption = (element: HTMLSelectElement, text: string) =>
-  set(element, optionValue(element, text));
-const menuItem = (node: ParentNode, text: string) => {
-  const item = [...node.querySelectorAll('[role="menuitem"]')].find((b) =>
-    b.textContent?.includes(text),
+const menuItems = (node: ParentNode, label: string) => [
+  ...openMenu(node, label).querySelectorAll<HTMLElement>(
+    '[role="menuitemradio"]',
+  ),
+];
+const pickMenu = (node: ParentNode, label: string, text: string) => {
+  const item = menuItems(node, label).find((row) =>
+    row.textContent?.includes(text),
   );
+  expect(item, `${label} → ${text}`).toBeDefined();
+  act(() => item!.click());
+};
+const pickEffort = (node: ParentNode, text: string) =>
+  pickMenu(node, menu(node, "Thinking") ? "Thinking" : "Effort", text);
+const menuTrigger = (node: ParentNode, suffix: string) =>
+  node
+    .querySelector(`button[aria-labelledby$="-${suffix}-label"]`)
+    ?.textContent?.trim();
+const menuItem = (node: ParentNode, text: string) => {
+  const item = [
+    ...node.querySelectorAll('[role="menuitem"], [role="menuitemradio"]'),
+  ].find((b) => b.textContent?.includes(text));
   expect(item, `a menu item reading ${text}`).toBeDefined();
   return item as HTMLElement;
 };
@@ -526,13 +554,11 @@ describe("the new session panel", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
-    const model = select(node, "model");
-    expect([...model.querySelectorAll("optgroup")].map((g) => g.label)).toEqual(
-      ["Claude", "GLM", "Other"],
-    );
-    expect(
-      [...model.options].filter((o) => o.textContent === "Claude Opus 5.5"),
-    ).toHaveLength(1);
+    const modelText = openMenu(node, "Model").textContent ?? "";
+    expect(modelText).toContain("Claude");
+    expect(modelText).toContain("GLM");
+    expect(modelText).toContain("Other");
+    expect(modelText.match(/Claude Opus 5\.5/g)).toHaveLength(1);
     expect(menuItem(node, "IBM").getAttribute("aria-disabled")).toBeNull();
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
@@ -543,7 +569,7 @@ describe("the new session panel", () => {
   /** TEST_SCENARIO: picking a model from another provider takes that provider too, and a model every provider offers stays on the one already picked. */
   it("takes the provider a picked model comes from", () => {
     const node = mount(picker());
-    pickOption(select(node, "model"), "Claude Opus 5.5");
+    pickMenu(node, "Model", "Claude Opus 5.5");
     expect(state.chosenModel).toHaveBeenCalledWith(
       "agent",
       expect.objectContaining({
@@ -551,7 +577,7 @@ describe("the new session panel", () => {
         model: "ibm/aws/claude-opus-5-5",
       }),
     );
-    pickOption(select(node, "model"), "GLM 5.3");
+    pickMenu(node, "Model", "GLM 5.3");
     expect(state.chosenModel).toHaveBeenLastCalledWith(
       "agent",
       expect.objectContaining({
@@ -592,7 +618,7 @@ describe("the new session panel", () => {
     state.oneProvider = true;
     const node = mount(picker());
     expect(node.textContent).toContain("Curve");
-    expect(select(node, "provider")).toBeNull();
+    expect(node.querySelector('button[aria-label^="Provider:"]')).toBeNull();
     click(node, "Change");
     expect(state.navigate).toHaveBeenCalledWith("agent", "providers");
   });
@@ -612,15 +638,16 @@ describe("the new session panel", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
-    const model = select(node, "model");
-    expect([...model.querySelectorAll("optgroup")].map((g) => g.label)).toEqual(
-      ["Claude", "GLM", "Other"],
+    const items = menuItems(node, "Model").map((row) =>
+      row.textContent?.trim(),
     );
-    expect(options(model)).toContain("Claude Opus 5.5");
-    expect(options(model)).not.toContain("Claude Opus 5.1");
-    expect(options(model)).toContain("Show older versions");
-    pickOption(model, "Show older versions");
-    expect(options(select(node, "model"))).toContain("Claude Opus 5.1");
+    expect(items).toContain("Claude Opus 5.5");
+    expect(items).not.toContain("Claude Opus 5.1");
+    expect(menu(node, "Model")?.textContent).toContain("Show older versions");
+    clickMenu(node, "Show older versions");
+    expect(
+      menuItems(node, "Model").map((row) => row.textContent?.trim()),
+    ).toContain("Claude Opus 5.1");
   });
 
   /** TEST_SCENARIO: a pick on a version behind the older-versions toggle still reads as the selected model while the older versions are collapsed, so the row never blanks a running session. */
@@ -631,8 +658,7 @@ describe("the new session panel", () => {
       model: "ibm/aws/claude-opus-5-1",
     };
     const node = mount(picker());
-    const model = select(node, "model");
-    expect(model.selectedOptions[0]?.textContent).toBe("Claude Opus 5.1");
+    expect(menuTrigger(node, "model")).toBe("Claude Opus 5.1");
   });
 
   /** TEST_SCENARIO: Effort (Thinking on a harness that names it so) sits on the main view, not behind More options, and a model that cannot use it says so instead of offering a value the harness would refuse. */
@@ -644,8 +670,10 @@ describe("the new session panel", () => {
     };
     const node = mount(picker());
     expect(node.textContent).toContain("Thinking");
-    expect(options(select(node, "effort"))).toEqual(["Low", "High"]);
-    set(select(node, "effort"), "high");
+    expect(
+      menuItems(node, "Thinking").map((row) => row.textContent?.trim()),
+    ).toEqual(["Low", "High"]);
+    pickMenu(node, "Thinking", "High");
     expect(state.chosenModel).toHaveBeenCalledWith(
       "agent",
       expect.objectContaining({
@@ -663,7 +691,9 @@ describe("the new session panel", () => {
     container.remove();
     const greyed = mount(picker());
     expect(greyed.textContent).toContain("Not available for Claude Haiku 5.5");
-    expect(select(greyed, "effort")).toBeNull();
+    expect(
+      greyed.querySelector('button[aria-labelledby$="-effort-label"]'),
+    ).toBeNull();
   });
 
   /** TEST_SCENARIO: More options starts collapsed and opens by itself while the pair already holds a subagent, so a carried choice is visible without a click; Subagents picks a provider and a model, and "Same as agent" is the empty slot. */
@@ -684,10 +714,8 @@ describe("the new session panel", () => {
     const node = mount(picker());
     expect(node.querySelector('[aria-expanded="true"]')).not.toBeNull();
     expect(node.textContent).toContain("Subagents");
-    expect(
-      select(node, "subagent-model").selectedOptions[0]?.textContent,
-    ).toContain("Claude Opus 5.5");
-    pickOption(select(node, "subagent-model"), "Claude Haiku 5.5");
+    expect(menuTrigger(node, "subagent-model")).toContain("Claude Opus 5.5");
+    pickMenu(node, "Subagent model", "Claude Haiku 5.5");
     expect(state.chosenModel).toHaveBeenCalledWith(
       "agent",
       expect.objectContaining({
@@ -701,7 +729,7 @@ describe("the new session panel", () => {
   /** TEST_SCENARIO: Save as a profile sits in the More options header, and a pick that came from a profile offers to update it there. */
   it("offers Save as a profile in the More options header", () => {
     const collapsed = renderToStaticMarkup(picker());
-    expect(collapsed).not.toContain("Save as a profile");
+    expect(collapsed).not.toContain("Save as profile");
 
     state.chosen = {
       harness: "pi",
@@ -710,7 +738,7 @@ describe("the new session panel", () => {
     };
     const node = mount(picker());
     click(node, "More options");
-    expect(node.textContent).toContain("Save as a profile");
+    expect(node.textContent).toContain("Save as profile");
 
     profilesState = [profile()];
     state.chosen = {
@@ -729,29 +757,23 @@ describe("the new session panel", () => {
   });
 
   /** TEST_SCENARIO: a harness picked without a model clears it, and the pair waits for a model there instead of saving a chat default the server would refuse. */
-  it("waits for a model when the harness changes", () => {
+  it("keeps a model when the harness changes", () => {
     const node = mount(
       picker({
         carried: [...carried, { ...carried[0]!, name: "codex" }],
       }),
     );
-    const harnessItems = () => [
-      ...node.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
-    ];
-    expect(harnessItems().map((item) => item.textContent?.trim())).toEqual([
-      "Pi",
-      "Codex",
-    ]);
-    act(() =>
-      harnessItems()
-        .find((item) => item.textContent?.includes("Codex"))!
-        .click(),
-    );
+    expect(
+      menuItems(node, "Harness").map((item) => item.textContent?.trim()),
+    ).toEqual(["Codex", "Pi"]);
+    pickMenu(node, "Harness", "Codex");
     expect(state.chosenModel).toHaveBeenCalledWith(
       "agent",
-      expect.objectContaining({ harness: "codex", model: null }),
+      expect.objectContaining({
+        harness: "codex",
+        model: "ibm/aws/claude-opus-5-5",
+      }),
     );
-    expect(state.remember).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: no provider at all warns in place of the panel, and an agent that has not reported its harnesses yet shows a loader. */
@@ -834,7 +856,22 @@ describe("the saved profiles behind Use a profile", () => {
     expect(node.textContent).toContain("Claude Opus 5.5");
     expect(node.textContent).toContain("Edit profile");
     click(node, "Manage");
-    expect(state.navigateSettings).toHaveBeenCalledWith("providers");
+    expect(state.navigateSettings).toHaveBeenCalledWith("profiles");
+  });
+
+  /** TEST_SCENARIO: "Edit profile" opens that profile's editor on Settings › Profiles, addressed by the profile's id, rather than the old Providers tab. */
+  it("edits a profile on the Settings › Profiles page", () => {
+    profilesState = [profile({ model: "ibm/aws/claude-opus-5-5" })];
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    const node = mount(picker());
+    click(node, "Edit profile");
+    expect(state.navigateSettings).toHaveBeenCalledWith("profiles", {
+      profileId: "p1",
+    });
   });
 
   /** TEST_SCENARIO: "Use a profile" at the bottom opens that view; Back to custom returns to the dropdowns; the panel reopens on the profiles while a profile is in use. */
@@ -844,7 +881,7 @@ describe("the saved profiles behind Use a profile", () => {
     click(node, "Use a profile");
     expect(node.textContent).toContain("Saved profiles");
     click(node, "Back to custom");
-    expect(select(node, "model")).not.toBeNull();
+    expect(menuTrigger(node, "model")).toBeDefined();
     expect(node.textContent).toContain("Use a profile");
   });
 
@@ -896,13 +933,38 @@ describe("the saved profiles behind Use a profile", () => {
     ];
     const node = mount(picker());
     click(node, "Use a profile");
-    expect(node.textContent).toContain("CurveBender (shared) is not connected");
-    expect(node.textContent).toContain("Configure providers");
-    expect(node.querySelector("li button")).toHaveProperty("disabled", true);
+    expect(node.textContent).toContain("No profiles fit this session.");
   });
 });
 
 describe("a config page's picker", () => {
+  /** TEST_SCENARIO: a config page renders the picker body inline, with no popover trigger or row card, while the chat input keeps its popover. */
+  it("renders the fields inline, without a popover trigger", () => {
+    const node = mount(
+      picker({
+        row: true,
+        target: {
+          slots: {
+            profileId: null,
+            pair: null,
+            platformSubagentProfileId: null,
+            platformSubagentSettings: null,
+          },
+          label: "Default model",
+          placeholder: "Choose a model",
+          onChoose: vi.fn(),
+        },
+      }),
+    );
+    expect(
+      node.querySelector('[data-testid="session-pair-row-picker"]'),
+    ).toBeNull();
+    expect(
+      node.querySelector('[data-testid="session-pair-picker"]'),
+    ).toBeNull();
+    expect(menuTrigger(node, "model")).toBeDefined();
+  });
+
   const emptySlots = {
     profileId: null,
     pair: null,
@@ -935,7 +997,9 @@ describe("a config page's picker", () => {
     const node = mount(picker({ row: true, target }));
     const toggle = node.querySelector('[role="switch"]') as HTMLButtonElement;
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(select(node, "model")).toBeNull();
+    expect(
+      node.querySelector('button[aria-labelledby$="-model-label"]'),
+    ).toBeNull();
     expect(node.textContent).toContain("GPT 5.5");
     expect(node.textContent).toContain("High");
     act(() => toggle.click());
@@ -958,7 +1022,7 @@ describe("a config page's picker", () => {
     const node = mount(picker({ row: true, target }));
     const toggle = node.querySelector('[role="switch"]') as HTMLButtonElement;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(select(node, "model")).not.toBeNull();
+    expect(menuTrigger(node, "model")).toBeDefined();
     act(() => toggle.click());
     expect(target.agentDefault.onClear).toHaveBeenCalled();
   });
@@ -995,7 +1059,7 @@ describe("an open session's picker", () => {
     const onChoose = vi.fn();
     const node = mount(session({ onChoose, turnRunning: true }));
     expect(node.textContent).toContain("applies to the next message");
-    pickOption(select(node, "model"), "Claude Opus 5.5");
+    pickMenu(node, "Model", "Claude Opus 5.5");
     expect(onChoose).toHaveBeenCalledWith("ibm/aws/claude-opus-5-5", {});
   });
 
@@ -1022,7 +1086,7 @@ describe("an open session's picker", () => {
         onConfigure,
       }),
     );
-    pickOption(select(node, "effort"), "High");
+    pickEffort(node, "High");
     expect(onConfigure).toHaveBeenCalledWith({
       effort: "high",
       subagentEffort: "low",
@@ -1050,10 +1114,7 @@ describe("an open session's picker", () => {
         onConfigure,
       }),
     );
-    const ibms = [...node.querySelectorAll('[role="menuitem"]')].filter((b) =>
-      b.textContent?.includes("IBM"),
-    );
-    act(() => (ibms[ibms.length - 1] as HTMLElement).click());
+    pickMenu(node, "Subagent provider", "IBM");
     expect(onConfigure).not.toHaveBeenCalled();
   });
 
@@ -1078,7 +1139,7 @@ describe("an open session's picker", () => {
         onChoose,
       }),
     );
-    pickOption(select(node, "model"), "GLM 5.3");
+    pickMenu(node, "Model", "GLM 5.3");
     expect(onChoose).toHaveBeenCalledWith("cb/rits/zai-org/glm-5-3", {
       subagentModel: "",
     });
@@ -1104,10 +1165,7 @@ describe("an open session's picker", () => {
         onConfigure,
       }),
     );
-    const ibms = [...node.querySelectorAll('[role="menuitem"]')].filter((b) =>
-      b.textContent?.includes("IBM"),
-    );
-    act(() => (ibms[ibms.length - 1] as HTMLElement).click());
+    pickMenu(node, "Subagent provider", "IBM");
     expect(onConfigure).toHaveBeenCalledWith({
       subagentModel: "ibm/aws/claude-haiku-5-5",
     });
@@ -1145,13 +1203,10 @@ describe("an open session's picker", () => {
       }),
     );
     expect(node.textContent).toContain("Curve");
-    const curves = [...node.querySelectorAll('[role="menuitem"]')].filter((b) =>
-      b.textContent?.includes("Curve"),
-    );
-    act(() => (curves[curves.length - 1] as HTMLElement).click());
+    pickMenu(node, "Subagent provider", "Curve");
     expect(onConfigure).not.toHaveBeenCalled();
 
-    pickOption(select(node, "subagent-model"), "Claude Haiku 5.5");
+    pickMenu(node, "Subagent model", "Claude Haiku 5.5");
     expect(onConfigure).toHaveBeenCalledWith({
       "platformSubagent.model": "cb/aws/claude-haiku-5-5",
       subagentModel: "cb/aws/claude-haiku-5-5",
@@ -1177,10 +1232,7 @@ describe("an open session's picker", () => {
     );
     expect(node.querySelector('[aria-label="Provider: IBM"]')).toBeNull();
     expect(node.querySelector('[aria-label="Provider: Curve"]')).not.toBeNull();
-    const ibms = [...node.querySelectorAll('[role="menuitem"]')].filter((b) =>
-      b.textContent?.includes("IBM"),
-    );
-    act(() => (ibms[ibms.length - 1] as HTMLElement).click());
+    pickMenu(node, "Subagent provider", "IBM");
     expect(onConfigure).not.toHaveBeenCalled();
   });
 
@@ -1201,7 +1253,7 @@ describe("an open session's picker", () => {
       }),
     );
     click(node, "More options");
-    pickOption(select(node, "subagent-model"), "GLM 5.3");
+    pickMenu(node, "Subagent model", "GLM 5.3");
     expect(onConfigure).toHaveBeenCalledWith({
       "platformSubagent.harness": "claude-code",
       "platformSubagent.model": "cb/rits/zai-org/glm-5-3",
@@ -1248,7 +1300,7 @@ describe("an open session's picker", () => {
       session({ sessionId: "s2", model: "ibm/aws/claude-haiku-5-5" }),
     );
     click(other, "More options");
-    expect(other.textContent).toContain("Save as a profile");
+    expect(other.textContent).toContain("Save as profile");
     expect(other.textContent).not.toContain("Update “Fast review”");
   });
 });
@@ -1287,8 +1339,8 @@ describe("the picker editing a profile in Settings", () => {
       }),
     );
     expect(node.textContent).not.toContain("Use a profile");
-    expect(node.textContent).not.toContain("Save as a profile");
-    pickOption(select(node, "model"), "owner-only");
+    expect(node.textContent).not.toContain("Save as profile");
+    pickMenu(node, "Model", "owner-only");
     expect(onChoose).toHaveBeenCalledWith(
       expect.objectContaining({ model: "cb/owner-only" }),
     );
@@ -1379,7 +1431,7 @@ describe("the slots a pick stores", () => {
     };
     const node = mount(picker());
     click(node, "More options");
-    pickOption(select(node, "subagent-model"), "Claude Haiku 5.5");
+    pickMenu(node, "Subagent model", "Claude Haiku 5.5");
     const [, pair, , , references] = lastCall(state.remember);
     expect(pair.settings).toMatchObject({
       "platformSubagent.harness": "pi",
@@ -1403,7 +1455,7 @@ describe("the slots a pick stores", () => {
       },
     };
     const node = mount(picker());
-    pickOption(select(node, "subagent-model"), "Same as agent");
+    pickMenu(node, "Subagent model", "Same as agent");
     const [, pair, , , references] = lastCall(state.remember);
     expect(pair.settings).toBeUndefined();
     expect(references).toEqual({
@@ -1431,7 +1483,7 @@ describe("the slots a pick stores", () => {
     const node = mount(picker());
     click(node, "Back to custom");
     click(node, "More options");
-    pickOption(select(node, "subagent-model"), "Claude Opus 5.5");
+    pickMenu(node, "Subagent model", "Claude Opus 5.5");
     const [, , , , references] = lastCall(state.remember);
     expect(references).toEqual({
       profileId: "p1",
@@ -1468,10 +1520,8 @@ describe("the subagent a page inherits from its profile", () => {
     const node = mount(picker({ row: true, target }));
     click(node, "Back to custom");
     expect(node.textContent).toContain("Subagents");
-    expect(
-      select(node, "subagent-model").selectedOptions[0]?.textContent,
-    ).toContain("GLM 5.3");
-    pickOption(select(node, "model"), "Claude Haiku 5.5");
+    expect(menuTrigger(node, "subagent-model")).toContain("GLM 5.3");
+    pickMenu(node, "Model", "Claude Haiku 5.5");
     const [pair, references, effective] = lastCall(target.onChoose);
     expect(pair.settings?.["platformSubagent.model"]).toBe(
       "cb/rits/zai-org/glm-5-3",
@@ -1689,7 +1739,7 @@ describe("references kept apart from effective values", () => {
     };
     const first = mount(picker());
     click(first, "Back to custom");
-    pickOption(select(first, "model"), "Claude Haiku 5.5");
+    pickMenu(first, "Model", "Claude Haiku 5.5");
     const [, customPair, , , customReferences] = lastCall(state.remember);
     expect(customPair.model).toBe("ibm/aws/claude-haiku-5-5");
     expect(customReferences).toEqual({
@@ -1704,7 +1754,7 @@ describe("references kept apart from effective values", () => {
     state.saved = { chatProfileId: null };
     const second = mount(picker());
     click(second, "More options");
-    pickOption(select(second, "subagent-model"), "Claude Opus 5.5");
+    pickMenu(second, "Subagent model", "Claude Opus 5.5");
     const [, pair, , , references] = lastCall(state.remember);
     expect(pair.model).toBe("ibm/aws/claude-haiku-5-5");
     expect(references).toEqual({
@@ -1721,7 +1771,7 @@ describe("references kept apart from effective values", () => {
     });
     const node = mount(picker({ row: true, target }));
     click(node, "Back to custom");
-    pickOption(select(node, "subagent-model"), "Same as agent");
+    pickMenu(node, "Subagent model", "Same as agent");
     const [stored, references, effective] = lastCall(target.onChoose);
     expect(stored.settings?.["platformSubagent.model"]).toBeUndefined();
     expect(effective.settings?.["platformSubagent.model"]).toBeUndefined();
@@ -1749,7 +1799,7 @@ describe("references kept apart from effective values", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
-    pickOption(select(node, "model"), "GLM 5.3");
+    pickMenu(node, "Model", "GLM 5.3");
     const [, stored, , , references] = lastCall(state.remember);
     expect(stored.settings?.["platformSubagent.model"]).toBeUndefined();
     expect(references).toEqual({
@@ -1777,7 +1827,7 @@ describe("references kept apart from effective values", () => {
         defaultHarness: "claude-code",
       }),
     );
-    pickOption(select(node, "model"), "Claude Haiku 5.5");
+    pickMenu(node, "Model", "Claude Haiku 5.5");
     const [, stored] = lastCall(state.remember);
     expect(stored.settings).toMatchObject({
       subagentModel: "ibm/aws/claude-haiku-5-5",
@@ -1806,7 +1856,9 @@ describe("references kept apart from effective values", () => {
     expect(node.textContent).toContain(
       "Curve: Couldn't refresh its models; showing its last listing.",
     );
-    expect(options(select(node, "model"))).toContain("GLM 5.3");
+    expect(
+      menuItems(node, "Model").map((row) => row.textContent?.trim()),
+    ).toContain("GLM 5.3");
   });
 });
 
@@ -1883,7 +1935,7 @@ describe("a real harness's subagent slot", () => {
       picker({ carried: claude(), defaultHarness: "claude-code" }),
     );
     click(node, "More options");
-    pickOption(select(node, "subagent-model"), "Claude Haiku 5.5");
+    pickMenu(node, "Subagent model", "Claude Haiku 5.5");
     const [, stored, , , , effective] = lastCall(state.remember);
     const platform = {
       "platformSubagent.harness": "claude-code",
@@ -2012,12 +2064,10 @@ describe("a real harness's subagent slot", () => {
     const node = mount(
       picker({ carried: claude(), defaultHarness: "claude-code" }),
     );
-    const piItem = [
-      ...node.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
-    ].find((item) => item.textContent?.includes("Pi"))!;
-    act(() => piItem.click());
+    pickMenu(node, "Harness", "Pi");
     const [, draft] = lastCall(state.chosenModel) as [string, SessionPair];
-    expect(draft).toMatchObject({ harness: "pi", model: null });
+    expect(draft).toMatchObject({ harness: "pi" });
+    expect(draft.model).not.toBeNull();
     const piPlatform = {
       "platformSubagent.harness": "claude-code",
       "platformSubagent.model": lent.model,
@@ -2032,7 +2082,7 @@ describe("a real harness's subagent slot", () => {
     state.chosen = draft;
     state.catalog = routedCatalog;
     const second = mount(picker({ carried: claude(), defaultHarness: "pi" }));
-    pickOption(select(second, "model"), "Claude Opus 5.5");
+    pickMenu(second, "Model", "Claude Opus 5.5");
     const [, stored] = lastCall(state.remember);
     expect(stored.settings).toEqual(readBack({}, piPlatform));
   });
@@ -2142,7 +2192,7 @@ describe("the reference draft's lifetime", () => {
     profileRow(node, "Fast review");
     await act(async () => {});
     click(node, "Back to custom");
-    pickOption(select(node, "subagent-model"), "Claude Opus 5.5");
+    pickMenu(node, "Subagent model", "Claude Opus 5.5");
     expect((lastCall(target.onChoose) as unknown[])[1]).toEqual({
       profileId: null,
       platformSubagentProfileId: null,
@@ -2178,7 +2228,7 @@ describe("a value-only default replaced elsewhere", () => {
       }),
     );
     click(node, "More options");
-    pickOption(select(node, "subagent-model"), "Claude Haiku 5.5");
+    pickMenu(node, "Subagent model", "Claude Haiku 5.5");
 
     act(() =>
       root!.render(
@@ -2197,9 +2247,7 @@ describe("a value-only default replaced elsewhere", () => {
       ),
     );
     expect(node.textContent).toContain("GPT 5.5");
-    expect(
-      select(node, "subagent-model").selectedOptions[0]?.textContent,
-    ).toContain("GLM 5.3");
+    expect(menuTrigger(node, "subagent-model")).toContain("GLM 5.3");
   });
 });
 
@@ -2220,9 +2268,11 @@ describe("a pending clear with the parent's old props", () => {
       settings: b,
     };
     const node = mount(picker());
-    pickOption(select(node, "subagent-model"), "Same as agent");
-    expect(node.querySelector('[id$="-subagent-model"]')).toBeNull();
-    pickOption(select(node, "model"), "Claude Haiku 5.5");
+    pickMenu(node, "Subagent model", "Same as agent");
+    expect(
+      node.querySelector('button[aria-labelledby$="-subagent-model-label"]'),
+    ).toBeNull();
+    pickMenu(node, "Model", "Claude Haiku 5.5");
     const [, stored] = lastCall(state.remember);
     expect(stored.settings?.["platformSubagent.model"]).toBeUndefined();
     expect(stored.settings?.subagentModel).toBeUndefined();
@@ -2244,15 +2294,13 @@ describe("a mounted picker switched to another agent", () => {
     };
     state.saved = undefined;
     const node = mount(picker({ agentId: "agent" }));
-    pickOption(select(node, "subagent-model"), "Claude Haiku 5.5");
-    expect(
-      select(node, "subagent-model").selectedOptions[0]?.textContent,
-    ).toContain("Claude Haiku 5.5");
+    pickMenu(node, "Subagent model", "Claude Haiku 5.5");
+    expect(menuTrigger(node, "subagent-model")).toContain("Claude Haiku 5.5");
 
     state.chosen = null;
     act(() => root!.render(picker({ agentId: "agent-c" })));
-    expect(select(node, "model").value).toBe("");
-    pickOption(select(node, "model"), "Claude Haiku 5.5");
+    expect(menuTrigger(node, "model")).toBe("Choose a model");
+    pickMenu(node, "Model", "Claude Haiku 5.5");
     const [, stored, , , references] = lastCall(state.remember);
     expect(references).toEqual({
       profileId: null,

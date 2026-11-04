@@ -696,6 +696,109 @@ export function SessionPairPicker(props: Props) {
     choose(values, { kind: "profile", profile });
   };
 
+  const body = routed ? (
+    <SessionModelPicker
+      agentId={agentId}
+      carried={carried}
+      harnesses={names}
+      pair={pair}
+      defaultHarness={defaultHarness}
+      profiles={edit ? undefined : profiles}
+      selectedProfileId={primary?.id ?? null}
+      {...(!edit && {
+        onPickProfile: pickProfile,
+        onManageProfiles: () => navigateToSettings("profiles"),
+        onEditProfile: (profile) =>
+          navigateToSettings("profiles", { profileId: profile.id }),
+        onLeaveProfiles: () => {
+          if (primary) setFromProfile(primary);
+        },
+        saveAsProfile: saveAs.row,
+      })}
+      {...(agentDefault && {
+        agentDefault: {
+          active: following,
+          pair: agentDefault.pair,
+          onActivate: () => {
+            setDraft(null);
+            agentDefault.onClear();
+          },
+          onDeactivate: () => {
+            if (agentDefault.pair)
+              choose(agentDefault.pair, {
+                kind: "references",
+                references: { profileId: null },
+              });
+            else
+              choose(
+                {
+                  harness: defaultHarness,
+                  provider: null,
+                  model: null,
+                },
+                {
+                  kind: "references",
+                  references: { profileId: null },
+                },
+              );
+          },
+        },
+      })}
+      onChoose={(next, intent) => choose(next, { kind: intent })}
+      onManageProviders={manageProviders}
+    />
+  ) : (
+    <OldRuntimePairs
+      agentId={agentId}
+      carried={carried}
+      names={names}
+      current={harness}
+      sections={sections}
+      attached={attached}
+      pair={pair}
+      pending={pending}
+      harnessName={harnessName(harness)}
+      onDisconnect={confirmDisconnect}
+      onAttach={attach}
+      onChoose={(name) =>
+        choose({
+          harness: name,
+          provider:
+            providerOptions(name, views, providers.granted, providers.owned)
+              .granted[0]?.id ?? null,
+          model: null,
+        })
+      }
+      onChooseModel={(id, model) =>
+        choose(withSettings({ harness, provider: id, model }))
+      }
+      settings={{
+        agentId,
+        carried,
+        capability,
+        model: pair?.model ?? null,
+        settings,
+        defaults,
+        onChange: (changes) =>
+          pair &&
+          choose({
+            ...pair,
+            settings: applySettingChanges(settings, changes),
+          }),
+      }}
+    />
+  );
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a config page shows the panel's body inline, with no panel, trigger or popover around it; the chat input keeps its popover. */
+  if (row)
+    return (
+      <div className="flex min-w-0 flex-col gap-2">
+        {attachDialog.dialog}
+        {saveAs.dialog}
+        {body}
+      </div>
+    );
+
   return (
     <div className="flex min-w-0 items-center gap-3">
       {attachDialog.dialog}
@@ -735,106 +838,10 @@ export function SessionPairPicker(props: Props) {
               : "New session harness and model")
           }
           onInteractOutside={keepOpenWhileDialog}
-          className={cn(
-            "flex flex-col gap-2 p-1 text-sm",
-            row ? "w-[420px]" : "w-[340px]",
-          )}
+          tail={false}
+          className="flex w-[368px] flex-col text-sm shadow-[0_12px_32px_rgba(0,0,0,0.14)]"
         >
-          {routed ? (
-            <SessionModelPicker
-              agentId={agentId}
-              carried={carried}
-              harnesses={names}
-              pair={pair}
-              defaultHarness={defaultHarness}
-              profiles={edit ? undefined : profiles}
-              selectedProfileId={primary?.id ?? null}
-              {...(!edit && {
-                onPickProfile: pickProfile,
-                onEditProfile: () => navigateToSettings("providers"),
-                onManageProfiles: () => navigateToSettings("providers"),
-                onLeaveProfiles: () => {
-                  if (primary) setFromProfile(primary);
-                },
-                saveAsProfile: saveAs.row,
-              })}
-              {...(agentDefault && {
-                agentDefault: {
-                  active: following,
-                  pair: agentDefault.pair,
-                  onActivate: () => {
-                    setDraft(null);
-                    agentDefault.onClear();
-                  },
-                  onDeactivate: () => {
-                    if (agentDefault.pair)
-                      choose(agentDefault.pair, {
-                        kind: "references",
-                        references: { profileId: null },
-                      });
-                    else
-                      choose(
-                        {
-                          harness: defaultHarness,
-                          provider: null,
-                          model: null,
-                        },
-                        {
-                          kind: "references",
-                          references: { profileId: null },
-                        },
-                      );
-                  },
-                },
-              })}
-              onChoose={(next, intent) => choose(next, { kind: intent })}
-              onManageProviders={manageProviders}
-            />
-          ) : (
-            <OldRuntimePairs
-              agentId={agentId}
-              carried={carried}
-              names={names}
-              current={harness}
-              sections={sections}
-              attached={attached}
-              pair={pair}
-              pending={pending}
-              harnessName={harnessName(harness)}
-              onDisconnect={confirmDisconnect}
-              onAttach={attach}
-              onChoose={(name) =>
-                choose({
-                  harness: name,
-                  provider:
-                    providerOptions(
-                      name,
-                      views,
-                      providers.granted,
-                      providers.owned,
-                    ).granted[0]?.id ?? null,
-                  model: null,
-                })
-              }
-              onChooseModel={(id, model) =>
-                choose(withSettings({ harness, provider: id, model }))
-              }
-              settings={{
-                agentId,
-                carried,
-                capability,
-                model: pair?.model ?? null,
-                settings,
-                defaults,
-                onChange: (changes) =>
-                  pair &&
-                  choose({
-                    ...pair,
-                    settings: applySettingChanges(settings, changes),
-                  }),
-              }}
-            />
-          )}
+          {body}
         </PopoverContent>
       </Popover>
       {pair && !edit && !target && (

@@ -5,6 +5,7 @@ const settingsTabSchema = z.enum([
   "account",
   "appearance",
   "providers",
+  "profiles",
   "connections",
   "api-keys",
   "usage",
@@ -25,7 +26,12 @@ export type Route =
   | { view: "artifacts" }
   | { view: "starter-kits" }
   | { view: "chat"; agent: string; session?: string }
-  | { view: "settings"; settingsTab: SettingsTab; period?: string }
+  | {
+      view: "settings";
+      settingsTab: SettingsTab;
+      period?: string;
+      profileId?: string;
+    }
   | { view: "terms" }
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
@@ -92,14 +98,20 @@ export function parseRoute(path: string, search = ""): Route {
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
   if (path === "/artifacts") return { view: "artifacts" };
   if (path === "/starter-kits") return { view: "starter-kits" };
-  const settingsMatch = path.match(/^\/settings\/([^/]+)$/);
+  const settingsMatch = path.match(/^\/settings\/([^/]+)(?:\/([^/]+))?$/);
   if (settingsMatch) {
     const tab = settingsTabSchema.safeParse(settingsMatch[1]);
-    if (tab.success) {
+    if (
+      tab.success &&
+      (settingsMatch[2] === undefined || tab.data === "profiles")
+    ) {
       return {
         view: "settings",
         settingsTab: tab.data,
         ...(tab.data === "usage" ? usagePeriodOf(search) : {}),
+        ...(tab.data === "profiles" && settingsMatch[2]
+          ? { profileId: decodeSegment(settingsMatch[2]) }
+          : {}),
       };
     }
   }
@@ -157,6 +169,8 @@ export function routeToPath(route: Route): string {
     case "settings": {
       if (route.settingsTab === "account") return "/settings";
       const base = `/settings/${route.settingsTab}`;
+      if (route.settingsTab === "profiles" && route.profileId)
+        return `${base}/${encodeURIComponent(route.profileId)}`;
       return route.settingsTab === "usage" && route.period
         ? `${base}?${new URLSearchParams({ [PERIOD_PARAM]: route.period })}`
         : base;
@@ -196,6 +210,7 @@ export function routeToNavigationState(route: Route): {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
+  settingsProfileId: string | null;
   usagePeriod: string | null;
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
@@ -207,6 +222,8 @@ export function routeToNavigationState(route: Route): {
     starterKitCatalog: route.view === "starter-kit" ? route.catalog : null,
     starterKitId: route.view === "starter-kit" ? route.kit : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
+    settingsProfileId:
+      route.view === "settings" ? (route.profileId ?? null) : null,
     usagePeriod: route.view === "settings" ? (route.period ?? null) : null,
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",

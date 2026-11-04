@@ -268,7 +268,8 @@ export function ModelIndicator({
           aria-label="Session harness and model"
           collisionPadding={8}
           onInteractOutside={keepOpenWhileDialog}
-          className="flex max-h-[var(--radix-popover-content-available-height)] w-[340px] flex-col gap-3 overflow-y-auto text-sm"
+          tail={false}
+          className="flex max-h-[var(--radix-popover-content-available-height)] w-[368px] flex-col overflow-y-auto text-sm shadow-[0_12px_32px_rgba(0,0,0,0.14)]"
         >
           {!routed && activeProvider && (
             <h3 className={cn("px-1", labelVariants())}>
@@ -309,11 +310,14 @@ export function ModelIndicator({
               {...(turnRunning && {
                 note: "A model picked now applies to the next message.",
               })}
-              profiles={sessionProfiles}
+              profiles={profiles}
+              profileHarness={harness}
               selectedProfileId={primary?.id ?? null}
               onPickProfile={pickProfile}
-              onEditProfile={() => navigateToSettings("providers")}
-              onManageProfiles={() => navigateToSettings("providers")}
+              onManageProfiles={() => navigateToSettings("profiles")}
+              onEditProfile={(profile) =>
+                navigateToSettings("profiles", { profileId: profile.id })
+              }
               onLeaveProfiles={() => {
                 if (primary) setFromProfile(primary);
               }}
