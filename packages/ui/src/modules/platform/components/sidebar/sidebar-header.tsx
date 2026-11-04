@@ -26,7 +26,7 @@ export function SidebarHeader({ expanded, onToggle, onHome }: Props) {
           type="button"
           onClick={onHome}
           aria-label={getBrand().name}
-          className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-lg px-0.5 py-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
         >
           <BrandLogo />
         </button>

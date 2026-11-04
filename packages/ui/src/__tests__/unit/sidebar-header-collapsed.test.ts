@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The header of the navigation rail. Collapsed, the rail shows the brand where the icons below it sit — the brand's own 16px slot, padded like a nav item and centred in it — so the wordmark and the Home icon share one column whatever the brand's width; expanded, the header is unchanged, with the wordmark on the left and the toggle on the right.
+// TEST_OVERVIEW: The header of the navigation rail. Collapsed, the rail shows the brand where the icons below it sit — the brand's own 16px slot, padded like a nav item and centred in it — so the wordmark and the Home icon share one column whatever the brand's width; expanded, the wordmark stays on the left and the toggle on the right, and the brand button is padded so the wordmark's box starts on the same column's left edge.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const { TooltipProvider } = await import("../../components/ui/tooltip.js");
+const { getBrand } = await import("../../brand.js");
 const { SidebarHeader } =
   await import("../../modules/platform/components/sidebar/sidebar-header.js");
 
@@ -57,10 +58,15 @@ it("centres the brand on the icon column", () => {
   );
 });
 
-// TEST_SCENARIO: the expanded header keeps the wordmark on the left and the toggle after it, so nothing of the rail's alignment reaches it.
+// TEST_SCENARIO: the expanded header keeps the wordmark on the left and the toggle after it, with the brand button padded so the logo's box starts at the icon column's left edge: the rail's 8px plus 2px, which centres the 32px logo on the icons' 26px column.
 it("leaves the expanded header alone", () => {
   render(true);
   const button = toggle("Collapse navigation");
   expect(button?.className).toContain("p-1.5");
   expect(button?.querySelector("span")).toBeNull();
+  const brand = document.querySelector<HTMLElement>(
+    `[aria-label="${getBrand().name}"]`,
+  );
+  expect(brand?.className).toContain("px-0.5");
+  expect(brand?.className).toContain("py-1");
 });
