@@ -46,8 +46,11 @@ export function ThoughtBlock({
         preview ? (
           <span className="flex min-w-0 flex-1 items-start gap-1.5">
             <span className="shrink-0">Thinking</span>
+            <span aria-hidden className="shrink-0">
+              ·
+            </span>
             <span
-              className="min-w-0 truncate text-foreground"
+              className="min-w-0 truncate text-muted-foreground/70"
               data-testid="thought-preview"
               title={preview}
             >

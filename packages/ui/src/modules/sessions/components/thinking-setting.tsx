@@ -5,7 +5,7 @@ import { OptionField } from "./option-field.js";
 
 const COLLAPSED = "collapsed";
 const EXPANDED = "expanded";
-const TITLE = "Thinking while streaming";
+const TITLE = "Thinking while it writes";
 
 export function ThinkingSetting() {
   const expanded = useStore((s) => s.thinkingExpandedWhileStreaming);
@@ -22,18 +22,19 @@ export function ThinkingSetting() {
         >
           <RadioGroupItem
             value={EXPANDED}
-            label="Expanded"
+            label="Open as it comes"
             className="w-auto"
           />
           <RadioGroupItem
             value={COLLAPSED}
-            label="Collapsed"
+            label="Only the latest line"
             className="w-auto"
           />
         </RadioGroup>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          A model's reasoning as it arrives. Collapsed shows only its latest
-          line until you open it. It applies to every agent in this browser.
+          How a model's reasoning shows while it arrives. Only the latest line
+          keeps it folded until you open it. It applies to every agent in this
+          browser.
         </p>
       </OptionField>
     </section>

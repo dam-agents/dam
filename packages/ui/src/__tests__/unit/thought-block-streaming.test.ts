@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: A streaming thinking block opens or stays collapsed by the user's "Thinking while streaming" setting. Collapsed, its header shows the latest line of the thoughts so progress stays visible; either way it folds when the block finishes, unless the user toggled it by hand.
+// TEST_OVERVIEW: A streaming thinking block opens or stays collapsed by the user's "Thinking while it writes" setting. On "Only the latest line", its header shows the latest line of the thoughts so progress stays visible; either way it folds when the block finishes, unless the user toggled it by hand.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
