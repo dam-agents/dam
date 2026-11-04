@@ -12,6 +12,7 @@ import {
   choiceSlots,
   resolvedChoice,
 } from "../../harness-config/domain/session-pair.js";
+import type { RunBoundary } from "../../harness-config/domain/run-boundary.js";
 import type { ProfileResolver } from "../../profiles/index.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: a channel whose profile cannot run on its agent refuses the turn with the reason, rather than running on a substitute the owner never chose (D91). */
@@ -46,6 +47,7 @@ export type ChannelPair = (
 export function createChannelProfiles(
   db: Db,
   resolveProfile: ProfileResolver,
+  boundary?: RunBoundary,
 ): {
   pair: ChannelPair;
   set: (input: {
@@ -86,6 +88,7 @@ export function createChannelProfiles(
         );
       const row = rows[0];
       if (!row) return null;
+
       const resolved = await resolvedChoice(
         {
           profileId: row.profileId,
@@ -104,7 +107,10 @@ export function createChannelProfiles(
           resolved.refused.profile,
           resolved.refused.detail,
         );
-      return resolved.pair;
+      if (!resolved.pair) return null;
+      if (!boundary) return resolved.pair;
+      /* UNIT_BOUNDARY_DESCRIPTION: a channel's turn is a run, so the pair it starts on is settled by the one helper, native subagent keys included (D193B). */
+      return (await boundary.pair(agentId, resolved.pair)) ?? resolved.pair;
     },
 
     /* UNIT_BOUNDARY_DESCRIPTION: stores a pick the caller has checked as a chat default's pick is checked; an omitted subagent reference leaves that slot as it is. */

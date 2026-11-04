@@ -456,6 +456,12 @@ export const profiles = pgTable(
     harness: text("harness").notNull(),
     providerTemplate: text("provider_template").notNull(),
     model: text("model").notNull(),
+    /* UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent the profile names, as a
+     * provider template and a model of it; a slot following the profile
+     * resolves to it while its own sub-agent slot is empty, and both null is
+     * "Same as agent" (D193B). */
+    subagentProviderTemplate: text("subagent_provider_template"),
+    subagentModel: text("subagent_model"),
     settings: jsonb("settings").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -470,6 +476,10 @@ export const profiles = pgTable(
       .on(table.owner, table.seed)
       .where(sql`${table.seed} is not null`),
     index("profiles_owner_idx").on(table.owner),
+    check(
+      "profiles_subagent_xor_template",
+      sql`(${table.subagentProviderTemplate} is null) = (${table.subagentModel} is null)`,
+    ),
   ],
 );
 

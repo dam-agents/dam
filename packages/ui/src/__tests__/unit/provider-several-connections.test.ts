@@ -80,7 +80,7 @@ describe("several connections of one provider", () => {
     state.connections = [];
   });
 
-  // TEST_SCENARIO: two Anthropic connections, an API key and an OAuth token, each get their own row named after the connection, each Configured with its own spend, and no row offers to connect Anthropic again.
+  // TEST_SCENARIO: two Anthropic connections, an API key and an OAuth token, each get their own row named after the connection, each Connected with its own spend, and no row offers to connect Anthropic again.
   it("shows a row for each Anthropic connection", () => {
     state.connections = [
       connection("c1", "anthropic", "work-anthropic"),
@@ -90,7 +90,7 @@ describe("several connections of one provider", () => {
     const work = rowOf(html, "Edit Anthropic (work-anthropic)");
     const personal = rowOf(html, "Edit Anthropic (personal-claude)");
     expect(work).toContain(">Anthropic (work-anthropic)<");
-    expect(work).toContain("Configured · Connected");
+    expect(work).toContain(">Connected<");
     expect(work).toContain("spend:c1");
     expect(personal).toContain(">Anthropic (personal-claude)<");
     expect(personal).toContain("spend:c2");
@@ -113,10 +113,10 @@ describe("several connections of one provider", () => {
     ];
     const html = render();
     expect(rowOf(html, "Edit Anthropic (work-anthropic)")).toContain(
-      "Configured · Key rejected",
+      ">Key rejected<",
     );
     expect(rowOf(html, "Edit Anthropic (spare-anthropic)")).toContain(
-      "Configured · Connected",
+      ">Connected<",
     );
   });
 

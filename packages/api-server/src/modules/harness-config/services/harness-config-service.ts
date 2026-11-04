@@ -18,6 +18,7 @@ import type {
   HarnessConfigChange,
   HarnessConfigService,
   HarnessConfigSnapshotPatch,
+  OwnerModelCatalogView,
   ProviderPresetType,
   SessionPair,
   SessionChoiceReferences,
@@ -25,13 +26,15 @@ import type {
 import { z } from "zod";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import {
+  composedSubagent,
   qualifiedPairModel,
   sameModelName,
   resolveSessionPair,
-  platformSubagentOf,
+  runSubagentSettings,
   splitPlatformSubagent,
   withoutPairApproval,
   withPlatformSubagent,
+  type LentSubagent,
 } from "../domain/session-pair.js";
 import { harnessFits } from "../../templates/index.js";
 import { NoDefaultModelError } from "../domain/no-default-model.js";
@@ -53,6 +56,8 @@ export function createHarnessConfigService(deps: {
   ownerSub: string;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's catalog for one agent's Connections, the same listing the picker offers, which says whether a model runs on the agent's own provider (D193B). */
+  ownerCatalog: (agentId: string) => Promise<OwnerModelCatalogView>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
   hiddenHarnesses: () => Promise<ReadonlySet<string>>;
@@ -205,12 +210,8 @@ export function createHarnessConfigService(deps: {
           code: "BAD_REQUEST",
           message: "only the chat default can name a profile",
         });
-      await deps.pairRepo.write(
-        agentId,
-        kind,
-        await validChoice(agentId, pair, references),
-        references,
-      );
+      const { intent } = await validChoice(agentId, pair, references);
+      await deps.pairRepo.write(agentId, kind, intent, references);
       await deps.publishDefaults(agentId);
       notifyDefaultChanged(agentId);
     },
@@ -226,7 +227,7 @@ export function createHarnessConfigService(deps: {
     agentId: string,
     pair: SessionPair | null,
     references: SessionChoiceReferences | undefined,
-  ): Promise<SessionPair> {
+  ): Promise<{ validated: SessionPair; intent: SessionPair }> {
     const profileId = references?.profileId ?? null;
     {
       const owned = async (id: string) => {
@@ -245,23 +246,61 @@ export function createHarnessConfigService(deps: {
             code: "BAD_REQUEST",
             message: resolved.unavailable,
           });
-        return resolved.pair;
+        return resolved;
       };
       const [, ownSlot] = pair ? splitPlatformSubagent(pair) : [null, null];
-      const primary = profileId !== null ? await owned(profileId) : pair;
+      let primary = pair;
+      let lent: LentSubagent | null = null;
+      if (profileId !== null) {
+        const resolved = await owned(profileId);
+        primary = resolved.pair;
+        lent = {
+          settings: resolved.subagent,
+          unavailable: resolved.subagentUnavailable,
+        };
+      }
       if (!primary)
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "pick a profile or a model",
         });
       const slotId = references?.platformSubagentProfileId ?? null;
-      return validDefaultPair(
+      if (slotId !== null) await owned(slotId);
+      /* UNIT_BOUNDARY_DESCRIPTION: a pick is composed as a run composes it, so the sub-agent the default would spawn is the one checked here (D193B). */
+      const subagent = await composedSubagent(
+        {
+          platformSubagentProfileId: slotId,
+          platformSubagentSettings: ownSlot,
+        },
+        lent,
+        deps.resolveProfile,
         agentId,
-        withPlatformSubagent(
-          primary,
-          slotId === null ? ownSlot : platformSubagentOf(await owned(slotId)),
-        ),
+        deps.ownerSub,
       );
+      if (subagent.refused)
+        throw new TRPCError({ code: "BAD_REQUEST", message: subagent.refused });
+      const validated = await validDefaultPair(
+        agentId,
+        withPlatformSubagent(primary, subagent.settings ?? null),
+      );
+      /* UNIT_BOUNDARY_DESCRIPTION: what a save stores is the caller's own pick, never the pair validation composed: a profile's lent sub-agent reaches every run through the reference, and storing it as an own slot would outlive the profile's next edit (D193B). */
+      const intent = await composedSubagent(
+        {
+          platformSubagentProfileId: slotId,
+          platformSubagentSettings: ownSlot,
+        },
+        null,
+        deps.resolveProfile,
+        agentId,
+        deps.ownerSub,
+      );
+      return {
+        validated,
+        intent: await validDefaultPair(
+          agentId,
+          withPlatformSubagent(primary, intent.settings ?? null),
+        ),
+      };
     }
   }
 
@@ -302,7 +341,14 @@ export function createHarnessConfigService(deps: {
         message: `the ${pair.harness} harness cannot run on that provider`,
       });
     const harness = carried.find((h) => h.name === pair.harness);
-    const unsupported = Object.keys(pair.settings ?? {}).find(
+    /* UNIT_BOUNDARY_DESCRIPTION: a save checks the settings a run would take, native subagent values derived by the one rule against the owner catalog the picker lists, yet it neither returns nor stores them: the default stays platform-level (D193B). */
+    const derived = runSubagentSettings(
+      harness,
+      await deps.ownerCatalog(agentId),
+      pair,
+      pair.settings,
+    );
+    const unsupported = Object.keys(derived).find(
       (id) =>
         !(isPlatformSubagentSetting(id)
           ? harness?.platformSubagentSettings
@@ -310,16 +356,15 @@ export function createHarnessConfigService(deps: {
     );
     const invalid = unsupported
       ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
-      : pair.settings &&
-        (sessionSettingsError(
+      : (sessionSettingsError(
           harness?.harnessConfigCatalog,
-          pair.settings,
+          derived,
           pair.model,
         ) ??
-          platformSubagentSettingsError(
-            pair.settings,
-            (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
-          ));
+        platformSubagentSettingsError(
+          derived,
+          (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
+        ));
     if (invalid) throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
     return withoutPairApproval(pair, harness?.harnessConfigCatalog);
   }

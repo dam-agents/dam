@@ -25,6 +25,7 @@ const profile = (
   harness: "claude-code",
   providerTemplate: "anthropic",
   model: "anthropic/claude-sonnet-5-5",
+  subagent: null,
   settings: { effort: "high" },
   newAgentDefault: false,
   usage: { agents: 0, channels: 0, schedules: 0 },

@@ -16,11 +16,20 @@ const profileSettingsSchema = sessionSettingsSchema.refine(
   { message: "a profile holds only non-empty session settings" },
 );
 
+/* UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent a profile names, which a
+ * slot following the profile resolves to while its own sub-agent slot is
+ * empty; null or absent is "Same as agent", the harness picking. */
+const profileSubagentSchema = z.object({
+  providerTemplate: z.string().trim().min(1).max(100),
+  model: z.string().trim().min(1).max(200),
+});
+
 const profileBodySchema = z.object({
   harness: z.string().trim().min(1).max(100),
   providerTemplate: z.string().trim().min(1).max(100),
   model: z.string().trim().min(1).max(200),
   settings: profileSettingsSchema.optional(),
+  subagent: profileSubagentSchema.nullable().optional(),
 });
 
 export const profileCreateInputSchema = profileBodySchema.extend({
@@ -55,6 +64,7 @@ export const profileViewSchema = z.object({
   harness: z.string(),
   providerTemplate: z.string(),
   model: z.string(),
+  subagent: profileSubagentSchema.nullable(),
   settings: z.record(z.string(), z.string()),
   /* UNIT_BOUNDARY_DESCRIPTION: the owner's one default for new agents, which cannot be deleted while it is. */
   newAgentDefault: z.boolean(),
