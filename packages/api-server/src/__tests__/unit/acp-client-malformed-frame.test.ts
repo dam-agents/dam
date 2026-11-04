@@ -33,10 +33,12 @@ async function fakeAgent(onClose: (code: number) => void) {
       if (frame.method === "initialize")
         answer(frame.id, { protocolVersion: 1, agentCapabilities: {} });
       if (frame.method === "session/new") answer(frame.id, { sessionId: "s1" });
-      if (frame.method === "session/prompt")
+      if (frame.method === "session/prompt") {
         ws.send(
           '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"title":"Ba',
         );
+        answer(frame.id, { stopReason: "end_turn" });
+      }
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -53,19 +55,24 @@ async function fakeAgent(onClose: (code: number) => void) {
 }
 
 describe("a truncated ACP frame", () => {
-  // TEST_SCENARIO: the agent sends a frame cut off mid-string while a prompt is running; the client closes that connection with 1007 and the prompt fails, and nothing is thrown out of the listener.
+  // TEST_SCENARIO: the agent sends a frame cut off mid-string while a prompt is running; the client closes that connection with 1007 and the prompt fails, even though the agent answers it right after, and nothing is thrown out of the listener.
   it("closes the connection with 1007 and fails the turn", async () => {
-    const uncaught = vi.fn();
-    process.on("uncaughtException", uncaught);
-    closers.push(() => process.off("uncaughtException", uncaught));
+    const escaped = new Promise<never>((_, reject) => {
+      process.on("uncaughtException", reject);
+      closers.push(() => process.off("uncaughtException", reject));
+    });
     let closed!: (code: number) => void;
     const closeCode = new Promise<number>((r) => (closed = r));
     const acp = await fakeAgent(closed);
 
     const sent = acp.sendPrompt("hi", { platformMeta: { harness: "x" } });
 
-    await expect(closeCode).resolves.toBe(1007);
-    await expect(sent).rejects.toThrow();
-    expect(uncaught).not.toHaveBeenCalled();
+    await Promise.race([
+      escaped,
+      Promise.all([
+        expect(closeCode).resolves.toBe(1007),
+        expect(sent).rejects.toThrow("ACP connection closed"),
+      ]),
+    ]);
   });
 });
