@@ -67,11 +67,14 @@ function machineDisks(): Map<string, number> {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the claim as the runner reads it, in KiB, from the runner pod whose `$HOME` is the owner's claim: what the claim holds, and what it holds plus what it can still take, which is the claim's own capacity. The filesystem's total is no ceiling for the claim, since that filesystem's other users hold room the claim never had.
+// UNIT_BOUNDARY_DESCRIPTION: the claim as the runner reads it (storage::measure), in KiB: what the runner's own directories hold — its state directory and `$HOME`, the machine disks — counted by their blocks, and that plus what the filesystem under them can still take. The filesystem's own used figure is no measure of the claim: on an install whose claim is a directory of the node's disk, as the CI lane's local-path claim is, it counts every other writer of that disk, which shrinks the room below 95% by a twentieth of what they hold and reads a correct grant as past it.
 function claimKb(): { used: number; capacity: number } {
-  const fields = onRunnerHost(probeId, 'df -Pk "$HOME" | tail -1').split(/\s+/);
-  const [used, avail] = [Number(fields[2]), Number(fields[3])];
-  return { used, capacity: used + avail };
+  const [df = "", du = ""] = onRunnerHost(
+    probeId,
+    'df -Pk "$HOME" | tail -1; du -skxc /var/lib/platform/machines "$HOME" | tail -1',
+  ).split("\n");
+  const used = Number(du.split(/\s+/)[0]);
+  return { used, capacity: used + Number(df.split(/\s+/)[3]) };
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine and the guest's own free space, read in one guest command with the grant bracketing the room: the grant line, the guest's `df`, and the grant line again. They are only comparable as one look — the runner writes a new grant every 30 s and a grant compared with a room read a look apart reads short for no defect — so a sample whose two grant lines differ straddles a renewal and is reported as unstable for the caller to retry, at no cost but one more read. The grant figure is not a share this spec works out for itself, because what the guard must do is hold the guest to the grant it was given. The id is what tells a renewal from the grant of an earlier look, and it is a figure the runner published, not an acknowledgement that the guard has processed that grant: the guard's own look and its 30 s move backoff are the runner's host side, so a bound is waited for rather than read once. An absent file prints `-`, never an empty line: `inGuest` trims its output, so an empty line would vanish, the `df` line would take the grant's place, and its first field would read as a grant id and its fourth as the grant. A `-` parses as no grant at all, so an unmeasured claim reads as NaN and fails the caller's check instead of passing a figure the guest never had.
