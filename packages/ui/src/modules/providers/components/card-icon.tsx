@@ -63,7 +63,7 @@ const STYLES: Record<
     Icon: BobIcon,
     Mark: BobHead,
     tile: "bg-white",
-    mark: "size-full",
+    mark: "size-4/5",
   },
   bedrock: { Icon: Cloud, Mark: BedrockColorIcon, tile: "", mark: "size-full" },
 };
