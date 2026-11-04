@@ -489,7 +489,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
       claim.used,
       `a concurrent writer took the claim to ${claim.used} KiB of its ${claim.capacity}`,
     ).toBeLessThanOrEqual(claim.capacity);
-    // UNIT_BOUNDARY_DESCRIPTION: a policy check on the live claim that costs the host no byte, not the claim-ceiling regression: the runner grants every running machine's guest all that is left below 95% of the claim's capacity, not a part of it, so one busy agent is not starved by idle siblings. A grant read here may come from a look before the claim read, and the sibling wrote 8 MiB just before it, so each grant must be the room the claim has within the case's slack: above it by more is a runner that grants past the 95% ceiling, and below it by more than a quarter is a runner that still splits the room between the machines. The near-ceiling regression — a guest refused while the claim itself is at 94–95% — needs the claim filled and stays in the `E2E_DISK_FILL_GIB` case below, and it stays open until a run can fill a small claim without a host budget.
+    // UNIT_BOUNDARY_DESCRIPTION: a policy check on the live claim that costs the host no byte, not the claim-ceiling regression: the runner grants every running machine's guest all that is left below 95% of the claim's capacity, not a part of it, so one busy agent is not starved by idle siblings. A grant read here may come from a look before the claim read, and the sibling wrote 8 MiB just before it, so each grant must be the room the claim has within the case's slack: above it by more than a twentieth, which is what other specs writing to the CI lane's shared node disk can add in a look and still less than a runner that ignored the 5% reserve would grant, is a runner that grants past the 95% ceiling, and below it by more than a quarter is a runner that still splits the room between the machines. The near-ceiling regression — a guest refused while the claim itself is at 94–95% — needs the claim filled and stays in the `E2E_DISK_FILL_GIB` case below, and it stays open until a run can fill a small claim without a host budget.
     const roomMiB = Math.max(
       0,
       Math.round((0.95 * claim.capacity - claim.used) / 1024),
@@ -505,7 +505,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
       expect(
         grant.grantMiB,
         `machine ${machine + 1} of the owner's was granted ${grant.grantMiB} MiB of the ${roomMiB} MiB left below the claim's 95% ceiling, and no grant may pass that room`,
-      ).toBeLessThanOrEqual(roomMiB + SLACK_MIB);
+      ).toBeLessThanOrEqual(roomMiB + Math.max(SLACK_MIB, roomMiB / 20));
       expect(
         grant.grantMiB,
         `machine ${machine + 1} of the owner's was granted ${grant.grantMiB} MiB of the ${roomMiB} MiB left below the claim's ceiling: a running machine is granted the whole room, not a part of it`,
