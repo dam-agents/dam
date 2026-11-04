@@ -189,7 +189,6 @@ export function createSessionsService(deps: {
     });
   }
 
-  // Keeps the first line of the title the harness lists for each wanted Session.
   async function adoptListedTitles(
     caller: InProcessCaller,
     harness: string,
@@ -215,7 +214,7 @@ export function createSessionsService(deps: {
   }
 
   /**
-   * A Session started before the runtime kept a title has none in the
+   * UNIT_BOUNDARY_DESCRIPTION: a Session started before the runtime kept a title has none in the
    * platform's records, and the list read answers from those records alone;
    * only its harness knows the title. So the first list read of a boot asks
    * each harness that has such Sessions, once, and keeps what it lists. A
