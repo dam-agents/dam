@@ -113,8 +113,8 @@ function SandboxRow({
       <span
         className={
           working
-            ? "inline-flex shrink-0 items-center rounded-full bg-[#defbe6] px-2.5 py-0.5 text-xs tracking-[0.338px] text-[#15803d] dark:bg-green-950 dark:text-green-300"
-            : "inline-flex shrink-0 items-center rounded-full bg-[#edf5ff] px-2.5 py-0.5 text-xs tracking-[0.338px] text-[#0f62fe] dark:bg-blue-950 dark:text-blue-300"
+            ? "inline-flex shrink-0 items-center rounded-full bg-[#defbe6] px-2.5 py-0.5 text-xs tracking-[0.338px] text-green-700 dark:bg-[#0f2a1f] dark:text-[#34d399]"
+            : "inline-flex shrink-0 items-center rounded-full bg-[#edf5ff] px-2.5 py-0.5 text-xs tracking-[0.338px] text-[#0f62fe] dark:bg-[#0f1f3a] dark:text-[#4589ff]"
         }
       >
         {working ? "Working" : "Idle"}
