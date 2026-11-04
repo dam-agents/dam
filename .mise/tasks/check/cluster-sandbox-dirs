@@ -74,13 +74,17 @@ OVERLAY="/var/lib/kubelet $NODE_HOME_SHARE"
 rc=0; node_kubelet_root_needed 2>/dev/null || rc=$?
 same "the home on an overlay too: nothing to move" "1 absent" "$rc $(dropin)"
 
-# --- an Environment's k3s keeps its images (#6128) -------------------------
+# --- an Environment's k3s keeps its images (#6128, #6272) -----------------
 NODE_IMAGE_GC_DROPIN="$work/config.yaml.d/60-image-gc-off.yaml"
 rc=0; node_image_gc_off || rc=$?
 same "a first write changes the drop-in" 0 "$rc"
-same "image collection never starts, at any disk use" \
-  "image-gc-high-threshold=100 image-gc-low-threshold=99" \
+same "image collection never starts, and only memory evicts, at any disk use" \
+  "image-gc-high-threshold=100 image-gc-low-threshold=99 eviction-hard=memory.available<100Mi" \
   "$(yq -r '."kubelet-arg+" | join(" ")' "$NODE_IMAGE_GC_DROPIN")"
+# The guard's grant reads as used disk: a disk threshold here would delete
+# the install's images and evict pods.
+yq -r '."kubelet-arg+"[]' "$NODE_IMAGE_GC_DROPIN" | grep -qE '(nodefs|imagefs)\.' &&
+  { echo "FAIL: the drop-in gives the kubelet a disk eviction threshold" >&2; fail=1; }
 rc=0; node_image_gc_off || rc=$?
 same "an unchanged drop-in: nothing to restart for" 1 "$rc"
 [[ "$(basename "$NODE_IMAGE_GC_DROPIN")" > 50-container-log-rotation.yaml ]] ||
