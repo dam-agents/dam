@@ -5,6 +5,8 @@ import {
   composeEditorStanding,
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
+import { permissionsOf } from "../../../modules/agents/domain/agent-permissions.js";
+import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -136,6 +138,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   const readChatFormPreferences = createChatFormPreferencesReader(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
+  const ownerPermissions = async (agentId: string, sub: string) => {
+    const infra = await agentsRepo.get(agentId);
+    if (!infra || infra.owner !== sub) return null;
+    return permissionsOf("owner", infra.kind);
+  };
   const agentOfTarget = createAgentTargetResolver({
     schedules: schedulesBoot.repo,
     egressRules: createEgressRulesRepository(db),
@@ -148,7 +155,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       self: () => ctx,
       agentOfTarget,
+      ownerPermissions,
       editorStanding,
+      assistantName: config.brand.assistantName,
       contextFor: (identity) => contextFor(identity, surface),
     });
     const connections = composeConnectionsForOwner({
@@ -309,6 +318,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       owner: user.sub,
       surface,
       modes: config.featureModes,
+    });
+    const { assistants } = composeAssistantsForOwner({
+      db,
+      owner: user.sub,
+      assistantName: config.brand.assistantName,
+      enabled: async () => (await features.flags()).assistant,
+      agentExists: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
+      agents,
+      enrolled: () => gettingStarted.ensureEnrolled(user.sub),
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
@@ -557,6 +575,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       userBudgets: userBudgetsForOperator(user.sub),
       providerStatus,
       user,
+      assistants,
+      assistantName: config.brand.assistantName,
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
@@ -564,5 +584,21 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     };
     return ctx;
   };
-  return contextFor;
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant is provisioned for a person, at the first request that person makes: the row settles it once, so every later request reads it and stops. An API key, an editor's context and a browser that is acting for someone else provision nothing. */
+  const ensureAssistant = async (ctx: ApiContext, user: UserIdentity) => {
+    if (user.keyId !== undefined) return;
+    if (user.agentIds !== "*" || user.actingEditor !== undefined) return;
+    await composeAssistantsForOwner({
+      db,
+      owner: user.sub,
+      assistantName: config.brand.assistantName,
+      enabled: async () => (await ctx.features.flags()).assistant,
+      agentExists: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
+      agents: ctx.agents,
+      enrolled: () => gettingStarted.ensureEnrolled(user.sub),
+    }).provisioner.ensure();
+  };
+
+  return { contextFor, ensureAssistant };
 }

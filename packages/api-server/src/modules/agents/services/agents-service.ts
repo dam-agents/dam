@@ -1081,7 +1081,7 @@ export function createAgentsService(deps: {
         ? await deps.resolveUserEmail(infra.owner).catch(() => null)
         : null,
       editors,
-      permissions: permissionsOf("editor"),
+      permissions: permissionsOf("editor", infra.kind),
     };
   }
 
@@ -1115,7 +1115,7 @@ export function createAgentsService(deps: {
         access: {
           role: "owner" as const,
           editors: editors.get(agent.id) ?? [],
-          permissions: permissionsOf("owner"),
+          permissions: permissionsOf("owner", agent.kind),
         },
       }));
       return match(scope)
@@ -1141,7 +1141,7 @@ export function createAgentsService(deps: {
         agent,
         access:
           role === "owner"
-            ? { role, editors, permissions: permissionsOf(role) }
+            ? { role, editors, permissions: permissionsOf(role, infra.kind) }
             : await editorAccess(infra, editors),
       };
     },

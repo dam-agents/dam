@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-26
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -18,6 +18,7 @@ Each replica remembers the tasks it already recorded, so the message sent on eve
 The character a task unlocks is random among the ones still locked, with one exception: the first Agent unlocks the character it was created with while that character is still locked, so the avatar the user sees on it is the one they just unlocked.
 When another task already unlocked that character, the first Agent unlocks a random locked one, and the UI does not claim it is on the Agent.
 A user with nothing unlocked yet gets a first Agent with the character its name gives it, which the create stores on the Agent.
+The [assistant](assistant.md) is an Agent like any other here: provisioning enrols a person first, so the assistant counts as their first Agent and finishes `Create`.
 Concurrent unlocks for one user are serialized in the database, so two tasks never unlock the same character.
 
 ## Who sees the checklist

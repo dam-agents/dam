@@ -48,11 +48,16 @@ export function AgentBindPicker({
   const [pickedId, setPickedId] = useState<string | null>(null);
   const scheduleCounts = useActiveScheduleCounts();
 
-  const sections = useMemo(
-    () => pickerSections(displayedAgents, query),
-    [displayedAgents, query],
+  // UNIT_BOUNDARY_DESCRIPTION: the assistant is never offered here, because it cannot be bound to a conversation; the server refuses it either way.
+  const bindable = useMemo(
+    () => displayedAgents.filter((a) => a.kind !== "assistant"),
+    [displayedAgents],
   );
-  const selected = displayedAgents.find((a) => a.id === pickedId) ?? null;
+  const sections = useMemo(
+    () => pickerSections(bindable, query),
+    [bindable, query],
+  );
+  const selected = bindable.find((a) => a.id === pickedId) ?? null;
   const bindConfirm = useBindSharingConfirm(selected);
   const whisper = copy.messenger === "slack" && selected?.whisper === true;
   const sharing = bindConfirm.body(copy.audience, whisper);

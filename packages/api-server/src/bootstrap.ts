@@ -208,6 +208,7 @@ import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
 } from "./modules/usage/index.js";
+import { createAssistantsRepository } from "./modules/assistants/index.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import {
   composeTelemetryReader,
@@ -2105,6 +2106,7 @@ export async function bootstrap() {
     store: artifacts,
   });
 
+  const assistantsRepo = createAssistantsRepository(db);
   const agentCleanupSources: AgentCleanupSource[] = [
     environments.cleanupSource,
     {
@@ -2216,6 +2218,12 @@ export async function bootstrap() {
       name: "public-profiles",
       listAgentIds: publicAgentPage.listLiveAgentIds,
       cleanup: publicAgentPage.retireProfile,
+    },
+    {
+      /* UNIT_BOUNDARY_DESCRIPTION: an assistant whose Agent is gone leaves its row empty, so the owner's next sign-in creates a new one instead of pointing at nothing. */
+      name: "assistants",
+      listAgentIds: () => assistantsRepo.listAgentIds(),
+      cleanup: (agentId: string) => assistantsRepo.forgetByAgent(agentId),
     },
   ];
   const agentCleanupHooks = agentCleanupSources.map((s) => s.cleanup);

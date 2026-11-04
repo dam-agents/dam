@@ -39,6 +39,10 @@ import {
 import type { ApiContext } from "../../context.js";
 import type { AgentUpdateInput } from "./types.js";
 import { AGENT_PERMISSIONS } from "./permissions.js";
+import {
+  assertAssistantNameAvailable,
+  assertRenameable,
+} from "./reserved-name.js";
 import { listedAgents, toAgentView, toListedAgentView } from "./view.js";
 
 async function updated(ctx: ApiContext, patch: AgentUpdateInput) {
@@ -134,6 +138,7 @@ export const agentsRouter = t.router({
   create: manageAgentsProcedure
     .input(agentCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
+      assertAssistantNameAvailable(input.name, ctx.assistantName);
       const agent = await ctx.agents.create(input);
       return {
         ...toListedAgentView({
@@ -153,7 +158,19 @@ export const agentsRouter = t.router({
   update: manageAgentsProcedure
     .input(agentUpdateInputSchema)
     .use(agentPermission("settings", (input) => agentTarget(input.id)))
-    .mutation(({ ctx, input }) => updated(ctx, input)),
+    .mutation(async ({ ctx, input }) => {
+      if (input.name !== undefined) {
+        const agent = await ctx.agents.get(input.id);
+        assertRenameable(
+          agent?.kind,
+          input.name,
+          agent?.name,
+          ctx.assistantName,
+        );
+        assertAssistantNameAvailable(input.name, ctx.assistantName);
+      }
+      return updated(ctx, input);
+    }),
 
   setEnv: manageAgentsProcedure
     .input(agentSetEnvInputSchema)
@@ -224,7 +241,7 @@ export const agentsRouter = t.router({
 
   setDisabled: manageAgentsProcedure
     .input(agentSetDisabledInputSchema)
-    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
+    .use(agentPermission("disable", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.setDisabled(input.id, input.disabled);
       if (res.ok) return toAgentView(res.value);
@@ -339,7 +356,9 @@ export const agentsRouter = t.router({
 
   bindSlackChannel: manageAgentsProcedure
     .input(agentBindSlackChannelInputSchema)
-    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
+    .use(
+      agentPermission("channelBinding", (input) => agentTarget(input.agentId)),
+    )
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack)
         throw new TRPCError({
@@ -431,7 +450,9 @@ export const agentsRouter = t.router({
 
   bindTelegramChat: manageAgentsProcedure
     .input(agentBindTelegramChatInputSchema)
-    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
+    .use(
+      agentPermission("channelBinding", (input) => agentTarget(input.agentId)),
+    )
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.telegram)
         throw new TRPCError({

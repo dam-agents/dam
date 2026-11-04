@@ -5,6 +5,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { getErrorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
+import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { useFreshAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { useUpdateAgent } from "../api/mutations.js";
@@ -28,6 +29,7 @@ export function EditableAgentIdentity({
 }: {
   agent: AgentView;
 } & IdentityDisplay) {
+  const assistantName = getBrand().assistantName;
   const rename = useUpdateAgent({ inlineError: true });
   const changeAvatar = useUpdateAgent();
   const name =
@@ -36,6 +38,19 @@ export function EditableAgentIdentity({
     (changeAvatar.isPending ? changeAvatar.variables.avatar : undefined) ??
     (rename.isPending ? rename.variables.avatar : undefined) ??
     agent.avatar;
+  // UNIT_BOUNDARY_DESCRIPTION: the assistant's name is the reserved one, so it is shown rather than edited, with the reason where the pencil used to be.
+  if (agent.kind === "assistant")
+    return (
+      <EditableIdentity
+        {...display}
+        name={name}
+        avatar={avatar}
+        onAvatarChange={(next) =>
+          changeAvatar.mutate({ id: agent.id, avatar: next })
+        }
+        whyReadOnly={`${assistantName} is your assistant, so its name is fixed.`}
+      />
+    );
   return (
     <EditableIdentity
       {...display}
@@ -75,6 +90,7 @@ export function EditableIdentity({
   avatar,
   onRename,
   onAvatarChange,
+  whyReadOnly,
   avatarSize,
   mood,
   nameClassName,
@@ -82,8 +98,9 @@ export function EditableIdentity({
 }: {
   name: string;
   avatar: string | null | undefined;
-  onRename: (name: string) => Promise<void> | void;
+  onRename?: (name: string) => Promise<void> | void;
   onAvatarChange: (avatar: string) => void;
+  whyReadOnly?: string;
 } & IdentityDisplay) {
   const hasNewAvatar = useFreshAvatars().length > 0;
   const [draft, setDraft] = useState<string | null>(null);
@@ -114,7 +131,7 @@ export function EditableIdentity({
     }
     editEnded.current = true;
     try {
-      await onRename(next);
+      await onRename?.(next);
       setError(null);
       setDraft(null);
     } catch (e) {
@@ -134,7 +151,18 @@ export function EditableIdentity({
         />
         {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
       </AvatarPicker>
-      {draft === null ? (
+      {onRename === undefined ? (
+        <NameTag className={cn("flex min-w-0", nameClassName)}>
+          <Tooltip content={whyReadOnly ?? "This name is fixed"}>
+            <span
+              className="flex min-w-0 items-center gap-1.5"
+              data-testid="agent-name-read-only"
+            >
+              <span className="truncate">{name}</span>
+            </span>
+          </Tooltip>
+        </NameTag>
+      ) : draft === null ? (
         <NameTag className={cn("flex min-w-0", nameClassName)}>
           <Tooltip content="Rename">
             <button

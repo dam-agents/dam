@@ -98,7 +98,8 @@ describe("API key revocation and open streams", () => {
     app.route(
       "/api/trpc",
       createTrpcHttpRoutes({
-        composeApiContext: (user) => ({ user, liveEvents }) as ApiContext,
+        composeApiContext: async (user) =>
+          ({ user, liveEvents }) as unknown as ApiContext,
       }),
     );
     const port = await listen(
@@ -141,7 +142,7 @@ describe("API key revocation and open streams", () => {
     const endpoint = createTrpcWsEndpoint({
       authenticate,
       surfaceAttribution: attribution,
-      composeApiContext: (user) =>
+      composeApiContext: async (user) =>
         ({
           user,
           liveEvents,

@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/ui/empty-state";
 
+import { getBrand } from "../../../brand.js";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
@@ -19,6 +20,8 @@ export function SandboxChannelsSection({
   const agent = findAgent(data, agentId) ?? undefined;
   const available = data?.availableChannels ?? {};
   const readOnly = agent ? !holds(agent.access, "channels") : false;
+  const bindingBlocked = agent ? !holds(agent.access, "channelBinding") : false;
+  const assistantName = getBrand().assistantName;
 
   const missing = [
     ...(available.slack ? [] : ["Slack"]),
@@ -62,19 +65,30 @@ export function SandboxChannelsSection({
           disconnect one.
         </OwnerOnlyNotice>
       )}
+      {/* UNIT_BOUNDARY_DESCRIPTION: only binding is refused on the assistant, so the section says why and shows no Connect control while whispers stay. */}
+      {bindingBlocked && (
+        <p
+          className="mb-6 text-sm text-muted-foreground"
+          data-testid="channels-binding-unavailable"
+        >
+          {assistantName} is yours alone, so it cannot be added to a Slack or
+          Telegram conversation. Make another agent if you want one that people
+          can talk to from a channel.
+        </p>
+      )}
       {available.slack && !compact && agent && (
         <div className="mb-6">
           <WhisperCard agent={agent} />
         </div>
       )}
-      {available.slack && (
+      {available.slack && !bindingBlocked && (
         <SlackChannelCard
           agent={agent}
           withWhisper={compact}
           readOnly={readOnly}
         />
       )}
-      {available.telegram && (
+      {available.telegram && !bindingBlocked && (
         <TelegramChannelCard
           agentId={agentId}
           readOnly={readOnly}

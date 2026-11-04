@@ -27,6 +27,7 @@ import type {
   FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
+import type { AssistantsService } from "./modules/assistants/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { EnvironmentsService } from "./modules/environments/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
@@ -73,7 +74,8 @@ export interface UserIdentity {
 }
 
 export type AgentActing =
-  { ok: true; ctx: ApiContext } | { ok: false; error: "Forbidden" };
+  | { ok: true; ctx: ApiContext }
+  | { ok: false; error: "Forbidden"; message?: string };
 
 export interface ApiContext {
   templates: TemplatesService;
@@ -118,6 +120,8 @@ export interface ApiContext {
   spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;
   user: UserIdentity;
+  assistants: AssistantsService;
+  assistantName: string;
   e2eEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;

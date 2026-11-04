@@ -215,6 +215,10 @@ export {
   type AgentPermission,
   type AgentTarget,
 } from "./modules/agents/permissions.js";
+export type {
+  AssistantNotice,
+  AssistantsService,
+} from "./modules/assistants/types.js";
 export {
   budgetCpuSchema,
   budgetSizeSchema,

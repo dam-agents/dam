@@ -34,21 +34,25 @@ export function AgentManagementActions({
   }, []);
 
   const lifecycle: Action[] = [
-    {
-      id: AGENT_ENABLE_ANCHOR,
-      kind: "button",
-      icon: <Power />,
-      title: agent.disabled ? "Enable agent" : "Disable agent",
-      description: agent.disabled
-        ? "The agent is disabled. Enable it to let messages, schedules and connections wake it again."
-        : "Stop the agent and keep it asleep.",
-      button: {
-        label: agent.disabled ? "Enable" : "Disable",
-        disabled: management.disabling,
-        onClick: () => void management.toggleDisabled(agent),
-        testId: "agent-toggle-disabled",
-      },
-    },
+    ...(holds(agent.access, "disable")
+      ? ([
+          {
+            id: AGENT_ENABLE_ANCHOR,
+            kind: "button",
+            icon: <Power />,
+            title: agent.disabled ? "Enable agent" : "Disable agent",
+            description: agent.disabled
+              ? "The agent is disabled. Enable it to let messages, schedules and connections wake it again."
+              : "Stop the agent and keep it asleep.",
+            button: {
+              label: agent.disabled ? "Enable" : "Disable",
+              disabled: management.disabling,
+              onClick: () => void management.toggleDisabled(agent),
+              testId: "agent-toggle-disabled",
+            },
+          },
+        ] satisfies Action[])
+      : []),
     {
       kind: "button",
       icon: <Restart />,
@@ -106,7 +110,7 @@ export function AgentManagementActions({
   return (
     <>
       {actions.length > 0 && <ActionList label="Manage" actions={actions} />}
-      {!canDelete && (
+      {!canDelete && agent.access.role === "editor" && (
         <p
           className="mt-3 text-sm text-muted-foreground"
           data-testid="agent-delete-owner-only"

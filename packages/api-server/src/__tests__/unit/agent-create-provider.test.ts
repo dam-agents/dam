@@ -169,6 +169,7 @@ function setup(
   const ctx = unused<ApiContext>({
     agents,
     connections,
+    assistantName: "Assistant",
     user: {
       sub: "owner-1",
       preferredUsername: "test",

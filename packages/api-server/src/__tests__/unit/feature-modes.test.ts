@@ -28,6 +28,7 @@ describe("feature modes", () => {
         "custom-avatars": "experimental",
         environments: "experimental",
         hermes: "experimental",
+        assistant: "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({

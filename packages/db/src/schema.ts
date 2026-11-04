@@ -998,6 +998,18 @@ export const avatarUnlocks = pgTable(
   ],
 );
 
+export const assistants = pgTable("assistants", {
+  owner: text("owner").primaryKey(),
+  agentId: text("agent_id"),
+  renamedAgentId: text("renamed_agent_id"),
+  renamedFrom: text("renamed_from"),
+  renamedTo: text("renamed_to"),
+  noticeSeenAt: timestamp("notice_seen_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const sidebarAgentOrder = pgTable(
   "sidebar_agent_order",
   {

@@ -37,6 +37,7 @@ const EDITS = [
   "settings",
   "envVars",
   "lifecycle",
+  "disable",
   "spendLimits",
   "egressRules",
   "skills",

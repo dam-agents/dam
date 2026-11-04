@@ -41,6 +41,7 @@ export {
   userFeatures,
   gettingStartedChecklists,
   avatarUnlocks,
+  assistants,
   sidebarAgentOrder,
   artifactFolders,
   libraryArtifacts,

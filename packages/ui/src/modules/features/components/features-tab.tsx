@@ -65,6 +65,12 @@ const FEATURE_ROWS: FeatureRow[] = [
       "Let your agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
   },
   {
+    id: "assistant",
+    label: "Assistant",
+    description:
+      "Give yourself an assistant agent of your own: it appears in your agent list with its own chat, and it stays yours alone.",
+  },
+  {
     id: "hermes",
     label: "Hermes harness",
     description:
