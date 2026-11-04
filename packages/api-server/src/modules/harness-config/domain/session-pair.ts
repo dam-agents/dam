@@ -421,7 +421,8 @@ function resolveLeasedPair(input: SessionPairInputs): SessionPair | null {
  * of a saved default: the platform's preferred work model across the
  * agent's providers in the owner catalog's order, else the first model the
  * first of them lists for the harness. A "not set" default that names a
- * provider keeps to it, so the run never moves to another provider. A
+ * provider the agent still holds keeps to it, so the run never moves off the
+ * provider it ran on; one the agent no longer holds pins nothing. A
  * provider that has not listed offers nothing. Null when no provider lists a
  * model for the harness, which the caller reports as the agent having no
  * model provider to run on.
@@ -430,10 +431,10 @@ export function automaticModel(
   providers: readonly ProviderCatalogView[],
   pair: Pick<SessionPair, "harness" | "provider">,
 ): { provider: string; model: string } | null {
+  const pinned = providers.some((p) => p.connectionId === pair.provider);
   const listings = providers.flatMap((p) => {
     const models =
-      p.status === "listed" &&
-      (pair.provider === null || p.connectionId === pair.provider)
+      p.status === "listed" && (!pinned || p.connectionId === pair.provider)
         ? p.models.filter((m) => m.harnesses.includes(pair.harness))
         : [];
     return models.length > 0 ? [{ ...p, models }] : [];

@@ -762,12 +762,19 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
    * A change that moves the session to another process waits while its turn
    * runs. Only the metadata changes here: the prompt that follows sends the
    * session's settings to the harness, after loading the session again when
-   * the harness closed it.
+   * the harness closed it. A session with no model on a harness that needs
+   * one has no pick to keep, so it takes its kind's default once, following
+   * or not, rather than be refused while the agent has a model to run on.
    */
   function followDefault(sessionId: string): void {
     const entry = deps.sessionMetadata.get(sessionId);
-    const kind = entry?.meta.follows;
-    if (!entry || !kind) return;
+    if (!entry) return;
+    const kind =
+      entry.meta.follows ??
+      (missesModel(sessionChoice(sessionId, false))
+        ? defaultKindOfType(entry.meta.type)
+        : null);
+    if (!kind) return;
     const after = entry.meta.followsAfter;
     if (after !== undefined && (deps.sessionDefaults?.revision() ?? 0) <= after)
       return;

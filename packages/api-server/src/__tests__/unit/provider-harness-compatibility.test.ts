@@ -67,6 +67,12 @@ describe("provider harness compatibility", () => {
         ownerCatalog: async () => ({ providers: [] }),
         catalog,
         pairRepo: {
+          readSaved: async () => ({
+            chat: null,
+            channel: null,
+            scheduled: null,
+            chatProfileId: null,
+          }),
           read: async () => ({
             harness: "pi",
             provider: "oauth",

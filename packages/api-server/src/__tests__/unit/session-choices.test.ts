@@ -263,6 +263,12 @@ describe("a subagent model beside a natively run provider", () => {
     saved: SessionPair | null = null,
   ) => {
     const pairRepo = {
+      readSaved: async () => ({
+        chat: null,
+        channel: null,
+        scheduled: null,
+        chatProfileId: null,
+      }),
       read: async () => saved,
       write: async () => {},
       grantedProviders: async () => granted as never,

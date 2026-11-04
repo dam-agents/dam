@@ -18,6 +18,7 @@ type Target = {
   placeholder: string;
   agentDefault?: {
     detail: string;
+    pair?: SessionPair | null;
     harness?: string | undefined;
     onClear: () => void;
   };
@@ -295,12 +296,13 @@ describe("the default model itself", () => {
     };
     state.remembered = opus;
     mount("chat");
-    expect(state.target?.slots.pair).toBeNull();
-    expect(state.target?.placeholder).toMatch(/Opus 5\.5.*\(automatic\)/);
+    expect(state.target?.slots.pair).toEqual(opus);
+    expect(container.textContent).toMatch(/use .*Opus 5\.5.*automatically/);
     act(() => root.unmount());
     container.remove();
     mount("channel");
     expect(state.target?.agentDefault?.detail).toMatch(/^Follows .*Opus 5\.5/);
+    expect(state.target?.agentDefault?.pair).toEqual(opus);
   });
 
   /** TEST_SCENARIO: an agent whose owner holds no provider has no model to offer, so the page shows no picker at all. */

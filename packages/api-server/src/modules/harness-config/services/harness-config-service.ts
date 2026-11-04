@@ -516,7 +516,7 @@ export function harnessesOf(capabilities: unknown): HarnessCapability[] | null {
 }
 
 export interface PairResolverDeps {
-  pairRepo: Pick<SessionPairRepo, "read" | "grantedProviders">;
+  pairRepo: Pick<SessionPairRepo, "read" | "readSaved" | "grantedProviders">;
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
@@ -597,7 +597,21 @@ export async function resolveFirePair(
       harnessFits(deps.catalog, harness, type, templateId),
     routed,
   });
+  /** UNIT_BOUNDARY_DESCRIPTION: a chat profile that cannot run reads as no default, yet it is the owner's choice, so it is refused, never replaced by the automatic model. */
+  const refusedProfile = async (): Promise<boolean> => {
+    const saved = await deps.pairRepo.readSaved(agentId);
+    return (
+      saved.chatProfileId !== null &&
+      saved.chat === null &&
+      (kind === "chat" || saved[kind] === null)
+    );
+  };
   if (routed && pair?.model === null && !remembered?.model) {
+    if (await refusedProfile()) {
+      if (requireLeases)
+        throw new NoDefaultModelError(undefined, { profile: true });
+      return pair;
+    }
     const automatic = automaticModel(
       (await deps.ownerCatalog(agentId)).providers,
       pair,

@@ -81,12 +81,10 @@ export function driverDefaultModel(
   firePair: FirePair,
 ): NonNullable<DriverOpsDeps["defaultModel"]> {
   return async (driverId, harness) => {
-    const pair = await firePair(driverId, "chat", { harness }).catch(
-      (err: unknown) => {
-        if (isNoDefaultModelError(err)) return null;
-        throw err;
-      },
-    );
+    const pair = await firePair(driverId, "chat", {}).catch((err: unknown) => {
+      if (isNoDefaultModelError(err)) return null;
+      throw err;
+    });
     return pair?.harness === harness && isQualifiedModel(pair.model)
       ? pair.model
       : null;

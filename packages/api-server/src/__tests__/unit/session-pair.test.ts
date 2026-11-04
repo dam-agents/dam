@@ -274,6 +274,12 @@ describe("resolveFirePair", () => {
       {
         ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
+          readSaved: async () => ({
+            chat: null,
+            channel: null,
+            scheduled: null,
+            chatProfileId: null,
+          }),
           read: async () => ({
             harness: "claude-code",
             provider: "second",
@@ -332,6 +338,12 @@ describe("resolveRememberedPair before the agent's first hello", () => {
         {
           ownerCatalog: async () => ({ providers: [] }),
           pairRepo: {
+            readSaved: async () => ({
+              chat: null,
+              channel: null,
+              scheduled: null,
+              chatProfileId: null,
+            }),
             read: async () => null,
             grantedProviders: async () => [
               { id: "claude", type: "anthropic" },
@@ -377,6 +389,12 @@ describe("resolveFirePair on an agent too old for session pairs", () => {
       {
         ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
+          readSaved: async () => ({
+            chat: null,
+            channel: null,
+            scheduled: null,
+            chatProfileId: null,
+          }),
           read: async () => ({
             harness: "pi",
             provider: "curve",
@@ -420,6 +438,12 @@ describe("resolveFirePair on a harness outside the catalog", () => {
       {
         ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
+          readSaved: async () => ({
+            chat: null,
+            channel: null,
+            scheduled: null,
+            chatProfileId: null,
+          }),
           read: async () => null,
           grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
         },
@@ -452,6 +476,12 @@ describe("resolveFirePair on a harness outside the catalog", () => {
         {
           ownerCatalog: async () => ({ providers: [] }),
           pairRepo: {
+            readSaved: async () => ({
+              chat: null,
+              channel: null,
+              scheduled: null,
+              chatProfileId: null,
+            }),
             read: async () => null,
             grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
           },

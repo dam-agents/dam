@@ -80,7 +80,7 @@ export function AgentModelPicker({
     (kind === "chat"
       ? {
           profileId: saved?.chatProfileId ?? null,
-          pair: automatic ? null : chat,
+          pair: shown,
           platformSubagentProfileId: saved?.platformSubagentProfileId ?? null,
           platformSubagentSettings: saved?.platformSubagentSettings ?? null,
         }
@@ -132,7 +132,11 @@ export function AgentModelPicker({
     <section className="flex flex-col gap-2">
       <div>
         <SectionLabel>{copy.label}</SectionLabel>
-        <p className="text-sm text-muted-foreground">{copy.hint}</p>
+        <p className="text-sm text-muted-foreground">
+          {kind === "chat" && automatic
+            ? `Nothing is saved, so new chats and runs use ${defaultSummary}, picked automatically from this agent's providers. Pick a model to keep one.`
+            : copy.hint}
+        </p>
       </div>
       <fieldset
         disabled={!!access && !holds(access, "settings")}
@@ -153,17 +157,14 @@ export function AgentModelPicker({
             valueOnly: kind !== "chat",
             slots,
             label: copy.label,
-            placeholder:
-              kind === "chat" && automatic
-                ? `${defaultSummary} (automatic)`
-                : copy.placeholder,
+            placeholder: copy.placeholder,
             ...(kind !== "chat" && {
               agentDefault: {
                 detail: defaultSummary
                   ? `Follows ${defaultSummary}`
                   : "No default set yet",
-                harness: chat?.harness,
-                pair: chat,
+                harness: shown?.harness,
+                pair: shown,
                 onClear: () => {
                   setDraft(null);
                   clearSessionDefault(agentId, kind);

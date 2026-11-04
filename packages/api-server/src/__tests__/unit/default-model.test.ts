@@ -54,6 +54,13 @@ const IBM = {
   templateId: "ibm-litellm",
 };
 
+const nothingSaved = {
+  chat: null,
+  channel: null,
+  scheduled: null,
+  chatProfileId: null,
+};
+
 const listed = (
   connectionId: string,
   alias: string,
@@ -76,9 +83,11 @@ describe("a fire on an Agent with no default model", () => {
     providers: ProviderCatalogView[] = [
       listed("anth", "anthropic", ["claude-sonnet-5-5", "claude-opus-5-5"]),
     ],
+    chatProfileId: string | null = null,
   ) => ({
     pairRepo: {
       read: async () => saved,
+      readSaved: async () => ({ ...nothingSaved, chatProfileId }),
       write: async () => {},
       grantedProviders: async () => [ANTHROPIC, IBM],
     },
@@ -122,6 +131,29 @@ describe("a fire on an Agent with no default model", () => {
         {},
       ),
     ).toMatchObject({ provider: "lite", model: "ibm/aws/claude-sonnet-5-5" });
+  });
+
+  // TEST_SCENARIO: a "not set" default whose provider the agent no longer holds pins nothing, so the run takes the automatic model of the providers it does hold, as the defaults the runtime follows do.
+  it("drops a not-set pin to a provider the agent no longer holds", async () => {
+    expect(
+      await resolveFirePair(
+        deps({ harness: "claude-code", provider: "gone", model: null }),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toMatchObject({ provider: "anth", model: "anthropic/claude-opus-5-5" });
+  });
+
+  // TEST_SCENARIO: the chat default names a profile that cannot run here, which reads as no default; it is the owner's choice, so the fire is refused rather than run on the automatic model, and the person's view shows no model.
+  it("refuses a chat profile that cannot run instead of replacing it", async () => {
+    const refused = deps(null, undefined, "profile-1");
+    await expect(
+      resolveFirePair(refused, "a", "scheduled", {}),
+    ).rejects.toThrow(/profile this agent's default names cannot run/);
+    expect(await resolveRememberedPair(refused, "a", "chat")).toMatchObject({
+      model: null,
+    });
   });
 
   // TEST_SCENARIO: the only failure left is an agent whose providers list nothing it can run; the reason says to connect a model provider, not to pick a model.
@@ -754,32 +786,14 @@ describe("the one-time default conversion", () => {
     expect(still.writes).toEqual([]);
   });
 
-  // TEST_SCENARIO: a schedule of an asleep Agent whose default is "not set" wakes it and converts before the fire is checked, since nothing else would ever wake it to try again; an Agent nothing can convert fails its fire without being woken each time.
-  it("wakes an agent whose default is not set before a fire", async () => {
+  // TEST_SCENARIO: an asleep Agent whose default is "not set" runs its fire and "Run now" on the automatic model, so neither wakes it nor waits on a conversion; the next hello converts it.
+  it("neither wakes nor holds a not-set agent for a fire or Run now", async () => {
     const notSet = { harness: "claude-code", provider: "anth", model: null };
-    const { c, wakes, writes } = converter({ running: false, saved: notSet });
-    await c.ensureForFire("a");
-    expect(wakes).toEqual(["a"]);
-    expect(writes[0]?.model).toBe("anthropic/claude-opus-5-5");
-
-    const none = converter({ running: false, saved: notSet, granted: [] });
-    expect(await none.c.ensureForFire("a")).toBeNull();
-    expect(none.wakes).toEqual([]);
-  });
-
-  // TEST_SCENARIO: "Run now" on an Agent whose default is "not set" converts it first, as a fire does: a running one is converted at once and runs, an asleep one is pending while it wakes for its listing, and one nothing can convert answers at once instead of waking.
-  it("converts a not set before Run now", async () => {
-    const notSet = { harness: "claude-code", provider: "anth", model: null };
-    const running = converter({ saved: notSet });
-    expect(await running.c.pendingAfterMove("a")).toBe(false);
-    expect(running.writes[0]?.model).toBe("anthropic/claude-opus-5-5");
-
     const asleep = converter({ running: false, saved: notSet });
-    expect(await asleep.c.pendingAfterMove("a")).toBe(true);
+    expect(await asleep.c.ensureForFire("a")).toBeNull();
+    expect(await asleep.c.pendingAfterMove("a")).toBe(false);
     expect(asleep.wakes).toEqual([]);
-
-    const none = converter({ running: false, saved: notSet, granted: [] });
-    expect(await none.c.pendingAfterMove("a")).toBe(false);
+    expect(asleep.writes).toEqual([]);
   });
 
   // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM is not filled from Anthropic.
