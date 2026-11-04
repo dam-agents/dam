@@ -20,6 +20,7 @@ export function SessionSettingsControls({
   settings,
   defaults,
   modelChoices = [],
+  skip = [],
   disabled = false,
   onChange,
 }: {
@@ -30,6 +31,8 @@ export function SessionSettingsControls({
   settings: Readonly<Record<string, string>>;
   defaults: Readonly<Record<string, string>>;
   modelChoices?: readonly { value: string; name: string }[];
+  /** UNIT_BOUNDARY_DESCRIPTION: a setting the picker shows in a row of its own, above More options. */
+  skip?: readonly string[];
   disabled?: boolean;
   onChange: (changes: Record<string, string>) => void;
 }) {
@@ -37,6 +40,7 @@ export function SessionSettingsControls({
   const catalog = capability?.harnessConfigCatalog;
   const options = sessionSettingOptions(capability).filter(
     (o) =>
+      !skip.includes(o.id) &&
       !o.subagents &&
       o.id !== SUBAGENT_MODEL_SETTING &&
       o.category !== "mode" &&

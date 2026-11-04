@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: One summary reads a pick under the chat input, on the Custom selection row and in Settings › Profiles: the pretty model name, the capitalized effort and the provider, each left out when it does not exist.
+// TEST_OVERVIEW: One summary reads a pick under the chat input, on the picker trigger and in Settings › Profiles: the pretty model name, the capitalized effort and the provider, each left out when it does not exist.
 import type { HarnessCapability } from "agent-runtime-api";
 import { expect, it } from "vitest";
 

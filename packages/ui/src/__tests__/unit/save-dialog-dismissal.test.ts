@@ -55,8 +55,12 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
     owned: [{ id: "c1", templateId: "anthropic" }],
   }),
 }));
-vi.mock("../../modules/sessions/components/custom-pair-screen.js", () => ({
-  CustomPairScreen: ({ onChoose }: { onChoose: (pair: SessionPair) => void }) =>
+vi.mock("../../modules/sessions/components/session-model-picker.js", () => ({
+  SessionModelPicker: ({
+    onChoose,
+  }: {
+    onChoose: (pair: SessionPair) => void;
+  }) =>
     createElement(
       "button",
       {

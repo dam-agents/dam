@@ -21,7 +21,11 @@ type Target = {
     harness?: string | undefined;
     onClear: () => void;
   };
-  onChoose: (pair: SessionPair, references: SessionChoiceReferences) => void;
+  onChoose: (
+    pair: SessionPair,
+    references: SessionChoiceReferences,
+    effective?: SessionPair,
+  ) => void;
 };
 
 const state = vi.hoisted(() => ({
@@ -209,7 +213,8 @@ describe("a channel's and a schedule's model", () => {
         pair,
         kind,
         undefined,
-        undefined,
+        {},
+        pair,
       );
     },
   );
@@ -251,7 +256,8 @@ describe("a channel's and a schedule's model", () => {
       picked,
       "scheduled",
       undefined,
-      undefined,
+      {},
+      picked,
     );
   });
 });
@@ -272,6 +278,7 @@ describe("the default model itself", () => {
       "chat",
       undefined,
       references,
+      opus,
     );
   });
 
@@ -284,7 +291,20 @@ describe("the default model itself", () => {
   });
 });
 
-describe("who may pick", () => {
+describe("the values a page stores and the pair a run shows", () => {
+  const storage: SessionPair = {
+    harness: "claude-code",
+    provider: "conn",
+    model: "anthropic/claude-opus-5-5",
+  };
+  const effective: SessionPair = {
+    ...storage,
+    settings: {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-sonnet-5-5",
+    },
+  };
+
   /** TEST_SCENARIO: an Agent Editor holds the agent's settings permission, so the picker is live on their page and a pick saves the default like the owner's. */
   it("lets an editor holding settings pick", () => {
     state.access = {
@@ -300,7 +320,8 @@ describe("who may pick", () => {
       opus,
       "channel",
       undefined,
-      undefined,
+      {},
+      opus,
     );
   });
 
@@ -309,5 +330,24 @@ describe("who may pick", () => {
     state.access = { role: "editor", editors: [], permissions: ["view"] };
     mount("chat");
     expect(disabledFieldset()).toBe(true);
+  });
+
+  /** TEST_SCENARIO: a channel or a schedule keeps the values a run shows, with the subagent its profile lends materialized; only the chat default stores a primary reference, so it stores the pair without the lent subagent and caches the effective one. */
+  it.each([
+    { kind: "channel" as const, stored: effective, profileId: null },
+    { kind: "scheduled" as const, stored: effective, profileId: null },
+    { kind: "chat" as const, stored: storage, profileId: "p1" },
+  ])("stores what $kind keeps from a pick", ({ kind, stored, profileId }) => {
+    mount(kind);
+    const references = { profileId, platformSubagentProfileId: null };
+    act(() => state.target!.onChoose(storage, references, effective));
+    expect(state.remember).toHaveBeenCalledWith(
+      "a1",
+      stored,
+      kind,
+      undefined,
+      expect.objectContaining({ platformSubagentProfileId: null }),
+      effective,
+    );
   });
 });

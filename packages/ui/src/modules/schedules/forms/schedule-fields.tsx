@@ -644,7 +644,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
             model to give it values of its own.
           </>
         ) : (
-          "What this schedule runs on, picked as a chat's model is. Editing a profile changes every schedule that names it; Custom selection gives this one its own."
+          "What this schedule runs on, picked as a chat's model is. Editing a profile changes every schedule that names it; a pick of its own applies to this schedule only."
         )}
       </span>
       <FormError

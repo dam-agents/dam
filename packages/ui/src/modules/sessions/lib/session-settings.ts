@@ -121,9 +121,9 @@ export function settingsForModel(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: how a pick reads under the chat input, on the
- * Custom selection row and in Settings › Profiles: the family's name (else the
- * upstream id), the effort the harness offers for that model, and the
- * provider. A part that does not exist is left out.
+ * trigger and in Settings › Profiles: the family's name (else the upstream
+ * id), the effort the harness offers for that model, and the provider. A part
+ * that does not exist is left out.
  */
 export function pairSummary(
   model: string | null,

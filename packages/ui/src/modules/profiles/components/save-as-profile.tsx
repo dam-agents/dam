@@ -14,21 +14,22 @@ import { Input } from "@/components/ui/input";
 
 import { useAgent } from "../../agents/api/queries.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
-import { isProfileSetting } from "../../sessions/lib/subagent-choice.js";
+import { profileSettings } from "../../sessions/lib/subagent-choice.js";
 import { useCreateProfile, useUpdateProfile } from "../api/mutations.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the foot of the full picker: "Save as a profile"
- * names the pick, and on a pick that came from a profile "Update {name}"
- * writes it back to that profile beside "Save as a new profile" (D95 B). Not
- * offered on a shared agent, whose editor uses the owner's profiles and never
- * changes them. The dialog renders outside the picker's popover, which an
- * outside click closes.
+ * UNIT_BOUNDARY_DESCRIPTION: the More options header of the picker: "Save as
+ * a profile" names the pick, and on a pick that came from a profile "Update
+ * {name}" writes it back to that profile beside "Save as a new profile" (D95
+ * B), subagent included (D193B). Not offered on a shared agent, whose editor
+ * uses the owner's profiles and never changes them. The dialog renders
+ * outside the picker's popover, which an outside click closes.
  */
 export function useSaveAsProfile({
   agentId,
   pair,
   providerTemplate,
+  subagent = null,
   from,
   capability,
   onSaved,
@@ -36,6 +37,8 @@ export function useSaveAsProfile({
   agentId: string | null;
   pair: SessionPair | null;
   providerTemplate: string | undefined;
+  /** UNIT_BOUNDARY_DESCRIPTION: the subagent the profile carries (D193B), which a slot following the profile resolves to; null is "Same as agent". */
+  subagent?: { providerTemplate: string; model: string } | null;
   from: { id: string; name: string } | null;
   capability: HarnessCapability | undefined;
   onSaved: (profile: { id: string; name: string }) => void;
@@ -65,11 +68,8 @@ export function useSaveAsProfile({
       harness: pair.harness,
       providerTemplate,
       model: pair.model ?? "",
-      settings: Object.fromEntries(
-        Object.entries(pair.settings ?? {}).filter(([id]) =>
-          isProfileSetting(id, capability),
-        ),
-      ),
+      settings: profileSettings(pair, capability),
+      subagent,
     };
     const done = {
       onSuccess: (saved: { id: string; name: string }) => {

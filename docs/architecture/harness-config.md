@@ -16,7 +16,8 @@ A routed picker, a session's or a [schedule](schedules.md#session-choices)'s, re
 The session picker offers named models, not a generic default-model choice.
 It shows loading, unavailable and empty listings explicitly, with a retry for failed discovery; a failed listing never falls back to the harness's static catalog.
 The catalog remains usable where discovery is not configured.
-Before a session starts, the picker lists every provider the harness accepts, in order: a routed picker groups models by family, lists the owner's unattached providers and the profiles on them like the agent's own, and ends with a Connect more providers row; the old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
+Before a session starts, a routed picker picks harness, model, provider and effort in turn: a harness an owner provider runs, its models by family, each once, and a provider, one lacking the model disabled, with the reason; a model the provider lacks moves the pick to one with it, and a provider the agent lacks connects on pick.
+The old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
 A web terminal starts from a menu of harnesses: the empty chat's Browser Terminal card opens it, and so does the Web terminal row on the agent's General page.
 The menu lists the harnesses the agent carries that a provider the owner holds accepts.
 Picking one stores its harness, with the first attached provider it accepts and no model, as the next terminal pair, and the terminal sends that pair when it connects.
@@ -36,7 +37,7 @@ Until the harness catalog arrives, the picker label is a loader, never a raw har
 A session the UI starts holds the pair it sent until the agent lists the session, so the composer names that pair from the first moment.
 Every chat model picker reads its list from the owner catalog, never from the stored snapshot, so it lists models while the agent sleeps.
 This holds for the session picker, the schedule form and the platform sub-agent model; nothing wakes the agent on its own.
-In an existing session, the picker keeps its harness and, on a routed runtime, offers every granted provider's models: another harness needs a new session, which the picker links to, and context moves over only through a file the agent saves.
+In an existing session, the picker keeps its harness and offers every owner provider's models: another harness needs a new session, which the picker links to, and context moves over only through a file the agent saves.
 
 ## Session settings
 
@@ -116,7 +117,7 @@ A runtime without the `sessionSettings` capability keeps the Config panel's harn
 The same record holds the session's **platform sub-agent settings** under `platformSubagent.<id>`: a harness, its model, its mode and its config options, which a runtime that reports `platformSubagentSettings` for the session's harness on hello accepts whatever the manifest binds, since they configure another agent ([invocations](invocations.md#spawning)).
 They join no Harness Lease key and reach no harness; the api-server reads them when the session spawns, and the saved pair and schedules carry them with the rest.
 A mode or config option is checked against the chosen harness's catalog when it is set; the model, and a harness the agent no longer carries, only at spawn, so a stale choice never blocks the session's other settings; a choice the catalog marks `needsApproval` (Claude Code's asking modes, Bob's approvals on ask) is refused, because nobody is there to approve.
-One **Subagent model** choice, a profile, a Custom selection on the primary model's own screen, or Let the agent pick, covers both kinds of subagent: its harness, model and settings, never a mode, reach the platform sub-agent, and its model reaches the harness's own subagents where the session's harness can run it, with the choice's effort where the harness offers a subagent effort; otherwise the agent picks.
+One **Subagent model** choice, a profile's, a model and its provider, or Same as agent, covers both kinds of subagent: its harness, model and settings, never a mode, reach the platform sub-agent, and its model reaches the harness's own subagents where the session's harness can run it, with the choice's effort where the harness offers a subagent effort; otherwise the agent picks.
 
 An unreadable setting is unavailable, not an unset default.
 Pi receives its selected provider and model as command-line options, because its extension loads after startup settings have been read; updating the saved defaults alone would leave the first turn on an earlier provider.

@@ -373,14 +373,16 @@ export function rememberSessionPair(
     profileId?: string | null;
     platformSubagentProfileId?: string | null;
   },
-): void {
+  /** UNIT_BOUNDARY_DESCRIPTION: the pair a run shows, with a subagent a profile lends materialized; `pair` is what is stored and may leave it to the reference, so the cache holds `display` while the request sends `pair`. */
+  display: SessionPair = pair,
+): Promise<boolean> {
   const key = trpc.harnessConfig.sessionPair.queryKey(
     sessionPairInput(agentId, kind),
   );
   const previous = queryClient.getQueryData<SessionPair | null>(key);
   const resolved = pair.provider !== null;
-  if (resolved) queryClient.setQueryData<SessionPair | null>(key, pair);
-  void api.harnessConfig.rememberSessionPair
+  if (resolved) queryClient.setQueryData<SessionPair | null>(key, display);
+  return api.harnessConfig.rememberSessionPair
     .mutate({
       agentId,
       kind,
@@ -392,7 +394,10 @@ export function rememberSessionPair(
         platformSubagentProfileId: references.platformSubagentProfileId,
       }),
     })
-    .then(() => onSaved?.())
+    .then(() => {
+      onSaved?.();
+      return true;
+    })
     .catch((err: unknown) => {
       if (resolved)
         queryClient.setQueryData<SessionPair | null>(key, previous ?? null);
@@ -400,6 +405,7 @@ export function rememberSessionPair(
         kind: "error",
         message: `Couldn't save the ${kind} default: ${err instanceof Error ? err.message : String(err)}`,
       });
+      return false;
     })
     .finally(() => invalidateDefaults());
 }
