@@ -120,6 +120,7 @@ import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js"
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createPublicImageUrlsRepository } from "./modules/channels/infrastructure/public-image-urls-repository.js";
 import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
+import { createSlackOwnedThreadsRepository } from "./modules/channels/infrastructure/slack-owned-threads-repository.js";
 import { createSlackLoopGuardDropsRepository } from "./modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import {
   createFakeSlackGateway,
@@ -1812,6 +1813,8 @@ export async function bootstrap() {
       : null;
   void agentIcons?.warm();
 
+  const slackOwnedThreads = createSlackOwnedThreadsRepository(db);
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
@@ -1834,6 +1837,7 @@ export async function bootstrap() {
         setSlackChannelAmbient: setSlackChannelAmbient(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
+        ownedThreads: slackOwnedThreads,
         loopGuardDrops,
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
@@ -2227,6 +2231,11 @@ export async function bootstrap() {
       name: "satellite-grants",
       listAgentIds: () => satellitesBoot.listAgentIds(),
       cleanup: satellitesBoot.onAgentDeleted,
+    },
+    {
+      name: "slack-owned-threads",
+      listAgentIds: () => slackOwnedThreads.listAgentIds(),
+      cleanup: (agentId: string) => slackOwnedThreads.forgetAgent(agentId),
     },
     {
       name: "chat-form-preferences",
