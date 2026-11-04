@@ -4,6 +4,8 @@ import {
 } from "api-server-api";
 
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
+import { connectionLabel } from "../../connections/lib/connection-label.js";
+import type { ProviderItem } from "../components/provider-item.js";
 
 export interface ProviderRowDef {
   type: ProviderPresetType;
@@ -71,3 +73,31 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
       "OpenAI models for Codex and Pi via Chat Completions and Responses APIs.",
   },
 ];
+
+export interface ProviderEntry {
+  key: string;
+  row: ProviderRowDef;
+  item: ProviderItem | undefined;
+  name: string;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a provider row stands once for each connection the
+ * owner holds of it, or once to connect it when they hold none. Several
+ * connections of one provider each take the connection's own name after the
+ * provider's, so each row says which one it is.
+ */
+export function providerEntries(
+  row: ProviderRowDef,
+  items: readonly ProviderItem[],
+): ProviderEntry[] {
+  const base = `${row.type}:${row.templateId ?? ""}`;
+  const name = providerRowName(row);
+  if (items.length === 0) return [{ key: base, row, item: undefined, name }];
+  return items.map((item) => ({
+    key: `${base}:${item.id}`,
+    row,
+    item,
+    name: items.length > 1 ? `${name} (${connectionLabel(item.conn)})` : name,
+  }));
+}
