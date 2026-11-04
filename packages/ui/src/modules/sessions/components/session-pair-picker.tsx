@@ -262,7 +262,9 @@ export function SessionPairPicker(props: Props) {
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
-  const models = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
+  const models = groups.flatMap((g) =>
+    g.models.map((m) => ({ name: m.name, native: g.native })),
+  );
   /* UNIT_BOUNDARY_DESCRIPTION: a target names its profiles, so its rows mark those rather than a profile its values happen to match. */
   const primary = target
     ? targetProfile

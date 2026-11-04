@@ -287,6 +287,12 @@ export function createHarnessConfigService(deps: {
       });
     if (routed) pair = await routedPair(agentId, pair, granted);
     const provider = granted.find((p) => p.id === pair.provider);
+    const native =
+      carried
+        .find((h) => h.name === pair.harness)
+        ?.nativeTemplates?.includes(
+          provider?.templateId ?? provider?.type ?? "",
+        ) ?? false;
     if (
       pair.provider !== null &&
       (!provider ||
@@ -315,6 +321,7 @@ export function createHarnessConfigService(deps: {
           harness?.harnessConfigCatalog,
           pair.settings,
           pair.model,
+          native,
         ) ??
           platformSubagentSettingsError(
             pair.settings,

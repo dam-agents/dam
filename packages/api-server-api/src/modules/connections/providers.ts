@@ -17,6 +17,8 @@ export function harnessFits(
   const entry = catalog.harnesses.find((h) => h.name === harness);
   if (templateId === "anthropic-oauth" && harness !== "claude-code")
     return false;
+  if (templateId === OPENAI_CHATGPT_TEMPLATE_ID && harness !== "codex")
+    return false;
   return !!entry && (!entry.providers || entry.providers.includes(type));
 }
 
@@ -121,6 +123,7 @@ export function openaiEnvMappings(): EnvMapping[] {
 }
 
 export const BEDROCK_TEMPLATE_ID = "bedrock";
+export const OPENAI_CHATGPT_TEMPLATE_ID = "openai-chatgpt";
 
 export const BEDROCK_REGION_PATTERN = "[a-z]{2}(?:-gov)?-[a-z]+-\\d";
 
@@ -261,7 +264,19 @@ export const PROVIDERS = {
     id: "openai",
     alias: "openai",
     displayName: "OpenAI",
-    modes: [{ key: "api-key", label: "API key", templateId: "openai" }],
+    modes: [
+      {
+        key: "api-key",
+        label: "API key",
+        templateId: "openai",
+        isDefault: true,
+      },
+      {
+        key: "chatgpt",
+        label: "ChatGPT subscription",
+        templateId: OPENAI_CHATGPT_TEMPLATE_ID,
+      },
+    ],
   },
   bob: {
     id: "bob",
@@ -363,6 +378,7 @@ export function aliasForTemplateId(templateId: string): ProviderAlias | null {
  */
 const TEMPLATE_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: "CurveBender (shared)",
+  [OPENAI_CHATGPT_TEMPLATE_ID]: "ChatGPT subscription",
 };
 
 export function displayNameForTemplate(templateId: string): string | null {

@@ -1,7 +1,15 @@
 #!/bin/sh
 # the CLI refuses to start without a key; a provider's own placeholder, which names its connection, wins
-: "${OPENAI_API_KEY:=dummy-placeholder}"
-export OPENAI_API_KEY
+if [ "${PLATFORM_CODEX_AUTH_MODE:-}" = chatgpt ]; then
+  unset OPENAI_API_KEY CODEX_API_KEY OPENAI_BASE_URL OPENAI_MODEL
+  if ! codex-chatgpt login status >/dev/null 2>&1; then
+    printf '%s\n' 'ChatGPT sign-in is required. Open the Codex terminal or run codex-chatgpt login --device-auth over SSH, then retry.' >&2
+    exit 1
+  fi
+else
+  : "${OPENAI_API_KEY:=dummy-placeholder}"
+  export OPENAI_API_KEY
+fi
 # The session's model is a per-turn choice the runtime sends over ACP
 # (session/set_config_option), picked from the catalog the Model Router serves,
 # so no model is pinned at start. codex-acp takes no -c flags: CODEX_CONFIG is

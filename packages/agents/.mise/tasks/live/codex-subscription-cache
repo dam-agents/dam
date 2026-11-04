@@ -1,0 +1,117 @@
+#!/usr/bin/env node
+//MISE description="Verify with a real Codex CLI (CODEX_CLI) that native and routed app-server starts preserve an isolated, synthetic ChatGPT auth cache; makes no inference call"
+//MISE sources=["codex/rootfs/etc/codex/config.toml", "codex/rootfs/app/runtime-manifest.yaml", ".mise/tasks/live/codex-subscription-cache"]
+//MISE deny_net=true
+import assert from "node:assert/strict";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// TEST_OVERVIEW: An isolated home contains synthetic credentials, never the developer's login. Initialize and read configuration from the real app-server in each mode, then verify that API-mode startup did not clear the native cache. No thread, prompt or inference is started, and network access is denied by the task.
+const cli = process.env.CODEX_CLI;
+if (!cli) {
+  console.log("codex-subscription-cache: skipped; set CODEX_CLI to the image's real Codex binary");
+  process.exit(0);
+}
+const rootfs = fileURLToPath(new URL("../../../codex/rootfs/", import.meta.url));
+const home = mkdtempSync(join(tmpdir(), "codex-subscription-cache-"));
+const codexHome = join(home, ".codex");
+mkdirSync(codexHome, { mode: 0o700 });
+const instructions = join(home, "instructions.md");
+writeFileSync(instructions, "You are a coding agent.\n");
+writeFileSync(join(codexHome, "config.toml"), readFileSync(join(rootfs, "etc/codex/config.toml"), "utf8").replace('"/etc/codex/model-instructions.md"', JSON.stringify(instructions)));
+const jwt = (claims) => `${Buffer.from('{"alg":"none"}').toString("base64url")}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.test-only`;
+const auth = JSON.stringify({
+  OPENAI_API_KEY: null,
+  tokens: {
+    id_token: jwt({ email: "fixture@example.invalid", sub: "fixture", exp: Math.floor(Date.now() / 1000) + 3600, "https://api.openai.com/auth": { chatgpt_account_id: "fixture", chatgpt_plan_type: "plus", chatgpt_user_id: "fixture" } }),
+    access_token: "synthetic-test-only", refresh_token: "synthetic-test-only", account_id: "fixture",
+  },
+  last_refresh: new Date().toISOString(),
+});
+const authPath = join(codexHome, "auth.json");
+writeFileSync(authPath, auth, { mode: 0o600 });
+const env = { PATH: process.env.PATH, HOME: home, CODEX_HOME: codexHome, RUST_LOG: "off" };
+
+async function configuration(args, extraEnv = {}, request = { method: "config/read", params: { includeLayers: false } }) {
+  const child = spawn(cli, ["app-server", ...args], { cwd: home, env: { ...env, ...extraEnv }, stdio: ["pipe", "pipe", "pipe"] });
+  let timer;
+  const closed = once(child, "close");
+  try {
+    return await new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("app-server configuration timed out")), 10_000);
+      let pending = "";
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        pending += chunk;
+        let end;
+        while ((end = pending.indexOf("\n")) >= 0) {
+          const line = pending.slice(0, end);
+          pending = pending.slice(end + 1);
+          let frame;
+          try { frame = JSON.parse(line); } catch { continue; }
+          if (frame.error) { reject(new Error(`app-server request failed: ${frame.error.message}`)); return; }
+          if (frame.id === 1) {
+            child.stdin.write(JSON.stringify({ method: "initialized" }) + "\n");
+            child.stdin.write(JSON.stringify({ id: 2, ...request }) + "\n");
+          }
+          if (frame.id === 2) {
+            if (request.after) {
+              try { child.stdin.write(JSON.stringify({ id: 3, ...request.after(frame.result) }) + "\n"); }
+              catch (err) { reject(err); }
+            } else resolve(request.method === "config/read" ? frame.result.config : frame.result);
+          }
+          if (frame.id === 3) resolve(frame.result);
+        }
+      });
+      child.on("error", reject);
+      child.on("exit", () => reject(new Error("app-server exited before reading config")));
+      child.stderr.resume();
+      child.stdin.write(JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "platform-auth-test", version: "1" } } }) + "\n");
+    });
+  } finally {
+    clearTimeout(timer);
+    child.kill();
+    await closed;
+  }
+}
+
+try {
+  // TEST_SCENARIO: A routed process starts beside a cached ChatGPT account. The custom provider uses its own placeholder and must not force a native logout.
+  const api = await configuration([], { OPENAI_API_KEY: "platform:conn:router" });
+  assert.equal(api.model_provider, "openai-platform");
+  assert.equal(readFileSync(authPath, "utf8"), auth);
+  // TEST_SCENARIO: The native provider can use the same account/config home without clearing it, and starting another routed process still preserves that native cache.
+  const native = await configuration(["-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "-c", "features.api_key_model_discovery=false"]);
+  assert.equal(native.model_provider, "openai");
+  assert.equal(readFileSync(authPath, "utf8"), auth);
+  // TEST_SCENARIO: The real ACP adapter accepts only models app-server lists. The image's declared native choices must exist in its bundled model catalog, independently of a person's account entitlements.
+  const listing = await configuration(["-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "-c", "features.api_key_model_discovery=false"], {}, { method: "model/list", params: { limit: 100 } });
+  const ids = new Set(listing.data.map((model) => model.id));
+  const declared = /^    models: \[([^\]]+)\]$/m.exec(readFileSync(join(rootfs, "app/runtime-manifest.yaml"), "utf8"))?.[1].split(",").map((id) => id.trim());
+  assert.ok(declared?.length, "the image declares native model choices");
+  for (const id of declared) assert.ok(ids.has(id), `the bundled native catalog does not list ${id}`);
+  await configuration([], { OPENAI_API_KEY: "platform:conn:router" });
+  assert.equal(readFileSync(authPath, "utf8"), auth);
+  // TEST_SCENARIO: The pinned client caches a missing account, which is why harness-chat must refuse unauthenticated startup. A fresh process on retry observes the external login.
+  rmSync(authPath);
+  const signedInLater = await configuration(["-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "-c", "features.api_key_model_discovery=false"], {}, {
+    method: "account/read", params: { refreshToken: false },
+    after: (result) => {
+      assert.equal(result.account, null);
+      writeFileSync(authPath, auth, { mode: 0o600 });
+      return { method: "account/read", params: { refreshToken: false } };
+    },
+  });
+  assert.equal(signedInLater.account, null, "the pinned client keeps its cached missing account");
+  execFileSync(cli, ["-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "login", "status"], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const afterRetry = await configuration(["-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "-c", "features.api_key_model_discovery=false"]);
+  assert.equal(afterRetry.model_provider, "openai");
+  const version = execFileSync(cli, ["--version"], { env, encoding: "utf8" }).trim();
+  console.log(`codex-subscription-cache: ${version}; native and routed app-server starts preserve the synthetic auth cache`);
+} finally {
+  rmSync(home, { recursive: true, force: true });
+}

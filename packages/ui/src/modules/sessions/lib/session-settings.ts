@@ -104,6 +104,8 @@ export function settingsForModel(
       const option = capability?.harnessConfigCatalog?.options.find(
         (o) => o.id === id,
       );
+      if (option?.requiresRouter && findModel(groups, model)?.group.native)
+        return false;
       if (option && isModelOption(option)) {
         const hit = findModel(groups, value);
         return !hit || side.includes(hit.group);

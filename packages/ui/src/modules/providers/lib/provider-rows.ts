@@ -68,6 +68,6 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "openai",
     description:
-      "OpenAI models for Codex and Pi via Chat Completions and Responses APIs.",
+      "OpenAI API keys for Codex and Pi, or a ChatGPT subscription for Codex.",
   },
 ];

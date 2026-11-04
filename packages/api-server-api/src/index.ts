@@ -545,6 +545,7 @@ export {
   bedrockEnvMappings,
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
+  OPENAI_CHATGPT_TEMPLATE_ID,
   BOB_CHAT_MODES,
   normalizeBobChatMode,
   IBM_LITELLM_HOST,

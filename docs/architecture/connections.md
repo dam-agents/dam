@@ -1,8 +1,11 @@
 # Connections
 
-Last verified: 2026-10-29
+Last verified: 2026-11-04
 
 ## Overview
+
+The ChatGPT subscription mode is a Connection with no platform-held credential: it selects Codex's native per-agent login and shares the OpenAI alias with the API-key mode, so an agent holds one or the other.
+Its configured state does not attest that an agent has signed in; native credential ownership and logout are described in [security and credentials](security-and-credentials.md#native-codex-subscription-login).
 
 A Connection is everything an agent needs to talk to one external integration — credentials, hosts to reach, config files to author, MCP entries to expose, skills to install.
 Connection Templates are code-level catalog entries that ship defaults; granting a Connection to an Agent materializes its Contributions into the right destinations.

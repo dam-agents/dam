@@ -428,7 +428,12 @@ export function composeAcp(opts: ComposeAcpOptions): {
       );
       if (crossed)
         return `The ${crossed[0]} setting ${crossed[1]} cannot run beside this session's model: one harness process reaches either the Model Router or a provider it runs natively, not both`;
-      return sessionSettingsError(runtime?.catalog, settings, model);
+      return sessionSettingsError(
+        runtime?.catalog,
+        settings,
+        model,
+        native(model),
+      );
     },
     sessionMetadata,
     backgroundWork,

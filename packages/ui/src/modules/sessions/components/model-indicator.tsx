@@ -145,7 +145,9 @@ export function ModelIndicator({
   /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so its primary model is offered only the profiles that run on it. */
   const sessionProfiles = profiles.filter((p) => p.harness === harness);
   const current: SessionPair = { harness, provider, model, settings };
-  const listed = groups.flatMap((g) => g.models.map((m) => ({ name: m.name })));
+  const listed = groups.flatMap((g) =>
+    g.models.map((m) => ({ name: m.name, native: g.native })),
+  );
   const primary = primaryProfileOf(current, sessionProfiles, capability);
   const slot = subagentProfileOf(current, profiles);
   const customSlot = subagentOf(current);

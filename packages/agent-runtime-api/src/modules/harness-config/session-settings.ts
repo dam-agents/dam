@@ -89,6 +89,7 @@ export function sessionSettingsError(
   catalog: HarnessConfigCatalog | undefined,
   settings: SessionSettings,
   model?: string | null,
+  native = false,
 ): string | undefined {
   for (const [id, value] of Object.entries(settings)) {
     if (isPlatformSubagentSetting(id)) continue;
@@ -96,6 +97,8 @@ export function sessionSettingsError(
       (o) => o.id === id && (o.id !== "model" || o.category !== "model"),
     );
     if (!option) return `Unsupported session setting: ${id}=${value}`;
+    if (native && option.requiresRouter)
+      return `The ${id} setting requires the Model Router and is not available for a native provider`;
     if (option.category === "model" && option.choices.length === 0) continue;
     if (!option.choices.some((choice) => choice.value === value))
       return `Unsupported session setting: ${id}=${value}`;

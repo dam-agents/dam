@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+//MISE description="Codex subscription launches select native authentication across terminal, chat and device login without changing routed API launches"
+//MISE sources=["codex/rootfs/usr/local/bin/*", "codex/rootfs/usr/local/lib/codex-*.sh", "codex/rootfs/etc/codex/config.toml", ".mise/tasks/test/codex-subscription"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// TEST_OVERVIEW: Run the shipped launchers against a fake Codex and ACP adapter. Native subscription processes must never receive the platform key or endpoint and must override API-only settings, while routed API processes keep their existing launch shape. Device login, a fresh terminal, terminal resume and web/Slack's ACP launch share the same authentication configuration.
+const rootfs = fileURLToPath(new URL("../../../codex/rootfs/", import.meta.url));
+const home = mkdtempSync(join(tmpdir(), "codex-subscription-"));
+const bin = join(home, "bin");
+const capture = join(home, "capture.json");
+mkdirSync(bin);
+mkdirSync(join(home, ".codex/platform-sessions"), { recursive: true });
+writeFileSync(join(home, "AGENTS.md"), "Project instructions\n");
+const instructions = join(home, "platform-instructions");
+writeFileSync(instructions, "Platform instructions\n");
+const recorder = join(home, "record.mjs");
+writeFileSync(recorder, `import {writeFileSync} from 'node:fs'; if(process.env.NATIVE_AUTH_STATUS==='missing' && process.argv.includes('login') && process.argv.includes('status')) process.exit(1); writeFileSync(process.env.CAPTURE, JSON.stringify({args:process.argv.slice(2), env:Object.fromEntries(['OPENAI_API_KEY','CODEX_API_KEY','OPENAI_BASE_URL','OPENAI_MODEL','CODEX_HOME','INITIAL_AGENT_MODE','CODEX_CONFIG','PLATFORM_CODEX_AUTH_MODE'].map(key=>[key,process.env[key]]))}));`);
+writeFileSync(join(bin, "codex"), '#!/bin/sh\nunset NODE_OPTIONS\nexec "$TEST_NODE" "$RECORDER" "$@"\n', { mode: 0o755 });
+writeFileSync(join(bin, "codex-acp"), '#!/bin/sh\nexec "$TEST_APP_SERVER" app-server\n', { mode: 0o755 });
+for (const name of ["codex-app-server", "harness-terminal", "harness-chat", "codex-chatgpt"]) {
+  const body = readFileSync(join(rootfs, "usr/local/bin", name), "utf8")
+    .replaceAll("/usr/local/lib/", join(rootfs, "usr/local/lib/"))
+    .replaceAll("/etc/AGENTS.md", instructions);
+  writeFileSync(join(bin, name), body, { mode: 0o755 });
+}
+const inherited = {
+  PATH: `${bin}:${process.env.PATH}`, HOME: home, HARNESS_SESSION_ID: "terminal-1",
+  CAPTURE: capture, RECORDER: recorder, TEST_NODE: process.execPath,
+  TEST_APP_SERVER: join(bin, "codex-app-server"),
+  OPENAI_API_KEY: "platform:conn:router", CODEX_API_KEY: "test-only-api",
+  OPENAI_BASE_URL: "https://api-key-endpoint.invalid", OPENAI_MODEL: "api/model",
+};
+const run = (name, args = [], env = {}) => {
+  execFileSync(join(bin, name), args, { env: { ...inherited, ...env } });
+  return JSON.parse(readFileSync(capture, "utf8"));
+};
+const configOf = (result) => Object.fromEntries(result.args.flatMap((arg, at) => {
+  if (arg !== "-c") return [];
+  const setting = result.args[at + 1];
+  const equals = setting.indexOf("=");
+  return [[setting.slice(0, equals), setting.slice(equals + 1)]];
+}));
+const native = (result) => {
+  const config = configOf(result);
+  assert.equal(config.model_provider, '"openai"');
+  assert.equal(config.forced_login_method, '"chatgpt"');
+  assert.equal(config.cli_auth_credentials_store, '"file"');
+  assert.equal(config["features.api_key_model_discovery"], "false");
+  for (const name of ["OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"])
+    assert.equal(result.env[name], undefined, `${name} must not select API authentication`);
+  assert.equal(config.developer_instructions, JSON.stringify("Platform instructions\n"));
+};
+
+try {
+  // TEST_SCENARIO: A person's device login uses native auth even in an SSH shell that inherited an API provider, and retains every caller argument.
+  const login = run("codex-chatgpt", ["login", "--device-auth"]);
+  native(login);
+  assert.deepEqual(login.args.slice(0, 2), ["login", "--device-auth"]);
+  const logout = run("codex-chatgpt", ["logout"]);
+  native(logout);
+  assert.equal(logout.args[0], "logout");
+
+  // TEST_SCENARIO: A subscription web terminal uses the bare selected model, and a resumed terminal keeps the same native auth overrides.
+  const env = { PLATFORM_CODEX_AUTH_MODE: "chatgpt", PLATFORM_MODEL: "gpt-6.1-sol" };
+  const terminal = run("harness-terminal", [], env);
+  native(terminal);
+  assert.equal(configOf(terminal).model, '"gpt-6.1-sol"');
+  writeFileSync(join(home, ".codex/platform-sessions/terminal-1"), "thread-native");
+  const resumed = run("harness-terminal", [], env);
+  native(resumed);
+  assert.deepEqual(resumed.args.slice(0, 2), ["resume", "thread-native"]);
+
+  // TEST_SCENARIO: Web chat and Slack use the ACP launcher, whose app-server must receive native auth before any new or resumed thread.
+  const chat = run("harness-chat", [], env);
+  native(chat);
+  assert.ok(chat.args.includes("app-server"));
+  assert.equal(chat.env.INITIAL_AGENT_MODE, "agent-full-access");
+
+  // TEST_SCENARIO: Starting ACP before authorization must fail with instructions instead of keeping an app-server with a cached missing account. After sign-in, retry starts normally.
+  assert.throws(() => run("harness-chat", [], { ...env, NATIVE_AUTH_STATUS: "missing" }), /ChatGPT sign-in is required/);
+  native(run("harness-chat", [], env));
+
+  // TEST_SCENARIO: Native and API launches share MCP/config/history in the existing home, but API processes select the router without a global login restriction that would log out the native account.
+  const api = run("harness-terminal");
+  assert.equal(configOf(api).model_provider, '"openai-platform"');
+  assert.equal(configOf(api).forced_login_method, undefined);
+  assert.equal(api.env.OPENAI_API_KEY, inherited.OPENAI_API_KEY);
+  assert.equal(api.env.CODEX_HOME, undefined);
+  assert.equal(terminal.env.CODEX_HOME, undefined);
+  const apiChat = run("harness-chat");
+  assert.equal(configOf(apiChat).forced_login_method, undefined);
+  assert.equal(apiChat.env.OPENAI_API_KEY, inherited.OPENAI_API_KEY);
+  const systemConfig = readFileSync(join(rootfs, "etc/codex/config.toml"), "utf8");
+  assert.doesNotMatch(systemConfig, /^forced_login_method\s*=/m);
+  assert.match(systemConfig, /requires_openai_auth = false/);
+
+  // TEST_SCENARIO: Enabling subscription auth preserves the existing telemetry privacy switches.
+  const telemetry = run("codex-chatgpt", [], { ...env, OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector.invalid/", OTEL_LOGS_EXPORTER: "otlp" });
+  native(telemetry);
+  assert.equal(configOf(telemetry)["otel.log_user_prompt"], "false");
+  assert.equal(configOf(telemetry)["otel.log_agent_responses"], "false");
+  console.log("codex-subscription: native device login, terminal/resume and ACP paths pass; API routing is retained");
+} finally {
+  rmSync(home, { recursive: true, force: true });
+}

@@ -43,7 +43,7 @@ export function withSubagent(
   pair: SessionPair,
   choice: SubagentPick | null,
   capability: HarnessCapability | undefined,
-  models: readonly { name: string }[],
+  models: readonly { name: string; native?: boolean }[],
 ): SessionPair {
   const { settings: current = {}, ...rest } = pair;
   const settings = Object.fromEntries(
@@ -54,7 +54,12 @@ export function withSubagent(
     ),
   );
   const keeps = (id: string) =>
-    capability?.sessionSettings?.includes(id) === true;
+    capability?.sessionSettings?.includes(id) === true &&
+    !(
+      models.some((m) => m.name === pair.model && m.native) &&
+      capability.harnessConfigCatalog?.options.find((o) => o.id === id)
+        ?.requiresRouter
+    );
   const effort = choice?.settings?.effort;
   if (choice) {
     for (const [id, value] of Object.entries(choice.settings ?? {}))
@@ -105,7 +110,7 @@ export function withSubagentPair(
   pair: SessionPair,
   sub: SessionPair,
   capability: HarnessCapability | undefined,
-  models: readonly { name: string }[],
+  models: readonly { name: string; native?: boolean }[],
 ): SessionPair {
   if (sub.model !== null)
     return withSubagent(
@@ -191,7 +196,7 @@ export function pickProfile(
   pair: SessionPair | null,
   profile: ProfileWithUsage,
   capability: HarnessCapability | undefined,
-  models: readonly { name: string }[],
+  models: readonly { name: string; native?: boolean }[],
 ): SessionPair {
   const kept = Object.fromEntries(
     Object.entries(pair?.settings ?? {}).filter(

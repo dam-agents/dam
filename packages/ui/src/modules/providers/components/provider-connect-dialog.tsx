@@ -2,6 +2,7 @@ import type {
   ConnectionCreateInput,
   ConnectionUpdateInput,
 } from "api-server-api";
+import { OPENAI_CHATGPT_TEMPLATE_ID } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
 
@@ -130,9 +131,30 @@ export function ProviderConnectDialog({
       {provider === "openai" && (
         <OpenAIForm
           variant={variant}
+          initialMode={
+            item?.conn.templateId === OPENAI_CHATGPT_TEMPLATE_ID
+              ? "chatgpt"
+              : "api-key"
+          }
+          lockMode={!!item}
           onCancel={dismiss}
-          onSave={({ value }) =>
-            persist({
+          onSave={async ({ mode, value }) => {
+            if (mode === "chatgpt") {
+              if (item) onConnected({ id: item.id });
+              else
+                await createConnection
+                  .mutateAsync({
+                    templateId: OPENAI_CHATGPT_TEMPLATE_ID,
+                    name: "ChatGPT subscription",
+                    authKind: "none",
+                  })
+                  .then(
+                    (created) => onConnected({ id: created.id }),
+                    () => {},
+                  );
+              return;
+            }
+            await persist({
               value,
               createInput: {
                 templateId: "openai",
@@ -140,8 +162,8 @@ export function ProviderConnectDialog({
                 authKind: "header",
                 value,
               },
-            })
-          }
+            });
+          }}
         />
       )}
       {provider === "bedrock" && (
