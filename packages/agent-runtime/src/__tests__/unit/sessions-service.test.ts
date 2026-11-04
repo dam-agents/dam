@@ -433,6 +433,7 @@ describe("adoptHarnessTitles", () => {
         } as T;
       },
       notify: () => {},
+      onNotification: () => {},
       close: () => {},
     };
     const service = createSessionsService({
