@@ -34,7 +34,7 @@ export function modelConstraintsFor(
   const constraints = catalog?.modelConstraints;
   if (!constraints || !model) return undefined;
   const stripped = model.replace(/^claude\//i, "");
-  const last = stripped.split("/").pop() ?? stripped;
+  const last = (stripped.split("/").pop() ?? stripped).replace(/-\d{8}$/, "");
   const key = Object.keys(constraints).find((k) => {
     const name = k.toLowerCase();
     return [model, stripped, last].some(

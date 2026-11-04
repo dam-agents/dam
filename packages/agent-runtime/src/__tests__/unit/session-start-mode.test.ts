@@ -53,6 +53,7 @@ const CATALOG: HarnessConfigCatalog = {
   ],
   modelConstraints: {
     haiku: { mode: ["default", "plan", "dontAsk"] },
+    "claude-haiku-4-5": { mode: ["default", "plan", "dontAsk"] },
   },
 };
 
@@ -120,6 +121,23 @@ describe("session start mode", () => {
     expect(modeFrame(frames({}, "ibm/haiku"))).toEqual({
       method: "session/set_mode",
       params: { sessionId: "s", modeId: "default" },
+    });
+  });
+
+  /** TEST_SCENARIO: A concrete Haiku 4.5 id, provider-prefixed or date-stamped, is constrained like the tier alias, while a later Haiku is not. */
+  it("constrains a concrete Haiku 4.5 id, not a later Haiku", () => {
+    for (const id of [
+      "ibm/aws/claude-haiku-4-5",
+      "claude/claude-haiku-4-5",
+      "anthropic/claude-haiku-4-5-20251001",
+    ])
+      expect(modeFrame(frames({}, id))).toEqual({
+        method: "session/set_mode",
+        params: { sessionId: "s", modeId: "default" },
+      });
+    expect(modeFrame(frames({}, "ibm/aws/claude-haiku-5-5"))).toEqual({
+      method: "session/set_mode",
+      params: { sessionId: "s", modeId: "auto" },
     });
   });
 

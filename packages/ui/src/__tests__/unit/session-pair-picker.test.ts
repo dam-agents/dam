@@ -112,7 +112,10 @@ const claudeCode: HarnessCapability = {
   sessionModel: true,
   sessionSettings: ["effort", "subagentModel", "subagentEffort"],
   harnessConfigCatalog: {
-    modelConstraints: { haiku: { effort: [], subagentEffort: [] } },
+    modelConstraints: {
+      haiku: { effort: [], subagentEffort: [] },
+      "claude-haiku-4-5": { effort: [], subagentEffort: [] },
+    },
     options: [
       {
         id: "model",
@@ -2681,7 +2684,7 @@ describe("a model's effort availability", () => {
     ).toBeUndefined();
   });
 
-  /** TEST_SCENARIO: a concrete model of its own still takes a constraint keyed by its exact id, qualified or not. */
+  /** TEST_SCENARIO: a concrete model still takes a constraint keyed by its own id, provider-prefixed or with a date stamp, while a later model of the same family does not. */
   it("matches a concrete key by its name", () => {
     const catalog = {
       options: [],
@@ -2693,7 +2696,14 @@ describe("a model's effort availability", () => {
     expect(modelConstraintsFor(catalog, "claude-haiku-4-5")).toEqual({
       effort: [],
     });
+    expect(
+      modelConstraintsFor(catalog, "anthropic/claude-haiku-4-5-20251001"),
+    ).toEqual({ effort: [] });
+    expect(modelConstraintsFor(catalog, "claude/claude-haiku-4-5")).toEqual({
+      effort: [],
+    });
     expect(modelConstraintsFor(catalog, "claude-haiku-5-5")).toBeUndefined();
+    expect(modelConstraintsFor(catalog, "claude-haiku-4-6")).toBeUndefined();
   });
 
   /** TEST_SCENARIO: every harness that has a thought-level setting leaves Claude Haiku 5.5 unconstrained; Hermes and Bob have none, so they show no Effort row at all. */

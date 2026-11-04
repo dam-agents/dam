@@ -168,13 +168,13 @@ const spawnInput = {
     .min(1)
     .optional()
     .describe(
-      "Harness mode, as the Config panel names it. Leave unset unless you know the harness: a mode that asks for approvals stalls an unattended sub-agent. claude-code on haiku needs bypassPermissions, or its report_result waits for an approval until the deadline.",
+      "Harness mode, as the Config panel names it. Leave unset unless you know the harness: a mode that asks for approvals stalls an unattended sub-agent. claude-code on Haiku 4.5 needs bypassPermissions, or its report_result waits for an approval until the deadline.",
     ),
   configOptions: z
     .record(z.string(), z.string())
     .optional()
     .describe(
-      "Harness config options as {name: value}: effort on claude-code (low to xhigh; haiku takes none) and codex (minimal to xhigh), approvals on bob. A setting the harness cannot apply fails the sub-agent as soon as it boots.",
+      "Harness config options as {name: value}: effort on claude-code (low to xhigh; Haiku 4.5 takes none) and codex (minimal to xhigh), approvals on bob. A setting the harness cannot apply fails the sub-agent as soon as it boots.",
     ),
 };
 
