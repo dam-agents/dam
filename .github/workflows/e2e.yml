@@ -146,6 +146,32 @@ jobs:
           sudo sysctl -w net.ipv6.conf.default.addr_gen_mode=1
           nohup bash -c ".mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo \$? > '$RUNNER_TEMP/k3s-provision.status'" \
             > "$RUNNER_TEMP/k3s-provision.log" 2>&1 &
+      # The runner image carries toolchains this lane never uses: every tool the
+      # lane runs comes from mise. They hold several gigabytes, which is the room
+      # the agent images' import needs — it once ran out of disk and the kubelet
+      # evicted the pods the install had just started. A rename is instant and
+      # stays on the same filesystem; the delete then runs in the background,
+      # under the cluster provision and the image builds. The df lines say what
+      # it freed here.
+      - &e2e-free-disk
+        name: Free the toolchains this lane never uses
+        run: |
+          set -euo pipefail
+          start="$(date +%s)"
+          df -h /
+          for d in /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup; do
+            [ ! -e "$d" ] || sudo mv "$d" "$d.gone" ||
+              echo "::warning::$d could not be set aside; the lane runs with less room"
+          done
+          # shellcheck disable=SC2016 # expanded by the clean-up's own shell
+          nohup sudo sh -c '
+            for d in /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup; do
+              [ ! -d "$d.gone" ] || rm -rf "$d.gone"
+            done
+            echo "freed in $(( $(date +%s) - $1 ))s"
+            df -h /
+            touch "$2"
+          ' free-disk "$start" "$RUNNER_TEMP/free-disk.done" > "$RUNNER_TEMP/free-disk.log" 2>&1 &
       # See build.yml's build-images. Before setup-mise, like check-test's.
       - &e2e-keycloak-theme-cache
         if: inputs.verify
@@ -306,6 +332,24 @@ jobs:
           else
             echo "E2E_HOST_PROVISIONED=1" >> "$GITHUB_ENV"
           fi
+      # Just before the install, which imports the images whose import ran out
+      # of disk: the delete above must be done, not just started, and its room
+      # is what the import counts on. Five minutes is longer than the delete
+      # takes on a fast run and shorter than the job can spare; one still
+      # running then is stuck, and a warning: the lane is slow, not broken.
+      - &e2e-free-disk-wait
+        name: Wait for the disk clean-up
+        run: |
+          set -o pipefail
+          waited_from="$(date +%s)"
+          if ! timeout 300 bash -c "until [ -e '$RUNNER_TEMP/free-disk.done' ]; do sleep 2; done"; then
+            echo "::warning::the disk clean-up did not finish within 5 minutes"
+          fi
+          df -h /
+          {
+            cat "$RUNNER_TEMP/free-disk.log" 2>/dev/null || true
+            printf 'waited %ss for the disk clean-up\n' "$(( $(date +%s) - waited_from ))"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       # Under the job's timeout, so a hung image build fails the step and the
       # log steps below still run; the job's own timeout cancels them too.
       - name: Run the e2e suite
@@ -405,6 +449,7 @@ jobs:
       - *e2e-timing-start
       - *e2e-checkout
       - *e2e-provision
+      - *e2e-free-disk
       - name: Open /dev/kvm to the runner user
         run: |
           set -euo pipefail
@@ -474,6 +519,7 @@ jobs:
       - *e2e-playwright-version
       - *e2e-playwright-cache
       - *e2e-provision-wait
+      - *e2e-free-disk-wait
       # Twice the container lane's budget: the vm-runner build above on a PR,
       # the node staging of the mock image, each agent's boots, each a machine
       # start under nested virtualization or, for the migration spec's legacy
