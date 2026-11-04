@@ -27,6 +27,7 @@ import { trpc } from "../../trpc.js";
 
 const ASSISTANT = "agent-00000000000000a1";
 const ON = {
+  kind: "assistant" as const,
   assistantOn: true,
   assistantId: ASSISTANT,
   selectedAgent: ASSISTANT,
@@ -46,9 +47,11 @@ describe("when the greeting is shown", () => {
     expect(greetingShown(ON)).toBe(true);
   });
 
-  // TEST_SCENARIO: the feature off for the person, another agent, an assistant that already had a session, and an install that has not recorded an assistant each leave the chat as it was.
+  // TEST_SCENARIO: the feature off for the person, another agent, an agent that is not an assistant at all, an assistant that already had a session, and an install that has not recorded an assistant each leave the chat as it was.
   it("is shown for nothing else", () => {
     expect(greetingShown({ ...ON, assistantOn: false })).toBe(false);
+    expect(greetingShown({ ...ON, kind: null })).toBe(false);
+    expect(greetingShown({ ...ON, kind: "knowledge-base" })).toBe(false);
     expect(greetingShown({ ...ON, selectedAgent: "agent-2" })).toBe(false);
     expect(greetingShown({ ...ON, assistantId: null })).toBe(false);
     expect(greetingShown({ ...ON, selectedAgent: null })).toBe(false);

@@ -1,5 +1,9 @@
-import type { AgentInitStep, AgentsService } from "api-server-api";
-import { assistantInstructions } from "api-server-api";
+import {
+  AGENT_INIT_STEPS,
+  type AgentInitStep,
+  type AgentsService,
+  assistantInstructions,
+} from "api-server-api";
 import { avatarCharacter } from "api-server-api/avatar/svg";
 import type { LockOutcome, OwnerLock } from "db";
 import { emit, EventType } from "../../../events.js";
@@ -165,7 +169,12 @@ export function createAssistantProvisioner(deps: {
       if (row === null) return { ran: true, value: undefined };
     }
     const exists = (await deps.agentOf(row.agentId)) !== null;
-    if (exists && row.state === "ready") return { ran: true, value: undefined };
+    const ready = exists && row.state === "ready";
+    /* UNIT_BOUNDARY_DESCRIPTION: a ready row is finished only against the steps this version defines, so a step added after the Agent was made reaches it once — and the hot path pays one comparison against a list of four. */
+    const recorded: readonly AgentInitStep[] = row.steps;
+    const upToDate =
+      ready && AGENT_INIT_STEPS.every((step) => recorded.includes(step));
+    if (upToDate) return { ran: true, value: undefined };
     if (!exists && row.state !== "creating") {
       const moved = await deps.repo.nextIncarnation(
         deps.ownName,
@@ -180,6 +189,8 @@ export function createAssistantProvisioner(deps: {
     await deps.repo.markReady(deps.ownName, row.agentId);
     const agent = await deps.agentOf(row.agentId);
     if (agent === null) return { ran: true, value: undefined };
+    /* UNIT_BOUNDARY_DESCRIPTION: a ready row catching up on a step it never had was announced when it became ready, so it is announced no second time. */
+    if (ready) return { ran: true, value: undefined };
     await deps.provisioned(agent);
     if (exists)
       emit({

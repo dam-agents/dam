@@ -1,4 +1,5 @@
 import {
+  type AgentKind,
   ASSISTANT_FIRST_TASKS,
   ASSISTANT_ROLE_ASK,
   assistantGreetingOpening,
@@ -23,6 +24,7 @@ export interface GreetingCopy {
 }
 
 export function greetingShown(input: {
+  kind: AgentKind | null;
   assistantOn: boolean;
   assistantId: string | null;
   selectedAgent: string | null;
@@ -30,6 +32,7 @@ export function greetingShown(input: {
   sessionsListed: number | undefined;
 }): boolean {
   return (
+    input.kind === "assistant" &&
     input.assistantOn &&
     input.used === false &&
     input.sessionsListed === 0 &&

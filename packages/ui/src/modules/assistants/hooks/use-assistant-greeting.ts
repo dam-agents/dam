@@ -1,5 +1,6 @@
 import { getUser } from "../../../auth.js";
 import { getBrand } from "../../../brand.js";
+import { useAgent } from "../../agents/api/queries.js";
 import { useAgentSessionQuery } from "../../sessions/api/queries.js";
 import { useAssistantOn, useAssistantState } from "../api/assistant-state.js";
 import {
@@ -24,11 +25,13 @@ const LOADING: AssistantGreetingState = { kind: "loading" };
  * and it is named by the install's brand and the signed-in person's given name
  * rather than by the code. Until both answers are in it is `loading`, so the
  * chat shows neither the greeting nor the ordinary empty page before it knows
- * which it is.
+ * which it is — and an Agent that is not an assistant is answered before the
+ * assistant's record is even asked about, so no ordinary chat is ever held back.
  */
 export function useAssistantGreeting(
   agentId: string | null,
 ): AssistantGreetingState {
+  const kind = useAgent(agentId)?.kind ?? null;
   const assistantOn = useAssistantOn();
   const state = useAssistantState();
   const listed = state.data;
@@ -45,6 +48,7 @@ export function useAssistantGreeting(
     },
   );
   const shown = greetingShown({
+    kind,
     assistantOn,
     assistantId: listed?.agentId ?? null,
     selectedAgent: agentId,
@@ -64,7 +68,9 @@ export function useAssistantGreeting(
     };
   }
   const waiting =
-    (assistantOn && agentId !== null && state.isPending) ||
-    (unused && sessions.isPending);
+    kind === "assistant" &&
+    assistantOn &&
+    agentId !== null &&
+    (state.isPending || (unused && sessions.isPending));
   return waiting ? LOADING : NONE;
 }

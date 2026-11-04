@@ -1,6 +1,10 @@
 // TEST_OVERVIEW: Provisioning gives each person one assistant whose Agent id is derived from the owner and the row's incarnation, so the store's create is the mutex: two replicas converge on one Agent, a retry finishes the same one, and only a genuine deletion moves to a new id so nothing keyed by the old one can reach the replacement. `ready` is written only after the Agent and its initialization returned, so a failure is retried rather than hidden. An Agent of the owner's already holding the reserved name is renamed once, the rename is recorded before it happens and completed only when it lands, and an Agent renamed since is left alone. Before the first create the owner is enrolled in the Getting Started checklist, so the assistant counts as their first Agent rather than as proof they were here before.
 import { describe, expect, it, vi } from "vitest";
-import type { Agent, AgentInitStep } from "api-server-api";
+import {
+  AGENT_INIT_STEPS,
+  type Agent,
+  type AgentInitStep,
+} from "api-server-api";
 import { EventType, events$ } from "../../events.js";
 import type { InfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { assistantAgentId } from "../../modules/assistants/domain/agent-id.js";
@@ -175,21 +179,28 @@ function world(
       initDone?: readonly AgentInitStep[];
       onInitStep?: (step: AgentInitStep) => Promise<void>;
     }) => {
+      // UNIT_BOUNDARY_DESCRIPTION: the step runner the real create has — the steps this version defines, minus the ones the caller recorded, and the instructions only for a create that names them — so the test sees which initialization a create performs, resuming or not.
+      const runSteps = async () => {
+        for (const step of AGENT_INIT_STEPS)
+          if (
+            (step !== "instructions" || input.instructions !== undefined) &&
+            !(input.initDone ?? []).includes(step)
+          ) {
+            state.ran.push(step);
+            await input.onInitStep?.(step);
+          }
+      };
       state.created.push(input);
       if (input.resume) {
         state.order.push("initialized");
         if (state.failResume) throw new Error("the preset seeder refused");
+        await runSteps();
         return (state.agents.find((a) => a.id === input.id) ?? null) as never;
       }
       state.order.push("created");
       await state.onCreate?.();
       if (state.failCreate) throw new Error("the storage gate refused");
-      // UNIT_BOUNDARY_DESCRIPTION: the step runner the real create has, so the test sees which initialization a store write performs.
-      for (const step of ["env", "egress", "grants"] as const)
-        if (!(input.initDone ?? []).includes(step)) {
-          state.ran.push(step);
-          await input.onInitStep?.(step);
-        }
+      await runSteps();
       const made = agent(
         input.id ?? `agent-new-${state.created.length}`,
         input.name,
@@ -228,6 +239,31 @@ function world(
   });
   return { provisioner, state, store, lock };
 }
+
+// TEST_SCENARIO: a row that was ready before this version defined the instructions step — steps [env, egress, grants] — gets that step on its next request, once: the create resumes, only the missing step runs, the row records it, and the Agent announced when it became ready is not announced again.
+it("adds a step a ready row predates, once", async () => {
+  const events = announced();
+  try {
+    const w = world({ agents: [agent(FIRST, NAME, "assistant")] });
+    await w.store.repo.start(ALICE, FIRST);
+    for (const step of ["env", "egress", "grants"] as const)
+      await w.store.repo.markInitStep(ALICE, FIRST, step);
+    await w.store.repo.markReady(ALICE, FIRST);
+
+    await w.provisioner.ensure();
+    expect(w.state.ran).toEqual(["instructions"]);
+    expect(w.store.rows.get(ALICE)).toMatchObject({
+      state: "ready",
+      steps: ["env", "egress", "grants", "instructions"],
+    });
+    expect(events.agents).toEqual([]);
+
+    await w.provisioner.ensure();
+    expect(w.state.ran).toEqual(["instructions"]);
+  } finally {
+    events.stop();
+  }
+});
 
 // TEST_SCENARIO: the Agent is created with the standing instructions that tell it what the platform greeted its owner with, naming the assistant and the install's brand and no person, so the assistant that receives the first reply knows the platform opened the conversation.
 it("hands the Agent its standing instructions", async () => {
@@ -447,7 +483,7 @@ describe("assistant provisioning", () => {
   it("initializes a replaced Agent from the start", async () => {
     const w = world();
     await w.store.repo.start(ALICE, FIRST);
-    for (const step of ["env", "egress", "grants"] as const)
+    for (const step of AGENT_INIT_STEPS)
       await w.store.repo.markInitStep(ALICE, FIRST, step);
     w.store.rows.get(ALICE)!.state = "creating";
 
@@ -455,10 +491,10 @@ describe("assistant provisioning", () => {
     expect(w.state.created).toEqual([
       expect.objectContaining({ id: FIRST, initDone: [] }),
     ]);
-    expect(w.state.ran).toEqual(["env", "egress", "grants"]);
+    expect(w.state.ran).toEqual(["env", "egress", "instructions", "grants"]);
     expect(w.store.rows.get(ALICE)).toMatchObject({
       state: "ready",
-      steps: ["env", "egress", "grants"],
+      steps: ["env", "egress", "instructions", "grants"],
     });
   });
 
