@@ -168,7 +168,12 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
               maxOutputTokens: entry.metadata.maxOutputTokens,
             },
           ),
-          { dialect, reasoning: entry.metadata.reasoning },
+          {
+            dialect,
+            reasoning: entry.metadata.reasoning,
+            template: entry.template,
+            upstreamId: entry.upstreamId,
+          },
         ),
         dialect,
       ),
