@@ -11,6 +11,7 @@ import {
   inArray,
   isNull,
   lt,
+  ne,
   or,
   sql,
   type Db,
@@ -173,7 +174,9 @@ export interface ArtifactLibraryRepository {
   getFolderBySlug(slug: string): Promise<FolderRow | null>;
   listFolders(
     owner: string,
+    countAgentId?: string,
   ): Promise<Array<FolderRow & { artifactCount: number }>>;
+  folderHoldsOthersThan(folderId: string, agentId: string): Promise<boolean>;
   updateFolder(
     id: string,
     owner: string,
@@ -556,7 +559,11 @@ export function createArtifactLibraryRepository(
       return row ?? null;
     },
 
-    async listFolders(owner) {
+    async listFolders(owner, countAgentId) {
+      const counted =
+        countAgentId === undefined
+          ? sql``
+          : sql` and ${artifactsTable.agentId} = ${countAgentId}`;
       const rows = await db
         .select({
           id: foldersTable.id,
@@ -567,13 +574,30 @@ export function createArtifactLibraryRepository(
           updatedAt: foldersTable.updatedAt,
           artifactCount: sql<number>`(
             select count(*)::int from ${artifactsTable}
-            where ${artifactsTable.folderId} = ${foldersTable.id}
+            where ${artifactsTable.folderId} = ${foldersTable.id}${counted}
           )`,
         })
         .from(foldersTable)
         .where(eq(foldersTable.owner, owner))
         .orderBy(asc(foldersTable.name));
       return rows;
+    },
+
+    async folderHoldsOthersThan(folderId, agentId) {
+      const [row] = await db
+        .select({ id: artifactsTable.id })
+        .from(artifactsTable)
+        .where(
+          and(
+            eq(artifactsTable.folderId, folderId),
+            or(
+              isNull(artifactsTable.agentId),
+              ne(artifactsTable.agentId, agentId),
+            ),
+          ),
+        )
+        .limit(1);
+      return row !== undefined;
     },
 
     async updateFolder(id, owner, patch) {

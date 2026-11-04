@@ -285,7 +285,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     markOnboardingComplete,
     onboardingChecklist,
     kitUpdateReporter,
-    artifactLibraryFor: mcpArtifactLibraryFor,
+    artifactLibraryFor: (owner, agentId) =>
+      artifactLibraryFor(owner, "mcp", {
+        scope: { kind: "agent", agentId },
+      }),
     invocationsServiceFor,
     driverOpsFor: createDriverOps(driverOpsDeps),
     subAgentAwaitsFor: composeSubAgentAwaitMarks(db),

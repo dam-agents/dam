@@ -162,14 +162,25 @@ function fakeRepo(
     getArtifactBySlug: (slug) =>
       Promise.resolve(artifacts.find((a) => a.slug === slug) ?? null),
     listArtifacts: (query) =>
-      Promise.resolve(artifacts.filter((a) => a.owner === query.owner)),
+      Promise.resolve(
+        artifacts.filter(
+          (a) =>
+            a.owner === query.owner &&
+            (query.agentId === undefined || a.agentId === query.agentId),
+        ),
+      ),
     listSharedInFolder: (folderId) =>
       Promise.resolve(
         artifacts.filter(
           (a) => a.folderId === folderId && a.visibility === "public",
         ),
       ),
-    countSharedInFolder: notImplemented,
+    countSharedInFolder: (folderId) =>
+      Promise.resolve(
+        artifacts.filter(
+          (a) => a.folderId === folderId && a.visibility === "public",
+        ).length,
+      ),
     updateArtifact: (id, owner, patch) => {
       const row = artifacts.find((a) => a.id === id && a.owner === owner);
       if (!row) return Promise.resolve(null);
@@ -211,12 +222,41 @@ function fakeRepo(
       });
     },
     insertFolder: notImplemented,
-    getFolder: notImplemented,
+    getFolder: (id, owner) =>
+      Promise.resolve(
+        folders.find((f) => f.id === id && f.owner === owner) ?? null,
+      ),
     getFolderBySlug: (slug) =>
       Promise.resolve(folders.find((f) => f.slug === slug) ?? null),
-    listFolders: notImplemented,
-    updateFolder: notImplemented,
-    deleteFolder: notImplemented,
+    listFolders: (owner, countAgentId) =>
+      Promise.resolve(
+        folders
+          .filter((f) => f.owner === owner)
+          .map((f) => ({
+            ...f,
+            artifactCount: artifacts.filter(
+              (a) =>
+                a.folderId === f.id &&
+                (countAgentId === undefined || a.agentId === countAgentId),
+            ).length,
+          })),
+      ),
+    folderHoldsOthersThan: (folderId, agentId) =>
+      Promise.resolve(
+        artifacts.some((a) => a.folderId === folderId && a.agentId !== agentId),
+      ),
+    updateFolder: (id, owner, patch) => {
+      const folder = folders.find((f) => f.id === id && f.owner === owner);
+      if (!folder) return Promise.resolve(null);
+      Object.assign(folder, patch, { updatedAt: new Date() });
+      return Promise.resolve(folder);
+    },
+    deleteFolder: (id, owner) => {
+      const index = folders.findIndex((f) => f.id === id && f.owner === owner);
+      if (index === -1) return Promise.resolve(false);
+      folders.splice(index, 1);
+      return Promise.resolve(true);
+    },
     listExpiredBefore: (cutoff, limit) =>
       Promise.resolve(
         artifacts
@@ -579,6 +619,149 @@ describe("library service — owner scoping", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.title).toBe("T");
     expect(rows[0]!.visibility).toBe("public");
+  });
+});
+
+describe("library service — an agent sees only what it published (#6181)", () => {
+  const folder = (id: string): FolderRow => ({
+    id,
+    owner: "o1",
+    name: id,
+    slug: `slug-${id}`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  function library() {
+    return [
+      artifactRow({ id: "mine", agentId: "agent-a", folderId: "f-mine" }),
+      artifactRow({
+        id: "sibling",
+        slug: "slug-s",
+        agentId: "agent-b",
+        visibility: "private",
+        folderId: "f-mixed",
+      }),
+      artifactRow({
+        id: "upload",
+        slug: "slug-u",
+        agentId: null,
+        visibility: "private",
+        folderId: "f-mixed",
+      }),
+    ];
+  }
+
+  async function serviceFor(
+    rows: ArtifactRow[],
+    folders: FolderRow[],
+    scope?: { kind: "agent"; agentId: string },
+  ) {
+    const { createArtifactLibraryService } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    return createArtifactLibraryService({
+      ...idleAgentApiDeps(),
+      surface: scope ? "mcp" : "ui",
+      repo: fakeRepo(rows, folders),
+      owner: "o1",
+      ...(scope ? { scope } : {}),
+      shareBaseUrl: "http://share.localhost",
+      artifacts: stubArtifacts(),
+    });
+  }
+
+  const agentA = { kind: "agent", agentId: "agent-a" } as const;
+
+  it("lists only the agent's own artifacts, whatever filter it asks for", async () => {
+    const service = await serviceFor(library(), [], agentA);
+    expect((await service.list()).map((a) => a.id)).toEqual(["mine"]);
+    await expect(service.list({ agentId: "agent-b" })).resolves.toEqual([]);
+  });
+
+  it("cannot read a sibling agent's artifact or the owner's upload", async () => {
+    const service = await serviceFor(library(), [], agentA);
+    for (const id of ["sibling", "upload"]) {
+      await expect(service.get(id)).resolves.toBeNull();
+      await expect(service.getContent(id)).resolves.toBeNull();
+      await expect(service.resolveContentRef(id)).resolves.toBeNull();
+      await expect(service.createAgentDownloadUrl(id)).rejects.toThrow(
+        /not found/,
+      );
+      await expect(service.listVersions(id)).rejects.toThrow(/not found/);
+    }
+  });
+
+  it("cannot change, publish, or delete a sibling agent's artifact", async () => {
+    const rows = library();
+    const service = await serviceFor(rows, [], agentA);
+    await expect(service.update("sibling", { title: "taken" })).rejects.toThrow(
+      /not found/,
+    );
+    await expect(
+      service.setSharing("sibling", { visibility: "public" }),
+    ).rejects.toThrow(/not found/);
+    await expect(service.delete("sibling")).rejects.toThrow(/not found/);
+    const sibling = rows.find((r) => r.id === "sibling")!;
+    expect(sibling.title).toBe("T");
+    expect(sibling.visibility).toBe("private");
+    expect(rows).toHaveLength(3);
+  });
+
+  it("still manages its own artifacts", async () => {
+    const rows = library();
+    const service = await serviceFor(rows, [], agentA);
+    await expect(
+      service.setSharing("mine", { visibility: "private" }),
+    ).resolves.toMatchObject({ id: "mine", visibility: "private" });
+    await service.delete("mine");
+    expect(rows.map((r) => r.id)).toEqual(["sibling", "upload"]);
+  });
+
+  it("sees every folder, counting only its own artifacts in each", async () => {
+    const service = await serviceFor(
+      library(),
+      [folder("f-mine"), folder("f-mixed")],
+      agentA,
+    );
+    const counts = Object.fromEntries(
+      (await service.listFolders()).map((f) => [f.id, f.artifactCount]),
+    );
+    expect(counts).toEqual({ "f-mine": 1, "f-mixed": 0 });
+  });
+
+  it("cannot rename or delete a folder that holds artifacts it did not publish", async () => {
+    const folders = [folder("f-mine"), folder("f-mixed")];
+    const service = await serviceFor(library(), folders, agentA);
+    await expect(
+      service.updateFolder("f-mixed", { name: "renamed" }),
+    ).rejects.toThrow(/did not publish/);
+    await expect(service.deleteFolder("f-mixed")).rejects.toThrow(
+      /did not publish/,
+    );
+    await expect(
+      service.updateFolder("f-mine", { name: "renamed" }),
+    ).resolves.toMatchObject({ id: "f-mine", name: "renamed" });
+    await service.deleteFolder("f-mine");
+    expect(folders.map((f) => f.id)).toEqual(["f-mixed"]);
+  });
+
+  it("leaves the owner's own library whole", async () => {
+    const service = await serviceFor(library(), [
+      folder("f-mine"),
+      folder("f-mixed"),
+    ]);
+    expect((await service.list()).map((a) => a.id)).toEqual([
+      "mine",
+      "sibling",
+      "upload",
+    ]);
+    await expect(service.get("upload")).resolves.toMatchObject({
+      id: "upload",
+    });
+    const counts = Object.fromEntries(
+      (await service.listFolders()).map((f) => [f.id, f.artifactCount]),
+    );
+    expect(counts).toEqual({ "f-mine": 1, "f-mixed": 2 });
   });
 });
 
