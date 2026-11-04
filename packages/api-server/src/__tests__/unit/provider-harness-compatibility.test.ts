@@ -64,6 +64,7 @@ describe("provider harness compatibility", () => {
   it("moves an automatic turn off a remembered Pi/OAuth pair", async () => {
     const pair = await resolveFirePair(
       {
+        ownerCatalog: async () => ({ providers: [] }),
         catalog,
         pairRepo: {
           read: async () => ({

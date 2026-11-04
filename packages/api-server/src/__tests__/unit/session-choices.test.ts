@@ -278,6 +278,7 @@ describe("a subagent model beside a natively run provider", () => {
           {
             catalog,
             pairRepo,
+            ownerCatalog: async () => ({ providers: [] }),
             getCapabilities: async () => capabilities,
             specHarness: async () => undefined,
           },

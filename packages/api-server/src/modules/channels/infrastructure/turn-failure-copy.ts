@@ -154,7 +154,10 @@ function noDefaultModelUserCopy(
   uiBaseUrl: string,
   agentId: string,
 ): string {
-  return err.pending
-    ? "This agent is still setting up its default model after an update. Try again in a minute."
-    : `This agent has no default model, so it can't answer here yet. Its owner can set one at ${agentPageUrl(uiBaseUrl, agentId, "providers")}`;
+  const providers = agentPageUrl(uiBaseUrl, agentId, "providers");
+  if (err.pending)
+    return "This agent is still setting up its default model after an update. Try again in a minute.";
+  return err.model === undefined
+    ? `This agent has no model provider, so it can't answer here yet. Its owner can connect one at ${providers}`
+    : `This agent's default model ${err.model} is on a provider it no longer holds, so it can't answer here yet. Its owner can pick another at ${providers}`;
 }

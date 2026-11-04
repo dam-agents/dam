@@ -272,6 +272,7 @@ describe("resolveFirePair", () => {
   it("keeps the remembered provider for a schedule that names only a model", async () => {
     const pair = await resolveFirePair(
       {
+        ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
           read: async () => ({
             harness: "claude-code",
@@ -329,6 +330,7 @@ describe("resolveRememberedPair before the agent's first hello", () => {
     expect(
       await resolveRememberedPair(
         {
+          ownerCatalog: async () => ({ providers: [] }),
           pairRepo: {
             read: async () => null,
             grantedProviders: async () => [
@@ -373,6 +375,7 @@ describe("resolveFirePair on an agent too old for session pairs", () => {
   it("names no pair when a configured harness lacks session settings", async () => {
     const pair = await resolveFirePair(
       {
+        ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
           read: async () => ({
             harness: "pi",
@@ -415,6 +418,7 @@ describe("resolveFirePair on a harness outside the catalog", () => {
   it("names no pair for an agent whose harness the catalog does not list", async () => {
     const pair = await resolveFirePair(
       {
+        ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
           read: async () => null,
           grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
@@ -446,6 +450,7 @@ describe("resolveFirePair on a harness outside the catalog", () => {
     expect(
       await resolveRememberedPair(
         {
+          ownerCatalog: async () => ({ providers: [] }),
           pairRepo: {
             read: async () => null,
             grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
