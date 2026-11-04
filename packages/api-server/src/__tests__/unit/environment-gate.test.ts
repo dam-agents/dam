@@ -72,7 +72,8 @@ async function world(
 ) {
   const seen: { path: string; headers: http.IncomingHttpHeaders }[] = [];
   const runtime = http.createServer((req, res) => {
-    seen.push({ path: req.url ?? "", headers: req.headers });
+    if (req.method !== "HEAD")
+      seen.push({ path: req.url ?? "", headers: req.headers });
     let received = 0;
     req.on("data", (d: Buffer) => (received += d.length));
     req.on("error", () => {});

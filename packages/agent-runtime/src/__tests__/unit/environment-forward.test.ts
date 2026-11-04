@@ -7,6 +7,7 @@ import {
   createEnvironmentForward,
   DECLARED_PORTS_HEADER,
   FORWARD_PREFIX,
+  UNREACHABLE_HEADER,
 } from "../../modules/environment-forward.js";
 
 const MODEL_ROUTER_PORT = 24180;
@@ -54,7 +55,11 @@ async function get(port: number, path: string, declared: string) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
     headers: { [DECLARED_PORTS_HEADER]: declared },
   });
-  return { status: res.status, body: await res.text() };
+  return {
+    status: res.status,
+    unreachable: res.headers.get(UNREACHABLE_HEADER),
+    body: await res.text(),
+  };
 }
 
 describe("the Environment forward", () => {
@@ -100,7 +105,7 @@ describe("the Environment forward", () => {
     );
   });
 
-  // TEST_SCENARIO: a declared port nothing listens on answers 502, not a hang.
+  // TEST_SCENARIO: a declared port nothing listens on answers 502, not a hang, marked as the runtime's own answer so the api-server tells an app that has not started from an app's own 502; an app's answer carries no such mark.
   it("answers 502 when nothing listens on a declared port", async () => {
     const { runtimePort } = await world();
     const closed = await listen(http.createServer());
@@ -112,6 +117,12 @@ describe("the Environment forward", () => {
       String(closed),
     );
     expect(res.status).toBe(502);
+    expect(res.unreachable).toBe("1");
+    const { appPort } = await world();
+    expect(
+      (await get(runtimePort, `${FORWARD_PREFIX}${appPort}/`, String(appPort)))
+        .unreachable,
+    ).toBeNull();
   });
 
   // TEST_SCENARIO: a WebSocket to a declared port is relayed both ways, so an app's live updates work at its address.

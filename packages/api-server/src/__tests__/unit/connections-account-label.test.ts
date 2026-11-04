@@ -93,6 +93,22 @@ describe("connection account label", () => {
     expect(await lookupSlackAccount("xoxp-token")).toBe("jan (Acme)");
   });
 
+  // TEST_SCENARIO: a Slack host names the person and the workspace with strings it controls, and the label is stored and shown on every row that lists the Connection, so a hostile label is stripped of control bytes and capped.
+  it("strips control bytes and caps a hostile Slack label", async () => {
+    const hostile = `\u001b[31m${"n".repeat(5000)}`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) =>
+        String(url).endsWith("/auth.test")
+          ? json({ ok: true, user: "jan", user_id: "U123", team: hostile })
+          : json({ ok: true, user: { profile: { real_name: hostile } } }),
+      ),
+    );
+    expect(await lookupSlackAccount("xoxp-token")).toBe(
+      `[31m${"n".repeat(196)}`,
+    );
+  });
+
   // TEST_SCENARIO: a Google service connection is named by the account's email from the OpenID userinfo endpoint.
   it("names a Google account by its email", async () => {
     vi.stubGlobal(
@@ -100,6 +116,19 @@ describe("connection account label", () => {
       vi.fn(async () => json({ email: "jan@example.com", sub: "1" })),
     );
     expect(await lookupGoogleAccount("ya29.token")).toBe("jan@example.com");
+  });
+
+  // TEST_SCENARIO: the OpenID userinfo endpoint can answer with a hostile email, and the label is stored and shown, so it is stripped of control bytes and capped like every other provider label.
+  it("strips control bytes and caps a hostile Google email", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        json({ email: `\u001b[31m${"e".repeat(5000)}@example.com` }),
+      ),
+    );
+    expect(await lookupGoogleAccount("ya29.token")).toBe(
+      `[31m${"e".repeat(196)}`,
+    );
   });
 
   // TEST_SCENARIO: the label lands on the Connection as a platform-derived input and is what the view reads back.

@@ -298,6 +298,17 @@ describe("a reported job read back", () => {
       },
       getJob: async (_owner: string, _satellite: string, sequence: number) =>
         rows.get(`gpu-box#${sequence}`) ?? null,
+      grantedSatellite: async () => ({
+        owner: "alice",
+        name: "gpu-box",
+        description: null,
+        host: null,
+        maxConcurrent: 16,
+        tools: [{ name: "plot", inputSchema: {} }],
+        draining: false,
+        lastSeenAt: new Date(),
+        incarnation: "11111111-1111-4111-8111-111111111111",
+      }),
       get: async () => ({
         owner: "alice",
         name: "gpu-box",
@@ -307,8 +318,8 @@ describe("a reported job read back", () => {
         tools: [{ name: "plot", inputSchema: {} }],
         draining: false,
         lastSeenAt: new Date(),
+        incarnation: "11111111-1111-4111-8111-111111111111",
       }),
-      grantedNames: async () => [{ owner: "alice", name: "gpu-box" }],
       markSeen: async () => true,
       markAwaited: async () => true,
       releaseAwaited: async () => {},

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { resolveGitHubIdentity, stripControlChars } from "./github-identity.js";
+import { displayLabel, resolveGitHubIdentity } from "./github-identity.js";
 
 const LOOKUP_TIMEOUT_MS = 10_000;
 
@@ -77,7 +77,7 @@ export const lookupSlackAccount: AccountLookup = async (accessToken) => {
     who.user ??
     who.user_id;
   const label = who.team ? `${person} (${who.team})` : person;
-  return stripControlChars(label);
+  return displayLabel(label);
 };
 
 export const lookupGitHubAccount: AccountLookup = async (accessToken) =>
@@ -90,5 +90,5 @@ export const lookupGoogleAccount: AccountLookup = async (accessToken) => {
       accessToken,
     ),
   );
-  return stripControlChars(info.email);
+  return displayLabel(info.email);
 };

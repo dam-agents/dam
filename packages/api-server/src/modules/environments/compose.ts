@@ -209,7 +209,10 @@ export interface ComposeEnvironmentGateDeps {
   shareBaseUrl: string;
   share: ShareSignIn;
   platform: PlatformCredentials;
-  ensureReady: (agentId: string) => Promise<unknown>;
+  ensureReady: (
+    agentId: string,
+    opts: { onWaking: () => void },
+  ) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   namespace: string;
   brandName: string;
