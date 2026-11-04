@@ -1,5 +1,8 @@
 import { z } from "zod";
-import type { HarnessConfigCatalog } from "../runtime/types.js";
+import type {
+  HarnessCapability,
+  HarnessConfigCatalog,
+} from "../runtime/types.js";
 
 export const sessionSettingsSchema = z
   .record(z.string().min(1).max(100), z.string().min(1).max(500))
@@ -8,6 +11,13 @@ export const sessionSettingsSchema = z
 export type SessionSettings = z.infer<typeof sessionSettingsSchema>;
 
 export const SUBAGENT_MODEL_SETTING = "subagentModel";
+
+/** UNIT_BOUNDARY_DESCRIPTION: the harness's own subagents' reasoning effort, which the router writes over the effort a call marked as a subagent's carries. */
+export const SUBAGENT_EFFORT_SETTING = "subagentEffort";
+
+/** UNIT_BOUNDARY_DESCRIPTION: a setting of the harness's own subagents, which one subagent choice drives beside the platform sub-agent it spawns (D193B). */
+export const isNativeSubagentSetting = (id: string): boolean =>
+  id === SUBAGENT_MODEL_SETTING || id === SUBAGENT_EFFORT_SETTING;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a catalog keys its model constraints by a tier
@@ -112,6 +122,80 @@ export const PLATFORM_SUBAGENT_PREFIX = "platformSubagent.";
 
 export const isPlatformSubagentSetting = (id: string): boolean =>
   id.startsWith(PLATFORM_SUBAGENT_PREFIX);
+
+/** UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent's reasoning effort, which the harness's own subagents take as `subagentEffort` so one choice drives both (D193B). */
+export const SUBAGENT_EFFORT_SLOT = `${PLATFORM_SUBAGENT_PREFIX}effort`;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one subagent choice drives both kinds of subagent
+ * (D193B), the rule every reader applies. With no effective platform sub-agent
+ * the primary's settings are the answer as they stand, so an old record or an
+ * own native pick survives; with one, the platform keys are the slot, and the
+ * harness's own subagents take its model, and its effort, only where the model
+ * runs on the primary's own provider (which the caller answers with the
+ * harness's own listing) and the harness offers that setting. A slot never
+ * holds a native key: storage keeps platform keys only. `primarySettings` is
+ * the primary's alone, the platform keys split off first.
+ */
+export function effectiveSubagentSettings(
+  capability: HarnessCapability | undefined,
+  primarySettings: Record<string, string>,
+  subagent: Record<string, string> | null,
+  runsNatively: (model: string) => boolean,
+): Record<string, string> {
+  if (subagent === null) return primarySettings;
+  const offered = (id: string, value: string): boolean => {
+    if (capability?.sessionSettings?.includes(id) !== true) return false;
+    const option = capability.harnessConfigCatalog?.options.find(
+      (o) => o.id === id,
+    );
+    if (!option) return false;
+    return (
+      option.choices.length === 0 ||
+      option.choices.some((choice) => choice.value === value)
+    );
+  };
+  const settings: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.entries(primarySettings).filter(
+        ([id]) => !isNativeSubagentSetting(id),
+      ),
+    ),
+    ...subagent,
+  };
+  const model = subagent["platformSubagent.model"];
+  if (model === undefined || !runsNatively(model)) return settings;
+  if (offered(SUBAGENT_MODEL_SETTING, model))
+    settings[SUBAGENT_MODEL_SETTING] = model;
+  const effort = subagent[SUBAGENT_EFFORT_SLOT];
+  if (effort !== undefined && offered(SUBAGENT_EFFORT_SETTING, effort))
+    settings[SUBAGENT_EFFORT_SETTING] = effort;
+  return settings;
+}
+
+export interface ProfileSubagent {
+  harness: string;
+  settings: Readonly<Record<string, string>>;
+  subagent: { model: string } | null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent a profile lends a slot that
+ * holds none of its own, platform keys only (D193B): its own harness, its
+ * sub-agent's model, and the effort it keeps as the native `subagentEffort`, so
+ * one choice drives both kinds of subagent. Null is a profile that names none.
+ */
+export function lentSubagentOfProfile(
+  profile: ProfileSubagent,
+): Record<string, string> | null {
+  if (!profile.subagent) return null;
+  const effort = profile.settings[SUBAGENT_EFFORT_SETTING];
+  return {
+    "platformSubagent.harness": profile.harness,
+    "platformSubagent.model": profile.subagent.model,
+    ...(effort !== undefined && { [SUBAGENT_EFFORT_SLOT]: effort }),
+  };
+}
 
 export interface SubAgentHarnessConfig {
   model?: string;

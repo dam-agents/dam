@@ -2,14 +2,22 @@ import { describe, it, expect } from "vitest";
 import type {
   HarnessConfigSnapshot,
   HarnessConfigSnapshotPatch,
+  OwnerModelCatalogView,
+  SessionChoiceReferences,
   SessionPair,
 } from "api-server-api";
-import type { GrantedProvider } from "../../modules/harness-config/domain/session-pair.js";
+import {
+  choiceSlots,
+  type GrantedProvider,
+} from "../../modules/harness-config/domain/session-pair.js";
 import {
   createHarnessConfigService,
   sessionModelChoices,
 } from "../../modules/harness-config/services/harness-config-service.js";
-import { harnessConfigSupported } from "../../modules/harness-config/index.js";
+import {
+  harnessConfigSupported,
+  runSubagentSettings,
+} from "../../modules/harness-config/index.js";
 import { createSessionPairRepo } from "../../modules/harness-config/infrastructure/session-pair-repo.js";
 import type { ResolvedProfile } from "../../modules/profiles/index.js";
 
@@ -29,6 +37,9 @@ function makeService(opts?: {
   resolved?: SessionPair;
   profileOwner?: string;
   unavailable?: string;
+  subagent?: Record<string, string> | null;
+  subagentUnavailable?: string | null;
+  ownerCatalog?: unknown;
   hidden?: string[];
 }) {
   const calls = {
@@ -54,6 +65,8 @@ function makeService(opts?: {
         : ({
             pair: opts.resolved,
             unavailable: opts.unavailable ?? null,
+            subagent: opts.subagent ?? null,
+            subagentUnavailable: opts.subagentUnavailable ?? null,
           } as ResolvedProfile),
     surface: "ui",
     eventQueue: {
@@ -114,6 +127,13 @@ function makeService(opts?: {
           tags: [],
           experimental: false,
         },
+        {
+          name: "claude-code",
+          displayName: "Claude",
+          providers: ["anthropic", "bedrock"],
+          tags: [],
+          experimental: false,
+        },
       ],
       telemetryEnv: () => [],
     },
@@ -124,6 +144,8 @@ function makeService(opts?: {
         ...(harness !== undefined && { harness }),
       });
     },
+    ownerCatalog: async () =>
+      (opts?.ownerCatalog ?? { providers: [] }) as OwnerModelCatalogView,
     isOwnedAgent: async () => opts?.owned ?? true,
     specHarness: async () => undefined,
     getCapabilities: async () => opts?.capabilities,
@@ -596,6 +618,343 @@ describe("ownership of a profile a caller names", () => {
     expect(calls.pairs[0]?.settings).toEqual({
       "platformSubagent.harness": "codex",
       "platformSubagent.model": "openai/gpt-6.1-sol",
+    });
+  });
+});
+
+describe("one subagent choice on a default that names a profile", () => {
+  /* UNIT_BOUNDARY_DESCRIPTION: Claude Code's real capability: it keeps the harness's own subagents' model and effort, and takes a platform sub-agent's harness and model (D193B). */
+  const CLAUDE_CARRIES = {
+    modelRouter: true,
+    defaultHarness: "claude-code",
+    harnesses: [
+      {
+        name: "claude-code",
+        harnessConfig: true,
+        sessionModel: true,
+        sessionSettings: ["subagentModel", "subagentEffort"],
+        platformSubagentSettings: true,
+        harnessConfigCatalog: {
+          options: [
+            {
+              id: "subagentModel",
+              name: "Subagent model",
+              category: "model",
+              subagents: true,
+              choices: [
+                { value: "anthropic/claude-haiku-5", name: "Haiku" },
+                { value: "anthropic/claude-sonnet-5", name: "Sonnet" },
+                { value: "anthropic/claude-opus-5", name: "Opus" },
+              ],
+            },
+            {
+              id: "effort",
+              name: "Effort",
+              category: "thought_level",
+              choices: [
+                { value: "low", name: "Low" },
+                { value: "high", name: "High" },
+              ],
+            },
+            {
+              id: "subagentEffort",
+              name: "Subagent effort",
+              category: "thought_level",
+              subagents: true,
+              choices: [
+                { value: "low", name: "Low" },
+                { value: "high", name: "High" },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const opus = {
+    harness: "claude-code",
+    provider: "conn-1",
+    model: "anthropic/claude-opus-5",
+  };
+  const lentB = {
+    "platformSubagent.harness": "claude-code",
+    "platformSubagent.model": "anthropic/claude-sonnet-5",
+  };
+  const lentC = {
+    "platformSubagent.harness": "claude-code",
+    "platformSubagent.model": "anthropic/claude-opus-5",
+  };
+  const granted = [{ id: "conn-1", type: "anthropic" as const }];
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's listing for the primary's Connection and harness, which says which model runs natively (D193B). */
+  const OWNER_CATALOG = {
+    providers: [
+      {
+        connectionId: "conn-1",
+        alias: "anthropic",
+        template: "anthropic",
+        displayName: "Anthropic",
+        status: "listed",
+        listedAt: null,
+        harnesses: ["claude-code"],
+        models: ["anthropic/claude-sonnet-5", "anthropic/claude-opus-5"].map(
+          (name) => ({ name, harnesses: ["claude-code"] }),
+        ),
+      },
+    ],
+  } as unknown as OwnerModelCatalogView;
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the chat default through the real stored-slots and read path: `write` builds the row's slots from the pair, `readSaved` resolves them with the profile the row names (D193B). */
+  const agentRow = (
+    slots: {
+      sessionPair?: unknown;
+      sessionProfile?: string | null;
+      platformSubagentProfile?: string | null;
+      platformSubagentSettings?: Record<string, string> | null;
+      snapshot?: unknown;
+    },
+    resolved: (profileId: string) => unknown,
+  ) => {
+    const row = {
+      chat: slots.sessionPair ?? null,
+      channel: null,
+      scheduled: null,
+      sessionProfile: slots.sessionProfile ?? null,
+      platformSubagentProfile: slots.platformSubagentProfile ?? null,
+      platformSubagentSettings: slots.platformSubagentSettings ?? null,
+      capabilities: CLAUDE_CARRIES,
+      snapshot: slots.snapshot ?? null,
+    };
+    const db = {
+      select: () => ({ from: () => ({ where: async () => [row] }) }),
+    } as never;
+    return createSessionPairRepo(
+      db,
+      async ({ profileId }) => resolved(profileId) as never,
+    );
+  };
+  const rowOf = (pair: SessionPair, references: SessionChoiceReferences) => {
+    const slots = choiceSlots(pair, references);
+    return {
+      sessionPair: slots.pair,
+      sessionProfile: slots.profileId ?? null,
+      platformSubagentProfile: slots.platformSubagentProfileId ?? null,
+      platformSubagentSettings: slots.platformSubagentSettings ?? null,
+    };
+  };
+
+  /** TEST_SCENARIO: a pick that follows a profile stores no sub-agent of its own, so both own-slot fields are null and the default is answered platform-level: the profile's own settings beside the sub-agent it lends, and an edit of the profile from B to C reaches the next answer and the payload derived from it (D193B). */
+  it("stores a profile pick from intent, and answers and derives its sub-agent", async () => {
+    const native = {
+      subagentModel: "anthropic/claude-sonnet-5",
+      subagentEffort: "low",
+    };
+    const profileOf = (lent: Record<string, string>) => () => ({
+      profile: { name: "P" },
+      pair: { ...opus, settings: native },
+      unavailable: null,
+      subagent: lent,
+      subagentUnavailable: null,
+      attachable: false,
+    });
+    const { service, calls } = makeService({
+      capabilities: CLAUDE_CARRIES,
+      granted,
+      resolved: opus,
+      subagent: lentB,
+    });
+    await service.rememberSessionPair("agent-1", "chat", opus, {
+      profileId: "profile-1",
+    });
+    expect(calls.pairs[0]).toEqual(opus);
+    expect(calls.references[0]).toEqual({ profileId: "profile-1" });
+    const slots = rowOf(opus, { profileId: "profile-1" });
+    expect(slots.platformSubagentProfile).toBeNull();
+    expect(slots.platformSubagentSettings).toBeNull();
+    await expect(
+      agentRow(slots, profileOf(lentB)).readSaved("agent-1"),
+    ).resolves.toMatchObject({
+      chat: { ...opus, settings: { ...native, ...lentB } },
+    });
+    const readBack = await agentRow(slots, profileOf(lentC)).readSaved(
+      "agent-1",
+    );
+    expect(readBack.chat).toEqual({
+      ...opus,
+      settings: { ...native, ...lentC },
+    });
+    /* UNIT_BOUNDARY_DESCRIPTION: a run's payload is where the lent sub-agent becomes the harness's own subagents' model, against the owner catalog (D193B). */
+    expect(
+      runSubagentSettings(
+        CLAUDE_CARRIES.harnesses[0],
+        OWNER_CATALOG,
+        readBack.chat!,
+        readBack.chat?.settings,
+      ),
+    ).toEqual({
+      ...lentC,
+      subagentModel: "anthropic/claude-opus-5",
+    });
+  });
+
+  /** TEST_SCENARIO: a profile created with sub-agent B and no native model of its own is answered platform-level, and a run derives B into the harness's own subagents' model and effort from the slot it lends (D193B). */
+  it("lends a profile's sub-agent platform-level and derives it at the run", async () => {
+    const lentWithEffort = { ...lentB, "platformSubagent.effort": "high" };
+    const withoutSettings = agentRow({ sessionProfile: "profile-1" }, () => ({
+      profile: { name: "P" },
+      pair: opus,
+      unavailable: null,
+      subagent: lentB,
+      subagentUnavailable: null,
+      attachable: false,
+    }));
+    const readBack = await withoutSettings.readSaved("agent-1");
+    expect(readBack.chat).toEqual({ ...opus, settings: { ...lentB } });
+    const withEffort = agentRow({ sessionProfile: "profile-1" }, () => ({
+      profile: { name: "P" },
+      pair: opus,
+      unavailable: null,
+      subagent: lentWithEffort,
+      subagentUnavailable: null,
+      attachable: false,
+    }));
+    const readWithEffort = await withEffort.readSaved("agent-1");
+    expect(readWithEffort.chat).toEqual({
+      ...opus,
+      settings: { ...lentWithEffort },
+    });
+    expect(
+      runSubagentSettings(
+        CLAUDE_CARRIES.harnesses[0],
+        OWNER_CATALOG,
+        readWithEffort.chat!,
+        readWithEffort.chat?.settings,
+      ),
+    ).toEqual({
+      ...lentWithEffort,
+      subagentModel: "anthropic/claude-sonnet-5",
+      subagentEffort: "high",
+    });
+  });
+
+  /** TEST_SCENARIO: an old-shaped custom default is answered as it is stored, its own native values beside the inline platform ones, and a run derives the harness's subagents from that slot instead (D193B). */
+  it("answers an old-shaped custom default as stored and derives at the run", async () => {
+    const stored = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-sonnet-5",
+      "platformSubagent.effort": "high",
+      subagentModel: "anthropic/claude-haiku-5",
+      subagentEffort: "low",
+    };
+    const repo = agentRow(
+      { sessionPair: { ...opus, settings: stored } },
+      () => null,
+    );
+    const readBack = await repo.readSaved("agent-1");
+    expect(readBack.chat).toEqual({ ...opus, settings: stored });
+    expect(
+      runSubagentSettings(
+        CLAUDE_CARRIES.harnesses[0],
+        OWNER_CATALOG,
+        readBack.chat!,
+        readBack.chat?.settings,
+      ),
+    ).toEqual({
+      ...stored,
+      subagentModel: "anthropic/claude-sonnet-5",
+      subagentEffort: "high",
+    });
+  });
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a Claude Code agent whose primary runs natively on Bedrock, as the owner catalog says (D193B). */
+  const BEDROCK = {
+    harness: "claude-code",
+    provider: "conn-bedrock",
+    model: "bedrock/anthropic.claude-sonnet-5",
+  };
+  const BEDROCK_CATALOG = {
+    providers: [
+      {
+        connectionId: "conn-bedrock",
+        alias: "bedrock",
+        template: "bedrock",
+        displayName: "AWS Bedrock",
+        status: "listed",
+        listedAt: null,
+        harnesses: ["claude-code"],
+        models: [
+          {
+            name: "bedrock/anthropic.claude-sonnet-5",
+            harnesses: ["claude-code"],
+          },
+        ],
+      },
+    ],
+  } as unknown as OwnerModelCatalogView;
+
+  /** TEST_SCENARIO: a Bedrock primary whose platform sub-agent is a routed model of another provider saves, answers and runs with the platform slot and no native subagent model, which its harness would reject: the catalog lists the routed model on no Connection it holds (D193B). */
+  it("keeps the platform slot and no native model for a routed sub-agent on a Bedrock primary", async () => {
+    const routed = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+    };
+    const { service, calls } = makeService({
+      capabilities: CLAUDE_CARRIES,
+      granted: [{ id: "conn-bedrock", type: "bedrock" as const }],
+      resolved: BEDROCK,
+      ownerCatalog: BEDROCK_CATALOG,
+    });
+    await service.rememberSessionPair(
+      "agent-1",
+      "chat",
+      { ...BEDROCK, settings: routed },
+      { platformSubagentProfileId: null },
+    );
+    const saved = calls.pairs[0]!;
+    expect(saved.settings).toEqual(routed);
+    const slots = rowOf(saved, { platformSubagentProfileId: null });
+    expect(slots.platformSubagentSettings).toEqual(routed);
+    const readBack = await agentRow(slots, () => null).readSaved("agent-1");
+    expect(readBack.chat).toEqual({ ...BEDROCK, settings: routed });
+    expect(
+      runSubagentSettings(
+        CLAUDE_CARRIES.harnesses[0],
+        BEDROCK_CATALOG,
+        readBack.chat!,
+        readBack.chat?.settings,
+      ),
+    ).toEqual(routed);
+  });
+
+  /** TEST_SCENARIO: a sub-agent pick of the agent's own stores only its platform keys, which later runs read as both kinds of subagent by the one rule (D193B). */
+  it("stores an own pick as platform keys only", async () => {
+    const { service, calls } = makeService({
+      capabilities: CLAUDE_CARRIES,
+      granted,
+      resolved: opus,
+      subagent: lentC,
+    });
+    await service.rememberSessionPair(
+      "agent-1",
+      "chat",
+      {
+        ...opus,
+        settings: {
+          "platformSubagent.harness": "claude-code",
+          "platformSubagent.model": "anthropic/claude-haiku-5",
+          "platformSubagent.effort": "low",
+        },
+      },
+      { profileId: "profile-1", platformSubagentProfileId: null },
+    );
+    const slots = rowOf(calls.pairs[0]!, {
+      profileId: "profile-1",
+      platformSubagentProfileId: null,
+    });
+    expect(slots.sessionPair).toBeNull();
+    expect(slots.platformSubagentSettings).toEqual({
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-haiku-5",
+      "platformSubagent.effort": "low",
     });
   });
 });
