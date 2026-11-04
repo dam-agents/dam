@@ -128,9 +128,6 @@ export const artifactLibraryRouter = t.router({
   sendPrompt: operateAgentsProcedure
     .input(artifactSendPromptInputSchema)
     .mutation(({ ctx, input }) =>
-      ctx.artifactLibrary.sendPrompt(input, {
-        agentIds: ctx.user.agentIds,
-        email: editorEmailOf(ctx.user),
-      }),
+      ctx.artifactLibrary.sendPrompt(input, { agentIds: ctx.user.agentIds }),
     ),
 });

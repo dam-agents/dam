@@ -3,11 +3,16 @@ import { useCallback } from "react";
 import { match } from "ts-pattern";
 
 import { emitToast } from "../../../lib/toast.js";
+import { cachedAgent } from "../../agents/api/queries.js";
+import { useOpenSession } from "../../sessions/hooks/use-open-session.js";
 import { useSendArtifactPrompt } from "../api/mutations.js";
 
-function refusal(result: ArtifactSendPromptResult): string | null {
-  if (result.ok) return null;
-  return match(result.reason)
+const SENT_TTL_MS = 10_000;
+
+type Refusal = Extract<ArtifactSendPromptResult, { ok: false }>["reason"];
+
+function refusal(reason: Refusal): string {
+  return match(reason)
     .with(
       "spend-limit",
       () =>
@@ -21,27 +26,41 @@ function refusal(result: ArtifactSendPromptResult): string | null {
     .exhaustive();
 }
 
+export function sentNotice(agentName: string | null): string {
+  const agent = agentName ?? "the agent";
+  return `Sent to ${agent} in a session of its own. Nobody watches that session, so a step that needs your permission is skipped.`;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: sends a prompt from an artifact opened outside a
  * chat to the owner's own Session for that page on its publishing Agent. The
- * turn runs without a chat to watch it, so the toast says where to find it.
+ * turn runs without a chat to watch it, so the toast names the agent, says
+ * that nobody answers its permission prompts, and opens the Session.
  */
 export function useArtifactSessionPrompt(
   artifactId: string | undefined,
 ): ((prompt: string) => Promise<void>) | undefined {
   const { mutateAsync } = useSendArtifactPrompt();
+  const openSession = useOpenSession();
   const send = useCallback(
     async (prompt: string) => {
       if (artifactId === undefined) return;
-      const reason = refusal(await mutateAsync({ artifactId, prompt }));
-      if (reason !== null) throw new Error(reason);
+      const result = await mutateAsync({ artifactId, prompt });
+      if (!result.ok) throw new Error(refusal(result.reason));
+      const { agentId, sessionId } = result;
       emitToast({
         kind: "success",
-        message:
-          "Sent to the agent in a session of its own. Find it in the agent's sessions.",
+        message: sentNotice(cachedAgent(agentId)?.name ?? null),
+        ttl: SENT_TTL_MS,
+        ...(sessionId !== null && {
+          action: {
+            label: "Open session",
+            onClick: () => openSession(agentId, sessionId),
+          },
+        }),
       });
     },
-    [artifactId, mutateAsync],
+    [artifactId, mutateAsync, openSession],
   );
   return artifactId === undefined ? undefined : send;
 }

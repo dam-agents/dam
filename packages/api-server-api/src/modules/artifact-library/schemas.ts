@@ -174,7 +174,11 @@ export const artifactSendPromptInputSchema = z.object({
 });
 
 export const artifactSendPromptResultSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true) }),
+  z.object({
+    ok: z.literal(true),
+    agentId: z.string(),
+    sessionId: z.string().nullable(),
+  }),
   z.object({
     ok: z.literal(false),
     reason: z.enum(["not-allowed", "agent-unreachable", "spend-limit"]),

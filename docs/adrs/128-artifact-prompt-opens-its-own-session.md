@@ -5,7 +5,7 @@ status: accepted
 supersedes:
 subsystem: artifact-library
 tags: [artifacts, postmessage, sessions]
-summary: Outside a chat with its publishing Agent, an interactive page's prompt that asks for it starts or continues the owner's own Session for that page, the way a viewer's prompt does; a plain prompt still goes nowhere there, and in a docked chat the open chat stays the destination.
+summary: Outside a chat with its publishing Agent, an interactive page's prompt that asks for it starts or continues the owner's own Session for that page, the way a viewer's prompt does; a plain prompt there still starts nothing, and in a docked chat the open chat stays the destination.
 ---
 
 # ADR-128: An owner's artifact prompt may open a Session of its own when no chat is docked
@@ -23,12 +23,13 @@ Since ADR-116, a viewer of the same page shared with them has a Session of their
 ## Decision
 
 Outside a chat with the publishing Agent, a prompt from the owner's interactive page that asks for a Session of its own starts or continues the owner's own Session for that page, one per owner and artifact, as a viewer's does under ADR-116.
-The page opts in per prompt; a plain prompt there still goes nowhere, so a page written for ADR-092 does not start turns where it did not before.
+The page opts in per prompt; a plain prompt there still starts nothing, so a page written for ADR-092 does not start turns where it did not before, and the owner is told the button works in the Agent's chat.
 In a docked chat with the publishing Agent the open chat stays the destination, opt-in or not, because the owner is watching it.
 
 - The server checks the artifact on every prompt as it does for the owner's Artifact API calls: the owner's own interactive HTML page an Agent published, not public, the feature on, within an API key's agent binding.
 - The prompt reaches the Agent through the same delivery as a viewer's: woken first, not woken at a spend limit, run as an unattended channel turn, and found again by its key on the next click.
-- The Session is titled with the owner's verified email, else their subject, and the artifact's title; the prompt tells the Agent it came from the page outside a chat.
+- The Session is titled with the artifact's title alone, since it is the owner's own; the prompt tells the Agent it came from the page outside a chat.
+- The owner is told it was sent, to which Agent, and that nobody answers its permission prompts, with a way to open the Session once the Agent names it.
 - The Session, the owner's and a viewer's alike, is typed `artifact`, beside the chat, channel, schedule, CLI-run and invocation types, and its key names the artifact, so the UI can label and filter it.
 - Every prompt, allowed or refused, is in the security log under the owner, without the prompt text.
 - Historical versions still have no callback.

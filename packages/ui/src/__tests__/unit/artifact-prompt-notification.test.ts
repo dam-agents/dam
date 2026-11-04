@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The artifact message listener shows one notification when its chat callback refuses a prompt. Chat delivery reporting and rejected frame messages must not produce extra notifications. With no chat, only a prompt that asks for a session of its own is sent, through the new-session callback.
+// TEST_OVERVIEW: The artifact message listener shows one notification when its chat callback refuses a prompt. Chat delivery reporting and rejected frame messages must not produce extra notifications. With no chat, only a prompt that asks for a session of its own is sent, through the new-session callback; a plain prompt there is refused with a notice.
 
 import type React from "react";
 import { createElement, type EffectCallback } from "react";
@@ -6,7 +6,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { emitToast } from "../../lib/toast.js";
-import { useArtifactPrompt } from "../../modules/artifacts/hooks/use-artifact-prompt.js";
+import {
+  NO_CHAT_PROMPT_REFUSAL,
+  useArtifactPrompt,
+} from "../../modules/artifacts/hooks/use-artifact-prompt.js";
 import { readArtifactPrompt } from "../../modules/artifacts/lib/artifact-prompt.js";
 
 const effects = vi.hoisted(() => new Set<EffectCallback>());
@@ -111,15 +114,18 @@ describe("artifact prompt notifications", () => {
     );
   });
 
-  // TEST_SCENARIO: With no chat, a prompt that does not opt in must not open a session, as before.
-  it("drops a plain prompt when no chat is docked", async () => {
+  // TEST_SCENARIO: With no chat, a prompt that does not opt in must not open a session, as before, but the person is told the button needs the agent's chat instead of the click doing nothing.
+  it("refuses a plain prompt out loud when no chat is docked", async () => {
     mount(undefined, newSessionPrompt);
 
     window.dispatchEvent(new MessageEvent("message"));
-    await Promise.resolve();
-
+    await vi.waitFor(() =>
+      expect(emitToast).toHaveBeenCalledExactlyOnceWith({
+        kind: "error",
+        message: NO_CHAT_PROMPT_REFUSAL,
+      }),
+    );
     expect(newSessionPrompt).not.toHaveBeenCalled();
-    expect(emitToast).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: In a chat, a prompt that asks for its own session still goes into the open chat, where the owner is watching.

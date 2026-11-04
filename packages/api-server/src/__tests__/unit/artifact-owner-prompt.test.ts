@@ -18,8 +18,10 @@ describe("Artifact prompt — no chat docked", () => {
   /**
    * TEST_SCENARIO: The owner opens the dashboard from the library and clicks
    * a button that asks for a new Session. The prompt reaches the publishing
-   * agent in the owner's own Session for this page, titled so the owner
-   * finds it in the session list, and the agent is told where it came from.
+   * agent in the owner's own Session for this page, titled by the page alone
+   * so the owner finds it in the session list, and the agent is told where
+   * it came from. The answer names the agent and the Session, so the owner
+   * can open it.
    */
   it("should hand the prompt to the owner's own session on the publishing agent", async () => {
     const world = createArtifactApiWorld();
@@ -29,33 +31,21 @@ describe("Artifact prompt — no chat docked", () => {
       world.prompt(dashboard, "Refresh the numbers", {
         email: "alice@example.com",
       }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toEqual({
+      ok: true,
+      agentId: "agent-a",
+      sessionId: "session-1",
+    });
 
     const [sent, ...rest] = world.prompts();
     expect(rest).toEqual([]);
     expect(sent).toMatchObject({
       agentId: "agent-a",
       sessionKey: `artifact:${dashboard}:alice`,
-      sessionTitle: "alice@example.com · Dashboard",
+      sessionTitle: "Dashboard",
     });
     expect(sent!.prompt).toContain(`"Dashboard" (id ${dashboard})`);
     expect(sent!.prompt).toMatch(/\nMessage: Refresh the numbers$/);
-  });
-
-  /**
-   * TEST_SCENARIO: The owner signs in with an unverified email. The Session
-   * is titled by their subject instead, so an unverified address never
-   * names it.
-   */
-  it("should title the session by the owner's subject without a verified email", async () => {
-    const world = createArtifactApiWorld();
-    const dashboard = world.publish({ by: "agent-a" });
-
-    await world.prompt(dashboard, "Refresh");
-
-    expect(world.prompts()[0]).toMatchObject({
-      sessionTitle: "alice · Dashboard",
-    });
   });
 
   /**
@@ -81,7 +71,7 @@ describe("Artifact prompt — no chat docked", () => {
     "should report %s",
     async (outcome) => {
       const world = createArtifactApiWorld();
-      world.answerPromptsWith(outcome);
+      world.refusePromptsWith(outcome);
       const dashboard = world.publish({ by: "agent-a" });
 
       await expect(world.prompt(dashboard, "Refresh")).resolves.toEqual({

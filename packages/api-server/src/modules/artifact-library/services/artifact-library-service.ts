@@ -37,8 +37,8 @@ import {
 import { generateSlug } from "../domain/share-crypto.js";
 import {
   ownerPromptText,
+  ownerSessionTitle,
   viewerSessionKey,
-  viewerSessionTitle,
 } from "../domain/viewer-bridge.js";
 import {
   isOwnStagingKey,
@@ -767,7 +767,7 @@ export function createArtifactLibraryService(
 
     async sendPrompt(
       { artifactId, prompt },
-      { agentIds, email },
+      { agentIds },
     ): Promise<ArtifactSendPromptResult> {
       const row = await repo.getArtifact(artifactId, owner);
       const access = agentApiAccess(row, agentIds);
@@ -791,16 +791,16 @@ export function createArtifactLibraryService(
       const outcome = await deps.prompts.deliver({
         agentId: access.agentId,
         sessionKey: viewerSessionKey(row.id, owner),
-        sessionTitle: viewerSessionTitle(email ?? owner, row.title),
+        sessionTitle: ownerSessionTitle(row.title),
         prompt: ownerPromptText({
           artifactId: row.id,
           artifactTitle: row.title,
           prompt,
         }),
       });
-      return outcome === "accepted"
-        ? { ok: true }
-        : { ok: false, reason: outcome };
+      return outcome.ok
+        ? { ok: true, agentId: access.agentId, sessionId: outcome.sessionId }
+        : outcome;
     },
 
     async recordTouch({ agentId, sessionId, artifactId, version }) {

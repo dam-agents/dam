@@ -161,7 +161,7 @@ export interface ArtifactLibraryService {
   ): Promise<ArtifactCallAgentApiResult>;
   sendPrompt(
     input: ArtifactSendPromptInput,
-    caller: { agentIds: readonly string[] | "*"; email: string | null },
+    caller: { agentIds: readonly string[] | "*" },
   ): Promise<ArtifactSendPromptResult>;
 }
 

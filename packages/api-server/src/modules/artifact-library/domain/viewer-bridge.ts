@@ -78,11 +78,22 @@ export function viewerSessionKey(artifactId: string, viewerSub: string) {
   return `artifact:${artifactId}:${viewerSub}`;
 }
 
-export function viewerSessionTitle(viewer: string, title: string): string {
-  const full = `${viewer} · ${title}`;
+function sessionTitle(full: string): string {
   return full.length <= SESSION_TITLE_MAX_LENGTH
     ? full
     : `${full.slice(0, SESSION_TITLE_MAX_LENGTH - 1)}…`;
+}
+
+export function viewerSessionTitle(viewer: string, title: string): string {
+  return sessionTitle(`${viewer} · ${title}`);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the owner's Session for a page is theirs alone,
+ * so the page's title names it; a viewer's also names the viewer.
+ */
+export function ownerSessionTitle(title: string): string {
+  return sessionTitle(title);
 }
 
 export function viewerPromptText(input: {

@@ -80,7 +80,10 @@ export function createArtifactApiWorld() {
   const agents = new Map<string, FakeAgent>();
   const prompts: DeliveredPrompt[] = [];
   let featureOn = true;
-  let promptOutcome: ViewerPromptOutcome = "accepted";
+  let promptOutcome: ViewerPromptOutcome = {
+    ok: true,
+    sessionId: "session-1",
+  };
 
   function fakeAgent(agentId: string): FakeAgent {
     let agent = agents.get(agentId);
@@ -204,7 +207,7 @@ export function createArtifactApiWorld() {
   ): Promise<ArtifactSendPromptResult> {
     return library(caller).sendPrompt(
       { artifactId, prompt: text },
-      { agentIds: caller.keyBoundTo ?? "*", email: caller.email ?? null },
+      { agentIds: caller.keyBoundTo ?? "*" },
     );
   }
 
@@ -217,8 +220,10 @@ export function createArtifactApiWorld() {
     turnFeatureOff: () => {
       featureOn = false;
     },
-    answerPromptsWith: (outcome: ViewerPromptOutcome) => {
-      promptOutcome = outcome;
+    refusePromptsWith: (
+      reason: Extract<ViewerPromptOutcome, { ok: false }>["reason"],
+    ) => {
+      promptOutcome = { ok: false, reason };
     },
   };
 }

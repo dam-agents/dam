@@ -68,10 +68,10 @@ A link the page opens in a new tab escapes the sandbox, so a link to a shared pa
 
 Callbacks are available in the docked preview inside the publishing Agent's chat, including maximized and full page, and work in a newly started conversation without reloading the page.
 There is no permanent Session binding: the currently open conversation is the destination.
-The same preview on a page outside that chat sends no requests and drops a plain prompt.
+The same preview on a page outside that chat sends no requests, and refuses a plain prompt with a notice that the button works in the Agent's chat.
 A prompt there that asks for a session of its own (`sendPrompt(text, { newSession: true })`) starts or continues the owner's own Session for that page on the publishing Agent, one per owner and artifact, as a viewer's prompt does below.
 The server checks the artifact again, as for a request, and that the owner has the feature on; it hands the prompt to the same delivery as a viewer's, so the Agent is woken, not at a spend limit, and the turn runs unattended as a channel turn, on the Agent's channel [pair](harness-config.md).
-The Session is titled with the owner's verified email, else their subject, and the artifact's title, and the owner gets a notice that it was sent; every such prompt is in the security log under the owner, without its text.
+The Session is titled with the artifact's title alone, and the owner gets a notice that names the Agent, says nobody answers the turn's permission prompts, and opens the Session once the Agent has named it; every such prompt is in the security log under the owner, without its text.
 In the publishing Agent's chat the open chat stays the destination, with or without the option.
 Historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.

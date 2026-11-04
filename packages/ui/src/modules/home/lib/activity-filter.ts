@@ -16,7 +16,7 @@ export const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
   chat: "Chat",
   slack: "Slack",
   telegram: "Telegram",
-  artifact: "Artifact",
+  artifact: "Artifact page",
   schedule: "Schedule",
   terminal: "Terminal",
 };
