@@ -40,7 +40,7 @@ const ROUTED = {
   ],
 };
 
-/** The converted model alone, for the cases where the deciding step is not what is tested. */
+/** TEST_SCENARIO: the converted model alone, for the cases where the deciding step is not what is tested. */
 const convertedDefaultModel = (input: Parameters<typeof converted>[0]) =>
   converted(input)?.model ?? null;
 
@@ -283,7 +283,10 @@ describe("convertedDefaultModel on several fitting providers", () => {
         ran: [],
         providers: [
           { alias: "anthropic", listed: ["claude-opus-4-8"] },
-          { alias: "cb", listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"] },
+          {
+            alias: "cb",
+            listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"],
+          },
         ],
       }),
     ).toEqual({
@@ -584,7 +587,11 @@ describe("the one-time default conversion", () => {
   // TEST_SCENARIO: the log line names what the conversion decided from — the setting, how many models each provider listed, how many models the agent ran, and the deciding step — so a surprising default can be explained from the log alone.
   it("logs what it decided from", async () => {
     const logs: string[] = [];
-    const { c } = converter({ setting: "default", ran: ["claude-opus-4-8"], log: logs });
+    const { c } = converter({
+      setting: "default",
+      ran: ["claude-opus-4-8"],
+      log: logs,
+    });
     await c.convert("a");
     expect(logs).toEqual([
       '[default-conversion] a: default set to anthropic/claude-opus-4-8 on claude-code; setting "default", listed anthropic=2, ran 1, step history',

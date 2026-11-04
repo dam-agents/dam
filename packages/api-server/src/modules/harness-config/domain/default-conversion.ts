@@ -53,7 +53,6 @@ export function declaredModelOf(input: {
   return null;
 }
 
-
 /** UNIT_BOUNDARY_DESCRIPTION: the source that decided a converted default, named in the conversion's log line. */
 export type ConversionStep =
   | "kit"

@@ -224,8 +224,7 @@ export function createDefaultConverter(deps: {
     convert,
     ensure,
     async pendingAfterMove(agentId) {
-      if (!(await deps.movedToNewImage(agentId)))
-        return unconverted(agentId);
+      if (!(await deps.movedToNewImage(agentId))) return unconverted(agentId);
       return (
         !(await deps.isRunning(agentId)) ||
         !(await deps.pairRepo.read(agentId, "chat"))
