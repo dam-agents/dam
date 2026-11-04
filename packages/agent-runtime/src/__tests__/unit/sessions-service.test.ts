@@ -383,9 +383,8 @@ describe("adoptHarnessTitle", () => {
 });
 
 describe("adoptHarnessTitles", () => {
-  function booted(
-    listings: Record<string, { sessionId: string; title?: string }[] | Error>,
-  ) {
+  type Listed = { sessionId: string; title?: string };
+  function booted(listings: Record<string, Listed[] | Listed[][] | Error>) {
     const entries = new Map<string, SessionMetaEntry>([
       [
         "old",
@@ -425,9 +424,16 @@ describe("adoptHarnessTitles", () => {
         )._meta?.platform?.harness;
         if (harness === undefined) return { sessions: [] } as T;
         asked.push(params as { _meta?: { platform?: { harness?: string } } });
-        const listing = listings[harness];
+        const listing = listings[harness] ?? [];
         if (listing instanceof Error) throw listing;
-        return { sessions: listing ?? [] } as T;
+        const pages = (
+          Array.isArray(listing[0]) ? listing : [listing]
+        ) as Listed[][];
+        const page = Number((params as { cursor?: string }).cursor ?? 0);
+        return {
+          sessions: pages[page],
+          nextCursor: page + 1 < pages.length ? String(page + 1) : null,
+        } as T;
       },
       notify: () => {},
       close: () => {},
@@ -483,6 +489,31 @@ describe("adoptHarnessTitles", () => {
       (s) => s.sessionId === "old",
     );
     expect(listed?.title).toBe("fix the login");
+  });
+
+  // TEST_SCENARIO: A harness with many sessions lists them over many pages; once every untitled session has its title, the runtime reads no further page.
+  it("stops paging once every untitled session is found", async () => {
+    const t = booted({
+      "claude-code": [
+        [{ sessionId: "named", title: "the harness's" }],
+        [{ sessionId: "old", title: "fix the login" }],
+        [{ sessionId: "older", title: "never read" }],
+      ],
+      codex: [{ sessionId: "codex-session", title: "port the hook" }],
+    });
+
+    await t.service.adoptHarnessTitles();
+
+    expect(t.meta("old")?.title).toBe("fix the login");
+    expect(t.asked).toEqual([
+      { cwd: ".", _meta: { platform: { harness: "claude-code" } } },
+      {
+        cwd: ".",
+        _meta: { platform: { harness: "claude-code" } },
+        cursor: "1",
+      },
+      { cwd: ".", _meta: { platform: { harness: "codex" } } },
+    ]);
   });
 
   // TEST_SCENARIO: One harness failing to answer must not stop the others; its sessions stay untitled and the next harness still gets its titles.

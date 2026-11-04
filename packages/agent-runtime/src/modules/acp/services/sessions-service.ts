@@ -332,7 +332,7 @@ export function createSessionsService(deps: {
           try {
             await readHarnessPages(caller, harness, (sessions) => {
               for (const { sessionId, title } of sessions) {
-                if (!ids.has(sessionId)) continue;
+                if (!ids.delete(sessionId)) continue;
                 const fresh = deps.sessionMetadata.get(sessionId);
                 if (!fresh || fresh.meta.title || fresh.meta.customTitle)
                   continue;
@@ -344,6 +344,7 @@ export function createSessionsService(deps: {
                 });
                 kept = true;
               }
+              return ids.size > 0;
             });
           } catch (error) {
             deps.log(
