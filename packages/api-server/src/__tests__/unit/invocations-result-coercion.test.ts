@@ -11,6 +11,8 @@ function makeService(row: InvocationRow) {
   const repo: InvocationsRepository = {
     insert: async () => {},
     get: async (id) => rows.get(id) ?? null,
+    markStarted: async () => null,
+    failExpired: async () => false,
     complete: async (id, result) => {
       const r = rows.get(id);
       if (!r || r.status !== "running") return false;
@@ -81,6 +83,7 @@ function runningRow(resultSchema: unknown): InvocationRow {
     exitCode: null,
     output: null,
     outputExpiresAt: null,
+    startedAt: null,
     harnessConfig: null,
     driverSessionId: null,
   };

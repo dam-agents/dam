@@ -39,7 +39,7 @@ vi.mock("../../store.js", () => ({
 }));
 
 describe("a bound channel's pick", () => {
-  /** TEST_SCENARIO: a Custom selection that moves the channel to another harness holds the harness until its model is picked, then stores the pick with the subagent values the channel keeps, both references named. */
+  /** TEST_SCENARIO: a pick that moves the channel to another harness holds the harness until its model is picked, then stores the pick with the subagent values the channel keeps, both references named. */
   it("waits for a model before it stores a new harness", () => {
     const own = {
       "platformSubagent.harness": "pi",

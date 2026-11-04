@@ -12,6 +12,7 @@ export const sessionTypeSchema = z.enum([
   "schedule_once",
   "cli_run",
   "invocation",
+  "artifact",
 ]);
 
 export const senderSchema = z.object({

@@ -7,6 +7,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
+import { getBrand } from "../../../brand.js";
 import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
@@ -19,6 +20,18 @@ interface FeatureRow {
   id: FeatureId;
   label: string;
   description: ReactNode;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the rows the tab offers, with the one row that names the install's own assistant built from its brand, never from a word written here. */
+function featureRows(assistantName: string): FeatureRow[] {
+  return [
+    ...FEATURE_ROWS,
+    {
+      id: "assistant",
+      label: assistantName,
+      description: `Give yourself ${assistantName}, an agent of your own: it appears in your agent list with its own chat, and it stays yours alone.`,
+    },
+  ];
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
@@ -63,12 +76,6 @@ const FEATURE_ROWS: FeatureRow[] = [
     label: "Environments",
     description:
       "Let your agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
-  },
-  {
-    id: "assistant",
-    label: "Assistant",
-    description:
-      "Give yourself an assistant agent of your own: it appears in your agent list with its own chat, and it stays yours alone.",
   },
   {
     id: "hermes",
@@ -129,8 +136,9 @@ export function FeaturesTab() {
       />
 
       <div className="flex flex-col gap-3">
-        {FEATURE_ROWS.filter((row) => isFeatureOffered(row.id, install)).map(
-          (row) => (
+        {featureRows(getBrand().assistantName)
+          .filter((row) => isFeatureOffered(row.id, install))
+          .map((row) => (
             <FeatureRowCard
               key={row.id}
               row={row}
@@ -139,8 +147,7 @@ export function FeaturesTab() {
                 setFeature.mutate({ feature: row.id, enabled })
               }
             />
-          ),
-        )}
+          ))}
       </div>
 
       <SectionLabel spaced className="mt-8">

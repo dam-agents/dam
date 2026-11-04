@@ -81,7 +81,7 @@ drivers:
             - value: high
               name: "High"
             - value: xhigh
-              name: "Extra High"
+              name: "Extra high"
     # Sources in priority order; the first whose variable is set answers.
     # A Bedrock connection names the region's control-plane endpoint, which
     # lists the inference profiles invocable from that region; it comes first

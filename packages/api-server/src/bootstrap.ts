@@ -89,6 +89,7 @@ import {
   MAX_AVATAR_BYTES,
   storeAvatarImage,
   sweepAvatarImages,
+  startWaitOf,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -259,6 +260,7 @@ import {
   composeShareAuth,
   composeShareRelayTokens,
   composeShareRenderTokens,
+  composeArtifactPromptDelivery,
   composeShareBridge,
   composeShareViewer,
   createAgentApiClient,
@@ -303,6 +305,7 @@ import {
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
+  createInvocationStartAdapter,
   createInvocationsCleanupHook,
   createDelegationFramesClient,
   createInvocationSetupFailure,
@@ -957,7 +960,10 @@ export async function bootstrap() {
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     resolveAgentName,
-    resolveEvent: (agentId, event) => resolveInitializationPair(agentId, event),
+    resolveEvent: async (agentId, event) => {
+      const paired = await resolveInitializationPair(agentId, event);
+      return paired && resolveInvocationStart(agentId, paired);
+    },
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   deliverOnReady = async (agentId) => {
@@ -994,6 +1000,9 @@ export async function bootstrap() {
     resolvePair: firePair,
   });
   let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
+  const resolveInvocationStart = createInvocationStartAdapter(db, (msg) =>
+    getLogger().warn(msg),
+  );
   const resolveInitializationPair = createInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
@@ -1744,21 +1753,26 @@ export async function bootstrap() {
     });
 
   const agentApiClient = createAgentApiClient(config.namespace);
-  const shareBridge = composeShareBridge({
-    featureOn: async (owner) =>
-      (
-        await composeFeaturesForOwner({
-          db,
-          owner,
-          surface: "system",
-          modes: config.featureModes,
-        }).features.flags()
-      )["interactive-artifacts"],
-    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    agentApi: agentApiClient,
+  const interactiveArtifactsOn = async (owner: string) =>
+    (
+      await composeFeaturesForOwner({
+        db,
+        owner,
+        surface: "system",
+        modes: config.featureModes,
+      }).features.flags()
+    )["interactive-artifacts"];
+  const artifactPrompts = composeArtifactPromptDelivery({
     makeAcpClient,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     spendHold: channelSpendHold,
     attendance: turnAttendance,
+  });
+  const shareBridge = composeShareBridge({
+    featureOn: interactiveArtifactsOn,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    agentApi: agentApiClient,
+    prompts: artifactPrompts,
   });
   const kbShareServing = composeKbShareServing({
     db,
@@ -2148,6 +2162,8 @@ export async function bootstrap() {
       agentExists: opts?.agentExists,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
+      featureOn: interactiveArtifactsOn,
+      prompts: artifactPrompts,
     }).artifactLibrary;
   const environments = composeEnvironments({
     db,
@@ -2182,6 +2198,8 @@ export async function bootstrap() {
       urlTemplate: config.environmentsUrl,
       maxPerAgent: config.environmentsMaxPerAgent,
       expiryMaxDays: config.environmentExpiryMaxDays,
+      idleTimeoutDefaultMin: config.environmentIdleTimeoutMinutes,
+      idleTimeoutMaxMin: config.environmentIdleTimeoutMaxMinutes,
     },
   });
 
@@ -2446,6 +2464,8 @@ export async function bootstrap() {
           }
         : null;
     },
+    readStartWait: async (agentId) =>
+      startWaitOf(agentsRepo.peekCached(agentId)),
     hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,

@@ -22,8 +22,9 @@ brand:
   # string drops that sentence.
   vendor: "IBM Research"
   # Name of each person's assistant agent — the one the platform gives them
-  # when `features.assistant` is on. The name is reserved: no other agent may
-  # take it, and the assistant itself cannot be renamed.
+  # when the `assistant` feature is on for them, which follows `featureDefault`
+  # unless `features.assistant` names it. The name is reserved: no other agent
+  # may take it, and the assistant itself cannot be renamed.
   assistantName: Dambledore
   # What `name` stands for. The sign-in page shows one meaning above its
   # heading and swaps it for another at random every few seconds, never the
@@ -110,10 +111,7 @@ links:
 # takes `featureDefault`, so an install that sets it `off` also keeps features
 # added by later releases off until it names them.
 featureDefault: experimental
-features:
-  # Each user's own assistant agent (see `brand.assistantName`). `off` until the
-  # rollout opens it; `experimental` lets a user switch it on for themselves.
-  assistant: off
+features: {}
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -269,6 +267,13 @@ environments:
   maxPerAgent: 5
   # -- Furthest ahead an Environment's expiry may be set, in days.
   expiryMaxDays: 30
+  # -- How long an Environment may sit idle before it sleeps, when its agent
+  # gives no idle timeout of its own. Longer than the agents' `vmIdleTimeout`,
+  # since what an Environment runs takes minutes to come back.
+  idleTimeout: "60m"
+  # -- Longest idle timeout an agent may give an Environment; a longer one is
+  # cut to it. An Environment always sleeps in the end.
+  idleTimeoutMax: "24h"
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
   # Environment address to the api-server; visitors sign in on the share
   # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
@@ -1924,8 +1929,9 @@ controller:
       # kubelet (see `virtualization.imageCache`).
       imagePullSecrets: [] # must exist in agentNamespace
 
-      # Lifecycle. A machine starts fast, so every agent takes this and
-      # ignores its own hibernationTimeout; "0s" disables hibernation.
+      # Lifecycle. A machine starts fast, so every agent takes this unless
+      # its spec carries a hibernationTimeout of its own, as an Environment's
+      # does (`environments.idleTimeout`); "0s" disables hibernation.
       vmIdleTimeout: "5m"
 
     harnessTemplateDefaults:

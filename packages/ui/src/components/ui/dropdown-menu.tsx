@@ -166,21 +166,32 @@ const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 function DropdownMenuRadioItem({
   className,
   children,
+  indicator = "dot",
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem> & {
+  /** UNIT_BOUNDARY_DESCRIPTION: a single-choice row marks its pick with a left dot or, as a value list does, a check on the right beside right-hand text. */
+  indicator?: "dot" | "check";
+}) {
   return (
     <DropdownMenuPrimitive.RadioItem
       className={cn(
         menuItemVariants({ tone: "default" }),
-        "relative pl-8",
+        indicator === "dot" ? "relative pl-8" : "pl-3",
         className,
       )}
       {...props}
     >
-      <span className="absolute left-2 flex size-4 items-center justify-center rounded-full border border-primary">
-        <DropdownMenuPrimitive.ItemIndicator className="size-2 rounded-full bg-primary" />
-      </span>
+      {indicator === "dot" && (
+        <span className="absolute left-2 flex size-4 items-center justify-center rounded-full border border-primary">
+          <DropdownMenuPrimitive.ItemIndicator className="size-2 rounded-full bg-primary" />
+        </span>
+      )}
       {children}
+      {indicator === "check" && (
+        <DropdownMenuPrimitive.ItemIndicator className="ml-auto flex size-4 shrink-0 items-center justify-center">
+          <Checkmark size={16} />
+        </DropdownMenuPrimitive.ItemIndicator>
+      )}
     </DropdownMenuPrimitive.RadioItem>
   );
 }

@@ -39,9 +39,9 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Settings** — API keys, providers, connections, appearance, usage, schedules, about.
 - **Home** — what changed since the user last looked; agents, usage, spend.
 - **Assistant** — an agent the platform gives each person when the install offers it: it is named by the install (Dambledore by default), cannot be deleted, shared, disabled or connected to a Slack or Telegram channel, cannot be renamed, and a person whose assistant has never been used lands in its chat instead of Home.
-  The QA install offers it with `features.assistant: off` unless its values say otherwise, so no account has one there.
-  With `on`, a fresh account gets one at sign-in.
-  With `experimental`, nothing is created until the account turns the assistant on under Settings → Experimental features, and it appears then.
+  It follows the install's `featureDefault` like every other experimental feature: on the QA install that is `experimental`, so no account has one until it turns the assistant on under Settings → Experimental features.
+  With `on`, a fresh account gets one at sign-in; with `off`, nobody does.
+  An account that never opts in has no assistant, no rename of an agent named Dambledore, and lands on Home as usual.
 
 ## What the nested install cannot do
 

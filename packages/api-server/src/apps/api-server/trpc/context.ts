@@ -1,5 +1,5 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import { ChannelType, editorEmailOf } from "api-server-api";
+import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
 import { avatarCharacter } from "api-server-api/avatar/svg";
 import {
   composeAgentsModule,
@@ -335,10 +335,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         owner: user.sub,
         assistantName: config.brand.assistantName,
         admitted: () => isTermsAccepted(user.sub),
-        enabled: async () =>
-          config.featureModes.assistant === "on" ||
-          (config.featureModes.assistant === "experimental" &&
-            (await features.flags()).assistant),
+        enabled: async () => {
+          const mode = config.featureModes.assistant;
+          if (mode === "on") return true;
+          if (mode !== "experimental") return false;
+          return featureOnForUser(mode, (await features.flags()).assistant);
+        },
         agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
         agents,
         enrolled: () => gettingStarted.ensureEnrolled(user.sub),

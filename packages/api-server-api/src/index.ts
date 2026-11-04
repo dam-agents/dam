@@ -441,11 +441,14 @@ export type {
   ArtifactTouchService,
   ArtifactCallAgentApiInput,
   ArtifactCallAgentApiResult,
+  ArtifactSendPromptInput,
+  ArtifactSendPromptResult,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
   artifactPromptSchema,
+  type ArtifactPrompt,
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
   ARTIFACT_REQUEST_MAX_IN_FLIGHT,
@@ -487,6 +490,7 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export { featureOnForUser } from "./modules/features/modes.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,

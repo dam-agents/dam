@@ -144,7 +144,8 @@ What it installs beside the chart:
   The gate hands each request to `127.0.0.1:<port>` with `Host: 127.0.0.1:<port>`, and the ingress routes by host name, so the bridge puts `X-Forwarded-Host` back as the host, and states the public scheme and port.
 - **Traefik's app entrypoint trusts forwarded headers**, so `X-Forwarded-Proto: https` reaches Keycloak and its cookies are `Secure`.
   Only the node's loopback reaches that entrypoint.
-- **No image garbage collection in k3s** (`60-image-gc-off.yaml`, `image-gc-high-threshold=100`): the kubelet deletes images past 85% of its disk, which the outer grant makes look used, and it deleted the agent image a minute after the import (#6128).
+- **No image garbage collection and no disk eviction in k3s** (`60-image-gc-off.yaml`, `image-gc-high-threshold=100`, `eviction-hard=memory.available<100Mi`): the outer grant makes the disk look nearly full, so the kubelet deleted the agent image a minute after the import (#6128), and under 5% free its eviction manager deleted every unused platform image and evicted pods, which left the install in `ErrImageNeverPull` (#6272).
+  An Environment installed before #6272 takes it at its next `cluster:install`, which restarts k3s; one whose images are gone already needs that install to put them back.
   Nothing in an Environment pulls an image back, since the install puts every one in itself; one the install no longer needs stays until a person removes it.
 
 **Signing in from the agent's own browser** needs the backchannel addresses (`backchannel.*` in the values): `cluster:install -- --environment <name> --backchannel` turns them on at `http://localhost:4444`, and `mise run cluster:open -- --environment <name>`, started in the background, forwards that port to this agent.

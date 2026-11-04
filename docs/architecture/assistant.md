@@ -13,8 +13,10 @@ The name is **reserved**: no other Agent may be created or renamed to it, and th
 
 ## Provisioning
 
-The install decides whether people get one at all through the `assistant` [feature](features.md) mode: `off` provisions nothing, `experimental` provisions for whoever switches the flag on, and `on` for everyone.
+The install decides whether people get one at all through the `assistant` [feature](features.md) mode, which follows the chart's `featureDefault` like every other feature and is named only when an install wants another answer: `off` provisions nothing, `experimental` provisions for whoever switches the flag on in Settings › Experimental features, and `on` for everyone.
+Until a person switches it on, nothing of theirs exists: no record, no Agent, and no rename for an Agent that already holds the reserved name.
 Switching the mode off later stops provisioning and leaves the existing assistants where they are.
+The UI asks the server for the assistant's record only for someone it is on for, and lands nobody in its chat otherwise, so an install that offers it experimentally costs a person who never opts in nothing.
 An install whose mode is off decides on the mode alone: no stored flag, no assistant record and no Agent is read, the UI does not ask for the assistant's state, and a Session report writes nothing.
 
 Provisioning is **lazy**, at a person's first authenticated request the install admits — the same moment the [Getting Started](getting-started.md) checklist first meets them — and again after they accept the Terms of Use or switch the flag on, since neither makes a new request context.

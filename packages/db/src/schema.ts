@@ -1273,6 +1273,7 @@ export const invocations = pgTable(
       .notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     reapedAt: timestamp("reaped_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     transcriptCaptured: boolean("transcript_captured").notNull().default(false),
     transcriptTruncated: boolean("transcript_truncated")

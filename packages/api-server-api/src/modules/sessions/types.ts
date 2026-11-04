@@ -9,6 +9,7 @@ export const SessionType = {
   ScheduleOnce: "schedule_once",
   CliRun: "cli_run",
   Invocation: "invocation",
+  Artifact: "artifact",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];

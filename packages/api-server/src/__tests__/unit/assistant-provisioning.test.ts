@@ -157,6 +157,7 @@ function world(
     renamed: [] as { id: string; name: string }[],
     recorded: [] as string[],
     ran: [] as string[],
+    enabled: initial.enabled ?? true,
     failCreate: false,
     failResume: false,
     onCreate: undefined as (() => Promise<void>) | undefined,
@@ -209,7 +210,7 @@ function world(
     ownName: ALICE,
     assistantName: NAME,
     admitted: async () => initial.admitted ?? true,
-    enabled: async () => initial.enabled ?? true,
+    enabled: async () => state.enabled,
     agentOf: async (agentId) => {
       const found = state.agents.find((a) => a.id === agentId);
       return found ? infra(found) : null;
@@ -236,6 +237,35 @@ describe("assistant provisioning", () => {
     await unadmitted.provisioner.ensure();
     expect(unadmitted.state.created).toEqual([]);
     expect(unadmitted.store.rows.size).toBe(0);
+  });
+
+  // TEST_SCENARIO: the install offers the assistant experimentally and this person has not switched it on: nothing is created, no row is written, and an Agent they already named the reserved name keeps its name.
+  it("does nothing until the person opts in", async () => {
+    const w = world({ agents: [agent("agent-old", NAME)], enabled: false });
+    await w.provisioner.ensure();
+
+    expect(w.state.created).toEqual([]);
+    expect(w.state.renamed).toEqual([]);
+    expect(w.store.rows.size).toBe(0);
+    expect(w.state.agents.map((a) => a.name)).toEqual([NAME]);
+  });
+
+  // TEST_SCENARIO: the person switches the assistant on later: the next request provisions it, and only then is the Agent that held the reserved name renamed.
+  it("provisions and renames once the person opts in", async () => {
+    const w = world({ agents: [agent("agent-old", NAME)], enabled: false });
+    await w.provisioner.ensure();
+    expect(w.state.created).toEqual([]);
+    expect(w.state.renamed).toEqual([]);
+
+    w.state.enabled = true;
+    await w.provisioner.ensure();
+    expect(w.state.created).toEqual([
+      expect.objectContaining({ name: NAME, kind: "assistant" }),
+    ]);
+    expect(w.state.renamed).toEqual([
+      { id: "agent-old", name: `${NAME} (yours)` },
+    ]);
+    expect(w.store.rows.get(ALICE)).toMatchObject({ state: "ready" });
   });
 
   // TEST_SCENARIO: the first request enrols the owner, creates the Agent its id is derived to, initializes it and only then marks it ready; the next request finds it done and does nothing.

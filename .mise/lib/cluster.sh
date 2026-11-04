@@ -470,21 +470,27 @@ node_host_dirs_at_boot() {
   fi
 }
 
-# NODE_IMAGE_GC_DROPIN: no image garbage collection in an Environment's k3s.
-# The kubelet deletes images past 85% of its disk used, and there the outer
-# guard's grant counts as used, so it deleted the agent image a minute after
-# the install imported it (#6128). Nothing in an Environment pulls an image
-# back: the install puts every one in itself. After
-# 50-container-log-rotation.yaml, whose plain `kubelet-arg:` replaces every
-# append in a drop-in that sorts before it.
+# NODE_IMAGE_GC_DROPIN: no image garbage collection and no disk eviction in an
+# Environment's k3s. The outer guard's grant counts as used there, so the
+# kubelet reads the disk as nearly full whatever the files take: past 85% its
+# image collection deleted the agent image a minute after the install
+# imported it (#6128), and under 5% free, k3s's hard eviction thresholds,
+# its eviction manager deletes every image no container runs and evicts pods,
+# whatever the collection thresholds say (#6272). Nothing in an Environment
+# pulls an image back: the install puts every one in itself. So hard
+# eviction keeps memory alone; a single `eviction-hard` names every signal,
+# and the ones it leaves out have no threshold. The guard and the VM runner
+# hold the disk. After 50-container-log-rotation.yaml, whose plain
+# `kubelet-arg:` replaces every append in a drop-in that sorts before it.
 NODE_IMAGE_GC_DROPIN=/etc/rancher/k3s/config.yaml.d/60-image-gc-off.yaml
 
 # node_image_gc_off: writes NODE_IMAGE_GC_DROPIN, and succeeds only when it
 # changed, so the caller knows a running k3s must restart to take it.
 node_image_gc_off() {
   local want
-  want="$(printf '%s\n' "# An Environment's k3s keeps every image the install put in (cluster:install)." \
-    "kubelet-arg+:" '  - "image-gc-high-threshold=100"' '  - "image-gc-low-threshold=99"')"
+  want="$(printf '%s\n' "# An Environment's k3s keeps every image the install put in, and evicts on memory alone (cluster:install)." \
+    "kubelet-arg+:" '  - "image-gc-high-threshold=100"' '  - "image-gc-low-threshold=99"' \
+    '  - "eviction-hard=memory.available<100Mi"')"
   [ "$(node_sh cat "$NODE_IMAGE_GC_DROPIN" 2>/dev/null)" != "$want" ] || return 1
   node_sh mkdir -p "$(dirname "$NODE_IMAGE_GC_DROPIN")"
   printf '%s\n' "$want" | node_sh tee "$NODE_IMAGE_GC_DROPIN" >/dev/null

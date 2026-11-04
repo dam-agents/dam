@@ -1,6 +1,7 @@
 import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   displayNameForTemplate,
+  shortNameForTemplate,
 } from "api-server-api";
 
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
@@ -31,6 +32,18 @@ export function providerName(
   return (
     (templateId ? displayNameForTemplate(templateId) : null) ??
     PROVIDERS[type].displayName
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a Connection named shortly for a one-line summary, "IBM proxy" beside its long Settings name, falling back to the Connection's own name when its template has no short one. */
+export function shortProviderName(connection: {
+  templateId?: string | undefined;
+  name: string;
+}): string {
+  return (
+    (connection.templateId
+      ? shortNameForTemplate(connection.templateId)
+      : null) ?? connection.name
   );
 }
 

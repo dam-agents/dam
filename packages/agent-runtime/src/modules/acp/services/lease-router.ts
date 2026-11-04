@@ -1159,7 +1159,12 @@ function defaultKindOfType(
   if (!parsed.success) return null;
   return match(parsed.data)
     .with("regular", "cli_run", () => "chat" as const)
-    .with("channel_slack", "channel_telegram", () => "channel" as const)
+    .with(
+      "channel_slack",
+      "channel_telegram",
+      "artifact",
+      () => "channel" as const,
+    )
     .with("schedule_cron", "schedule_once", () => "scheduled" as const)
     .with("invocation", () => null)
     .exhaustive();

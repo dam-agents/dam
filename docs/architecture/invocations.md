@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-30
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -79,7 +79,8 @@ An image target declares nothing, so nothing is narrowed.
 **Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver.
 Network reach needs no grant of its own: a target has no egress identity and runs under its Driver's rules, though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 
-**Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)), and the wait counts against its deadline.
+**Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)).
+The wait does not count against its deadline (see [Deadline](#outcomes)), and while it lasts the Driver reads why it waits: the Invocation's view, await_subagents and the SDKs carry the controller's sentence, and the Driver's chat shows the target as waiting for room with the same sentence.
 A spawn whose root Driver is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is refused before anything is created, with a reason of its own that says which one and when it lifts, because the target could only fail its first model call.
 
 ## Outcomes
@@ -110,6 +111,9 @@ The reasons:
   The check repeats every minute while something runs, so work that ends without a further turn fails the run then.
   A failed call's reason carries its status and body, since a harness such as Codex can go quiet after it without ending the turn.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
+  It runs from the target's start: the first delivery of its task to its runtime, which goes only to a Ready Agent whose runtime said hello, stamps the start and moves the deadline there, so a start that waited for room keeps the whole deadline for the work.
+  A target that has not started may wait as long as its deadline; past that the Invocation fails with a reason of its own that names the wait.
+  A script's task carries its stop and report times, which are set from the start when the task is delivered, so an old runtime keeps working unchanged.
 - **Restart.** A target whose machine restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.
 - **Stopped.** The owner stops a running target from the Driver's chat; the Invocation fails with that reason and the target is reaped like any other.
@@ -216,6 +220,7 @@ The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
 The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, and write result schemas in shorthand.
 A failure raises with the platform's reason; a failed script's error still reads its streams.
+A wait for a sub-agent logs why it has not started each time that reason changes, and its default client timeout is twice the deadline plus five minutes, since a sub-agent may wait its deadline for room and then run its whole deadline.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.
 The HTTP routes are the contract; the clients stay thin.
 Sources: [`packages/driver-sdk/`](../../packages/driver-sdk/), [`packages/driver-sdk-py/`](../../packages/driver-sdk-py/).

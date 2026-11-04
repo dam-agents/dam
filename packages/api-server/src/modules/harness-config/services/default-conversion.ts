@@ -36,19 +36,22 @@ const LISTING_WAIT_MS = 120_000;
  * UNIT_BOUNDARY_DESCRIPTION: An Agent from before per-session defaults has
  * no saved default, and neither has a new Agent until its runtime first says
  * hello. Once it runs the Model Router its default is converted once, and
- * only while nothing is saved, so a model the person picked is never rewritten:
+ * only while no model is saved, so a model the person picked is never rewritten:
  * from what is certain about it (the model its calls ran, and its harness's
  * model setting) against its providers' listings on the Agent's own runtime,
  * and then from the platform's model preference list, which also decides an
  * Agent whose providers number more than one — the case that used to be left
  * "not set" because no provider's own order could be trusted over another's.
  * The result is a normal default the owner sees and can change, or "not set",
- * which is saved too, so the owner is told and nothing converts it again. An
+ * which is saved too, so the owner is told. A "not set" runs nothing, so it is
+ * never final: every later hello and fire converts again, since a provider
+ * granted or listed since, or a fixed conversion, may now find the model. An
  * Agent still on an older runtime, or whose providers have not listed, or are
  * unsupported only because an older runtime's env names no template for them,
  * is left for a later try. A fire
- * wakes an Agent first only while it is moved to a new image and asleep, so
- * the fire is checked and resolved against the new runtime, not the one its
+ * wakes an Agent first only while it is moved to a new image, or its default
+ * is "not set" and waits on the runtime's listing, and it is asleep, so the
+ * fire is checked and resolved against the running runtime, not the one its
  * last hello came from; that start ends the move. When the new runtime does
  * not say hello in time, the fire fails as still setting up rather than go
  * out with the old runtime's view.
@@ -89,9 +92,11 @@ export function createDefaultConverter(deps: {
 
   const save = async (
     agentId: string,
+    saved: SessionPair | null,
     pair: SessionPair,
     note?: DefaultModelNote,
   ): Promise<DefaultConversion> => {
+    if (saved && pair.model === null) return "not-set";
     if (!(await deps.pairRepo.writeIfEmpty(agentId, pair, note)))
       return "saved";
     deps.log(
@@ -102,18 +107,25 @@ export function createDefaultConverter(deps: {
   };
 
   const convert = async (agentId: string): Promise<DefaultConversion> => {
-    if (await deps.pairRepo.read(agentId, "chat")) return "saved";
+    const saved = await deps.pairRepo.read(agentId, "chat");
+    if (saved?.model) return "saved";
     const capabilities = await deps.getCapabilities(agentId);
     if (!routesByModelName(capabilities)) return "old-runtime";
+    /** UNIT_BOUNDARY_DESCRIPTION: a "not set" keeps the harness and the
+     * provider it names, so converting it again never moves the agent's runs
+     * to another harness or provider. */
     const harness =
+      saved?.harness ??
       defaultHarnessOf(capabilities) ??
       (await deps.specHarness(agentId)) ??
       deps.catalog.default;
     const fitting = (await deps.pairRepo.grantedProviders(agentId)).filter(
-      (p) => harnessFits(deps.catalog, harness, p.type, p.templateId),
+      (p) =>
+        harnessFits(deps.catalog, harness, p.type, p.templateId) &&
+        (!saved?.provider || p.id === saved.provider),
     );
     if (fitting.length === 0)
-      return save(agentId, { harness, provider: null, model: null });
+      return save(agentId, saved, { harness, provider: null, model: null });
     const view = await deps.catalogView(agentId, harness).catch(() => null);
     const groups = fitting.flatMap((p) => {
       const group = view?.providers.find((g) => g.connectionId === p.id);
@@ -148,6 +160,7 @@ export function createDefaultConverter(deps: {
     const alias = model ? parseQualifiedModel(model)?.alias : null;
     return save(
       agentId,
+      saved,
       {
         harness,
         provider:
@@ -202,14 +215,30 @@ export function createDefaultConverter(deps: {
     convert,
     ensure,
     async pendingAfterMove(agentId) {
-      if (!(await deps.movedToNewImage(agentId))) return false;
+      /** UNIT_BOUNDARY_DESCRIPTION: a "not set" is pending for "Run now" only
+       * while its conversion waits on the runtime's listing, as for a fire; one
+       * that converts or stays not set answers at once. */
+      if (!(await deps.movedToNewImage(agentId)))
+        return (
+          (await deps.pairRepo.read(agentId, "chat"))?.model === null &&
+          (await convert(agentId)) === "waiting"
+        );
       return (
         !(await deps.isRunning(agentId)) ||
         !(await deps.pairRepo.read(agentId, "chat"))
       );
     },
     async ensureForFire(agentId) {
-      if (!(await deps.movedToNewImage(agentId))) return null;
+      const notSet =
+        (await deps.pairRepo.read(agentId, "chat"))?.model === null;
+      /** UNIT_BOUNDARY_DESCRIPTION: a "not set" wakes the agent only when the
+       * conversion waits on its runtime's listing, so an agent nothing can
+       * convert fails its fire without being woken each time. */
+      if (
+        !(await deps.movedToNewImage(agentId)) &&
+        (!notSet || (await convert(agentId)) !== "waiting")
+      )
+        return null;
       let stamp: WakeStamp | null = null;
       if (!(await deps.isRunning(agentId))) {
         const since = now();
@@ -217,7 +246,7 @@ export function createDefaultConverter(deps: {
         if (!(await helloSince(agentId, since)))
           throw new NoDefaultModelError(undefined, { pending: true });
       }
-      if (!(await deps.pairRepo.read(agentId, "chat")))
+      if (!(await deps.pairRepo.read(agentId, "chat"))?.model)
         await ensure(agentId, LISTING_WAIT_MS);
       return stamp;
     },

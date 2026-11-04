@@ -549,6 +549,10 @@ spec:
               value: {{ .Values.environments.maxPerAgent | quote }}
             - name: ENVIRONMENT_EXPIRY_MAX_DAYS
               value: {{ .Values.environments.expiryMaxDays | quote }}
+            - name: ENVIRONMENT_IDLE_TIMEOUT
+              value: {{ .Values.environments.idleTimeout | quote }}
+            - name: ENVIRONMENT_IDLE_TIMEOUT_MAX
+              value: {{ .Values.environments.idleTimeoutMax | quote }}
             - name: SPEND_PRICE_OVERRIDES
               value: {{ (.Values.apiServer.spend | default dict).priceOverrides | default list | toJson | quote }}
             {{- $defaultUserCeilingUsd := (.Values.apiServer.spend | default dict).defaultUserCeilingUsd }}

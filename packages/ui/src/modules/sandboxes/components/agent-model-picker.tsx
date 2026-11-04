@@ -13,6 +13,7 @@ import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useAgent } from "../../agents/api/queries.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
+import { shortProviderName } from "../../providers/lib/provider-rows.js";
 import {
   clearSessionDefault,
   rememberSessionPair,
@@ -88,21 +89,37 @@ export function AgentModelPicker({
     ? pairSummary(chat.model, {
         settings: chat.settings,
         capability: status?.harnesses?.find((h) => h.name === chat.harness),
-        provider: owned.find((p) => p.id === chat.provider)?.name,
+        provider: (() => {
+          const connection = owned.find((p) => p.id === chat.provider);
+          return connection ? shortProviderName(connection) : undefined;
+        })(),
       })
     : null;
-  const choose = (pair: SessionPair, references: SessionChoiceReferences) => {
+  /* UNIT_BOUNDARY_DESCRIPTION: only the chat default names a primary profile; a channel's and a schedule's hold the values their profiles resolve to, while the subagent slot's own values reach every kind. */
+  const choiceReferences = (references: SessionChoiceReferences) => ({
+    ...(kind === "chat" && { profileId: references.profileId }),
+    ...(references.platformSubagentProfileId !== undefined && {
+      platformSubagentProfileId: references.platformSubagentProfileId,
+    }),
+  });
+  const choose = (
+    pair: SessionPair,
+    references: SessionChoiceReferences,
+    effective = pair,
+  ) => {
+    const nextReferences = choiceReferences(references);
     /* UNIT_BOUNDARY_DESCRIPTION: a harness picked without a model waits in the open picker, since a routed runtime keeps no default without one. */
     if (!references.profileId && pair.model === null)
-      return setDraft(nextSlots(slots, pair, references));
+      return setDraft(nextSlots(slots, effective, nextReferences));
     setDraft(null);
-    /* UNIT_BOUNDARY_DESCRIPTION: only the chat default names a profile; a channel's and a schedule's hold the values their profiles resolve to. */
-    rememberSessionPair(
+    /* UNIT_BOUNDARY_DESCRIPTION: only the chat default stores a reference; every kind stores the values a run shows, so a channel or a schedule keeps the subagent its profile lends. */
+    return rememberSessionPair(
       agentId,
-      pair,
+      kind === "chat" ? pair : effective,
       kind,
       undefined,
-      kind === "chat" ? references : undefined,
+      nextReferences,
+      effective,
     );
   };
 
@@ -128,6 +145,7 @@ export function AgentModelPicker({
           }}
           onConnectProviders={() => navigateToSandboxHome(agentId, "providers")}
           target={{
+            valueOnly: kind !== "chat",
             slots,
             label: copy.label,
             placeholder: copy.placeholder,
@@ -137,6 +155,7 @@ export function AgentModelPicker({
                   ? `Follows ${defaultSummary}`
                   : "No default set yet",
                 harness: chat?.harness,
+                pair: chat,
                 onClear: () => {
                   setDraft(null);
                   clearSessionDefault(agentId, kind);

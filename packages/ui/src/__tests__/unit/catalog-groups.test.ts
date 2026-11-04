@@ -102,7 +102,7 @@ describe("settingsForModel", () => {
           choices: [],
         },
       ],
-      modelConstraints: { haiku: { effort: [] } },
+      modelConstraints: { "claude-haiku-4-5": { effort: [] } },
     },
   };
   const groups = [

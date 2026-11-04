@@ -44,6 +44,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     disabled: agent.disabled,
     overBudget: agent.overBudget,
     overBudgetMessage: agent.overBudgetMessage,
+    startWaitMessage: agent.startWaitMessage,
     ...(agent.reclaimed ? { reclaimed: agent.reclaimed } : {}),
     podTerminationReason: agent.podTerminationReason,
     podTerminationCode: agent.podTerminationCode,

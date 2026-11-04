@@ -42,8 +42,11 @@ __all__ = [
 ]
 
 _DEFAULT_POLL_SECONDS = 5.0
-# Mirrors the server's ttl clamp (~1min..6h) plus a poll of slack.
-_DEFAULT_SPAWN_TIMEOUT_S = 6 * 60 * 60 + 60
+# A sub-agent may wait up to its ttl for room to start, then has its whole
+# ttl for the work: twice the ttl (the server's default is 1h) plus the
+# liveness sweep's period and a few polls of slack.
+_DEFAULT_TTL_S = 60 * 60
+_TIMEOUT_SLACK_S = 5 * 60
 
 
 class InvocationFailed(Exception):
@@ -238,12 +241,17 @@ def _await(
     deadline = time.monotonic() + (
         timeout_seconds
         if timeout_seconds is not None
-        else (ttl_ms / 1000 + 60 if ttl_ms else _DEFAULT_SPAWN_TIMEOUT_S)
+        else 2 * (ttl_ms / 1000 if ttl_ms else _DEFAULT_TTL_S) + _TIMEOUT_SLACK_S
     )
+    waiting = None
     while True:
         view = _request("GET", f"/invocations/{invocation_id}")
         if view["status"] != "running":
             return view
+        if view.get("waiting") != waiting:
+            waiting = view.get("waiting")
+            if waiting:
+                _log(f"{name} ({invocation_id}) waits for room to start: {waiting}")
         if time.monotonic() > deadline:
             raise InvocationFailed(invocation_id, f"{name} (client timeout)")
         time.sleep(poll_seconds)
@@ -289,7 +297,9 @@ def spawn(
     which pass over them.
 
     ``ttl_ms`` is a kill deadline, not pacing: the platform removes the
-    sub-agent the moment it lapses, mid-work or not. ``label`` names the
+    sub-agent the moment it lapses, mid-work or not. It runs from the
+    sub-agent's start: a sub-agent that waits for room to start waits up to
+    ``ttl_ms`` more, and the default client timeout covers both. ``label`` names the
     sub-agent, in this script's log lines and on the platform.
 
     ``model``, ``mode`` and ``config_options`` choose the sub-agent's harness

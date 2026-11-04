@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
 
 import { useStore } from "../../../store.js";
-import { useAssistantState } from "../../assistants/api/assistant-state.js";
+import {
+  useAssistantOn,
+  useAssistantState,
+} from "../../assistants/api/assistant-state.js";
 import { useInstallCapabilities } from "../../features/api/queries.js";
 import { useAgents } from "../api/queries.js";
 import { landingAssistantId } from "../lib/assistant-landing.js";
@@ -20,10 +23,9 @@ export function useLandInAssistantChat(): void {
   const view = useStore((s) => s.view);
   const agents = useAgents();
   const install = useInstallCapabilities();
-  const assistantsOffered =
-    install.data !== undefined && install.data.features.assistant !== "off";
+  const assistantOn = useAssistantOn();
   const { data: state, isSuccess: stateLoaded } = useAssistantState();
-  const stateKnown = install.isSuccess && (!assistantsOffered || stateLoaded);
+  const stateKnown = install.isSuccess && (!assistantOn || stateLoaded);
   const listed =
     agents.data?.list.some((agent) => agent.id === state?.agentId) ?? false;
 
