@@ -20,6 +20,7 @@ import { DetachProviderMessage } from "../../sessions/components/detach-provider
 import { useProviderUsage } from "../../sessions/hooks/use-provider-usage.js";
 import { providerHarnesses } from "../../sessions/lib/session-pair-options.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
+import { AgentModelPicker } from "./agent-model-picker.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
 
 export function SandboxProvidersSection({
@@ -42,6 +43,9 @@ export function SandboxProvidersSection({
   return (
     <div className="flex flex-col gap-3">
       {header()}
+      <div className="mb-6">
+        <AgentModelPicker agentId={agentId} kind="chat" />
+      </div>
       {access && !managesProviders && (
         <OwnerOnlyNotice
           title="Only the owner adds and removes providers."

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export const MODAL_BACKDROP =
-  "fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in";
+  "fixed inset-0 flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in";
 export const MODAL_PANEL =
   "rounded-xl border border-border bg-card shadow-xl anim-scale-in";
 
@@ -40,7 +40,7 @@ export function Modal({
   return createPortal(
     <ModalContext.Provider value={{ labelId }}>
       <div
-        className={MODAL_BACKDROP}
+        className={cn(MODAL_BACKDROP, "z-overlay")}
         onMouseDown={(e) => {
           pressStartedOnBackdrop.current = e.target === e.currentTarget;
         }}

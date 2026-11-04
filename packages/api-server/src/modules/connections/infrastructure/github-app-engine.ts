@@ -4,6 +4,7 @@ import type {
   GitHubUserTokenProbe,
 } from "api-server-api";
 import { OAuthTokenEndpointError } from "./oauth-engine.js";
+import { stripControlChars } from "./github-identity.js";
 
 export interface GitHubAppTokenSet {
   accessToken: string;
@@ -399,12 +400,19 @@ export function createGitHubAppEngine(
       ),
     ]);
     const repositories = listed?.repositories?.flatMap((repo) =>
-      repo.name ? [repo.name] : [],
+      repo.name ? [stripControlChars(repo.name).slice(0, 200)] : [],
     );
     return {
-      ...(installation?.app_slug ? { appSlug: installation.app_slug } : {}),
+      ...(installation?.app_slug
+        ? { appSlug: stripControlChars(installation.app_slug).slice(0, 200) }
+        : {}),
       ...(installation?.account?.login
-        ? { accountLogin: installation.account.login }
+        ? {
+            accountLogin: stripControlChars(installation.account.login).slice(
+              0,
+              200,
+            ),
+          }
         : {}),
       ...(repositories ? { repositories } : {}),
       ...(repositories &&

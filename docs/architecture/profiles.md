@@ -1,6 +1,6 @@
 # Profiles
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -16,7 +16,10 @@ A running chat's subagent slot offers every profile, as a new chat's does; its p
 
 The chat default, each Slack and Telegram channel, and each schedule hold the same two slots, a primary model and a subagent, each either a profile reference or values of their own, never both; an empty subagent slot lets the agent pick.
 The api-server resolves a reference into the pair the runtime is sent, so an edit reaches every later run that follows it, while a session that picked keeps its own ([harness configuration](harness-config.md#session-settings)).
-A channel or schedule naming none follows its kind's legacy pair; picking a profile grants its provider on the agent.
+The agent's Providers, Channels and Schedules pages pick the three with the same picker, which a page shows as a row: its chat default, its channel pair and its scheduled pair.
+Only the chat default keeps a profile reference; a profile picked on the Channels or Schedules page is stored as its values, so a later edit of that profile does not reach it.
+The channel and scheduled pickers lead with **Use agent default**, which reads the chat default; picking it clears their own pair, so they follow that default and every later change of it.
+A channel or schedule naming none follows its kind's pair, which is the chat default until the agent's page sets one; picking a profile grants its provider on the agent.
 An edit that no agent using the profile can run is put back, and that revert never undoes a newer edit made meanwhile.
 A profile in use cannot be deleted, and the refusal names what uses it.
 

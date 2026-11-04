@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -42,7 +42,7 @@ In an existing session, the picker keeps its harness and, on a routed runtime, o
 
 A session may also pick the settings its harness manifest lists under `sessionSettings`: mode, effort, thinking level, prompt cache or approvals, each a catalog option.
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
-An agent remembers one **chat default**, which preselects the next session, and two **legacy** pairs, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on, kept for rows written before profiles.
+An agent remembers one **chat default**, which preselects the next session, and two pairs of its own, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on; unset, they follow it.
 A pick in a chat saves the chat default, whose primary model and subagent slot each hold a profile reference or values of their own, never both; a channel and a schedule keep the same two slots, checked by the same rule.
 **Tool approval** (Claude Code's permission mode, Bob's approvals, Copilot's mode, whose Autopilot is Auto mode) is one session's own pick, in a picker shown where there are two choices: no default, profile, channel, schedule or Config panel holds one, a session that picks none runs on Auto mode (else Bypass), and Plan modes are offered nowhere.
 An owner's named pairs, the defaults that follow them and a new agent's start are [profiles](profiles.md).
@@ -213,7 +213,7 @@ Each call is reported once on the telemetry rail with its tokens, Connection, up
 The router also fits the output budget to the catalog's limit, drops a reasoning effort sent to a model that does not reason, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.
 The effort level Claude Code persists, sent as `output_config.effort`, is rewritten to the nearest level a DeepSeek target's chat template knows, since that template refuses the whole call on a level it does not: Claude Code's `medium` default becomes `high`.
 
-Beyond the model routes the router serves each harness's **catalog endpoint** from its view: `/v1/models` in the OpenAI list shape (`display_name` and `description` for Claude Code's picker, a `metadata` extension Pi registers its provider from), `/codex/models` in Codex's `ModelInfo` shape (a missing field makes Codex drop the catalog silently), `/inference/v1/model/info` in LiteLLM's shape for Bob, `HEAD /api/hello` for Claude Code's probe; Bob's `/admin/v1/*` calls get a JSON 404.
+Beyond the model routes the router serves each harness's **catalog endpoint** from its view: `/v1/models` in the OpenAI list shape (`display_name` and `description` for Claude Code's picker, `metadata` for Pi's provider), `/codex/models` in Codex's `ModelInfo` shape, `/inference/v1/model/info` in LiteLLM's shape for Bob, `HEAD /api/hello` for Claude Code's probe; Bob's `/admin/v1/*` calls get a JSON 404, and `GET /platform/call-costs` answers the ledger's measured cost of those calls, which Pi asks for.
 A catalog request waits up to ten seconds for the agent's first listing and answers 503 while a provider has not listed, which a harness retries rather than caches.
 A harness whose manifest says `modelFromSession` (Bob, one settings-file model per process) gets the session's model on every call; a tier alias its subagents ask for (`premium-ide`, `explorer`), and on Codex (`bareNamesFromSession`) any bare name, is mapped the same way.
 Claude Code's tier slots (`ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL`, manifest `claudeTiers`) are filled per process from the agent's default provider, and Claude Code resolves its own aliases through them, so a session moved to another provider would send its titles, WebFetch summaries and alias-named subagents to the provider it left.
@@ -240,7 +240,7 @@ A main-conversation turn is never moved: it names the model the session was give
 A session's **subagent model** is one setting delivered three ways: Claude Code reads `CLAUDE_CODE_SUBAGENT_MODEL` at process start, forced (`CLAUDE_CODE_SUBAGENT_MODEL_FORCE`) over the Agent tool's model argument and an agent definition's model, so the session runs in a process of its own; Bob's and Codex's subagent calls carry a parent marker (`X-Parent-Task-Id`, a child `thread-id`) and the router sends them to the session's choice, nothing written to the harness (manifest binding `router: true`).
 A session's **subagent effort** (Claude Code, Codex) is a `router: true` setting too: the router writes it over the effort a call marked as a subagent's carries (`output_config.effort`, `reasoning.effort`, `reasoning_effort`), and leaves a call that carries none alone, since the harness sends none to a model that takes none.
 Its catalog option says `subagents: true`, so its model constraints come from the subagent model, not the session's.
-A session on a native Connection (Bedrock) sends no call through the router, so its subagent effort has no effect.
+A session on a native Connection (Bedrock) passes through the router unchanged, so subagent effort has no effect.
 Both settings reach only the harness's own subagents; a platform sub-agent follows the session's platform sub-agent settings ([session settings](#session-settings)).
 Pi's image has no subagents, so Pi has neither setting.
 

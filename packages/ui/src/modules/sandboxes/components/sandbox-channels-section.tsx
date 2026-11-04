@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
+import { AgentModelPicker } from "./agent-model-picker.js";
 import { SlackChannelCard } from "./channels/slack-channel-card.js";
 import { TelegramChannelCard } from "./channels/telegram-channel-card.js";
 import { WhisperCard } from "./channels/whisper-card.js";
@@ -23,6 +24,12 @@ export function SandboxChannelsSection({
     ...(available.slack ? [] : ["Slack"]),
     ...(available.telegram ? [] : ["Telegram"]),
   ];
+  /* UNIT_BOUNDARY_DESCRIPTION: what channel turns run on is the agent's, whatever messengers this install offers, so the page picks it above an install with none. */
+  const modelPicker = !compact && (
+    <div className="mb-6">
+      <AgentModelPicker agentId={agentId} kind="channel" />
+    </div>
+  );
   // UNIT_BOUNDARY_DESCRIPTION: in a panel the section names the messenger this install does not offer in one muted line, and shows no card for it; whispers are a row of the Slack card rather than a card of their own.
   if (missing.length === 2) {
     if (compact)
@@ -32,14 +39,18 @@ export function SandboxChannelsSection({
         </p>
       );
     return (
-      <EmptyState title="No messenger set up">
-        There is nothing to connect yet. Ask your administrator to configure
-        Slack or Telegram.
-      </EmptyState>
+      <>
+        {modelPicker}
+        <EmptyState title="No messenger set up">
+          There is nothing to connect yet. Ask your administrator to configure
+          Slack or Telegram.
+        </EmptyState>
+      </>
     );
   }
   return (
     <>
+      {modelPicker}
       {agent && readOnly && (
         <OwnerOnlyNotice
           title="Only the owner connects channels."
