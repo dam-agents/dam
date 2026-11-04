@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Session inside the machine
 
@@ -22,6 +22,7 @@ Each lease is the unchanged ACP runtime this section describes, behind a **lease
 Each lease is told about the client as the first was, and an agent's question is answered to the lease that asked.
 The session list draws on the metadata store too, so a harness not running still lists its sessions.
 A listed session's title is its explicit title (a rename, a schedule's session title, or the original's on a rewind) when it has one, else the harness's own or the one its first prompt gave it; the list also carries the explicit and the automatic title apart, so the rename dialog prefills only an explicit one and offers the automatic one as its placeholder.
+A Session that a runtime before 0.2.24 created has no title in the platform's records, which the list read answers from; the first list read of a boot asks each harness with such Sessions for its own listing, once, and keeps the titles it gives.
 A channel turn's first prompt opens with the platform's instructions to the agent, so a Slack or Telegram Session's automatic title is instead the person's first message, which the channel names on `session/new` in `_meta.platform.title` (Slack sends its first line without leading mentions, Telegram the whole text); the runtime cuts it to one line of the same length as a title from a prompt.
 
 A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
