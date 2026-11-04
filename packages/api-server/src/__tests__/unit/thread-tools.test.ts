@@ -22,7 +22,11 @@ async function harness(over: Partial<ThreadToolPorts> = {}) {
     callerSessionId: async () => "s-web",
     startThread: async (channel, start) => {
       starts.push({ channel, start });
-      return { ok: true, conversationId: start.conversationId, threadTs: "5.5" };
+      return {
+        ok: true,
+        conversationId: start.conversationId,
+        threadTs: "5.5",
+      };
     },
     listThreads: async () => ({
       threads: [

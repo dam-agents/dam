@@ -409,8 +409,7 @@ export function createMcpSession(
       },
     );
     const failed = "error" in result;
-    const attachmentError =
-      "ok" in result ? result.attachmentError : undefined;
+    const attachmentError = "ok" in result ? result.attachmentError : undefined;
     const logLevel = failed || attachmentError ? "warn" : "info";
     emit({
       type: EventType.ChannelMessageSent,

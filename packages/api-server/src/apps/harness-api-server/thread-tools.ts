@@ -113,7 +113,10 @@ export function registerThreadTools(
     "Stop following a Slack thread this session started: later messages in it no longer come back here. A message there that tags you then opens a session of its own, as in any thread. Slack only.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
-      chatId: z.string().min(1).describe("The thread's chatId, from list_threads."),
+      chatId: z
+        .string()
+        .min(1)
+        .describe("The thread's chatId, from list_threads."),
       threadTs: z
         .string()
         .min(1)

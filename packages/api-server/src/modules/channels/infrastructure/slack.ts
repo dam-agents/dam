@@ -5537,8 +5537,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   type OwnedRouting =
-    | { owner: null }
-    | { owner: string; dropped: boolean; rateChecked: boolean };
+    { owner: null } | { owner: string; dropped: boolean; rateChecked: boolean };
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a message in a thread one of an Agent's
