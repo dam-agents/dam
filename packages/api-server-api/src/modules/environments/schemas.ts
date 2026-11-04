@@ -77,6 +77,7 @@ export const environmentViewSchema = z.object({
   memberAgents: z.array(environmentMemberAgentSchema),
   agentMemberCount: z.number().int(),
   expiresAt: z.string(),
+  idleTimeoutMin: z.number().int().nullable(),
   createdAt: z.string(),
   state: z.string(),
 });

@@ -98,6 +98,8 @@ function world(
         urlTemplate: null,
         maxPerAgent: 5,
         expiryMaxDays: 30,
+        idleTimeoutDefaultMin: 60,
+        idleTimeoutMaxMin: 1440,
       },
       listAgents: async () => cluster,
       editorsOf: async () => [],

@@ -288,6 +288,8 @@ const configSchema = z.object({
     .default(null),
   environmentsMaxPerAgent: z.coerce.number().int().positive().default(5),
   environmentExpiryMaxDays: z.coerce.number().int().positive().default(30),
+  environmentIdleTimeoutMinutes: z.number().int().positive(),
+  environmentIdleTimeoutMaxMinutes: z.number().int().positive(),
   minClientCliVersion: z.string().optional(),
   recommendedClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
@@ -514,6 +516,12 @@ export function loadConfig(): Config {
     environmentsUrl: process.env.ENVIRONMENTS_URL || null,
     environmentsMaxPerAgent: process.env.ENVIRONMENTS_MAX_PER_AGENT,
     environmentExpiryMaxDays: process.env.ENVIRONMENT_EXPIRY_MAX_DAYS,
+    environmentIdleTimeoutMinutes: durationToMinutesStrict(
+      process.env.ENVIRONMENT_IDLE_TIMEOUT ?? "60m",
+    ),
+    environmentIdleTimeoutMaxMinutes: durationToMinutesStrict(
+      process.env.ENVIRONMENT_IDLE_TIMEOUT_MAX ?? "24h",
+    ),
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     recommendedClientCliVersion: recommendedClientCliVersion(appVersion),
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,

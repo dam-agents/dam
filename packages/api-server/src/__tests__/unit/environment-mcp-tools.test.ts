@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The owning agent's Environment tools take each endpoint's readiness path, at create and at update, and never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who.
+// TEST_OVERVIEW: The owning agent's Environment tools take each endpoint's readiness path, at create and at update, and never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who. An `idle_timeout` reaches create and update as whole minutes, one that means "never sleep" is refused before the service is called, and its description names the install's own default and maximum.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -17,6 +17,7 @@ const view: AgentEnvironmentView = {
   endpoints: [{ name: "app", port: 4444, url: null }],
   peopleWhoMayOpen: 2,
   expiresAt: new Date().toISOString(),
+  idleTimeoutMin: 60,
   createdAt: new Date().toISOString(),
   state: "running",
 };
@@ -36,6 +37,7 @@ const shared: SharedEnvironmentView = {
 
 async function tools(manage = true) {
   const environments = {
+    idleTimeout: { defaultMin: 45, maxMin: 600 },
     manage,
     shared: vi.fn(async () => [shared]),
     create: vi.fn(async () => view),
@@ -55,7 +57,7 @@ async function tools(manage = true) {
     const [content] = result.content as { text: string }[];
     return { isError: result.isError === true, text: content!.text };
   };
-  return { call, environments };
+  return { call, environments, mcp };
 }
 
 const endpoints = [{ name: "app", port: 4444 }];
@@ -143,5 +145,50 @@ describe("Environments shared with an agent", () => {
       endpoints,
     });
     expect(create.isError).toBe(true);
+  });
+});
+
+describe("an Environment's idle timeout, from the agent's tools", () => {
+  // TEST_SCENARIO: an agent gives `idle_timeout` as it gives `expires`; create and update pass it on in minutes, and "never" is refused with a message that says why, with nothing created or changed.
+  it("passes an idle timeout on in minutes and refuses never", async () => {
+    const { call, environments } = await tools();
+
+    await call("create_environment", {
+      name: "pr-1",
+      endpoints,
+      idle_timeout: "90m",
+    });
+    await call("update_environment", { name: "pr-1", idle_timeout: "4h" });
+    const never = await call("update_environment", {
+      name: "pr-1",
+      idle_timeout: "never",
+    });
+
+    expect(environments.create).toHaveBeenCalledWith({
+      name: "pr-1",
+      endpoints,
+      idleTimeoutMin: 90,
+    });
+    expect(environments.update).toHaveBeenCalledTimes(1);
+    expect(environments.update).toHaveBeenCalledWith("pr-1", {
+      idleTimeoutMin: 240,
+    });
+    expect(never.isError).toBe(true);
+    expect(never.text).toMatch(/always sleeps/);
+  });
+
+  // TEST_SCENARIO: an install may set its own default and maximum for Environments, so the tools describe `idle_timeout` with the values the service applies, never a constant that a configured install does not use.
+  it("describes the install's own default and maximum", async () => {
+    const { mcp } = await tools();
+
+    const { tools: listed } = await mcp.listTools();
+    for (const name of ["create_environment", "update_environment"]) {
+      const schema = listed.find((t) => t.name === name)!.inputSchema as {
+        properties: Record<string, { description?: string }>;
+      };
+      const description = schema.properties.idle_timeout!.description!;
+      expect(description).toMatch(/Default 45 minutes/);
+      expect(description).toMatch(/at most 600 minutes/);
+    }
   });
 });
