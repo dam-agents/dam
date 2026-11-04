@@ -470,6 +470,7 @@ describe("the statements that own a registration", () => {
         agentId: "agent-1",
         tool: "run",
         args: {},
+        transferDirection: null,
         status: "queued",
         expiresAt: new Date(),
         maxConcurrent: 4,

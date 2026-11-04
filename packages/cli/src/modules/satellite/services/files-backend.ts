@@ -301,6 +301,8 @@ export function createFilesBackend(input: {
         : [downloadTool(input.root)];
     },
 
+    ensureReady: () => Promise.resolve({ restarted: false }),
+
     async call({ sequence, tool, args, transferToken }): Promise<CallOutcome> {
       const controller = new AbortController();
       running.set(sequence, controller);

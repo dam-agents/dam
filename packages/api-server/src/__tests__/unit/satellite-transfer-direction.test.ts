@@ -33,6 +33,7 @@ function satellite(tools: SatelliteTool[] = TOOLS) {
     tools,
     draining: false,
     lastSeenAt: NOW,
+    incarnation: "11111111-1111-4111-8111-111111111111",
   };
 }
 
@@ -68,7 +69,7 @@ function admission(tools: SatelliteTool[] = TOOLS) {
   const inserted: { tool: string; transferDirection: unknown }[] = [];
   const ops = createSatelliteAgentOps({
     repo: {
-      grantedNames: async () => [{ owner: "alice", name: "laptop" }],
+      grantedSatellite: async () => satellite(tools),
       get: async () => satellite(tools),
       activeJobs: async () => [],
       insertJob: async (input: {

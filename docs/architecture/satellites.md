@@ -218,7 +218,7 @@ A call made while the Satellite is offline never starts at all: admission refuse
 
 **Credentials refresh themselves.** A worker signed in through the browser re-mints its access token before each call, and one started as a service holds a serve key in `DAM_TOKEN` instead, which needs no refresh.
 Either way, a worker that cannot authenticate retries like any other failure but says what ends it: signing in again, or a new key.
-||||||| parent of d3272c8ee (feat(satellite): download and upload one file between a machine and an agent)
+
 ## Files between the machine and the Agent
 
 A Job's result carries one string of at most 1 MiB beside a handful of images, which is the wrong channel for a file: a tool that returned contents would spend the Agent's context on bytes, and a large file would not fit at all.
