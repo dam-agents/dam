@@ -253,6 +253,13 @@ describe("harness icons on provider and preset cards", () => {
         }),
       );
       expect(html).not.toMatch(/>All harnesses<|Claude|>Pi/);
+      const doc = new Window().document;
+      doc.body.innerHTML = html;
+      for (const ref of doc
+        .querySelector("button")!
+        .getAttribute("aria-describedby")!
+        .split(" "))
+        expect(doc.getElementById(ref)).not.toBeNull();
     },
   );
 });

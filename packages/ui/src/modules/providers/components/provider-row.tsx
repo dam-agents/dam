@@ -75,7 +75,9 @@ export function ProviderRow({
           type="button"
           onClick={onOpen}
           aria-label={label}
-          aria-describedby={`${id}-harnesses ${id}-status`}
+          aria-describedby={
+            harnesses?.length ? `${id}-harnesses ${id}-status` : `${id}-status`
+          }
           className="absolute inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         />
       )}
