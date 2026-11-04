@@ -380,6 +380,7 @@ describe("the one-time default conversion", () => {
     const wakes: string[] = [];
     let catalogReads = 0;
     let moved = opts.moved ?? false;
+    let awake = opts.running ?? true;
     let clock = 0;
     const c = createDefaultConverter({
       pairRepo: {
@@ -415,6 +416,7 @@ describe("the one-time default conversion", () => {
       specHarness: async () => undefined,
       catalogView: async () => {
         catalogReads++;
+        if (!awake) throw new Error("runtime asleep");
         return opts.catalog === undefined
           ? view("listed", ["claude-opus-4-8", "claude-opus-5-5"])
           : opts.catalog;
@@ -428,6 +430,7 @@ describe("the one-time default conversion", () => {
       isRunning: async () => opts.running ?? true,
       wake: async (id) => {
         wakes.push(id);
+        awake = true;
         if (opts.helloAfterWake !== false) moved = false;
         return { previous: "T0", written: "T1" };
       },
@@ -672,15 +675,32 @@ describe("the one-time default conversion", () => {
     expect(still.writes).toEqual([]);
   });
 
-  // TEST_SCENARIO: a schedule of an asleep Agent whose default is "not set" wakes it and converts before the fire is checked, since nothing else would ever wake it to try again.
+  // TEST_SCENARIO: a schedule of an asleep Agent whose default is "not set" wakes it and converts before the fire is checked, since nothing else would ever wake it to try again; an Agent nothing can convert fails its fire without being woken each time.
   it("wakes an agent whose default is not set before a fire", async () => {
-    const { c, wakes, writes } = converter({
-      running: false,
-      saved: { harness: "claude-code", provider: "anth", model: null },
-    });
+    const notSet = { harness: "claude-code", provider: "anth", model: null };
+    const { c, wakes, writes } = converter({ running: false, saved: notSet });
     await c.ensureForFire("a");
     expect(wakes).toEqual(["a"]);
     expect(writes[0]?.model).toBe("anthropic/claude-opus-5-5");
+
+    const none = converter({ running: false, saved: notSet, granted: [] });
+    expect(await none.c.ensureForFire("a")).toBeNull();
+    expect(none.wakes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM is not filled from Anthropic.
+  it("keeps the harness and provider of a not set", async () => {
+    const codex = converter({
+      saved: { harness: "codex", provider: null, model: null },
+    });
+    expect(await codex.c.convert("a")).toBe("not-set");
+    expect(codex.writes).toEqual([]);
+
+    const ibm = converter({
+      saved: { harness: "claude-code", provider: "lite", model: null },
+    });
+    expect(await ibm.c.convert("a")).toBe("not-set");
+    expect(ibm.writes).toEqual([]);
   });
 
   // TEST_SCENARIO: a hello, a fire and a channel turn arriving together share one conversion instead of each polling the runtime.

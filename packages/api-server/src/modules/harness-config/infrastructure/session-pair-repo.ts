@@ -173,7 +173,7 @@ export function createSessionPairRepo(
             eq(agentsTable.id, agentId),
             or(
               isNull(agentsTable.sessionPair),
-              sql`${agentsTable.sessionPair}->'model' = 'null'::jsonb`,
+              sql`${agentsTable.sessionPair}->>'model' IS NULL`,
             ),
             isNull(agentsTable.sessionProfile),
           ),
