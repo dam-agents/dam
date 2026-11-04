@@ -85,7 +85,12 @@ export const satellitesRouter = t.router({
   connectFenced: serveSatellitesProcedure
     .input(connectFencedInputSchema)
     .mutation(({ ctx, input }) =>
-      ctx.satelliteWorker.connect(ctx.user.sub, input.manifest, input.host),
+      ctx.satelliteWorker.connect(
+        ctx.user.sub,
+        input.manifest,
+        input.host,
+        input.resume,
+      ),
     ),
 
   claimFenced: serveSatellitesProcedure
