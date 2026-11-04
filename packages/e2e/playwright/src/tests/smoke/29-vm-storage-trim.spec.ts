@@ -496,7 +496,11 @@ test("a writing agent stops at its share, and writes again when its share grows"
         `machine ${machine + 1} of the owner's was granted ${grant.grantMiB} MiB of the ${roomMiB} MiB left below the claim's ceiling: a running machine is granted the whole room, not a part of it`,
       ).toBeGreaterThanOrEqual(roomMiB - Math.max(SLACK_MIB, roomMiB / 4));
     }
-    // UNIT_BOUNDARY_DESCRIPTION: the agent refused at its share must write again once its share grows, which a wedged one does not: it keeps the answer to its last refusal however much room the owner frees. Its share grows when a sibling is deleted, by the blocks that sibling's disk held on the claim, and the room has to be room a real write lands in. A guest its disk holds rather than its grant (diskLeftMiB) has no room a larger share can add, so the room it must reach is its share's growth or what its disk has left, whichever is less, and the write after it is what shows it writes again either way.
+    // UNIT_BOUNDARY_DESCRIPTION: the agent refused at its share must write again once its share grows, which a wedged one does not: it keeps the answer to its last refusal however much room the owner frees. Its share grows when a sibling is deleted, by the blocks that sibling's disk held on the claim, which the sibling first makes at least REAL_MIB so the growth stands out of the noise, and the room has to be room a real write lands in. A guest its disk holds rather than its grant (diskLeftMiB) has no room a larger share can add, so the room it must reach is its share's growth or what its disk has left, whichever is less, and the write after it is what shows it writes again either way.
+    inGuest(
+      siblingId,
+      `head -c ${REAL_MIB}M /dev/urandom > /tmp/e2e-sibling-held && sync`,
+    );
     const beforeRenew = guestAvailMiB();
     const renewLeft = diskLeftMiB(markedMiB);
     await api.agents.delete.mutate({ id: siblingId });
