@@ -72,13 +72,6 @@ export interface AgentSpecCR {
    */
   grantedConnectionIds?: string[];
   /**
-   * GrantedSecretIDs are the credential Secret IDs granted to this agent's
-   * egress — intent written by the api-server. These live in spec rather
-   * than a ConfigMap annotation, because they are reconciled by the
-   * controller into the credential set mounted on the gateway.
-   */
-  grantedSecretIds?: string[];
-  /**
    * Harness names the harness the agent image runs (claude-code, codex,
    * pi, bob, copilot, mock). One image serves every harness, and the agent reads
    * this as PLATFORM_HARNESS; empty leaves the image's own default.

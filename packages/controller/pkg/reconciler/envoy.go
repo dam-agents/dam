@@ -34,7 +34,6 @@ const (
 	envoyInjectionHTTP2Ann      = "agent-platform.ai/injection-http2"
 	envoyInjectionHostsAnn      = "agent-platform.ai/injection-hosts"
 	envoySecretPurposeAnn       = "agent-platform.ai/secret-purpose"
-	credentialSecretNamePrefix  = "platform-cred-"
 	envoyBootstrapVolume        = "envoy-bootstrap"
 	envoyBootstrapMount         = "/etc/envoy"
 	envoyCredentialsRoot        = "/etc/envoy/credentials"
@@ -145,7 +144,7 @@ func (c envoyHostChain) ConnectionIDs() []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(id string) {
-		if id == "" || seen[id] {
+		if seen[id] {
 			return
 		}
 		seen[id] = true
@@ -165,7 +164,7 @@ var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai"
 func (c envoyHostChain) MeteredConnectionTemplates() map[string]string {
 	out := map[string]string{}
 	add := func(id, templateID string) {
-		if id != "" && slices.Contains(meteredProviderTemplates, templateID) {
+		if slices.Contains(meteredProviderTemplates, templateID) {
 			out[id] = templateID
 		}
 	}
@@ -312,72 +311,54 @@ const envoySecretTypeAllowOnly = "allow-only"
 
 const CredentialSecretSelector = envoyManagedByLabel + "=api-server"
 
-func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, agent, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
+func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, agent, owner string, grantedConnectionIDs []string) ([]corev1.Secret, error) {
 	all, err := listOwnerCredentialSecrets(ctx, client, namespace, owner)
 	if err != nil {
 		return nil, err
 	}
-	return filterByGrants(agent, all, grantedSecretIDs, grantedConnectionIDs), nil
-}
-
-type grantKind string
-
-const (
-	grantKindSecrets     grantKind = "granted-secret-ids"
-	grantKindConnections grantKind = "granted-connection-ids"
-)
-
-type unresolvedGrantKey struct {
-	agent string
-	kind  grantKind
+	return filterByGrants(agent, all, grantedConnectionIDs), nil
 }
 
 type unresolvedGrantReporter struct {
 	mu       sync.Mutex
-	reported map[unresolvedGrantKey][]string
+	reported map[string][]string
 }
 
 var unresolvedGrants = &unresolvedGrantReporter{}
 
-func (u *unresolvedGrantReporter) takeChange(key unresolvedGrantKey, unresolved []string) bool {
+func (u *unresolvedGrantReporter) takeChange(agent string, unresolved []string) bool {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if len(unresolved) == 0 {
-		delete(u.reported, key)
+		delete(u.reported, agent)
 		return false
 	}
-	if slices.Equal(u.reported[key], unresolved) {
+	if slices.Equal(u.reported[agent], unresolved) {
 		return false
 	}
 	if u.reported == nil {
-		u.reported = map[unresolvedGrantKey][]string{}
+		u.reported = map[string][]string{}
 	}
-	u.reported[key] = slices.Clone(unresolved)
+	u.reported[agent] = slices.Clone(unresolved)
 	return true
 }
 
 func (u *unresolvedGrantReporter) forget(agent string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	for key := range u.reported {
-		if key.agent == agent {
-			delete(u.reported, key)
-		}
-	}
+	delete(u.reported, agent)
 }
 
-func (u *unresolvedGrantReporter) warnOnChange(agent string, kind grantKind, message string, unresolved []string) {
-	if !u.takeChange(unresolvedGrantKey{agent: agent, kind: kind}, unresolved) {
+func (u *unresolvedGrantReporter) warnOnChange(agent string, unresolved []string) {
+	if !u.takeChange(agent, unresolved) {
 		return
 	}
-	slog.Warn(message, "agent", agent, "unresolvedIds", unresolved)
+	slog.Warn("granted-connection-ids contains ids with no matching owner Secret; entries contribute nothing",
+		"agent", agent, "unresolvedIds", unresolved)
 }
 
-func filterByGrants(agent string, secrets []corev1.Secret, grantedSecretIDs, grantedConnectionIDs []string) []corev1.Secret {
-	grantedSecretIds := toGrantSet(grantedSecretIDs)
+func filterByGrants(agent string, secrets []corev1.Secret, grantedConnectionIDs []string) []corev1.Secret {
 	grantedConnIds := toGrantSet(grantedConnectionIDs)
-
-	resolvedSecrets := map[string]bool{}
 	resolvedConns := map[string]bool{}
 
 	out := secrets[:0:0]
@@ -391,21 +372,10 @@ func filterByGrants(agent string, secrets []corev1.Secret, grantedSecretIDs, gra
 				resolvedConns[connKey] = true
 				out = append(out, s)
 			}
-		default:
-			id := strings.TrimPrefix(s.Name, credentialSecretNamePrefix)
-			if grantedSecretIds[id] {
-				resolvedSecrets[id] = true
-				out = append(out, s)
-			}
 		}
 	}
 
-	unresolvedGrants.warnOnChange(agent, grantKindSecrets,
-		"granted-secret-ids contains ids with no matching owner Secret; entries contribute nothing",
-		unresolvedKeys(grantedSecretIds, resolvedSecrets))
-	unresolvedGrants.warnOnChange(agent, grantKindConnections,
-		"granted-connection-ids contains ids with no matching owner Secret; entries contribute nothing",
-		unresolvedKeys(grantedConnIds, resolvedConns))
+	unresolvedGrants.warnOnChange(agent, unresolvedKeys(grantedConnIds, resolvedConns))
 
 	return out
 }

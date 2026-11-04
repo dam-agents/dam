@@ -43,7 +43,6 @@ export interface AbsorbPreview {
     normalized: Record<string, number>;
   };
   connectionGrants: { onlyInResource: Refusal[]; onlyInDatabase: Refusal[] };
-  grantedSecretIds: Refusal[];
 }
 
 export { type AgentStoreDefaults } from "./rows.js";
@@ -219,18 +218,6 @@ export function previewAgentStore(input: {
       normalized: counted(mappedBudgets, "normalized"),
     },
     connectionGrants: { onlyInResource, onlyInDatabase },
-    grantedSecretIds: input.agents
-      .filter((cr) =>
-        Array.isArray((cr.spec as Spec | undefined)?.grantedSecretIds),
-      )
-      .filter(
-        (cr) => ((cr.spec as Spec).grantedSecretIds as unknown[]).length > 0,
-      )
-      .map((cr) => ({
-        id: cr.metadata?.name ?? "",
-        reason:
-          "the spec grants secrets by id, which the store has no column for: the credentials would stop being injected",
-      })),
   };
 }
 
@@ -258,8 +245,6 @@ export function blockingRefusals(preview: AbsorbPreview): string[] {
     lines.push(
       `Agent ${refusal.id}: connection grants disagree with the database (${refusal.reason}); run the grant fan-out repair first`,
     );
-  for (const refusal of preview.grantedSecretIds)
-    lines.push(`Agent ${refusal.id}: ${refusal.reason}`);
   return lines;
 }
 

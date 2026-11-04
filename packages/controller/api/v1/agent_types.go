@@ -117,12 +117,6 @@ type AgentSpec struct {
 	// +optional
 	ImagePullSecretRef string `json:"imagePullSecretRef,omitempty"`
 
-	// GrantedSecretIDs are the credential Secret IDs granted to this agent's
-	// egress — intent written by the api-server. These live in spec rather
-	// than a ConfigMap annotation, because they are reconciled by the
-	// controller into the credential set mounted on the gateway.
-	// +optional
-	GrantedSecretIDs []string `json:"grantedSecretIds,omitempty"`
 	// GrantedConnectionIDs are the connection IDs granted to this agent.
 	// +optional
 	GrantedConnectionIDs []string `json:"grantedConnectionIds,omitempty"`
@@ -454,7 +448,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=20
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=21
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

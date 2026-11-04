@@ -50,31 +50,12 @@ func names(in []corev1.Secret) []string {
 	return out
 }
 
-func TestFilterByGrants_AbsentAnnotationsGrantNothing(t *testing.T) {
+func TestFilterByGrants_AbsentGrantsGrantNothing(t *testing.T) {
 	secrets := []corev1.Secret{
-		ownerSecret("platform-cred-aaa", "anthropic", ""),
-		ownerSecret("platform-cred-bbb", "generic", ""),
 		ownerSecret("platform-conn-github", "connection", "github"),
+		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	got := filterByGrants("agent-absent-annotations", secrets, nil, nil)
-	assert.Empty(t, got)
-}
-
-func TestFilterByGrants_SelectiveSecretsDropUngranted(t *testing.T) {
-	secrets := []corev1.Secret{
-		ownerSecret("platform-cred-aaa", "anthropic", ""),
-		ownerSecret("platform-cred-bbb", "generic", ""),
-	}
-	got := filterByGrants("agent-selective-secrets", secrets, []string{"aaa"}, nil)
-	assert.Equal(t, []string{"platform-cred-aaa"}, names(got))
-}
-
-func TestFilterByGrants_EmptySecretListGrantsNothing(t *testing.T) {
-	secrets := []corev1.Secret{
-		ownerSecret("platform-cred-aaa", "anthropic", ""),
-		ownerSecret("platform-cred-bbb", "generic", ""),
-	}
-	got := filterByGrants("agent-empty-secret-list", secrets, []string{}, nil)
+	got := filterByGrants("agent-absent-grants", secrets, nil)
 	assert.Empty(t, got)
 }
 
@@ -83,43 +64,39 @@ func TestFilterByGrants_ConnectionGrantsByList(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	got := filterByGrants("agent-connection-grants", secrets, nil, []string{"github"})
+	got := filterByGrants("agent-connection-grants", secrets, []string{"github"})
 	assert.Equal(t, []string{"platform-conn-github"}, names(got))
 
-	got = filterByGrants("agent-connection-grants", secrets, nil, []string{})
+	got = filterByGrants("agent-connection-grants", secrets, []string{})
 	assert.Empty(t, got)
+}
+
+// TEST_SCENARIO: an owner Secret of no Connection carries no grant an agent can name, so no grant list reaches it, whatever id it would have had.
+func TestFilterByGrants_SecretOfNoConnectionIsNeverGranted(t *testing.T) {
+	secrets := []corev1.Secret{
+		ownerSecret("platform-cred-aaa", "generic", ""),
+		ownerSecret("platform-conn-github", "connection", "github"),
+	}
+	got := filterByGrants("agent-no-bare-secret", secrets, []string{"aaa", "platform-cred-aaa", "github"})
+	assert.Equal(t, []string{"platform-conn-github"}, names(got))
 }
 
 func TestFilterByGrants_AllowOnlyPassesThroughUngranted(t *testing.T) {
 	secrets := []corev1.Secret{
 		ownerSecret("platform-allow-abc12345-api-example-com", envoySecretTypeAllowOnly, ""),
-		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-conn-github", "connection", "github"),
 	}
 
-	got := filterByGrants("agent-allow-only", secrets, nil, nil)
+	got := filterByGrants("agent-allow-only", secrets, nil)
 	assert.Equal(t, []string{"platform-allow-abc12345-api-example-com"}, names(got))
 
-	got = filterByGrants("agent-allow-only", secrets, []string{"aaa"}, []string{"github"})
+	got = filterByGrants("agent-allow-only", secrets, []string{"github"})
 	assert.ElementsMatch(t,
-		[]string{"platform-allow-abc12345-api-example-com", "platform-cred-aaa", "platform-conn-github"},
+		[]string{"platform-allow-abc12345-api-example-com", "platform-conn-github"},
 		names(got))
 }
 
-func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
-	secrets := []corev1.Secret{
-		ownerSecret("platform-cred-aaa", "anthropic", ""),
-		ownerSecret("platform-cred-bbb", "generic", ""),
-		ownerSecret("platform-conn-github", "connection", "github"),
-		ownerSecret("platform-conn-slack", "connection", "slack"),
-	}
-	got := filterByGrants("agent-independent-axes", secrets, []string{"aaa"}, []string{"slack"})
-	assert.ElementsMatch(t, []string{"platform-cred-aaa", "platform-conn-slack"}, names(got))
-}
-
 const unresolvedConnectionMessage = "granted-connection-ids contains ids with no matching owner Secret; entries contribute nothing"
-
-const unresolvedSecretMessage = "granted-secret-ids contains ids with no matching owner Secret; entries contribute nothing"
 
 // TEST_SCENARIO: the owner Secret behind a granted connection is gone and nothing in the cluster changes. Every reconcile recomputes the same unresolved id, so the controller must report it on the first pass only — the log stays readable while the grant stays broken.
 func TestFilterByGrants_UnresolvedGrantWarnsOnceWhileUnchanged(t *testing.T) {
@@ -127,7 +104,7 @@ func TestFilterByGrants_UnresolvedGrantWarnsOnceWhileUnchanged(t *testing.T) {
 	secrets := []corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}
 
 	for range 5 {
-		got := filterByGrants("agent-steady", secrets, nil, []string{"github", "conn-gone"})
+		got := filterByGrants("agent-steady", secrets, []string{"github", "conn-gone"})
 		assert.Equal(t, []string{"platform-conn-github"}, names(got))
 	}
 
@@ -141,9 +118,9 @@ func TestFilterByGrants_UnresolvedGrantWarnsOnceWhileUnchanged(t *testing.T) {
 func TestFilterByGrants_ChangedUnresolvedSetWarnsAgain(t *testing.T) {
 	captured := captureLog(t)
 
-	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-growing", nil, nil, []string{"conn-gone", "conn-also-gone"})
+	filterByGrants("agent-growing", nil, []string{"conn-gone"})
+	filterByGrants("agent-growing", nil, []string{"conn-gone"})
+	filterByGrants("agent-growing", nil, []string{"conn-gone", "conn-also-gone"})
 
 	require.Len(t, captured.all(), 2)
 	assert.Equal(t, []string{"conn-gone"}, logAttr(captured.all()[0], "unresolvedIds").Any().([]string))
@@ -155,9 +132,9 @@ func TestFilterByGrants_ResolvedThenRecurringGrantWarnsAgain(t *testing.T) {
 	captured := captureLog(t)
 	restored := []corev1.Secret{ownerSecret("platform-conn-restored", "connection", "conn-flapping")}
 
-	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"})
-	filterByGrants("agent-flapping", restored, nil, []string{"conn-flapping"})
-	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"})
+	filterByGrants("agent-flapping", nil, []string{"conn-flapping"})
+	filterByGrants("agent-flapping", restored, []string{"conn-flapping"})
+	filterByGrants("agent-flapping", nil, []string{"conn-flapping"})
 
 	require.Len(t, captured.all(), 2)
 	assert.Equal(t, []string{"conn-flapping"}, logAttr(captured.all()[0], "unresolvedIds").Any().([]string))
@@ -168,36 +145,23 @@ func TestFilterByGrants_ResolvedThenRecurringGrantWarnsAgain(t *testing.T) {
 func TestFilterByGrants_EachAgentGetsItsOwnFirstReport(t *testing.T) {
 	captured := captureLog(t)
 
-	filterByGrants("agent-one", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-one", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-two", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-two", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-one", nil, []string{"conn-gone"})
+	filterByGrants("agent-one", nil, []string{"conn-gone"})
+	filterByGrants("agent-two", nil, []string{"conn-gone"})
+	filterByGrants("agent-two", nil, []string{"conn-gone"})
 
 	require.Len(t, captured.all(), 2)
 	assert.Equal(t, "agent-one", logAttr(captured.all()[0], "agent").String())
 	assert.Equal(t, "agent-two", logAttr(captured.all()[1], "agent").String())
 }
 
-// TEST_SCENARIO: one agent has an unresolvable secret grant and an unresolvable connection grant at once. The two grant kinds are remembered apart, so both are reported once and neither masks the other.
-func TestFilterByGrants_BothGrantKindsReportIndependently(t *testing.T) {
-	captured := captureLog(t)
-
-	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"})
-	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"})
-
-	require.Len(t, captured.all(), 2)
-	assert.ElementsMatch(t,
-		[]string{unresolvedSecretMessage, unresolvedConnectionMessage},
-		captured.messages())
-}
-
 // TEST_SCENARIO: an Agent is deleted while one of its grants is still unresolvable. Deletion forgets what was reported for that agent, so the memory does not grow for agents that no longer exist, and an agent recreated under the same name reports again.
 func TestFilterByGrants_DeletingAgentForgetsWhatWasReported(t *testing.T) {
 	captured := captureLog(t)
 
-	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-deleted", nil, []string{"conn-gone"})
 	unresolvedGrants.forget("agent-deleted")
-	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-deleted", nil, []string{"conn-gone"})
 
 	require.Len(t, captured.all(), 2)
 }
@@ -335,10 +299,11 @@ func credentialedChain(secretName, host string) envoyHostChain {
 		UpstreamCluster: "upstream_" + secretName,
 		Host:            host,
 		Credentials: []envoyCredential{{
-			SecretName: secretName,
-			HeaderName: "Authorization",
-			VolumeName: "cred-" + secretName,
-			SDSFileKey: sdsFileKeyForHost(host),
+			ConnectionID: secretName,
+			SecretName:   secretName,
+			HeaderName:   "Authorization",
+			VolumeName:   "cred-" + secretName,
+			SDSFileKey:   sdsFileKeyForHost(host),
 		}},
 	}
 }
@@ -357,6 +322,7 @@ func queryParamChain(secretName, host, headerName, queryParamName string) envoyH
 		UpstreamCluster: "upstream_" + secretName,
 		Host:            host,
 		Credentials: []envoyCredential{{
+			ConnectionID:   secretName,
 			SecretName:     secretName,
 			HeaderName:     headerName,
 			QueryParamName: queryParamName,
@@ -373,12 +339,14 @@ func twoCredentialChain(firstName, secondName, host string) envoyHostChain {
 		Host:            host,
 		Credentials: []envoyCredential{
 			{
-				SecretName: firstName,
-				HeaderName: "Authorization",
-				VolumeName: "cred-" + firstName,
-				SDSFileKey: sdsFileKeyForHost(host),
+				ConnectionID: firstName,
+				SecretName:   firstName,
+				HeaderName:   "Authorization",
+				VolumeName:   "cred-" + firstName,
+				SDSFileKey:   sdsFileKeyForHost(host),
 			},
 			{
+				ConnectionID:   secondName,
 				SecretName:     secondName,
 				HeaderName:     "X-Internal-Query-" + secondName,
 				QueryParamName: "key",
@@ -910,14 +878,18 @@ func TestBuildChainForwardRoutes_RewriteRoutePrecedesCatchAll(t *testing.T) {
 	c.PathRewrites = []envoyPathRewrite{{Prefix: "/inference/v1/", Replacement: "/v1/"}}
 
 	routes := buildChainForwardRoutes(c)
-	require.Len(t, routes, 2)
+	require.Equal(t, []string{
+		"/__platform_conn/platform-conn-litellm/inference/v1/", "/__platform_conn/platform-conn-litellm/",
+		"/inference/v1/@platform-conn-litellm", "/@platform-conn-litellm",
+		"/inference/v1/", "/",
+	}, routeMatchPrefixes(routes))
 
-	rewrite := routes[0].(ev)
+	rewrite := routes[4].(ev)
 	assert.Equal(t, "/inference/v1/", rewrite["match"].(ev)["prefix"])
 	assert.Equal(t, "/v1/", rewrite["route"].(ev)["prefix_rewrite"])
 	assert.Equal(t, "upstream_platform-conn-litellm", rewrite["route"].(ev)["cluster"])
 
-	catchAll := routes[1].(ev)
+	catchAll := routes[5].(ev)
 	assert.Equal(t, "/", catchAll["match"].(ev)["prefix"])
 	assert.NotContains(t, catchAll["route"], "prefix_rewrite")
 }
@@ -973,7 +945,7 @@ func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
 
 func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
-		queryParamChain("platform-cred-bob", "prod.ibm-bob-staging.cloud.ibm.com", "X-Bobshell-Cred", "key"),
+		queryParamChain("platform-conn-bob", "prod.ibm-bob-staging.cloud.ibm.com", "X-Bobshell-Cred", "key"),
 	}, false)
 	require.NoError(t, err)
 
@@ -985,12 +957,13 @@ func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T)
 	assert.Contains(t, got, "cred = urlencode(cred)")
 }
 
-func TestRenderEnvoyBootstrap_HeaderOnlyChainSkipsLua(t *testing.T) {
+func TestRenderEnvoyBootstrap_HeaderOnlyChainRendersNoQueryParamStep(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
 	}, false)
 	require.NoError(t, err)
-	assert.NotContains(t, got, luaFilterType)
+	assert.Equal(t, 1, strings.Count(got, luaFilterType), "the connection address step is the chain's only Lua")
+	assert.NotContains(t, got, "local function urlencode")
 	assert.Contains(t, got, "header: Authorization")
 }
 
@@ -998,7 +971,7 @@ func TestRenderEnvoyBootstrap_HostileValuesEscapedNotInjected(t *testing.T) {
 	const hostile = "evil.example.com\"]}\ninjected_key: pwned #"
 	const hostileHeader = "X-Evil\": pwned\n"
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
-		queryParamChain("platform-cred-x", hostile, hostileHeader, "key"),
+		queryParamChain("platform-conn-x", hostile, hostileHeader, "key"),
 	}, false)
 	require.NoError(t, err)
 
@@ -1020,22 +993,22 @@ func TestRenderEnvoyBootstrap_HostileValuesEscapedNotInjected(t *testing.T) {
 
 func TestRenderEnvoyBootstrap_TwoCredentialsOnSameHostStackInOneChain(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
-		twoCredentialChain("platform-cred-header", "platform-cred-query", "prod.ibm-bob-staging.cloud.ibm.com"),
+		twoCredentialChain("platform-conn-header", "platform-conn-query", "prod.ibm-bob-staging.cloud.ibm.com"),
 	}, false)
 	require.NoError(t, err)
 
 	injectorHeaders := strings.Count(got, "header: Authorization")
 	assert.Equal(t, 1, injectorHeaders, "header-injection credential renders one Authorization injector")
-	assert.Contains(t, got, "header: X-Internal-Query-platform-cred-query")
+	assert.Contains(t, got, "header: X-Internal-Query-platform-conn-query")
 
 	doc := mustParseBootstrap(t, got)
-	assert.NotNil(t, filterChainNamed(t, doc, "terminate_chain_platform-cred-header"))
+	assert.NotNil(t, filterChainNamed(t, doc, "terminate_chain_platform-conn-header"))
 	assert.Len(t, internalFilterChains(t, doc), 2, "one terminating chain + the L4 catch-all")
 
 	luaCount := strings.Count(got, luaFilterType)
-	assert.Equal(t, 1, luaCount)
+	assert.Equal(t, 2, luaCount, "the connection address step and the query-param step")
 
-	assert.Equal(t, 1, countClustersWithPrefix(t, doc, "upstream_platform-cred-header"))
+	assert.Equal(t, 1, countClustersWithPrefix(t, doc, "upstream_platform-conn-header"))
 }
 
 func TestChainsFromSecrets_MergesSameHostIntoOneChain(t *testing.T) {
@@ -1186,10 +1159,10 @@ func TestChainsFromSecrets_AllowOnlyAndCredentialedOnSameHost(t *testing.T) {
 }
 
 func TestEnvoySecretsRev_QueryParamAnnotationRollsExistingPods(t *testing.T) {
-	plain := ownerSecret("platform-cred-bob", "generic", "")
+	plain := ownerSecret("platform-conn-bob", "connection", "bob")
 	plain.Annotations[envoyHeaderNameAnn] = "X-Bobshell-Credential"
 
-	withParam := ownerSecret("platform-cred-bob", "generic", "")
+	withParam := ownerSecret("platform-conn-bob", "connection", "bob")
 	withParam.Annotations[envoyHeaderNameAnn] = "X-Bobshell-Credential"
 	withParam.Annotations[envoyQueryParamAnn] = "key"
 
@@ -1249,7 +1222,7 @@ func http2CredentialedChain(secretName, host string) envoyHostChain {
 
 func TestRenderEnvoyBootstrap_HTTP2ChainAdvertisesH2AndMirrorsUpstream(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
-		http2CredentialedChain("platform-cred-modal-id", "api.modal.com"),
+		http2CredentialedChain("platform-conn-modal-id", "api.modal.com"),
 	}, false)
 	require.NoError(t, err)
 
@@ -1535,7 +1508,7 @@ func TestRenderEnvoyBootstrap_TracingOnHeaderCredentialChains(t *testing.T) {
 
 func TestRenderEnvoyBootstrap_TracingNotOnQueryParamChains(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), []envoyHostChain{
-		queryParamChain("platform-cred-q", "api.example.com", "X-Key", "key"),
+		queryParamChain("platform-conn-q", "api.example.com", "X-Key", "key"),
 	}, false)
 	require.NoError(t, err)
 	assert.Equal(t, 1, strings.Count(got, "OpenTelemetryConfig"),
@@ -1544,7 +1517,7 @@ func TestRenderEnvoyBootstrap_TracingNotOnQueryParamChains(t *testing.T) {
 
 func TestRenderEnvoyBootstrap_AccessLogNeverLogsCredentials(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), []envoyHostChain{
-		queryParamChain("platform-cred-q", "api.example.com", "X-Key", "key"),
+		queryParamChain("platform-conn-q", "api.example.com", "X-Key", "key"),
 	}, false)
 	require.NoError(t, err)
 	assert.Contains(t, got, "%REQ_WITHOUT_QUERY(:PATH)%")
@@ -1791,8 +1764,8 @@ func TestRenderEnvoyBootstrap_UpgradesChainTunnelsWebsocketAndSpdy(t *testing.T)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "upgrade_type: spdy/3.1")
-	assert.Equal(t, 2, strings.Count(got, "idle_timeout: 14400s"),
-		"idle_timeout must cover both the inner chain and the outer CONNECT tunnel")
+	assert.Equal(t, 4, strings.Count(got, "idle_timeout: 14400s"),
+		"idle_timeout must cover the chain's three routes — addressed by path, addressed by header, unaddressed — and the outer CONNECT tunnel")
 }
 
 func TestRenderEnvoyBootstrap_NonUpgradesChainOmitsTunneling(t *testing.T) {

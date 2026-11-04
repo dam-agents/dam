@@ -400,11 +400,6 @@ export function rowsFromResource(
   if (Object.keys(limits.requests ?? {}).length > 0)
     dropped.push("spec.resources.requests");
   if (
-    Array.isArray(spec.grantedSecretIds) &&
-    (spec.grantedSecretIds as unknown[]).length > 0
-  )
-    dropped.push("spec.grantedSecretIds");
-  if (
     Object.keys(annotations).some(
       (key) =>
         key.startsWith("agent-platform.ai/") && !KNOWN_ANNOTATIONS.has(key),

@@ -20,7 +20,6 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
   whisper: true,
-  grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
   disabled: false,

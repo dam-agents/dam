@@ -36,7 +36,6 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     hibernationTimeoutMin: agent.effectiveHibernationTimeoutMin,
     requireConnectionAddress: agent.spec.requireConnectionAddress === true,
     whisper: agent.spec.whispersOff !== true,
-    grantedSecretIds: agent.spec.grantedSecretIds ?? [],
     grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
     state: agent.state,
     error: agent.error,

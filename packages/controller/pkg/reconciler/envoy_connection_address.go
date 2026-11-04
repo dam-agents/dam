@@ -23,14 +23,11 @@ func connectionAddressHTTPFilter(p bootstrapParams, c envoyHostChain) ev {
 }
 
 func (c envoyHostChain) RivalsOf(cred envoyCredential) []string {
-	if cred.ConnectionID == "" {
-		return nil
-	}
 	scope := injectionScope(cred.PathPattern)
 	seen := map[string]bool{}
 	var out []string
 	for _, other := range c.Credentials {
-		if other.ConnectionID == "" || other.ConnectionID == cred.ConnectionID || seen[other.ConnectionID] {
+		if other.ConnectionID == cred.ConnectionID || seen[other.ConnectionID] {
 			continue
 		}
 		if !strings.EqualFold(other.HeaderName, cred.HeaderName) {
@@ -113,19 +110,19 @@ func buildConnectionAddressRoutes(c envoyHostChain, connectionID string) []any {
 func claimedHeaderNames(c envoyHostChain) []string {
 	seen := map[string]bool{}
 	var out []string
-	claim := func(connectionID, header string) {
+	claim := func(header string) {
 		name := strings.ToLower(header)
-		if connectionID == "" || name == "" || seen[name] {
+		if name == "" || seen[name] {
 			return
 		}
 		seen[name] = true
 		out = append(out, name)
 	}
 	for _, cred := range c.Credentials {
-		claim(cred.ConnectionID, cred.HeaderName)
+		claim(cred.HeaderName)
 	}
-	for _, signer := range c.Signers {
-		claim(signer.ConnectionID, "Authorization")
+	if len(c.Signers) > 0 {
+		claim("Authorization")
 	}
 	sort.Strings(out)
 	return out
@@ -135,7 +132,7 @@ func claimedQueryParams(c envoyHostChain) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, cred := range c.Credentials {
-		if cred.ConnectionID == "" || cred.QueryParamName == "" || seen[cred.QueryParamName] {
+		if cred.QueryParamName == "" || seen[cred.QueryParamName] {
 			continue
 		}
 		seen[cred.QueryParamName] = true

@@ -260,14 +260,6 @@ func TestBuildChainForwardRoutes_ContestedHostRefusesUnaddressedRewritePaths(t *
 		"an unaddressed rewrite route would stack both injectors and serve the loser's account")
 }
 
-func TestBuildChainForwardRoutes_UnlabelledCredentialKeepsTodaysSingleRoute(t *testing.T) {
-	c := credentialedChain("platform-cred-legacy", "api.example.com")
-
-	routes := buildChainForwardRoutes(c)
-	assert.Equal(t, []string{"/"}, routeMatchPrefixes(routes))
-	assert.NotContains(t, routes[0].(ev), "direct_response")
-}
-
 func TestRenderEnvoyBootstrap_TwoConnectionsOnOneHostRenderDistinctInjectors(t *testing.T) {
 	a := connectionCredential("conn-aaa", "platform-conn-aaa", "Authorization", "mcp.slack.com")
 	b := connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "mcp.slack.com")
@@ -468,29 +460,17 @@ func TestLuaConnectionAddressScript_RefusesUnaddressedContestedScopesItself(t *t
 	assert.Contains(t, script, `local PATH_SEGMENT = "__platform_conn"`)
 }
 
-func TestRenderEnvoyBootstrap_UnlabelledChainReadsNoAddress(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
-		credentialedChain("platform-cred-legacy", "api.example.com"),
-	}, false)
-	require.NoError(t, err)
-	assert.NotContains(t, got, "connection_address")
-}
-
 func TestLuaConnectionAddressScript_ListsEveryClaimedHeaderAndParam(t *testing.T) {
 	queryParam := connectionCredential("conn-bob", "platform-conn-bob", "X-Bobshell-Cred", "bob.example.com")
 	queryParam.QueryParamName = "key"
-	legacy := envoyCredential{SecretName: "platform-cred-legacy", HeaderName: "X-Legacy"}
 	c := connectionChain("bob.example.com",
 		connectionCredential("conn-bob", "platform-conn-bob", "Authorization", "bob.example.com"),
 		queryParam,
-		legacy,
 	)
 
 	script := luaConnectionAddressScript(c)
 	assert.Contains(t, script, `local HEADERS = {"authorization", "x-bobshell-cred"}`)
 	assert.Contains(t, script, `local PARAMS = {"key"}`)
-	assert.NotContains(t, script, "x-legacy",
-		"a credential no connection owns has no address to read")
 }
 
 func requiringAddress(chains ...envoyHostChain) []envoyHostChain {
@@ -565,20 +545,6 @@ func TestRenderEnvoyBootstrap_RequireAddressGatesTheQueryParamStep(t *testing.T)
 	}
 	require.NotNil(t, queryStep)
 	assertInjectsOnlyWhenAddressed(t, queryStep, "conn-q")
-}
-
-func TestRenderEnvoyBootstrap_RequireAddressLeavesCredentialsWithoutAConnectionPlain(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, requiringAddress(
-		credentialedChain("platform-conn-github", "api.github.com"),
-	), false)
-	require.NoError(t, err)
-
-	for _, f := range injectorFilters(httpFiltersForHost(t, mustParseBootstrap(t, got), "api.github.com")) {
-		assert.Equal(t,
-			"type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
-			f["typed_config"].(map[string]any)["@type"],
-			"a credential with no connection has no address, so it injects as before")
-	}
 }
 
 func TestEnvoyGatewayRev_RollsTheGatewayWhenRequireAddressToggles(t *testing.T) {

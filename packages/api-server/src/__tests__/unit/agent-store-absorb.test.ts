@@ -157,16 +157,13 @@ describe("the marks a switch carries", () => {
 });
 
 describe("what stops an absorb", () => {
-  // TEST_SCENARIO: A record that would stop existing as the platform reads it blocks the switch and is named; the two that would become no row anyway only get reported. A grant that disagrees, or a secret granted by id the store cannot hold, blocks too.
-  it("names every finding that would lose a record or a credential", () => {
+  // TEST_SCENARIO: A record that would stop existing as the platform reads it blocks the switch and is named; the two that would become no row anyway only get reported. A grant that disagrees blocks too.
+  it("names every finding that would lose a record or a grant", () => {
     const preview = previewAgentStore({
       agents: [
         agent("agent-live"),
         agent("agent-deleting", {
           metadata: { deletionTimestamp: AT } as KubeObject["metadata"],
-        }),
-        agent("agent-secret", {
-          spec: { grantedSecretIds: ["secret-1"] },
         }),
         agent("agent-granted", {
           spec: { grantedConnectionIds: ["only-on-resource"] },
@@ -181,7 +178,6 @@ describe("what stops an absorb", () => {
       switchedAt: AT,
     });
     const lines = blockingRefusals(preview);
-    expect(lines.join("\n")).toMatch(/agent-secret/);
     expect(lines.join("\n")).toMatch(/agent-granted/);
     expect(lines.join("\n")).not.toMatch(/agent-deleting/);
     expect(

@@ -13,7 +13,7 @@ import (
 )
 
 func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-conn-aaa", "api.example.com")}
 	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil, false)
 
 	require.NotNil(t, ss)
@@ -41,7 +41,7 @@ func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 	for _, m := range envoy.VolumeMounts {
 		mountPaths[m.Name] = m.MountPath
 	}
-	assert.Equal(t, "/etc/envoy/credentials/cred-platform-cred-aaa", mountPaths["cred-platform-cred-aaa"])
+	assert.Equal(t, "/etc/envoy/credentials/cred-platform-conn-aaa", mountPaths["cred-platform-conn-aaa"])
 	assert.Equal(t, "/etc/envoy/tls", mountPaths["envoy-tls"])
 	assert.Equal(t, "/etc/envoy", mountPaths["envoy-bootstrap"])
 }
@@ -104,9 +104,9 @@ func TestRefreshGatewayCredentials_AnnotatesOnRotationOnly(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "a-gateway-0", Namespace: testConfig.Namespace}})
 	r := NewAgentReconciler(client, nil, testConfig)
-	cred := credSecret("platform-cred-aaa", "api.example.com")
+	cred := credSecret("platform-conn-aaa", "api.example.com")
 	cred.ResourceVersion = "1"
-	allowOnly := credSecret("platform-cred-bbb", "allow.example.com")
+	allowOnly := credSecret("platform-conn-bbb", "allow.example.com")
 	allowOnly.Labels[envoySecretTypeLabel] = envoySecretTypeAllowOnly
 	allowOnly.ResourceVersion = "1"
 	now := time.Date(2026, 10, 19, 18, 4, 12, 0, time.UTC)
@@ -139,7 +139,7 @@ func TestRefreshGatewayCredentials_SyncsTwiceForAStaleKubeletCopy(t *testing.T) 
 	ctx := context.Background()
 	client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "a-gateway-0", Namespace: testConfig.Namespace}})
 	r := NewAgentReconciler(client, nil, testConfig)
-	cred := credSecret("platform-cred-aaa", "api.example.com")
+	cred := credSecret("platform-conn-aaa", "api.example.com")
 	cred.ResourceVersion = "7"
 	now := time.Date(2026, 10, 19, 18, 4, 12, 0, time.UTC)
 	refresh := func(at time.Time) time.Duration {

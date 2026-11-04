@@ -20,7 +20,6 @@ const agent: AgentView = {
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
   whisper: true,
-  grantedSecretIds: [],
   grantedConnectionIds: ["provider"],
   stopRequested: false,
   disabled: false,

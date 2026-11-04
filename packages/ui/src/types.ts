@@ -169,7 +169,6 @@ export interface AgentView {
   hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
   whisper: boolean;
-  grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;
   error?: string;

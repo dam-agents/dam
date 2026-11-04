@@ -68,8 +68,11 @@ func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) 
 		}
 		if first["name"] == "envoy.filters.network.http_connection_manager" {
 			httpFilters := first["typed_config"].(map[string]any)["http_filters"].([]any)
+			if httpFilters[0].(map[string]any)["name"] == "connection_address" {
+				httpFilters = httpFilters[1:]
+			}
 			assert.Equal(t, "envoy.filters.http.ext_authz", httpFilters[0].(map[string]any)["name"],
-				"a terminating chain checks egress before injecting or dialing")
+				"a terminating chain checks egress before injecting or dialing; only reading the connection address comes first")
 			continue
 		}
 		assert.Equal(t, "envoy.filters.network.ext_authz", first["name"],

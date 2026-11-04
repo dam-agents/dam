@@ -24,7 +24,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
   whisper: true,
-  grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
   disabled: false,

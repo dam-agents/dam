@@ -26,9 +26,9 @@ func TestBuildEnvoyLeafCertificate_L7HostsExtendSANs(t *testing.T) {
 
 func TestBuildEnvoyLeafCertificate_DedupesAndSortsHosts(t *testing.T) {
 	secrets := []corev1.Secret{
-		credSecret("platform-cred-bbb", "b.example.com"),
-		credSecret("platform-cred-aaa", "a.example.com"),
-		credSecret("platform-cred-dup", "a.example.com"),
+		credSecret("platform-conn-bbb", "b.example.com"),
+		credSecret("platform-conn-aaa", "a.example.com"),
+		credSecret("platform-conn-dup", "a.example.com"),
 	}
 	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NotNil(t, cert)
@@ -52,8 +52,8 @@ func TestBuildEnvoyLeafCertificate_TelemetryHostDedupedWithChainHost(t *testing.
 	cfg := *testConfig
 	cfg.TelemetryCollectorHost = "a.example.com"
 	secrets := []corev1.Secret{
-		credSecret("platform-cred-aaa", "a.example.com"),
-		credSecret("platform-cred-bbb", "b.example.com"),
+		credSecret("platform-conn-aaa", "a.example.com"),
+		credSecret("platform-conn-bbb", "b.example.com"),
 	}
 	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NotNil(t, cert)
@@ -63,7 +63,7 @@ func TestBuildEnvoyLeafCertificate_TelemetryHostDedupedWithChainHost(t *testing.
 func TestBuildEnvoyLeafCertificate_IssuerRef(t *testing.T) {
 	cfg := *testConfig
 	cfg.EnvoyMitmCAIssuer = "platform-mitm-ca-issuer"
-	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-conn-aaa", "api.example.com")}
 
 	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NotNil(t, cert)
@@ -74,7 +74,7 @@ func TestBuildEnvoyLeafCertificate_IssuerRef(t *testing.T) {
 }
 
 func TestBuildEnvoyLeafCertificate_OwnerReferences(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-conn-aaa", "api.example.com")}
 	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NotNil(t, cert)
 
@@ -89,7 +89,7 @@ func TestAppliedCertificatesRenderExactly(t *testing.T) {
 	r.config.EnvoyMitmCAIssuer = "platform-mitm-ca-issuer"
 	r.config.VMRunnerCAIssuer = "platform-vm-runner-ca-issuer"
 	ctx := context.Background()
-	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-conn-aaa", "api.example.com")}
 	require.NoError(t, r.applyCertificate(ctx, BuildEnvoyLeafCertificate("my-instance", r.config, configMapOwnerRef(testOwnerCM), secrets, nil)))
 	require.NoError(t, r.applyCertificate(ctx, r.buildRunnerCertificate(testOwner, nil)))
 

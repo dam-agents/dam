@@ -99,11 +99,6 @@ func (in *AgentSpec) DeepCopyInto(out *AgentSpec) {
 		*out = new(Backend)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.GrantedSecretIDs != nil {
-		in, out := &in.GrantedSecretIDs, &out.GrantedSecretIDs
-		*out = make([]string, len(*in))
-		copy(*out, *in)
-	}
 	if in.GrantedConnectionIDs != nil {
 		in, out := &in.GrantedConnectionIDs, &out.GrantedConnectionIDs
 		*out = make([]string, len(*in))

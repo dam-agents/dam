@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-27
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -172,7 +172,7 @@ A change to the runner pod reboots that owner's machines, so the controller roll
 ### gateway
 
 A per-agent Envoy pod paired with the agent's machine.
-Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap.
+Mounts the Secrets of the Connections granted to the agent, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap.
 Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler.
 A per-agent NetworkPolicy admits ingress to its proxy port and the machine's resolver only from the owner's VM runner ([vm-runner](vm-runner.md)).
 With `virtualization.gateway.perOwner` on, Agents share one gateway pod per owner instead, a Deployment beside the owner's runner with one listener per agent behind each agent's own gateway Service ([credential-gateway](credential-gateway.md#owner-gateway)).
@@ -274,9 +274,9 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
   A guest that answers is ready even while the runtime's start call runs on, and a guest that has answered stays ready through one missed probe — a probe is bounded to two seconds, which a guest under nested virtualization or on a busy node can take, and a readiness that flapped on each such miss would fail the deliveries riding on it — reading unready on the second consecutive miss, and revived only once quiet far longer than that.
   An Agent's restart verb and template-driven env and image changes reach the machine as a restart.
 
-| Kind    | Purpose                                                                                                                                                                                                                                                         |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Agent` | Agent definition and runtime state: image, mounts, env, secret refs, granted secret and connection IDs. The sole resource per Agent — there is no separate instance resource and no `desiredState` — running-vs-hibernated is derived from activity annotations |
+| Kind    | Purpose                                                                                                                                                                                                                                              |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Agent` | Agent definition and runtime state: image, mounts, env, secret refs, granted connection IDs. The sole resource per Agent — there is no separate instance resource and no `desiredState` — running-vs-hibernated is derived from activity annotations |
 
 Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).
 

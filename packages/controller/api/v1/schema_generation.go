@@ -53,7 +53,9 @@ const (
 	// whispers to the agent in every conversation; an older CRD would prune it.
 	// Agent gen 20: environmentOf added to AgentSpec — the Agent that owns this
 	// one as an Environment, immutable; an older CRD would prune it.
-	AgentSchemaGeneration = 20
+	// Agent gen 21: grantedSecretIds removed from AgentSpec — a credential
+	// reaches an agent only through a Connection.
+	AgentSchemaGeneration = 21
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

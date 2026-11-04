@@ -487,7 +487,7 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 		sdsFile, sdsDir := p.credentialFile(cred.VolumeName, cred.SDSFileKey)
 		rivals := c.RivalsOf(cred)
 		gate := func(filter ev, innerName string) ev { return skippedForRivals(filter, innerName, rivals) }
-		if c.RequireAddress && cred.ConnectionID != "" {
+		if c.RequireAddress {
 			gate = func(filter ev, innerName string) ev {
 				return skippedUnlessAddressed(filter, innerName, cred.ConnectionID)
 			}
@@ -769,7 +769,7 @@ func refusedBody(c envoyHostChain, scope string) string {
 	claimants := map[string]bool{}
 	var ids []string
 	for _, cred := range c.credentialsAt(scope) {
-		if cred.ConnectionID == "" || claimants[cred.ConnectionID] {
+		if claimants[cred.ConnectionID] {
 			continue
 		}
 		claimants[cred.ConnectionID] = true

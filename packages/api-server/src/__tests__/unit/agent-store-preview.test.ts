@@ -159,7 +159,6 @@ describe("agent mapping", () => {
           imagePullPolicy: "Always",
           storageClass: "fast",
           agentHome: "/home/agent",
-          grantedSecretIds: ["secret-1"],
         },
       }),
       DEFAULTS,
@@ -174,7 +173,6 @@ describe("agent mapping", () => {
         "spec.imagePullPolicy",
         "spec.storageClass",
         "spec.agentHome",
-        "spec.grantedSecretIds",
         "annotations.unknown",
       ]),
     );
