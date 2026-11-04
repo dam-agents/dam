@@ -99,6 +99,32 @@ describe("dam ping (integration)", () => {
     expect(r.stderr).toMatch(
       /warning:.*behind the server's recommended CLI 99\.0\.0/,
     );
+    expect(r.stderr).toContain("; run `dam update`");
+    expect(r.stderr).not.toContain("npm install -g");
+  });
+
+  // TEST_SCENARIO: the server runs a release candidate and recommends it while npm's latest is still the older stable, so `dam update` can never reach the recommendation; the warning has to name the exact version to install instead, as `dam version` and the command preflight do.
+  it("BehindCurrent on a prerelease recommendation: names the exact npm install", async () => {
+    fixture.setResponse({
+      body: {
+        serverVersion: "99.0.0-rc1",
+        minClientVersion: "0.0.0",
+        recommendedClientVersion: "99.0.0-rc1",
+      },
+    });
+    await configureServer(fixture.url);
+
+    const r = await runDam(["ping"], {
+      HOME: home,
+      PATH: process.env.PATH ?? "",
+    });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("ok — server 99.0.0-rc1");
+    expect(r.stderr).toContain(
+      "behind the server's recommended CLI 99.0.0-rc1",
+    );
+    expect(r.stderr).toContain("npm install -g @dam-agents/cli@99.0.0-rc1");
+    expect(r.stderr).not.toContain("; run `dam update`");
   });
 
   it("BelowFloor: error on stderr, non-zero exit, no stdout", async () => {

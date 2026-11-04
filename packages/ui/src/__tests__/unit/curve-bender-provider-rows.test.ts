@@ -75,8 +75,10 @@ vi.mock("../../modules/provider-status/api/queries.js", () => ({
 }));
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
   useProviderItems: () => ({
-    itemByType: new Map(),
-    itemByTemplateId: state.itemsByTemplate,
+    itemsByType: new Map(),
+    itemsByTemplateId: new Map(
+      [...state.itemsByTemplate].map(([k, v]) => [k, [v]]),
+    ),
     isPending: false,
   }),
 }));

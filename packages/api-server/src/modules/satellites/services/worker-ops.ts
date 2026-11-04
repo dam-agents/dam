@@ -37,38 +37,73 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
   const now = deps.now ?? (() => new Date());
 
   return {
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Registers a Satellite, or replaces what an
+     * existing one offers. A worker that has served this name before says which
+     * registration it served, and only that one is written: a name that was
+     * removed, or registered again since, has another incarnation, so the answer
+     * is that there is no such Satellite. Registering anyway would undo a
+     * removal, or take a name over from the machine that holds it, and both are
+     * the owner's decisions. A worker registering for the first time says
+     * nothing and takes the name.
+     */
     async connect(
       owner: string,
       manifest: SatelliteManifest,
       host?: string,
-    ): Promise<void> {
-      await deps.repo.upsertFromManifest(
+      resume?: string,
+    ): Promise<{ incarnation: string }> {
+      if (resume === undefined)
+        return deps.repo.upsertFromManifest(
+          owner,
+          manifest,
+          host ?? null,
+          deps.maxConcurrentCeiling,
+        );
+      const renewed = await deps.repo.renewFromManifest(
         owner,
         manifest,
         host ?? null,
         deps.maxConcurrentCeiling,
+        resume,
       );
+      if (renewed === null)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `${manifest.name} is no longer the registration this worker served`,
+        });
+      return renewed;
     },
 
     async claim(owner: string, input: ClaimInput): Promise<WorkItem[]> {
-      const satellite = await deps.repo.get(owner, input.satellite);
-      if (satellite === null)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "unknown satellite",
-        });
       const deadline = now().getTime() + (input.waitMs ?? 0);
 
-      if (satellite.draining)
-        await deps.repo.setDraining(owner, input.satellite, false);
-
       for (;;) {
-        await deps.repo.touch(owner, input.satellite);
+        const satellite = await deps.repo.get(owner, input.satellite);
+        if (
+          satellite === null ||
+          (input.incarnation !== undefined &&
+            satellite.incarnation !== input.incarnation)
+        )
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "unknown satellite",
+          });
+        if (satellite.draining)
+          await deps.repo.setDraining(
+            owner,
+            input.satellite,
+            false,
+            input.incarnation,
+          );
+
+        await deps.repo.touch(owner, input.satellite, input.incarnation);
 
         const cancels = await deps.repo.takeCancellations(
           owner,
           input.satellite,
           new Date(now().getTime() - LEASE_MS),
+          input.incarnation,
         );
         const items: WorkItem[] = cancels.map((job) => ({
           kind: "cancel",
@@ -82,6 +117,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
           input.satellite,
           input.capacity,
           new Date(now().getTime() + LEASE_MS),
+          input.incarnation,
         );
         const names = await Promise.all(
           claimed.map((job) =>
@@ -105,15 +141,33 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
     },
 
     async heartbeat(owner: string, input: HeartbeatInput): Promise<void> {
-      await deps.repo.touch(owner, input.satellite);
+      const satellite = await deps.repo.get(owner, input.satellite);
+      if (
+        satellite === null ||
+        (input.incarnation !== undefined &&
+          satellite.incarnation !== input.incarnation)
+      )
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "unknown satellite",
+        });
+      await deps.repo.touch(owner, input.satellite, input.incarnation);
       await deps.repo.renewLeases(
         owner,
         input.satellite,
         input.running,
         new Date(now().getTime() + LEASE_MS),
+        input.incarnation,
       );
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: Records what a Job came to. A worker names the
+     * registration it claimed the Job under, and a report that names another
+     * one is dropped: removing a Satellite deletes its Jobs and restarts the
+     * sequence, so the old machine's #1 and the new machine's #1 are different
+     * Jobs, and settling one with the other's outcome would be a lie.
+     */
     async report(owner: string, input: ReportInput): Promise<void> {
       const written = {
         output: input.outcome.output,
@@ -142,6 +196,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
         input.sequence,
         patch,
         "running",
+        input.incarnation,
       );
       if (settled === null) return;
       await deps.deliverOutcome({
@@ -152,8 +207,20 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       });
     },
 
-    async drain(owner: string, satellite: string): Promise<void> {
-      await deps.repo.setDraining(owner, satellite, true);
+    async drain(
+      owner: string,
+      satellite: string,
+      incarnation?: string,
+    ): Promise<void> {
+      if (incarnation !== undefined) {
+        const existing = await deps.repo.get(owner, satellite);
+        if (existing === null || existing.incarnation !== incarnation)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "unknown satellite",
+          });
+      }
+      await deps.repo.setDraining(owner, satellite, true, incarnation);
     },
   };
 }
@@ -184,7 +251,8 @@ export function createLeaseSweep(deps: WorkerOpsDeps) {
         }
       }
 
-      expired = await deps.repo.expiredLeases(now());
+      const at = now();
+      expired = await deps.repo.expiredLeases(at);
       for (const job of expired) {
         try {
           const settled = await deps.repo.settle(
@@ -195,6 +263,9 @@ export function createLeaseSweep(deps: WorkerOpsDeps) {
               status: "interrupted",
               reason: `${formatJobRef(job.satellite, job.sequence)} lost its worker; the command may have completed`,
             },
+            "running",
+            undefined,
+            at,
           );
           if (settled === null) continue;
           await deps.deliverOutcome({

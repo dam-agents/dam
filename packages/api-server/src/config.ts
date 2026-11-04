@@ -230,9 +230,10 @@ const configSchema = z.object({
   imgbbApiKey: z.string().nullable().default(null),
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
-  // UNIT_BOUNDARY_DESCRIPTION: the pool each owner's VM runner is created at, as the chart sizes it, read before any runner exists to ask. The storage is the claim every machine disk shares; a memory the install does not set leaves the runner sized by the owner's UserBudget alone, whose own absence refuses nothing.
+  // UNIT_BOUNDARY_DESCRIPTION: the pool each owner's VM runner is created at, as the chart sizes it, read before any runner exists to ask. The storage is the claim every machine disk shares; a memory the install does not set leaves the runner sized by the owner's UserBudget alone, whose own absence refuses nothing. The vCPUs every machine gets are 0 when the chart does not say.
   vmPoolStorage: z.string().default("100Gi"),
   vmPoolMemory: z.string().default(""),
+  vmMachineCpus: z.coerce.number().int().nonnegative().default(0),
   featureModes: featureModesSchema,
   curveBenderDeployment: curveBenderDeploymentSchema,
   defaultProfileSeed: defaultProfileSeedSchema,
@@ -391,7 +392,14 @@ export function agentsInstallSettings(config: Config) {
   };
 }
 
-const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc\d+)?$/;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the forms a tagged release reports — `X.Y.Z`, a
+ * `-rc.N` candidate, or the legacy `-rcN` one. A dotted number is a numeric
+ * identifier, which semver forbids to start with a zero, so `-rc.01` is not a
+ * release version. A build from `main` reports `X.Y.Z-dev-<sha>` and matches
+ * none of them.
+ */
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc([0-9]+|\.(0|[1-9]\d*)))?$/;
 
 function recommendedClientCliVersion(appVersion: string): string | undefined {
   return RELEASE_VERSION.test(appVersion) ? appVersion : undefined;
@@ -440,6 +448,7 @@ export function loadConfig(): Config {
     e2eEnabled: process.env.E2E_ENABLED,
     vmPoolStorage: process.env.VM_POOL_STORAGE,
     vmPoolMemory: process.env.VM_POOL_MEMORY,
+    vmMachineCpus: process.env.VM_MACHINE_CPUS,
     featureModes: {
       named: process.env.FEATURE_MODES,
       fallback: process.env.FEATURE_DEFAULT_MODE,

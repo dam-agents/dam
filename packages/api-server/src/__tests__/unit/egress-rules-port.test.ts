@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { load as parseYaml } from "js-yaml";
 import { describe, it, expect } from "vitest";
 import { createEgressRulesService } from "../../modules/egress-rules/services/egress-rules-service.js";
 import { createEgressRuleWriter } from "../../modules/egress-rules/services/egress-rule-writer.js";
@@ -454,6 +456,32 @@ describe("preset-seeder: the trusted preset is one write", () => {
     expect(calls).toEqual(["revoke", "insertAll:3", "mark:3:preset:trusted"]);
     expect(rows.map((r) => [r.host, r.source])).toEqual(
       hosts.map((h) => [h, "preset:trusted"]),
+    );
+  });
+});
+
+describe("preset-seeder: the chart's trusted hosts", () => {
+  // TEST_SCENARIO: gh posts its own telemetry to cafe.github.com from the hidden `send-telemetry` command it runs after another command, so a new agent must not be asked to approve that host; the chart ships the preset list, and that one entry is what seeds the rule.
+  it("seeds an allow rule for the host gh sends its telemetry to", async () => {
+    const chart = parseYaml(
+      readFileSync(
+        new URL("../../../../../helm/values.yaml", import.meta.url),
+        "utf8",
+      ),
+    ) as { apiServer: { trustedHosts: string[] } };
+    const { repo, rows } = fakeRepo([]);
+
+    await createPresetSeeder({
+      repo,
+      trustedHosts: chart.apiServer.trustedHosts,
+    }).seed("agent-1", "trusted", "owner-1");
+
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        host: "cafe.github.com",
+        verdict: "allow",
+        source: "preset:trusted",
+      }),
     );
   });
 });

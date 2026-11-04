@@ -283,6 +283,7 @@ node_volumes_on_home() {
   node_k3s_running && was_running=1
   mapfile -t dirs < <(node_dir_roots helm/values.yaml helm/values-local.yaml ${HELM_VALUES:+"$HELM_VALUES"} -- ${HELM_EXTRA_ARGS[@]+"${HELM_EXTRA_ARGS[@]}"} | sort -u)
   node_host_dirs ${dirs[@]+"${dirs[@]}"}
+  node_host_dirs_at_boot
   MOUNTED_LATE=(${NODE_MOUNTED[@]+"${NODE_MOUNTED[@]}"})
   if node_kubelet_root_needed; then
     if node_k3s_running; then

@@ -18,6 +18,7 @@ import {
   relayHeaders,
   requestAllowed,
   RESERVED_PREFIX,
+  safeNext,
   siblingPreflight,
   SESSION_COOKIE_PLAIN,
   SESSION_COOKIE_SECURE,
@@ -32,11 +33,19 @@ import {
 import type { EnvironmentRecord } from "../domain/environment.js";
 import type { EnvironmentsRepository } from "../infrastructure/environments-repository.js";
 import type { EnvironmentSignIn } from "../services/environment-signin.js";
+import { createEndpointReadiness } from "./endpoint-readiness.js";
 import { renderGatePage } from "./pages.js";
 
 const FORWARD_PREFIX = "/api/environment/forward/";
 const DECLARED_PORTS_HEADER = "x-platform-environment-ports";
+const UNREACHABLE_HEADER = "x-platform-environment-unreachable";
+const STATUS_PATH = `${RESERVED_PREFIX}status`;
+const START_PATH = `${RESERVED_PREFIX}start`;
 const ACTIVITY_INTERVAL_MS = 60_000;
+const WAKE_FAILED_HOLD_MS = 30_000;
+const PROBE_TIMEOUT_MS = 5_000;
+const RETRY_AFTER_S = 5;
+const SLOW_AFTER_MS = 5 * 60_000;
 const NO_STORE = "private, no-store";
 const HOP_BY_HOP = [
   "transfer-encoding",
@@ -72,10 +81,14 @@ export interface EnvironmentGateDeps {
   editorsOf: (owningAgentId: string) => Promise<string[]>;
   signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "signOut">;
   platform: PlatformCredentials;
-  ensureReady: (agentId: string) => Promise<unknown>;
+  ensureReady: (
+    agentId: string,
+    opts: { onWaking: () => void },
+  ) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   upstream: (agentId: string) => { host: string; port: number };
   brandName: string;
+  readinessRetryMs?: number;
 }
 
 export interface EnvironmentGate {
@@ -86,7 +99,20 @@ export interface EnvironmentGate {
 interface Resolved {
   record: EnvironmentRecord;
   port: number;
+  ready: string | undefined;
   address: string;
+}
+
+type MachineState = "ready" | "waking" | "failed";
+
+// UNIT_BOUNDARY_DESCRIPTION: one endpoint of an Environment as its readiness probe reaches it: through the runtime's forward to its port, with the public host a router inside the Environment tells endpoints apart by.
+interface ProbeTarget {
+  agentId: string;
+  endpoint: string;
+  port: number;
+  ready: string | undefined;
+  ports: string;
+  publicHost: string;
 }
 
 export const noEnvironmentGate: EnvironmentGate = {
@@ -101,9 +127,11 @@ export const noEnvironmentGate: EnvironmentGate = {
  * name, admits the visitor by the session the share host's front door handed
  * it (the owner, or a verified email on the effective list, checked again on
  * every request, while the share host's session it came from lasts), wakes a
- * sleeping Environment and waits for it, and relays HTTP and WebSocket to the
- * Environment runtime's forward, which reaches only the declared port on the
- * Environment's loopback. Any other host passes on untouched. A request
+ * sleeping Environment without waiting for it, and relays HTTP and WebSocket
+ * to the Environment runtime's forward, which reaches only the declared port
+ * on the Environment's loopback, once the endpoint's app is ready. Until then
+ * a page load gets a loading page that opens the app by itself, and any other
+ * request a 503 to try again. Any other host passes on untouched. A request
  * that another origin's page makes in the visitor's name is refused before
  * any of that, whatever cookie it carries. The relay never passes the
  * platform's own cookies or credentials to the app, never lets the app set
@@ -117,6 +145,14 @@ export function createEnvironmentGate(
   const cookieName = secure ? SESSION_COOKIE_SECURE : SESSION_COOKIE_PLAIN;
   const signInCookieName = secure ? SIGNIN_COOKIE_SECURE : SIGNIN_COOKIE_PLAIN;
   const lastStamp = new Map<string, number>();
+  const waking = new Set<string>();
+  const wakeFailedAt = new Map<string, number>();
+  const readiness = createEndpointReadiness<ProbeTarget>({
+    probe,
+    ...(deps.readinessRetryMs !== undefined
+      ? { retryMs: deps.readinessRetryMs }
+      : {}),
+  });
 
   function stamp(agentId: string) {
     const now = Date.now();
@@ -134,7 +170,132 @@ export function createEnvironmentGate(
     const record = await deps.repo.getByHost(parsed.host);
     const endpoint = record?.endpoints.find((e) => e.name === parsed.endpoint);
     if (!record || !endpoint) return "none";
-    return { record, port: endpoint.port, address: parsed.address };
+    return {
+      record,
+      port: endpoint.port,
+      ready: endpoint.ready,
+      address: parsed.address,
+    };
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: whether an endpoint's app answers: its readiness path with 2xx or 3xx, or, without one, anything at all on its port. The runtime marks its own answer when nothing listens there, so an app's own 502 still counts as an answer.
+  async function probe(target: ProbeTarget): Promise<boolean> {
+    const runtime = deps.upstream(target.agentId);
+    const answer = await fetch(
+      `http://${runtime.host}:${runtime.port}${FORWARD_PREFIX}${target.port}${target.ready ?? "/"}`,
+      {
+        method: target.ready === undefined ? "HEAD" : "GET",
+        headers: {
+          [DECLARED_PORTS_HEADER]: target.ports,
+          "x-forwarded-host": target.publicHost,
+          "x-forwarded-proto": deps.scheme,
+        },
+        redirect: "manual",
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      },
+    );
+    void answer.body?.cancel().catch(() => {});
+    if (answer.headers.has(UNREACHABLE_HEADER)) return false;
+    if (target.ready === undefined) return true;
+    return answer.status >= 200 && answer.status < 400;
+  }
+
+  function probeTarget(
+    resolved: Resolved,
+    publicHost: string | undefined,
+  ): ProbeTarget {
+    const endpoint = resolved.address.slice(0, resolved.address.indexOf("-"));
+    return {
+      agentId: resolved.record.agentId,
+      endpoint,
+      port: resolved.port,
+      ready: resolved.ready,
+      ports: declaredPorts(resolved.record),
+      publicHost: publicHost ?? "",
+    };
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: wakes the Environment and says at once whether its machine runs, is still waking, or could not be woken; a request never waits for a wake. A wake that failed is not tried again for half a minute, so a waiting page can say it did not start, unless the visitor asks to try again. A finished wake forgets what was known of its endpoints, since their apps start again.
+  function machine(agentId: string): Promise<MachineState> {
+    const failed = wakeFailedAt.get(agentId);
+    if (failed !== undefined && Date.now() - failed < WAKE_FAILED_HOLD_MS)
+      return Promise.resolve("failed");
+    if (waking.has(agentId)) return Promise.resolve("waking");
+    return new Promise((resolve) => {
+      let slept = false;
+      deps
+        .ensureReady(agentId, {
+          onWaking: () => {
+            slept = true;
+            waking.add(agentId);
+            resolve("waking");
+          },
+        })
+        .then(
+          () => {
+            wakeFailedAt.delete(agentId);
+            if (slept) readiness.forget(agentId);
+            resolve("ready");
+          },
+          (e: unknown) => {
+            getLogger().warn(
+              { agentId, error: (e as Error).message },
+              "environment-gate.wake.failed",
+            );
+            if (wakeFailedAt.size > 10_000) wakeFailedAt.clear();
+            wakeFailedAt.set(agentId, Date.now());
+            resolve("failed");
+          },
+        )
+        .finally(() => waking.delete(agentId));
+    });
+  }
+
+  async function startState(
+    resolved: Resolved,
+    publicHost: string | undefined,
+  ): Promise<"ready" | "starting" | "failed"> {
+    const state = await machine(resolved.record.agentId);
+    if (state === "failed") return "failed";
+    if (state === "waking") return "starting";
+    return (await readiness.ready(probeTarget(resolved, publicHost)))
+      ? "ready"
+      : "starting";
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: the gate's answer while an Environment's app is not ready: a page load gets the loading page, which checks the gate's status and opens the app once it answers, or says it did not start; anything else, a script's call or an API client, gets a plain 503, never a page or a 200 a monitor would read as up. Both ask to be tried again after a few seconds.
+  function notReady(
+    c: Context,
+    record: EnvironmentRecord,
+    state: "starting" | "failed",
+  ) {
+    gateHeaders(c);
+    c.header("Retry-After", String(RETRY_AFTER_S));
+    siblingCors(c, record);
+    if (!isNavigation(c))
+      return c.text(
+        state === "failed"
+          ? "The Environment could not be started."
+          : "The Environment is starting.",
+        503,
+      );
+    const url = new URL(c.req.url);
+    return c.html(
+      state === "failed"
+        ? renderGatePage({
+            brandName: deps.brandName,
+            title: "Did not start",
+            body: "The Environment could not be started.",
+            retry: `${START_PATH}?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`,
+          })
+        : renderGatePage({
+            brandName: deps.brandName,
+            title: "Starting…",
+            body: "The Environment is starting. This page opens it as soon as it is ready.",
+            waitFor: { statusPath: STATUS_PATH, slowAfterMs: SLOW_AFTER_MS },
+          }),
+      503,
+    );
   }
 
   function gateHeaders(c: Context) {
@@ -144,7 +305,7 @@ export function createEnvironmentGate(
 
   function page(
     c: Context,
-    status: 401 | 403 | 404 | 400 | 502,
+    status: 401 | 403 | 404 | 400,
     title: string,
     body: string,
   ) {
@@ -329,12 +490,13 @@ export function createEnvironmentGate(
         { agentId: resolved.record.agentId, error: (e as Error).message },
         "environment-gate.upstream.failed",
       );
-      return page(
-        c,
-        502,
-        "Not answering",
-        "The Environment did not answer. Try again in a moment.",
-      );
+      readiness.failed(probeTarget(resolved, c.req.header("host")));
+      return notReady(c, resolved.record, "starting");
+    }
+    if (answer.headers.has(UNREACHABLE_HEADER)) {
+      void answer.body?.cancel().catch(() => {});
+      readiness.failed(probeTarget(resolved, c.req.header("host")));
+      return notReady(c, resolved.record, "starting");
     }
     const out = new Headers();
     for (const [name, value] of answer.headers) {
@@ -374,7 +536,11 @@ export function createEnvironmentGate(
         "A page of another site asked for this in your name, so the Environment did not answer it.",
       );
     }
-    if (c.req.path.startsWith(RESERVED_PREFIX))
+    if (
+      c.req.path.startsWith(RESERVED_PREFIX) &&
+      c.req.path !== STATUS_PATH &&
+      c.req.path !== START_PATH
+    )
       return reserved(c, address, record);
     const preflight = siblingPreflight(
       {
@@ -431,32 +597,37 @@ export function createEnvironmentGate(
       );
     }
 
-    try {
-      await deps.ensureReady(record.agentId);
-    } catch (e) {
-      getLogger().warn(
-        { agentId: record.agentId, error: (e as Error).message },
-        "environment-gate.wake.failed",
-      );
-      return page(
-        c,
-        502,
-        "Not running",
-        "The Environment could not be woken. Try again in a moment.",
-      );
+    if (c.req.path === START_PATH) {
+      wakeFailedAt.delete(record.agentId);
+      gateHeaders(c);
+      return c.redirect(safeNext(c.req.query("next")), 302);
     }
-    stamp(record.agentId);
+    const state = await startState(resolved, c.req.header("host"));
+    if (state !== "failed") stamp(record.agentId);
+    if (c.req.path === STATUS_PATH) {
+      gateHeaders(c);
+      return c.json({ state });
+    }
+    if (state !== "ready") return notReady(c, record, state);
     return relay(c, resolved);
   };
 
   function refuseUpgrade(socket: Duplex, status: string) {
+    const retry = status.startsWith("503")
+      ? `Retry-After: ${RETRY_AFTER_S}\r\n`
+      : "";
     socket.end(
-      `HTTP/1.1 ${status}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n`,
+      `HTTP/1.1 ${status}\r\nCache-Control: no-store\r\n${retry}Connection: close\r\n\r\n`,
     );
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: passes the app's answer to a WebSocket upgrade on to the visitor without its Set-Cookie lines, which no rule would filter there, then hands the socket over. An app sets cookies over HTTP, where the relay filters them. An app that closes before it answered closes the visitor's socket too.
-  function relayHandshake(upstream: Duplex, socket: Duplex, then: () => void) {
+  // UNIT_BOUNDARY_DESCRIPTION: passes the app's answer to a WebSocket upgrade on to the visitor without its Set-Cookie lines, which no rule would filter there, then hands the socket over. An app sets cookies over HTTP, where the relay filters them. An app that closes before it answered closes the visitor's socket too, and one the runtime found nothing listening for is a 503 to try again.
+  function relayHandshake(
+    upstream: Duplex,
+    socket: Duplex,
+    then: () => void,
+    unreachable: () => void,
+  ) {
     let buffered = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
       buffered = Buffer.concat([buffered, chunk]);
@@ -467,10 +638,17 @@ export function createEnvironmentGate(
       }
       upstream.off("data", onData);
       upstream.pause();
-      const head = buffered
-        .subarray(0, end)
-        .toString("latin1")
-        .split("\r\n")
+      const lines = buffered.subarray(0, end).toString("latin1").split("\r\n");
+      if (
+        lines.some((line) =>
+          line.toLowerCase().startsWith(`${UNREACHABLE_HEADER}:`),
+        )
+      ) {
+        upstream.destroy();
+        unreachable();
+        return refuseUpgrade(socket, "503 Service Unavailable");
+      }
+      const head = lines
         .filter((line) => !/^set-cookie\s*:/i.test(line))
         .join("\r\n");
       socket.write(`${head}\r\n\r\n`);
@@ -529,11 +707,9 @@ export function createEnvironmentGate(
             : "403 Forbidden",
         );
       }
-      try {
-        await deps.ensureReady(resolved.record.agentId);
-      } catch {
-        return refuseUpgrade(socket, "502 Bad Gateway");
-      }
+      const state = await startState(resolved, req.headers.host);
+      if (state !== "ready")
+        return refuseUpgrade(socket, "503 Service Unavailable");
       stamp(resolved.record.agentId);
 
       const incoming = new Headers();
@@ -559,10 +735,15 @@ export function createEnvironmentGate(
         for (const [name, value] of headers) lines.push(`${name}: ${value}`);
         upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
         if (head.length > 0) upstream.write(head);
-        relayHandshake(upstream, socket, () => {
-          upstream.pipe(socket);
-          socket.pipe(upstream);
-        });
+        relayHandshake(
+          upstream,
+          socket,
+          () => {
+            upstream.pipe(socket);
+            socket.pipe(upstream);
+          },
+          () => readiness.failed(probeTarget(resolved, req.headers.host)),
+        );
       });
       socket.on("data", () => stamp(resolved.record.agentId));
       const close = () => {
@@ -570,7 +751,7 @@ export function createEnvironmentGate(
         socket.destroy();
       };
       upstream.on("error", () => {
-        if (socket.writable) refuseUpgrade(socket, "502 Bad Gateway");
+        if (socket.writable) refuseUpgrade(socket, "503 Service Unavailable");
         close();
       });
       socket.on("close", () => upstream.destroy());

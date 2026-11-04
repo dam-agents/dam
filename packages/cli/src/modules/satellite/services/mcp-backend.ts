@@ -174,33 +174,75 @@ async function connectClient(spec: McpServerSpec): Promise<Client> {
 export async function createMcpBackend(
   spec: McpServerSpec,
 ): Promise<SatelliteBackend> {
-  const client = await connectClient(spec);
+  let dead = false;
+  let openedAt = Date.now();
+  let client = await open();
+  let tools = await listTools(client);
 
-  const listed = await client.listTools();
-  const tools: SatelliteTool[] = [];
-  for (const tool of listed.tools) {
-    const candidate = {
-      name: tool.name,
-      ...(tool.title === undefined ? {} : { title: tool.title.slice(0, 120) }),
-      ...(tool.description === undefined
-        ? {}
-        : { description: tool.description.slice(0, 4096) }),
-      inputSchema: tool.inputSchema as Record<string, unknown>,
+  async function open(): Promise<Client> {
+    const started = await connectClient(spec);
+    started.onclose = () => {
+      dead = true;
     };
-    const parsed = satelliteToolSchema.safeParse(candidate);
-    if (!parsed.success) {
-      await client.close().catch(() => {});
-      throw new Error(
-        `that MCP server's tool "${tool.name}" is not one a satellite can offer: ${parsed.error.issues[0]?.message ?? "invalid"}. Rename it on the server, or expose it through a different one.`,
-      );
+    openedAt = Date.now();
+    return started;
+  }
+
+  async function listTools(from: Client): Promise<SatelliteTool[]> {
+    const listed = await from.listTools();
+    const collected: SatelliteTool[] = [];
+    for (const tool of listed.tools) {
+      const candidate = {
+        name: tool.name,
+        ...(tool.title === undefined
+          ? {}
+          : { title: tool.title.slice(0, 120) }),
+        ...(tool.description === undefined
+          ? {}
+          : { description: tool.description.slice(0, 4096) }),
+        inputSchema: tool.inputSchema as Record<string, unknown>,
+      };
+      const parsed = satelliteToolSchema.safeParse(candidate);
+      if (!parsed.success) {
+        await from.close().catch(() => {});
+        throw new Error(
+          `that MCP server's tool "${tool.name}" is not one a satellite can offer: ${parsed.error.issues[0]?.message ?? "invalid"}. Rename it on the server, or expose it through a different one.`,
+        );
+      }
+      collected.push(parsed.data);
     }
-    tools.push(parsed.data);
+    return collected;
   }
   const inFlight = new Map<number, AbortController>();
 
   return {
-    tools,
+    get tools(): SatelliteTool[] {
+      return tools;
+    },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: A replacement server is opened, listed and
+     * only then published: a child whose tool list cannot be read is closed
+     * rather than left running with no way to reach it, which would leak one
+     * process per attempt. `livedMs` is how long the server that just exited
+     * had been up, which is what tells a crash loop from a server that ran.
+     */
+    async ensureReady(): Promise<{ restarted: boolean; livedMs?: number }> {
+      if (!dead) return { restarted: false };
+      const livedMs = Date.now() - openedAt;
+      const candidate = await open();
+      let offered: SatelliteTool[];
+      try {
+        offered = await listTools(candidate);
+      } catch (err) {
+        await candidate.close().catch(() => {});
+        throw err;
+      }
+      client = candidate;
+      tools = offered;
+      dead = false;
+      return { restarted: true, livedMs };
+    },
     describeCall(tool, args) {
       const text = `${tool} ${JSON.stringify(args)}`;
       return text.length > 200 ? `${text.slice(0, 199)}…` : text;

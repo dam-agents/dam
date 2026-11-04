@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-11-02
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -30,19 +30,18 @@ The Agent whose create is that first meeting does not count.
 
 ## In the browser
 
-The UI shows the checklist as the **Get started** dock, docked in the lower right corner: a pill with a progress ring, its title and the done count.
-On a page it is fixed to the window's corner; in an Agent's chat it sits in the corner of the message area, so it never covers the composer below it.
-A click on the pill opens the checklist as a card in its place, and a page that scrolls passes under the pill and the open card.
-A click elsewhere on the page, Escape, the card's collapse chevron or its Dismiss closes it back to the pill, so a user cannot be left with it over a button they want.
-The pill's own X dismisses the checklist without opening it.
-Nothing opens it but that click: an unlock the user has not seen puts a count on the pill instead.
+The UI shows the checklist as the **Get started** item in the sidebar footer, above Documentation and Settings: a progress ring, its label, and a count of the unlocks the user has not seen.
+A collapsed sidebar shows the ring alone, and names the progress for a screen reader.
+A click on the item opens the checklist in a popover beside it: the same ring, the done count, a strip of the eight characters with an egg for each one still locked, and the eight tasks, each with an info mark that gives a one-line reason for it.
+A click elsewhere on the page, Escape, the popover's close button or its Dismiss closes it back to the item, so a user cannot be left with it over a button they want.
+Nothing opens it but that click: an unlock the user has not seen puts a count on the item instead.
 Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the Artifacts page, or in an Agent's chat the Artifacts section beside the conversation.
-A click on a row closes the dock before it takes the user there.
-Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); the dock plays a short celebration at its top for each unlock the user has not seen, one at a time, while it is open, then records it as seen.
+A click on a row closes the checklist before it takes the user there.
+Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); while the popover is open it plays a short celebration beside the item for each unlock the user has not seen, one at a time, in place of the task list, then records it as seen.
 
-The pill stays in its corner until the checklist is done; closing the dock only closes it.
-A checklist dismissed through the API stays hidden until the next unlock, which brings the pill back, or until the user asks for the checklist from the avatar picker, which opens the dock.
-Once every character is unlocked and seen, the checklist is gone until the user resets their onboarding progress from the Experimental features tab.
+The item stays in the footer until the checklist is done; closing the popover only closes it.
+A checklist dismissed through the API stays hidden until the next unlock, which brings the item back, or until the user asks for the checklist from the avatar picker, which opens the popover.
+Once every character is unlocked and seen, the item is gone until the user resets their onboarding progress from the Experimental features tab.
 That reset deletes every unlock and reopens the checklist; characters already on Agents stay on them.
 The replica that serves the reset forgets the tasks it recorded for that user, so redoing one unlocks again; another replica skips a task it already recorded until it restarts.
 The avatar picker offers only unlocked characters, plus the one the Agent already shows; the rest appear as eggs.

@@ -10,12 +10,17 @@ function point(deg: number) {
 interface Props {
   done: number;
   total: number;
+  className?: string;
 }
 
-export function ProgressRing({ done, total }: Props) {
+export function ProgressRing({ done, total, className }: Props) {
   const step = 360 / total;
   return (
-    <svg viewBox="0 0 28 28" className="size-7 shrink-0" aria-hidden>
+    <svg
+      viewBox="0 0 28 28"
+      className={cn("size-7 shrink-0", className)}
+      aria-hidden
+    >
       {Array.from({ length: total }, (_, i) => {
         const start = -90 + i * step + 9;
         const end = start + step - 18;

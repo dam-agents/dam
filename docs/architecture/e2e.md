@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-30
+Last verified: 2026-11-03
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -9,7 +9,7 @@ It is the only test that covers a change across the whole system — login throu
 
 A **lane** is a gateway topology for the Agents a spec creates, each a machine on its owner's VM runner.
 One lane runs the chart's default, a gateway pod per Agent; the other turns on the [owner gateway](credential-gateway.md#owner-gateway), one gateway pod per owner.
-The lanes differ in nothing else, and each runs on its own runner.
+The lanes differ in nothing else but the nightly run's `full/` tier, which the default lane alone takes, and each runs on its own runner.
 Both run in every full-suite run; a pull request runs the default lane alone, since the push to main runs both on the merged tree, so a fault only one topology has still shows within one main run.
 The lane is one variable, `E2E_GATEWAY_PER_OWNER`, which the install reads to turn the owner gateway on.
 
@@ -47,7 +47,7 @@ The opt-in ceiling case is unchanged.
 It skips on a Mac host runner, where the first case measures no machine's disk.
 The case beside it fills the claim itself with real bytes to read the ceiling, and spends `E2E_DISK_FILL_GIB` of the host to do it, so it skips when the claim would need more than that or the variable is unset.
 The spec that deletes a user's VM runner runs after the rest of the suite, since that runner runs every other machine of that user.
-The tier under `src/tests/full/` is on demand: a local run asks for it, and no CI run takes it.
+The tier under `src/tests/full/` is slow scenario specs: a local run asks for it with `--full`, and in CI only the nightly run takes it.
 
 ## Scope: what a pull request runs
 
@@ -60,6 +60,8 @@ The Playwright config owns the list of specs a run takes: the workflow passes th
 A spec may read that same scope for its own route: the scheduled-fire case waits up to a minute for a cron tick on a full run, and fires the same trigger with run-now on a pull request.
 What that route leaves out is proved by the full set on the push to main and on the nightly run.
 Each lane's job summary states the scope beside its timings, so a green pull request is never read as a green full suite.
+The nightly run on main is the one run that also takes the `full/` tier, in the default lane alone: `cd.yml` passes it as `full-tier`, `e2e.yml` sets `E2E_FULL` for that lane, and the config adds the tier's projects.
+A pull request, the merge queue, a push to main, a dispatch and a tag never take it, and that lane's summary names the tier beside the scope.
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
 
 The merge queue is Mergify's.

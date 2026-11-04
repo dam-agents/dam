@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-11-02
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -159,7 +159,7 @@ A Job still queued settles server-side with no worker involved.
 
 **Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs.
 The record goes with the machine, which is what removing it asks for.
-A worker still serving it stops claiming, lets its running jobs finish and exits, rather than registering the Satellite again.
+A worker still serving it stops claiming, lets its running jobs finish and exits, rather than registering the Satellite again — and a worker that reconnects after the removal is refused, since it can only name the registration that is gone.
 
 An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed.
 The hourly wake retry is what eventually clears it.
@@ -180,6 +180,42 @@ An image over any of those bounds is named in the output as not passed on, rathe
 An image that does pass leaves a marker of its own in the text, so a harness that renders no image blocks still shows that a picture came back; a tool result whose text was spilled names its images itself, since the marker went to the file.
 Audio and embedded resources stay placeholders: no harness hands either to its model.
 A turn the platform starts carries no images, so it says the picture exists and names the job tool that shows it.
+
+## Staying connected
+
+A worker is meant to run for weeks on a machine nobody watches: a laptop that sleeps, a network that drops, a platform that redeploys.
+Everything it does about that follows from the direction it is reached from: outward only.
+
+**It retries forever, and never in step with the other machines.** A failed connect or claim is retried after a wait that doubles from a second to half a minute and carries jitter, so the machines that come back when a platform returns spread out instead of arriving together.
+Nothing ends the loop; the process stops when it is told to stop.
+
+**A reconnect is a registration, not a second Satellite.** The name is what identifies a Satellite, so connecting again replaces the Snapshot of the one the machine already serves and keeps its Grants, its Jobs and its Job sequence.
+An Agent sees the same tools before and after a drop, and never two of anything.
+
+A Satellite's row is nevertheless a **registration** of that name, and each registration has an identity of its own.
+A worker names the registration it serves on every call it makes — registering, claiming, renewing a lease, cancelling, reporting — and the platform puts that identity inside the statements that act rather than in a read before them, because a name can be registered again between the two.
+A removal, or a registration replaced while a worker was away, is therefore refused: the worker that names a registration the platform no longer holds, or holds under another identity, is told there is no such Satellite before it runs anything, and stops ([Jobs](#jobs)).
+A **fresh** worker that names nothing is not refused one: connecting under a name another machine is serving takes that name over — the row keeps its identity and its Jobs, and both workers then claim from the same registration.
+Identity belongs to the registration, not to the process, so a second machine is never turned away on its own account; exporting one name from two machines at once is the case to avoid.
+Removing a Satellite takes its row first, in one transaction, and admission binds its insert to the registration it admitted against, so a call arriving beside a removal is either deleted with it or refused — never left for the next machine of that name to claim.
+That is what keeps a stale worker from undoing the owner's decision to remove one, from claiming jobs queued for a machine that is not this one, and from settling another machine's `#1` with its own.
+A worker from before the identity existed names nothing and is served as it always was: it cannot be fenced, which is the cost of the rollout, not a promise the platform makes.
+
+**The machine's own server is restarted, but only when it exited.** Reconnecting must not kill work that is in progress, so a server that is still up keeps serving.
+One that did exit is started again, and the tool list it comes back with is **registered before any more work is claimed**, because a Snapshot is that machine's claim about what it offers now; a server that keeps exiting seconds after it starts is restarted on its own backoff rather than as fast as work arrives.
+
+**A result survives a short drop.** An outcome that could not be reported is kept and sent again before more work is taken, and once the platform answers again, which covers any outage shorter than the Job's lease.
+It is replayed only to the **registration it was claimed under**: a name registered again starts its Job sequence over, so an old machine's `#1` is not the new machine's `#1`, and the platform settles a report that names the wrong registration as nothing at all.
+A rollout moves the two ends apart for a while, so a missing identity is read as *unknown* rather than as *different*, and the worker keeps the registration it last learned.
+A result claimed before the platform could name a registration is never replayed, though: the worker cannot tell it from the same number of a machine registered since, so it says so and lets the lease settle that Job as interrupted.
+Nor is one sent to a server that cannot enforce a registration: every call a worker makes once it knows its registration — resuming, claiming, renewing a lease, reporting, draining — goes to a procedure of its own that requires it, and an older server refuses such a call by name instead of reading it and ignoring the field.
+A rolling deployment can answer one call from a newer replica and the next from an older one, so the fence has to travel on the call that writes rather than on a promise from an earlier one.
+A worker that meets such a refusal waits for a platform that enforces registrations; it never takes the unfenced path with a registration in hand.
+Beyond the lease, the sweep settles the Job as interrupted and the Agent is told its outcome is unknown, so a call in flight during a drop ends in a sentence rather than a wait.
+A call made while the Satellite is offline never starts at all: admission refuses it and says since when the machine has been gone ([Admission](#admission)).
+
+**Credentials refresh themselves.** A worker signed in through the browser re-mints its access token before each call, and one started as a service holds a serve key in `DAM_TOKEN` instead, which needs no refresh.
+Either way, a worker that cannot authenticate retries like any other failure but says what ends it: signing in again, or a new key.
 
 ## Trust boundary
 
@@ -232,8 +268,12 @@ Every request is one line naming the Agent that sent it and what it asked for.
 The api-server resolves the Agent's name when the worker claims the call, and falls back to its id.
 Every outcome is one line too, and each way a call ends reads differently: `DONE` with its exit code, `FAILED` for a command that ran and failed or a tool that returned an error, `BLOCKED` for a call the machine refused without running, which names the pattern it came closest to, and `CANCELLED` and `INTERRUPTED`.
 A parse error names the line it is on, since the text the user just typed is the whole allowlist.
-Shutdown drains on the first interrupt and forces on the second.
+Shutdown stops claiming on the first interrupt — a claim already open hands nothing back that is then started — and lets what is running report.
+After a bounded grace it stops waiting on the platform, so a supervisor's stop timeout gets an exit rather than a kill, and it closes the MCP server it started before it exits, waiting for the child to stop within its own deadline.
+A Satellite found removed by a reconnect drains what is running just as a removed claim does, rather than closing the machine's MCP server on top of it.
+The second interrupt forces.
 There is no reload: neither form reads a file, so changing what a machine offers means restarting it.
+Keeping one worker running unattended is [running a satellite as a service](../notes/satellite-service.md), which holds the systemd unit and the launchd plist.
 
 `dam satellite` marks itself **experimental** in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 
