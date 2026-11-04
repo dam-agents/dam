@@ -30,13 +30,13 @@ const STYLES: Record<
   anthropic: {
     Icon: AnthropicIcon,
     Mark: AnthropicIcon,
-    tile: "bg-white text-logo-anthropic",
+    tile: "bg-white text-black",
     mark: "size-3/5",
   },
   openai: {
     Icon: OpenAIIcon,
     Mark: OpenAIIcon,
-    tile: "bg-white text-logo-openai",
+    tile: "bg-white text-black",
     mark: "size-3/5",
   },
   "ibm-litellm": {

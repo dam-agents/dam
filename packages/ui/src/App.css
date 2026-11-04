@@ -47,9 +47,7 @@
   --color-icon-cb: #4d7e88;
   --color-icon-cb-deep: #38626a;
   --color-icon-litellm: #4962ab;
-  /* Provider marks in their vendor's own colours: Claude's orange and OpenAI's black on white, and LiteLLM's blue behind its white train. The other vendors' marks carry their colours in the SVG. */
-  --color-logo-anthropic: #d97757;
-  --color-logo-openai: #000000;
+  /* LiteLLM's blue behind its white train; the other provider marks carry their colours in the SVG. */
   --color-logo-litellm: #0117be;
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;

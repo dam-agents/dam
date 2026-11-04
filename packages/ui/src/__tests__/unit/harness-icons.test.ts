@@ -143,7 +143,7 @@ describe("harness icons on provider and preset cards", () => {
     expect(html.match(/fill="currentColor"/g)).toHaveLength(6);
   });
 
-  // TEST_SCENARIO: a tile carries the vendor's full-colour mark, in its SVG or through a logo colour token, while the untiled small size stays a one-colour glyph.
+  // TEST_SCENARIO: a tile carries the vendor's full-colour mark, in its SVG, through a logo colour token or as black on white, while the untiled small size stays a one-colour glyph.
   it.each(PROVIDER_PRESET_TYPES)(
     "uses the vendor's colours only on %s tiles",
     (provider) => {
@@ -155,7 +155,7 @@ describe("harness icons on provider and preset cards", () => {
         expect(html).not.toMatch(/<img|<mask|🚅/);
         if (size === "sm")
           expect(html).not.toMatch(/bg-|text-white|fill="#|gradient/);
-        else expect(html).toMatch(/fill="#|-logo-[a-z]+/);
+        else expect(html).toMatch(/fill="#|-logo-[a-z]+|text-black/);
       }
     },
   );
