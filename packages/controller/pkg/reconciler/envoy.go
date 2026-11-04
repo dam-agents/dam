@@ -250,15 +250,22 @@ func (c envoyHostChain) credentialsAt(scope string) []envoyCredential {
 	return out
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether two Connections inject one header on this scope. Header names ignore case in HTTP, so two spellings of one name are one header.
 func (c envoyHostChain) ContestedAt(scope string) bool {
 	owners := map[string]string{}
 	for _, cred := range c.credentialsAt(scope) {
-		if owner, seen := owners[cred.HeaderName]; seen && owner != cred.ConnectionID {
+		name := strings.ToLower(cred.HeaderName)
+		if owner, seen := owners[name]; seen && owner != cred.ConnectionID {
 			return true
 		}
-		owners[cred.HeaderName] = cred.ConnectionID
+		owners[name] = cred.ConnectionID
 	}
 	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a request naming no Connection on this scope is refused at the gateway. A contested scope is refused, since serving it from whichever credential sorted first acts as the wrong account. On an Agent requiring addresses every injector skips such a request, so it goes upstream with no credential and nothing is refused.
+func (c envoyHostChain) RefusesUnaddressedAt(scope string) bool {
+	return !c.RequireAddress && c.ContestedAt(scope)
 }
 
 func (c envoyHostChain) ScopesOf(connectionID string) []string {
@@ -942,7 +949,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v28-gateway-leaf-sds"
+const envoyBootstrapTemplateRev = "v29-gateway-unaddressed"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
