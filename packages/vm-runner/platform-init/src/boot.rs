@@ -12,8 +12,9 @@ use sha2::{Digest, Sha256};
 
 use crate::guest::{self, SeedDigest};
 use crate::pool_guard::{
-    disk_short, eviction_pass, guard_look, guest_room, read_grant, room_of, ClaimRequest,
-    EvictionKind, EvictionPass, PoolGuard, Room, EVICT_AGES, EVICT_BELOW_PERCENT, POOL_GUARD_STEP,
+    disk_short, eviction_pass, guard_look, guard_note, guest_room, read_grant, room_of,
+    ClaimRequest, EvictionKind, EvictionPass, PoolGuard, Room, EVICT_AGES, EVICT_BELOW_PERCENT,
+    POOL_GUARD_STEP,
 };
 
 const BOOT_LOG_CAP: u64 = 32 << 20;
@@ -1901,8 +1902,8 @@ static POOL_GUARD: std::sync::Mutex<Option<Guard>> = std::sync::Mutex::new(None)
 
 // UNIT_BOUNDARY_DESCRIPTION: the platform's own directory on the storage disk, kept as a descriptor that outlives the mount: the disk is detached from the image once the boot has what it needs, so a guard file made after that has to be reached through a descriptor opened before it. The image never sees this subvolume, and a descriptor into it stays valid across the unmount.
 fn guard_dir(root: &Path) -> Option<File> {
-    let dir = root.join(guest::SYSTEM_DIR);
-    match File::open(&dir) {
+    let dir = root.join(guest::SYSTEM_DIR).join(guest::STORAGE_GUARD_DIR);
+    match fs::create_dir_all(&dir).and_then(|()| File::open(&dir)) {
         Ok(file) => Some(file),
         Err(e) => {
             logf!("WARNING: opening {} for the guard file ({e}); this agent's writes are not held to the owner's storage", dir.display());
@@ -2008,6 +2009,7 @@ fn guard_pool(dir: File) {
     let mut marked: Option<Room> = None;
     let mut marked_at: Option<std::time::Instant> = None;
     let mut trim_failing = false;
+    let mut noted = String::new();
     loop {
         std::thread::sleep(POOL_GUARD_INTERVAL);
         // UNIT_BOUNDARY_DESCRIPTION: the guard is read and the disk is looked at outside POOL_GUARD, and the mutex is taken only to size the file: a stop's release takes it to empty the file, and a stop must never wait on a trim or a sync, which is unbounded work, because the host gives a stop 5 s of silence before it cuts the machine down.
@@ -2063,6 +2065,10 @@ fn guard_pool(dir: File) {
             held,
         ) {
             return;
+        }
+        let note = guard_note(held, room);
+        if note != noted && fs::write(guest::STORAGE_GUARD_NOTE, &note).is_ok() {
+            noted = note;
         }
         let mark = room_of(room, marked);
         let since = marked_at.map_or(std::time::Duration::ZERO, |at| at.elapsed());
