@@ -3,6 +3,7 @@ import { claudeTierOf, newestOfTier } from "agent-runtime-api";
 import {
   convertedDefaultModel,
   declaredModelOf,
+  type ConvertedModel,
 } from "./default-conversion.js";
 
 /**
@@ -13,13 +14,13 @@ import {
  * Model Router (the gateway serves Haiku requests on it), so it becomes the
  * provider's newest Sonnet, noted so the owner is told — not the platform's
  * preferred model, which would be a tier nobody asked for. Everything else
- * converts as convertedDefaultModel says or not at all.
+ * converts as convertedDefaultModel says.
  */
 export function convertedDefault(
   input: Parameters<typeof convertedDefaultModel>[0],
-): { model: string; changedFrom?: string } | null {
+): ConvertedModel | null {
   const declared = declaredModelOf(input);
-  if (declared) return { model: declared };
+  if (declared) return { model: declared, step: "kit" };
   const one = input.providers.length === 1 ? input.providers[0] : undefined;
   if (
     one &&
@@ -29,8 +30,11 @@ export function convertedDefault(
   ) {
     const sonnet = newestOfTier(one.listed, "sonnet");
     if (sonnet)
-      return { model: `${one.alias}/${sonnet}`, changedFrom: "haiku" };
+      return {
+        model: `${one.alias}/${sonnet}`,
+        step: "setting",
+        changedFrom: "haiku",
+      };
   }
-  const model = convertedDefaultModel(input);
-  return model ? { model } : null;
+  return convertedDefaultModel(input);
 }

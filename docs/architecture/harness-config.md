@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-27
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -56,18 +56,19 @@ On a routed runtime (`modelRouter` on hello) the saved model is a qualified name
 A run nobody picks for stays on the harness asked for, on the saved model and the provider it names; no saved model, or a model on a provider the agent no longer holds, fails the run as having no default model, with the reason, and no fitting provider fails it rather than moving it to another harness.
 **Conversion of an old default.** An agent from before per-session defaults has no saved pair, nor has a new agent before its first `hello`, and once it runs the Model Router the api-server converts its default once, while nothing is saved, so a model the person picked is never rewritten.
 It reads what is certain first: the model setting its harness was left with, against the listing of each granted provider that fits its harness on the agent's own runtime; a tier word needs exactly one such provider, since it names no model across several.
-A tier word (`opus`, `opus[1m]`) becomes the provider's newest model containing exactly that word, never another tier; a model id is kept when the provider lists it; the harness's own default becomes the model the agent's calls mostly ran, by output tokens in the last day, week or month of telemetry, when the provider lists it, and no model the calls ran less takes its place.
-A model id the provider does not list is left to the owner rather than met with another version.
+A tier word (`opus`, `opus[1m]`) becomes the provider's newest model containing exactly that word, never another tier; a model id is kept when the provider lists it, or the one listed id ending in it (`claude-sonnet-4-6` for IBM's `aws/claude-sonnet-4-6`); the harness's own default becomes the model the agent's calls mostly ran, by output tokens in the last day, week or month, when the provider lists it, and no model the calls ran less takes its place; Bob's calls left no such record, so its history is not read.
 One substitution is made, where no kit names a model: Haiku on a provider that lists no Haiku becomes that provider's newest Sonnet, the model its gateway served Haiku requests on before, and the agent keeps a note of it until its owner saves a default.
 A kit may name the model its agent needs (`defaultModel`, [starter kits](starter-kits.md#concepts)), and that model is what the conversion saves when a granted provider lists it, under its own name or as the one listed id ending in it; it is answered before any other source, since it is what the agent was created for, and a declared model no provider lists falls through to the setting, so a kit's pin never becomes a call that fails.
-Whatever the certain sources leave open — a tier word no provider lists a model of, a history the listings do not name, or more than one fitting provider, where no provider's own order can say which one the person meant — is answered by the platform's [preferred model list](#the-model-router) across every fitting provider, and the list's order beats the providers' own.
-An id the setting or the history names is not left to the list: it names the same model wherever it is, so it is resolved against each fitting provider in turn, and only a tier word, which names nothing on several, goes to the list.
-Nothing to go on at all saves the default as **not set**; a fitting provider not listed yet is left for a later try.
+Whatever the certain sources leave open — a tier word no provider lists a model of, an id or a history the listings do not name, or several fitting providers — falls back, in order, to the platform's [preferred model list](#the-model-router) across every fitting provider; a provider's own default (Bob's `premium`); the first chat model listed.
+An id the setting or the history names is resolved against each fitting provider in turn; only a tier word, which names nothing on several, skips to the fallback.
+An unlisted id is noted, so the owner is told.
+Only no listed model saves **not set**; a fitting provider not listed yet is left for a later try.
+The log line names what decided it.
 A new agent holds one provider ([agent-lifecycle](agent-lifecycle.md#create)) and its image presets its harness's model (Claude Code's `opus`), so its default becomes what the list prefers on that provider — DeepSeek V4.1 Flash on CurveBender, whose ids carry no tier word at all, and that provider's newest Opus on Anthropic — saved as a normal default the owner sees in the picker and can change; the save redelivers the agent's pending events, so a kit's setup turn waiting for it goes out at once.
 The owner is told on [Home](home-feed.md#default-model-notices) about a default that is not set, one on a provider the agent no longer holds, and one the conversion changed.
 The first two stop no work on an agent that runs nothing unattended: they are shown once the agent has an enabled Schedule or a Slack or Telegram Channel bound, which is the point where they start failing runs.
 Slack Channels and Telegram chats are bound in separate stores, each written by its own binding flow, so the notice reader asks both for the Agents they hold.
-The conversion runs after each `hello` while nothing is saved, and once per channel turn.
+The conversion runs after each `hello` while nothing is saved, once per channel turn, and before a fire.
 A schedule fire for an agent moved to a new image and still asleep wakes it first, so the fire is checked, converted and resolved against the new runtime rather than the one its last `hello` came from; when the new runtime does not say hello in time, the fire fails as still setting up instead of going out on the old view.
 Run Now on such an agent refuses with "setting up" and starts that wake in the background.
 **A turn with no model.** On a harness that reaches its models through the Model Router, the runtime refuses a turn whose session has no model, with the `no-model` reason, whether the turn starts a session, prompts one or resends an edited message; the router or the harness never picks a model in its place.
