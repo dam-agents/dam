@@ -1902,8 +1902,14 @@ static POOL_GUARD: std::sync::Mutex<Option<Guard>> = std::sync::Mutex::new(None)
 
 // UNIT_BOUNDARY_DESCRIPTION: the platform's own directory on the storage disk, kept as a descriptor that outlives the mount: the disk is detached from the image once the boot has what it needs, so a guard file made after that has to be reached through a descriptor opened before it. The image never sees this subvolume, and a descriptor into it stays valid across the unmount.
 fn guard_dir(root: &Path) -> Option<File> {
-    let dir = root.join(guest::SYSTEM_DIR).join(guest::STORAGE_GUARD_DIR);
-    match fs::create_dir_all(&dir).and_then(|()| File::open(&dir)) {
+    let system = root.join(guest::SYSTEM_DIR);
+    let named = system.join(guest::STORAGE_GUARD_DIR);
+    // UNIT_BOUNDARY_DESCRIPTION: a disk too full for the directory keeps the guard in `system` itself, where it was before the directory had a name.
+    let dir = match fs::create_dir(&named) {
+        Err(e) if e.kind() != io::ErrorKind::AlreadyExists => system,
+        _ => named,
+    };
+    match File::open(&dir) {
         Ok(file) => Some(file),
         Err(e) => {
             logf!("WARNING: opening {} for the guard file ({e}); this agent's writes are not held to the owner's storage", dir.display());
@@ -2067,7 +2073,8 @@ fn guard_pool(dir: File) {
             return;
         }
         let note = guard_note(held, room);
-        if note != noted && fs::write(guest::STORAGE_GUARD_NOTE, &note).is_ok() {
+        let gone = fs::metadata(guest::STORAGE_GUARD_NOTE).is_err();
+        if (note != noted || gone) && fs::write(guest::STORAGE_GUARD_NOTE, &note).is_ok() {
             noted = note;
         }
         let mark = room_of(room, marked);
@@ -3622,9 +3629,13 @@ mod tests {
         let guard = pool_guard(&dir).expect("an unnamed file on the disk");
         assert_eq!(guard.metadata().unwrap().nlink(), 0);
         assert_eq!(
-            fs::read_dir(disk.path().join(guest::SYSTEM_DIR))
-                .unwrap()
-                .count(),
+            fs::read_dir(
+                disk.path()
+                    .join(guest::SYSTEM_DIR)
+                    .join(guest::STORAGE_GUARD_DIR)
+            )
+            .unwrap()
+            .count(),
             0
         );
     }

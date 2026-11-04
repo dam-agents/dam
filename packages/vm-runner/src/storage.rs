@@ -64,7 +64,7 @@ impl StorageUse {
             < u128::from(self.usable) * u128::from(CRITICAL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the bytes every machine that is up may still add to the claim: all that is left before it reaches FULL_PERCENT, not a part of it, so the one agent that needs the room gets it whatever number of idle siblings run beside it. The claim is overcommitted on purpose: guests that write at once can together pass FULL_PERCENT before the next look, and the last 100 - FULL_PERCENT of the claim is the reserve that absorbs them. A single guest never reaches the reserve, since its guard holds it to this grant.
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes every machine that is up may still add to the claim: all that is left before it reaches FULL_PERCENT, not a part of it, so the one agent that needs the room gets it whatever number of idle siblings run beside it. The claim is overcommitted on purpose: guests that write at once can together pass FULL_PERCENT before the next look, and the last 100 - FULL_PERCENT of the claim is the reserve that absorbs them. A single guest reaches into the reserve by at most its floor and the writes it had not flushed when the runner looked, since its guard holds it to this grant.
     pub fn guest_room(&self) -> u64 {
         let limit = u64::try_from(u128::from(self.usable) * u128::from(FULL_PERCENT) / 100)
             .unwrap_or(u64::MAX);
