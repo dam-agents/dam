@@ -2,7 +2,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
-  ENVIRONMENT_IDLE_TIMEOUT_DEFAULT_MIN,
   environmentEndpointsSchema,
   environmentNameSchema,
 } from "api-server-api";
@@ -32,12 +31,14 @@ export function parseExpiry(value: string | undefined): Date | undefined {
   return at;
 }
 
-const idleTimeoutInput = z
-  .string()
-  .optional()
-  .describe(
-    `How long it may sit idle before it sleeps: a number of minutes, hours or days ("90m", "4h"). Default ${ENVIRONMENT_IDLE_TIMEOUT_DEFAULT_MIN} minutes; capped at the install's maximum. It always sleeps in the end: 0 or "never" is refused, and the platform may still put it to sleep early when its machine's memory is needed.`,
-  );
+function idleTimeoutInput(limits: OwningAgentEnvironments["idleTimeout"]) {
+  return z
+    .string()
+    .optional()
+    .describe(
+      `How long it may sit idle before it sleeps: a number of minutes, hours or days ("90m", "4h"). Default ${limits.defaultMin} minutes; at most ${limits.maxMin} minutes, and a longer one is cut to that. It always sleeps in the end: 0 or "never" is refused, and the platform may still put it to sleep early when its machine's memory is needed.`,
+    );
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: reads an idle timeout as an agent writes it, in the units `expires` takes plus minutes, into whole minutes. A word or a bare number is refused here, so "never" or "off" cannot read as no timeout; zero parses and is refused by the service, with the reason.
 export function parseIdleTimeout(
@@ -85,6 +86,7 @@ export function registerEnvironmentTools(
   deps: { environments: OwningAgentEnvironments },
 ): void {
   const envs = deps.environments;
+  const idleTimeout = idleTimeoutInput(envs.idleTimeout);
 
   server.tool(
     "create_environment",
@@ -107,7 +109,7 @@ export function registerEnvironmentTools(
         .optional()
         .describe("Disk size, e.g. 40Gi; the install's default otherwise."),
       expires: expiresInput,
-      idle_timeout: idleTimeoutInput,
+      idle_timeout: idleTimeout,
       access: noAccessInput,
     },
     (args) =>
@@ -140,7 +142,7 @@ export function registerEnvironmentTools(
     {
       name: environmentNameSchema,
       expires: expiresInput,
-      idle_timeout: idleTimeoutInput,
+      idle_timeout: idleTimeout,
       access: noAccessInput,
     },
     (args) =>

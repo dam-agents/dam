@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The owning agent's Environment tools never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who. An `idle_timeout` reaches create and update as whole minutes, and one that means "never sleep" is refused before the service is called.
+// TEST_OVERVIEW: The owning agent's Environment tools never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who. An `idle_timeout` reaches create and update as whole minutes, one that means "never sleep" is refused before the service is called, and its description names the install's own default and maximum.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -21,6 +21,7 @@ const view: AgentEnvironmentView = {
 
 async function tools() {
   const environments = {
+    idleTimeout: { defaultMin: 45, maxMin: 600 },
     create: vi.fn(async () => view),
     list: vi.fn(async () => [view]),
     update: vi.fn(async () => view),
@@ -38,7 +39,7 @@ async function tools() {
     const [content] = result.content as { text: string }[];
     return { isError: result.isError === true, text: content!.text };
   };
-  return { call, environments };
+  return { call, environments, mcp };
 }
 
 const endpoints = [{ name: "app", port: 4444 }];
@@ -110,5 +111,20 @@ describe("an Environment's idle timeout, from the agent's tools", () => {
     });
     expect(never.isError).toBe(true);
     expect(never.text).toMatch(/always sleeps/);
+  });
+
+  // TEST_SCENARIO: an install may set its own default and maximum for Environments, so the tools describe `idle_timeout` with the values the service applies, never a constant that a configured install does not use.
+  it("describes the install's own default and maximum", async () => {
+    const { mcp } = await tools();
+
+    const { tools: listed } = await mcp.listTools();
+    for (const name of ["create_environment", "update_environment"]) {
+      const schema = listed.find((t) => t.name === name)!.inputSchema as {
+        properties: Record<string, { description?: string }>;
+      };
+      const description = schema.properties.idle_timeout!.description!;
+      expect(description).toMatch(/Default 45 minutes/);
+      expect(description).toMatch(/at most 600 minutes/);
+    }
   });
 });

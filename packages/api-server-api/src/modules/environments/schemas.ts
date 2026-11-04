@@ -6,7 +6,6 @@ import {
 
 export const ENVIRONMENT_EXPIRY_MAX_DAYS = 30;
 export const ENVIRONMENT_EXPIRY_DEFAULT_DAYS = 7;
-export const ENVIRONMENT_IDLE_TIMEOUT_DEFAULT_MIN = 60;
 
 export const environmentNameSchema = z
   .string()

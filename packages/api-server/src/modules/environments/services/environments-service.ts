@@ -56,6 +56,7 @@ export interface EnvironmentsDeps {
 }
 
 export interface OwningAgentEnvironments {
+  idleTimeout: { defaultMin: number; maxMin: number };
   create(input: CreateEnvironmentInput): Promise<AgentEnvironmentView>;
   list(): Promise<AgentEnvironmentView[]>;
   update(
@@ -298,6 +299,10 @@ export function createEnvironmentsService(
     }
 
     return {
+      idleTimeout: {
+        defaultMin: deps.config.idleTimeoutDefaultMin,
+        maxMin: deps.config.idleTimeoutMaxMin,
+      },
       create: createUnder,
 
       async list() {
