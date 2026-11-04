@@ -1,13 +1,14 @@
 import "./getting-started.css";
 
 import type { GettingStartedTask } from "api-server-api";
-import { useEffect, useRef } from "react";
+import { useContext, useEffect, useRef } from "react";
 
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { DrawerPanelContext } from "@/components/ui/side-drawer";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,7 @@ export function GettingStartedNavItem({
   onNavigate,
 }: Props) {
   const onScreen = useIsDesktop() !== inDrawer;
+  const drawerPanel = useContext(DrawerPanelContext);
   const progress = useGettingStarted().data;
   const open = useStore((s) => s.checklistExpanded);
   const setOpen = useStore((s) => s.setChecklistExpanded);
@@ -68,7 +70,7 @@ export function GettingStartedNavItem({
   const visible =
     checklist !== null && !checklist.complete && !checklist.dismissed;
   const celebrating = checklist?.celebrating ?? null;
-  const phase = celebrating ? "celebration" : "checklist";
+  const phase = celebrating?.unlock.task ?? "checklist";
 
   const content = useRef<HTMLDivElement>(null);
   const wasPhase = useRef(phase);
@@ -95,6 +97,7 @@ export function GettingStartedNavItem({
   }, [phase]);
 
   if (!onScreen || !checklist || !visible) return null;
+  if (inDrawer && !drawerPanel) return null;
 
   const done = checklist.unlocked.length;
   const total = checklist.rows.length;
@@ -150,6 +153,7 @@ export function GettingStartedNavItem({
         </Tooltip>
       )}
       <PopoverContent
+        container={inDrawer ? drawerPanel : undefined}
         side="right"
         align="end"
         tail={false}
@@ -157,7 +161,14 @@ export function GettingStartedNavItem({
         data-testid="getting-started-popover"
         className="getting-started animate-in border-0 bg-transparent p-0 shadow-none"
       >
-        <div ref={content}>
+        <div
+          ref={content}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.defaultPrevented) return;
+            event.preventDefault();
+            close();
+          }}
+        >
           {celebrating ? (
             <UnlockCelebration
               key={celebrating.unlock.task}

@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The Get started checklist is a sidebar footer item: a progress ring with its label, or the ring alone on the collapsed rail, named with the progress and the unseen unlocks in both states. A click opens the checklist beside it, Escape, its close button, Dismiss or a task row closes it back to the item, and an unseen unlock is celebrated in the popover's place before it counts, taking the keyboard with it. It is gone once every avatar character is unlocked, or while the user has dismissed it, and the open flag goes when the item leaves the screen or its drawer closes. This file gives every document listener a fresh handler identity, tracked per event type so removal unregisters the right one, because happy-dom drops a listener that is re-registered with the identity it used before.
+// TEST_OVERVIEW: The Get started checklist is a sidebar footer item: a progress ring with its label, or the ring alone on the collapsed rail, named with the progress and the unseen unlocks in both states. A click opens the checklist beside it, Escape, its close button, Dismiss or a task row closes it back to the item, and an unseen unlock is celebrated in the popover's place before it counts, taking the keyboard with it. It is gone once every avatar character is unlocked, or while the user has dismissed it, and the open flag goes when the item leaves the screen or its drawer closes.
 import type { AvatarUnlock, GettingStartedProgress } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
   progress: { unlocks: [], dismissed: false } as GettingStartedProgress,
@@ -44,46 +44,9 @@ vi.mock("../../modules/getting-started/hooks/use-start-task.js", () => ({
 }));
 
 const { TooltipProvider } = await import("../../components/ui/tooltip.js");
+const { SideDrawer } = await import("../../components/ui/side-drawer.js");
 const { GettingStartedNavItem } =
   await import("../../modules/getting-started/components/getting-started-nav-item.js");
-
-const nativeAdd = document.addEventListener;
-const nativeRemove = document.removeEventListener;
-const captureOf = (options?: AddEventListenerOptions | boolean) =>
-  typeof options === "boolean" ? options : (options?.capture ?? false);
-const stacks = new Map<
-  EventListenerOrEventListenerObject,
-  Map<string, EventListener[]>
->();
-document.addEventListener = ((
-  type: string,
-  listener: EventListenerOrEventListenerObject,
-  options?: AddEventListenerOptions | boolean,
-) => {
-  const key = `${type}:${String(captureOf(options))}`;
-  const perType = stacks.get(listener) ?? new Map<string, EventListener[]>();
-  const wrapped = (event: Event) =>
-    typeof listener === "function"
-      ? listener(event)
-      : listener.handleEvent(event);
-  perType.set(key, [...(perType.get(key) ?? []), wrapped]);
-  stacks.set(listener, perType);
-  nativeAdd.call(document, type, wrapped, options);
-}) as typeof document.addEventListener;
-document.removeEventListener = ((
-  type: string,
-  listener: EventListenerOrEventListenerObject,
-  options?: AddEventListenerOptions | boolean,
-) => {
-  const key = `${type}:${String(captureOf(options))}`;
-  void key;
-  nativeRemove.call(document, type, listener, options);
-}) as typeof document.removeEventListener;
-
-afterAll(() => {
-  document.addEventListener = nativeAdd;
-  document.removeEventListener = nativeRemove;
-});
 
 const ALL_CHARACTERS: AvatarUnlock["character"][] = [
   "stack",
@@ -138,15 +101,18 @@ function render(expanded = true, drawer = false) {
 
 function rerender(expanded = expandedProp) {
   expandedProp = expanded;
-  act(() =>
-    root?.render(
-      createElement(
-        TooltipProvider,
-        null,
-        createElement(GettingStartedNavItem, { expanded, inDrawer }),
-      ),
-    ),
-  );
+  const item = createElement(GettingStartedNavItem, { expanded, inDrawer });
+  const content = inDrawer
+    ? createElement(SideDrawer, {
+        side: "left",
+        label: "Navigation",
+        closing: false,
+        onClose: () => {},
+        onClosed: () => {},
+        children: item,
+      })
+    : item;
+  act(() => root?.render(createElement(TooltipProvider, null, content)));
 }
 
 const inDocument = (testId: string) =>
@@ -226,7 +192,7 @@ it("closes on Escape", async () => {
   render();
   await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
   act(() => {
-    document.body.dispatchEvent(
+    inDocument("getting-started-checklist")?.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     );
   });
@@ -328,6 +294,35 @@ it("moves focus onto the celebration and back into the list", () => {
   expect(document.activeElement).toBe(button("Close checklist"));
 });
 
+// TEST_SCENARIO: tasks that unlock together queue their celebrations, and each new one takes the keyboard its predecessor held, so a batch never drops the user to the top of the page between two "Nice" buttons.
+it("keeps focus on Nice across two queued celebrations", () => {
+  const nice = () =>
+    [...document.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "Nice",
+    );
+  fake.progress = {
+    unlocks: [
+      unlock("create-agent", "lens", false),
+      unlock("send-message", "wave", false),
+    ],
+    dismissed: false,
+  };
+  fake.expanded = true;
+  render();
+  act(() => nice()?.focus());
+  expect(document.activeElement).toBe(nice());
+  fake.progress = {
+    unlocks: [
+      unlock("create-agent", "lens", true),
+      unlock("send-message", "wave", false),
+    ],
+    dismissed: false,
+  };
+  rerender();
+  expect(document.activeElement).toBe(nice());
+  expect(document.activeElement?.textContent).toBe("Nice");
+});
+
 // TEST_SCENARIO: while the checklist is closed, the unseen unlocks ride on the item as a count, so the user knows there is something to open.
 it("counts the unseen unlocks on the item", () => {
   fake.progress = { unlocks: everything(1), dismissed: false };
@@ -394,4 +389,21 @@ it("drops the open flag when the drawer closes", () => {
   act(() => root?.unmount());
   root = undefined;
   expect(fake.setExpanded).toHaveBeenCalledWith(false);
+});
+
+// TEST_SCENARIO: a checklist that is gone hears no Escape: no listener of it survives its unmount to close a checklist the user opens later.
+it("hears no Escape once it is unmounted", async () => {
+  fake.expanded = true;
+  render();
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  act(() => root?.unmount());
+  root = undefined;
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  fake.setExpanded.mockClear();
+  act(() =>
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    ),
+  );
+  expect(fake.setExpanded).not.toHaveBeenCalled();
 });
