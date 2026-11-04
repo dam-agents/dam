@@ -1521,8 +1521,14 @@ export async function bootstrap() {
     (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
   const assistantsRepo = createAssistantsRepository(db);
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant's "used" mark follows the install's mode, so an install that offers no assistants writes nothing for any session report. */
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
-    composeSessionDirectory(db, (agentId) => assistantsRepo.markUsed(agentId));
+    composeSessionDirectory(
+      db,
+      config.featureModes.assistant === "off"
+        ? undefined
+        : (agentId) => assistantsRepo.markUsed(agentId),
+    );
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,

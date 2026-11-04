@@ -7,7 +7,6 @@ import {
 } from "../../../modules/agents/index.js";
 import { permissionsOf } from "../../../modules/agents/domain/agent-permissions.js";
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
-import { generateK8sName } from "../../../modules/agents/infrastructure/configmap-mappers.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -332,13 +331,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           config.featureModes.assistant === "on" ||
           (config.featureModes.assistant === "experimental" &&
             (await features.flags()).assistant),
-        agentOf: async (agentId) => {
-          const infra = await agentsRepo.get(agentId);
-          return infra?.owner === user.sub ? infra : null;
-        },
+        agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
         agents,
         enrolled: () => gettingStarted.ensureEnrolled(user.sub),
-        newAgentId: () => generateK8sName("agent"),
       });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,

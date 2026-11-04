@@ -1,5 +1,5 @@
 {
-  "id": "18af4070-027d-4b18-b84d-13818db9836c",
+  "id": "380c613e-bc9e-44c2-befb-9794f75f4a68",
   "prevId": "ea3ed6bc-9282-40dd-ad63-82545e4827b9",
   "version": "7",
   "dialect": "postgresql",
@@ -1398,6 +1398,13 @@
           "primaryKey": true,
           "notNull": true
         },
+        "incarnation": {
+          "name": "incarnation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
         "agent_id": {
           "name": "agent_id",
           "type": "text",
@@ -1432,6 +1439,12 @@
         "renamed_to": {
           "name": "renamed_to",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "renamed_done_at": {
+          "name": "renamed_done_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

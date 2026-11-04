@@ -1097,6 +1097,8 @@ export function createAgentsService(deps: {
       (await deps.editors.agentIdsFor(deps.editorEmail)).map(async (id) => {
         const infra = await deps.repo.get(id);
         if (!infra) return [];
+        // UNIT_BOUNDARY_DESCRIPTION: an assistant has no editors, so a row left on one lists nothing for them.
+        if (infra.kind === "assistant") return [];
         const editors = await deps.editors.list(id);
         if (accessTo(infra.owner, editors, caller) !== "editor") return [];
         const [agent, access] = await Promise.all([
@@ -1140,7 +1142,9 @@ export function createAgentsService(deps: {
               sub: deps.owner,
               editorEmail: deps.editorEmail,
             });
-      if (role === null) return null;
+      // UNIT_BOUNDARY_DESCRIPTION: an assistant has no editors, so a row left on one grants nobody its view either.
+      if (role === null || (role === "editor" && infra.kind === "assistant"))
+        return null;
       const agent = await project(infra);
       return {
         agent,
@@ -1330,7 +1334,7 @@ export function createAgentsService(deps: {
           deps.agentDefaultLimits,
         );
       }
-      await deps.storageGate?.assertCanCreateVm();
+      if (!input.resume) await deps.storageGate?.assertCanCreateVm();
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
         input.name,
@@ -1410,7 +1414,7 @@ export function createAgentsService(deps: {
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
       assertNameNotReserved(input.name, input.kind, deps.assistantName);
-      await assertNameFree(input.name, owner);
+      await assertNameFree(input.name, owner, input.id);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -1443,13 +1447,24 @@ export function createAgentsService(deps: {
 
       let infra: InfraAgent;
       try {
-        infra = await deps.repo.create(
-          spec,
-          owner,
-          agentId,
-          templateId,
-          Object.keys(createAnnotations).length ? createAnnotations : undefined,
-        );
+        infra = input.resume
+          ? // UNIT_BOUNDARY_DESCRIPTION: a resumed create initializes the Agent its store write already made, read from the store rather than from the informer, which may not have caught up.
+            ((await deps.repo.getLive(agentId, owner)) ??
+            (() => {
+              throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "the agent this initialization belongs to is gone",
+              });
+            })())
+          : await deps.repo.create(
+              spec,
+              owner,
+              agentId,
+              templateId,
+              Object.keys(createAnnotations).length
+                ? createAnnotations
+                : undefined,
+            );
       } catch (e) {
         if (input.registryCredential) {
           try {
@@ -1557,12 +1572,14 @@ export function createAgentsService(deps: {
           envKeys: (input.env ?? []).map((e) => e.name),
         },
       });
-      emit({
-        type: EventType.AgentCreated,
-        agentId: agent.id,
-        ownerSub: owner,
-        character: avatarCharacter(agent.spec.avatar, owner, agent.name),
-      });
+      // UNIT_BOUNDARY_DESCRIPTION: the Agent already existed for a resumed create, so it was announced once when it was made.
+      if (!input.resume)
+        emit({
+          type: EventType.AgentCreated,
+          agentId: agent.id,
+          ownerSub: owner,
+          character: avatarCharacter(agent.spec.avatar, owner, agent.name),
+        });
       return agent;
     },
 

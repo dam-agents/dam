@@ -86,13 +86,14 @@ describe("provisioning before admission", () => {
   // TEST_SCENARIO: a person who has not accepted the Terms of Use — or whose sign-up was refused — is not admitted, and provisioning creates nothing and records nothing for them.
   it("creates nothing for a person the install has not admitted", async () => {
     const rows = new Map<string, { owner: string; agentId: string }>();
-    const create = vi.fn(async () => ({ id: "agent-chosen" }) as never);
+    const create = vi.fn(async () => ({ id: "agent-derived" }) as never);
     const repo = {
       find: async (owner: string) => {
         const row = rows.get(owner);
         return row
           ? {
               ...row,
+              incarnation: 1,
               state: "ready" as const,
               used: false,
               renamed: null,
@@ -100,14 +101,15 @@ describe("provisioning before admission", () => {
             }
           : null;
       },
-      reserve: async (owner: string, agentId: string) => {
+      start: async (owner: string, agentId: string) => {
         if (rows.has(owner)) return false;
         rows.set(owner, { owner, agentId });
         return true;
       },
-      takeOver: async () => true,
+      nextIncarnation: async () => false,
       markReady: async () => undefined,
       recordRename: async () => undefined,
+      completeRename: async () => undefined,
       clearRename: async () => undefined,
       markNoticeSeen: async () => undefined,
       markUsed: async () => undefined,
@@ -127,7 +129,6 @@ describe("provisioning before admission", () => {
         update: async () => null,
       },
       enrolled: async () => undefined,
-      newAgentId: () => "agent-chosen",
     });
 
     await provisioner.ensure();

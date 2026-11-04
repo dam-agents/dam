@@ -15,16 +15,17 @@ The name is **reserved**: no other Agent may be created or renamed to it, and th
 
 The install decides whether people get one at all through the `assistant` [feature](features.md) mode: `off` provisions nothing, `experimental` provisions for whoever switches the flag on, and `on` for everyone.
 Switching the mode off later stops provisioning and leaves the existing assistants where they are.
-An install whose mode is off reads nothing for this: the mode decides before any stored flag or record is read.
+An install whose mode is off decides on the mode alone: no stored flag, no assistant record and no Agent is read, the UI does not ask for the assistant's state, and a Session report writes nothing.
 
 Provisioning is **lazy**, at a person's first authenticated request the install admits — the same moment the [Getting Started](getting-started.md) checklist first meets them — and again after they accept the Terms of Use or switch the flag on, since neither makes a new request context.
 A person who has not accepted the Terms of Use, or whose acceptance a closed sign-up refuses, gets nothing: the admission is read before anything is created.
 No batch job provisions dormant accounts: an install of any age gives each person their assistant the next time they sign in.
 
-The context is **durable and idempotent**.
-One row per owner is the record: it names the assistant's Agent, chosen before anything else happens, and it is written before that Agent is created.
-A retry therefore finishes *that* Agent — after a crash, a refused create or an operator's delete — instead of making a second one, and two replicas that race converge because one wins the claim and the other adopts the Agent already there.
-Nothing waits on another request: a claim left behind by a replica that died is taken over once it is stale, and a claim that is still fresh is left to the request that holds it.
+Provisioning is **an idempotent ensure over a durable record**.
+One row per owner names the incarnation of its assistant, and the Agent's id is derived from the owner and that number: every replica computes the same id, so the store's own uniqueness is what makes one Agent — a create that loses is refused and its caller adopts what is there.
+Nothing waits and nothing is fenced: there is no claim to take over and no lease to expire.
+The row records `ready` only after the Agent and every initialization step behind it returned, so a request that dies half-way leaves a record the next request finishes; a step that fails is logged, recorded as not ready, and retried on the next one.
+When the Agent is deleted after it was ready, the row moves to its next incarnation, so the replacement has a **new id**: nothing still keyed by the old one — an artifacts sweep, an outbox entry — can reach it.
 
 An assistant runs on the owner's [default for new agents](profiles.md#the-default-for-new-agents), at the size that default gives every new Agent, with ordinary hibernation and on the owner's budget.
 An install with no [CurveBender](platform-topology.md) still creates it: the composer's own provider notice explains what to connect, which is the same answer every other Agent gives.
@@ -33,7 +34,8 @@ An install with no [CurveBender](platform-topology.md) still creates it: the com
 That decision reads the Agents a person already owns, so provisioning enrols them *before* it creates the assistant; the assistant is then what makes their first checklist task done rather than evidence they were here before.
 
 **A name already taken.** A person who already owns an Agent under the reserved name is not refused their assistant: that Agent is renamed once, to the reserved name marked `(yours)` and a number when that is taken too, and the news is written on the row as a one-time notice the UI shows on [Home](home-feed.md) until it is dismissed.
-The news is recorded before the rename happens, so a create that fails afterwards cannot lose it, and a retry finishes a rename the record already describes instead of renaming again.
+The news is recorded before the rename happens, as pending, and completed only once the Agent carries its new name — a create that fails afterwards cannot lose it, and the notice waits for the rename to land.
+A retry finishes a rename the record still describes, and drops the record when the person renamed that Agent themselves since.
 It never touches the assistant.
 
 ## What its owner may not do
@@ -57,7 +59,7 @@ That is presentation on top of the server's refusal, never a substitute for it.
 
 The assistant is visible in the agent list like any other Agent, and nothing hides it from lists or from the API.
 A person whose assistant has never been used lands in its chat rather than on Home; once it has been used, Home is where they land again.
-That answer is the row's own mark, set when the first Session is reported, so a sleeping assistant is decided without waking it.
+That answer is the row's own mark, set when the first Session is reported — and only while the install offers assistants — so a sleeping assistant is decided without waking it and an install that offers none writes nothing.
 Its first message, and anything it knows beyond what every Agent knows, is not part of this subsystem.
 
 ## Rolling it out

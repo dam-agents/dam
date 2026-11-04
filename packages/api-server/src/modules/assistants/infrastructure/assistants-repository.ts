@@ -1,16 +1,13 @@
 import { and, assistants, eq, sql, type Db } from "db";
 
-/** UNIT_BOUNDARY_DESCRIPTION: how far provisioning has got with the owner's assistant: its Agent is being made, is there, or was deleted and can be made again. */
-export type AssistantRowState = "creating" | "ready" | "gone";
+import type { AssistantRename } from "../domain/types.js";
 
-export interface AssistantRename {
-  agentId: string;
-  from: string;
-  to: string;
-}
+/** UNIT_BOUNDARY_DESCRIPTION: how far provisioning has got with the owner's assistant: its Agent still has steps to run, or it is initialized, or it was deleted. */
+export type AssistantRowState = "creating" | "ready" | "gone";
 
 export interface AssistantRow {
   owner: string;
+  incarnation: number;
   agentId: string;
   state: AssistantRowState;
   used: boolean;
@@ -18,16 +15,23 @@ export interface AssistantRow {
   noticeSeen: boolean;
 }
 
+export { type AssistantRename } from "../domain/types.js";
+
 export interface AssistantsRepository {
   find(owner: string): Promise<AssistantRow | null>;
-  reserve(owner: string, agentId: string): Promise<boolean>;
-  takeOver(owner: string, agentId: string, staleMs: number): Promise<boolean>;
+  start(owner: string, agentId: string): Promise<boolean>;
+  nextIncarnation(
+    owner: string,
+    fromAgentId: string,
+    toAgentId: string,
+  ): Promise<boolean>;
   markReady(owner: string, agentId: string): Promise<void>;
   recordRename(
     owner: string,
     agentId: string,
     rename: AssistantRename,
   ): Promise<void>;
+  completeRename(owner: string, agentId: string): Promise<void>;
   clearRename(owner: string, agentId: string): Promise<void>;
   markNoticeSeen(owner: string): Promise<void>;
   markUsed(agentId: string): Promise<void>;
@@ -37,29 +41,34 @@ export interface AssistantsRepository {
 
 const COLUMNS = {
   owner: assistants.owner,
+  incarnation: assistants.incarnation,
   agentId: assistants.agentId,
   state: assistants.state,
   usedAt: assistants.usedAt,
   renamedAgentId: assistants.renamedAgentId,
   renamedFrom: assistants.renamedFrom,
   renamedTo: assistants.renamedTo,
+  renamedDoneAt: assistants.renamedDoneAt,
   noticeSeenAt: assistants.noticeSeenAt,
 };
 
 type Row = {
   owner: string;
+  incarnation: number;
   agentId: string;
   state: string;
   usedAt: Date | null;
   renamedAgentId: string | null;
   renamedFrom: string | null;
   renamedTo: string | null;
+  renamedDoneAt: Date | null;
   noticeSeenAt: Date | null;
 };
 
 function toRow(row: Row): AssistantRow {
   return {
     owner: row.owner,
+    incarnation: row.incarnation,
     agentId: row.agentId,
     state:
       row.state === "ready" || row.state === "gone" ? row.state : "creating",
@@ -70,6 +79,7 @@ function toRow(row: Row): AssistantRow {
             agentId: row.renamedAgentId,
             from: row.renamedFrom,
             to: row.renamedTo,
+            done: row.renamedDoneAt !== null,
           }
         : null,
     noticeSeen: row.noticeSeenAt !== null,
@@ -78,13 +88,11 @@ function toRow(row: Row): AssistantRow {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The row per owner that makes the assistant one per
- * owner, and the durable record of provisioning it. Every call is one statement:
- * nothing holds a pool connection across the Agent's creation, which the
- * api-server performs on its own connections. `reserve` is the claim — its
- * primary key admits one winner and the losers get false, so contention costs
- * no wait. `takeOver` refreshes a claim a dead replica left behind, or one whose
- * Agent was deleted, again with a single winner; a claim younger than its bound
- * is left to the request that holds it.
+ * owner, and the durable record of provisioning it. Every call is one statement,
+ * so nothing holds a pool connection across the Agent's creation, and none of
+ * them waits for another: `start` is settled by the primary key, and
+ * `nextIncarnation` is a compare-and-set on the Agent id, so one caller moves the
+ * owner to the next incarnation and the rest find it already moved.
  */
 export function createAssistantsRepository(db: Db): AssistantsRepository {
   return {
@@ -96,7 +104,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
       return row ? toRow(row) : null;
     },
 
-    async reserve(owner, agentId) {
+    async start(owner, agentId) {
       const inserted = await db
         .insert(assistants)
         .values({ owner, agentId, state: "creating" })
@@ -105,19 +113,21 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
       return inserted.length > 0;
     },
 
-    async takeOver(owner, agentId, staleMs) {
-      const taken = await db
+    async nextIncarnation(owner, fromAgentId, toAgentId) {
+      const moved = await db
         .update(assistants)
-        .set({ updatedAt: sql`now()` })
+        .set({
+          incarnation: sql`${assistants.incarnation} + 1`,
+          agentId: toAgentId,
+          state: "creating",
+          usedAt: null,
+          updatedAt: sql`now()`,
+        })
         .where(
-          and(
-            eq(assistants.owner, owner),
-            eq(assistants.agentId, agentId),
-            sql`(${assistants.state} <> 'creating' OR ${assistants.updatedAt} < now() - make_interval(secs => ${staleMs / 1000}))`,
-          ),
+          and(eq(assistants.owner, owner), eq(assistants.agentId, fromAgentId)),
         )
         .returning({ owner: assistants.owner });
-      return taken.length > 0;
+      return moved.length > 0;
     },
 
     async markReady(owner, agentId) {
@@ -136,9 +146,19 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
           renamedAgentId: rename.agentId,
           renamedFrom: rename.from,
           renamedTo: rename.to,
+          renamedDoneAt: null,
           noticeSeenAt: null,
           updatedAt: sql`now()`,
         })
+        .where(
+          and(eq(assistants.owner, owner), eq(assistants.agentId, agentId)),
+        );
+    },
+
+    async completeRename(owner, agentId) {
+      await db
+        .update(assistants)
+        .set({ renamedDoneAt: sql`now()`, updatedAt: sql`now()` })
         .where(
           and(eq(assistants.owner, owner), eq(assistants.agentId, agentId)),
         );
@@ -151,6 +171,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
           renamedAgentId: null,
           renamedFrom: null,
           renamedTo: null,
+          renamedDoneAt: null,
           updatedAt: sql`now()`,
         })
         .where(

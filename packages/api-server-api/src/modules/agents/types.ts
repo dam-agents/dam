@@ -200,6 +200,8 @@ export interface AgentDefaultProvider {
 export type AgentKind = z.infer<typeof agentKindSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
+  /* UNIT_BOUNDARY_DESCRIPTION: a create for an Agent whose definition is already stored — the assistant, whose id its provisioning derives — so the store write is skipped and the initialization that follows it runs again, idempotently. */
+  resume?: boolean;
   starterKit?: string;
   starterKitSeed?: SeedStamp;
   starterKitDefaultModel?: string;

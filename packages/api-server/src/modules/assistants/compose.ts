@@ -18,7 +18,6 @@ export function composeAssistantsForOwner(deps: {
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
   agents: Pick<AgentsService, "list" | "create" | "update">;
   enrolled: () => Promise<void>;
-  newAgentId: () => string;
 }): { assistants: AssistantsService; provisioner: AssistantProvisioner } {
   const repo = createAssistantsRepository(deps.db);
   return {
@@ -32,7 +31,6 @@ export function composeAssistantsForOwner(deps: {
       agentOf: deps.agentOf,
       agents: deps.agents,
       enrolled: deps.enrolled,
-      newAgentId: deps.newAgentId,
     }),
   };
 }
