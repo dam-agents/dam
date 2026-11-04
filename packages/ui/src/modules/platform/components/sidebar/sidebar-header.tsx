@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
 
-import { BrandLogo } from "@/components/brand-logo";
+import { BrandLogoSlot } from "@/components/brand-logo-slot";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -26,9 +26,9 @@ export function SidebarHeader({ expanded, onToggle, onHome }: Props) {
           type="button"
           onClick={onHome}
           aria-label={getBrand().name}
-          className="rounded-lg px-0.5 py-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-10 items-center rounded-lg px-2.5 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
         >
-          <BrandLogo />
+          <BrandLogoSlot />
         </button>
       )}
       <Tooltip content={toggleLabel} side="right">
@@ -47,13 +47,12 @@ export function SidebarHeader({ expanded, onToggle, onHome }: Props) {
           {expanded ? (
             <ChevronLeft size={16} />
           ) : (
-            <span className="relative flex size-4 shrink-0 items-center justify-center">
-              <BrandLogo className="shrink-0 opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
+            <BrandLogoSlot logoClassName="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0">
               <ChevronRight
                 size={16}
                 className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
               />
-            </span>
+            </BrandLogoSlot>
           )}
         </button>
       </Tooltip>
