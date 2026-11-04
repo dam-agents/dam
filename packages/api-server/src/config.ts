@@ -300,7 +300,6 @@ const configSchema = z.object({
   starterKitsCatalogs: z.string().default(""),
   githubEnterpriseHost: z.string().default(""),
   githubEnterpriseToken: z.string().default(""),
-  gitReposPath: z.string().default(""),
   maxImportBundleBytes: z.coerce
     .number()
     .int()
@@ -516,7 +515,6 @@ export function loadConfig(): Config {
     starterKitsCatalogs: process.env.STARTER_KITS_CATALOGS,
     githubEnterpriseHost: process.env.GITHUB_ENTERPRISE_HOST,
     githubEnterpriseToken: process.env.GITHUB_ENTERPRISE_TOKEN,
-    gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     maxArtifactBytes: process.env.MAX_ARTIFACT_BYTES,
     satelliteMaxConcurrentCeiling: process.env.SATELLITE_MAX_CONCURRENT_CEILING,

@@ -266,7 +266,6 @@ import {
   shareSessionCookie,
   type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
-import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
@@ -749,7 +748,6 @@ export async function bootstrap() {
         storeAvatarImage(createAvatarImagesRepository(db), bytes, ownerSub),
     },
   });
-  const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
     keycloakRealm: config.keycloakRealm,
@@ -2543,7 +2541,6 @@ export async function bootstrap() {
     kitUpstream,
     linkedKits,
     firePair,
-    reposService,
     apiKeysModule,
     satellitesBoot,
     auth,

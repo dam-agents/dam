@@ -29,7 +29,6 @@ import { sidebarOrderRouter } from "./modules/sidebar-order/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
 import { spendRouter } from "./modules/spend/router.js";
 import { starterKitsRouter } from "./modules/starter-kits/router.js";
-import { reposRouter } from "./modules/repos/router.js";
 import { metricsRouter } from "./modules/metrics/router.js";
 import { telemetryRouter } from "./modules/telemetry/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
@@ -38,7 +37,6 @@ import { usageRouter } from "./modules/usage/router.js";
 
 export const appRouter = t.router({
   templates: templatesRouter,
-  repos: reposRouter,
   agents: agentsRouter,
   schedules: schedulesRouter,
   channels: channelsRouter,
