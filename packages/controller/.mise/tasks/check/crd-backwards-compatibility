@@ -21,6 +21,12 @@ status=0
 # an explicit in-cluster cleanup (the retired definition carries
 # helm.sh/resource-policy: keep, so Helm never deletes it itself).
 removed_ok="agent-platform.ai_forks.yaml agent-platform.ai_runs.yaml" # #2987: person-scoped forks removed; runs: dam-run executor removed (local exec shim)
+# Fields deliberately retired from a CRD, as crdify names them: "<file> <property>".
+# A removal here must be dead on every install: nothing writes it, and the
+# controller bumps the CRD schema generation, so a stored value is pruned.
+removed_fields_ok="
+agent-platform.ai_agents.yaml ^.spec.grantedSecretIds
+" # #6253: a credential reaches an agent only through a Connection
 for f in $(git ls-tree -r --name-only "$baseline" -- "$crds" $legacy); do
   if [ ! -f "$crds/$(basename "$f")" ]; then
     case " $removed_ok " in
@@ -50,9 +56,23 @@ for f in "$crds"/*.yaml; do
     echo "crd-compat: $f is new since $baseline — skipped"
     continue
   fi
-  if ! crdify --config "$config" "file://$tmp/$name" "file://$f"; then
+  if crdify --config "$config" "file://$tmp/$name" "file://$f" >/dev/null 2>&1; then
+    continue
+  fi
+  allowed=$(printf '%s\n' "$removed_fields_ok" | awk -v n="$name" '$1 == n { print $2 }' | jq -Rn '[inputs | select(. != "")]')
+  remaining=$({ crdify --config "$config" -o json "file://$tmp/$name" "file://$f" || true; } | jq --argjson ok "$allowed" '
+    def retired($p): any($ok[]; . as $r | $p == $r or ($p | startswith($r + ".")));
+    def field($e): $e | capture("^removed field : [^.]+\\.(?<p>.+)$").p // "";
+    [(.crdValidation // [])[] | .name as $n | .errors[]? | select(($n == "existingFieldRemoval" and retired(field(.))) | not)]
+    + [(.sameVersionValidation // [])[] | .propertyComparisons[]? | select(retired(.property) | not) | .comparisonResults[]? | .errors[]?]
+    + [(.servedVersionValidation // [])[] | .propertyComparisons[]? | select(retired(.property) | not) | .comparisonResults[]? | .errors[]?]
+    | length')
+  if [ "$remaining" != "0" ]; then
+    crdify --config "$config" "file://$tmp/$name" "file://$f" || true
     echo "crd-compat: $f is incompatible with $baseline (see findings above)" >&2
     status=1
+  else
+    echo "crd-compat: $f removes only fields retired deliberately — allowed"
   fi
 done
 exit $status
