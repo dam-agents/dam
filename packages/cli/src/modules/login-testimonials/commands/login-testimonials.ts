@@ -37,6 +37,8 @@ interface CommonOptions {
   json?: boolean;
 }
 
+const PHOTO_PLACEHOLDER = "0".repeat(64);
+
 const IMAGE_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -182,6 +184,23 @@ function buildImportCommand(deps: Deps): Command {
   ).action(async (file: string, opts: CommonOptions & { yes?: boolean }) => {
     const path = resolve(file);
     const parsed = await readTestimonialsFile(path);
+    const checked = loginTestimonialsSaveInputSchema.safeParse({
+      testimonials: parsed.testimonials.map((t) => ({
+        name: t.name,
+        role: t.role,
+        quote: t.quote,
+        photoId: t.photo ? PHOTO_PLACEHOLDER : null,
+      })),
+    });
+    if (!checked.success) {
+      const issue = checked.error.issues[0];
+      fail(
+        `${issue?.path.join(".") ?? "testimonials"}: ${issue?.message ?? "invalid"}`,
+      );
+    }
+    for (const t of parsed.testimonials)
+      if (t.photo && !IMAGE_TYPES[extname(t.photo).toLowerCase()])
+        fail(`${t.photo}: a photo must be a .png, .jpg or .jpeg file`);
     const host = await resolveActiveHost(deps, opts.server);
     const service = deps.createService(host);
     const current = await service.list();

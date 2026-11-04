@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { asc, avatarImages, type Db, inArray, loginTestimonials } from "db";
+import {
+  asc,
+  avatarImages,
+  type Db,
+  inArray,
+  loginTestimonials,
+  sql,
+} from "db";
 
 export interface StoredTestimonial {
   name: string;
@@ -18,7 +25,7 @@ export interface TestimonialsRepository {
   storedPhotos(ids: readonly string[]): Promise<Set<string>>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the login testimonials in Postgres, read in their position order. A replace deletes the list and writes the new one in one transaction, so a reader sees the old list or the new one, never a mix.
+// UNIT_BOUNDARY_DESCRIPTION: the login testimonials in Postgres, read in their position order. A replace deletes the list and writes the new one in one transaction, so a reader sees the old list or the new one, never a mix. Replaces take one transaction-scoped advisory lock, so two saves at once run one after the other and the later one wins whole, instead of the second failing on the position index.
 export function createTestimonialsRepository(db: Db): TestimonialsRepository {
   return {
     async list() {
@@ -36,6 +43,9 @@ export function createTestimonialsRepository(db: Db): TestimonialsRepository {
     },
     async replace(rows, updatedBy) {
       await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext('login_testimonials'))`,
+        );
         await tx.delete(loginTestimonials);
         if (rows.length === 0) return;
         await tx.insert(loginTestimonials).values(

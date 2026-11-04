@@ -1,12 +1,13 @@
 import { kcSanitize } from "keycloakify/lib/kcSanitize";
 import type { PageProps } from "keycloakify/login/pages/PageProps";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "../../components/button.js";
 import { Input } from "../../components/input.js";
 import { Label } from "../../components/label.js";
 import { cn } from "../../lib/cn.js";
 import { HeroBgShapes } from "../components/hero-bg-shapes.js";
+import { MessageAlert } from "../components/message-alert.js";
 import { ScaledStage } from "../components/scaled-stage.js";
 import { AccessSection } from "../components/sections/access.js";
 import { CapabilitiesSection } from "../components/sections/capabilities.js";
@@ -18,11 +19,13 @@ import { SlackDmIllustration } from "../components/slack-dm-illustration.js";
 import { SocialProviderButton } from "../components/social-provider-button.js";
 import type { LoginContent } from "../content.js";
 import { readLoginContent, useTestimonials } from "../content.js";
-import { useApplyThemeScript } from "../hooks/use-apply-theme-script.js";
-import { useRotatingNameMeaning } from "../hooks/use-rotating-name-meaning.js";
+import {
+  BRAND_FALLBACK,
+  showsMessage,
+  useLoginPageSetup,
+} from "../hooks/use-login-page-setup.js";
 import type { I18n } from "../i18n.js";
 import type { KcContext } from "../KcContext.js";
-import { BRAND_FALLBACK } from "../Template.js";
 
 type LoginContext = Extract<KcContext, { pageId: "login.ftl" }>;
 
@@ -84,6 +87,7 @@ export default function Login(props: PageProps<LoginContext, I18n>) {
       brand={brand}
       content={content}
       showMessage={!usernameError}
+      doUseDefaultCss={doUseDefaultCss}
       heroForm={<LoginForm {...form} formId={PRIMARY_FORM_ID} autoFocusInput />}
       bottomForm={
         <LoginForm
@@ -244,6 +248,7 @@ function ScrollPage({
   brand,
   content,
   showMessage,
+  doUseDefaultCss,
   heroForm,
   bottomForm,
 }: {
@@ -252,37 +257,21 @@ function ScrollPage({
   brand: string;
   content: LoginContent;
   showMessage: boolean;
+  doUseDefaultCss: boolean;
   heroForm: React.ReactNode;
   bottomForm: React.ReactNode;
 }) {
-  const { realm, message, isAppInitiatedAction } = kcContext;
-  const { msgStr } = i18n;
-
-  useApplyThemeScript();
   const testimonials = useTestimonials(kcContext.properties.PLATFORM_API_URL);
-  const nameMeaning = useRotatingNameMeaning(
-    kcContext.properties.PLATFORM_BRAND_NAME_MEANINGS,
-  );
-
-  useEffect(() => {
-    document.title =
-      realm.displayNameHtml || msgStr("loginTitle", realm.displayName || brand);
-  }, [msgStr, realm.displayNameHtml, realm.displayName, brand]);
+  const { isReadyToRender, nameMeaning } = useLoginPageSetup({
+    kcContext,
+    i18n,
+    doUseDefaultCss,
+  });
+  if (!isReadyToRender) return null;
 
   const alert =
-    showMessage &&
-    message !== undefined &&
-    (message.type !== "warning" || !isAppInitiatedAction) ? (
-      <div
-        role="alert"
-        className={cn(
-          "rounded-md border px-3 py-2 text-sm",
-          message.type === "error"
-            ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-            : "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200",
-        )}
-        dangerouslySetInnerHTML={{ __html: kcSanitize(message.summary) }}
-      />
+    showsMessage(kcContext, showMessage) && kcContext.message ? (
+      <MessageAlert message={kcContext.message} />
     ) : null;
 
   return (

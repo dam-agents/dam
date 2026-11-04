@@ -39,14 +39,14 @@ export function TestimonialsSection({
 
         <div className="mt-16 flex flex-col gap-5">
           <div className={FIRST_ROW[Math.min(testimonials.length, 3)]}>
-            {testimonials.slice(0, 3).map((t) => (
-              <TestimonialCard key={t.name} testimonial={t} brand={brand} />
+            {testimonials.slice(0, 3).map((t, i) => (
+              <TestimonialCard key={i} testimonial={t} brand={brand} />
             ))}
           </div>
           {testimonials.length > 3 && (
             <div className="mx-auto grid w-full grid-cols-1 gap-5 md:grid-cols-2 lg:max-w-[calc(66.666%+10px)]">
-              {testimonials.slice(3).map((t) => (
-                <TestimonialCard key={t.name} testimonial={t} brand={brand} />
+              {testimonials.slice(3).map((t, i) => (
+                <TestimonialCard key={i + 3} testimonial={t} brand={brand} />
               ))}
             </div>
           )}

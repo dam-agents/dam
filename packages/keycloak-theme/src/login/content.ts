@@ -50,19 +50,27 @@ export function useTestimonials(apiUrl: string): Testimonial[] {
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   useEffect(() => {
     if (!apiUrl) return;
+    let unmounted = false;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     fetch(`${apiUrl.replace(/\/$/, "")}/api/public/login-testimonials`, {
       signal: controller.signal,
     })
-      .then((res) => (res.ok ? res.json() : { testimonials: [] }))
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((body: unknown) => setTestimonials(toTestimonials(body)))
-      .catch(() => {
-        if (!controller.signal.aborted) return;
-        console.warn("[keycloak-theme] testimonials did not load in time");
+      .catch((err: unknown) => {
+        if (unmounted) return;
+        console.warn(
+          "[keycloak-theme] testimonials not shown:",
+          controller.signal.aborted ? "no answer in time" : err,
+        );
       })
       .finally(() => clearTimeout(timer));
     return () => {
+      unmounted = true;
       clearTimeout(timer);
       controller.abort();
     };
@@ -101,7 +109,7 @@ function text(entry: unknown, key: string): string {
 }
 
 function initialsOf(name: string): string {
-  const words = name.split(/\s+/).filter(Boolean);
+  const words = name.trim().split(/\s+/).filter(Boolean);
   const first = words[0]?.[0] ?? "";
   const last = words.length > 1 ? words[words.length - 1]![0]! : "";
   return (first + last).toUpperCase();
