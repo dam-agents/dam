@@ -54,7 +54,7 @@ What the prototype gets wrong, and this feature does differently:
 | 02  | ✅ Content sections and bottom sign-in        | Capabilities, channels, testimonials, sandbox, DevOps and access sections with the one character widget; trimmed; initials avatars; dark styles; content from one defaults module   | 01         |
 | 03  | ✅ Deployment settings for the page's content | Env vars from new `keycloak.login.*` Helm values for the docs URL, the community link and the testimonials; empty hides                                                             | 02         |
 | 04  | ✅ Testimonials in the database               | `login_testimonials` table; operator tRPC to list, save and reorder; public read endpoint the login page fetches; photos in the avatar image store; Helm testimonials value removed | 03         |
-| 05  | Editing testimonials                          | "Login page" card on Settings → Operator with photo upload; `dam login-testimonials` CLI with import and export; architecture pages                                                 | 04         |
+| 05  | ✅ Editing testimonials                       | "Login page" card on Settings → Operator with photo upload; `dam login-testimonials` CLI with import and export; architecture pages                                                 | 04         |
 
 Sub-issues 04 and 05 were added after 01–03 shipped on the branch: operators want to change the testimonials, photos included, without a chart upgrade.
 The docs link and community link stay Helm values; only the testimonials move to the database.

@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -146,6 +146,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit; for a platform operator, also listing, setting and removing each user's Spend Ceiling by the user's email; owned by [spend-limits.md](spend-limits.md).
   "Continue" at a limit is an `approval` verb, because the question is an approval.
 - **`budget`** — for a platform operator, listing each user's own compute Budget one page at a time (found, sorted and paged by the server), and setting, changing or removing one by the user's email; owned by [budgets.md](budgets.md#the-pool).
+- **`login-testimonials`** — for a platform operator, listing the testimonials the login page shows, exporting them to a JSON file with their photos beside it, and replacing them from such a file, owned by [security-and-credentials.md](security-and-credentials.md#identity).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 
 ## Shared conventions
