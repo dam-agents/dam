@@ -124,7 +124,7 @@ function AgentEnvironmentMembers({ agentId }: { agentId: string }) {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the loaded list, its edits and their Save. The shared editor says how full the list is, and the empty list says who may open them without it.
+// UNIT_BOUNDARY_DESCRIPTION: the loaded list, its edits and their Save. The shared editor says how full the list is, and the empty list says who may open them without it. Save waits while an email or an agent id is typed but not added, as the Share dialog's does, so nothing typed is dropped unseen.
 function MembersForm({
   savedEmails,
   edited,
@@ -150,6 +150,7 @@ function MembersForm({
 }) {
   const emails = edited ?? savedEmails;
   const agents = agentEdits.agents;
+  const pendingDraft = draft.trim().length > 0 || agentDraft.trim().length > 0;
   const dirty =
     (edited !== null && !sameViewers(edited, savedEmails)) || agentEdits.dirty;
 
@@ -185,7 +186,7 @@ function MembersForm({
         <div className="flex gap-2">
           <Button
             size="sm"
-            disabled={saving}
+            disabled={saving || pendingDraft}
             onClick={() =>
               onSave(
                 emails,
@@ -207,6 +208,11 @@ function MembersForm({
             Cancel
           </Button>
         </div>
+      )}
+      {dirty && pendingDraft && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Add what you typed to its list or clear it before saving.
+        </p>
       )}
     </>
   );

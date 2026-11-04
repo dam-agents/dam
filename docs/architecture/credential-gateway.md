@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -117,7 +117,7 @@ The depth is on [spend-limits](spend-limits.md).
 An Agent opens an [Environment](environments.md#agents-at-the-gate) as itself because its gateway sends its key there; the Agent never holds it.
 
 - **Its Secret.** The api-server writes one `agent-key` Secret per Agent while the Agent carries the platform's Environments egress rule, labelled with its owner and its Agent, its host pattern the environments domain, `*.<domain>`, and its one key, `sds.yaml`, the key as the credential injector reads it.
-  `filterByGrants` gives it to the gateway of the Agent its label names and no other, with no grant: on the owner gateway its key reaches the owner Secret under that Agent's prefix, as a connection's does.
+  The controller gives it to the gateway of the Agent its label names and no other, with no grant needed: on the owner gateway its key reaches the owner Secret under that Agent's prefix, as a connection's does.
   The controller's Secret watch reconciles that Agent when the Secret is written or deleted, so removing or restoring the rule reaches the gateway at once.
 - **Its chain.** The Secret makes one chain, which takes the domain from any other chain that claims it, so a connection's credential never reaches the gate and the key never reaches a connection's upstream; a Secret whose host is not a `*.` wildcard, or that lacks its key, makes none.
   The domain joins the leaf's SANs as any chain's host does.

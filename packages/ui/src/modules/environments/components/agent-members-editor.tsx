@@ -9,8 +9,7 @@ import { Input } from "@/components/ui/input";
 import { RemoveButton } from "@/components/ui/remove-button";
 import { timeAgo } from "@/lib/format-time";
 
-import { queryClient } from "../../../query-client.js";
-import { trpc } from "../../../trpc.js";
+import { useLookupAgent } from "../api/queries.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: an Agent on a list as the editor holds it: what the server said of it, or, for one just added, what its lookup said.
 export type ListedAgent = Pick<
@@ -45,6 +44,7 @@ export function AgentMembersEditor({
   const errorId = useId();
   const [error, setError] = useState<string | null>(null);
   const [looking, setLooking] = useState(false);
+  const lookupAgent = useLookupAgent();
   const full = agents.length >= VIEWER_ALLOWLIST_MAX;
 
   async function handleAdd() {
@@ -56,9 +56,7 @@ export function AgentMembersEditor({
     }
     setLooking(true);
     try {
-      const found = await queryClient.fetchQuery(
-        trpc.environments.lookupAgent.queryOptions({ agentId: id }),
-      );
+      const found = await lookupAgent(id);
       if (!found.found) {
         setError("That id names no agent that can open an Environment");
         return;
@@ -88,7 +86,7 @@ export function AgentMembersEditor({
           variant={error ? "invalid" : "standard"}
           aria-invalid={error !== null}
           aria-describedby={error ? errorId : undefined}
-          disabled={disabled || full}
+          disabled={disabled || full || looking}
           onChange={(e) => {
             onDraftChange(e.target.value);
             setError(null);

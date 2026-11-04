@@ -31,6 +31,7 @@ vi.mock("../../modules/environments/api/mutations.js", () => ({
   useSetAgentEnvironmentMembers: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("../../modules/environments/api/queries.js", () => ({
+  useLookupAgent: () => (id: string) => state.lookup!(id),
   useAgentEnvironmentMembers: () => ({
     data: { emails: state.agentMembers, agents: state.agentMemberAgents },
     isError: false,
@@ -62,23 +63,6 @@ vi.mock("../../modules/agents/api/queries.js", () => {
 });
 vi.mock("../../modules/agents/components/avatar/agent-avatar.js", () => ({
   AgentAvatar: () => null,
-}));
-vi.mock("../../query-client.js", () => ({
-  queryClient: {
-    fetchQuery: (options: { queryKey: unknown }) =>
-      state.lookup!(JSON.stringify(options.queryKey)),
-  },
-}));
-vi.mock("../../trpc.js", () => ({
-  trpc: {
-    environments: {
-      lookupAgent: {
-        queryOptions: (input: { agentId: string }) => ({
-          queryKey: input.agentId,
-        }),
-      },
-    },
-  },
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
@@ -531,6 +515,74 @@ describe("an Environment's Share dialog", () => {
 });
 
 describe("the agent's page", () => {
+  // TEST_SCENARIO: the person types an agent id on the agent's page but has not added it. Save stays off and the page says why, so a Save never drops what was typed.
+  it("holds Save while an agent id is typed but not added", () => {
+    state.agentMembers = ["a@example.com"];
+    const doc = mount(
+      createElement(AgentEnvironmentsSection, {
+        agentId: "agent-dev",
+        header: () => null,
+      }),
+    );
+    act(() =>
+      (
+        doc.querySelector(
+          '[aria-label="Remove a@example.com"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    const input = doc.querySelector(
+      '[data-testid="agent-member-input"]',
+    ) as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(input, "agent-qa1");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const save = [...doc.querySelectorAll("button")].find(
+      (b) => b.textContent === "Save",
+    );
+    expect(save?.disabled).toBe(true);
+    expect(doc.body.textContent).toContain(
+      "Add what you typed to its list or clear it before saving.",
+    );
+  });
+
+  // TEST_SCENARIO: while an agent id is being looked up, its field takes no more typing, so the lookup's result never clears text typed meanwhile.
+  it("locks the agent id field while its lookup runs", () => {
+    state.lookup = () => new Promise(() => {});
+    const doc = mount(
+      createElement(AgentEnvironmentsSection, {
+        agentId: "agent-dev",
+        header: () => null,
+      }),
+    );
+    const input = doc.querySelector(
+      '[data-testid="agent-member-input"]',
+    ) as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(input, "agent-qa1");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() =>
+      [...doc.querySelectorAll("button")]
+        .find(
+          (b) =>
+            b.textContent?.trim() === "Add" &&
+            b.closest('[data-testid="agent-members"]'),
+        )!
+        .click(),
+    );
+    expect(input.disabled).toBe(true);
+  });
+
   // TEST_SCENARIO: AC-5 — the agent's page shows its Environment members and a link to the Artifacts list, and no row for an Environment.
   it("keeps only the agent's members and links to Artifacts", () => {
     state.agentMembers = ["reviewer@example.com", "qa@example.com"];
