@@ -202,8 +202,9 @@ export function createSessionsService(deps: {
         ...(cursor !== undefined && { cursor }),
       });
       for (const listed of result.sessions ?? []) {
+        if (!wanted.delete(listed.sessionId)) continue;
         const title = firstLine(listed.title);
-        if (!title || !wanted.delete(listed.sessionId)) continue;
+        if (!title) continue;
         const fresh = deps.sessionMetadata.get(listed.sessionId);
         if (fresh && !fresh.meta.title && !fresh.meta.customTitle)
           deps.sessionMetadata.set(listed.sessionId, { ...fresh.meta, title });
