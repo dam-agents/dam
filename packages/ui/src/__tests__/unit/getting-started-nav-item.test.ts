@@ -203,6 +203,9 @@ it("lists the tasks and closes from the header", () => {
   render();
   expect(inDocument("getting-started-checklist")).not.toBeNull();
   expect(inDocument("getting-started-slots")?.children).toHaveLength(8);
+  expect(document.body.textContent).toContain(
+    "0 of 8 done · unlock new avatars",
+  );
   expect(document.body.textContent).toContain("Create a connection");
   act(() => button("Close checklist")?.click());
   expect(fake.setExpanded).toHaveBeenCalledWith(false);

@@ -39,7 +39,7 @@ export function ChecklistPanel({ rows, onClose, onDismiss, onStart }: Props) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground">Get started</p>
           <p className="text-sm text-muted-foreground">
-            {done} of {total} done{done > 0 && " · unlock new avatars"}
+            {done} of {total} done · unlock new avatars
           </p>
         </div>
         <Button
