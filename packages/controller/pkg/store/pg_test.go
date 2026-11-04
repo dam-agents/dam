@@ -600,3 +600,62 @@ func TestPostgresRelistSeesAnIncarnationChange(t *testing.T) {
 		t.Fatalf("changed %v, deleted %v", changed, deleted)
 	}
 }
+
+// TEST_SCENARIO: A status write that changes nothing writes nothing. Every
+// TEST_SCENARIO: write to the status or a condition row fires the change feed,
+// TEST_SCENARIO: and the feed requeues the Agent, so a write of the status the
+// TEST_SCENARIO: row already holds reconciles the Agent again and writes it
+// TEST_SCENARIO: again, for ever. The conditions are those of a hibernated vm
+// TEST_SCENARIO: agent, written by the same mutation twice.
+func TestPostgresUnchangedStatusWritesNothing(t *testing.T) {
+	ownerURL, controllerURL := postgresURLs(t)
+	owner, err := pgxpool.New(context.Background(), ownerURL)
+	if err != nil {
+		t.Fatalf("connecting as the owner: %v", err)
+	}
+	t.Cleanup(func() { owner.Close() })
+	seedAgent(t, owner)
+	t.Cleanup(func() { cleanup(t, owner) })
+	s, _ := openAs(t, controllerURL)
+	ctx := context.Background()
+
+	hibernated := func(status *apiv1.AgentStatus) {
+		for _, c := range []struct{ condType, reason string }{
+			{apiv1.ConditionAgentPodReady, "Hibernated"},
+			{apiv1.ConditionGatewayPodReady, "Hibernated"},
+			{apiv1.ConditionReady, "Hibernated"},
+		} {
+			apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
+				Type: c.condType, Status: metav1.ConditionFalse, Reason: c.reason,
+			})
+		}
+		apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
+			Type: "NestedVirtualization", Status: metav1.ConditionTrue, Reason: "Enabled", ObservedGeneration: 7,
+		})
+		apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
+			Type: apiv1.ConditionReconciled, Status: metav1.ConditionTrue, Reason: "Reconciled", ObservedGeneration: 7,
+		})
+		status.ObservedGeneration = 7
+		status.AgentPodRestarts = 0
+		status.AgentPodRestartReason = ""
+	}
+	if err := s.UpdateStatus(ctx, testAgent, hibernated); err != nil {
+		t.Fatalf("writing the hibernated status: %v", err)
+	}
+	version := func() int64 {
+		var v int64
+		if err := owner.QueryRow(ctx, "SELECT version FROM control.agent_status WHERE agent_id = $1", testAgent).Scan(&v); err != nil {
+			t.Fatalf("reading the status version: %v", err)
+		}
+		return v
+	}
+	before := version()
+	for range 3 {
+		if err := s.UpdateStatus(ctx, testAgent, hibernated); err != nil {
+			t.Fatalf("rewriting the hibernated status: %v", err)
+		}
+	}
+	if after := version(); after != before {
+		t.Fatalf("an unchanged status was written: the status version moved from %d to %d", before, after)
+	}
+}

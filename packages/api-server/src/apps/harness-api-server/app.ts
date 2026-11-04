@@ -101,6 +101,8 @@ export interface HarnessApiServerAppDeps {
   artifactLibraryFor: ArtifactLibraryFor;
   agentsServiceFor: (owner: string) => AgentsService;
   environmentsFor: (owner: string) => EnvironmentsServiceImpl;
+  // UNIT_BOUNDARY_DESCRIPTION: whether the install gives Environments addresses, so an Agent may be shared one and should be able to list it, whatever its owner turned on.
+  servesEnvironments: boolean;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
@@ -118,6 +120,7 @@ export interface HarnessApiServerAppDeps {
   satellitesBoot: SatellitesComposition;
   secretStore: SecretStore;
   spendHold: SpendHoldGate;
+  openCalls: (agentId: string) => Promise<number>;
   spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
   toolApprovalsFor: (owner: string) => ToolApprovalReports;
   agentSecretRequestsFor: (
@@ -196,6 +199,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
+      openCalls: deps.openCalls,
       readHarnessConfigSupport,
       scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,
@@ -252,6 +256,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       composeBudgetsModule({
         k8s: k8sClient,
         owner,
+        cpuPool: {
+          defaultCpu: config.defaultUserCpuBudget,
+          machineCpus: config.vmMachineCpus,
+          agentStore: { authority: config.agentStore, db },
+        },
         listAgentIds: async () =>
           (await agentsRepo.list(owner)).map((a) => a.id),
         isSlackUnlinked: async () => false,
@@ -292,11 +301,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       ),
     agentImage: createAgentImageReader((id) => deps.agentStateCache.get(id)),
     environments: async (owner, agentId) => {
-      const flags = await featureFlagsFor(owner);
-      if (!flags.environments) return null;
+      const manage = Boolean((await featureFlagsFor(owner)).environments);
+      if (!manage && !deps.servesEnvironments) return null;
       const agent = await agentsRepo.get(agentId, owner);
       if (!agent || agent.spec.environmentOf) return null;
-      return deps.environmentsFor(owner).forOwningAgent(agentId);
+      return deps.environmentsFor(owner).forOwningAgent(agentId, { manage });
     },
     agentTelemetry,
     spendStatusFor,

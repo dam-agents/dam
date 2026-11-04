@@ -1,7 +1,7 @@
 import type { Contribution } from "api-server-api";
 
 export type ProviderKeyProbeOutcome =
-  | { ok: true; unchecked?: true }
+  | { ok: true; unchecked?: true; account?: string }
   | { ok: false; reason: "refused" | "unverified"; detail: string };
 
 export interface ProviderKeyTarget {

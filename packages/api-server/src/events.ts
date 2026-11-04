@@ -4,6 +4,8 @@ import type {
   EntryPointChoice,
   GettingStartedTask,
   ProviderOutageReason,
+  SpendLimitScope,
+  SpendUnit,
 } from "api-server-api";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { Subject, type Observable } from "rxjs";
@@ -42,6 +44,7 @@ export enum EventType {
   ApprovalRequested = "ApprovalRequested",
   ApprovalResolved = "ApprovalResolved",
   SpendLimitsChanged = "SpendLimitsChanged",
+  SpendWorkStopped = "SpendWorkStopped",
   GatewayCallEnded = "GatewayCallEnded",
   ProviderStatusEvaluated = "ProviderStatusEvaluated",
   ScheduleCreated = "ScheduleCreated",
@@ -263,6 +266,37 @@ export type ApprovalResolved = {
 export type SpendLimitsChanged = {
   type: EventType.SpendLimitsChanged;
   ownerSub: string;
+};
+
+export type SpendStopLevel =
+  | { kind: "ceiling"; amountMicros: number }
+  | {
+      kind: "limit";
+      limitId: string;
+      scope: SpendLimitScope;
+      unit: SpendUnit;
+      amountMicros: number;
+      extensions: number;
+    };
+
+export type SpendStoppedWork =
+  | { kind: "schedule" }
+  | { kind: "ambient"; channel: "slack" | "telegram" }
+  | { kind: "mention"; channel: "slack" | "telegram" }
+  | { kind: "call"; agentId: string; sessionId: string | null };
+
+export type SpendWorkStopped = {
+  type: EventType.SpendWorkStopped;
+  ownerSub: string;
+  payer: string;
+  day: string;
+  level: SpendStopLevel;
+  near: readonly {
+    level: SpendStopLevel;
+    spentMicros: number;
+    effectiveMicros: number;
+  }[];
+  work: SpendStoppedWork;
 };
 
 export type GatewayCallEnded = {
@@ -567,6 +601,7 @@ export type DomainEvent =
   | ApprovalRequested
   | ApprovalResolved
   | SpendLimitsChanged
+  | SpendWorkStopped
   | GatewayCallEnded
   | ProviderStatusEvaluated
   | ScheduleCreated

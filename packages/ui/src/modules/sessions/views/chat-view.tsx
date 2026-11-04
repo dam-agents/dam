@@ -47,11 +47,15 @@ import {
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
+import { AgentReconnectingNotice } from "../../agents/components/agent-reconnecting-notice.js";
 import {
   AgentStartNotice,
   hasStartNotice,
 } from "../../agents/components/agent-start-notice.js";
-import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
+import {
+  AgentUnavailableOverlay,
+  takesOverChat,
+} from "../../agents/components/agent-unavailable-overlay.js";
 import {
   AgentAvatar,
   avatarMood,
@@ -73,7 +77,6 @@ import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fall
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
-import { startsInChat } from "../../agents/lib/agent-start.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
@@ -87,7 +90,6 @@ import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
 import { useContinuedFrom } from "../../invocations/api/queries.js";
 import {
   DelegationOwnersProvider,
@@ -149,7 +151,6 @@ import {
 } from "../components/side-panel-bar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThreadDivider } from "../components/thread-divider.js";
-import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
@@ -160,6 +161,7 @@ import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import { useReconciledPermissions } from "../hooks/use-reconciled-permissions.js";
 import { useSenderNames } from "../hooks/use-sender-names.js";
 import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
 import {
@@ -302,7 +304,24 @@ export function ChatView() {
     busy,
     loadingSession,
     connectionState,
+    retryChannel,
   } = useAcpSession(selectedAgent, textareaRef);
+  useReconciledPermissions(connectionState);
+  const channelChat = sessionMode !== SessionMode.Terminal;
+  const channelLive = connectionState === "live";
+  const channelLost =
+    channelChat &&
+    (connectionState === "reconnecting" || connectionState === "reloading");
+  const channelBlocked =
+    channelChat &&
+    !channelLive &&
+    !agentStarting &&
+    (sessionId !== null || !agentOperable);
+  const channelBlock = channelBlocked
+    ? channelLost
+      ? ("lost" as const)
+      : ("connecting" as const)
+    : null;
 
   const promptGate = {
     agentId: selectedAgent,
@@ -521,6 +540,7 @@ export function ChatView() {
     noGrantedProvider,
     sharedCurveBender: !!shared,
     formLocked: formLocksComposer,
+    channel: channelBlock,
   });
   const sendWithA2uiData = useCallback(
     (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
@@ -804,6 +824,13 @@ export function ChatView() {
 
   const notices = (
     <>
+      {channelBlock !== null && agentDisplay?.state === "running" && (
+        <AgentReconnectingNotice
+          name={selectedAgentName ?? "the agent"}
+          state={channelBlock}
+          onRetry={loadingSession ? undefined : retryChannel}
+        />
+      )}
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
       <ContributionGapNotice agentId={selectedAgent} />
       <WorkspaceFailureNotice agentId={selectedAgent} />
@@ -1069,7 +1096,6 @@ export function ChatView() {
             </ChatColumn>
           </div>
 
-          <GettingStartedDock placement="chat" />
           {showJump && (
             <button
               onClick={scrollToBottom}
@@ -1097,6 +1123,12 @@ export function ChatView() {
             onStop={stopAgent}
             onTakeBack={takeBack}
             blockedReason={block?.reason ?? null}
+            stopBlockedReason={
+              channelBlocked
+                ? "Waiting for the agent's connection — Stop works once it is up."
+                : null
+            }
+            channelLive={channelLive}
             harness={sendHarness ?? null}
             onBlockedClick={
               block?.kind === "connect"
@@ -1234,7 +1266,7 @@ export function ChatView() {
     );
 
   return (
-    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {}
       {(providersModal ?? noProviders) && (
         <ProviderSettingsModal
@@ -1278,7 +1310,7 @@ export function ChatView() {
               selectedAgent={selectedAgent}
               agent={agentView}
               busy={busy}
-              connectionState={connectionState}
+              channelLost={channelLost}
               sessionId={sessionId}
               processesEnabled={processesEnabled}
             />
@@ -1326,7 +1358,7 @@ export function ChatView() {
       ) : selectedAgent &&
         !agentInaccessible &&
         !agentOperable &&
-        !(agentView && agentDisplay && startsInChat(agentDisplay.state)) ? (
+        takesOverChat(agentDisplay?.state ?? null) ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}
@@ -1342,24 +1374,22 @@ function ChatHeaderStatus({
   selectedAgent,
   agent,
   busy,
-  connectionState,
+  channelLost,
   sessionId,
   processesEnabled,
 }: {
   selectedAgent: string | null;
   agent: AgentView | null;
   busy: boolean;
-  connectionState: ConnectionState;
+  channelLost: boolean;
   sessionId: string | null;
   processesEnabled: boolean;
 }) {
   const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
-  const reconnecting =
-    connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
       {!processesEnabled && <BackgroundWorkIndicator items={backgroundWork} />}
-      {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
+      {channelLost && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {agent && <GatewayFailureBadge agent={agent} />}
       {!busy && agent && (

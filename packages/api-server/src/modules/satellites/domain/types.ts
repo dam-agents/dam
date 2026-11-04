@@ -1,4 +1,4 @@
-import type { JobStatus, SatelliteTool } from "api-server-api";
+import type { JobStatus, SatelliteImage, SatelliteTool } from "api-server-api";
 
 export interface SatelliteRow {
   owner: string;
@@ -9,6 +9,8 @@ export interface SatelliteRow {
   tools: SatelliteTool[];
   draining: boolean;
   lastSeenAt: Date | null;
+  incarnation: string;
+  createdAt: Date;
 }
 
 export interface JobRow {
@@ -18,10 +20,12 @@ export interface JobRow {
   agentId: string;
   tool: string;
   args: Record<string, unknown>;
+  transferDirection: "download" | "upload" | null;
   status: JobStatus;
   isError: boolean;
   exitCode: number | null;
   output: string | null;
+  images: SatelliteImage[];
   truncated: boolean;
   reason: string | null;
   cancelRequested: boolean;

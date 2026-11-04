@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import {
+  PLATFORM_ENVIRONMENTS_SOURCE,
+  type PlatformRuleState,
   type EgressPreset,
   type EgressRuleCreateInput,
   type EgressRuleUpdateInput,
@@ -24,6 +26,12 @@ export interface CreateEgressRulesServiceDeps {
   ownerSub: string;
   actor: string;
   resolveUserEmail(sub: string): Promise<string | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: what follows the platform's Environments rule: the Agent's key goes when the owner removes the rule and comes back, new, when they restore it. Absent, the rule's state reads unavailable.
+  platformAccess?: {
+    withdraw(agentId: string): Promise<void>;
+    restore(agentId: string, ownerSub: string): Promise<EgressRuleRow | null>;
+    state(agentId: string): Promise<PlatformRuleState>;
+  };
 }
 
 const WRITTEN_BY_A_PERSON = new Set(["manual", "inbox"]);
@@ -181,6 +189,12 @@ export function createEgressRulesService(
           message: "egress rule not found",
         });
       }
+      if (rule.source === PLATFORM_ENVIRONMENTS_SOURCE)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "the platform's Environments rule cannot be edited; remove it, or keep it as it is",
+        });
       const method = input.method ?? rule.method;
       const pathPattern = input.pathPattern ?? rule.pathPattern;
       const verdict = input.verdict ?? rule.verdict;
@@ -221,6 +235,8 @@ export function createEgressRulesService(
       if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub)))
         return;
       await deps.repo.revoke(id);
+      if (rule.source === PLATFORM_ENVIRONMENTS_SOURCE)
+        await deps.platformAccess?.withdraw(rule.agentId);
       securityLog("info", "egress_rule.revoke", {
         category: "authz-list",
         actor: deps.ownerSub,
@@ -234,6 +250,38 @@ export function createEgressRulesService(
         },
       });
       await reconvergeAgentL7Hosts(deps, rule.agentId);
+    },
+
+    async platformRule(agentId) {
+      if (
+        !deps.platformAccess ||
+        !(await deps.isAgentOwnedBy(agentId, deps.ownerSub))
+      )
+        return { state: "unavailable" };
+      return deps.platformAccess.state(agentId);
+    },
+
+    async restorePlatformRule(agentId) {
+      if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) {
+        logNotOwner(agentId, { surface: "egress-rule.platform-restore" });
+        throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+      }
+      const row = await deps.platformAccess?.restore(agentId, deps.ownerSub);
+      if (!row)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "this install serves no Environments",
+        });
+      securityLog("info", "egress_rule.create", {
+        category: "authz-list",
+        actor: deps.ownerSub,
+        actorKind: "user",
+        agentId,
+        target: row.host,
+        decision: "allow",
+        detail: { ruleId: row.id, source: PLATFORM_ENVIRONMENTS_SOURCE },
+      });
+      return toView(row);
     },
 
     async applyPreset(agentId: string, preset: EgressPreset) {

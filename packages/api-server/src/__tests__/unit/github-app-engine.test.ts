@@ -401,6 +401,28 @@ describe("github app engine readInstallation", () => {
     ).toHaveLength(2);
   });
 
+  // TEST_SCENARIO: a custom host can answer the installation with a hostile account login and repository names, and the connection page and the CLI print both, so they arrive stripped of control bytes and capped.
+  it("cleans the account and repository labels a hostile host returns", async () => {
+    const hostile = `\u001b[31m${"r".repeat(5000)}`;
+    const { engine } = makeEngine((call) =>
+      call.url.endsWith("/app/installations/987654")
+        ? jsonResponse({
+            permissions: {},
+            repository_selection: "selected",
+            account: { login: hostile },
+          })
+        : call.url.includes("/access_tokens")
+          ? jsonResponse({ token: "ghs_probe" })
+          : jsonResponse({ repositories: [{ id: 12, name: hostile }] }),
+    );
+    const info = await read(engine);
+
+    expect(info.accountLogin).toBe(`[31m${"r".repeat(196)}`);
+    expect(info.repositories).toEqual([
+      { id: 12, name: `[31m${"r".repeat(196)}` },
+    ]);
+  });
+
   it("works when the method is called detached from the engine", async () => {
     const { engine } = makeEngine((call) =>
       call.url.endsWith("/app/installations/987654")

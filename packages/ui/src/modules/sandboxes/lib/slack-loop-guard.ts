@@ -8,6 +8,11 @@ function dropTime(at: string, now: Date): string {
     : `${formatDate(at, { month: "short", day: "numeric" })}, ${clockLabel(at)}`;
 }
 
+function minutes(ms: number): string {
+  const count = Math.round(ms / 60_000);
+  return count === 1 ? "a minute" : `${count} minutes`;
+}
+
 export function loopGuardNoticeCopy(
   drops: SlackLoopGuardDrops,
   now: Date = new Date(),
@@ -16,9 +21,9 @@ export function loopGuardNoticeCopy(
   return {
     title: `${drops.dropped} bot or app ${posts} dropped by the loop guard, last ${dropTime(drops.lastDroppedAt, now)}.`,
     rule:
-      `Once ${drops.limit} bot or app posts in a row reach one conversation, ` +
-      "later ones start no turn until a person posts there, a day passes " +
-      "without one being let through, or the platform restarts.",
+      `When more than ${drops.limit} bot or app posts reach one conversation within ${minutes(drops.windowMs)}, ` +
+      `bot and app posts there start no turn for ${minutes(drops.cooldownMs)}, ` +
+      "and the conversation gets a notice saying so. A person's posts still start turns.",
     latest:
       drops.recent.length === 0
         ? null

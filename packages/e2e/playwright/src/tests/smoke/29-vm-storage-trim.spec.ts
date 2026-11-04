@@ -144,6 +144,21 @@ async function settledRoom(
   }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the guest's room once the guard has answered the machines running now, in MiB: a sample under a grant the runner published after this call, whose room the guard has settled on (heldToShare) and which meets `moved`. A plain read is the guard's answer to a look up to a STORAGE_CHECK old, moved up to a POOL_GUARD_BACKOFF later, so it can still count a machine of another spec that the idle sweep stopped seconds before: a round that took such a read as its baseline compared a move against a share the runner had already left, and when no look fell between the sibling's delete and the next start the guest went from three machines' share to two and never back, which read as a start that did not shrink the room. The machine a round stops or starts is only counted by a look after the API answers, which a stop does not ask for, so the sample that shows the move is waited for rather than read once.
+async function movedRoom(
+  moved: (availMiB: number) => boolean,
+  what: string,
+): Promise<number> {
+  const after = readRoom().id;
+  const settled = heldToShare(diskLeftMiB(0));
+  const room = await settledRoom(
+    after,
+    (room) => settled(room) && moved(room.availMiB),
+    what,
+  );
+  return room.availMiB;
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and a per-agent hibernation timeout a spec can set is not what the sweep reads for a machine; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
 async function keepAwake(id: string): Promise<void> {
   await api.agents.wake.mutate({ id });
@@ -317,14 +332,16 @@ test("the guard gives a machine the room its share gains, and takes it back", as
           await waitAgentState(api, siblingId, "running");
         }
         await keepAwake(probeId);
-        const base = guestAvailMiB();
+        const base = await movedRoom(
+          () => true,
+          `round ${round}: the guest's room never settled on the machines running before the move`,
+        );
         await api.agents.delete.mutate({ id: siblingId });
         siblingId = "";
         await keepAwake(probeId);
-        const stopped = await waitFor(
-          guestAvailMiB,
+        const stopped = await movedRoom(
           (mib) => mib >= base + MOVE_MIB,
-          `round ${round}: the guest's free space did not grow when a machine stopped`,
+          `round ${round}: the guest's free space did not grow from ${base} MiB when a machine stopped`,
         );
         siblingId = await createAgentOn(
           api,
@@ -333,10 +350,9 @@ test("the guard gives a machine the room its share gains, and takes it back", as
         );
         await waitAgentState(api, siblingId, "running");
         await keepAwake(probeId);
-        await waitFor(
-          guestAvailMiB,
+        await movedRoom(
           (mib) => mib <= stopped - MOVE_MIB,
-          `round ${round}: the guest's free space did not fall when another machine started`,
+          `round ${round}: the guest's free space did not fall from ${stopped} MiB when another machine started`,
         );
         break;
       } catch (error) {

@@ -332,6 +332,8 @@ spec:
               value: {{ .Values.virtualization.runner.storage | quote }}
             - name: VM_POOL_MEMORY
               value: {{ (((.Values.virtualization.runner.resources | default dict).limits) | default dict).memory | default "" | toString | quote }}
+            - name: VM_MACHINE_CPUS
+              value: {{ .Values.virtualization.runner.machineCPUs | default 0 | toString | quote }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED
               value: "true"
@@ -641,9 +643,17 @@ spec:
               value: {{ .Values.terms.text | quote }}
             - name: SIGN_UPS
               value: {{ .Values.signUps | quote }}
+            {{- if .Values.links.docs }}
+            - name: LINKS_DOCS
+              value: {{ .Values.links.docs | quote }}
+            {{- end }}
             {{- if .Values.links.computeRequest }}
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}
+            {{- end }}
+            {{- if .Values.links.curveBenderCommunity }}
+            - name: LINKS_CURVE_BENDER_COMMUNITY
+              value: {{ .Values.links.curveBenderCommunity | quote }}
             {{- end }}
             {{- if .Values.links.slackInstallRequest }}
             - name: LINKS_SLACK_INSTALL_REQUEST

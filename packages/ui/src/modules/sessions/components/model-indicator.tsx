@@ -303,6 +303,9 @@ export function ModelIndicator({
               subagentProfiles={profiles}
               carried={carried}
               customHint={harnessName ?? harness}
+              onConfigureProviders={() =>
+                navigateToSandboxHome(agentId, "providers")
+              }
               primary={{
                 selectedId: primary?.id ?? null,
                 custom: primary ? null : (

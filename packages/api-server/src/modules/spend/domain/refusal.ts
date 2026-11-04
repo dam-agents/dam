@@ -1,6 +1,7 @@
 import { nextUtcMidnight, PLATFORM_REFUSAL_HEADER } from "api-server-api";
 import { match } from "ts-pattern";
 import type { ApiDialect } from "./call.js";
+import type { SpendBlock } from "./limits.js";
 
 export interface Refusal {
   readonly status: number;
@@ -18,6 +19,17 @@ export function softLimitText(brandName: string): string {
   return brand && !/\d/.test(brand)
     ? `Spend quota exceeded for today. The owner can approve more in ${brand}.`
     : "Spend quota exceeded for today. The owner can approve more.";
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: which spend stop a harness's error text reports.
+ * A refusal reaches a channel turn only as the harness's own error, which
+ * keeps the refusal body, so the body's fixed opening tells a spend stop from
+ * any other failure, and the ceiling's text names the platform operator.
+ */
+export function spendRefusalIn(text: string): SpendBlock | null {
+  if (!/spend quota exceeded/i.test(text)) return null;
+  return /platform operator/i.test(text) ? "ceiling" : "limit";
 }
 
 const JSON_ERROR_PROVIDERS: ReadonlySet<string> = new Set(["bob"]);

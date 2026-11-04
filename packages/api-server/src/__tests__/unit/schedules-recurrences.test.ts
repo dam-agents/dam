@@ -129,7 +129,14 @@ function stepFromAnchor(rrule: string, from: Date): Date | null {
   const step = Number(fields.INTERVAL ?? 1) * (hourly ? 60 : 1);
   const minutes = list("BYMINUTE");
   const hours = list("BYHOUR");
-  const anchor = Date.UTC(2001, 0, 1) / 60_000;
+  const anchor =
+    Date.UTC(
+      2001,
+      0,
+      1,
+      hours ? Math.min(...hours) : 0,
+      hours && !hourly && minutes ? Math.min(...minutes) : 0,
+    ) / 60_000;
   const first = Math.floor((from.getTime() / 60_000 - anchor) / step);
   for (let k = first; k < first + 200_000; k++) {
     const period = anchor + k * step;
@@ -195,7 +202,7 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
   });
 
   it.each([
-    "FREQ=HOURLY;INTERVAL=2;BYHOUR=9",
+    "FREQ=MINUTELY;INTERVAL=60;BYMINUTE=30",
     "FREQ=HOURLY;BYSETPOS=3",
     "FREQ=DAILY;BYHOUR=9,10;BYSETPOS=3",
     "FREQ=MINUTELY;INTERVAL=15;BYMINUTE=0;BYMONTH=2;BYMONTHDAY=30",
@@ -216,6 +223,93 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
     },
     60_000,
   );
+});
+
+// TEST_SCENARIO: a sub-daily rule with BYHOUR steps in wall-clock time from its first hour, so it fires on the hours it lists in summer and winter alike, as a daily rule does across a clock change.
+describe("nextFireAt (sub-daily rule with BYHOUR across a clock change)", () => {
+  const EVERY_TWO_HOURS =
+    "FREQ=HOURLY;INTERVAL=2;BYHOUR=9,11,13,15,17,19;BYMINUTE=37";
+
+  it.each([
+    ["2026-10-20T12:00:00Z", "2026-10-20T13:37:00.000Z"],
+    ["2026-11-02T12:00:00Z", "2026-11-02T12:37:00.000Z"],
+    ["2027-03-29T12:00:00Z", "2027-03-29T13:37:00.000Z"],
+  ])("fires on the listed hours from %s", (from, expected) => {
+    const spec = rruleSpec(EVERY_TWO_HOURS, "Europe/Prague");
+    expect(nextFireAt(spec, new Date(from))?.toISOString()).toBe(expected);
+  });
+
+  it("fires an interval that never reaches its hour from midnight", () => {
+    const spec = rruleSpec("FREQ=HOURLY;INTERVAL=2;BYHOUR=9", "Europe/Prague");
+    const next = nextFireAt(spec, new Date("2026-11-02T12:00:00Z"));
+    expect(next?.toISOString()).toBe("2026-11-03T08:00:00.000Z");
+  });
+
+  it("steps a minutely rule from its first hour in winter time", () => {
+    const spec = rruleSpec(
+      "FREQ=MINUTELY;INTERVAL=90;BYHOUR=10,11",
+      "Europe/Prague",
+    );
+    const first = nextFireAt(spec, new Date("2026-11-02T07:00:00Z"))!;
+    expect(first.toISOString()).toBe("2026-11-02T09:00:00.000Z");
+    expect(nextFireAt(spec, first)?.toISOString()).toBe(
+      "2026-11-02T10:30:00.000Z",
+    );
+  });
+
+  it("fires a repeated wall time once, at its first occurrence", () => {
+    const spec = rruleSpec("FREQ=HOURLY;BYHOUR=2;BYMINUTE=37", "Europe/Prague");
+    const first = nextFireAt(spec, new Date("2026-10-24T23:00:00Z"))!;
+    expect(first.toISOString()).toBe("2026-10-25T00:37:00.000Z");
+    expect(nextFireAt(spec, first)?.toISOString()).toBe(
+      "2026-10-26T01:37:00.000Z",
+    );
+  });
+
+  it("fires a wall time erased by spring-forward one hour later", () => {
+    const spec = rruleSpec("FREQ=HOURLY;BYHOUR=2;BYMINUTE=37", "Europe/Prague");
+    const next = nextFireAt(spec, new Date("2027-03-27T23:00:00Z"));
+    expect(next?.toISOString()).toBe("2027-03-28T01:37:00.000Z");
+  });
+
+  it("fires every pin a spring-forward jump moves one hour later", () => {
+    const spec = rruleSpec(
+      "FREQ=HOURLY;BYHOUR=2;BYMINUTE=15,45",
+      "Europe/Prague",
+    );
+    const first = nextFireAt(spec, new Date("2027-03-27T23:00:00Z"))!;
+    expect(first.toISOString()).toBe("2027-03-28T01:15:00.000Z");
+    expect(nextFireAt(spec, first)?.toISOString()).toBe(
+      "2027-03-28T01:45:00.000Z",
+    );
+    expect(
+      nextFireAt(spec, new Date("2027-03-28T01:00:00Z"))?.toISOString(),
+    ).toBe("2027-03-28T01:15:00.000Z");
+  });
+
+  // TEST_SCENARIO: a minutely rule starts its steps at its first hour and minute, so a stored rule whose pins sat on the steps from midnight still fires.
+  it("keeps a minutely rule on its first pinned minute", () => {
+    const spec = rruleSpec(
+      "FREQ=MINUTELY;INTERVAL=90;BYHOUR=1;BYMINUTE=30",
+      "Europe/Prague",
+    );
+    const first = nextFireAt(spec, new Date("2026-11-02T12:00:00Z"))!;
+    expect(first.toISOString()).toBe("2026-11-03T00:30:00.000Z");
+    expect(nextFireAt(spec, first)?.toISOString()).toBe(
+      "2026-11-04T00:30:00.000Z",
+    );
+  });
+
+  it.each([
+    ["FREQ=HOURLY;BYHOUR=9;UNTIL=20261103T080000Z", "2026-11-03T08:00:00.000Z"],
+    ["FREQ=HOURLY;BYHOUR=9;UNTIL=20261103T075900Z", undefined],
+    ["FREQ=HOURLY;BYHOUR=9;UNTIL=20261103T090000", "2026-11-03T08:00:00.000Z"],
+  ])("ends %s at its UNTIL", (rrule, expected) => {
+    const spec = rruleSpec(rrule, "Europe/Prague");
+    expect(
+      nextFireAt(spec, new Date("2026-11-02T12:00:00Z"))?.toISOString(),
+    ).toBe(expected);
+  });
 });
 
 // TEST_SCENARIO: the search runs on the api-server's event loop, so rules that once took seconds to answer, quiet hours that cover a sparse rule among them, now answer within a fraction of a second.
@@ -353,7 +447,7 @@ describe("validateRRule", () => {
   });
 
   it.each([
-    ["FREQ=HOURLY;INTERVAL=2;BYHOUR=9", /it never fires/],
+    ["FREQ=MINUTELY;INTERVAL=60;BYMINUTE=30", /it never fires/],
     ["FREQ=HOURLY;BYSETPOS=3", /it never fires/],
     ["FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30", /it never fires/],
     ["FREQ=DAILY;UNTIL=20200101T000000Z", /it has no more occurrences/],

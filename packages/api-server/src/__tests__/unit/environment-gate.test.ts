@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. An Environment with several endpoints is one sign-in: the browser passes through each other endpoint, which gets a session of its own, and returns to the page it asked for; a page of one endpoint can then call another, its CORS preflight is answered by the gate, and a refusal it gets carries CORS headers so the page can read it. A visitor who is not signed in is sent to sign in; the owner and people on the owner's list (narrowed per Environment by its agent) are admitted, by verified email; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and its own credentials in `Authorization` never reach the app, while the app's own bearer token does; the app cannot set the platform's cookies, and every response is uncacheable. Any other host passes on untouched.
+// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. An Environment with several endpoints is one sign-in: the browser passes through each other endpoint, which gets a session of its own, and returns to the page it asked for; a page of one endpoint can then call another, its CORS preflight is answered by the gate, and a refusal it gets carries CORS headers so the page can read it. A visitor who is not signed in is sent to sign in; the owner the owning agent's editors, its Agent Environment Members and an Environment's own Environment Members are admitted, by verified email, each list only adding people; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and its own credentials in `Authorization` never reach the app, while the app's own bearer token does; the app cannot set the platform's cookies, and every response is uncacheable. Any other host passes on untouched.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -49,7 +49,6 @@ function record(host: string, port: number, owner = OWNER): EnvironmentRecord {
     name: host,
     host,
     endpoints: [{ name: "app", port }],
-    access: null,
     expiresAt: new Date(Date.now() + 86_400_000),
     createdAt: new Date(),
   };
@@ -65,15 +64,17 @@ async function world(
   opts: {
     signedInAs?: string;
     email?: string | null;
-    ownerList?: string[];
+    agentMembers?: string[];
     editors?: string[];
-    environmentList?: string[] | null;
+    environmentMembers?: string[];
     endpoints?: { name: string; port: number }[];
+    memberAgents?: string[];
   } = {},
 ) {
   const seen: { path: string; headers: http.IncomingHttpHeaders }[] = [];
   const runtime = http.createServer((req, res) => {
-    seen.push({ path: req.url ?? "", headers: req.headers });
+    if (req.method !== "HEAD")
+      seen.push({ path: req.url ?? "", headers: req.headers });
     let received = 0;
     req.on("data", (d: Buffer) => (received += d.length));
     req.on("error", () => {});
@@ -105,9 +106,9 @@ async function world(
   const runtimePort = await listen(runtime);
 
   const records = [record("pr-1-abcdef", 4444), record("pr-2-abcdef", 4444)];
-  records[0]!.access = opts.environmentList ?? null;
   if (opts.endpoints) records[0]!.endpoints = opts.endpoints;
   const woken: string[] = [];
+  const agentVisits: [string, string][] = [];
   // UNIT_BOUNDARY_DESCRIPTION: the share host's sessions, faked: the ones still alive, by id.
   const shareSessions = new Set(["share-1"]);
   const signIn = createEnvironmentSignIn({
@@ -125,8 +126,12 @@ async function world(
     getByHost: async (host: string) =>
       records.find((r) => r.host === host) ?? null,
   };
-  const owners = { list: opts.ownerList ?? [] };
-  const ownerList = async () => owners.list;
+  const owners = { list: opts.agentMembers ?? [] };
+  const agentMembers = async () => owners.list;
+  const environmentMembers = async (environmentId: string) =>
+    environmentId === records[0]!.agentId
+      ? (opts.environmentMembers ?? [])
+      : [];
   const editorsOf = async () => opts.editors ?? [];
   // UNIT_BOUNDARY_DESCRIPTION: the share host's sign-in, faked: a `share` cookie names a share session, alive or not, and its login path is where the share host would send a visitor without one through the identity provider.
   const shareLogins: string[] = [];
@@ -147,7 +152,8 @@ async function world(
       domain: DOMAIN,
       addressUrl: (a) => `http://${a}.${DOMAIN}`,
       repo,
-      ownerList,
+      agentMembers,
+      environmentMembers,
       editorsOf,
       signIn,
       share: {
@@ -174,8 +180,13 @@ async function world(
       `http://${SHARE}/e/${address}?next=${encodeURIComponent(next)}&b=${binding}${chain ? `&chain=${chain}` : ""}`,
     signOutUrl: (address) => shareSignIn.logoutUrl(`/e/${address}`),
     repo,
-    ownerList,
+    agentMembers,
+    environmentMembers,
     editorsOf,
+    memberAgents: async () => opts.memberAgents ?? [],
+    agentOfKey: async (key) => AGENT_KEYS[key] ?? null,
+    recordAgentVisit: async (environmentId, agentId) =>
+      void agentVisits.push([environmentId, agentId]),
     signIn,
     platform: PLATFORM,
     ensureReady: async (id) => void woken.push(id),
@@ -347,10 +358,20 @@ async function world(
     owners,
     seen,
     woken,
+    agentVisits,
     port,
     runtimePort,
   };
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: Agent Keys as the gate's key lookup knows them: the Owning Agent's, another user's QA agent's; any other key names nobody.
+const OWNING_KEY = `ak_${"o".repeat(43)}`;
+const QA_KEY = `ak_${"q".repeat(43)}`;
+const UNKNOWN_KEY = `ak_${"u".repeat(43)}`;
+const AGENT_KEYS: Record<string, { agentId: string }> = {
+  [OWNING_KEY]: { agentId: "agent-owning" },
+  [QA_KEY]: { agentId: "agent-qa" },
+};
 
 describe("the Environment gate", () => {
   // TEST_SCENARIO: the owner signs in once and the address relays to the runtime's forward for the declared port, waking the Environment first. The app gets its own cookies and the original host, never the platform's session cookie or a platform token in Authorization; it cannot set the session cookie, nor a cookie for the whole environments domain; and the answer is uncacheable whatever the app said.
@@ -477,7 +498,7 @@ describe("the Environment gate", () => {
     const w = await world({
       signedInAs: "reviewer-sub",
       email: "reviewer@example.com",
-      ownerList: ["reviewer@example.com"],
+      agentMembers: ["reviewer@example.com"],
     });
     const cookie = await w.signInTo("app-pr-1-abcdef");
     expect(
@@ -490,43 +511,43 @@ describe("the Environment gate", () => {
     expect(res.body).toContain("no longer on this Environment");
   });
 
-  // TEST_SCENARIO: a person on the owner's list opens every Environment of that agent; when the agent narrowed one Environment's list, only the people left on it open that one, and an email the agent added that is not on the owner's list opens nothing.
-  it("admits people on the owner's list, narrowed per Environment", async () => {
+  // TEST_SCENARIO: a person on the agent's Environment Members opens every Environment of that agent; a person the owner added to one Environment opens that one and is refused at the agent's other Environment. Emails compare trimmed and lowercased.
+  it("admits the agent's members to all its Environments, and an Environment's own to that one", async () => {
     const reviewer = await world({
       signedInAs: "reviewer-sub",
       email: "Reviewer@Example.com",
-      ownerList: ["reviewer@example.com", "qa@example.com"],
+      agentMembers: ["reviewer@example.com", "qa@example.com"],
     });
     const cookie = await reviewer.signInTo("app-pr-1-abcdef");
     expect(
       (await reviewer.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie }))
         .status,
     ).toBe(200);
+    expect((await reviewer.frontDoor("app-pr-2-abcdef")).status).toBe(302);
 
-    const narrowed = await world({
-      signedInAs: "reviewer-sub",
-      email: "reviewer@example.com",
-      ownerList: ["reviewer@example.com", "qa@example.com"],
-      environmentList: ["qa@example.com"],
+    const guest = await world({
+      signedInAs: "guest-sub",
+      email: "guest@example.com",
+      environmentMembers: ["guest@example.com"],
     });
-    expect((await narrowed.frontDoor("app-pr-1-abcdef")).status).toBe(403);
-
-    const widened = await world({
-      signedInAs: "outsider-sub",
-      email: "outsider@example.com",
-      ownerList: ["qa@example.com"],
-      environmentList: ["outsider@example.com"],
-    });
-    expect((await widened.frontDoor("app-pr-1-abcdef")).status).toBe(403);
+    const guestCookie = await guest.signInTo("app-pr-1-abcdef");
+    expect(
+      (
+        await guest.request(`app-pr-1-abcdef.${DOMAIN}`, "/", {
+          cookie: guestCookie,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await guest.frontDoor("app-pr-2-abcdef")).status).toBe(403);
   });
 
-  // TEST_SCENARIO: an Agent Editor of the owning agent opens its Environments like the owner does: they are on no list, and a list the agent narrowed does not shut them out.
-  it("admits the owning agent's editors, whatever the lists say", async () => {
+  // TEST_SCENARIO: an Agent Editor of the owning agent opens its Environments like the owner does, while on no list of members.
+  it("admits the owning agent's editors, on no list", async () => {
     const editor = await world({
       signedInAs: "editor-sub",
       email: "Editor@Example.com",
       editors: ["editor@example.com"],
-      environmentList: ["qa@example.com"],
+      environmentMembers: ["qa@example.com"],
     });
     const cookie = await editor.signInTo("app-pr-1-abcdef");
     expect(
@@ -540,7 +561,7 @@ describe("the Environment gate", () => {
     const w = await world({
       signedInAs: "unverified-sub",
       email: null,
-      ownerList: ["someone@example.com"],
+      agentMembers: ["someone@example.com"],
     });
     const res = await w.frontDoor("app-pr-1-abcdef");
     expect(res.status).toBe(403);
@@ -924,6 +945,115 @@ describe("the Environment gate", () => {
       setTimeout(() => resolve("hanging"), 2000);
     });
     expect(crashed).toBe("closed");
+  });
+});
+
+describe("an agent at the Environment gate", () => {
+  const host = `app-pr-1-abcdef.${DOMAIN}`;
+  const keyed = (key: string, extra: Record<string, string> = {}) => ({
+    "x-platform-agent-key": key,
+    ...extra,
+  });
+
+  // TEST_SCENARIO: the Owning Agent fetches its own Environment's address from its sandbox, its gateway adding its key. It is admitted on no list, with no sign-in, the Environment is woken, and the app never sees the key.
+  it("admits the Owning Agent by its key, and strips the key", async () => {
+    const w = await world();
+    const res = await w.request(host, "/page", keyed(OWNING_KEY));
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("from the app");
+    expect(res.cookies.some((c) => c.startsWith("platform-env"))).toBe(false);
+    expect(w.seen.at(-1)!.headers["x-platform-agent-key"]).toBeUndefined();
+    expect(w.woken).toContain(w.records[0]!.agentId);
+  });
+
+  // TEST_SCENARIO: another user's QA agent is refused until a list names it, then admitted; its visit is recorded once for a burst of requests, for the owner to see.
+  it("admits an agent a list names, and no other", async () => {
+    const refused = await (await world()).request(host, "/", keyed(QA_KEY));
+    expect(refused.status).toBe(403);
+    expect(refused.body).toContain("not on this Environment&#39;s list");
+
+    const w = await world({ memberAgents: ["agent-qa"] });
+    for (let i = 0; i < 3; i++)
+      expect((await w.request(host, "/", keyed(QA_KEY))).status).toBe(200);
+    expect(w.agentVisits).toEqual([[w.records[0]!.agentId, "agent-qa"]]);
+  });
+
+  // TEST_SCENARIO: the owner signed in to the Environment in the agent's browser panel, so the agent's request carries the owner's session cookie too. The key decides: an unlisted agent is refused whatever cookie it carries, and a key no Agent holds is refused, not sent to sign in.
+  it("ignores a person's session on an agent's request", async () => {
+    const w = await world();
+    const cookie = await w.signInTo("app-pr-1-abcdef");
+    expect((await w.request(host, "/", { cookie })).status).toBe(200);
+
+    const borrowed = await w.request(
+      host,
+      "/",
+      keyed(QA_KEY, { cookie, accept: "text/html" }),
+    );
+    expect(borrowed.status).toBe(403);
+    expect(borrowed.location).toBeNull();
+    const unknown = await w.request(
+      host,
+      "/",
+      keyed(UNKNOWN_KEY, { cookie, accept: "text/html" }),
+    );
+    expect(unknown.status).toBe(403);
+    expect(unknown.location).toBeNull();
+  });
+
+  // TEST_SCENARIO: an agent's request reaches the sign-in paths, or another site's page in the agent's browser makes a request with the agent's key. Neither is served: a key gets no session, and the cross-origin check holds for agents too.
+  it("gives a key no sign-in, and refuses another site's page", async () => {
+    const w = await world({ memberAgents: ["agent-qa"] });
+    const signin = await w.request(
+      host,
+      "/.platform/session?code=x",
+      keyed(QA_KEY),
+    );
+    expect(signin.status).toBe(403);
+    const crossSite = await w.request(
+      host,
+      "/",
+      keyed(QA_KEY, { origin: "https://evil.example" }),
+    );
+    expect(crossSite.status).toBe(403);
+  });
+
+  // TEST_SCENARIO: an agent sends its key with a Host of the platform itself. The api-server refuses it before any route reads it, so the key only ever reaches the Environment gate.
+  it("refuses a key on any other host", async () => {
+    const w = await world();
+    const res = await w.request(
+      "platform.test",
+      "/api/anything",
+      keyed(QA_KEY),
+    );
+    expect(res.status).toBe(421);
+    expect(res.body).not.toBe("the platform");
+  });
+
+  // TEST_SCENARIO: a listed agent's test suite opens a WebSocket to the Environment; it is relayed, without the key, and an unlisted agent's is refused.
+  it("relays a listed agent's WebSocket and refuses an unlisted one", async () => {
+    const w = await world({ memberAgents: ["agent-qa"] });
+    const open = (key: string) =>
+      new WebSocket(`ws://127.0.0.1:${w.port}/live`, {
+        headers: { host, "x-platform-agent-key": key },
+      });
+    const reply = await new Promise<string>((resolve, reject) => {
+      const ws = open(QA_KEY);
+      ws.on("open", () => ws.send("hi"));
+      ws.on("message", (d) => {
+        resolve(String(d));
+        ws.close();
+      });
+      ws.on("error", reject);
+    });
+    expect(reply).toBe("echo:hi");
+    expect(w.seen.at(-1)!.headers["x-platform-agent-key"]).toBeUndefined();
+
+    const refused = await new Promise<number>((resolve) => {
+      const ws = open(UNKNOWN_KEY);
+      ws.on("unexpected-response", (_req, res) => resolve(res.statusCode!));
+      ws.on("error", () => resolve(0));
+    });
+    expect(refused).toBe(403);
   });
 });
 

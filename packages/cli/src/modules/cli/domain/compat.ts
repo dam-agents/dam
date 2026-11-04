@@ -134,8 +134,36 @@ function comparePreRelease(a: string[], b: string[]): -1 | 0 | 1 {
     } else if (bNum) {
       return 1;
     } else {
-      if (ai < bi) return -1;
-      if (ai > bi) return 1;
+      const word = compareWord(ai, bi);
+      if (word !== 0) return word;
+    }
+  }
+  return 0;
+}
+
+const WORD_PARTS = /\d+|\D+/g;
+const WORD_DIGITS = /^\d+$/;
+
+function compareWord(a: string, b: string): -1 | 0 | 1 {
+  const pa = a.match(WORD_PARTS) ?? [];
+  const pb = b.match(WORD_PARTS) ?? [];
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i];
+    const y = pb[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const xNum = WORD_DIGITS.test(x);
+    const yNum = WORD_DIGITS.test(y);
+    if (xNum && yNum) {
+      const xn = Number.parseInt(x, 10);
+      const yn = Number.parseInt(y, 10);
+      if (xn !== yn) return xn < yn ? -1 : 1;
+    } else if (xNum) {
+      return -1;
+    } else if (yNum) {
+      return 1;
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
     }
   }
   return 0;

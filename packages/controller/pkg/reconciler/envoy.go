@@ -45,6 +45,7 @@ const (
 	connectionEgressPathSegment = "__platform_conn"
 	envoyImageCABundle          = "/etc/ssl/certs/ca-certificates.crt"
 	envoyUpstreamCAKey          = "upstream-ca.pem"
+	envoyLeafSDSKey             = "leaf-sds.yaml"
 )
 
 const (
@@ -122,6 +123,8 @@ type envoyHostChain struct {
 	Upgrades        bool
 	UpstreamCAFile  string
 	PathRewrites    []envoyPathRewrite
+	// UNIT_BOUNDARY_DESCRIPTION: set on the one chain for the environments domain: it carries the Agent's key to the api-server's Environment gate, inside the cluster, instead of to the host the agent named.
+	AgentKey *envoyCredential
 }
 
 func (c envoyHostChain) UpstreamPortValue() int {
@@ -309,6 +312,12 @@ func (c envoyHostChain) CredentialsDisabledAt(connectionID, scope string) []envo
 
 const envoySecretTypeAllowOnly = "allow-only"
 
+// UNIT_BOUNDARY_DESCRIPTION: the Secret that holds one Agent's Agent Key, written by the api-server while the Agent carries the platform's Environments egress rule. It names its Agent in the agent label, so only that Agent's gateway mounts it, and its host-pattern annotation names the environments domain the key is sent to.
+const envoySecretTypeAgentKey = "agent-key"
+
+// UNIT_BOUNDARY_DESCRIPTION: the header the gateway carries an Agent's key in, to the Environment gate alone; the gate strips it before anything reaches an Environment's app.
+const agentKeyHeader = "x-platform-agent-key"
+
 const CredentialSecretSelector = envoyManagedByLabel + "=api-server"
 
 func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, agent, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
@@ -384,6 +393,10 @@ func filterByGrants(agent string, secrets []corev1.Secret, grantedSecretIDs, gra
 		switch s.Labels[envoySecretTypeLabel] {
 		case envoySecretTypeAllowOnly:
 			out = append(out, s)
+		case envoySecretTypeAgentKey:
+			if s.Labels[LabelAgent] == agent {
+				out = append(out, s)
+			}
 		case "connection":
 			connKey := s.Labels[envoyConnectionLabel]
 			if grantedConnIds[connKey] {
@@ -800,9 +813,15 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		add(host, "l7", nil, chainOpts{})
 	}
 
-	chains := make([]envoyHostChain, 0, len(order))
+	keyChain := agentKeyChain(secrets)
+	chains := make([]envoyHostChain, 0, len(order)+1)
 	for _, host := range order {
 		b := byHost[host]
+		if keyChain != nil && host == keyChain.Host {
+			slog.Warn("a chain claims the environments domain; the Agent Key chain takes it, so the key reaches only the Environment gate",
+				"host", host, "secret", b.first)
+			continue
+		}
 		chains = append(chains, envoyHostChain{
 			ChainID:         "chain_" + b.first + "_" + shortHash(host),
 			UpstreamCluster: "upstream_" + b.first + "_" + shortHash(host),
@@ -816,7 +835,41 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			PathRewrites:    b.opts.pathRewrites,
 		})
 	}
+	if keyChain != nil {
+		chains = append(chains, *keyChain)
+	}
 	return chains
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the chain an Agent Key Secret makes: the environments domain, terminated with the gateway's leaf, its requests sent with the key to the api-server's Environment gate inside the cluster, WebSocket upgrades included. A Secret whose host is not a `*.` wildcard, or that lacks its key file, makes none, so the key is never sent to a host the agent could have named.
+func agentKeyChain(secrets []corev1.Secret) *envoyHostChain {
+	for _, s := range secrets {
+		if s.Labels[envoySecretTypeLabel] != envoySecretTypeAgentKey {
+			continue
+		}
+		host := strings.ToLower(s.Annotations[envoyHostPatternAnn])
+		if !strings.HasPrefix(host, "*.") || !validServerName(host) {
+			slog.Warn("Agent Key Secret names no *.domain; rendering no chain for it", "secret", s.Name, "host", host)
+			continue
+		}
+		if len(s.Data[envoyCredentialKeySDS]) == 0 {
+			slog.Warn("Agent Key Secret has no key file; rendering no chain for it", "secret", s.Name)
+			continue
+		}
+		return &envoyHostChain{
+			ChainID:         "chain_agent_key_" + shortHash(host),
+			UpstreamCluster: "environments_gate",
+			Host:            host,
+			Upgrades:        true,
+			AgentKey: &envoyCredential{
+				SecretName: s.Name,
+				HeaderName: agentKeyHeader,
+				VolumeName: "cred-" + s.Name,
+				SDSFileKey: envoyCredentialKeySDS,
+			},
+		}
+	}
+	return nil
 }
 
 func shortHash(s string) string {
@@ -891,6 +944,9 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *confi
 		data[envoyUpstreamCAKey] = cfg.GatewayUpstreamTrustBundle
 	}
 	data[machineDNSCorefileKey] = machineDNSCorefile
+	if data[envoyLeafSDSKey], err = renderLeafSDS(""); err != nil {
+		return nil, err
+	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            EnvoyBootstrapName(instanceName),
@@ -936,7 +992,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v27-gateway-otlp-path"
+const envoyBootstrapTemplateRev = "v28-gateway-leaf-sds"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}

@@ -2,6 +2,7 @@ import { sql, type Db, type DbTx } from "db";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { sessionDefaultsEvent } from "../domain/session-defaults-event.js";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
+import type { RunBoundary } from "../domain/run-boundary.js";
 
 export type PublishSessionDefaults = (agentId: string) => Promise<void>;
 
@@ -19,17 +20,26 @@ export function createSessionDefaultsPublisher(deps: {
   db: Db;
   pairRepo: Pick<SessionPairRepo, "readSaved">;
   runtimeMutator: RuntimeMutator;
+  /* UNIT_BOUNDARY_DESCRIPTION: the defaults a runtime follows are a run boundary: a following session takes these settings at its next turn, so they carry the native subagent keys derived for each pair (D193B). */
+  boundary: RunBoundary;
   now?: () => number;
 }): PublishSessionDefaults {
   const now = deps.now ?? (() => Date.now());
   return async (agentId) => {
+    /* UNIT_BOUNDARY_DESCRIPTION: the inputs the derivation needs are read before the transaction opens, since the owner catalog lists models from the providers and the pool stays free for the read-and-enqueue that follows; inside it only the pure settle runs (D193B). */
+    const settle = deps.boundary.settle(await deps.boundary.inputs(agentId));
     await deps.db.transaction(async (tx) => {
       const saved = await deps.pairRepo.readSaved(agentId, tx);
+      const defaults = {
+        chat: settle.pair(saved.chat) ?? null,
+        channel: settle.pair(saved.channel) ?? null,
+        scheduled: settle.pair(saved.scheduled) ?? null,
+      };
       const at = Math.max(now(), (await lastEventAt(tx, agentId)) + 1);
       await deps.runtimeMutator.supersede(agentId, "session-defaults", tx);
       await deps.runtimeMutator.bump(
         agentId,
-        [sessionDefaultsEvent(agentId, saved, at)],
+        [sessionDefaultsEvent(agentId, defaults, at)],
         tx,
       );
     });

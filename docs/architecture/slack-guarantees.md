@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-29
+Last verified: 2026-11-03
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -81,7 +81,7 @@ flowchart TD
 | `@DAM Reviewer …`                                               | Reaches the Agent named Reviewer (name must open the message; case-insensitive, whole word)                                                                                           | `@DAM hey Reviewer` goes to the default                                                             |
 | Edit a message to add the tag                                   | Ignored                                                                                                                                                                               | none                                                                                                |
 | Another bot, workflow or Agent posts a plain message            | Reaches readers only, like a person's; never the Agent that posted it                                                                                                                 | Each reader spends a turn; `/dam ignore` silences one app                                           |
-| Another bot, workflow or Agent posts a message that tags `@DAM` | Routed like a person's mention                                                                                                                                                        | Three bot posts in a row per thread start turns, until a person posts                               |
+| Another bot, workflow or Agent posts a message that tags `@DAM` | Routed like a person's mention                                                                                                                                                        | More than ten bot posts a minute per thread pause bot posts there for five minutes, with a notice   |
 
 ### 1.2 Channel, ambient (reads along)
 
@@ -119,10 +119,10 @@ flowchart TD
 | An Agent hands the message to a peer                     | The peer, bound to the same conversation, takes the whole turn as its own in the same thread                                                       | Once only; attachments dropped; the receiver's owner must have accepted the terms                                             |
 | Mixed bindings: one reads along, another is mention-only | Ambient is per binding. Plain messages reach only readers. A tagged mention reaches one Agent, default or named; readers aren't handed it live     | A reader may meet it later as history and take it as open if the answer sits in a thread                                      |
 | A plain message names an Agent without `@`               | Readers only; the named one answers if it reads along, the others are told to stay silent                                                          | A mention-only Agent gets nothing; the silence is prompt only                                                                 |
-| An Agent's post tags the bot and names a peer            | The peer gets a turn, as if a person had asked; the post never starts a turn for its author                                                        | At most three bot posts in a row per thread start turns, until a person posts                                                 |
+| An Agent's post tags the bot and names a peer            | The peer gets a turn, as if a person had asked; the post never starts a turn for its author                                                        | More than ten bot posts a minute per thread pause bot posts there for five minutes, with a notice                             |
 | An Agent posts where others read along                   | Every reader but the author gets it; a reply in an ambient round does not, since the round already handed it on                                    | A reader that went before it in the round never sees that reply live; each reader spends a turn per post, even to stay silent |
 | A reader tags a peer in its ambient reply                | The peer answers once, as an addressed turn, and skips its turn in that round; its answer reaches the asker                                        | The peer answers only the request, not the person's message on its own                                                        |
-| Another app or a webhook posts (CI, alerts, deploys)     | Routed like a person's post: a tag reaches one Agent, readers get plain posts; the Agent reads the post's attachments and blocks, named by the app | On by default; `/dam ignore <link to its post>` makes the channel ignore that app; same three-in-a-row limit                  |
+| Another app or a webhook posts (CI, alerts, deploys)     | Routed like a person's post: a tag reaches one Agent, readers get plain posts; the Agent reads the post's attachments and blocks, named by the app | On by default; `/dam ignore <link to its post>` makes the channel ignore that app; same ten-a-minute rate limit               |
 
 ### 1.6 Proactive and cross-channel posts
 
@@ -251,17 +251,17 @@ flowchart TD
 
 ### Nothing happens
 
-| Situation                                                  | Why                                                                                                                            |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Untagged reply in the agent's thread (normal binding)      | Dropped; the writer sees a note once per thread                                                                                |
-| Untagged message in a group DM                             | Dropped                                                                                                                        |
-| Edited a message to add the tag                            | Edits are ignored                                                                                                              |
-| A bot or workflow wrote to the agent without tagging it    | Plain posts reach readers only; a mention-only Agent needs a tag                                                               |
-| An app's posts reach no Agent in one channel               | The channel ignores that app (`/dam ignore` lists them)                                                                        |
-| Agents or apps went quiet after a few posts back and forth | Three bot posts in a row per thread is the limit; a person's post resets it; the Agent's Channels page shows the dropped posts |
-| Mentioned a name two connected Agents share                | Went to the default; sender not told                                                                                           |
-| An ambient agent went quiet                                | Every failure on ambient turns is invisible                                                                                    |
-| The agent did less than asked                              | A tool call was auto-refused or a host blocked; only the agent can explain                                                     |
+| Situation                                                  | Why                                                                                                                                                        |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Untagged reply in the agent's thread (normal binding)      | Dropped; the writer sees a note once per thread                                                                                                            |
+| Untagged message in a group DM                             | Dropped                                                                                                                                                    |
+| Edited a message to add the tag                            | Edits are ignored                                                                                                                                          |
+| A bot or workflow wrote to the agent without tagging it    | Plain posts reach readers only; a mention-only Agent needs a tag                                                                                           |
+| An app's posts reach no Agent in one channel               | The channel ignores that app (`/dam ignore` lists them)                                                                                                    |
+| Agents or apps went quiet after a few posts back and forth | More than ten bot posts a minute per thread pause them for five minutes; a notice in the thread says so; the Agent's Channels page shows the dropped posts |
+| Mentioned a name two connected Agents share                | Went to the default; sender not told                                                                                                                       |
+| An ambient agent went quiet                                | Every failure on ambient turns is invisible                                                                                                                |
+| The agent did less than asked                              | A tool call was auto-refused or a host blocked; only the agent can explain                                                                                 |
 
 A revoked bot token or uninstalled app silences every conversation, and nothing in Slack says why.
 
@@ -279,7 +279,7 @@ A revoked bot token or uninstalled app silences every conversation, and nothing 
 
 ### Notices
 
-Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment.
+Addressed turns get a plain-language notice for: unbound conversation, no default Agent, no default model, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment, a channel profile the agent can't use, a model that refused the message.
 Ambient turns get none.
 
 ---
@@ -327,7 +327,7 @@ Everything else (DM people, attach files, look people up, react) is within the o
 
 ### Platform notices
 
-The platform DMs a linked person, as the app, when something needs them that no Agent would say: a resource alert ([budgets](budgets.md)).
+The platform DMs a linked person, as the app, when something needs them that no Agent would say: a resource alert ([budgets](budgets.md)), or unattended work that a spend limit stopped ([spend-limits](spend-limits.md#unattended-work)).
 
 | What           | Decided by | Drawback                                                                                               |
 | -------------- | ---------- | ------------------------------------------------------------------------------------------------------ |

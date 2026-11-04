@@ -15,7 +15,7 @@ export interface SpendLimitQuestions {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function spendLimitApprovalId(question: SpendLimitQuestion): string {
-  return `spendlimit:${question.limitId}:${question.day}:${String(question.extensions)}`;
+  return `spendlimit:${question.limitId}:${question.day}:${String(question.amountMicros)}:${String(question.extensions)}`;
 }
 
 export function createSpendLimitQuestions(deps: {

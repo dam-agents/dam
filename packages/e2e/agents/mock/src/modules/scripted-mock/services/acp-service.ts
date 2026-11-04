@@ -20,6 +20,7 @@ const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
 const ASK_DIRECTIVE = /__ASK__\s+(\S+)(?:\s+(\S+))?/;
 const FAIL_MIDTURN_DIRECTIVE = /__FAIL_MIDTURN__/;
+const EXIT_MIDTURN_DIRECTIVE = /__EXIT_MIDTURN__\s+(\d+)/;
 const ASK_TIMEOUT_MS = 30_000;
 
 export interface AcpServiceDeps {
@@ -130,6 +131,13 @@ export function startAcpService(deps: AcpServiceDeps): void {
       await maybeSlackReply(text, slackThreadTs);
       respond(id, { stopReason: "end_turn" });
       return;
+    }
+
+    const exitAfterMs = EXIT_MIDTURN_DIRECTIVE.exec(promptStr)?.[1];
+    if (exitAfterMs) {
+      emitText(sid, "partial reply before the harness exits");
+      await sleep(Number(exitAfterMs));
+      process.exit(1);
     }
 
     if (FAIL_MIDTURN_DIRECTIVE.test(promptStr)) {

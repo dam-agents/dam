@@ -129,6 +129,7 @@ export function hintFor(event: DomainEvent): {
     case EventType.AgentResourceRemoved:
     case EventType.SpendLimitsChanged:
     case EventType.GatewayCallEnded:
+    case EventType.SpendWorkStopped:
     case EventType.ProviderStatusEvaluated:
       return null;
     default: {

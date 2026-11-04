@@ -85,10 +85,16 @@ signUps: open
 # -- Outbound links surfaced in the UI, changeable per install without a
 # rebuild (the api-server serves them over `links.all`).
 links:
+  # The documentation site, also on the sign-in page. Complete URL of its
+  # root: the UI builds the CLI reference, MCP and LiteLLM key pages under it.
+  # Empty string hides every documentation link.
+  docs: "https://pages.github.ibm.com/dam-agents/docs/"
   # Where "Request more" next to the compute meter points — a chat channel,
-  # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
-  # default, which is install-specific and slated for removal — set this.
-  computeRequest: ""
+  # form, or ticket queue. Complete URL. Empty string hides the link.
+  computeRequest: "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759"
+  # The #curvebender-community channel the CurveBender thank-you dialog
+  # invites people to. Complete URL. Empty string drops that sentence.
+  curveBenderCommunity: "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1"
   # Where "Request it" on the Slack setup surfaces points — the form people
   # use to ask for the Slack app in a workspace that does not have it yet.
   # Complete URL. Empty string hides that line; there is no bundled default.
@@ -787,6 +793,16 @@ postgres:
     periodSeconds: 15
     timeoutSeconds: 10
     failureThreshold: 6
+  # -- Timing of the `pg_isready` check that holds the two checks around it off
+  # until Postgres first answers: after initdb on a first boot, after recovery
+  # when the last run was killed. On a loaded CI runner Postgres was still
+  # answering nothing 108 seconds in, and liveness's 90-second budget killed it
+  # inside initdb; the recovery that kill left took minutes more. Five minutes
+  # bounds such a start, and still bounds one that never answers.
+  startupProbe:
+    periodSeconds: 5
+    timeoutSeconds: 10
+    failureThreshold: 60
   readinessProbe:
     initialDelaySeconds: 5
     periodSeconds: 5
@@ -865,7 +881,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: mirror.gcr.io/chrislusf/seaweedfs:4.48
+  image: mirror.gcr.io/chrislusf/seaweedfs:4.51
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
@@ -918,7 +934,7 @@ clickstack:
     podAnnotations: {}
     # Mirror of otel/opentelemetry-collector-contrib. Registered in
     # .mise/tasks/image/mirror, which CI runs on every main push.
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.162.0
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.163.2
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
@@ -949,7 +965,7 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.41.0"
+        tag: "2.42.0"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.38.0"
 
@@ -1558,13 +1574,15 @@ apiServer:
     - pypi.org
     - files.pythonhosted.org
     - conda.anaconda.org
-    # GitHub
+    # GitHub. `cafe.github.com` is where gh posts its own telemetry, from the
+    # hidden `send-telemetry` command it runs after another command.
     - github.com
     - api.github.com
     - codeload.github.com
     - objects.githubusercontent.com
     - raw.githubusercontent.com
     - release-assets.githubusercontent.com
+    - cafe.github.com
     # Container registries. The registry host alone never pulls: Docker Hub
     # first hands out an anonymous token from auth.docker.io, then 307s the
     # blob off to whichever CDN serves the caller's region. ghcr.io redirects
@@ -1929,11 +1947,6 @@ controller:
       # Platform-injected envs (HOME, HTTPS_PROXY, API_SERVER_URL, etc.) are
       # set unconditionally by the controller.
       #
-      # `QUEUE_PARK_MS` is settable here: how long a session's queued prompts
-      # wait for a client to come back before they are recorded as undelivered
-      # (agent-runtime's own default is 90s). The e2e overlay shortens it so a
-      # spec need not spend the full window in a real wait.
-      #
       # `MEM_REAPER` / `MEM_REAPER_THRESHOLD` tune agent-runtime's early-OOM
       # reaper: at the threshold fraction of the agent's memory ceiling (default
       # 0.93) it SIGKILLs the largest tool process spawned under the harness,
@@ -1964,8 +1977,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.40.0 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0
+  # envoyproxy/envoy:distroless-v1.40.1 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.1
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
   # its gateway passes through untouched. The api-server trusts them too
@@ -2014,7 +2027,7 @@ controller:
   # pod: it answers every name with the gateway's address and resolves nothing
   # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like
   # Envoy.
-  machineDNSImage: mirror.gcr.io/coredns/coredns:1.14.7
+  machineDNSImage: mirror.gcr.io/coredns/coredns:1.15.0
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart

@@ -31,7 +31,15 @@ export const starterKitsRouter = t.router({
     .input(starterKitApplyInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.starterKits.apply(input);
-      return { ...result, agent: toAgentView(result.agent) };
+      return {
+        ...result,
+        agent: {
+          ...toAgentView(result.agent),
+          ...(result.agent.defaultProvider && {
+            defaultProvider: result.agent.defaultProvider,
+          }),
+        },
+      };
     }),
 
   updates: readAgentProcedure.query(({ ctx }) => ctx.starterKits.updates()),

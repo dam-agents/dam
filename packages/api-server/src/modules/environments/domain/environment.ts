@@ -9,7 +9,6 @@ export interface EnvironmentRecord {
   name: string;
   host: string;
   endpoints: EnvironmentEndpoint[];
-  access: string[] | null;
   expiresAt: Date;
   createdAt: Date;
 }

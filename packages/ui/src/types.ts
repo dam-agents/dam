@@ -102,6 +102,7 @@ export interface Message {
   steered?: boolean;
   lastMessageId?: string;
   promptId?: string;
+  unconfirmed?: "sending" | "waking";
   retryWith?: RetryPayload;
   notice?: boolean;
   loadOlderBefore?: string;

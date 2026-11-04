@@ -13,6 +13,7 @@ import {
   ARTIFACT_SHARED_BRIDGE_SHIM_BODY,
   SHARED_BRIDGE_REFUSAL,
 } from "../../modules/artifact-library/viewer/bridge-shim.js";
+import { ARTIFACT_SIZE_REPORTER } from "../../modules/artifact-library/viewer/print-size.js";
 import { renderHtmlInner } from "../../modules/artifact-library/viewer/renderer.js";
 
 interface PageApi {
@@ -274,13 +275,15 @@ describe("artifact bridge on a public interactive page", () => {
 });
 
 describe("artifact preview rendering", () => {
-  it("leaves ordinary HTML rendering unchanged", () => {
+  it("leaves ordinary HTML rendering unchanged apart from the size reporter", () => {
     const source = "<html><head></head><body>Report</body></html>";
     expect(renderHtmlInner(source)).toBe(
-      '<html><head><base target="_blank"></head><body>Report</body></html>',
+      `<html><head>${ARTIFACT_SIZE_REPORTER}<base target="_blank"></head><body>Report</body></html>`,
     );
     const withBase = '<head><base target="_self"></head><p>Report</p>';
-    expect(renderHtmlInner(withBase)).toBe(withBase);
+    expect(renderHtmlInner(withBase)).toBe(
+      `<head>${ARTIFACT_SIZE_REPORTER}<base target="_self"></head><p>Report</p>`,
+    );
   });
 
   it("installs the API before authored scripts even with an existing base", () => {

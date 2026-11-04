@@ -12,6 +12,7 @@ import {
   ARTIFACT_BRIDGE_SHIM,
   ARTIFACT_SHARED_BRIDGE_SHIM,
 } from "./bridge-shim.js";
+import { ARTIFACT_SIZE_REPORTER, FRAME_PRINT_BODY } from "./print-size.js";
 import { escapeHtml } from "../../../core/escape-html.js";
 
 function jsStringLiteral(s: string): string {
@@ -45,7 +46,7 @@ function chromePage(title: string, body: string): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="robots" content="noindex"/>
+<meta name="robots" content="noindex, nofollow"/>
 <title>${escapeHtml(title)}</title>
 <style>${CHROME_CSS}</style>
 </head>
@@ -142,6 +143,15 @@ function renderViewerRelay(
 </script>`;
 }
 
+const FRAME_FRAGMENT_BODY = `
+(() => {
+  const frame = document.querySelector("iframe");
+  const src = frame.dataset.src;
+  frame.src = src + location.hash;
+  window.addEventListener("hashchange", () => frame.contentWindow.location.replace(src + location.hash));
+})();
+`;
+
 export function renderWrapper(input: WrapperInput): string {
   const { slug, version, relay } = input;
   return `<!doctype html>
@@ -149,7 +159,7 @@ export function renderWrapper(input: WrapperInput): string {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="robots" content="noindex"/>
+<meta name="robots" content="noindex, nofollow"/>
 <title>${escapeHtml(input.title)}</title>
 <style>
   :root { color-scheme: light dark; }
@@ -163,6 +173,11 @@ export function renderWrapper(input: WrapperInput): string {
   .banner a:hover { background: light-dark(#f2f4f8, #262626); }
   iframe { flex: 1; width: 100%; border: 0; background: #fff; }
   .relay-status { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 6px; background: #161616; color: #fafaf9; font: 13px/1.4 system-ui, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  @media print {
+    html, body { height: auto; }
+    body { display: block; background: none; }
+    .banner, .relay-status { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -172,7 +187,9 @@ export function renderWrapper(input: WrapperInput): string {
   <span class="spacer"></span>
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="${relay ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+<iframe sandbox="${relay ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" data-src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+<script>${FRAME_FRAGMENT_BODY}</script>
+<script>${FRAME_PRINT_BODY}</script>
 ${relay ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug, relay.token, relay.caller)}` : ""}
 </body>
 </html>`;
@@ -191,8 +208,7 @@ export function renderHtmlInner(
 ): string {
   const shim = bridge ? BRIDGE_SHIMS[bridge] : "";
   const base = /<base[\s>]/i.test(content) ? "" : `<base target="_blank">`;
-  const prelude = `${shim}${base}`;
-  if (!prelude) return content;
+  const prelude = `${ARTIFACT_SIZE_REPORTER}${shim}${base}`;
   const headMatch = content.match(/<head[^>]*>/i);
   if (headMatch && headMatch.index !== undefined) {
     const at = headMatch.index + headMatch[0].length;
@@ -227,6 +243,7 @@ function renderJsxInner(source: string, title: string): string {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${escapeHtml(title)}</title>
+${ARTIFACT_SIZE_REPORTER}
 <script type="importmap">${JSX_IMPORT_MAP}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com/3.4.16"></script>
@@ -293,6 +310,7 @@ function renderMarkdownInner(source: string, title: string): string {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${escapeHtml(title)}</title>
+${ARTIFACT_SIZE_REPORTER}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <style>
@@ -354,6 +372,7 @@ function renderCodeInner(
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${escapeHtml(title)}</title>
+${ARTIFACT_SIZE_REPORTER}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -386,6 +405,7 @@ export function renderImageInner(rawUrl: string, title: string): string {
 <html lang="en">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${escapeHtml(title)}</title>
 <style>:root{color-scheme:light dark;} body { margin: 0; min-height: 100dvh; display: flex; align-items: center; justify-content: center; background: light-dark(#fafaf9, #0c0a09); } img { max-width: 100%; max-height: 100dvh; }</style>
+${ARTIFACT_SIZE_REPORTER}
 </head>
 <body><img src="${escapeHtml(rawUrl)}" alt="${escapeHtml(title)}"/></body>
 </html>`;
@@ -405,6 +425,7 @@ export function renderDownloadInner(input: {
 <html lang="en">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${escapeHtml(input.title)}</title>
 <style>${CHROME_CSS}</style>
+${ARTIFACT_SIZE_REPORTER}
 </head>
 <body>
 <div class="center-card"><div class="card">
@@ -491,6 +512,13 @@ export function renderFolderPage(input: {
       <p class="sub">${input.artifacts.length} shared artifact${input.artifacts.length === 1 ? "" : "s"} · via ${escapeHtml(input.brandName)}</p>
       ${rows}
     </div>`,
+  );
+}
+
+export function renderSignInRedirect(loginUrl: string): string {
+  return chromePage(
+    "Signing in",
+    `<script>location.replace(${jsStringLiteral(loginUrl)} + encodeURIComponent(location.hash));</script>`,
   );
 }
 

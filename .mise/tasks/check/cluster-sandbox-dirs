@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="On an overlay root a sandbox's or an Environment's cluster keeps the kubelet's root and the runner's node directories on the home disk, and nowhere else"
+#MISE description="On an overlay root a sandbox's or an Environment's cluster keeps the kubelet's root and the runner's node directories on the home disk, and nowhere else, and an Environment's kubelet keeps its images"
 #MISE sources=["helm/values*.yaml", ".mise/lib/cluster.sh", ".mise/lib/root.sh", ".mise/tasks/check/cluster-sandbox-dirs"]
 #MISE outputs=[]
 #MISE cache.enabled=true
@@ -29,7 +29,7 @@ same "the dev install" "/var/lib/platform-vm-images /var/lib/platform-vm-runner-
   "$(node_dir_roots helm/values.yaml helm/values-local.yaml -- | sorted)"
 same "the e2e lane's own cache root replaces the dev one" "/var/lib/platform-vm-runner-releases /var/lib/vm-images" \
   "$(node_dir_roots helm/values.yaml helm/values-local.yaml helm/values-e2e.yaml -- \
-    --set=domain=localhost --set=virtualization.imageCache.hostPath=/var/lib/vm-images --set=virtualization.runner.machineCPUs=1 | sorted)"
+    --set=domain=localhost --set=virtualization.imageCache.hostPath=/var/lib/vm-images --set=virtualization.runner.machineCPUs=4 | sorted)"
 same "a --set-string and a legacy path" "/srv/old /srv/releases" \
   "$(node_dir_roots helm/values.yaml -- --set-string=virtualization.runner.releaseHostPath=/srv/releases \
     --set=virtualization.imageCache.legacyPath=/srv/old | sorted)"
@@ -74,6 +74,18 @@ OVERLAY="/var/lib/kubelet $NODE_HOME_SHARE"
 rc=0; node_kubelet_root_needed 2>/dev/null || rc=$?
 same "the home on an overlay too: nothing to move" "1 absent" "$rc $(dropin)"
 
+# --- an Environment's k3s keeps its images (#6128) -------------------------
+NODE_IMAGE_GC_DROPIN="$work/config.yaml.d/60-image-gc-off.yaml"
+rc=0; node_image_gc_off || rc=$?
+same "a first write changes the drop-in" 0 "$rc"
+same "image collection never starts, at any disk use" \
+  "image-gc-high-threshold=100 image-gc-low-threshold=99" \
+  "$(yq -r '."kubelet-arg+" | join(" ")' "$NODE_IMAGE_GC_DROPIN")"
+rc=0; node_image_gc_off || rc=$?
+same "an unchanged drop-in: nothing to restart for" 1 "$rc"
+[[ "$(basename "$NODE_IMAGE_GC_DROPIN")" > 50-container-log-rotation.yaml ]] ||
+  { echo "FAIL: $(basename "$NODE_IMAGE_GC_DROPIN") sorts before 50-container-log-rotation.yaml, whose kubelet-arg would drop it" >&2; fail=1; }
+
 # --- the node directories --------------------------------------------------
 : > "$work/root.log"
 OVERLAY="" node_host_dirs "$work/var/vm-images"
@@ -88,5 +100,66 @@ same "an overlay directory is mounted from the home disk, an existing mount is l
   "$(cat "$work/root.log")|${NODE_MOUNTED[*]}"
 same "what the overlay directory held is kept behind the mount" staged \
   "$(cat "$NODE_HOME_SHARE/host-vm-images/default/image" 2>/dev/null)"
+
+# --- the mounts come back at every boot (#6017) ----------------------------
+NODE_HOST_DIRS_SERVICE="$work/init.d/platform-host-dirs"
+mkdir -p "$work/init.d"
+node_sh() {
+  case "$1" in
+    mount|rc-update) echo "$*" >> "$work/root.log" ;;
+    mountpoint) case " $MOUNTED " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
+    test) [ "$2 $3" = "-x /sbin/openrc-run" ] && return 0; "$@" ;;
+    *) "$@" ;;
+  esac
+}
+: > "$work/root.log"
+OVERLAY="$work/var/vm-images $work/var/releases" MOUNTED="$work/var/releases"
+mkdir -p "$NODE_HOME_SHARE/host-releases"
+node_host_dirs "$work/var/vm-images" "$work/var/releases"
+node_host_dirs_at_boot
+same "the boot service names the mount made now and one an earlier install made" \
+  "2" "$(grep -c 'mount --bind' "$NODE_HOST_DIRS_SERVICE" 2>/dev/null)"
+grep -qF "mount --bind '$NODE_HOME_SHARE/host-vm-images' '$work/var/vm-images'" "$NODE_HOST_DIRS_SERVICE" &&
+  grep -qF "mount --bind '$NODE_HOME_SHARE/host-releases' '$work/var/releases'" "$NODE_HOST_DIRS_SERVICE" ||
+  { echo "FAIL: the boot service does not bind-mount both node directories from the home disk" >&2; fail=1; }
+# A path with a space is one operand in the service, not two (review of #6225).
+NODE_HOST_MOUNTS=("$work/home/host one" "$work/var/vm images")
+node_host_dirs_at_boot
+sed -n '/^start() {$/,/^}$/p' "$NODE_HOST_DIRS_SERVICE" > "$work/start-space.sh"
+: > "$work/root.log"
+( mountpoint() { return 1; }
+  mkdir() { :; }
+  mount() { printf '%s|' "$@" >> "$work/root.log"; }
+  . "$work/start-space.sh"; start )
+same "a path with a space reaches mount as one argument" \
+  "--bind|$work/home/host one|$work/var/vm images|" "$(cat "$work/root.log")"
+NODE_HOST_MOUNTS=()
+OVERLAY="$work/var/vm-images $work/var/releases" MOUNTED="$work/var/releases"
+mkdir -p "$NODE_HOME_SHARE/host-releases"
+node_host_dirs "$work/var/vm-images" "$work/var/releases"
+node_host_dirs_at_boot
+grep -q 'before k3s' "$NODE_HOST_DIRS_SERVICE" ||
+  { echo "FAIL: the boot service does not start before k3s" >&2; fail=1; }
+grep -qF "rc-update add $(basename "$NODE_HOST_DIRS_SERVICE") default" "$work/root.log" ||
+  { echo "FAIL: the boot service is not added to the default runlevel" >&2; fail=1; }
+sh -n "$NODE_HOST_DIRS_SERVICE" || { echo "FAIL: the boot service is not valid shell" >&2; fail=1; }
+# The start() body, run as the boot would run it, mounts each directory once:
+# a directory already mounted is left, so a restart of the service is a no-op.
+sed -n '/^start() {$/,/^}$/p' "$NODE_HOST_DIRS_SERVICE" > "$work/start.sh"
+: > "$work/root.log"
+( mountpoint() { case " $MOUNTED " in *" $2 "*) return 0 ;; *) return 1 ;; esac; }
+  mount() { echo "mount $*" >> "$work/root.log"; }
+  . "$work/start.sh"; MOUNTED="$work/var/releases" start )
+same "a boot mounts what is not mounted yet, and leaves what is" \
+  "mount --bind $NODE_HOME_SHARE/host-vm-images $work/var/vm-images" "$(cat "$work/root.log")"
+: > "$work/root.log"
+OVERLAY="" MOUNTED=""
+rm -rf "$NODE_HOME_SHARE/host-releases" "$NODE_HOME_SHARE/host-vm-images"
+node_host_dirs "$work/var/vm-images" "$work/var/releases"
+node_host_dirs_at_boot
+[ ! -e "$NODE_HOST_DIRS_SERVICE" ] ||
+  { echo "FAIL: a node whose directories need no mount keeps a boot service" >&2; fail=1; }
+grep -qF "rc-update del $(basename "$NODE_HOST_DIRS_SERVICE") default" "$work/root.log" ||
+  { echo "FAIL: a boot service no install needs is left in the default runlevel" >&2; fail=1; }
 
 exit "$fail"

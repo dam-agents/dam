@@ -119,15 +119,6 @@ export function useApprovalActions(
       resolvedLabel: "Continued",
       run: () => direct(() => each(approveOnce.mutateAsync)),
     },
-    {
-      id: "dismiss",
-      label: "Stop for today",
-      icon: Close,
-      danger: true,
-      disabled: inflight || !live,
-      resolvedLabel: "Stopped for today",
-      run: () => direct(() => each(dismiss.mutateAsync)),
-    },
   ];
 
   const egressActions: ApprovalAction[] = [

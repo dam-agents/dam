@@ -135,8 +135,10 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
 
 export function PermissionPrompt({
   onResolved,
+  channelLive,
 }: {
   onResolved?: (verdict: PermissionVerdict, toolCallId: string) => void;
+  channelLive: boolean;
 }) {
   const sessionId = useStore((s) => s.sessionId);
   const agentId = useStore((s) => s.selectedAgent);
@@ -147,6 +149,9 @@ export function PermissionPrompt({
     ? pendingPermissions.filter((p) => p.sessionId === sessionId)
     : [];
   const current = pending[0];
+
+  const liveRef = useRef(channelLive);
+  liveRef.current = channelLive;
 
   const titleRef = useRef<HTMLSpanElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -161,7 +166,12 @@ export function PermissionPrompt({
   }, [expanded, current?.toolCallId]);
 
   const answer = useCallback(
-    (entry: PendingPermission, opt: PermissionOption) => {
+    (entry: PendingPermission, opt: PermissionOption): boolean => {
+      if (!liveRef.current) return false;
+      const delivered = resolve(entry.toolCallId, {
+        outcome: { outcome: "selected", optionId: opt.optionId },
+      });
+      if (!delivered) return false;
       onResolved?.(
         {
           toolCallId: entry.toolCallId,
@@ -171,9 +181,7 @@ export function PermissionPrompt({
         },
         entry.toolCallId,
       );
-      resolve(entry.toolCallId, {
-        outcome: { outcome: "selected", optionId: opt.optionId },
-      });
+      return true;
     },
     [resolve, onResolved],
   );
@@ -187,6 +195,7 @@ export function PermissionPrompt({
 
   const deniable = pending.filter((p) => denyOnceOption(p.options));
   const denyAll = async () => {
+    if (!liveRef.current) return;
     const confirmed = new Set(deniable.map((p) => p.toolCallId));
     const prompt = denyAllPrompt(confirmed.size);
     const ok = await showConfirm(prompt.message, prompt.title, {
@@ -197,12 +206,12 @@ export function PermissionPrompt({
     for (const entry of useStore.getState().pendingPermissions) {
       if (!confirmed.has(entry.toolCallId)) continue;
       const opt = denyOnceOption(entry.options);
-      if (opt) answer(entry, opt);
+      if (opt && !answer(entry, opt)) return;
     }
   };
 
   useEffect(() => {
-    if (!current) return;
+    if (!current || !channelLive) return;
     const onKey = (e: KeyboardEvent) => {
       if (useStore.getState().dialog?.open) return;
       const target = e.target as HTMLElement | null;
@@ -221,7 +230,7 @@ export function PermissionPrompt({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [current, pick]);
+  }, [current, pick, channelLive]);
 
   if (!current) return null;
 
@@ -264,13 +273,23 @@ export function PermissionPrompt({
                 variant="outline"
                 size="sm"
                 onClick={() => pick(opt)}
+                disabled={!channelLive}
                 className="bg-background max-w-full"
-                tooltip={`${opt.name} — press ${i + 1}`}
+                tooltip={
+                  channelLive
+                    ? `${opt.name} — press ${i + 1}`
+                    : "Waiting for the agent's connection — answer again once it is back."
+                }
               >
                 <span className="truncate">{optionLabel(opt)}</span>
               </Button>
             ))}
           </div>
+          {!channelLive && (
+            <p className="text-2xs text-muted-foreground">
+              Waiting for the agent's connection — answer again once it is back.
+            </p>
+          )}
           {pending.length > 1 && (
             <div className="flex flex-wrap items-center gap-x-2 text-2xs text-muted-foreground">
               <span>
@@ -282,6 +301,7 @@ export function PermissionPrompt({
                   variant="link"
                   size="inline"
                   onClick={() => void denyAll()}
+                  disabled={!channelLive}
                   data-testid="deny-all-permissions"
                   className="text-2xs"
                 >

@@ -11,6 +11,7 @@ const settled = {
   noGrantedProvider: false,
   sharedCurveBender: false,
   formLocked: false,
+  channel: null,
 };
 
 describe("the composer block", () => {
@@ -84,6 +85,30 @@ describe("the composer block", () => {
       kind: "form",
       reason: COMPOSER_LOCKED_REASON,
     });
+  });
+
+  // TEST_SCENARIO: a running Agent whose connection dropped cannot carry a send, so the composer waits and keeps the draft instead of holding a message that a Stop could not cancel.
+  it("waits while the agent reconnects", () => {
+    expect(composerBlock({ ...settled, channel: "lost" })).toEqual({
+      kind: "reconnect",
+      reason: "Reconnecting to this agent — your message stays in the draft.",
+    });
+  });
+
+  // TEST_SCENARIO: a chat whose channel has not opened yet is not a dropped one, so the composer names the connection it is waiting for.
+  it("waits while the channel connects", () => {
+    expect(composerBlock({ ...settled, channel: "connecting" })).toEqual({
+      kind: "connecting",
+      reason: "Connecting to this agent — your message stays in the draft.",
+    });
+  });
+
+  // TEST_SCENARIO: a provider problem still wins over the reconnect, because the user can act on it and the reconnect reason would hide that action.
+  it("keeps an actionable provider block over the reconnect", () => {
+    expect(
+      composerBlock({ ...settled, channel: "lost", noGrantedProvider: true })
+        ?.kind,
+    ).toBe("attach");
   });
 
   it("lets a settled agent with a provider send", () => {

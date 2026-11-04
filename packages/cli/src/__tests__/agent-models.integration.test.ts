@@ -28,6 +28,7 @@ function connection(id: string, name: string, templateId: string) {
 
 const CONNECTIONS = [
   connection("conn-ibm", "IBM proxy", "ibm-litellm"),
+  connection("conn-ibm2", "IBM proxy of my own", "ibm-litellm"),
   connection("conn-oai", "My OpenAI", "openai"),
   connection("conn-gh", "github", "github"),
 ];
@@ -73,6 +74,11 @@ const CATALOG: OwnerModelCatalogView = {
       models: [],
     },
   ],
+};
+
+const SECOND_IBM: OwnerModelCatalogView["providers"][number] = {
+  ...CATALOG.providers[0]!,
+  connectionId: "conn-ibm2",
 };
 
 describe("dam agent get / update / models (integration)", () => {
@@ -149,7 +155,9 @@ describe("dam agent get / update / models (integration)", () => {
         },
         modelCatalog: async (agentId?: string) => {
           catalogAgent = agentId;
-          return CATALOG;
+          return granted.includes("conn-ibm2")
+            ? { ...CATALOG, providers: [...CATALOG.providers, SECOND_IBM] }
+            : CATALOG;
         },
         getAgentConnections: async (agentId: string) => ({
           agentId,
@@ -292,6 +300,29 @@ describe("dam agent get / update / models (integration)", () => {
   });
 
   /**
+   * TEST_SCENARIO: new runs start on the saved chat default's harness, so
+   * the (default) mark and `defaultHarness` follow it, not the harness the
+   * runtime reports as its own default.
+   */
+  it("agent get marks the saved chat harness as the default", async () => {
+    defaults = {
+      chat: { harness: "codex", provider: null, model: "ibm/gpt-5.5" },
+      channel: null,
+      scheduled: null,
+    };
+    const r = await dam("agent", "get", AGENT_ID);
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/^HARNESSES:\s+claude-code, codex \(default\)$/m);
+    const json = await dam("agent", "get", AGENT_ID, "--json");
+    expect(json.exitCode, json.stderr).toBe(0);
+    const parsed = JSON.parse(json.stdout) as {
+      models: { defaultHarness: string; defaults: SessionDefaults };
+    };
+    expect(parsed.models.defaultHarness).toBe("codex");
+    expect(parsed.models.defaults.chat?.harness).toBe("codex");
+  });
+
+  /**
    * TEST_SCENARIO: a default whose model's provider is no longer granted
    * fails every run, so the table says so instead of looking set.
    */
@@ -360,6 +391,7 @@ describe("dam agent get / update / models (integration)", () => {
       provider: null,
       model: "ibm/gpt-5.5",
     });
+    expect(r.stdout).toMatch(/^HARNESSES:\s+claude-code, codex \(default\)$/m);
   });
 
   /**
@@ -452,6 +484,147 @@ describe("dam agent get / update / models (integration)", () => {
   });
 
   /**
+   * TEST_SCENARIO: swapping one provider for another of the same alias in one
+   * update must not leave a default on the Connection just taken away: every
+   * default kind that named it moves to the new one, and the output says so.
+   */
+  it("agent update moves the defaults off a removed provider to its replacement", async () => {
+    defaults = {
+      ...defaults,
+      channel: {
+        harness: "claude-code",
+        provider: "conn-ibm",
+        model: "ibm/gpt-5.5",
+      },
+    };
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "conn-ibm2",
+      "--remove-provider",
+      "conn-ibm",
+      "--json",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      defaults: SessionDefaults;
+      defaultMoves: unknown[];
+    };
+    expect(parsed.defaults.chat).toEqual({
+      harness: "claude-code",
+      provider: "conn-ibm2",
+      model: "ibm/aws/claude-opus-4-8",
+      settings: { effort: "high" },
+    });
+    expect(parsed.defaults.channel?.provider).toBe("conn-ibm2");
+    expect(parsed.defaults.scheduled?.provider).toBe("conn-ibm2");
+    expect(parsed.defaultMoves).toEqual([
+      {
+        kind: "chat",
+        model: "ibm/aws/claude-opus-4-8",
+        from: "conn-ibm",
+        to: "conn-ibm2",
+      },
+      {
+        kind: "channel",
+        model: "ibm/gpt-5.5",
+        from: "conn-ibm",
+        to: "conn-ibm2",
+      },
+      {
+        kind: "scheduled",
+        model: "ibm/gpt-5.5",
+        from: "conn-ibm",
+        to: "conn-ibm2",
+      },
+    ]);
+    expect(r.stderr).toContain(
+      "note: the chat default (ibm/aws/claude-opus-4-8) moved from IBM proxy to IBM proxy of my own",
+    );
+    expect(r.stderr).toContain(
+      "note: the scheduled default (ibm/gpt-5.5) moved",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: with no provider of the same alias left, a default cannot
+   * move; the output names each one left without a provider and how to set a
+   * new one, instead of succeeding in silence.
+   */
+  it("agent update warns about a default with no provider left", async () => {
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "My OpenAI",
+      "--remove-provider",
+      "conn-ibm",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(remembered).toEqual([]);
+    expect(r.stderr).toContain(
+      "warning: the chat default (ibm/aws/claude-opus-4-8) ran on IBM proxy, which the agent no longer holds, and it has no provider now",
+    );
+    expect(r.stderr).toContain(
+      "hint: set one with `dam agent update demo --model <provider>/<model id>`",
+    );
+    expect(r.stderr).toContain(
+      "warning: the scheduled default (ibm/gpt-5.5) ran on IBM proxy",
+    );
+    expect(r.stderr).toContain(
+      "hint: set one with `dam agent update demo --kind scheduled --model",
+    );
+    expect(r.stderr).not.toContain("channel default");
+  });
+
+  /**
+   * TEST_SCENARIO: the server keeps the rules about which pair is valid, so
+   * a move it refuses leaves the default without a provider, and the
+   * warning carries the server's reason.
+   */
+  it("agent update warns with the server's reason when a move is refused", async () => {
+    rememberRefusal = "the codex harness cannot run on that provider";
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "conn-ibm2",
+      "--remove-provider",
+      "conn-ibm",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stderr).toContain(
+      "warning: the scheduled default (ibm/gpt-5.5) ran on IBM proxy, which the agent no longer holds, and it has no provider now: the codex harness cannot run on that provider",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: a default the same update sets with --model is the
+   * caller's pick, so it is saved as asked and never moved after it.
+   */
+  it("agent update leaves a default the same update sets", async () => {
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "conn-ibm2",
+      "--remove-provider",
+      "conn-ibm",
+      "--model",
+      "ibm/gpt-5.5",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(remembered.map((m) => m.kind)).toEqual(["chat", "scheduled"]);
+    expect(remembered[0]?.pair.provider).toBeNull();
+    expect(r.stderr).not.toContain("the chat default");
+  });
+
+  /**
    * TEST_SCENARIO: the server owns which pair is valid; its refusal reaches
    * the user word for word.
    */
@@ -509,5 +682,22 @@ describe("dam agent get / update / models (integration)", () => {
     expect(codex.providers.flatMap((p) => p.models.map((m) => m.name))).toEqual(
       ["ibm/gpt-5.5"],
     );
+  });
+
+  /**
+   * TEST_SCENARIO: with no --harness, the catalog is the one for the harness
+   * new runs start on, the saved chat default's, so a model picked from it
+   * is one that harness takes.
+   */
+  it("agent models lists the saved chat harness's catalog", async () => {
+    defaults = {
+      chat: { harness: "codex", provider: null, model: "ibm/gpt-5.5" },
+      channel: null,
+      scheduled: null,
+    };
+    const r = await dam("agent", "models", AGENT_ID, "--json");
+    expect(r.exitCode, r.stderr).toBe(0);
+    const catalog = JSON.parse(r.stdout) as HarnessCatalogView;
+    expect(catalog.harness).toBe("codex");
   });
 });

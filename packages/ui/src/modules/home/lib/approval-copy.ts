@@ -13,11 +13,25 @@ import {
 } from "../../spend/lib/copy.js";
 import { formatSpendOf, localResetTime } from "../../spend/lib/format.js";
 
+export const ALL_AGENTS_SUBJECT = "All your agents";
+
+export function countsAllAgents(approval: ApprovalView): boolean {
+  return (
+    approval.payload.kind === "spend_limit" &&
+    (approval.payload.scope.kind === "owner" ||
+      approval.payload.scope.kind === "owner-connection")
+  );
+}
+
 export function approvalHeadline(approval: ApprovalView): string {
   return match(approval.payload)
     .with({ kind: "ext_authz" }, () => "Wants to access network")
     .with({ kind: "acp_native" }, () => "Wants to run a command")
-    .with({ kind: "spend_limit" }, () => "Reached its spend limit")
+    .with({ kind: "spend_limit" }, () =>
+      countsAllAgents(approval)
+        ? "Reached your spend limit"
+        : "Reached its spend limit",
+    )
     .with({ kind: "egress_proposal" }, () => "Proposes a network rule")
     .exhaustive();
 }

@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-10-27
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -94,7 +94,7 @@ The surface is cut **by signal, not by question** — one read per thing the sto
 An agent then asks its own questions of them rather than looking for the tool whose name matches its question, and a new question costs no new tool.
 
 - **`get_metrics`** — the numbers.
-  Window totals per unit and the per-model split, over whole UTC days (today and the days before it) or over the last given hours, with the measuring start beside them, and at coarser-to-finer **granularity** a row per session (its spend with the part of the sub-agents spawned from it, calls, model time, tokens, first/last day and first/last call time) or a row per LLM call from telemetry (model, request latency, tokens, context size), with the measured cost of its call row and whether that cost is estimated, joined by the Model Router's call id; a call with no router record, such as one on Bedrock, or with no call row has no cost.
+  Window totals per unit and the per-model split, over whole UTC days (today and the days before it) or over the last given hours, with the measuring start beside them, and at coarser-to-finer **granularity** a row per session (its spend with the part of the sub-agents spawned from it, calls, model time, tokens, first/last day and first/last call time) or a row per LLM call from telemetry (model, request latency, tokens, context size), with the measured cost of its call row and whether that cost is estimated, joined by the Model Router's call id; a call the router did not record, such as one from a harness it does not serve, or with no call row has no cost.
   A window in hours sums the call rows ([spend-limits](spend-limits.md#ledger)); one that starts more than 30 days ago, or before the call rows carried a call's model and counts, counts whole UTC days, and `totalsCover` says so.
   The per-session level is what turns *this got slower* into a comparison between runs; the summary level is the default because it is the cheapest and answers the commonest question.
   A further granularity gives a row per **sub-agent** — keyed by the id the spawn returned, with the models it ran, its spend, calls, model time and tokens — so a Driver can tell which piece of delegated work cost what and compare models or harnesses on cost.
@@ -182,7 +182,7 @@ On a runtime with the Model Router ([harness configuration](harness-config.md#th
 Router records from before the measuring start carried a cost, so the earlier estimates cover those days and show little after them.
 The reader sums an agent from the router's records when it has any in the window, else from the harness's own (Claude Code's, Pi's of the same shape, and Codex's, which the collector reshapes to it ([observability](observability.md#agent-export))), so a router export that never reached the store leaves the harness's count and no call is summed twice.
 The switch is per agent and invocation, at its own first router record, so an agent moved to a router image mid-window keeps the harness records from before, whenever the owner's other agents moved.
-A Claude Code call on a native Connection (Bedrock) has no router record; Claude Code's own record names the model without the `claude/` prefix and is always counted, with no provider.
+A Claude Code call on a native Connection (Bedrock) reaches the router like any other call, so it is counted from the router's record, under the `bedrock` alias and the Connection behind it; a call from before the agent's image routed Bedrock keeps Claude Code's record.
 A call the router could not count is still a record: cut before its usage arrived, or answered without usage.
 Each per-model and per-provider row carries its **uncounted** count beside its total, and the earlier-estimates view says so, so a total reads as a floor.
 The **per-provider** rollup groups rows by the alias and Connection the router recorded, labelled with the Connection's live display name (a deleted Connection keeps its alias), with the harness's own records, which name no provider, in a row of their own.

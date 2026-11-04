@@ -1,5 +1,6 @@
 import {
   PROVIDER_TEMPLATE_IDS,
+  type AgentDefaultProvider,
   type HarnessCatalog,
   type ProviderPresetType,
 } from "api-server-api";
@@ -244,6 +245,8 @@ type ProvisionerConnections = Pick<
   | "listConnections"
 >;
 
+type ProviderOrderSource = Exclude<AgentDefaultProvider["source"], "profile">;
+
 async function fittingProviders(
   connections: ProvisionerConnections,
   catalog: Pick<HarnessCatalog, "harnesses">,
@@ -258,14 +261,17 @@ async function fittingProviders(
     preferred?: readonly string[];
   },
   upTo?: string,
-): Promise<string[]> {
+): Promise<{ ids: string[]; source: ProviderOrderSource }> {
   const chosen = new Set(connectionIds);
   const holdsProvider = (await connections.listConnections()).some(
     (c) => chosen.has(c.id) && PROVIDER_TEMPLATE_IDS.has(c.templateId),
   );
-  if (holdsProvider) return [];
+  const inCatalog =
+    harness !== undefined && catalog.harnesses.some((h) => h.name === harness);
+  const source = !inCatalog && providers ? "template" : "harness";
+  if (holdsProvider) return { ids: [], source };
   const fits = (type: ProviderPresetType, templateId: string) =>
-    harness !== undefined && catalog.harnesses.some((h) => h.name === harness)
+    inCatalog
       ? harnessFits(catalog, harness, type, templateId)
       : !providers || providers.includes(type);
   const preferredIds =
@@ -276,8 +282,11 @@ async function fittingProviders(
       upTo,
     ));
   return preferredIds?.length
-    ? preferredIds
-    : connections.defaultProviderConnections(fits, harness, upTo);
+    ? { ids: preferredIds, source: "kit" }
+    : {
+        ids: await connections.defaultProviderConnections(fits, harness, upTo),
+        source,
+      };
 }
 
 /**
@@ -304,9 +313,13 @@ export function connectionGrantProvisioner(
       };
     },
     async defaultProviders(connectionIds, template) {
-      return (
-        await fittingProviders(connections, catalog, connectionIds, template)
-      ).slice(0, 1);
+      const { ids, source } = await fittingProviders(
+        connections,
+        catalog,
+        connectionIds,
+        template,
+      );
+      return { ids: ids.slice(0, 1), source };
     },
     async applyAfterCreate(agentId, sel) {
       if (sel.connectionIds.length)
@@ -344,7 +357,7 @@ export async function attachProviderToBareAgents(
       const { connections: grants } = await connections.getAgentConnections(
         agent.id,
       );
-      const chosen = await fittingProviders(
+      const { ids: chosen } = await fittingProviders(
         connections,
         catalog,
         grants.map((g) => g.connectionId),

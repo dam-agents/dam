@@ -37,9 +37,3 @@ export const DEFAULT_KIND_LABEL: Record<DefaultKind, string> = {
   channel: "channel",
   scheduled: "scheduled",
 };
-
-export const DEFAULT_KIND_TITLE: Record<DefaultKind, string> = {
-  chat: "Chat",
-  channel: "Channel",
-  scheduled: "Scheduled",
-};

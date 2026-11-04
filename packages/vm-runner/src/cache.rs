@@ -88,6 +88,34 @@ pub fn reclaim_scratch(dir: &Path) {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: removes every tree an earlier layout put inside a subdirectory of the directory the one writer owns: `<dir>/<something>/sha256_*`. The current layout is `<dir>/sha256_*` at the top, so a tree below a subdirectory is never one this cache serves, counts or evicts — no path it builds reaches one, and no budget is charged for it. It enters no entry directory and follows no symlink, so nothing inside a tree a machine boots is touched. Nothing above `dir` is touched either: the parent holds other installs' trees, which this writer may not delete, and the install's own trees a layout before this one left beside its directory stay an operator step, since nothing in a pod tells them from another install's.
+pub fn reclaim_old_layout(dir: &Path) {
+    let Ok(lay) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in lay.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.')
+            || is_digest_entry(&name)
+            || !entry.file_type().map(|k| k.is_dir()).unwrap_or(false)
+        {
+            continue;
+        }
+        let Ok(trees) = fs::read_dir(entry.path()) else {
+            continue;
+        };
+        for tree in trees.flatten() {
+            let old = tree.file_name().to_string_lossy().into_owned();
+            if !is_digest_entry(&old) || !tree.file_type().map(|k| k.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            if let Err(e) = fs::remove_dir_all(tree.path()) {
+                tracing::warn!(path = %format!("{name}/{old}"), error = %e, "image cache: reclaiming a tree an earlier layout of this directory left behind");
+            }
+        }
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: one entry as eviction sees it — where it is, what it costs, and when it was written, which is the order entries are taken in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
@@ -226,6 +254,42 @@ mod tests {
 
         assert!(!abandoned.exists());
         assert!(kept.exists());
+    }
+
+    // TEST_SCENARIO: a tree an earlier layout nested under a subdirectory of the directory is unreachable by every path this cache builds, so it is charged to no budget and evicted by no trim; the one writer removes it when it opens. The entries at the top of the directory are untouched, because those are the trees machines boot, and so is anything outside the directory or reached through a symlink.
+    #[test]
+    fn opening_the_cache_reclaims_the_trees_an_earlier_layout_nested() {
+        let root = TempDir::new("cache");
+        let dir = root.path().join("images");
+        let nested = dir.join("old-layout");
+        fs::create_dir_all(&nested).unwrap();
+        let stale = entry_of(&nested, &entry_name('a'), 4096, Duration::from_secs(1));
+        let kept = entry_of(&dir, &entry_name('b'), 16, Duration::from_secs(1));
+        let inside = kept.join("guest").join(entry_name('c'));
+        fs::create_dir_all(&inside).unwrap();
+        let outside = entry_of(root.path(), &entry_name('d'), 16, Duration::from_secs(1));
+        let linked = root.path().join("elsewhere");
+        fs::create_dir_all(&linked).unwrap();
+        let through_link = entry_of(&linked, &entry_name('e'), 16, Duration::from_secs(1));
+        std::os::unix::fs::symlink(&linked, dir.join("old-link")).unwrap();
+
+        reclaim_old_layout(&dir);
+
+        assert!(
+            !stale.exists(),
+            "a nested tree an earlier layout left is not freed"
+        );
+        assert!(kept.exists(), "a tree a machine may be booting was removed");
+        assert!(inside.exists(), "a tree inside an entry was walked into");
+        assert!(nested.exists(), "the pass removes trees, not directories");
+        assert!(
+            outside.exists() && !dir.join(entry_name('d')).exists(),
+            "the pass reached outside the directory it was given"
+        );
+        assert!(
+            through_link.exists(),
+            "the pass followed a symlink out of the directory"
+        );
     }
 
     const DIGEST: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";

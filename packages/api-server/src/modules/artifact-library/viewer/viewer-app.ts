@@ -33,11 +33,13 @@ import {
   type Authorized,
 } from "./authorize.js";
 import { createRawHandler, RAW_ROUTE } from "./raw-handler.js";
+import { robotsTxt, ROBOTS_TXT_ROUTE, X_ROBOTS_TAG } from "./robots.js";
 import {
   renderExpired,
   renderFolderPage,
   renderNoAccess,
   renderNotFound,
+  renderSignInRedirect,
   renderWrapper,
 } from "./renderer.js";
 import {
@@ -88,6 +90,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     await next();
     c.header("X-Content-Type-Options", "nosniff");
     c.header("Referrer-Policy", "no-referrer");
+    c.header("X-Robots-Tag", X_ROBOTS_TAG);
     c.header(
       "Content-Security-Policy",
       c.req.path.endsWith("/raw")
@@ -128,7 +131,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
           if (!signIn) {
             return denied(
               surface === "page"
-                ? c.redirect(loginPath(currentPath(c)), 302)
+                ? c.html(renderSignInRedirect(loginPath(currentPath(c))), 401)
                 : c.text("unauthorized", 401),
             );
           }
@@ -263,6 +266,8 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
       }),
     );
   });
+
+  app.get(ROBOTS_TXT_ROUTE, robotsTxt);
 
   app.get(RAW_ROUTE, createRawHandler(viewer, authorize("raw")));
 

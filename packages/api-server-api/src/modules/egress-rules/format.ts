@@ -1,4 +1,8 @@
-import type { EgressRuleSource, EgressRuleView } from "./types.js";
+import {
+  PLATFORM_ENVIRONMENTS_SOURCE,
+  type EgressRuleSource,
+  type EgressRuleView,
+} from "./types.js";
 
 export function formatEgressRuleSource(source: EgressRuleSource): string {
   if (source === "manual") return "manual";
@@ -6,6 +10,8 @@ export function formatEgressRuleSource(source: EgressRuleSource): string {
   if (source === "kit") return "from the starter kit";
   if (source === "preset:trusted") return "preset: trusted";
   if (source === "preset:all") return "preset: all";
+  if (source === PLATFORM_ENVIRONMENTS_SOURCE)
+    return "added by the platform, for Environments shared with this agent";
   if (source.startsWith("connection:")) {
     return `from ${source.slice("connection:".length)}`;
   }

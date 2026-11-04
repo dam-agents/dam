@@ -30,6 +30,7 @@ import {
   appendUndelivered,
   finalizeAllStreaming,
   hasStreamingAssistant,
+  hasWorkingReply,
 } from "../../acp/session-projection.js";
 import {
   untilAgentOperable,
@@ -99,22 +100,27 @@ export function useAcpSession(
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
   const setBusy = useStore((s) => s.setBusy);
-  const [loadingSession, setLoadingSession] = useState(false);
+  // UNIT_BOUNDARY_DESCRIPTION: a load counts only while its session is the one shown: a new session, another agent or a terminal opened while it runs never inherits its spinner and its blocked composer.
+  const [load, setLoad] = useState<{ sid: string } | null>(null);
+  const loadingSession = load !== null && load.sid === sessionId;
 
   const busy =
     sessionMode !== SessionMode.Terminal &&
     (hasStreamingAssistant(messages) || queueWaiting);
+  const working =
+    sessionMode !== SessionMode.Terminal &&
+    (hasWorkingReply(messages) || queueWaiting);
   useEffect(() => {
-    setBusy(busy);
-  }, [busy, setBusy]);
-  const prevBusyRef = useRef(busy);
+    setBusy(working);
+  }, [working, setBusy]);
+  const prevWorkingRef = useRef(working);
   useEffect(() => {
-    if (prevBusyRef.current === busy) return;
-    prevBusyRef.current = busy;
+    if (prevWorkingRef.current === working) return;
+    prevWorkingRef.current = working;
     if (selectedAgent && sessionId) {
-      setSessionRunning(selectedAgent, sessionId, busy);
+      setSessionRunning(selectedAgent, sessionId, working);
     }
-  }, [busy, selectedAgent, sessionId]);
+  }, [working, selectedAgent, sessionId]);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
 
@@ -136,12 +142,14 @@ export function useAcpSession(
 
   const {
     ensureLive,
+    engageAside,
     beginSession,
     loadSessionHistory,
     runtimeIdle,
     clearRuntimeIdle,
     connectionRef,
     state: connectionState,
+    retry: retryChannel,
     reset: resetConnection,
   } = useAcpConnection({
     selectedAgent,
@@ -192,7 +200,10 @@ export function useAcpSession(
       if (!selectedAgent) return;
 
       resetConnection();
-      setLoadingSession(true);
+      const started = { sid };
+      const endLoad = () =>
+        setLoad((current) => (current === started ? null : current));
+      setLoad(started);
       setMessages([]);
       useStore.getState().setRewriting(null);
       useStore.getState().setHarnessForks(false);
@@ -244,7 +255,7 @@ export function useAcpSession(
         if (useStore.getState().sessionId !== sid) return;
         const unstored = unstoredSessionPrompts(e);
         if (unstored !== null) {
-          setLoadingSession(false);
+          endLoad();
           await useStore.getState().reopenUnstoredSession(sid, unstored);
           return;
         }
@@ -253,7 +264,7 @@ export function useAcpSession(
         if (useStore.getState().sessionId !== sid) return;
         useStore.getState().setSessionError({ sessionId: sid, kind });
       } finally {
-        if (useStore.getState().sessionId === sid) setLoadingSession(false);
+        endLoad();
       }
     },
     [
@@ -296,6 +307,7 @@ export function useAcpSession(
     selectedAgent,
     agentRunState,
     ensureConnection: ensureLive,
+    engageAside,
     beginSession,
     engagedSessionIdRef,
     connectionRef,
@@ -475,6 +487,7 @@ export function useAcpSession(
     busy,
     loadingSession,
     connectionState,
+    retryChannel,
   };
 }
 

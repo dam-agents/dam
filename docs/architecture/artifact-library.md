@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-30
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -149,13 +149,29 @@ The code is redeemed server-side and no token ever reaches the browser: the brow
 On an https share host the cookie is named with the `__Host-` prefix, so the browser accepts it only from the share host itself: another host under the same parent domain, the content host included, cannot plant a session the share host would read or that sign-out would leave behind.
 On plain http, as on the local cluster, browsers refuse that prefix, so the cookie keeps its bare name there.
 Signing out ends both that session and the identity provider's, so "switch account" on the no-access page really switches.
+A visitor with no session first gets a small page that sends the browser to sign-in with the fragment of the link added to the return path, because the identity provider's sign-in form drops the fragment.
+The return path accepts a fragment of printable ASCII after a share page or an Environment's front door, and the callback sends the browser back to it.
 Every restricted response is marked private and uncacheable so no shared cache replays it to the next visitor.
 
 **The artifact frame.** A share page is two documents from two origins.
 The outer page, on the share host, is platform chrome (title banner and source download); the inner document is the user content, loaded from the content host in an iframe.
 The browser's same-origin rule is the boundary: artifact code runs as the content origin, so it can neither read the share session cookie nor call the share host as the signed-in viewer.
 The sandbox blocks top-level navigation and forms, but permits scripts, same-origin access and unsandboxed popups: it does not provide an independent origin boundary.
+A popup the artifact opens is a normal top-level tab, an app-origin one included, and the artifact cannot read it: its document never runs on the app's origin, so the two are cross-origin.
 The content host agrees to be framed only by the share origin, and serves raw bytes under a sandbox directive so a document opened directly cannot run either.
+
+**Fragment links.** A page can open an item named in the URL fragment (`/a/<slug>#C-35`), and only the share page's own address carries the fragment of a shared link: the server never sees it.
+So the share page gives the frame its address from a script, as the content address plus the page's fragment, and the frame loads once.
+When the page's fragment changes later, the frame follows it without loading the document again.
+A frame that changes its own fragment does not change the page's address.
+
+**Printing.** The browser's own print (Cmd/Ctrl+P or its menu) prints the whole artifact, not only the part in view.
+The frame is sandboxed without modals, so the artifact's document cannot print itself, and the browser prints the outer page even when the keyboard focus is inside the frame.
+Instead every document the frame renders reports its content height to the page around it, and on `beforeprint` that page stretches the frame to the reported height, so the browser breaks it across sheets.
+A frame wider than a sheet keeps its layout width and is scaled down to fit, so its right side is not clipped.
+A print stylesheet hides the banner and every other part of the page, and on `afterprint` the frame returns to its normal size.
+The page takes a height only from its own frame's document, and the reported height grants nothing but a size.
+The in-app preview prints the same way, without the app's navigation, chat or toolbar.
 
 The content host cannot see the share session, so a restricted frame carries a **render token**: minted by the share page for exactly one artifact and its current version after the viewer passed, with a short expiry, redeemed by the content host on the document and on its raw bytes.
 It is a short-lived, single-purpose bearer grant — not a session and not an identity; anyone holding it can replay it until expiry, after which a pasted frame address answers unauthorized.
@@ -170,6 +186,7 @@ Rendering is entirely client-side — the server never compiles or sanitizes use
   Raw bytes are served inline only for images — everything else is download-only, so no user-controlled document can execute on either by-link origin *outside* the frame.
 
 The viewer sends conservative headers (no-referrer, nosniff, framing pinned to the share origin) but deliberately no restrictive content CSP: the dedicated content origin provides origin isolation; the sandbox restricts specific browser capabilities.
+No search engine may index user content: every response of a share page, the share sign-in routes and the content host, errors included, carries `X-Robots-Tag: noindex, nofollow, noarchive`, and both hosts answer `robots.txt` with `Disallow: /`.
 
 Blob bytes relay through the api-server with constant memory: raw views stream store → response without ever buffering the object (the store is deliberately never exposed to the public side — no presigned links leave this origin), page renders buffer only size-capped text sources (anything bigger falls back to the download card), and the public folder listing is bounded.
 What remains on the api-server per public view is bounded work: a small HTML wrapper, an indexed slug lookup, and pass-through bandwidth.
@@ -214,6 +231,8 @@ flowchart LR
   Folders are listed first and unfiled artifacts after them at the top level.
   The whole library lists every user folder, empty ones included; a list of one Agent's artifacts lists only the folders that hold at least one of them, because a folder belongs to the user's library and not to one Agent.
   That list still shows every folder while an artifact is dragged, so any folder can take the drop, and keeps a folder created there or dropped on in view, empty or not; the artifact menu's **Move** offers every folder.
+  With the `environments` feature on, the owner's [Environments](environments.md#surfaces) are an **Environments** group above the folders, which folds like one, shown only while it has an Environment to show: in an Agent's chat that Agent's alone, and filtered by name with a search.
+  The list and the page's introduction count them too, so an owner with Environments and no artifact sees the list.
 - Opening an artifact docks a **preview** in the same tab, or, in a chat with both experiments off, in the panel docked beside the conversation; it reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.
   An owner can **change a text artifact's content** from the preview, which publishes a version like any other revision, so the artifact keeps its identity, its link and every earlier version.
   Only the current version is editable; a past one is read-only.

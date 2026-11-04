@@ -6,6 +6,8 @@ import { ARTIFACT_PROMPT_TYPE, ARTIFACT_REQUEST_TYPE } from "api-server-api";
 
 import { SHARED_BRIDGE_REFUSAL } from "../../modules/artifact-library/viewer/bridge-shim.js";
 import { createContentApp } from "../../modules/artifact-library/viewer/content-app.js";
+import { createShareAuthRoutes } from "../../modules/artifact-library/viewer/share-auth-routes.js";
+import type { ShareAuthService } from "../../modules/artifact-library/services/share-auth-service.js";
 import { createShareViewerApp } from "../../modules/artifact-library/viewer/viewer-app.js";
 import type {
   FolderResolution,
@@ -130,6 +132,41 @@ function contentAppWith(viewer: ShareViewerService) {
   });
 }
 
+function fakeLocation() {
+  return {
+    hash: "",
+    replaced: "",
+    replace(url: string) {
+      this.replaced = url;
+    },
+  };
+}
+
+function runPageScript(
+  html: string,
+  marker: string,
+  frame: object,
+  hash: string,
+) {
+  const script = html
+    .split("<script>")
+    .slice(1)
+    .map((part) => part.split("</script>")[0]!)
+    .find((body) => body.includes(marker))!;
+  const listeners: Record<string, () => void> = {};
+  const location = { ...fakeLocation(), hash };
+  new Function("document", "window", "location", script)(
+    { querySelector: () => frame },
+    {
+      addEventListener: (type: string, fn: () => void) => {
+        listeners[type] = fn;
+      },
+    },
+    location,
+  );
+  return { location, listeners };
+}
+
 describe("share viewer app", () => {
   it("frames a public artifact from the content origin, never inline", async () => {
     const app = appWith(publicViewer());
@@ -143,6 +180,34 @@ describe("share viewer app", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(res.headers.get("Content-Security-Policy")).not.toContain("sandbox");
+  });
+
+  /**
+   * TEST_SCENARIO: A page can open an item named in the URL fragment, and only
+   * the share page sees the fragment of a shared link. The frame starts loading
+   * once, with the fragment. It follows a later fragment change by replacing its
+   * own history entry, so Back moves the page and the frame together.
+   */
+  it("hands the share link's fragment to the frame and follows it", async () => {
+    const html = await (
+      await appWith(publicViewer()).request("/a/slug-a")
+    ).text();
+    const contentUrl = "https://content.example.com/a/slug-a?v=1";
+    expect(html).toMatch(
+      /<iframe [^>]*data-src="https:\/\/content\.example\.com\/a\/slug-a\?v=1"/,
+    );
+    expect(html).not.toMatch(/<iframe [^>]* src=/);
+    const frame = {
+      dataset: { src: contentUrl },
+      src: "",
+      contentWindow: { location: fakeLocation() },
+    };
+    const page = runPageScript(html, "hashchange", frame, "#C-35");
+    expect(frame.src).toBe(`${contentUrl}#C-35`);
+    page.location.hash = "#C-40";
+    page.listeners.hashchange!();
+    expect(frame.contentWindow.location.replaced).toBe(`${contentUrl}#C-40`);
+    expect(frame.src).toBe(`${contentUrl}#C-35`);
   });
 
   /**
@@ -241,6 +306,64 @@ describe("share viewer app", () => {
     const res = await app.request("/anything/else");
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("http://app.localhost");
+  });
+
+  it("tells search engines not to index any share-host response, errors included", async () => {
+    const app = appWith(publicViewer());
+    const folderApp = appWith(
+      fakeViewer({
+        resolveFolder: () =>
+          Promise.resolve({
+            state: "ok",
+            folder: { name: "Reports" },
+            artifacts: [],
+          } as unknown as FolderResolution),
+      }),
+    );
+    const responses = [
+      await app.request("/a/slug-a"),
+      await app.request("/a/slug-a/raw"),
+      await folderApp.request("/f/folder-a"),
+      await appWith(fakeViewer({})).request("/a/nope"),
+      await appWith(fakeViewer({})).request("/f/nope"),
+      await app.request("/anything/else"),
+      await app.request("/a/slug-a/request", { method: "POST" }),
+    ];
+    expect(responses.map((r) => r.status)).toEqual([
+      200, 200, 200, 404, 404, 302, 403,
+    ]);
+    for (const res of responses)
+      expect(res.headers.get("X-Robots-Tag")).toBe(
+        "noindex, nofollow, noarchive",
+      );
+    expect(await responses[0]!.text()).toContain(
+      '<meta name="robots" content="noindex, nofollow"/>',
+    );
+  });
+
+  it("disallows every crawler in robots.txt", async () => {
+    const res = await appWith(fakeViewer({})).request("/robots.txt");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/plain");
+    expect(res.headers.get("X-Robots-Tag")).toBe(
+      "noindex, nofollow, noarchive",
+    );
+    expect(await res.text()).toBe("User-agent: *\nDisallow: /\n");
+  });
+
+  it("tells search engines not to index the sign-in routes", async () => {
+    const routes = createShareAuthRoutes({
+      auth: {
+        beginLogin: () => Promise.resolve("https://idp.example.com/authorize"),
+      } as unknown as ShareAuthService,
+      brandName: "Platform",
+      sessionCookie: shareSessionCookie("https://share.example.com"),
+    });
+    const res = await routes.request("/login?next=/a/slug-a");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("X-Robots-Tag")).toBe(
+      "noindex, nofollow, noarchive",
+    );
   });
 });
 
@@ -394,6 +517,31 @@ describe("content app", () => {
       expect(res.headers.get("Location")).toBeNull();
       expect(res.headers.get("Content-Type")).toContain("text/plain");
     }
+  });
+
+  it("tells search engines not to index any content-host response, errors included", async () => {
+    const app = contentAppWith(publicViewer());
+    const responses = [
+      await app.request("/a/slug-a?v=1"),
+      await app.request("/a/slug-a/raw?v=1"),
+      await app.request("/a/slug-a?v=2"),
+      await contentAppWith(fakeViewer({})).request("/a/nope/raw"),
+      await app.request("/f/anything"),
+    ];
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 404, 404, 404]);
+    for (const res of responses)
+      expect(res.headers.get("X-Robots-Tag")).toBe(
+        "noindex, nofollow, noarchive",
+      );
+  });
+
+  it("disallows every crawler in robots.txt", async () => {
+    const res = await contentAppWith(fakeViewer({})).request("/robots.txt");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Robots-Tag")).toBe(
+      "noindex, nofollow, noarchive",
+    );
+    expect(await res.text()).toBe("User-agent: *\nDisallow: /\n");
   });
 });
 
@@ -588,15 +736,22 @@ describe("restricted artifacts on the share host", () => {
 
   /**
    * TEST_SCENARIO: A stranger with no share session must be sent to sign in and
-   * come back to the same page afterwards. The raw download cannot redirect a
-   * browser download, so it answers 401 instead.
+   * come back to the same page afterwards, with the fragment of the link, which
+   * only the browser sees. The raw download cannot run a page, so it answers a
+   * plain 401.
    */
   it("sends an anonymous visitor to sign in and back", async () => {
     const app = appWith(restrictedViewer([]));
     const page = await app.request("/a/slug-a?v=1");
-    expect(page.status).toBe(302);
-    expect(page.headers.get("Location")).toBe(
-      `/auth/login?next=${encodeURIComponent("/a/slug-a?v=1")}`,
+    expect(page.status).toBe(401);
+    const signIn = runPageScript(
+      await page.text(),
+      "location.replace",
+      { dataset: {}, src: "" },
+      "#C-35",
+    );
+    expect(signIn.location.replaced).toBe(
+      `/auth/login?next=${encodeURIComponent("/a/slug-a?v=1#C-35")}`,
     );
     expect(page.headers.get("Cache-Control")).toBe("private, no-store");
     expect((await app.request("/a/slug-a/raw?v=1")).status).toBe(401);
@@ -612,8 +767,8 @@ describe("restricted artifacts on the share host", () => {
     const app = appWith(restrictedViewer(["alice@example.com"]));
     const planted = { headers: { cookie: "share_session=sid-alice" } };
     const page = await app.request("/a/slug-a", planted);
-    expect(page.status).toBe(302);
-    expect(page.headers.get("Location")).toBe(
+    expect(page.status).toBe(401);
+    expect(await page.text()).toContain(
       `/auth/login?next=${encodeURIComponent("/a/slug-a")}`,
     );
     expect((await app.request("/a/slug-a/raw", planted)).status).toBe(401);

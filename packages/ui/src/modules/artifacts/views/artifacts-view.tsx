@@ -13,6 +13,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 
 import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
+import { useListedEnvironments } from "../../environments/api/queries.js";
 import { SidePanelCloseScope } from "../../sessions/components/side-panel-close-button.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ChatArtifactsPanel } from "../components/chat-artifacts-panel.js";
@@ -21,7 +22,14 @@ import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
 export function ArtifactsView() {
   const artifacts = useArtifacts({}).data;
   const folders = useArtifactFolders().data;
-  if (artifacts?.length === 0 && folders?.length === 0)
+  const environments = useListedEnvironments(true);
+  if (
+    artifacts?.length === 0 &&
+    folders?.length === 0 &&
+    !environments.loading &&
+    !environments.failed &&
+    environments.data.length === 0
+  )
     return <ArtifactsEmpty />;
   return (
     <>

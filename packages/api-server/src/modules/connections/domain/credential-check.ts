@@ -70,6 +70,7 @@ const KEY_CHECK_STATUS: Record<
 export function fromKeyCheck(keyCheck: ProviderKeyCheck): CredentialCheck {
   return {
     status: KEY_CHECK_STATUS[keyCheck.result],
+    ...(keyCheck.account ? { account: keyCheck.account } : {}),
     ...(keyCheck.detail ? { reason: keyCheck.detail } : {}),
     at: keyCheck.checkedAt,
   };

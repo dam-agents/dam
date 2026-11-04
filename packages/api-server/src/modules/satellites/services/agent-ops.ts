@@ -56,18 +56,18 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
     const owner = await deps.ownerOf(agentId);
     if (owner === null)
       throw new TRPCError({ code: "NOT_FOUND", message: "unknown agent" });
-    const granted = await deps.repo.grantedNames(agentId);
-    if (!granted.some((g) => g.owner === owner && g.name === name))
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: `this agent has no access to a satellite called "${name}"`,
-      });
-    const satellite = await deps.repo.get(owner, name);
-    if (satellite === null)
+    const satellite = await deps.repo.grantedSatellite(agentId, owner, name);
+    if (satellite === null) {
+      if ((await deps.repo.get(owner, name)) !== null)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `this agent has no access to a satellite called "${name}"`,
+        });
       throw new TRPCError({
         code: "NOT_FOUND",
         message: `no satellite "${name}"`,
       });
+    }
     return { owner, satellite };
   }
 
@@ -88,6 +88,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       outputPath,
       truncated: job.truncated,
       reason: job.reason,
+      images: job.images,
     };
   }
 
@@ -160,11 +161,20 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
         agentId,
         tool,
         args,
+        transferDirection:
+          satellite.tools.find((entry) => entry.name === tool)?.transfer ??
+          null,
         status: "queued",
         expiresAt: new Date(at.getTime() + JOB_TTL_MS),
         maxConcurrent: satellite.maxConcurrent,
         toolMax: verdict.toolMax,
+        incarnation: satellite.incarnation,
       });
+      if ("stale" in inserted)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `${name} was registered again while this call was being admitted — retry it`,
+        });
       if ("full" in inserted)
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -213,7 +223,8 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
       name: string,
       sequence: number,
     ): Promise<JobOutcome> {
-      const { owner } = await resolve(agentId, name);
+      const { owner, satellite } = await resolve(agentId, name);
+      const incarnation = satellite.incarnation;
       let job: JobRow | null = null;
       for (let attempt = 0; attempt < CANCEL_ATTEMPTS; attempt++) {
         job = await deps.repo.getJob(owner, name, sequence);
@@ -225,7 +236,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
           return outcome(agentId, job);
         }
         if (job.status === "running") {
-          await deps.repo.requestCancel(owner, name, sequence);
+          await deps.repo.requestCancel(owner, name, sequence, incarnation);
           return outcome(agentId, { ...job, reason: "cancellation requested" });
         }
         const settled = await deps.repo.settle(
@@ -234,6 +245,7 @@ export function createSatelliteAgentOps(deps: AgentOpsDeps) {
           sequence,
           { status: "cancelled", reason: "cancelled before it started" },
           job.status,
+          incarnation,
         );
         if (settled === null) continue;
         await deps.repo.markSeen(agentId, name, sequence);

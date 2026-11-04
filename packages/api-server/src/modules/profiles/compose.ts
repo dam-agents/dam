@@ -1,4 +1,4 @@
-import type { Db } from "db";
+import type { Db, DbTx } from "db";
 import type { HarnessCatalog, OwnerModelCatalogView } from "api-server-api";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import { createProfilesRepository } from "./infrastructure/profiles-repository.js";
@@ -11,6 +11,12 @@ import {
 
 export function composeProfileResolver(db: Db, pseudo: SubPseudonymizer) {
   return profileResolver(createProfilesRepository(db, pseudo));
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the same resolver over one transaction's connection, for a read that holds the agent's row and must not take a second connection (D193B). */
+export function composeProfileResolverOn(pseudo: SubPseudonymizer) {
+  return (executor: Db | DbTx) =>
+    profileResolver(createProfilesRepository(executor as Db, pseudo));
 }
 
 export function composeProfilesForOwner(deps: {
@@ -44,6 +50,8 @@ export function composeProfilesForOwner(deps: {
       const chosen = await newAgentDefault(owner);
       return (
         chosen && {
+          name: chosen.profile.name,
+          model: chosen.profile.model,
           harness: chosen.profile.harness,
           connectionId: chosen.connectionId,
           bind: (agentId: string) =>

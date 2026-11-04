@@ -128,7 +128,9 @@ For `dam connection connect` and `dam connection update`, the user types the sec
    Run it again for a new link.
 4. Read the `check` in the `--json` output before you tell the user the connection is ready.
    These connections are checked when they are saved: a GitHub token (`github-pat`, `github-enterprise-pat`), a GitHub App (`github-app`, `github-enterprise-app`), a Kubernetes token, and a model provider key.
-   `"status": "passed"` names the `account`, so tell the user which account it is.
+   `"status": "passed"` names the `account` when the check can tell it, so tell the user which account it is.
+   A model provider check names it only where the provider tells it: an Anthropic OAuth token's email and organization, an Anthropic or OpenAI key's organization, an IBM LiteLLM or Bob key's user, a Bedrock key's AWS account.
+   It may still come without an `account`: then tell the user the key works but you can't tell whose it is.
    A GitHub App's `account` is its bot (`<app>[bot]`), `installedOn` the user or organization it is installed on, and `repositories` the repositories it reaches (`repositoriesTruncated` when there are more): tell the user these.
    When `expiresAt` is set, tell the user when the token expires; the CLI warns when that is within a day.
    A Kubernetes token's `account` is the user it acts as, such as `system:serviceaccount:<namespace>:<name>`.
@@ -189,6 +191,8 @@ dam agent create my-agent --wait --json
 - `--template <id>` picks a template from `dam template list`; without it the deployment's default is used.
 - `--provider <connection>` picks the model provider connection; without it the user's preferred one is used.
   `dam connection list --providers` lists the model providers: the PROVIDER column names each one's alias and the harnesses that run on it, and marks the preferred one (`provider.preferred` in `--json`).
+  The preferred one is the provider of the user's default for new agents (a profile, set in Settings › Providers › Profiles), which may be a shared provider, and the agent starts on that profile's model and harness; with no such default it is the first provider the default harness runs on.
+  The create output names the provider it granted and why (`defaultProvider` in `--json`: its `connectionId`; `source`, what chose it — `profile` for the default for new agents, `kit` for the starter kit's providers list, `template` for the template's, `harness` for the harness's provider order; and `profile` with its name, model and harness, or `null` unless `source` is `profile`); tell the user what it says rather than assuming.
   If it lists none, the user connects one first ([Secrets](#secrets)); `dam connection templates --providers` lists the kinds there are.
   To change the providers or the default model later, see [Models and harnesses](#models-and-harnesses).
 - `--wait` returns once the agent is running, and stops early on an error or when there is no room to start it.
@@ -213,6 +217,7 @@ dam agent create my-desk --kit research --connection github --json
   Pass the full commit `dam kit show` printed as `--commit <sha>`; create refuses when the repository has moved on since, so run `dam kit show` again and check what changed.
 - A required connection the user does not have yet is made first ([Secrets](#secrets)), then passed with `--connection`.
   When the user has exactly one connection a required need accepts, `dam agent create --kit` grants it without being told, as the web app does.
+  When they have several it accepts, such as GitHub connections each scoped to another repository, `dam kit show` names none of them: pick, with the user, the one scoped to the repository the kit will work on, or make one that is, and pass it with `--connection`.
 - `--slack-channel <channel-id>` binds a Slack channel at create, `--skip-schedule <name>` leaves out one of the kit's schedules, and `--template <id>` picks the template for a kit that brings no image.
 - `--json` returns `steps`: what is left to set up, each with `done` and the `command` that does it.
   `done: null` means not checked: without `credentials:read` the CLI cannot read which connections meet a need, so ask the user before setting up another one.
@@ -284,6 +289,8 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
   A provider that has not listed its models yet is named in a note; ask again in a minute.
 - `dam agent update` changes only what you pass.
   `--provider <connection>` grants a model provider and `--remove-provider <connection>` takes one away; `dam connection list` names them.
+  To swap a provider for another one of the same alias, pass both in one update: each default on the removed provider moves to the new one when it offers the same model, and a `note:` names each default that moved (`defaultMoves` in `--json`).
+  A default that cannot move gets a `warning:` and runs fail until you set a new model with `--model` (with `--kind` for a channel or scheduled default).
   `--kind channel` or `--kind scheduled` changes that default instead of chat's, and `--same-as-chat` makes it follow chat again.
   Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
 - `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { type HarnessFamily, PROVIDER_PRESET_TYPES } from "api-server-api";
+import { PROVIDER_PRESET_TYPES } from "api-server-api";
 import { Window } from "happy-dom";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
@@ -18,21 +18,18 @@ import { CardIcon } from "../../modules/providers/components/card-icon.js";
 import { ProviderBalance } from "../../modules/providers/components/provider-balance.js";
 import { ProviderRow } from "../../modules/providers/components/provider-row.js";
 
-vi.mock("../../modules/providers/api/queries.js", () => ({
-  useProviderBalance: () => ({
-    data: { unit: "usd", used: 12, limit: 100, resetsAt: null },
-    isError: false,
-  }),
+const balance = vi.hoisted(() => ({
+  data: { unit: "usd", used: 12, limit: 100, resetsAt: null } as {
+    unit: "usd" | "bobcoins";
+    used: number;
+    limit: number | null;
+    resetsAt: string | null;
+  },
 }));
 
-const ALL: HarnessFamily[] = [
-  "bob",
-  "claude-code",
-  "codex",
-  "copilot",
-  "hermes",
-  "pi",
-];
+vi.mock("../../modules/providers/api/queries.js", () => ({
+  useProviderBalance: () => ({ data: balance.data, isError: false }),
+}));
 
 function renderToStaticMarkup(element: ReactElement) {
   return renderMarkup(createElement(TooltipProvider, null, element));
@@ -61,6 +58,19 @@ describe("harness icons on provider and preset cards", () => {
         Number.parseInt(hex!.slice(i, i + 2), 16),
       );
       expect(1.05 / (luminance(rgb) + 0.05)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  // TEST_SCENARIO: a provider's mark keeps its vendor's colour on a white tile in both themes, so each logo colour needs the 3:1 a graphic needs against white.
+  it("keeps coloured provider marks legible on their white tile", () => {
+    const css = readFileSync(new URL("../../App.css", import.meta.url), "utf8");
+    const colors = [...css.matchAll(/--color-logo-[a-z-]+: #([0-9a-f]{6});/g)];
+    expect(colors.length).toBeGreaterThan(0);
+    for (const [, hex] of colors) {
+      const rgb = [0, 2, 4].map((i) =>
+        Number.parseInt(hex!.slice(i, i + 2), 16),
+      );
+      expect(1.05 / (luminance(rgb) + 0.05)).toBeGreaterThanOrEqual(3);
     }
   });
 
@@ -98,14 +108,18 @@ describe("harness icons on provider and preset cards", () => {
       const html = renderToStaticMarkup(
         createElement(CardIcon, { provider: "bob", size }),
       );
-      const Icon = size === "sm" ? BobFilledIcon : BobIcon;
-      expect(html).toContain(
-        renderToStaticMarkup(
-          createElement(Icon, {
-            className: size === "sm" ? "size-full" : "size-3/5",
-          }),
-        ),
-      );
+      if (size === "sm")
+        expect(html).toContain(
+          renderToStaticMarkup(
+            createElement(BobFilledIcon, { className: "size-full" }),
+          ),
+        );
+      else {
+        expect(html).toContain('src="/icons/bob-head.png"');
+        expect(html).not.toContain(
+          renderToStaticMarkup(createElement(BobIcon)),
+        );
+      }
     },
   );
 
@@ -135,61 +149,55 @@ describe("harness icons on provider and preset cards", () => {
     expect(html.match(/fill="currentColor"/g)).toHaveLength(6);
   });
 
+  // TEST_SCENARIO: a tile carries the vendor's full-colour mark, in its SVG or image, through a logo colour token or as black on white, while the untiled small size stays a one-colour glyph.
   it.each(PROVIDER_PRESET_TYPES)(
-    "uses colored tiles only for large %s icons",
+    "uses the vendor's colours only on %s tiles",
     (provider) => {
       for (const size of ["sm", "md", "lg"] as const) {
         const html = renderToStaticMarkup(
           createElement(CardIcon, { provider, size }),
         );
-        expect(html).toContain("<svg");
-        expect(html).not.toMatch(/<img|<mask|gradient|🚅|fill="#|stroke="#/);
-        if (size === "sm") expect(html).not.toMatch(/bg-|text-white/);
-        else {
-          expect(html).toContain("bg-");
-          expect(html).toContain("text-white");
-          expect(html).toMatch(/bg-icon-[a-z]+/);
-          expect(html).not.toMatch(/bg-icon-[a-z]+\//);
-        }
+        expect(html).toMatch(
+          size !== "sm" && provider === "bob" ? /<img[^>]*alt=""/ : /<svg/,
+        );
+        expect(html).not.toMatch(/<mask|🚅/);
+        if (size === "sm")
+          expect(html).not.toMatch(/bg-|text-white|fill="#|gradient/);
+        else expect(html).toMatch(/fill="#|-logo-[a-z]+|text-black|<img/);
       }
     },
   );
 
   it.each([true, false])(
-    "reads one line per provider when connected=%s, its state as an icon",
+    "reads one line per provider when connected=%s, its state in words",
     (connected) => {
       const html = renderToStaticMarkup(
         createElement(ProviderRow, {
           type: "ibm-litellm",
           connected,
-          harnesses: ALL,
           balance: connected
             ? createElement(ProviderBalance, { connectionId: "proxy" })
             : undefined,
           onOpen() {},
         }),
       );
-      expect(html).not.toContain("Supports:");
       if (connected) {
         expect(html).toContain("$12.00 of $100.00 used");
-        expect(html).toContain(
-          'role="img" aria-label="Configured · Connected"',
-        );
+        expect(html).toContain(">Connected<");
       } else {
         expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
-        expect(html).toContain('role="img" aria-label="Not configured"');
+        expect(html).toContain(">Not connected<");
       }
-      expect(html).not.toMatch(/>(Not configured|Configured · Connected)</);
+      expect(html).not.toContain('role="img"');
     },
   );
 
-  /** TEST_SCENARIO: the row-wide button that opens a provider covers the row; what has a title or an action of its own (the harness icons, the balance, the spend pill and the status icon with the key check's reason) sits in the raised layer above it, so its title shows and its own action works. */
+  /** TEST_SCENARIO: the row-wide button that opens a provider covers the row; what has a title or an action of its own (the balance, the spend pill and the status with the key check's reason) sits in the raised layer above it, so its title shows and its own action works. */
   it("keeps whatever has a title or an action above the row's button", () => {
     const html = renderToStaticMarkup(
       createElement(ProviderRow, {
         type: "ibm-litellm",
         connected: true,
-        harnesses: ALL,
         keyCheck: {
           result: "unverified",
           detail: "HTTP 503",
@@ -209,57 +217,93 @@ describe("harness icons on provider and preset cards", () => {
       [...doc.querySelectorAll(selector)].find((el) =>
         el.textContent.includes(text),
       );
-    expect(
-      raised(doc.querySelector('[aria-label="Configured · Unverified"]')),
-    ).toBe(true);
-    expect(raised(withText("p", "$12.00 of $100.00 used"))).toBe(true);
+    expect(raised(doc.querySelector('[title*="HTTP 503"]'))).toBe(true);
+    expect(raised(withText("span", "$12.00 of $100.00 used"))).toBe(true);
     expect(raised(withText("button", "$0.00 today"))).toBe(true);
-    expect(raised(doc.querySelector('[aria-label="Claude"]'))).toBe(true);
     expect(
       html.match(/<button[^>]*aria-label="Edit [^"]*"[^>]*><\/button>/),
     ).not.toBeNull();
   });
 
-  it("names each compatible harness inline after the provider's name", () => {
+  // TEST_SCENARIO: a row describes its provider in one line from the provider definitions, the own-key and deployment CurveBender alike, and its button points only at elements that exist.
+  it.each([
+    ["anthropic", undefined, "Claude models straight from the source"],
+    [
+      "openai",
+      undefined,
+      "OpenAI API keys for Codex and Pi, or a ChatGPT subscription for Codex.",
+    ],
+    ["bedrock", undefined, "Amazon Web Services inference engine"],
+    ["bob", undefined, "IBM Bob&#x27;s backend"],
+    [
+      "ibm-litellm",
+      undefined,
+      "IBM Research&#x27;s gateway to external model providers",
+    ],
+    [
+      "curve-bender",
+      "curve-bender",
+      "IBM&#x27;s internal inference on open-source models",
+    ],
+    [
+      "curve-bender",
+      "curve-bender-deployment",
+      "IBM&#x27;s internal inference on open-source models",
+    ],
+  ] as const)("describes %s (%s)", (type, templateId, text) => {
     const html = renderToStaticMarkup(
       createElement(ProviderRow, {
-        type: "ibm-litellm",
-        connected: true,
-        harnesses: ALL,
-      }),
-    );
-    for (const name of ["Bob", "Claude", "Codex", "Pi"])
-      expect(html).toContain(`role="img" aria-label="${name}"`);
-    expect(html).not.toContain("tabindex");
-  });
-
-  it.each([{ harnesses: undefined }, { harnesses: [] }])(
-    "does not invent compatibility when the catalog is missing or empty (%s)",
-    ({ harnesses }) => {
-      const html = renderToStaticMarkup(
-        createElement(ProviderRow, {
-          type: "anthropic",
-          connected: false,
-          harnesses,
-          onOpen() {},
-        }),
-      );
-      expect(html).not.toContain('aria-label="Claude"');
-      expect(html).not.toContain('aria-label="Pi"');
-    },
-  );
-
-  it("does not advertise unsupported harnesses", () => {
-    const html = renderToStaticMarkup(
-      createElement(ProviderRow, {
-        type: "anthropic",
-        connected: true,
-        harnesses: ["claude-code"],
+        type,
+        ...(templateId && { templateId }),
+        connected: false,
         onOpen() {},
       }),
     );
-    expect(html).toContain('aria-label="Claude"');
-    for (const name of ["Bob", "Codex", "Pi"])
-      expect(html).not.toContain(`aria-label="${name}"`);
+    expect(html).toContain(`>${text}<`);
+    const doc = new Window().document;
+    doc.body.innerHTML = html;
+    for (const ref of doc
+      .querySelector("button")!
+      .getAttribute("aria-describedby")!
+      .split(" "))
+      expect(doc.getElementById(ref)).not.toBeNull();
+  });
+
+  // TEST_SCENARIO: Bob's balance is a pill like the spend pill, in Bobcoins' short unit and for the month, with no reset date; a used-up budget says so in red.
+  it("shows Bob's balance as a monthly pill in Bc", () => {
+    const pill = (data: typeof balance.data) => {
+      balance.data = data;
+      return renderToStaticMarkup(
+        createElement(ProviderBalance, { connectionId: "bob" }),
+      );
+    };
+    const bob = { unit: "bobcoins", resetsAt: "2026-12-01T00:00:00Z" } as const;
+    const html = pill({ ...bob, used: 0, limit: 100 });
+    expect(html).toContain(">0 of 100 Bc this month<");
+    expect(html).toContain("rounded-full bg-muted");
+    expect(pill({ ...bob, used: 100, limit: 100 })).toMatch(
+      /text-danger-fg[^>]*>Budget used up: 100 of 100 Bc this month</,
+    );
+    balance.data = { unit: "usd", used: 12, limit: 100, resetsAt: null };
+  });
+
+  // TEST_SCENARIO: the used-up balance's small red text keeps 4.5:1 on the muted pill in both themes.
+  it("keeps the used-up balance legible on its pill", () => {
+    const css = readFileSync(new URL("../../App.css", import.meta.url), "utf8");
+    const theme = (selector: string, name: string) =>
+      css
+        .slice(css.indexOf(`${selector} {`))
+        .match(new RegExp(`--${name}: #([0-9a-f]{6});`))![1]!;
+    const rgb = (hex: string) =>
+      [0, 2, 4].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+    for (const selector of [":root", ".dark"]) {
+      const [a, b] = [
+        luminance(rgb(theme(selector, "c-danger-fg"))),
+        luminance(rgb(theme(selector, "muted"))),
+      ];
+      expect(
+        (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

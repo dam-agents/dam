@@ -119,12 +119,29 @@
     { "host": "github.com", "method": "POST", "path": "/login/oauth/access_token", "why": "sandbox: DAM's api-server exchanges the code for the user's token" },
     { "host": "github.githubassets.com", "method": "GET", "path": "/assets/*", "why": "sandbox: the sign-in pages' scripts and styles (the authorize button is enabled by a script)" },
     { "host": "slack.com", "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through" },
-    { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" }
+    { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" },
+    { "host": "litellm.cb.ete.res.ibm.com", "why": "operator credential: the nested agent's model calls with the operator's CurveBender key" }
   ],
   "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },
   "expected_requests": [
     { "method": "GET", "path": "/api/slack/install/status", "status": 404, "why": "the QA install sets no Slack app, so Settings asks and hides the Slack workspaces tab" }
   ],
+  "design": {
+    "retired_words": [
+      { "word": "Experiment", "say": "Invocations written from a Driver script; the Driver SDK" },
+      { "word": "Experiments", "say": "Invocations written from a Driver script; the Driver SDK" },
+      { "word": "your sandbox", "say": "your agent" },
+      { "word": "your sandboxes", "say": "your agents" },
+      { "word": "Delete sandbox", "say": "Delete agent" },
+      { "word": "Stop sandbox", "say": "Stop agent" },
+      { "word": "Update sandbox", "say": "Update agent" },
+      { "word": "Update sandboxes", "say": "Update agents" },
+      { "word": "Configure sandbox", "say": "Configure agent" },
+      { "word": "Sandbox actions", "say": "Agent actions" },
+      { "word": "temporary sandbox", "say": "temporary agent" }
+    ],
+    "tokens": { "prefixes": ["--color-", "--text-", "--radius-"], "spacing_step": "--spacing" }
+  },
   "environment": {
     "endpoints": [ { "name": "app", "port": 4400 }, { "name": "keycloak", "port": 4400 }, { "name": "share", "port": 4400 }, { "name": "content", "port": 4400 } ],
     "account": "owner"
@@ -142,6 +159,11 @@
         "guide": "sandbox/slack-second.md", "credentials": ["HUMAN_TOKEN"] }
     ]
   },
+  "operator_credentials": [
+    { "name": "LITELLM_CURVE_BENDER_TOKEN",
+      "what": "a real CurveBender (LiteLLM) API key for litellm.cb.ete.res.ibm.com, so a nested agent can use a real model; optional — without it a criterion that needs one is blocked",
+      "required": false }
+  ],
   "config": {
     "chart_ref": { "default": "oci://quay.io/dam-agents/charts/platform", "about": "OCI chart the builds come from" },
     "mock_image": { "default": "quay.io/dam-agents/mock:cb334b15595863567e8a4d61474886a1cbf10aef", "about": "image of the scripted mock harness template, so nested agents answer without a model; empty = none" },

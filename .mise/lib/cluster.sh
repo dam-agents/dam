@@ -399,28 +399,95 @@ node_dir_roots() {
 
 # node_host_dirs <dir>...: bind-mounts $NODE_HOME_SHARE/host-<name> over each
 # node directory that is on an overlay and not yet a mount point, and names
-# the ones it mounted in NODE_MOUNTED. A bind mount does not outlive the
-# machine, so every install makes it again, and the directory behind it keeps
+# the ones it mounted in NODE_MOUNTED. The directory behind the mount keeps
 # what was staged there; what a directory held before its first mount is
-# copied over, so a node that staged images on the overlay keeps them.
+# copied over, so a node that staged images on the overlay keeps them. A bind
+# mount does not outlive the machine, so every mount it made or found from
+# the home disk is named in NODE_HOST_MOUNTS, as a source and a target entry
+# in turn, which node_host_dirs_at_boot makes again at every boot (#6017).
 node_host_dirs() {
   local dir src
   NODE_MOUNTED=()
+  NODE_HOST_MOUNTS=()
   for dir in "$@"; do
     [ -n "$dir" ] || continue
-    ! node_sh mountpoint -q "$dir" 2>/dev/null || continue
+    src="$NODE_HOME_SHARE/host-$(basename "$dir")"
+    if node_sh mountpoint -q "$dir" 2>/dev/null; then
+      ! node_sh test -d "$src" || NODE_HOST_MOUNTS+=("$src" "$dir")
+      continue
+    fi
     on_overlay "$dir" || continue
     on_overlay "$NODE_HOME_SHARE" && {
       echo "WARNING: $dir and $NODE_HOME_SHARE are both on an overlay; the VM runner pod cannot mount it." >&2
       continue
     }
-    src="$NODE_HOME_SHARE/host-$(basename "$dir")"
     echo "Mounting $src over $dir (the machine root is an overlay)..."
     node_sh mkdir -p "$src" "$dir"
     node_sh sh -c '[ -z "$(ls -A "$2")" ] || [ -n "$(ls -A "$1")" ] || cp -a "$2/." "$1/"' _ "$src" "$dir"
     node_sh mount --bind "$src" "$dir"
     NODE_MOUNTED+=("$dir")
+    NODE_HOST_MOUNTS+=("$src" "$dir")
   done
+}
+
+# NODE_HOST_DIRS_SERVICE: the openrc service that makes node_host_dirs' bind
+# mounts again at every boot, before k3s starts, so the VM runner pod starts
+# after a restart with no new install (#6017).
+NODE_HOST_DIRS_SERVICE=/etc/init.d/platform-host-dirs
+
+# node_host_dirs_at_boot: writes NODE_HOST_DIRS_SERVICE for the mounts in
+# NODE_HOST_MOUNTS and puts it in the default runlevel, beside k3s; with none,
+# a service an earlier install wrote is removed. A node with no OpenRC keeps
+# the mounts until it restarts, and a new install makes them again.
+node_host_dirs_at_boot() {
+  local i src dir mounts="" name
+  name="$(basename "$NODE_HOST_DIRS_SERVICE")"
+  for ((i = 0; i + 1 < ${#NODE_HOST_MOUNTS[@]}; i += 2)); do
+    src="'${NODE_HOST_MOUNTS[i]//\'/\'\\\'\'}'"
+    dir="'${NODE_HOST_MOUNTS[i + 1]//\'/\'\\\'\'}'"
+    mounts+="    mountpoint -q $dir || { mkdir -p $dir && mount --bind $src $dir; } || return 1"$'\n'
+  done
+  if [ -z "$mounts" ]; then
+    if node_sh test -x /sbin/openrc-run && node_sh test -e "$NODE_HOST_DIRS_SERVICE"; then
+      node_sh rc-update del "$name" default >/dev/null 2>&1 || true
+      node_sh rm -f "$NODE_HOST_DIRS_SERVICE"
+    fi
+    return 0
+  fi
+  if node_sh test -x /sbin/openrc-run; then
+    printf '%s\n' '#!/sbin/openrc-run' \
+      "# The VM runner's node directories, bind-mounted from the home disk over the" \
+      "# overlay root, where runc cannot idmap them (cluster:install, #6017)." \
+      'description="VM runner node directories on the home disk"' \
+      'depend() { before k3s; }' \
+      'start() {' "${mounts%$'\n'}" '}' |
+      node_sh tee "$NODE_HOST_DIRS_SERVICE" >/dev/null
+    node_sh chmod 755 "$NODE_HOST_DIRS_SERVICE"
+    node_sh rc-update add "$name" default >/dev/null 2>&1 ||
+      echo "WARNING: $name is not in the default runlevel, so a restart loses the runner's node directories' mounts" >&2
+  else
+    echo "WARNING: no OpenRC on the node, so nothing makes the runner's node directories' mounts again after a restart; run cluster:install again then" >&2
+  fi
+}
+
+# NODE_IMAGE_GC_DROPIN: no image garbage collection in an Environment's k3s.
+# The kubelet deletes images past 85% of its disk used, and there the outer
+# guard's grant counts as used, so it deleted the agent image a minute after
+# the install imported it (#6128). Nothing in an Environment pulls an image
+# back: the install puts every one in itself. After
+# 50-container-log-rotation.yaml, whose plain `kubelet-arg:` replaces every
+# append in a drop-in that sorts before it.
+NODE_IMAGE_GC_DROPIN=/etc/rancher/k3s/config.yaml.d/60-image-gc-off.yaml
+
+# node_image_gc_off: writes NODE_IMAGE_GC_DROPIN, and succeeds only when it
+# changed, so the caller knows a running k3s must restart to take it.
+node_image_gc_off() {
+  local want
+  want="$(printf '%s\n' "# An Environment's k3s keeps every image the install put in (cluster:install)." \
+    "kubelet-arg+:" '  - "image-gc-high-threshold=100"' '  - "image-gc-low-threshold=99"')"
+  [ "$(node_sh cat "$NODE_IMAGE_GC_DROPIN" 2>/dev/null)" != "$want" ] || return 1
+  node_sh mkdir -p "$(dirname "$NODE_IMAGE_GC_DROPIN")"
+  printf '%s\n' "$want" | node_sh tee "$NODE_IMAGE_GC_DROPIN" >/dev/null
 }
 
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
@@ -428,6 +495,36 @@ node_host_dirs() {
 # turns the marks into the job's per-phase timing summary.
 e2e_mark() {
   [ -z "${E2E_TIMINGS:-}" ] || printf '%s\t%s\n' "$(date +%s)" "$1" >> "$E2E_TIMINGS"
+}
+
+# e2e_checkout_commit: the commit this checkout is on, when its tree is clean
+# — nothing changed, tracked or not, outside what git ignores. Prints nothing
+# for a dirty tree: what an install of it holds is no commit's.
+e2e_checkout_commit() {
+  [ -z "$(git -C "$MISE_CONFIG_ROOT" status --porcelain 2>/dev/null)" ] || return 0
+  git -C "$MISE_CONFIG_ROOT" rev-parse HEAD 2>/dev/null || true
+}
+
+# e2e_cluster_id: the identity of the cluster kubectl reaches, the UID of its
+# kube-system namespace: a cluster made again, as a recreated Environment's
+# is, has another. Prints nothing when the cluster does not answer.
+e2e_cluster_id() {
+  kubectl get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true
+}
+
+# e2e_install_current <record> <cluster-id>: prints the commit the e2e lane's
+# install that <record> names is of, and succeeds, when it is this checkout's
+# on this cluster: e2e:install recorded it as `<commit> <cluster-id>`, the
+# cluster is still the one it installed into, and the checkout is still on
+# that commit with a clean tree. A missing record, another cluster, another
+# commit or a dirty tree is not current, and the next run installs as it
+# always did.
+e2e_install_current() {
+  local recorded head
+  recorded="$(cat "$1" 2>/dev/null)" || return 1
+  head="$(e2e_checkout_commit)"
+  [ -n "$head" ] && [ -n "$2" ] && [ "$recorded" = "$head $2" ] || return 1
+  printf '%s' "$head"
 }
 
 # The port the e2e lane answers on from this agent: the test cluster's, which

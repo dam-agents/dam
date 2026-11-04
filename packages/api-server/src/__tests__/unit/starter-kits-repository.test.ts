@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -1122,5 +1122,168 @@ describe("the shipped proof-of-concept catalog", () => {
       "claude: claude/ibm/aws/claude-opus-5\ncodex: ibm/azure/gpt-5.5\n",
     );
     expect(none.rates["openai:codex"]).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: one run reported the `result` event with `type` as its 19th key and followed it with a `system` event, the filter matched the event by line prefix and moved nothing, and every run then died in the extractor after paying for the model work. The engine takes the last JSON object of the stream as the run's outcome, so the shim must leave the last result event last whatever its key order, keep every other line in the order it arrived, pass a non-JSON line through, and keep the CLI's exit status.
+  it("leaves the last result event last in the Spotlights claude stream", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const dir = path.resolve(here, "../../../../../helm/starter-kits");
+    const kit = loadYamlDocument(
+      fs.readFileSync(path.join(dir, "kits/spotlights/kit.yaml"), "utf8"),
+    ) as { install: { command: string } };
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "spotlights-stream-"));
+    const fakeBin = path.join(home, "fake-bin");
+    const wrapperDir = path.join(home, ".local", "share", "aube", "bin");
+    fs.mkdirSync(fakeBin);
+    const at = (...parts: string[]) => path.join(home, ...parts);
+    const fake = (name: string, body: string) => {
+      const file = path.join(fakeBin, name);
+      fs.writeFileSync(file, body, { mode: 0o755 });
+      return file;
+    };
+
+    fs.writeFileSync(at("bundled-rates.json"), JSON.stringify({}));
+    const engineCli = at(".local", "bin", "spotlights-engine");
+    fs.mkdirSync(path.dirname(engineCli), { recursive: true });
+    fs.writeFileSync(
+      engineCli,
+      `#!${fake("engine-python", `#!/bin/sh\necho ${at("bundled-rates.json")}\n`)}\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    fake("uv", "#!/bin/sh\nexit 0\n");
+    fake("curl", `#!/bin/sh\necho '{"data":[]}'\n`);
+
+    const assistant = (text: string) =>
+      `{"session_id":"s","message":{"content":[{"text":"${text}","type":"text"}],"role":"assistant"},"type":"assistant"}`;
+    const decoy =
+      '{"session_id":"s","message":{"content":[{"content":"{\\"type\\":\\"result\\"}","type":"tool_result"}],"role":"user"},"type":"user"}';
+    const noise = "[spotlights] a status line that is not json";
+    const result = (uuid: string) =>
+      `{"duration_api_ms":103841,"subtype":"success","total_cost_usd":0.6472877,"uuid":"${uuid}","type":"result"}`;
+    const state =
+      '{"state":"idle","subtype":"session_state_changed","type":"system"}';
+    const stream = at("stream.jsonl");
+    fs.writeFileSync(
+      stream,
+      [
+        assistant("reading"),
+        decoy,
+        noise,
+        result("superseded"),
+        assistant("answering"),
+        result("kept"),
+        state,
+      ].join("\n") + "\n",
+    );
+    fake("claude", `#!/bin/sh\ncat ${stream}\nexit 3\n`);
+
+    execFileSync("bash", ["-c", kit.install.command], {
+      cwd: home,
+      env: { HOME: home, PATH: `${wrapperDir}:${fakeBin}:${process.env.PATH}` },
+      stdio: "pipe",
+    });
+
+    const run = spawnSync(
+      "bash",
+      [
+        at(".local", "share", "spotlights", "shim", "claude"),
+        "--print",
+        "--output-format",
+        "stream-json",
+      ],
+      {
+        env: {
+          HOME: home,
+          PATH: `${wrapperDir}:${fakeBin}:${process.env.PATH}`,
+        },
+      },
+    );
+
+    expect(run.stdout.toString()).toBe(
+      [
+        assistant("reading"),
+        decoy,
+        noise,
+        assistant("answering"),
+        state,
+        result("kept"),
+      ].join("\n") + "\n",
+    );
+    expect(run.status).toBe(3);
+  });
+
+  // TEST_SCENARIO: the engine cancels a run by signalling the process it started, so the shim must leave the CLI on its own pid and its exit status must be the shim's. Under a pipeline the pid is a bash that dies alone, the CLI keeps running with nobody reading its stdout, and the engine waits on a process that is no longer the run.
+  it("leaves the Spotlights claude on the shim's pid, so a signal reaches it", async () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const dir = path.resolve(here, "../../../../../helm/starter-kits");
+    const kit = loadYamlDocument(
+      fs.readFileSync(path.join(dir, "kits/spotlights/kit.yaml"), "utf8"),
+    ) as { install: { command: string } };
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "spotlights-signal-"));
+    const fakeBin = path.join(home, "fake-bin");
+    const wrapperDir = path.join(home, ".local", "share", "aube", "bin");
+    fs.mkdirSync(fakeBin);
+    const at = (...parts: string[]) => path.join(home, ...parts);
+    const fake = (name: string, body: string) => {
+      const file = path.join(fakeBin, name);
+      fs.writeFileSync(file, body, { mode: 0o755 });
+      return file;
+    };
+
+    fs.writeFileSync(at("bundled-rates.json"), JSON.stringify({}));
+    const engineCli = at(".local", "bin", "spotlights-engine");
+    fs.mkdirSync(path.dirname(engineCli), { recursive: true });
+    fs.writeFileSync(
+      engineCli,
+      `#!${fake("engine-python", `#!/bin/sh\necho ${at("bundled-rates.json")}\n`)}\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    fake("uv", "#!/bin/sh\nexit 0\n");
+    fake("curl", `#!/bin/sh\necho '{"data":[]}'\n`);
+    fake(
+      "claude",
+      [
+        "#!/bin/bash",
+        `trap 'echo term > ${at("term")}; exit 7' TERM`,
+        `echo ready > ${at("ready")}`,
+        "for i in $(seq 1 100); do sleep 0.05; done",
+        "exit 9",
+        "",
+      ].join("\n"),
+    );
+
+    execFileSync("bash", ["-c", kit.install.command], {
+      cwd: home,
+      env: { HOME: home, PATH: `${wrapperDir}:${fakeBin}:${process.env.PATH}` },
+      stdio: "pipe",
+    });
+
+    const run = spawn(
+      "bash",
+      [
+        at(".local", "share", "spotlights", "shim", "claude"),
+        "--print",
+        "--output-format",
+        "stream-json",
+      ],
+      {
+        env: {
+          HOME: home,
+          PATH: `${wrapperDir}:${fakeBin}:${process.env.PATH}`,
+        },
+      },
+    );
+    const exited = new Promise<{ code: number | null; signal: string | null }>(
+      (resolve) => run.on("exit", (code, signal) => resolve({ code, signal })),
+    );
+    const deadline = Date.now() + 5000;
+    while (!fs.existsSync(at("ready")) && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fs.existsSync(at("ready"))).toBe(true);
+
+    process.kill(run.pid!, "SIGTERM");
+
+    expect(await exited).toEqual({ code: 7, signal: null });
+    expect(fs.readFileSync(at("term"), "utf8")).toBe("term\n");
   });
 });

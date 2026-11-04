@@ -145,6 +145,13 @@ spec:
               value: {{ include "platform.apiserver.harnessUrl" . | quote }}
             - name: PLATFORM_HARNESS_SERVER_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
+            # The environments domain and the api-server's public port: an
+            # agent's gateway sends the domain there, to the Environment
+            # gate, with the Agent's key. Empty domain: no such chain.
+            - name: PLATFORM_ENVIRONMENTS_DOMAIN
+              value: {{ .Values.environments.domain | quote }}
+            - name: PLATFORM_APISERVER_PORT
+              value: {{ .Values.apiServer.port | quote }}
             # SPIFFE trust domain — used to render the principal
             # string in the per-agent AuthorizationPolicies the
             # controller writes alongside each agent.

@@ -23,7 +23,7 @@ import {
 const CB_WORK = "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
 const CB_CLASSIFIER = "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4";
 const IBM_CLASSIFIER = "aws/nvidia/NVIDIA-Nemotron-3-Ultra-550B";
-const PROCESS_CLASSIFIER = "claude/anthropic/claude-sonnet-5-5";
+const PROCESS_CLASSIFIER = "claude/anthropic/claude-sonnet-5";
 
 const sent: { url: string; model: unknown }[] = [];
 let router: ModelRouter;
@@ -100,6 +100,7 @@ beforeAll(async () => {
     catalog: {
       providers: () => [
         provider("anthropic", "anthropic", [
+          "claude-sonnet-5",
           "claude-sonnet-5-5",
           "claude-opus-5-5",
         ]),
@@ -188,7 +189,7 @@ describe("the classifier's call", () => {
     ).toBe(200);
     expect(sent[1]).toEqual({
       url: "http://upstream.invalid/ant/v1/messages",
-      model: "claude-sonnet-5-5",
+      model: "claude-sonnet-5",
     });
   });
 
@@ -216,7 +217,7 @@ describe("the classifier's call", () => {
     expect(sent).toEqual([
       {
         url: "http://upstream.invalid/ant/v1/messages",
-        model: "claude-sonnet-5-5",
+        model: "claude-sonnet-5",
       },
       { url: "http://upstream.invalid/ibm/v1/messages", model: IBM_CLASSIFIER },
     ]);

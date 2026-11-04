@@ -1,0 +1,7 @@
+{
+  "name": "mise-npm-install",
+  "private": true,
+  "dependencies": {
+    "@agentclientprotocol/sdk": "2.0.2"
+  }
+}

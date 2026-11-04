@@ -1,5 +1,4 @@
 import { parseQualifiedModel, type SessionSteering } from "api-server-api";
-import { config } from "../config.js";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { ArtifactTouch } from "./infrastructure/tool-call-outcome.js";
 import type { ToolActivity } from "../changes/index.js";
@@ -392,6 +391,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
       ]);
     },
     modelRequired: opts.modelRequired,
+    envReady: () => opts.envReader.ready(),
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
       sessionListAnswer(sessionMetadata, isRunning, terminalSessionPins?.()),
@@ -543,9 +543,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
         log: (msg) => opts.log(`[${pair.harness}] ${msg}`),
         envReadyAtBoot: opts.envReader.ready(),
         idleReapDelayMs: 3_000,
-        ...(config.QUEUE_PARK_MS !== undefined
-          ? { queueParkMs: config.QUEUE_PARK_MS }
-          : {}),
       });
     },
   });

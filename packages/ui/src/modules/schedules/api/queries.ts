@@ -1,15 +1,8 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 
-import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { listAgentSessionPage } from "../../sessions/api/acp-session-ops.js";
 import { acpSessionsKeys } from "../../sessions/api/keys.js";
-
-export function fetchSchedulesForAgent(agentId: string) {
-  return queryClient
-    .query(trpc.schedules.list.queryOptions({ agentId }))
-    .catch(() => []);
-}
 
 export function useSchedules(agentId: string | null) {
   return useQuery({

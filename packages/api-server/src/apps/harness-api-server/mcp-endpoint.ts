@@ -60,6 +60,7 @@ import {
   json,
   run,
   textResult,
+  type TextContent,
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
 import { withChannelArtifactLinks } from "../../modules/artifact-library/channel-links.js";
@@ -125,7 +126,7 @@ export async function textTool<T>(
   fallback: string,
   call: () => Promise<T>,
   format: (result: T) => string,
-): Promise<ToolContent> {
+): Promise<TextContent> {
   try {
     return textResult(format(await call()));
   } catch (err) {

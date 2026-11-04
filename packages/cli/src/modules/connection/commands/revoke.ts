@@ -1,24 +1,18 @@
 import { Command } from "commander";
-import type { AgentService } from "../../agent/index.js";
-import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
-import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
-import { resolveActiveHost } from "../../shared/preflight.js";
 import {
   CONNECTION_ID_PREFIX,
   resolveConnectionRef,
 } from "../domain/connection-ref.js";
-import type { ConnectionService } from "../services/connection-service.js";
+import {
+  resolveAgentConnections,
+  type ConnectionCommandDeps,
+} from "./resolve-agent-connections.js";
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
 
-export function buildRevokeCommand(deps: {
-  compatService: CompatService;
-  configService: ConfigService;
-  createAgentService: (host: string) => AgentService;
-  createConnectionService: (host: string) => ConnectionService;
-}): Command {
+export function buildRevokeCommand(deps: ConnectionCommandDeps): Command {
   return new Command("revoke")
     .description(
       "Revoke one or more connections from an Agent. Idempotent — revoking an ungranted id exits 0.",
@@ -54,22 +48,15 @@ export function buildRevokeCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        const host = await resolveActiveHost(deps, opts.server);
-
-        const agent = await resolveAgentOrExit(
-          deps.createAgentService(host),
+        const { host, agent, svc, connections } = await resolveAgentConnections(
+          deps,
           ref,
-          host,
+          opts.server,
         );
-
-        const svc = deps.createConnectionService(host);
-
-        const allRes = await svc.list();
-        exitOnServiceError(allRes, host);
         const connectionIds: string[] = [];
         const unknown: string[] = [];
         for (const r of requested) {
-          const match = resolveConnectionRef(allRes.value, r);
+          const match = resolveConnectionRef(connections, r);
           if (match) connectionIds.push(match.id);
           else if (r.startsWith(CONNECTION_ID_PREFIX)) connectionIds.push(r);
           else unknown.push(r);
