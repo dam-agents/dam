@@ -132,6 +132,7 @@ function wsStream(
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
           ws.on("message", (data) => {
+            if (ws.readyState !== WebSocket.OPEN) return;
             const text = data.toString();
             let frame: AnyMessage;
             try {
@@ -144,7 +145,9 @@ function wsStream(
               ws.close(1007, "invalid JSON frame");
               return;
             }
-            controller.enqueue(frame);
+            try {
+              controller.enqueue(frame);
+            } catch {}
           });
           ws.on("close", () => {
             try {
