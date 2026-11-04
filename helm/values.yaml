@@ -1427,6 +1427,16 @@ apiServer:
     grepDeadlineMs: 2000
     # -- Most shared-knowledge-base connections one account may hold.
     maxConnectionsPerOwner: 20
+  # -- The offer of a cost review in an owner's Approvals: an agent at least
+  # 7 days old, with scheduled or channel spend on 3 of the last 7 days,
+  # qualifies when it spent at least one of these amounts of Metered Spend
+  # over those days. Dollars and Bobcoins are never added up; subscription
+  # and free providers count toward neither.
+  costReview:
+    # -- Paid dollars over the last 7 days.
+    minWeeklyUsd: 25
+    # -- Bobcoins over the last 7 days.
+    minWeeklyBobcoins: 20
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's

@@ -1,4 +1,8 @@
-import type { Sender, SessionRepository } from "agent-runtime-api";
+import type {
+  Sender,
+  SessionPurpose,
+  SessionRepository,
+} from "agent-runtime-api";
 import { z } from "zod";
 
 export const SessionType = {
@@ -57,6 +61,7 @@ export interface SessionView {
   scheduleId?: string | null;
   continuedScheduleIds?: readonly string[];
   initialization?: boolean | null;
+  purpose?: SessionPurpose;
   title?: string | null;
   customTitle?: string | null;
   autoTitle?: string | null;

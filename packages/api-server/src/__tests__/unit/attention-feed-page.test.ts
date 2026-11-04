@@ -49,6 +49,7 @@ function service(ownerSub = "owner-1") {
       ownsAgent: async () => false,
       defaultModelNotices: async () => [],
       outageAlerts: async () => [],
+      costReviews: async () => [],
       log: () => {},
     }),
   };
