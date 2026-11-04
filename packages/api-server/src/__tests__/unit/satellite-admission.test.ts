@@ -503,6 +503,7 @@ describe("a claimed call", () => {
     agentId: "agent-1",
     tool: "run",
     args: { cmd: ["./process.sh"] },
+    transferDirection: null,
     status: "running",
     isError: false,
     exitCode: null,
@@ -520,13 +521,17 @@ describe("a claimed call", () => {
     createdAt: NOW,
   };
 
-  function claimWith(agentName: (id: string) => Promise<string | null>) {
+  function claimWith(
+    agentName: (id: string) => Promise<string | null>,
+    job: JobRow = queued,
+    tools = satellite().tools,
+  ) {
     const repo = {
-      get: async () => satellite(),
+      get: async () => satellite({ tools }),
       touch: async () => {},
       setDraining: async () => {},
       takeCancellations: async () => [],
-      claimQueued: async () => [queued],
+      claimQueued: async () => [{ job, transferToken: "f".repeat(64) }],
     };
     return createSatelliteWorkerOps({
       repo: repo as never,

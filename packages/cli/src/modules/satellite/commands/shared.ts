@@ -2,6 +2,7 @@ import { hostname, userInfo } from "node:os";
 import { basename } from "node:path";
 import { TRPCClientError } from "@trpc/client";
 import { Command } from "commander";
+import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_INVALID_INPUT,
@@ -27,6 +28,7 @@ export interface ConnectDeps {
   compatService: CompatService;
   configService: ConfigService;
   createTrpc: (host: string) => TrpcClient;
+  tokenProvider: TokenProvider;
 }
 
 export interface CommonConnectOpts {
@@ -59,7 +61,7 @@ export function connectOptions(command: Command, defaultHint: string): Command {
  * with anything outside it turned into a dash — so an unusual login, hostname
  * or command still connects instead of failing on a name the user never typed.
  */
-function asSatelliteName(raw: string): string {
+export function asSatelliteName(raw: string): string {
   return raw
     .toLowerCase()
     .replace(/[^a-z0-9.@-]+/g, "-")

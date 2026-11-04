@@ -55,8 +55,8 @@ function PanelDivider({
  * Agent's identity and status, a resizable column of Files,
  * Artifacts and Processes sections on the left, the conversation in the
  * middle, and the docked item on the right, beside the conversation.
- * Approvals opens as a drawer over the chat and Get started as a dock under the
- * top bar, so the slot keeps whatever it shows.
+ * Approvals opens as a drawer over the chat, so the slot keeps whatever it
+ * shows.
  */
 export function ClassicChatLayout({
   identity,

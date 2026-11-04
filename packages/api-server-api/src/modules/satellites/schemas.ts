@@ -40,6 +40,7 @@ export const satelliteToolSchema = z.object({
   description: z.string().max(4096).optional(),
   inputSchema: z.record(z.string(), z.unknown()),
   maxConcurrent: z.number().int().positive().max(1024).optional(),
+  transfer: z.enum(["download", "upload"]).optional(),
 });
 
 export const satelliteManifestSchema = z.object({
@@ -289,6 +290,60 @@ export const jobRefSchema = z.object({
   satellite: satelliteNameSchema,
   job: z.number().int().positive(),
 });
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One file crossing between the machine and the
+ * Agent's workspace, in either direction. The cap is the agent runtime's own
+ * per-file ceiling, so a transfer can never carry a file the workspace would
+ * refuse to hold. The bytes travel over their own request, never through a
+ * Job's arguments or its 1 MiB result, which is what keeps a transfer out of
+ * the Agent's context.
+ */
+export const SATELLITE_FILE_MAX_BYTES = 50 * 1024 * 1024;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The transfer token a worker is handed with the
+ * work item it claimed, and must present with any file request for that Job.
+ * It is minted per claim, stored as a hash on the Job row, and consumed by the
+ * transfer it authorises, so a transfer belongs to one claimant of one running
+ * Job and can happen once. That is what makes a transfer request prove the
+ * operation the Agent asked for, rather than merely naming a Job that happens
+ * to be running.
+ */
+export const SATELLITE_TRANSFER_CLAIM_HEADER = "x-dam-claim";
+
+export const satelliteTransferTokenSchema = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/, "a transfer token is 64 hex characters");
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The name a transferred file takes in the Agent's
+ * workspace. The platform takes it from the Job's own arguments — the path the
+ * Agent asked for — so a name is one segment and nothing else: no separator, no
+ * `..`, no NUL.
+ */
+export const satelliteFileNameSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .refine(
+    (name) =>
+      !name.includes("/") &&
+      !name.includes("\\") &&
+      !name.includes("\0") &&
+      name !== "." &&
+      name !== "..",
+    "a file name is a single path segment, with no separator, no .. and no NUL",
+  );
+
+export const satelliteFileWrittenSchema = z.object({
+  path: z.string().min(1),
+  size: z.number().int().nonnegative(),
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/, "sha256 is 64 lowercase hex digits"),
+});
+export type SatelliteFileWritten = z.infer<typeof satelliteFileWrittenSchema>;
 
 export const satelliteGrantInputSchema = z.object({
   satellite: satelliteNameSchema,

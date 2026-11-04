@@ -75,6 +75,7 @@ export interface WorkItem {
   tool: string;
   args: Record<string, unknown>;
   agent?: { id: string; name: string | null };
+  transferToken?: string;
 }
 
 export interface SatellitesService {

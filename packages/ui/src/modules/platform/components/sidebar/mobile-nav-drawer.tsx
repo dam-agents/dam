@@ -44,6 +44,7 @@ function OpenDrawer() {
       <div data-testid="mobile-nav" className="flex min-h-0 flex-1 flex-col">
         <SidebarContent
           stickyHeaderClassName="bg-card"
+          inDrawer
           onNavigate={() => setMobileNavOpen(false)}
         />
       </div>

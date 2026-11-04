@@ -1,5 +1,5 @@
 {
-  "id": "411d0951-6d41-46a3-b763-768cc9562dfa",
+  "id": "499f2fcc-f86d-4671-8ff9-79ea7a5e9446",
   "prevId": "da4567c8-4c8e-4ee7-9a91-6f26e2e49c3e",
   "version": "7",
   "dialect": "postgresql",
@@ -4542,6 +4542,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "transfer_token_hash": {
+          "name": "transfer_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transfer_direction": {
+          "name": "transfer_direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "delivered_at": {
           "name": "delivered_at",
           "type": "timestamp with time zone",
@@ -6231,145 +6243,6 @@
           ]
         }
       },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.ui_events": {
-      "name": "ui_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigint",
-          "primaryKey": true,
-          "notNull": true,
-          "identity": {
-            "type": "always",
-            "name": "ui_events_id_seq",
-            "schema": "public",
-            "increment": "1",
-            "startWith": "1",
-            "minValue": "1",
-            "maxValue": "9223372036854775807",
-            "cache": "1",
-            "cycle": false
-          }
-        },
-        "actor_sub": {
-          "name": "actor_sub",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tab": {
-          "name": "tab",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "build": {
-          "name": "build",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seq": {
-          "name": "seq",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "route": {
-          "name": "route",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "element": {
-          "name": "element",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signal": {
-          "name": "signal",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "flow": {
-          "name": "flow",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "step": {
-          "name": "step",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "duration_ms": {
-          "name": "duration_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "ui_events_occurred_idx": {
-          "name": "ui_events_occurred_idx",
-          "columns": [
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "ui_events_tab_seq_idx": {
-          "name": "ui_events_tab_seq_idx",
-          "columns": [
-            {
-              "expression": "tab",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

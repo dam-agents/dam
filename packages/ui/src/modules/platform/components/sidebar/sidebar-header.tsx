@@ -38,22 +38,22 @@ export function SidebarHeader({ expanded, onToggle, onHome }: Props) {
           aria-label={toggleLabel}
           aria-expanded={expanded}
           className={cn(
-            "group relative flex items-center justify-center rounded-lg transition-colors hover:bg-muted hover:text-foreground",
+            "group relative flex items-center rounded-lg transition-colors hover:bg-muted hover:text-foreground",
             expanded
-              ? "p-1.5 text-muted-foreground"
-              : "h-10 w-10 text-foreground/80",
+              ? "justify-center p-1.5 text-muted-foreground"
+              : "h-10 w-full justify-start pl-2.5 text-foreground/80",
           )}
         >
           {expanded ? (
             <ChevronLeft size={16} />
           ) : (
-            <>
-              <BrandLogo className="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
+            <span className="relative flex size-4 shrink-0 items-center justify-center">
+              <BrandLogo className="shrink-0 opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
               <ChevronRight
                 size={16}
                 className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
               />
-            </>
+            </span>
           )}
         </button>
       </Tooltip>

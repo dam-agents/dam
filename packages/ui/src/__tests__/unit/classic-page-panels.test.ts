@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The current layout's right edge: the approvals bell sits in the page's own corner and opens Approvals as a drawer over the page instead of a column beside it. The drawer follows the side panel's tab, so the same store tab opens it from the corner and from a phone's top bar, and closing it clears it. Get started floats as its own dock, so it takes no page tab.
+// TEST_OVERVIEW: The current layout's right edge: the approvals bell sits in the page's own corner and opens Approvals as a drawer over the page instead of a column beside it. The drawer follows the side panel's tab, so the same store tab opens it from the corner and from a phone's top bar, and closing it clears it. Get started lives in the sidebar footer, so it takes no page tab.
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
