@@ -311,11 +311,17 @@ test("room a home of small files frees goes back too", async () => {
   );
 });
 
-// TEST_SCENARIO: every running machine is granted the claim's whole room below its 95% ceiling, so real bytes a sibling writes shrink the probe's share and their delete grows it again, and the guard must take both moves and give the room back both ways: the sibling's write shrinks the share, which grows the guard, and the guest's free space must fall; the delete, once its trim reaches the claim, shrinks the guard, and the free space must rise. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The user's other running machines belong to specs that run beside this one, and one of them that stops or starts during a round cancels the move the round waits for, so a round that fails while they changed is run again, up to three times; a round that fails while they held still fails the case.
+// TEST_SCENARIO: every running machine is granted the claim's whole room below its 95% ceiling, so real bytes a sibling writes shrink the probe's share and their delete grows it again, and the guard must take both moves and give the room back both ways: the sibling's write shrinks the share, which grows the guard, and the guest's free space must fall; the delete, once its trim reaches the claim, shrinks the guard, and the free space must rise. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The user's other running machines belong to specs that run beside this one, and one of them that stops or starts during a round cancels the move the round waits for, so a round that fails while they changed is run again, up to three times; a round that fails while they held still fails the case. A grant larger than what the probe's disk has left by more than the sibling's write never holds the guest at all, since the guard gives a guest at most its disk: the move is invisible there, and the case says so and skips rather than wait on it — the CI lane is that install, its claim a directory of the node's disk with far more room than the probe's 40 GiB disk.
 test("the guard gives a machine the room its share gains, and takes it back", async () => {
   test.setTimeout(1_800_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
   await keepAwake(probeId);
+  const start = readRoom();
+  const startLeft = diskLeftMiB(0);
+  test.skip(
+    !(start.grantMiB <= startLeft + REAL_MIB - MOVE_MIB - SLACK_MIB),
+    `the probe's grant of ${start.grantMiB} MiB is past the ${startLeft} MiB its disk has left by more than a ${REAL_MIB} MiB write, so its disk and not its grant holds it and no sibling's write can move its room`,
+  );
   const probeDiskBefore = machineDisks().get(probeDisk) ?? 0;
   const moving = "/home/agent/e2e-storage-trim-move";
   let movePeers = 0;
