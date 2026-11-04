@@ -104,6 +104,16 @@ isolate_mise() {
     MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
     MISE_NPM_PACKAGE_MANAGER=aube MISE_LOCKED=0 MISE_GITHUB_SLSA=false
   : > "$MISE_GLOBAL_CONFIG_FILE"
+  # A pipx tool's venv names the Python it was made with by the path the tools
+  # layer's `current` held then. A new layer takes that Python away while mise
+  # keeps the install, so the venv outlives its interpreter and a build dies
+  # copying it (build-workloads, 2026-11-04). Drop the tool's install, and
+  # mise installs it again.
+  local cfg home
+  [ ! -d "$work/data/installs" ] || while read -r cfg; do
+    home="$(sed -n 's/^home = //p' "$cfg")"
+    [ -z "$home" ] || [ -d "$home" ] || rm -rf "${cfg%/*/pyvenv.cfg}"
+  done < <(find "$work/data/installs" -mindepth 4 -maxdepth 4 -path '*/pipx-*/*/*/pyvenv.cfg')
 }
 
 stage_project() {
