@@ -7,7 +7,7 @@ const runtime = vi.hoisted(() => ({ port: 0 }));
 
 vi.mock("../../modules/agents/infrastructure/k8s.js", async (original) => ({
   ...(await original<object>()),
-  agentServiceAddress: () => `127.0.0.1:${String(runtime.port)}`,
+  podBaseUrl: () => `127.0.0.1:${String(runtime.port)}`,
 }));
 
 const { createAcpClient } = await import("../../core/acp-client.js");
@@ -65,7 +65,7 @@ describe("a truncated ACP frame", () => {
     const closeCode = new Promise<number>((r) => (closed = r));
     const acp = await fakeAgent(closed);
 
-    const sent = acp.sendPrompt("hi", { platformMeta: { harness: "x" } });
+    const sent = acp.sendPrompt("hi", {});
 
     await Promise.race([
       escaped,
