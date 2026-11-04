@@ -24,6 +24,7 @@ export function SandboxIdentity({ agent, display }: Props) {
       <div className="flex min-w-0 items-center gap-3">
         <EditableAgentIdentity
           agent={agent}
+          showFixedNameReason
           avatarSize={36}
           mood={avatarMood(display.state, agent)}
           nameClassName="text-lg font-semibold text-foreground"

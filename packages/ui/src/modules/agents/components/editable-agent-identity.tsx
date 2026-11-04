@@ -25,9 +25,12 @@ const ICON_BUTTON = "shrink-0 text-muted-foreground hover:text-foreground";
  */
 export function EditableAgentIdentity({
   agent,
+  showFixedNameReason = false,
   ...display
 }: {
   agent: AgentView;
+  /* UNIT_BOUNDARY_DESCRIPTION: a fixed name says why it is fixed where there is room for a sentence — the configuration pages' identity — and only in the tooltip where there is not, as in the chat's own header. */
+  showFixedNameReason?: boolean;
 } & IdentityDisplay) {
   const assistantName = getBrand().assistantName;
   const rename = useUpdateAgent({ inlineError: true });
@@ -49,6 +52,7 @@ export function EditableAgentIdentity({
           changeAvatar.mutate({ id: agent.id, avatar: next })
         }
         whyReadOnly={`${assistantName} is your assistant, so its name is fixed.`}
+        showWhyReadOnly={showFixedNameReason}
       />
     );
   return (
@@ -91,6 +95,7 @@ export function EditableIdentity({
   onRename,
   onAvatarChange,
   whyReadOnly,
+  showWhyReadOnly = false,
   avatarSize,
   mood,
   nameClassName,
@@ -101,6 +106,7 @@ export function EditableIdentity({
   onRename?: (name: string) => Promise<void> | void;
   onAvatarChange: (avatar: string) => void;
   whyReadOnly?: string;
+  showWhyReadOnly?: boolean;
 } & IdentityDisplay) {
   const hasNewAvatar = useFreshAvatars().length > 0;
   const [draft, setDraft] = useState<string | null>(null);
@@ -154,14 +160,16 @@ export function EditableIdentity({
       {onRename === undefined ? (
         <span className="flex min-w-0 flex-col gap-0.5">
           <NameTag className={cn("flex min-w-0", nameClassName)}>
-            <span
-              className="flex min-w-0 items-center gap-1.5"
-              data-testid="agent-name-read-only"
-            >
-              <span className="truncate">{name}</span>
-            </span>
+            <Tooltip content={whyReadOnly ?? "This name is fixed"}>
+              <span
+                className="flex min-w-0 items-center gap-1.5"
+                data-testid="agent-name-read-only"
+              >
+                <span className="truncate">{name}</span>
+              </span>
+            </Tooltip>
           </NameTag>
-          {whyReadOnly !== undefined && (
+          {showWhyReadOnly && whyReadOnly !== undefined && (
             <span className="text-xs font-normal text-muted-foreground">
               {whyReadOnly}
             </span>
