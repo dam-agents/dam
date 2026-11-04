@@ -1,5 +1,12 @@
 import { Close } from "@carbon/icons-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
@@ -8,6 +15,14 @@ import { useBodyScrollLock, useFocusTrap } from "../modal.js";
 import { Button } from "./button";
 
 const TRANSITION_MS = 150;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The drawer's own panel, for a popover its content
+ * opens: portaled inside it, the popover stays inside the drawer's focus trap
+ * instead of losing the keyboard to it, and the trap never reads the popover as
+ * focus that left the drawer.
+ */
+export const DrawerPanelContext = createContext<HTMLElement | null>(null);
 
 interface Props {
   side: "left" | "right";
@@ -31,6 +46,11 @@ export function SideDrawer({
   children,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [panel, setPanel] = useState<HTMLDivElement | null>(null);
+  const takePanel = useCallback((node: HTMLDivElement | null) => {
+    panelRef.current = node;
+    setPanel(node);
+  }, []);
   useFocusTrap(panelRef);
   useBodyScrollLock();
   const [shown, setShown] = useState(false);
@@ -66,7 +86,7 @@ export function SideDrawer({
         )}
       />
       <div
-        ref={panelRef}
+        ref={takePanel}
         role="dialog"
         aria-label={label}
         onKeyDown={(event) => {
@@ -80,7 +100,9 @@ export function SideDrawer({
           className,
         )}
       >
-        {children}
+        <DrawerPanelContext.Provider value={panel}>
+          {children}
+        </DrawerPanelContext.Provider>
       </div>
     </div>,
     document.body,
