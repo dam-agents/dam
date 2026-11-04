@@ -1,10 +1,12 @@
 import type {
+  ArtifactApiRelayInput,
   ArtifactApiRequestInput,
   ArtifactApiRequestResult,
 } from "agent-runtime-api";
 import type {
   ArtifactCallAgentApiResult,
   ArtifactKind,
+  ArtifactSendPromptResult,
   ArtifactVisibility,
 } from "api-server-api";
 
@@ -14,6 +16,10 @@ import type {
   ArtifactRow,
 } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import { createArtifactLibraryService } from "../../modules/artifact-library/services/artifact-library-service.js";
+import type {
+  ViewerPromptDelivery,
+  ViewerPromptOutcome,
+} from "../../modules/artifact-library/services/share-bridge-service.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 
 type AppAnswer = { status: number; contentType: string | null; body: string };
@@ -22,7 +28,7 @@ interface FakeAgent {
   awake: boolean;
   reachable: boolean;
   oldRuntime: boolean;
-  app: ((request: ArtifactApiRequestInput) => AppAnswer) | null;
+  app: ((request: ArtifactApiRelayInput) => AppAnswer) | null;
   received: string[];
 }
 
@@ -30,7 +36,7 @@ export interface AgentHandle {
   hibernate(): AgentHandle;
   failToWake(): AgentHandle;
   runOldRuntime(): AgentHandle;
-  serve(app: (request: ArtifactApiRequestInput) => AppAnswer): AgentHandle;
+  serve(app: (request: ArtifactApiRelayInput) => AppAnswer): AgentHandle;
   isAwake(): boolean;
   received(): string[];
 }
@@ -59,7 +65,7 @@ function ownerScopedRepo(rows: ArtifactRow[]): ArtifactLibraryRepository {
   });
 }
 
-function relay(agent: FakeAgent, request: ArtifactApiRequestInput) {
+function relay(agent: FakeAgent, request: ArtifactApiRelayInput) {
   if (agent.oldRuntime)
     return { ok: false, reason: "unsupported-runtime" } as const;
   if (!agent.app) return { ok: false, reason: "app-not-listening" } as const;
@@ -67,9 +73,17 @@ function relay(agent: FakeAgent, request: ArtifactApiRequestInput) {
   return { ok: true, ...agent.app(request) } satisfies ArtifactApiRequestResult;
 }
 
+type DeliveredPrompt = Parameters<ViewerPromptDelivery["deliver"]>[0];
+
 export function createArtifactApiWorld() {
   const rows: ArtifactRow[] = [];
   const agents = new Map<string, FakeAgent>();
+  const prompts: DeliveredPrompt[] = [];
+  let featureOn = true;
+  let promptOutcome: ViewerPromptOutcome = {
+    ok: true,
+    sessionId: "session-1",
+  };
 
   function fakeAgent(agentId: string): FakeAgent {
     let agent = agents.get(agentId);
@@ -148,12 +162,14 @@ export function createArtifactApiWorld() {
     return id;
   }
 
-  function call(
-    artifactId: string,
-    request: ArtifactApiRequestInput,
-    caller: { as?: string; keyBoundTo?: readonly string[] } = {},
-  ): Promise<ArtifactCallAgentApiResult> {
-    const library = createArtifactLibraryService({
+  interface Caller {
+    as?: string;
+    keyBoundTo?: readonly string[];
+    email?: string;
+  }
+
+  function library(caller: Caller) {
+    return createArtifactLibraryService({
       repo: ownerScopedRepo(rows),
       artifacts: new Proxy({} as ArtifactService, {
         get: (_target, method: string) => () => unused(`artifacts.${method}`),
@@ -163,12 +179,51 @@ export function createArtifactApiWorld() {
       shareBaseUrl: "https://share.example.test",
       ensureReady: cluster.ensureReady,
       agentApi: cluster.agentApi,
+      featureOn: () => Promise.resolve(featureOn),
+      prompts: {
+        deliver: (input) => {
+          prompts.push(input);
+          return Promise.resolve(promptOutcome);
+        },
+      },
     });
-    return library.callAgentApi(
+  }
+
+  function call(
+    artifactId: string,
+    request: ArtifactApiRequestInput,
+    caller: Caller = {},
+  ): Promise<ArtifactCallAgentApiResult> {
+    return library(caller).callAgentApi(
       { artifactId, ...request },
+      { agentIds: caller.keyBoundTo ?? "*", email: caller.email ?? null },
+    );
+  }
+
+  function prompt(
+    artifactId: string,
+    text: string,
+    caller: Caller = {},
+  ): Promise<ArtifactSendPromptResult> {
+    return library(caller).sendPrompt(
+      { artifactId, prompt: text },
       { agentIds: caller.keyBoundTo ?? "*" },
     );
   }
 
-  return { agent, publish, call };
+  return {
+    agent,
+    publish,
+    call,
+    prompt,
+    prompts: () => [...prompts],
+    turnFeatureOff: () => {
+      featureOn = false;
+    },
+    refusePromptsWith: (
+      reason: Extract<ViewerPromptOutcome, { ok: false }>["reason"],
+    ) => {
+      promptOutcome = { ok: false, reason };
+    },
+  };
 }

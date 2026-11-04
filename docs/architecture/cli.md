@@ -1,29 +1,32 @@
 # CLI
 
-Last verified: 2026-10-29
+Last verified: 2026-11-04
 
 ## Overview
 
 The `dam` CLI is a TypeScript Node package, distributed via npm, that users install on their own machine and point at a configured Platform deployment.
 It never runs inside the cluster.
-It reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
+For deployment operations, it reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
 Command groups are singular (`agent`, `connection`, `channel`, …) to match `gh`, `git`, and `docker`.
 
-The CLI is at parity with the web UI: every action a user can take in the browser has a verb.
-It owns no domain logic of its own — each command group is a thin surface over the api-server procedures the corresponding subsystem already exposes, so the concepts live on their owning architecture pages (see [Command surface](#command-surface)).
+The CLI is at parity with the web UI for deployment operations: every action a user can take in the browser has a verb.
+Its local client-management commands configure the CLI, inspect its version and update its npm installation without a web counterpart.
+It owns no deployment domain logic of its own — each deployment-facing command group is a thin surface over the api-server procedures the corresponding subsystem already exposes, so the concepts live on their owning architecture pages (see [Command surface](#command-surface)).
 
 ## Trust boundary
 
 The CLI runs on the user's machine.
-It reads and writes only under the XDG config and state directories and makes outbound network calls only to the configured server.
+It reads and writes its own state only under the XDG config and state directories and makes deployment calls only to the configured server.
+Its version and update commands may query the npm registry, and update invokes npm to replace the global package.
 There is no telemetry and no anonymous reporting — the platform collects nothing, and the CLI does not break that posture.
 
 One deliberate exception is `dam ssh`'s editor modes: dam's own SSH host entries live in `$XDG_CONFIG_HOME/dam/ssh_config`, and a single `Include` line is added to `~/.ssh/config` so an external editor's SSH client can resolve the agent host.
 dam never touches the user's own `~/.ssh` keys (see [SSH access](#ssh-access)).
 
-The other exception is `dam version`: it also asks the npm registry for the `latest` dist-tag of `@dam-agents/cli`, so it can tell an out-of-date CLI even when the server cannot.
+The other exception is CLI version management: `dam version` and `dam update` ask the npm registry for the `latest` dist-tag of `@dam-agents/cli`, so they can find an out-of-date CLI even when the server cannot.
 It asks `registry.npmjs.org`, or the registry in `npm_config_registry` when that variable is set.
-It sends nothing about the user, and no other verb makes the call.
+`dam update` then runs npm to replace a global CLI installation with that exact stable version; it never invokes `sudo`, changes CLI state or contacts a Platform deployment.
+These commands send nothing about the user, and no other verb makes the registry call.
 
 ## Config
 
@@ -40,7 +43,7 @@ Two persistence concerns split across the XDG directories: editable configuratio
 ## Compatibility negotiation
 
 Before any networked verb runs, the CLI hits the api-server's unauthenticated version endpoint (plain HTTP, outside the tRPC surface) to learn the server's version, the minimum CLI version it accepts, and the CLI version it recommends.
-The server's version is the release it was built from, the chart's `appVersion`: a tagged release reports `X.Y.Z` or `X.Y.Z-rcN`, and a build from `main` reports `X.Y.Z-dev-<sha>`.
+The server's version is the release it was built from, the chart's `appVersion`: a tagged release reports `X.Y.Z` or `X.Y.Z-rc.N`, a release cut before that spelling reports `X.Y.Z-rcN`, and a build from `main` reports `X.Y.Z-dev-<sha>`.
 A tagged release recommends the CLI of its own version, which CD publishes to npm with it; a build from `main` recommends none, because no CLI is published at its version.
 Three verdicts:
 
@@ -113,11 +116,15 @@ The `agent` module gives users a human-friendly way to name an Agent and exports
 
 ## Command surface
 
-The CLI is at parity with the web UI across these groups.
+The deployment-facing groups are at parity with the web UI.
+Local commands such as `config`, `version` and `update` manage or inspect the client itself and have no browser counterpart.
 Each concept's depth lives on its owning architecture page; per-verb flags, exit-code numbers, and tRPC procedure names live in the code, not here.
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
+- **`update`** (`upgrade` alias) — update the documented global npm installation to the latest stable CLI release, or report that it is current.
 - **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`kit`** — list the starter kits, show what one sets up and what it needs from the user, and see, take or skip a kit's update on an agent; `agent create --kit` applies one and lists the setup left, and `agent get` names the kit an agent came from with its update state, owned by [starter-kits.md](starter-kits.md).
+  A kit is a separate group from the template listing because a kit is not a Template: an agent that only knows templates answers a question about kits with images.
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns with the Metered Spend of each ([Spend limits](spend-limits.md#ledger)), and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
 - **`metrics`** — an agent's measured spend by model and by session, and its recent calls ([Metrics](metrics.md), [Spend limits](spend-limits.md#ledger)).
@@ -133,7 +140,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md).
-  `mcp` and `shell` are the two verbs with no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.
+  Within the deployment-facing groups, `mcp` and `shell` have no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.
   The group marks itself experimental in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 - **`schedule`** — time-triggered tasks on an agent: recurrences, including the Precheck that decides each occurrence, and one-time schedules at a local moment or now, owned by [schedules.md](schedules.md).
 - **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit; for a platform operator, also listing, setting and removing each user's Spend Ceiling by the user's email; owned by [spend-limits.md](spend-limits.md).
@@ -143,7 +150,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 
 ## Shared conventions
 
-Every command group is a thin client over the procedures its subsystem already exposes, holding no service state beyond a per-host client.
+Every deployment-facing command group is a thin client over the procedures its subsystem already exposes, holding no service state beyond a per-host client.
 The recurring patterns, stated once:
 
 - **Thin surface, server-authoritative.** The CLI does not re-validate domain rules it doesn't own; it sends the request and classifies the server's typed error, surfacing the server's reason for bad input, conflicts, and authorization failures.
@@ -205,10 +212,12 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
   **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
   `list` and `get` show a disabled agent's state as `disabled`.
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants one provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
+  The create then prints a `Provider:` line naming the one granted and what chose it (`defaultProvider` in `--json`), so a caller sees a provider it did not expect.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
-- **Providers, harnesses and defaults** are the agent's Providers section: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying, the Session Pair defaults and the profile the chat default names ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections, saves or clears a default and names a profile with `--profile`, through the same procedures the web app calls, so the server keeps every rule about which pair is valid; `--kind channel` and `--same-as-chat` still write the legacy channel pair that channels bound before profiles follow; `models` lists a harness's model catalog from the agent-runtime.
+- **Providers, harnesses and defaults** are the agent's Providers section: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying, the Session Pair defaults and the profile the chat default names ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections, saves or clears a default and names a profile with `--profile`, through the same procedures the web app calls, so the server keeps every rule about which pair is valid; `--kind channel` and `--kind scheduled` write that kind's own pair, the one its page's picker shows, and `--same-as-chat` clears it, so the kind follows the chat default again; `models` lists a harness's model catalog from the agent-runtime.
   An `update` flag changes only what it names: a new model keeps the default's harness and settings, a new harness drops the settings, since they belong to one harness.
+  Revoking a provider changes only the grants on the server, so `update --remove-provider` then moves each saved default that named the revoked Connection to a granted provider of the same alias that offers its model, and warns about each default it cannot move; a default the same `update` sets is left as set.
   A part `get` may not read, such as the providers for a key without credential-read permission, shows as unknown and leaves the rest.
 - **Name and avatar** are the identity the web app edits in place: `update --name` renames through the same procedure, with the server's name rules, and `--avatar`, `--avatar-file` and `--avatar-default` pick a character or an emoji, upload an image through the same endpoint and limits as the picker, or go back to the default ([agent avatars](agent-avatars.md)); `create` takes the avatar flags too.
   The CLI keeps the picker's rules: a character only once it is unlocked, an emoji or an image only with custom avatars on; `avatars` lists the characters, which are unlocked, and whether custom avatars are on.
@@ -243,8 +252,11 @@ On exit, on a drop that does not reconnect, and when it gives up or the user sto
 `dam session list` reads the same agent-owned session list.
 `dam session show` reads one Session: it lists the sessions first, so an id the agent does not have is refused with a pointer to `dam session list`, then loads it over the same ACP relay the UI uses and prints its Session Transcript as messages and tool calls.
 A tool call's duration is the time between the stamps the runtime puts on the frame that started it and the frame that finished it, since no harness reports one.
-The load answer says whether a turn is running and when it started, for any Session, so the CLI tells how long a turn has been going even where the run fields of the session list stay empty: those count unattended runs only.
-`--follow` keeps the connection open and prints each new step and the turn's end as they come.
+A call its turn left open, by a stop or an error, is closed when the turn ends, or by the load when no turn runs: it gets an end time and no duration.
+The load answer says whether a turn is running, and the runtime adds when it started, for any Session, so the CLI tells how long a turn has been going even where the run fields of the session list stay empty: those count unattended runs only.
+A runtime that does not send the start leaves it unknown, and the CLI says so.
+`--follow` keeps the connection open and prints each new step, the turn's start and the turn's end as they come.
+It does not reconnect, unlike an attach: a lost connection ends it with exit code 1 and a hint to run it again.
 
 ## Headless runs
 

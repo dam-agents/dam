@@ -147,6 +147,7 @@ export type AuthKind = z.infer<typeof authKind>;
 
 export const providerKeyCheck = z.object({
   result: z.enum(["ok", "refused", "unverified"]),
+  account: z.string().optional(),
   detail: z.string().optional(),
   checkedAt: z.string(),
 });

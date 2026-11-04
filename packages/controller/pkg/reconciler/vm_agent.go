@@ -27,7 +27,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what told anything inside the guest which backend it was on, kept for the images that still read it. An Agent's image may predate the container backend's removal: its entrypoint reads this to know its HOME is a local disk rather than a network volume, and takes the container path when it is missing. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too. Remove it once every Agent runs an image that no longer reads it (agents.runtimeFleet.outdated).
+// UNIT_BOUNDARY_DESCRIPTION: kept for an image from before #5896, whose own runtime enables its memory reaper only on `PLATFORM_BACKEND=vm`, and a machine offers no root-cgroup limit for that reaper to fall back on: without the write, that image runs under memory pressure until the kernel kills the harness or the runtime, not a tool process. Such an image stays reachable as a pinned custom image, an Agent that defers its upgrade, or a rollback after one. Removing the write is not free either: the env map is one of the fields a running machine is restarted for, unlike its size, and it restarts whether or not the agent is idle. So it waits for a release that restarts machines anyway, and for confirmation that no Agent runs a pre-#5896 image, custom pins included, which `agents.runtimeFleet.outdated` does not cover. (Recorded 2026-11-02.)
 const vmBackendEnv = "PLATFORM_BACKEND"
 
 const (

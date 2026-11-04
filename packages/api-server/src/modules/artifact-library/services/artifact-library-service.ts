@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { match } from "ts-pattern";
 import { artifactSharingInputSchema } from "api-server-api";
+import { artifactApiCallerEmail } from "agent-runtime-api";
 import { TRPCError } from "@trpc/server";
 import type {
   ArtifactCallAgentApiResult,
@@ -10,6 +11,7 @@ import type {
   ArtifactKind,
   ArtifactLibraryService,
   ArtifactListFilter,
+  ArtifactSendPromptResult,
   ArtifactSharingInput,
   ArtifactUpdateInput,
   ArtifactUploadTicket,
@@ -34,6 +36,11 @@ import {
 } from "../domain/artifact-kind.js";
 import { generateSlug } from "../domain/share-crypto.js";
 import {
+  ownerPromptText,
+  ownerSessionTitle,
+  viewerSessionKey,
+} from "../domain/viewer-bridge.js";
+import {
   isOwnStagingKey,
   stagingKey,
   versionKey,
@@ -46,6 +53,7 @@ import type {
 } from "../infrastructure/artifact-library-repository.js";
 import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
+import type { ViewerPromptDelivery } from "./share-bridge-service.js";
 import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
@@ -99,6 +107,8 @@ export interface ArtifactLibraryDeps {
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
+  featureOn: () => Promise<boolean>;
+  prompts: ViewerPromptDelivery;
 }
 
 type AgentApiAccess =
@@ -723,7 +733,7 @@ export function createArtifactLibraryService(
 
     async callAgentApi(
       { artifactId, ...request },
-      { agentIds },
+      { agentIds, email },
     ): Promise<ArtifactCallAgentApiResult> {
       const row = await repo.getArtifact(artifactId, owner);
       const access = agentApiAccess(row, agentIds);
@@ -745,7 +755,52 @@ export function createArtifactLibraryService(
       } catch {
         return { ok: false, reason: "agent-unreachable" };
       }
-      return deps.agentApi.request(access.agentId, request);
+      return deps.agentApi.request(access.agentId, {
+        ...request,
+        caller: {
+          role: "owner",
+          email: artifactApiCallerEmail(email),
+          sub: owner,
+        },
+      });
+    },
+
+    async sendPrompt(
+      { artifactId, prompt },
+      { agentIds },
+    ): Promise<ArtifactSendPromptResult> {
+      const row = await repo.getArtifact(artifactId, owner);
+      const access = agentApiAccess(row, agentIds);
+      const denial = !access.allowed
+        ? access.denial
+        : (await deps.featureOn())
+          ? null
+          : "feature-off";
+      securityLog(denial === null ? "info" : "warn", "artifact.owner_prompt", {
+        category: "authz",
+        actor: owner,
+        actorKind: "user",
+        surface: securitySurface(surface),
+        decision: denial === null ? "allow" : "deny",
+        target: artifactId,
+        ...(row?.agentId ? { agentId: row.agentId } : {}),
+        ...(denial === null ? {} : { reason: denial }),
+      });
+      if (!row || !access.allowed || denial !== null)
+        return { ok: false, reason: "not-allowed" };
+      const outcome = await deps.prompts.deliver({
+        agentId: access.agentId,
+        sessionKey: viewerSessionKey(row.id, owner),
+        sessionTitle: ownerSessionTitle(row.title),
+        prompt: ownerPromptText({
+          artifactId: row.id,
+          artifactTitle: row.title,
+          prompt,
+        }),
+      });
+      return outcome.ok
+        ? { ok: true, agentId: access.agentId, sessionId: outcome.sessionId }
+        : outcome;
     },
 
     async recordTouch({ agentId, sessionId, artifactId, version }) {

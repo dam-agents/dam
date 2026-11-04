@@ -123,7 +123,7 @@ Every claim in the body is true of this diff, not of a later one.
 
 A section for a person who reads the body and not the code. After it, they
 know what the pull request decides and where to look. Name concepts,
-behaviors and components, not lines or symbols. Write at most fifteen lines.
+behaviors and components, not lines or symbols. Write at most twenty lines.
 For a change with no decision in it (a typo, a version bump), write one line
 that says so.
 
@@ -135,6 +135,12 @@ that says so.
   or the work rests on an assumption: a migration, a concurrency path, a
   security boundary, a behavior change no test covers. Say what could go
   wrong there.
+- **Ruled out** — each option you tried or weighed and dropped, one bullet:
+  what it was and why it failed or lost. The reviewer then does not propose
+  it again. Omit the part when you weighed no option.
+- **Gates you changed** — every test you skipped, deleted or rewrote to a new
+  expected value, and every check or threshold you relaxed, with the reason.
+  The reviewer reads each one first.
 - **Who decided.** A decision the person made or confirmed also has its
   `author-decisions` entry. A decision you made alone appears only here,
   marked `(open)`, so the reviewer judges it.
@@ -199,7 +205,8 @@ summary: <two or three sentences: what the person asked for, and how the
   commands pass.
 - The body declares every change in the diff, links the issue with the right
   keyword, says what was tested, and its reviewer guide names every
-  architectural decision, with the ones you made alone marked `(open)`.
+  architectural decision, with the ones you made alone marked `(open)`, the
+  options you ruled out and every gate you changed.
 - The `author-decisions` block holds the person's decisions that a reviewer
   could read as a defect.
 - The branch is pushed; the pull request is open, or the caller holds the

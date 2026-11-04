@@ -22,6 +22,8 @@ function makeService(opts: {
     },
     get: async () => null,
     complete: async () => true,
+    markStarted: async () => null,
+    failExpired: async () => false,
     fail: async () => {},
     listExpiredRunning: async () => [],
     listRunning: async () => [],
@@ -56,6 +58,7 @@ function makeService(opts: {
     } as never,
     driverResolution: { resolveRoot: opts.resolveRoot },
     reaper: { reap: async () => {} },
+    reportedReap: { afterReport: () => {} },
     runtimeMutator: {
       bump: async () => 0,
       enqueueAfterCommit: async () => {},

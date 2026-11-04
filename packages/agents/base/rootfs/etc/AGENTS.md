@@ -9,6 +9,18 @@ What survives a restart:
 
 Caches in the home that no tool here reads are removed at boot: a Go module cache (no Go is shipped) and pnpm's own store layouts (`pnpm` is aube).
 
+Network: every outgoing request goes through the platform's credential gateway, which injects the real credential for a host a connection covers.
+What an integration hands you is a placeholder such as `platform:conn:<id>`, so never hunt for a key, paste one, or run an auth login.
+A host no rule covers is normally held for the user's approval (30 minutes by default); a request driven from a chat channel, with no interactive session attached to answer, is refused instead.
+A `403` with `x-platform-refusal: egress` means a rule refused the request; repeat the same request with the same method and URL, without `-o /dev/null`, to read the body, which names the rule.
+A bare `403`, a close, no answer, or a `502` or `503` has several possible sources, and the response alone does not say which; a `502` or `503` can be the gateway failing to reach the host, or the upstream answering it.
+One control shows that traffic flows: `curl -sS -o /dev/null -D - --suppress-connect-headers --max-time 20 https://registry.npmjs.org/` answers on the default rules.
+If it answers and your request does not, look for a pending approval on Home before you blame the network.
+For a host, propose a rule with the `egress_proposal` tool: `method` and `path` default to `*`, and a proposal without `port` covers only 443 over TLS or 80 over plain HTTP.
+Only the user's verdict writes the rule; a sub-agent reports the host to the agent that started it instead.
+For a missing credential, ask with the `connection_secret` tool, which gives the user a one-time link valid for ten minutes, instead of asking for the secret in chat.
+The platform's source, docs and issues are at `github.com/dam-agents/dam`; `docs/architecture/` is the source of truth for its behaviour.
+
 Available:
 
 - usual Linux tools

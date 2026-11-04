@@ -1,7 +1,7 @@
 import { Close } from "@carbon/icons-react";
 import { useState } from "react";
 
-import { BrandLogo } from "@/components/brand-logo";
+import { BrandLogoSlot } from "@/components/brand-logo-slot";
 import { SideDrawer } from "@/components/ui/side-drawer";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -28,8 +28,8 @@ function OpenDrawer() {
       onClosed={() => setMobileNavOpen(false)}
       className="max-w-[300px] bg-card px-2 safe-bottom"
     >
-      <div className="flex items-center justify-between pt-3 pb-1 pl-1">
-        <BrandLogo />
+      <div className="flex h-12 items-center justify-between pl-2.5">
+        <BrandLogoSlot />
         <Tooltip content="Close navigation">
           <button
             type="button"
@@ -44,6 +44,7 @@ function OpenDrawer() {
       <div data-testid="mobile-nav" className="flex min-h-0 flex-1 flex-col">
         <SidebarContent
           stickyHeaderClassName="bg-card"
+          inDrawer
           onNavigate={() => setMobileNavOpen(false)}
         />
       </div>

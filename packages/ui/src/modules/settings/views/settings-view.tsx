@@ -49,6 +49,7 @@ const themeOptions = [
 export function SettingsView() {
   const { tabs, hidden, settledHidden } = useSettingsTabs();
   const rawTab = useStore((s) => s.settingsTab);
+  const settingsProfileId = useStore((s) => s.settingsProfileId);
   const activeTab = hidden(rawTab) ? "account" : rawTab;
   const tabStrip = useRef<HTMLDivElement>(null);
   const hiddenTabSettled = settledHidden(rawTab);
@@ -173,9 +174,17 @@ export function SettingsView() {
               <section className="mb-8">
                 <ProviderSection />
               </section>
-
-              <ProfileSection />
             </div>
+          </div>
+        )}
+
+        {activeTab === "profiles" && (
+          <div>
+            <PageHeader
+              title="Profiles"
+              description="Edit a profile once to update every agent, channel and schedule using it."
+            />
+            <ProfileSection openProfileId={settingsProfileId} />
           </div>
         )}
 

@@ -41,7 +41,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
 
 ## What the nested install cannot do
 
-- No outbound network from inside the nested cluster beyond the sandbox accounts below: real model providers (unless lent), Telegram, and any GitHub or Slack other than the sandbox's do not work.
+- No outbound network from inside the nested cluster beyond the sandbox accounts below and the CurveBender model proxy: real model providers (unless lent, or reached with the instance's CurveBender key, below), Telegram, and any GitHub or Slack other than the sandbox's do not work.
   An AC that needs any of them is `testable: no — external dependency`, unless it only checks that the UI offers or records something.
 - **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
   - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`, and a test GitHub user who owns it.
@@ -66,9 +66,10 @@ Builds published before these accounts were added have only `qa-owner`; there an
     With the dialog open, call `connectSlackChannel({ screen })` from `suite/lib/sandbox.ts`: it adds the sandbox channel and taps *Connect*.
     The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text, threadTs?)`, `botReplies(ts)`.
     A **second test person** (`slack2`) in the same channel writes with `personSays(text, threadTs?, 'second')`; `sandbox.slack('second')` says whether this instance has it, and `botReplies` never counts either person's post as the agent's.
-    DAM drops the fourth bot or app post in a row in one conversation (a channel's top level, or one thread) until a person writes there, and the test person's posts count as app posts.
+    The test person's posts count as app posts, and DAM rate-limits bot and app posts per conversation (a channel's top level, or one thread).
+    When more than ten of them arrive in one conversation within a minute, DAM drops them there for five minutes and posts one notice that starts with `:pause_button:`; `botReplies` would return that notice as a reply.
     So each request goes in a thread of its own: a root without a mention (`personSays(text)`), then the mention in that thread (`personSays(text, root)`), then `botReplies(root)`.
-    A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would follow earlier runs' posts there and be dropped.
+    A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would share one count with every other run's posts there and could be dropped.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
   - **Testability limit — Slack account linking.**
     A user links their Slack account only inside Slack: `/dam login` (then a DAM sign-in page), or `/dam bind` typed in the channel itself.
@@ -79,24 +80,27 @@ Builds published before these accounts were added have only `qa-owner`; there an
     A criterion that checks only what the dialog offers (the `/dam login` and `/dam bind` instructions) stays testable.
     When a later build links the owner's account at install, the picker lists the channel and the same test passes with no change.
   - **Cleanup after a pass only**: after the last criterion, `closeSandboxPull(pull)` closes the run's pull request and deletes its branch, and the test deletes its agent; a failed run keeps both for its report.
-  - Filing an issue or deciding anything needs a real model: with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template.
-    Without it, such ACs are `blocked`, naming `lend_model`.
+  - Filing an issue or deciding anything needs a real model.
+    Two ways make it testable:
+    with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template;
+    when the instance credential `E2E_LITELLM_CURVE_BENDER_TOKEN` is set, the test creates the **CurveBender (own key)** provider connection whose key is that value, and the agent uses a real model that key serves.
+    With neither, such ACs are `blocked`, naming `lend_model` and `E2E_LITELLM_CURVE_BENDER_TOKEN`.
   - A sandbox whose credentials are not set leaves its ACs `testable: no — external dependency`; so does a second user or person this instance lacks, for an AC that needs two.
-- Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`), where an agent can run at all (see *No running agents* below): it replies "Hello from the mock agent."
+- Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`), where an agent can run at all (see *Agents run only where* below): it replies "Hello from the mock agent."
   to every prompt and never calls a model.
   An AC about what an agent says or decides is judged only on what the UI shows around that reply; with `mock_image` set empty, an AC that needs an agent to reply or run is `blocked`, not failed.
-- The harness templates (Claude Code, Codex, Pi, Bob) boot the default image, which bakes their
-  tools, but no real model provider is reachable (above), so an AC about such a harness's own
-  replies is `testable: no — external dependency`; one that only checks what the UI offers or
-  records for it stays testable.
+- The harness templates (Claude Code, Codex, Pi, Bob) boot the default image, which bakes their tools, but no real model provider is reachable (above) unless the instance's CurveBender key is set, so without it an AC about such a harness's own replies is `testable: no — external dependency`; with it, the reply is judged like any other; one that only checks what the UI offers or records for it stays testable either way.
 - What a user creates with a free-text field (a schedule's prompt) needs an agent first; the agent's name is itself free text and shows wherever the agent is listed.
   The injection canary therefore names one Mock agent with its text (`canary` in `profile.json`) and deletes it.
 - No service mesh: the VM's kernel cannot run Istio, so the nested install runs without it.
   Network isolation between agents is not enforced — an AC that one agent cannot reach or act as another is `testable: no — no mesh`.
-- No running agents: every agent runs as a virtual machine, and the inspector's VM cannot host one inside it.
-  An agent is created, shown, shared and configured as usual, but none of its sessions starts: DAM reports that it "can't start" because the owner's VM runner cannot be scheduled.
-  That message is this limit, not a product failure.
-  An AC that needs an agent to start, reply or run a task (the Mock agent included) is `testable: no — no VM agents`; one that only checks what the UI offers or records stays testable.
+- Agents run only where the inspector's VM has `/dev/kvm`: every agent runs as a virtual machine on the owner's VM runner, which needs it.
+  `bash "$HOME/scripts/env.sh" status` says `"kvm": true` when the VM has it (the platform that hosts the inspector gives it nested virtualization) and `false` when not.
+  With `false`, an agent is created, shown, shared and configured as usual, but none of its sessions starts: DAM reports that it "can't start" because the owner's VM runner cannot be scheduled.
+  That message is this limit, not a product failure: an AC that needs an agent to start, reply or run a task (the Mock agent included) is `testable: no — no VM agents`; one that only checks what the UI offers or records stays testable.
+  With `true`, that message, or an agent that never reaches running, is a finding like any other.
+- In a platform Environment (`env.sh where` says `environment`) the install is the same, at the same `localhost` address for the tests.
+  A build older than `0.0.0-main.9300` or `0.2.24` gets no public addresses there, so a kept Environment of such a build is no use to a person: release it (`env.sh release <label>`) instead of keeping it, and say so in the report.
 - No email, no SSO federation, no real billing.
 
 ## Tested elsewhere
@@ -124,6 +128,13 @@ A flow that needs real Slack, real GitHub, a real model or real time passing is 
 
 Builds are chart versions: `0.0.0-main.<n>` after every merge to main, `X.Y.Z` releases.
 Candidate `main` = the newest dev chart; baseline `release` = the newest release.
+There is no build of a pull request: a change is tested after it merges, in the next `0.0.0-main.<n>`.
+
+## Design
+
+- The words DAM retired are `design.retired_words` in `profile.json`, from its glossary.
+  "Sandbox" is still right for the machine an agent runs in (an Environment, a "sandbox image"), "image" for a picture or what an agent runs, and "shell" in *Bob Shell* or a shell command.
+- The UI follows the system's light or dark theme until the user picks one under Settings → Appearance.
 
 ## CLI and API
 

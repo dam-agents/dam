@@ -15,6 +15,7 @@ const profile = (
   providerTemplate: "bedrock",
   model: "bedrock/opus",
   settings: {},
+  subagent: null,
   newAgentDefault,
   usage: { agents: 0, channels: 0, schedules: 0, ...uses },
   availability: null,

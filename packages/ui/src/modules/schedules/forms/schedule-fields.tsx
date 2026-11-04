@@ -501,10 +501,10 @@ interface ChoicesControl {
  * chat's own picker in both slots and kept in the form's fields: the primary a
  * profile or the harness, model and settings of its own, the subagent a
  * profile or the platform sub-agent values its settings carry. Empty primary
- * fields are not a scheduled default — nothing writes one any more (D90) —
- * they are the agent's chat default, which only a row already following it
- * keeps (D123), saying what it is now in the hint. On a runtime without the
- * Model Router the old single model field stands.
+ * fields are the scheduled default — what the agent's Schedules page picks,
+ * which the chat default answers until it does — and only a row already
+ * following it keeps them empty (D123), saying what it is now in the hint. On
+ * a runtime without the Model Router the old single model field stands.
  */
 export function ScheduleChoicesField<T extends ChoicesControl>({
   agentId,
@@ -517,7 +517,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   migrationNote: string | null;
   /* UNIT_BOUNDARY_DESCRIPTION: the empty choice is offered only where it is the
    * schedule's own current selection — a schedule written before profiles that
-   * follows the chat default — so such a row opens and saves untouched, and
+   * follows the scheduled default — so such a row opens and saves untouched, and
    * every other form asks for concrete values (D123). */
   inheritChoice?: boolean;
 }) {
@@ -593,7 +593,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
         target={{
           slots,
           label: "Schedule harness and model",
-          placeholder: "The agent's chat default",
+          placeholder: "The agent's model for schedules",
           onChoose: (pair, references) => {
             const next = scheduleFields(
               nextSlots(slots, pair, references),
@@ -619,13 +619,13 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
           }}
           className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
         >
-          Follow the agent's chat default again
+          Use the agent's model for schedules
         </button>
       )}
       <span className="text-sm text-muted-foreground">
         {follows ? (
           <>
-            This schedule follows the agent&apos;s chat default
+            This schedule follows the agent&apos;s model for schedules
             {fallback?.model && (
               <>
                 {" (now: "}
@@ -640,11 +640,11 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
                 {")"}
               </>
             )}
-            , which a chat&apos;s model picker sets. Pick a profile or a model
-            to give it values of its own.
+            , which the agent&apos;s Schedules page sets. Pick a profile or a
+            model to give it values of its own.
           </>
         ) : (
-          "What this schedule runs on, picked as a chat's model is. Editing a profile changes every schedule that names it; Custom selection gives this one its own."
+          "What this schedule runs on, picked as a chat's model is. Editing a profile changes every schedule that names it; a pick of its own applies to this schedule only."
         )}
       </span>
       <FormError

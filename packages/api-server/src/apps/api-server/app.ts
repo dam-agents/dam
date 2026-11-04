@@ -18,6 +18,10 @@ import { createAgentTrpcProxy } from "./agent-proxies/trpc-proxy.js";
 import { createEditorRuntimeAccess } from "./agent-proxies/editor-runtime-access.js";
 import { createEditorSockets } from "./agent-proxies/editor-sockets.js";
 import { composeEditorStanding } from "../../modules/agents/index.js";
+import {
+  createAgentTransfer,
+  createSatelliteFileRoutes,
+} from "../../modules/satellites/index.js";
 import { editorEmailOf, type UserIdentity } from "api-server-api";
 import { createImportProxy } from "./agent-proxies/import-proxy.js";
 import { createSshRelay } from "./agent-proxies/ssh-relay.js";
@@ -110,6 +114,13 @@ export function startApiServerApp(deps: ApiServerDeps) {
     ),
   );
   mountRoutes(app, deps);
+  app.route(
+    "/",
+    createSatelliteFileRoutes({
+      repo: deps.satellitesBoot.repo,
+      transferFor: (agentId) => createAgentTransfer(agentId, config.namespace),
+    }),
+  );
   app.route("/api/trpc", createTrpcHttpRoutes({ composeApiContext }));
   app.all(
     "/api/agents/:id/trpc/*",
@@ -168,6 +179,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.approvalsRelay,
     deps.sessionPresence,
     deps.firePair,
+    deps.runBoundary,
   );
   const terminalRelay = createTerminalRelay(
     config.namespace,

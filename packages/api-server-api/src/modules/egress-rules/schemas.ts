@@ -44,6 +44,10 @@ export const egressRuleRevokeInputSchema = z.object({
   id: z.string().min(1),
 });
 
+export const egressPlatformRuleInputSchema = z.object({
+  agentId: z.string().min(1),
+});
+
 export const egressRuleApplyPresetInputSchema = z.object({
   agentId: z.string().min(1),
   preset: egressPresetSchema,

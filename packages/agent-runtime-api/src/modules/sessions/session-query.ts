@@ -13,7 +13,11 @@ export function sessionCategoryOf(session: {
   type: string;
 }): SessionCategory {
   if (session.mode === "terminal") return "terminal";
-  if (session.type === "channel_slack" || session.type === "channel_telegram")
+  if (
+    session.type === "channel_slack" ||
+    session.type === "channel_telegram" ||
+    session.type === "artifact"
+  )
     return "channels";
   if (session.type === "schedule_cron" || session.type === "schedule_once")
     return "scheduled";

@@ -13,6 +13,7 @@ const profile = (id: string, name: string): ProfileWithUsage => ({
   providerTemplate: "bedrock",
   model: "bedrock/opus",
   settings: {},
+  subagent: null,
   newAgentDefault: false,
   usage: { agents: 1, channels: 0, schedules: 0 },
   availability: null,

@@ -13,7 +13,10 @@ umask=022
 # which the entrypoint links there to give containers the platform CA.
 export PATH="/run/platform/bin:$PATH"
 # openrc may start it before the entrypoint, so it builds the CA bundle its
-# pulls trust itself.
+# pulls trust itself. dockerd gives the containerd it starts 15 s to answer,
+# and a vm guest's first read of the tools' binaries can take most of that, so
+# they are read in first, outside that window.
 start_pre() {
 	platform-ca-bundle
+	cat "$command" "${command%/*}/containerd" "${command%/*}/containerd-shim-runc-v2" >/dev/null 2>&1 || true
 }

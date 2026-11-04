@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TemplateService } from "../template/index.js";
+import type { KitService } from "../kit/index.js";
 import type { TokenProvider } from "../auth/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildAvatarsCommand } from "./commands/avatars.js";
@@ -32,6 +33,7 @@ export interface AgentModuleOptions {
   configService: ConfigService;
   compatService: CompatService;
   templateService: (host: string) => TemplateService;
+  kitService: (host: string) => KitService;
 }
 
 export interface AgentModule {
@@ -70,12 +72,15 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
     "Address Agents by name or ID",
   );
   parent.addCommand(buildListCommand(shared), { isDefault: true });
-  parent.addCommand(buildGetCommand(withModels));
+  parent.addCommand(
+    buildGetCommand({ ...withModels, createKitService: opts.kitService }),
+  );
   const createDeps = {
     ...shared,
     createTemplateService: opts.templateService,
     createTrpcClient: opts.buildTrpc,
     createAvatarUploader: createUploader,
+    createKitService: opts.kitService,
   };
   parent.addCommand(buildCreateCommand(createDeps));
   parent.addCommand(buildCreateInteractiveCommand(createDeps));

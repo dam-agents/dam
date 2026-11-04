@@ -19,7 +19,7 @@ on:
   # The merge queue's gate: a merge group verifies like a PR and publishes
   # nothing a consumer reads, only cache tags for later groups (build.yml's
   # build-images). The push to main that follows only builds and publishes;
-  # see e2e. Mergify tests its batches as draft PRs from
+  # see e2e. Mergify tests queued PRs as draft queue PRs from
   # mergify/merge-queue/* branches, so a pull_request run on such a branch is
   # a merge group too (`queue` below). merge_group stays while GitHub's queue
   # is the rollback.
@@ -79,6 +79,9 @@ jobs:
       # A pull request runs the reduced smoke set; the merge queue, the nightly
       # run and a tag run all of it.
       pr-scope: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'mergify/merge-queue/') }}
+      # The nightly run alone also takes the specs under src/tests/full/, in
+      # the default lane: no other run covers them.
+      full-tier: ${{ github.event_name == 'schedule' }}
     secrets:
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
@@ -164,7 +167,7 @@ jobs:
 
   verify-queue:
     name: verify-queue
-    # Mergify's merge condition, on a batch PR only. A check the PR never
+    # Mergify's merge condition, on a queue PR only. A check the PR never
     # passes keeps the queue two-step: Mergify's Direct Merge would otherwise
     # merge a PR that is up to date with main on its PR-scope `verify` alone,
     # without the full e2e.

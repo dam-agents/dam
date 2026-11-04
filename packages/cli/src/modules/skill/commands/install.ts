@@ -1,27 +1,17 @@
 import { Command } from "commander";
-import type { AgentService } from "../../agent/index.js";
-import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import {
-  printServiceError,
-  exitOnServiceError,
-} from "../../shared/trpc/print.js";
-import type { CompatService, ConfigService } from "../../cli/index.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import {
   EXIT_AGENT_NOT_REACHABLE,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
-import { resolveActiveHost } from "../../shared/preflight.js";
-import { resolveSourceRef } from "../domain/source-ref.js";
-import type { SkillsService } from "../services/skills-service.js";
+import {
+  resolveSkillTarget,
+  type SkillCommandDeps,
+} from "./resolve-skill-target.js";
 
-export function buildInstallCommand(deps: {
-  compatService: CompatService;
-  configService: ConfigService;
-  createAgentService: (host: string) => AgentService;
-  createSkillsService: (host: string) => SkillsService;
-}): Command {
+export function buildInstallCommand(deps: SkillCommandDeps): Command {
   return new Command("install")
     .description("Install (or update) a skill from a source onto an Agent")
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
@@ -59,29 +49,12 @@ export function buildInstallCommand(deps: {
         }
         const name = opts.name;
 
-        const host = await resolveActiveHost(deps, opts.server);
-
-        const agent = await resolveAgentOrExit(
-          deps.createAgentService(host),
+        const { host, agentId, svc, source } = await resolveSkillTarget(
+          deps,
           ref,
-          host,
+          opts.source,
+          opts.server,
         );
-        const agentId = agent.id;
-
-        const svc = deps.createSkillsService(host);
-
-        const sourcesRes = await svc.listSources(agentId);
-        exitOnServiceError(sourcesRes, host);
-        const source = resolveSourceRef(sourcesRes.value, opts.source);
-        if (!source) {
-          process.stderr.write(
-            `error: no registered skill source with id or url '${opts.source}'\n`,
-          );
-          process.stderr.write(
-            "hint: run `dam skill source list` to see registered sources\n",
-          );
-          process.exit(EXIT_INVALID_INPUT);
-        }
 
         const catalogRes = await svc.catalog(source.id, agentId);
         if (!catalogRes.ok) {

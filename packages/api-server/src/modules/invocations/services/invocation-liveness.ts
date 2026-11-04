@@ -1,5 +1,9 @@
-import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
-import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
+import type {
+  InvocationRow,
+  InvocationsRepository,
+} from "../infrastructure/invocations-repository.js";
+import type { TargetReaper } from "./target-reaper.js";
+import type { ReportedTargetReap } from "./reported-target-reap.js";
 import {
   HARNESS_CONFIG_STEP,
   type ReadHarnessConfigSupport,
@@ -9,6 +13,7 @@ import { createSetupFailure } from "./setup-failure.js";
 import type { ScriptOutputs } from "./script-outputs.js";
 
 const SCRIPT_STEP = "script";
+const UNREAPED_AFTER_MS = 30_000;
 
 const NO_SCRIPT_RUNNER_REASON =
   "the image's agent-runtime predates script sub-agents; rebuild the image on a current base image";
@@ -25,7 +30,9 @@ export interface TargetRestartState {
 export interface CreateInvocationLivenessSweepDeps {
   repo: InvocationsRepository;
   reaper: TargetReaper;
+  reportedReap: Pick<ReportedTargetReap, "due">;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
+  readStartWait: (agentId: string) => Promise<string | null>;
   hasAgent: (agentId: string) => Promise<boolean>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   runsScripts: (agentId: string) => Promise<boolean | null>;
@@ -52,14 +59,29 @@ export function createInvocationLivenessSweep(
     await deps.reaper.reap(row);
   }
 
+  async function expiryReason(row: InvocationRow): Promise<string> {
+    if (row.startedAt !== null) return "liveness deadline exceeded";
+    const minutes = Math.round(
+      (row.expiresAt.getTime() - row.createdAt.getTime()) / 60_000,
+    );
+    const wait = await deps.readStartWait(row.id).catch(() => null);
+    return `the sub-agent did not start within ${minutes} min of its spawn${wait ? `. ${wait}` : ""}`;
+  }
+
   async function tick(): Promise<void> {
     if (running) return;
     running = true;
     try {
-      const expired = await deps.repo.listExpiredRunning(now(), deps.batchSize);
+      const expiredAt = now();
+      const expired = await deps.repo.listExpiredRunning(
+        expiredAt,
+        deps.batchSize,
+      );
       for (const row of expired) {
         try {
-          await failAndReap(row, "liveness deadline exceeded");
+          const reason = await expiryReason(row);
+          if (await deps.repo.failExpired(row.id, reason, expiredAt))
+            await deps.reaper.reap(row);
         } catch (err) {
           process.stderr.write(
             `[invocation-liveness] fail ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
@@ -99,12 +121,13 @@ export function createInvocationLivenessSweep(
         }
       }
 
-      const graceEnd = new Date(now().getTime() - REPORT_GRACE_MS);
       const unreaped = await deps.repo.listTerminalUnreaped(
-        graceEnd,
+        new Date(now().getTime() - UNREAPED_AFTER_MS),
         deps.batchSize,
       );
       for (const row of unreaped) {
+        if (row.status === "done" && !(await deps.reportedReap.due(row)))
+          continue;
         await deps.reaper.reap(row);
         try {
           if (!(await deps.hasAgent(row.rootDriverId))) {

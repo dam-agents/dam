@@ -77,6 +77,9 @@ function setup(connections: ConnectionView[] = [provider]) {
     }),
     createTrpcClient: () => trpc,
     createAvatarUploader: () => ({ upload: vi.fn() }),
+    createKitService: () => {
+      throw new Error("no kit in a plain create");
+    },
   });
 
   async function run(args: string[], exitCode: number) {
@@ -111,6 +114,74 @@ describe("dam agent create provider selection (#3786)", () => {
       templateId: "claude-code",
     });
   });
+
+  /** TEST_SCENARIO: Without --provider the output names the provider the
+   * platform granted and why, in text and in --json, so a caller that trusts
+   * the docs sees a provider other than the one it expected (#6142). */
+  it.each([
+    [
+      "profile" as const,
+      { name: "Default", model: "anthropic/claude-opus-5-5", harness: "pi" },
+      'Provider: My provider (conn-provider), from your default for new agents, profile "Default": anthropic/claude-opus-5-5 on pi.',
+    ],
+    [
+      "harness" as const,
+      null,
+      "Provider: My provider (conn-provider), the first of yours its harness runs on",
+    ],
+    [
+      "kit" as const,
+      null,
+      "Provider: My provider (conn-provider), the first of the starter kit's providers you hold",
+    ],
+    [
+      "template" as const,
+      null,
+      "Provider: My provider (conn-provider), the first of its template's providers you hold",
+    ],
+  ])(
+    "names the provider granted without --provider (source %s)",
+    async (source, profile, line) => {
+      const { run, create } = setup();
+      const defaultProvider = { connectionId: provider.id, source, profile };
+      create.mockResolvedValue({ ...agent, defaultProvider });
+      await run([], EXIT_SUCCESS);
+      expect(process.stdout.write).toHaveBeenCalledWith(
+        expect.stringContaining(line),
+      );
+      await run(["--json"], EXIT_SUCCESS);
+      expect(process.stdout.write).toHaveBeenCalledWith(
+        `${JSON.stringify({ ...agent, defaultProvider })}\n`,
+      );
+    },
+  );
+
+  /** TEST_SCENARIO: A server older than `source` answers without it; the
+   * line still names the default when a profile came back, and the harness
+   * order otherwise, never "undefined". */
+  it.each([
+    [
+      { name: "Default", model: "anthropic/claude-opus-5-5", harness: "pi" },
+      'from your default for new agents, profile "Default"',
+    ],
+    [null, "the first of yours its harness runs on;"],
+  ])(
+    "names the reason from an answer without source (profile %o)",
+    async (profile, line) => {
+      const { run, create } = setup();
+      create.mockResolvedValue({
+        ...agent,
+        defaultProvider: { connectionId: provider.id, profile },
+      });
+      await run([], EXIT_SUCCESS);
+      expect(process.stdout.write).toHaveBeenCalledWith(
+        expect.stringContaining(line),
+      );
+      expect(process.stdout.write).not.toHaveBeenCalledWith(
+        expect.stringContaining("undefined"),
+      );
+    },
+  );
 
   it.each([provider.id, provider.name])(
     "grants the provider selected by %s in the creation request and preserves JSON output",

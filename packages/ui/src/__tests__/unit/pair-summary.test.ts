@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: One summary reads a pick under the chat input, on the Custom selection row and in Settings › Profiles: the pretty model name, the capitalized effort and the provider, each left out when it does not exist.
+// TEST_OVERVIEW: One summary reads a pick under the chat input, on the picker trigger and in Settings › Profiles: the pretty model name, the capitalized effort and the provider, each left out when it does not exist.
 import type { HarnessCapability } from "agent-runtime-api";
 import { expect, it } from "vitest";
 
@@ -46,7 +46,7 @@ it.each<{
     capability: claude,
     settings: { effort: "high", subagentEffort: "low" },
     provider: "IBM ETE LiteLLM Proxy",
-    expected: "Claude Sonnet 5.5 · High (IBM ETE LiteLLM Proxy)",
+    expected: "Claude Sonnet 5.5 · High · IBM ETE LiteLLM Proxy",
   },
   {
     model: "ete/claude-sonnet-5-5",
@@ -60,14 +60,14 @@ it.each<{
     capability: claude,
     settings: { effort: "high" },
     provider: "ETE",
-    expected: "Claude Haiku 4.5 (ETE)",
+    expected: "Claude Haiku 4.5 · ETE",
   },
   {
     model: "cb/vendor/unknown-model",
     capability: undefined,
     settings: { effort: "high" },
     provider: "Curve",
-    expected: "vendor/unknown-model (Curve)",
+    expected: "vendor/unknown-model · Curve",
   },
   {
     model: null,

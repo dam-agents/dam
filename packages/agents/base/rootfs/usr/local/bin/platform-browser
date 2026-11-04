@@ -8,6 +8,58 @@
 # Chrome's component updater and Safe Browsing list updates reach Google with no
 # page asking, and the gateway holds each for the user's approval, so the
 # switches that turn them off are on every launch too.
-quiet="--disable-background-networking --disable-component-update"
-set -- $quiet --disable-blink-features=AutomationControlled "$@"
-exec /opt/ms-playwright/chromium "$@"
+#
+# A start agent-browser gave up on is carried on, not begun again. agent-browser
+# waits a fixed 30 s for DevToolsActivePort, then kills the process group it
+# started and launches anew, three times. A cold start on a small guest takes
+# longer than that, so every attempt was killed partway and the next began from
+# nothing: the browser never came up. So Chromium runs in a session of its own,
+# where that kill does not reach it, with its pid kept beside the profile, and a
+# launch on a profile whose Chromium still runs waits for that one instead of
+# starting a second. agent-browser deletes DevToolsActivePort before each
+# launch, so the session also keeps a copy of the file once Chromium writes it,
+# and a launch that adopts that Chromium puts it back. The launcher stays the
+# process agent-browser watches: it ends when Chromium does, stops Chromium when
+# it is stopped itself, and says where DevTools listens, as Chromium does.
+set -- --disable-background-networking --disable-component-update --disable-blink-features=AutomationControlled "$@"
+profile=
+for arg; do
+  case "$arg" in --user-data-dir=*) profile="${arg#--user-data-dir=}" ;; esac
+done
+[ -n "$profile" ] || exec /opt/ms-playwright/chromium "$@"
+
+mkdir -p "$profile"
+pidfile="$profile/.platform-browser.pid"
+portfile="$profile/DevToolsActivePort"
+kept="$profile/.platform-browser.port"
+runs() {
+  [ -n "$1" ] && tr '\0' '\n' <"/proc/$1/cmdline" 2>/dev/null | grep -qxF -- "--user-data-dir=$profile"
+}
+pid=$(cat "$pidfile" 2>/dev/null)
+if runs "$pid"; then
+  [ -e "$portfile" ] || [ ! -s "$kept" ] || cp "$kept" "$portfile"
+else
+  rm -f "$kept" "$pidfile"
+  # shellcheck disable=SC2016 # expanded by the session's own shell
+  setsid sh -c '
+    pidfile=$1 portfile=$2 kept=$3; shift 3
+    /opt/ms-playwright/chromium "$@" &
+    echo $! >"$pidfile"
+    while kill -0 $! 2>/dev/null && [ ! -s "$kept" ]; do
+      [ ! -s "$portfile" ] || cp "$portfile" "$kept"
+      sleep 0.2
+    done
+    wait
+  ' platform-browser "$pidfile" "$portfile" "$kept" "$@" </dev/null >/dev/null 2>&1 &
+  while [ ! -s "$pidfile" ]; do sleep 0.05; done
+  pid=$(cat "$pidfile")
+fi
+trap 'kill "$pid" 2>/dev/null; exit 143' TERM INT HUP
+said=
+while runs "$pid"; do
+  if [ -z "$said" ] && [ -s "$kept" ]; then
+    said=1
+    echo "DevTools listening on ws://127.0.0.1:$(sed -n 1p "$kept")$(sed -n 2p "$kept")" >&2
+  fi
+  sleep 0.2
+done

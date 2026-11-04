@@ -511,7 +511,10 @@ export function createTelegramMessageHandler(deps: {
       }
       return;
     }
-    const held = await deps.spendHold?.(binding.agentId);
+    const held = await deps.spendHold?.(binding.agentId, {
+      kind: ambient ? "ambient" : "mention",
+      channel: "telegram",
+    });
     if (held) {
       if (ambient) return;
       await thread.post({
@@ -796,6 +799,14 @@ export function createTelegramWorker(deps: {
               .with({ kind: "plain" }, ({ copy }) =>
                 copy({ uiBaseUrl: deps.uiBaseUrl, agentId, threads: false }),
               )
+              .with({ kind: "spend" }, ({ block }) => ({
+                markdown: spendHoldUserCopy(
+                  block,
+                  "This agent",
+                  brandName,
+                  telegramResetTime(new Date()),
+                ),
+              }))
               .with({ kind: "provider-unavailable" }, () => ({
                 markdown: telegramProviderOutageCopy(outage, brandName),
               }))

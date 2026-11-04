@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-10-09
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -11,7 +11,7 @@ The machine polls; nothing is pushed to it.
 The worker runs beside the tools, claims work over ordinary outbound HTTPS, calls them and reports back.
 The Agent sees each granted Satellite's tools on the platform MCP server it already has, scoped by Satellite name.
 
-Two verbs start a worker, and **nothing above it can tell them apart**:
+Three verbs start a worker, and **nothing above it can tell them apart**:
 
 - `dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` — any MCP server, whose tools are offered as they come, bar a name the contract refuses.
   The worker either starts it over stdio or, with `--url localhost:8080`, reaches one already listening and forwards each call to it: Streamable HTTP first, then SSE, with any `--header` the server wants.
@@ -20,8 +20,10 @@ Two verbs start a worker, and **nothing above it can tell them apart**:
   Without `--name` it is named after the server it starts — the first word past a package runner such as `npx` or `uvx`, less scope, version and path — or the host it forwards to.
 - `dam satellite shell "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
   Without `--name` it is named after the one command every pattern permits, or called `user@hostname` when they differ; either is folded into the name contract.
+- `dam satellite files --root <dir>` — one directory on the machine, offered as a `download` tool, and with `--upload` an `upload` tool beside it (see [Files](#files-between-the-machine-and-the-agent)).
+  Without `--name` it is named after the directory.
 
-Two verbs rather than one flag because the two are different things to set up, not two ways of saying one thing, and an explicit verb cannot be misread the way a selector flag can.
+Separate verbs rather than one flag because each is a different thing to set up, not another way of saying the same thing, and an explicit verb cannot be misread the way a selector flag can.
 
 Making the Command Surface a degenerate MCP server rather than a parallel concept is what keeps the platform out of the business of understanding commands.
 It forwards a tool call and stores an outcome; the machine alone reads the arguments.
@@ -159,7 +161,7 @@ A Job still queued settles server-side with no worker involved.
 
 **Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs.
 The record goes with the machine, which is what removing it asks for.
-A worker still serving it stops claiming, lets its running jobs finish and exits, rather than registering the Satellite again.
+A worker still serving it stops claiming, lets its running jobs finish and exits, rather than registering the Satellite again — and a worker that reconnects after the removal is refused, since it can only name the registration that is gone.
 
 An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed.
 The hourly wake retry is what eventually clears it.
@@ -169,6 +171,98 @@ A Job that reached its TTL without ever starting — queued with nobody claiming
 Output is captured with stdout and stderr merged in terminal order.
 Under a few KB it comes back inline; over that the tool returns a path and the full log is written into the Agent's own sandbox, so a large log costs the model a line rather than a context window.
 The file is written **at read time** — when an outcome arrives the Agent may be hibernating, but an Agent asking for it is up by definition.
+
+An MCP tool's images are not output: each one reaches the Agent as the image content block the tool returned, so the harness shows its model a picture instead of base64 the model would have to decode.
+The machine is not trusted to send a picture, so an image is forwarded only when it is base64 and of a format a harness shows — PNG, JPEG, GIF or WebP — which is also what makes its length a byte count.
+A Job that carries an image holds the text and the images together under a single ceiling, counted on the JSON the platform stores and hands back rather than on the bytes the tool printed, because text the JSON must escape grows sixfold.
+It carries at most a handful of them, because an image cannot be spilled to a file the way a log can.
+A report that carries no image keeps the character cap it has always had, since a worker of an older version sends one.
+Within that ceiling an image takes its bytes first: a long log reaches the Agent as a file it can read, and a picture has nowhere else to go.
+An image over any of those bounds is named in the output as not passed on, rather than vanishing from a result that then looks empty.
+An image that does pass leaves a marker of its own in the text, so a harness that renders no image blocks still shows that a picture came back; a tool result whose text was spilled names its images itself, since the marker went to the file.
+Audio and embedded resources stay placeholders: no harness hands either to its model.
+A turn the platform starts carries no images, so it says the picture exists and names the job tool that shows it.
+
+## Staying connected
+
+A worker is meant to run for weeks on a machine nobody watches: a laptop that sleeps, a network that drops, a platform that redeploys.
+Everything it does about that follows from the direction it is reached from: outward only.
+
+**It retries forever, and never in step with the other machines.** A failed connect or claim is retried after a wait that doubles from a second to half a minute and carries jitter, so the machines that come back when a platform returns spread out instead of arriving together.
+Nothing ends the loop; the process stops when it is told to stop.
+
+**A reconnect is a registration, not a second Satellite.** The name is what identifies a Satellite, so connecting again replaces the Snapshot of the one the machine already serves and keeps its Grants, its Jobs and its Job sequence.
+An Agent sees the same tools before and after a drop, and never two of anything.
+
+A Satellite's row is nevertheless a **registration** of that name, and each registration has an identity of its own.
+A worker names the registration it serves on every call it makes — registering, claiming, renewing a lease, cancelling, reporting — and the platform puts that identity inside the statements that act rather than in a read before them, because a name can be registered again between the two.
+A removal, or a registration replaced while a worker was away, is therefore refused: the worker that names a registration the platform no longer holds, or holds under another identity, is told there is no such Satellite before it runs anything, and stops ([Jobs](#jobs)).
+A **fresh** worker that names nothing is not refused one: connecting under a name another machine is serving takes that name over — the row keeps its identity and its Jobs, and both workers then claim from the same registration.
+Identity belongs to the registration, not to the process, so a second machine is never turned away on its own account; exporting one name from two machines at once is the case to avoid.
+Removing a Satellite takes its row first, in one transaction, and admission binds its insert to the registration it admitted against, so a call arriving beside a removal is either deleted with it or refused — never left for the next machine of that name to claim.
+That is what keeps a stale worker from undoing the owner's decision to remove one, from claiming jobs queued for a machine that is not this one, and from settling another machine's `#1` with its own.
+A worker from before the identity existed names nothing and is served as it always was: it cannot be fenced, which is the cost of the rollout, not a promise the platform makes.
+
+**The machine's own server is restarted, but only when it exited.** Reconnecting must not kill work that is in progress, so a server that is still up keeps serving.
+One that did exit is started again, and the tool list it comes back with is **registered before any more work is claimed**, because a Snapshot is that machine's claim about what it offers now; a server that keeps exiting seconds after it starts is restarted on its own backoff rather than as fast as work arrives.
+
+**A result survives a short drop.** An outcome that could not be reported is kept and sent again before more work is taken, and once the platform answers again, which covers any outage shorter than the Job's lease.
+It is replayed only to the **registration it was claimed under**: a name registered again starts its Job sequence over, so an old machine's `#1` is not the new machine's `#1`, and the platform settles a report that names the wrong registration as nothing at all.
+A rollout moves the two ends apart for a while, so a missing identity is read as *unknown* rather than as *different*, and the worker keeps the registration it last learned.
+A result claimed before the platform could name a registration is never replayed, though: the worker cannot tell it from the same number of a machine registered since, so it says so and lets the lease settle that Job as interrupted.
+Nor is one sent to a server that cannot enforce a registration: every call a worker makes once it knows its registration — resuming, claiming, renewing a lease, reporting, draining — goes to a procedure of its own that requires it, and an older server refuses such a call by name instead of reading it and ignoring the field.
+A rolling deployment can answer one call from a newer replica and the next from an older one, so the fence has to travel on the call that writes rather than on a promise from an earlier one.
+A worker that meets such a refusal waits for a platform that enforces registrations; it never takes the unfenced path with a registration in hand.
+Beyond the lease, the sweep settles the Job as interrupted and the Agent is told its outcome is unknown, so a call in flight during a drop ends in a sentence rather than a wait.
+A call made while the Satellite is offline never starts at all: admission refuses it and says since when the machine has been gone ([Admission](#admission)).
+
+**Credentials refresh themselves.** A worker signed in through the browser re-mints its access token before each call, and one started as a service holds a serve key in `DAM_TOKEN` instead, which needs no refresh.
+Either way, a worker that cannot authenticate retries like any other failure but says what ends it: signing in again, or a new key.
+
+## Files between the machine and the Agent
+
+A Job's result carries one string of at most 1 MiB beside a handful of images, which is the wrong channel for a file: a tool that returned contents would spend the Agent's context on bytes, and a large file would not fit at all.
+So a file travels on **its own request, in the direction the queue cannot go** — the machine makes it, over the same outbound HTTPS the worker already uses, streamed both ways and never through a Job's arguments or its result.
+
+`dam satellite files --root <dir>` exposes one directory on the machine as a **transfer surface**:
+
+- `download` copies one file **into the Agent's workspace**, and the Agent is told only the path the file landed at, its size and its sha256.
+  It reads the file with its own tools, never through the model's context.
+- `upload`, offered only when the worker was started with `--upload`, copies one file **from the Agent's workspace onto the machine**.
+  It is the same request in reverse, and it never replaces a file that is already there unless the call says to.
+
+Each tool declares which way it moves files, and **that direction is frozen on the Job when the Agent's call is admitted**, from the Snapshot that accepted it.
+A Satellite replaces its tool list every time it connects, so the direction cannot be read again later: a manifest that points the tool the other way must not reinterpret a Job the Agent already made.
+A Job whose tool moved no file, or moves them the other way, authorises nothing.
+
+**A transfer belongs to the claim that is running the Job.** Claiming a Job issues that worker a transfer token, stored on the Job row as a hash, and a file request must present it; the token is spent by the transfer it authorises, in the same statement that checks the Job is still running.
+So a transfer happens once, for one Job, and only while that Job runs: bytes that arrive after it settled land nothing, a second transfer on the same Job is refused, and an upload's stream stops within one re-check interval of the Job ending.
+This is the one thing the serve key does *not* buy: two keys of one owner are indistinguishable to the queue, and the token is what tells the claimant from any other worker of that owner.
+
+**The platform takes the direction and both paths from the Job itself** — the direction frozen at admission and the arguments the Agent's call carried — so a machine cannot ask for a file its Agent did not ask for, and cannot choose where a received file lands.
+A download lands in a directory the platform derives from the Job and its claim, so two transfers never collide even when a Satellite is removed and its sequences start again; the file's name is the last segment of the path the Agent asked for.
+An upload reads the workspace path the Agent asked for, and no other.
+
+The directory is the whole allowlist on the machine, and every path is opened without trusting a component:
+
+- The root is resolved once at startup and re-resolved on every call, so a root replaced afterwards stops being a root.
+  `/` and the home directory are refused as roots.
+- Each directory on the way must be a real one, and the file is opened without following a link, without blocking on a FIFO, and then compared with the path it was opened by — same device and inode, a regular file, one link.
+  A `..`, an absolute path, a link at any point, a hard link out and a special file are all refused.
+- Read-only unless the user passed `--upload`.
+  A write is staged beside its destination under an exclusive name, verified before a byte is written, and published **inside the destination directory's inode**: the process steps into that directory, proves it is the one that was checked, and names both files relatively, so renaming a path on top of it cannot steer the step.
+  It never writes through a link, and it never replaces a file with more than one link.
+- Every chunk is written in full, and the finished file is read back through its own descriptor and compared with what was hashed before anything is published: a short write fails the transfer instead of leaving a truncated file.
+- The surface is POSIX only; on Windows the verb refuses to start rather than promise a confinement it cannot keep.
+
+The Agent's own workspace is treated as untrusted in exactly the same way, because the Agent owns everything inside it.
+The platform's writes are staged beside their destination in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; both directions walk the workspace components, open without following a link, refuse a hard link and a special file, and publish and clean up inside a verified directory's inode rather than by a pathname.
+Cleanup of an abandoned stage is confined the same way, and it removes only an entry that is one of the platform's own staged files, so it cannot be steered into deleting an Agent's file through a link.
+
+**One transfer carries at most 50 MB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
+A file that grows after it was measured, or a response that never ends, is cut off at the limit rather than read whole.
+Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
+Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
 
 ## Trust boundary
 
@@ -180,6 +274,11 @@ The command — or the MCP server — inherits the **worker's own environment**,
 
 This is a narrower promise than matching in both places, and deliberately so: a check the platform cannot perform for every Satellite is a check it should not appear to perform for any.
 What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
+
+A **file transfer crosses in the other direction**, so the platform is the side that writes what it is given.
+It trusts none of it: the machine names no path at all, the direction is the one frozen on the Job when the call was admitted and both paths come from the Job's own arguments, and the workspace end walks every component without following a link.
+The claim's token is spent atomically: a download lands only by spending it, so nothing lands once it is spent or once the Job ends, and an upload's stream stops within one re-check interval of the Job ending — the resolution at which the platform re-proves the Job while bytes leave, not the instant they stop.
+What the machine reads is bounded on the machine, by its root.
 
 Anything an Agent can call is callable by a **prompt-injected** Agent.
 That is the whole exposure surface, and it is why a tool call is bounded before it is stored — arguments are capped, and the concurrency limit is enforced in the same transaction that inserts.
@@ -214,15 +313,19 @@ Its **+ New** catalog lists them under MCP servers, which is where a grant is gi
 A Satellite is an MCP server to the agent, so the catalog has no tab of its own for it; the form that adds a remote MCP server points at `dam satellite` for one that runs on the user's own machine.
 The Connections page and the catalog poll while open, so a machine that has just connected, or just gone offline, shows without a reload.
 
-The CLI is at parity plus `dam satellite mcp` and `dam satellite shell`, whose **log is the interface**.
+For deployment operations, the CLI is at parity plus `dam satellite mcp`, `dam satellite shell` and `dam satellite files`, whose **log is the interface**.
 The parsed Command Patterns print at startup.
 Right after connecting, the worker prints where in the UI to add the machine to an Agent, since until someone does, no Agent can reach it.
 Every request is one line naming the Agent that sent it and what it asked for.
 The api-server resolves the Agent's name when the worker claims the call, and falls back to its id.
 Every outcome is one line too, and each way a call ends reads differently: `DONE` with its exit code, `FAILED` for a command that ran and failed or a tool that returned an error, `BLOCKED` for a call the machine refused without running, which names the pattern it came closest to, and `CANCELLED` and `INTERRUPTED`.
 A parse error names the line it is on, since the text the user just typed is the whole allowlist.
-Shutdown drains on the first interrupt and forces on the second.
+Shutdown stops claiming on the first interrupt — a claim already open hands nothing back that is then started — and lets what is running report.
+After a bounded grace it stops waiting on the platform, so a supervisor's stop timeout gets an exit rather than a kill, and it closes the MCP server it started before it exits, waiting for the child to stop within its own deadline.
+A Satellite found removed by a reconnect drains what is running just as a removed claim does, rather than closing the machine's MCP server on top of it.
+The second interrupt forces.
 There is no reload: neither form reads a file, so changing what a machine offers means restarting it.
+Keeping one worker running unattended is [running a satellite as a service](../notes/satellite-service.md), which holds the systemd unit and the launchd plist.
 
 `dam satellite` marks itself **experimental** in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 

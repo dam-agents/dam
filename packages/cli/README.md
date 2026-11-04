@@ -15,7 +15,11 @@ Requires Node ≥ 20.
 ```sh
 dam --help
 dam --version
+dam update
 ```
+
+`dam update` (also available as `dam upgrade`) updates a global npm installation to the latest stable release.
+It keeps the CLI's configuration and saved sign-ins.
 
 Configuration lives at `$XDG_CONFIG_HOME/dam/config.toml` (default `~/.config/dam/config.toml`).
 State and credentials live separately under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`).

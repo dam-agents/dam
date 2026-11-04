@@ -2,6 +2,8 @@ import type { z } from "zod";
 import type {
   artifactCallAgentApiInputSchema,
   artifactCallAgentApiResultSchema,
+  artifactSendPromptInputSchema,
+  artifactSendPromptResultSchema,
 } from "./schemas.js";
 
 export const ARTIFACT_INTERNAL_LINK_PREFIX = "platform://artifacts/";
@@ -155,8 +157,12 @@ export interface ArtifactLibraryService {
   folderShareUrl(id: string): Promise<string | null>;
   callAgentApi(
     input: ArtifactCallAgentApiInput,
-    caller: { agentIds: readonly string[] | "*" },
+    caller: { agentIds: readonly string[] | "*"; email: string | null },
   ): Promise<ArtifactCallAgentApiResult>;
+  sendPrompt(
+    input: ArtifactSendPromptInput,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<ArtifactSendPromptResult>;
 }
 
 export interface ArtifactTouch {
@@ -181,4 +187,10 @@ export type ArtifactCallAgentApiInput = z.infer<
 >;
 export type ArtifactCallAgentApiResult = z.infer<
   typeof artifactCallAgentApiResultSchema
+>;
+export type ArtifactSendPromptInput = z.infer<
+  typeof artifactSendPromptInputSchema
+>;
+export type ArtifactSendPromptResult = z.infer<
+  typeof artifactSendPromptResultSchema
 >;

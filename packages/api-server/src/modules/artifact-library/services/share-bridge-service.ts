@@ -4,6 +4,7 @@ import type { ArtifactCallAgentApiResult } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import type { ShareSession } from "../domain/share-session.js";
 import {
+  shareCaller,
   viewerBridgeAccess,
   viewerPromptText,
   viewerSessionKey,
@@ -15,7 +16,8 @@ import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
 import type { ArtifactRow } from "../infrastructure/artifact-library-repository.js";
 
 export type ViewerPromptOutcome =
-  "accepted" | "spend-limit" | "agent-unreachable";
+  | { ok: true; sessionId: string | null }
+  | { ok: false; reason: "spend-limit" | "agent-unreachable" };
 
 export interface ViewerPromptDelivery {
   deliver(input: {
@@ -108,7 +110,10 @@ export function createShareBridgeService(deps: {
       } catch {
         return { ok: false, reason: "agent-unreachable" };
       }
-      return deps.agentApi.request(agentId, input);
+      return deps.agentApi.request(agentId, {
+        ...input,
+        caller: shareCaller(artifact, viewer),
+      });
     },
 
     async prompt(artifact, viewer, prompt) {
@@ -126,9 +131,7 @@ export function createShareBridgeService(deps: {
           prompt,
         }),
       });
-      return outcome === "accepted"
-        ? { ok: true }
-        : { ok: false, reason: outcome };
+      return outcome.ok ? { ok: true } : outcome;
     },
 
     refuse(artifact, viewer, kind, denial) {

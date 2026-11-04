@@ -289,6 +289,13 @@ env_e2e_port() {
   cat "$ENV_DIR/e2e-port"
 }
 
+# The commit the e2e lane's install in this Environment is of, and the cluster
+# it went into, beside its port: e2e:install writes them once its gate passed, and cluster:install clears it as
+# it starts there, so an install that failed or was not the lane's is never
+# taken for this checkout's (e2e_install_current).
+ENV_E2E_INSTALLED="$ENV_DIR/e2e-installed"
+export ENV_E2E_INSTALLED
+
 # env_e2e_forward <port>: forwards the lane's backchannel port, and a port of
 # its own to the k3s API env_tunnel found, to this agent's loopback, and writes
 # the suite's kubeconfig for that API port. An SSH link of its own, not the
@@ -299,6 +306,10 @@ ENV_E2E_KUBECONFIG="$ENV_DIR/e2e-kubeconfig.yaml"
 export ENV_E2E_KUBECONFIG
 env_e2e_forward() {
   local port="$1" api
+  # The task found the API when it started, and a task that started before
+  # k3s did, as e2e:loop's first run in a new Environment does, found none
+  # then: it looks again now that the install has started it.
+  [ -n "${ENV_API_PORT:-}" ] || env_tunnel || true
   [ -n "${ENV_API_PORT:-}" ] || { echo "FATAL: no tunnel to the k3s API of Environment $CLUSTER_ENVIRONMENT, so no port to forward it from" >&2; return 1; }
   api="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
   (umask 077 && sed "s#https://127.0.0.1:[0-9]*#https://127.0.0.1:$api#" "$KUBECONFIG" > "$ENV_E2E_KUBECONFIG")

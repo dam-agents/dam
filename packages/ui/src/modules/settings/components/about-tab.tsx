@@ -15,8 +15,9 @@ import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
-import { DOCS_URL, SOURCE_URL } from "../../../constants.js";
+import { SOURCE_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
+import { useDocsUrl } from "../../links/api/queries.js";
 import { AppVersionRow } from "./app-version-row.js";
 
 const ROW = cn(
@@ -27,6 +28,7 @@ const ROW = cn(
 export function AboutTab() {
   const setView = useStore((s) => s.setView);
   const { name } = getBrand();
+  const docsUrl = useDocsUrl("home");
   return (
     <div>
       <PageHeader
@@ -34,14 +36,16 @@ export function AboutTab() {
         description="Find the documentation, source code and terms for this installation."
       />
       <Card className="divide-y divide-border overflow-hidden">
-        <a href={DOCS_URL} {...externalLinkProps} className={ROW}>
-          <AboutRowBody
-            icon={Book}
-            title="Documentation"
-            description="Guides and reference for using agents."
-            external
-          />
-        </a>
+        {docsUrl && (
+          <a href={docsUrl} {...externalLinkProps} className={ROW}>
+            <AboutRowBody
+              icon={Book}
+              title="Documentation"
+              description="Guides and reference for using agents."
+              external
+            />
+          </a>
+        )}
         <a href={SOURCE_URL} {...externalLinkProps} className={ROW}>
           <AboutRowBody
             icon={LogoGithub}

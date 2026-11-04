@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-27
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -76,15 +76,17 @@ Exact field shapes live in the [Connections contract types](../../packages/api-s
 
 An Agent may hold several **provider Connections**, at most one per **provider alias**: the alias names the provider in every qualified model name, so a second Connection behind one alias is refused.
 A session picks its model per turn, and the provider follows from the name.
-Creation grants the one it names, else one provider Connection the owner holds that the harness runs on, the first in the harness's provider order ([agent-lifecycle](agent-lifecycle.md#create)).
+Creation grants the one it names, else one provider Connection the owner holds that the harness runs on: the provider of the owner's [default for new agents](profiles.md#the-default-for-new-agents) when the agent starts on that profile, else the first in the harness's provider order, taken from the providers its [starter kit](starter-kits.md) lists when the owner holds one of them ([agent-lifecycle](agent-lifecycle.md#create)).
 The agent's Providers section lists every provider Connection the owner holds with a grant toggle; picking a profile grants the provider it runs on ([profiles](profiles.md)).
-A provider Connection, and its Template, carry their alias and the harnesses of the catalog that run on it in every listing, so a caller tells providers apart without knowing template ids; the listing also marks one **preferred**: the one a create that names no provider gives the install's default harness first.
+A provider Connection, and its Template, carry their alias and the harnesses of the catalog that run on it in every listing, so a caller tells providers apart without knowing template ids; the listing also marks one **preferred**: the one a create that names no provider grants — the provider of the owner's [default for new agents](profiles.md#the-default-for-new-agents) where they hold one, else the first in the provider order of the harness a plain create boots on (the default's, else the install's), and none while the owner holds no active provider that harness runs on — unless a starter kit lists other providers.
 A provider Connection's env lands in a per-provider layer the Model Router reads; granting or revoking one recycles the [Harness Leases](sessions.md#session-inside-the-machine).
 
 Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
 A model provider's key is proven where the provider offers a check.
+A key that passes names its account where the provider tells that key: an Anthropic OAuth token the email and organization of its profile, an Anthropic or OpenAI API key the organization its provider answers with, an IBM LiteLLM or Bob key the user it belongs to, and a Bedrock key its AWS account.
+The account is extra: a lookup that fails leaves the key passed, with no account.
 A provider that cannot say leaves the key unverified; the CurveBender deployment's key, which the user holds no copy of, leaves it unchecked.
 The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, which Settings › Providers also does each time it opens, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
@@ -126,6 +128,7 @@ A **GitHub App** installation and a **GitHub sign-in** made through a GitHub App
 A Connection that acts as a person rather than as the Agent records **whose account** it acts as, so the product can name that person wherever the Connection is listed.
 The platform asks the provider with the Connection's own credential (Slack, GitHub and the Google services today) when the credential first works: at the OAuth callback, at create for a token, and again on every re-consent or rotation, since a new credential may belong to someone else.
 The answer is a platform-derived fact on the Connection, never a user input.
+A label the provider chooses, such as an account or a repository name, is cleaned of control characters and capped in length before it is stored or shown, so a hostile host cannot spoof the terminal or the page with it.
 A lookup that fails costs nothing but the label.
 Connections made before this existed are labelled by a background sweep that tries each one once per api-server process, so a credential the provider refuses is not retried in a loop.
 
@@ -177,12 +180,12 @@ Naming refuses them and delivery drops them, and the Agents already holding one 
 
 Naming a Connection is only *required* where two of them genuinely collide: the same header on the same host over paths that overlap.
 Connections that scope themselves to different parts of one service — one per Google Workspace service on `www.googleapis.com` — are not rivals, and each keeps being injected on its own paths without any address.
-Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end.
+Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end — unless the Agent requires naming (below), where it carries no credential of the Agent's at all.
 
 An Agent can make naming *required* for every one of its Connections; a new one does unless its create or starter kit says otherwise.
 The Agent's spec says so, and agent settings change it later.
 Its gateway then injects a Connection's credential only into a request that names it, and sends any other request upstream with the credential it already carries, rather than replacing it.
-Contested scopes still fail closed.
+That holds on contested scopes too: a request naming none of two rival Connections goes upstream unchanged, so a public download from a host where the Agent holds two accounts answers as it does to anyone, and nothing is ambiguous, since no credential is chosen.
 It serves an agent whose tools — Docker containers, nested agents, a browser its user drives — call the same hosts with their own credentials or none: their requests name none of the agent's Connections, so the gateway leaves them alone.
 Off serves the opposite: tools that need a credential added to a request naming no Connection.
 Platform-written values already carry an address, so the agent's own clients are unaffected.
@@ -196,7 +199,7 @@ How two GitHub accounts share one host, through gh's own hosts file, is on [gith
 
 Two limits follow.
 First, an address exists only where the platform writes one or the Agent can send one.
-A Connection reached with no credential of the Agent's own — a Custom Header credential that sets no env — has no address the Agent can use, and two Connections whose placeholders would land in one env — two accounts of one Google service, both writing the same variable — can deliver only one of them, so in either case two such Connections that collide can never both work: every request where their paths overlap is refused.
+A Connection reached with no credential of the Agent's own — a Custom Header credential that sets no env — has no address the Agent can use, and two Connections whose placeholders would land in one env — two accounts of one Google service, both writing the same variable — can deliver only one of them, so in either case two such Connections that collide can never both work: every request where their paths overlap is refused, or, on an Agent requiring naming, sent with neither credential.
 GitHub is the collision the platform resolves, through gh's hosts file.
 The Connections context therefore refuses to grant an Agent a Connection that collides with one it holds unless both are addressed — when a grant is added and when an Agent is created with its first grants — and the connection pickers say which granted Connection is in the way.
 An Agent that already holds such a pair can still change its other grants, and is shown a warning naming the pair until one is revoked.
@@ -303,6 +306,7 @@ A second LiteLLM proxy, fronting open models hosted on RITS rather than Claude a
 An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
 This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender (own key)` so it cannot be confused with the deployment's own.
+Where the deployment offers CurveBender, Settings / Providers lists the own-key row only to a user who already connected their own key.
 
 Work runs on DeepSeek V4.1 Flash, which the Connection's work slots pin; Claude Code's non-reasoning permission classifier is the router's call, from the session provider's preferred classifier ([harness configuration](harness-config.md#the-model-router)), since a routed provider's env never reaches the harness.
 The endpoint's model list names models but does not describe them, so the Connection supplies the deployment's window to the catalog, which Claude Code's per-model map and Pi read: 1,048,576 tokens, the `max_model_len` its own RITS router reports, which a live 270k-token prompt confirmed.

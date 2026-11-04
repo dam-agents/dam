@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { compareVersions, type CompatVerdict } from "../domain/compat.js";
-import { CLI_PACKAGE } from "../infrastructure/npm-latest-probe.js";
 import type { NpmLatestProbe } from "../infrastructure/npm-latest-probe.js";
+import { upgradeAdvice } from "../infrastructure/npm-installer.js";
 import type { CompatService } from "../services/compat-service.js";
 import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
@@ -98,12 +98,12 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
         );
       } else if (verdict?.kind === "behind-current") {
         process.stderr.write(
-          `warning: CLI ${local} is behind the server's recommended CLI ${verdict.serverRecommendedClient}; consider upgrading\n`,
+          `warning: CLI ${local} is behind the server's recommended CLI ${verdict.serverRecommendedClient}; ${upgradeAdvice(verdict.serverRecommendedClient)}\n`,
         );
       }
       if (latest.ok && behindLatest) {
         process.stderr.write(
-          `warning: CLI ${local} is behind ${latest.value}, the latest on npm; update with \`npm install -g ${CLI_PACKAGE}@latest\`\n`,
+          `warning: CLI ${local} is behind ${latest.value}, the latest on npm; run \`dam update\`\n`,
         );
       }
     });

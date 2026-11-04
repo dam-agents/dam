@@ -97,6 +97,7 @@ interface World {
   agentAwake: boolean;
   wakeFails: boolean;
   appRequests: { agentId: string; method: string; path: string }[];
+  appCallers: unknown[];
   delivered: Parameters<ViewerPromptDelivery["deliver"]>[0][];
   deliverOutcome: "accepted" | "spend-limit" | "agent-unreachable";
 }
@@ -109,6 +110,7 @@ function world(overrides: Partial<World> = {}) {
     agentAwake: false,
     wakeFails: false,
     appRequests: [],
+    appCallers: [],
     delivered: [],
     deliverOutcome: "accepted",
     ...overrides,
@@ -147,6 +149,7 @@ function world(overrides: Partial<World> = {}) {
     agentApi: {
       request: (agentId, input) => {
         w.appRequests.push({ agentId, method: input.method, path: input.path });
+        w.appCallers.push(input.caller);
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -158,7 +161,11 @@ function world(overrides: Partial<World> = {}) {
     prompts: {
       deliver: (input) => {
         w.delivered.push(input);
-        return Promise.resolve(w.deliverOutcome);
+        return Promise.resolve(
+          w.deliverOutcome === "accepted"
+            ? { ok: true, sessionId: "s-1" }
+            : { ok: false, reason: w.deliverOutcome },
+        );
       },
     },
   });
@@ -253,6 +260,23 @@ describe("a viewer's request on a shared interactive page", () => {
       { agentId: "agent-1", method: "GET", path: "/state" },
     ]);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  /**
+   * TEST_SCENARIO: A shared survey keeps each teammate's answers apart. The
+   * Agent's app learns which viewer asks from the share session, never from
+   * the page, so a viewer cannot read another's answers by claiming their
+   * email.
+   */
+  it("tells the agent's app which viewer is asking", async () => {
+    const { w, app } = world();
+    await call(app, "/a/slug-a/request", {
+      ...getState,
+      caller: { role: "owner", email: "bob@example.com", sub: "bob-sub" },
+    });
+    expect(w.appCallers).toEqual([
+      { role: "viewer", email: "alice@example.com", sub: "alice-sub" },
+    ]);
   });
 
   it("passes every method through", async () => {
@@ -618,7 +642,18 @@ describe("the share page relay", () => {
       slug: "slug-a",
       version: 1,
       downloadName: "dashboard.html",
-      ...(relay ? { relayToken: "relay-token-1234567890" } : {}),
+      ...(relay
+        ? {
+            relay: {
+              token: "relay-token-1234567890",
+              caller: {
+                role: "viewer" as const,
+                email: "alice@example.com",
+                sub: "alice-sub",
+              },
+            },
+          }
+        : {}),
     });
 
   it("relays only for a page that has one, to its own routes", () => {
@@ -730,16 +765,20 @@ describe("delivering a viewer's prompt", () => {
   /**
    * TEST_SCENARIO: The first prompt opens the viewer's Session, named for the
    * owner to read and keyed so it can be found again. The turn runs as an
-   * unattended channel turn, and the viewer gets their answer as soon as the
-   * Agent is awake, not when the turn ends.
+   * unattended channel turn, and the answer, with the Session's id, comes as
+   * soon as the Agent names the Session, not when the turn ends.
    */
   it("opens a named session, unattended, and answers before the turn ends", async () => {
     const { acp, sent, finishTurns } = fakeAcp([]);
     const { d, open } = delivery(acp);
-    await expect(d.deliver(turn)).resolves.toBe("accepted");
+    await expect(d.deliver(turn)).resolves.toEqual({
+      ok: true,
+      sessionId: "s-1",
+    });
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]!.opts).toMatchObject({
       platformMeta: {
+        type: "artifact",
         threadTs: "artifact:a1:alice-sub",
         customTitle: "alice@example.com · Team dashboard",
       },
@@ -757,11 +796,28 @@ describe("delivering a viewer's prompt", () => {
   it("continues the viewer's session, even after a quick double click", async () => {
     const { acp, sent, finishTurns } = fakeAcp([]);
     const { d } = delivery(acp);
-    await d.deliver(turn);
-    await d.deliver({ ...turn, prompt: "second" });
+    const first = d.deliver(turn);
+    const second = d.deliver({ ...turn, prompt: "second" });
+    await expect(first).resolves.toEqual({ ok: true, sessionId: "s-1" });
+    await expect(second).resolves.toEqual({ ok: true, sessionId: "s-1" });
     await vi.waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1]!.opts).toMatchObject({ resumeSessionId: "s-1" });
     finishTurns();
+  });
+
+  /**
+   * TEST_SCENARIO: The Agent is awake but does not name a Session in time.
+   * The prompt still counts as sent, without a Session to open, so the
+   * person is not left waiting on the page.
+   */
+  it("answers without a session when the agent does not name one in time", async () => {
+    vi.useFakeTimers();
+    const { acp } = fakeAcp([]);
+    acp.sendPrompt = () => new Promise<string>(() => {});
+    const { d } = delivery(acp);
+    const answer = d.deliver(turn);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(answer).resolves.toEqual({ ok: true, sessionId: null });
   });
 
   it("starts fresh when the stored session cannot be loaded", async () => {
@@ -788,7 +844,10 @@ describe("delivering a viewer's prompt", () => {
   it("neither wakes nor prompts an agent at a spend limit", async () => {
     const { acp, sent } = fakeAcp([]);
     const { d, woke } = delivery(acp, { hold: "limit" });
-    await expect(d.deliver(turn)).resolves.toBe("spend-limit");
+    await expect(d.deliver(turn)).resolves.toEqual({
+      ok: false,
+      reason: "spend-limit",
+    });
     expect(woke()).toBe(0);
     expect(sent).toEqual([]);
   });
@@ -796,7 +855,10 @@ describe("delivering a viewer's prompt", () => {
   it("reports an agent that does not wake", async () => {
     const { acp, sent } = fakeAcp([]);
     const { d } = delivery(acp, { wakeFails: true });
-    await expect(d.deliver(turn)).resolves.toBe("agent-unreachable");
+    await expect(d.deliver(turn)).resolves.toEqual({
+      ok: false,
+      reason: "agent-unreachable",
+    });
     expect(sent).toEqual([]);
   });
 });

@@ -1,4 +1,7 @@
-import { artifactApiRequestInputSchema } from "agent-runtime-api";
+import {
+  artifactApiRequestInputSchema,
+  type ArtifactApiCaller,
+} from "agent-runtime-api";
 import { z } from "zod";
 
 import type { ArtifactCallAgentApiResult } from "./types.js";
@@ -9,7 +12,10 @@ export const ARTIFACT_PROMPT_MAX_LENGTH = 16_384;
 export const artifactPromptSchema = z.object({
   type: z.literal(ARTIFACT_PROMPT_TYPE),
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+  newSession: z.boolean().optional(),
 });
+
+export type ArtifactPrompt = z.infer<typeof artifactPromptSchema>;
 
 export const ARTIFACT_REQUEST_TYPE = "artifact.request";
 export const ARTIFACT_RESPONSE_TYPE = "artifact.response";
@@ -28,3 +34,24 @@ export type ArtifactResponseMessage = {
   type: typeof ARTIFACT_RESPONSE_TYPE;
   id: string;
 } & ArtifactCallAgentApiResult;
+
+export const ARTIFACT_WHOAMI_TYPE = "artifact.whoami";
+
+export const artifactWhoamiMessageSchema = z.object({
+  type: z.literal(ARTIFACT_WHOAMI_TYPE),
+  id: z.string().min(1).max(64),
+});
+
+export type ArtifactWhoamiResponseMessage = {
+  type: typeof ARTIFACT_RESPONSE_TYPE;
+  id: string;
+  ok: true;
+} & ArtifactApiCaller;
+
+export const ARTIFACT_SIZE_TYPE = "artifact.size";
+export const ARTIFACT_PRINT_MAX_WIDTH = 960;
+
+export const artifactSizeMessageSchema = z.object({
+  type: z.literal(ARTIFACT_SIZE_TYPE),
+  height: z.number().positive().max(1_000_000),
+});

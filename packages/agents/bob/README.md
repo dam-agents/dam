@@ -7,13 +7,13 @@ The harness ships in the default image every harness Template boots, built by `/
 
 ## Stack
 
-| Component          | Source                                                                                | Purpose                                                                                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Harness            | `bobshell` 2.0.6 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
-| Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)                                     | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform and agent instructions rules links and the terminal-session pin hook; runs before either surface starts |
-| Session ref        | [`bob-mcp-file.mjs`](rootfs/usr/local/lib/bob-mcp-file.mjs)                           | Preloaded into `bob acp` only: hides the file's platform MCP entry from Bob, so the per-session entry carrying the session ref is the one Bob uses (see [Session ref](#session-ref))                                 |
-| MCP startup        | [`bob-acp-patch.mjs`](rootfs/usr/local/lib/bob-acp-patch.mjs)                         | Preloaded into `bob acp` only: starts the servers of `mcp.json` in the background, so one that never gets ready cannot hold every chat session back (see [MCP startup](#mcp-startup))                                |
-| Storage            | `/home/agent`, on the machine's disk                                                  | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives restarts and hibernation                                                                                    |
+| Component          | Source                                                        | Purpose                                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Harness            | `@ibm/bob` 2.0.8 (npm, as a mise `npm:` tool)                 | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
+| Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)             | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform and agent instructions rules links and the terminal-session pin hook; runs before either surface starts |
+| Session ref        | [`bob-mcp-file.mjs`](rootfs/usr/local/lib/bob-mcp-file.mjs)   | Preloaded into `bob acp` only: hides the file's platform MCP entry from Bob, so the per-session entry carrying the session ref is the one Bob uses (see [Session ref](#session-ref))                                 |
+| MCP startup        | [`bob-acp-patch.mjs`](rootfs/usr/local/lib/bob-acp-patch.mjs) | Preloaded into `bob acp` only: starts the servers of `mcp.json` in the background, so one that never gets ready cannot hold every chat session back (see [MCP startup](#mcp-startup))                                |
+| Storage            | `/home/agent`, on the machine's disk                          | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives restarts and hibernation                                                                                    |
 
 ## ACP
 
@@ -61,13 +61,13 @@ One visible side effect: Bob's own `read_file` tool, in a chat session, shows `m
 The preload takes its own `--import` out of `NODE_OPTIONS` only once the process reads the file, so a parent that merely starts the real Bob still hands it down, and it writes one line to stderr the first time it reads the file and finds nothing to hide, since the only other symptom would be anonymous platform calls.
 The Bob preloads share [`bob-preload-lib.mjs`](rootfs/usr/local/lib/bob-preload-lib.mjs): the path an fs call names, the wrapping of renames and copies, and the `NODE_OPTIONS` cleanup.
 
-The preload is written against Bob 2.0.6, which reads and writes the file through `node:fs` by that path.
+The preload is written against Bob 2.0.8, which reads and writes the file through `node:fs` by that path.
 `mise run //packages/agents:check:bob-mcp-file` fails when the image pins another Bob than the preload names, so a bump runs `mise run //packages/agents:test:bob-session-ref` with `BOB_CLI` naming the new Bob: its control scenario fails when Bob starts preferring a session's own entry, which is the moment to delete the preload, its line in `harness-chat`, and these tests; its other scenarios fail when Bob stops reading the file the way the preload expects.
 `mise run //packages/agents:test:bob-mcp-file` checks the preload itself with a fake Bob and runs in CI.
 
 ### MCP startup
 
-`bob acp` builds each session's harness as a non-interactive one, and Bob 2.0.6 ties the MCP startup mode to that flag.
+`bob acp` builds each session's harness as a non-interactive one, and Bob 2.0.8 ties the MCP startup mode to that flag.
 Left alone, a `session/new`, `session/load` or `session/resume` answers only after every server of `mcp.json` finished its first connect.
 A stdio server gets no timeout of its own: the per-server `timeout` reaches HTTP servers only, so one that never answers `initialize` holds each session for the MCP SDK's 60 s request timeout.
 Every new chat then waits a minute for its first answer, and a reopen, which also spawns Bob, ran past agent-runtime's load budget before Bob's manifest raised it, so a single broken entry, such as an `npx` server an agent added for itself, stopped every chat on the agent.

@@ -35,7 +35,6 @@ import type { PlatformUndeliveredPrompt } from "api-server-api";
 export type Frame = Record<string, unknown> & { method?: string; id?: unknown };
 
 export const IDLE_REAP_DELAY_MS = 3_000;
-export const QUEUE_PARK_MS = 5_000;
 
 export interface Harness {
   received(method?: string): Frame[];
@@ -231,7 +230,6 @@ export function createWorld(
     idleReapDelayMs: IDLE_REAP_DELAY_MS,
     agentRequests: noopAgentRequests,
     onArtifactTouch: () => {},
-    queueParkMs: QUEUE_PARK_MS,
     undeliveredPrompts: createInMemoryUndeliveredStore(),
     continuedFrom: createContinuedFromStore(memoryDocumentBackend(), () =>
       new Date().toISOString(),

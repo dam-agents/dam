@@ -6,12 +6,14 @@ import {
   operateAgentsProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
+import { editorEmailOf } from "../agents/editor-email.js";
 import {
   artifactCallAgentApiInputSchema,
   artifactContentInputSchema,
   artifactCreateInputSchema,
   artifactIdInputSchema,
   artifactListInputSchema,
+  artifactSendPromptInputSchema,
   artifactSharingInputSchema,
   artifactTouchListInputSchema,
   artifactUpdateInputSchema,
@@ -117,6 +119,15 @@ export const artifactLibraryRouter = t.router({
   callAgentApi: operateAgentsProcedure
     .input(artifactCallAgentApiInputSchema)
     .mutation(({ ctx, input }) =>
-      ctx.artifactLibrary.callAgentApi(input, { agentIds: ctx.user.agentIds }),
+      ctx.artifactLibrary.callAgentApi(input, {
+        agentIds: ctx.user.agentIds,
+        email: editorEmailOf(ctx.user),
+      }),
+    ),
+
+  sendPrompt: operateAgentsProcedure
+    .input(artifactSendPromptInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.artifactLibrary.sendPrompt(input, { agentIds: ctx.user.agentIds }),
     ),
 });

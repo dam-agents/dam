@@ -42,6 +42,7 @@ function runningRow(id: string): InvocationRow {
     exitCode: null,
     output: null,
     outputExpiresAt: null,
+    startedAt: null,
     harnessConfig: null,
     driverSessionId: null,
   };
@@ -79,7 +80,9 @@ function makeSweep(
         deleted.push(row.id);
       },
     },
+    reportedReap: { due: async () => true },
     readTargetRestart,
+    readStartWait: async () => null,
     hasAgent: opts.hasAgent ?? (async () => true),
     readHarnessConfigSupport: async () => null,
     runsScripts: async () => true,

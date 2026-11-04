@@ -98,7 +98,7 @@ drivers:
             - value: high
               name: "High"
             - value: xhigh
-              name: "Extra High"
+              name: "Extra high"
         # The router writes it over the reasoning effort of each call on a
         # subagent thread, and only where Codex sent one.
         - id: subagentEffort
@@ -116,7 +116,7 @@ drivers:
             - value: high
               name: "High"
             - value: xhigh
-              name: "Extra High"
+              name: "Extra high"
     modelDiscovery:
       urlEnv:
         - OPENAI_BASE_URL

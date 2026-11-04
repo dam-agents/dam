@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-25
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -73,10 +73,12 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's mounts, storage size and the trusted egress preset — or, for a kit that declares any of them, the kit's — and shares its owner's [memory pool](vm-memory.md) instead of holding a size of its own.
-A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-machine)): it boots the default Template on the install's default harness and grants one provider Connection of the caller's that the harness runs on: the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.
+A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-machine)): it boots the default Template on the harness of the owner's [default for new agents](profiles.md#the-default-for-new-agents), else the install's default harness, and grants one provider Connection of the caller's that the harness runs on: the default's provider when the caller holds an active one the harness runs on, else the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.
+A create that grants a provider it was not named answers which one and what chose it — the default, a starter kit's or Template's providers list, or the harness's provider order — and the CLI prints it; one that grants none, or an Environment, answers nothing.
 One, not every fitting one, so the [default](harness-config.md#session-settings) its runtime saves at its first `hello` sits on that provider and is the model its image presets, and no call goes to a provider the owner never chose for this agent; picking a profile that runs on another provider grants that provider on its Providers section.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 A create that names a provider gets that one alone.
+A create from a [starter kit](starter-kits.md) that lists its providers gets one of them first, when the caller holds one, and the harness's order otherwise.
 Only a template create gets default providers; a bare image and a [sub-agent](invocations.md) hold only what they name.
 A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none, when it is the owner's first provider that agent's harness runs on.
 An agent that holds none while an older such provider exists was detached on purpose, and stays so.
@@ -165,10 +167,12 @@ The classification distinguishes transient causes (progressing, worth waiting or
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
 The primitive also records wake begin/success/timeout with duration and the condition snapshot, so wake latency and failures are diagnosable from the log store.
 Callers can additionally register for a cold-start signal, fired when a call enters (or joins) a wake wait, to tell their user a wake is underway.
+A call that joins one already running hears it only once that call found the Agent not ready, never while it only refreshes a running Agent's activity: a page loading many assets at once would otherwise read a running Agent as starting.
 The schedule-driven poke is the exception: it doesn't wait, so there is no bounded wait to fail.
 
 The UI holds a start to the same budget: past it, it offers Restart and the controller's not-ready message, timed from when it first saw the Agent starting.
 An Agent boots in seconds, so its chat stays usable during the start: the composer takes a prompt and holds it until the Agent is ready, and the sessions list shows a placeholder.
+A chat whose channel is not live stays readable in the same way: its labels follow the connection state, it offers Retry in each blocked state that is not loading, keeps the draft, and disables Stop until the channel returns; a terminal session, on its own viewer connection, is left alone.
 
 ### Schedule fire
 

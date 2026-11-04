@@ -12,6 +12,9 @@
     "app_port": 4444,
     "traefik_port": true,
     "apply_chart_crds": true,
+    "kvm": true,
+    "host_dirs": ["/var/lib/platform-vm-images", "/var/lib/platform-vm-runner-releases"],
+    "environment_bridge": { "image": "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0", "port": 4400 },
     "channels": {
       "main": { "tag": "^0\\.0\\.0-main\\.[0-9]+$", "order": "numeric-suffix" },
       "release": { "tag": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "order": "semver" }
@@ -40,7 +43,8 @@
                  "httproutes.gateway.networking.k8s.io", "referencegrants.gateway.networking.k8s.io"] },
       { "kind": "helm", "name": "istio-base", "repo": "https://istio-release.storage.googleapis.com/charts", "chart": "base",
         "version": "{{config:istio_version}}", "namespace": "istio-system", "set": { "defaultRevision": "" } },
-      { "kind": "manifest", "name": "no-mesh-marker", "file": "no-mesh-marker.yaml" }
+      { "kind": "manifest", "name": "no-mesh-marker", "file": "no-mesh-marker.yaml" },
+      { "kind": "manifest", "name": "kvm-device-plugin", "file": "kvm-device-plugin.yaml", "unless": "ns/kvm-device-plugin" }
     ],
     "values": {
       "domain": "localhost",
@@ -60,10 +64,15 @@
       },
       "controller": { "gatewayUpstreamExtraCAs": "{{gateway_ca}}" },
       "virtualization": {
-        "runner": { "resources": { "limits": { "memory": "4Gi" } } },
+        "runner": { "devices": { "squat.ai/kvm": "1" }, "resources": { "limits": { "memory": "4Gi" } } },
         "imageCache": { "hostPath": "/var/lib/platform-vm-images" } }
     },
     "overlays": [
+      { "when": "@environment", "tags": "^(0\\.0\\.0-main\\.(9[3-9][0-9]{2}|[1-9][0-9]{4,})|0\\.2\\.(2[4-9]|[3-9][0-9])(-rc[0-9]+)?|0\\.([3-9]|[1-9][0-9]+)\\.[0-9]+(-rc[0-9]+)?|[1-9][0-9]*\\.[0-9]+\\.[0-9]+(-rc[0-9]+)?)$",
+        "values": {
+          "scheme": "{{env_scheme}}",
+          "urls": { "ui": "{{env_url:app}}", "keycloak": "{{env_url:keycloak}}", "share": "{{env_url:share}}", "content": "{{env_url:content}}" },
+          "backchannel": { "enabled": true, "scheme": "http", "domain": "localhost", "port": "{{app_port}}" } } },
       { "when": "mock_image", "values": { "harnessTemplates": { "mock": {
         "enabled": true, "harness": "mock", "description": "Scripted mock agent (QA)",
         "image": { "repository": "{{config_repo:mock_image}}", "tag": "{{config_tag:mock_image}}" },
@@ -83,6 +92,7 @@
     { "host": "get.helm.sh", "method": "GET", "why": "the helm binary" },
     { "host": "mirror.gcr.io", "method": "GET", "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror; layers come from the same host)" },
     { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
+    { "host": "ghcr.io", "method": "GET", "why": "the KVM device plugin's image (squat's generic-device-plugin), which hands /dev/kvm to the VM runner" },
     { "host": "api.github.com", "method": "GET", "path": "/user", "why": "sandbox: DAM checks a saved GitHub token, or a GitHub sign-in, and shows the test user's login as the connection's account" },
     { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/issues", "why": "sandbox: an agent files the issue a test asks for" },
     { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/issues/*", "why": "sandbox: the agent or the test closes it" },
@@ -109,12 +119,33 @@
     { "host": "github.com", "method": "POST", "path": "/login/oauth/access_token", "why": "sandbox: DAM's api-server exchanges the code for the user's token" },
     { "host": "github.githubassets.com", "method": "GET", "path": "/assets/*", "why": "sandbox: the sign-in pages' scripts and styles (the authorize button is enabled by a script)" },
     { "host": "slack.com", "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through" },
-    { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" }
+    { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" },
+    { "host": "litellm.cb.ete.res.ibm.com", "why": "operator credential: the nested agent's model calls with the operator's CurveBender key" }
   ],
   "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },
   "expected_requests": [
     { "method": "GET", "path": "/api/slack/install/status", "status": 404, "why": "the QA install sets no Slack app, so Settings asks and hides the Slack workspaces tab" }
   ],
+  "design": {
+    "retired_words": [
+      { "word": "Experiment", "say": "Invocations written from a Driver script; the Driver SDK" },
+      { "word": "Experiments", "say": "Invocations written from a Driver script; the Driver SDK" },
+      { "word": "your sandbox", "say": "your agent" },
+      { "word": "your sandboxes", "say": "your agents" },
+      { "word": "Delete sandbox", "say": "Delete agent" },
+      { "word": "Stop sandbox", "say": "Stop agent" },
+      { "word": "Update sandbox", "say": "Update agent" },
+      { "word": "Update sandboxes", "say": "Update agents" },
+      { "word": "Configure sandbox", "say": "Configure agent" },
+      { "word": "Sandbox actions", "say": "Agent actions" },
+      { "word": "temporary sandbox", "say": "temporary agent" }
+    ],
+    "tokens": { "prefixes": ["--color-", "--text-", "--radius-"], "spacing_step": "--spacing" }
+  },
+  "environment": {
+    "endpoints": [ { "name": "app", "port": 4400 }, { "name": "keycloak", "port": 4400 }, { "name": "share", "port": 4400 }, { "name": "content", "port": 4400 } ],
+    "account": "owner"
+  },
   "requires": { "root": true, "commands": ["k3s", "curl", "jq", "node"], "memory_gi": 12 },
   "sandbox": {
     "accounts": [
@@ -128,6 +159,11 @@
         "guide": "sandbox/slack-second.md", "credentials": ["HUMAN_TOKEN"] }
     ]
   },
+  "operator_credentials": [
+    { "name": "LITELLM_CURVE_BENDER_TOKEN",
+      "what": "a real CurveBender (LiteLLM) API key for litellm.cb.ete.res.ibm.com, so a nested agent can use a real model; optional — without it a criterion that needs one is blocked",
+      "required": false }
+  ],
   "config": {
     "chart_ref": { "default": "oci://quay.io/dam-agents/charts/platform", "about": "OCI chart the builds come from" },
     "mock_image": { "default": "quay.io/dam-agents/mock:cb334b15595863567e8a4d61474886a1cbf10aef", "about": "image of the scripted mock harness template, so nested agents answer without a model; empty = none" },

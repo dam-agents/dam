@@ -49,5 +49,10 @@ When no branches remain open, or the user asks:
    No intro line.
 2. Session about a GitHub issue → ask whether to post the log as a comment.
    Post with `gh issue comment` only after the user approves the exact text, then `gh issue edit --add-label agent/grilled`.
-   Never edit the issue body; if it is now out of date, say so under "Open questions".
-3. Otherwise offer to file an issue with the `file-issue` skill, passing the log as input, and add the `agent/grilled` label to it.
+   Never edit the issue body beyond step 3; if it is now out of date, say so under "Open questions".
+3. **Issue with `needs-ac`** → write its acceptance criteria from the decisions (see [work-process.md](../../../docs/guidelines/work-process.md)).
+   Draft `### AC-<k>` blocks per [acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md): observable outcomes a user can see, never the implementation the grilling chose.
+   After the user approves the exact text, replace the `TBD (after grilling)` of **Done when** with them (`gh issue view --json body`, then `gh issue edit --body-file`, changing nothing else), and `gh issue edit --remove-label needs-ac`.
+   An issue whose type keeps a plain **Done when** gets that end state in place of the `TBD`, and the label removed the same way.
+4. No issue → offer to file one with the `file-issue` skill, passing the log as input, and add the `agent/grilled` label to it.
+   The criteria come out of this grilling, not the original request: draft them with the user as in step 3, so the issue is filed with them and without `needs-ac`.

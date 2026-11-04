@@ -435,6 +435,24 @@ describe("the model catalog", () => {
     expect(ready.catalog.providers()[0]?.status).toBe("listed");
   });
 
+  /** TEST_SCENARIO: A granted provider is shown unavailable with no models
+   * before its first listing, so a first listing that fails changes nothing a
+   * reader sees, and no listener is told: a listener recycles every idle
+   * harness, and a recycle for nothing loses what the process held. A listing
+   * that later lands is a change, and is told. */
+  it("tells no listener when a failed first listing leaves the providers as they were", async () => {
+    const listing: Listing = { "https://ibm.example": "down" };
+    const { catalog } = catalogWith(listing, [ibmLayer]);
+    const changed = vi.fn();
+    catalog.onChange(changed);
+    await catalog.refresh();
+    expect(catalog.providers()[0]?.status).toBe("unavailable");
+    expect(changed).not.toHaveBeenCalled();
+    listing["https://ibm.example"] = { ids: ["gpt-5.5"] };
+    await catalog.refresh();
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
   /** TEST_SCENARIO: A grant restarts the agent's egress gateway, so the
    * listings right after it fail. Failures retry on a doubling delay, and a
    * refresh from an env change starts the delay over, so a provider lists

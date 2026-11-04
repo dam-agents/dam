@@ -170,6 +170,30 @@ describe("dam version (integration)", () => {
     );
   });
 
+  // TEST_SCENARIO: the server runs a release candidate and recommends it while npm's latest is still the older stable, so `dam update` can never reach the recommendation; the warning has to name the exact version to install instead.
+  it("BehindCurrent on a prerelease recommendation: names the exact npm install", async () => {
+    const [major, minor, patch] = LOCAL.replace(/-.*$/, "")
+      .split(".")
+      .map((n) => Number(n));
+    const recommended = `${major}.${minor}.${patch! + 1}-rc10`;
+    fixture.setResponse({
+      body: {
+        serverVersion: recommended,
+        minClientVersion: "0.2.0",
+        recommendedClientVersion: recommended,
+      },
+    });
+    fixture.setNpmLatest(LOCAL);
+    await configureServer(fixture.url);
+
+    const r = await runDam(["version"], env());
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toContain(
+      `warning: CLI ${LOCAL} is behind the server's recommended CLI ${recommended}; run \`npm install -g @dam-agents/cli@${recommended}\``,
+    );
+    expect(r.stderr).not.toContain("; run `dam update`");
+  });
+
   // TEST_SCENARIO: a dev server built from main reports `<version>-dev-<sha>` and recommends no CLI, so only npm can tell that the CLI is old. An agent reads the verdict from `--json` and must see that it is not up to date.
   it("dev server, npm has a newer CLI: warns, and --json says the CLI is not up to date", async () => {
     fixture.setResponse({
@@ -185,7 +209,7 @@ describe("dam version (integration)", () => {
     expect(text.stderr).toContain(
       `warning: CLI ${LOCAL} is behind 99.0.0, the latest on npm`,
     );
-    expect(text.stderr).toContain("npm install -g @dam-agents/cli@latest");
+    expect(text.stderr).toContain("dam update");
 
     const json = await runDam(["version", "--json"], env());
     expect(json.exitCode).toBe(0);

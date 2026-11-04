@@ -53,6 +53,8 @@ With several, the active one is what the platform user set as the default, and e
 
 - A repository can be visible to one of your accounts and not to another.
   Before concluding that it does not exist or that access is missing, run `gh auth status` and retry as each of the other accounts.
+- A request that names no account — `curl`, `helm`, a tool in a container — reaches GitHub with no credential when this agent requires addresses, so a public download works and a private one answers as it would to anyone signed out.
+  Name an account for anything private.
 - A 403 whose body starts with "More than one connection injects the same credential header" is the gateway, not GitHub: the request named no account.
   Send it through `gh`, or add the placeholder header shown above.
   Never try to obtain a real token to get past it.

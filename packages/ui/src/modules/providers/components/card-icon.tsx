@@ -3,8 +3,10 @@ import type { ComponentType, SVGProps } from "react";
 
 import {
   AnthropicIcon,
+  BedrockColorIcon,
   BobFilledIcon,
   BobIcon,
+  CurveBenderColorIcon,
   CurveBenderIcon,
   LiteLLMIcon,
   OpenAIIcon,
@@ -13,76 +15,96 @@ import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
 
+type Icon = ComponentType<SVGProps<SVGSVGElement>>;
+
+function BobHead({ className }: { className?: string }) {
+  return <img src="/icons/bob-head.png" alt="" className={className} />;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a tile shows the vendor's own full-colour mark,
+ * the same in both themes; `Icon` is the one-colour glyph for the untiled
+ * small size.
+ */
 const STYLES: Record<
   ProviderPresetType,
   {
-    Icon: ComponentType<SVGProps<SVGSVGElement>>;
-    bg: string;
+    Icon: Icon;
+    Mark: ComponentType<{ className?: string }>;
+    tile: string;
+    mark: string;
   }
 > = {
   anthropic: {
     Icon: AnthropicIcon,
-    bg: "bg-icon-clay",
+    Mark: AnthropicIcon,
+    tile: "bg-white text-black",
+    mark: "size-4/5",
   },
-  openai: { Icon: OpenAIIcon, bg: "bg-icon-green" },
+  openai: {
+    Icon: OpenAIIcon,
+    Mark: OpenAIIcon,
+    tile: "bg-white text-black",
+    mark: "size-4/5",
+  },
   "ibm-litellm": {
     Icon: LiteLLMIcon,
-    bg: "bg-icon-litellm",
+    Mark: LiteLLMIcon,
+    tile: "bg-logo-litellm text-white",
+    mark: "size-full",
   },
   "curve-bender": {
     Icon: CurveBenderIcon,
-    bg: "bg-icon-cb",
+    Mark: CurveBenderColorIcon,
+    tile: "bg-white",
+    mark: "size-4/5",
   },
-  bob: { Icon: BobIcon, bg: "bg-icon-violet" },
-  bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
+  bob: {
+    Icon: BobIcon,
+    Mark: BobHead,
+    tile: "bg-white",
+    mark: "size-4/5",
+  },
+  bedrock: { Icon: Cloud, Mark: BedrockColorIcon, tile: "", mark: "size-full" },
 };
 
-type CardIconSize = "lg" | "md" | "sm" | "tile-sm" | "tile-xs";
+type CardIconSize = "lg" | "md" | "sm" | "tile-md" | "tile-sm" | "tile-xs";
 
 const TILE_SIZE_CLASS: Record<CardIconSize, string> = {
   lg: "size-[68px] rounded-lg",
   md: "size-[38px] rounded-lg",
   sm: "size-5",
+  "tile-md": "size-8 rounded-md",
   "tile-sm": "size-5 rounded-[5px]",
   "tile-xs": "size-3.5 rounded-[3px]",
 };
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: one preset can offer two providers a user tells
- * apart only by their rows, so a template may take its own shade of the
- * preset's tile. The glyph stays white on the tile whichever theme is up.
- */
-const TEMPLATE_BG: Readonly<Record<string, string>> = {
-  "curve-bender-deployment": "bg-icon-cb-deep",
-};
-
 export function CardIcon({
   provider,
-  templateId,
   size = "md",
 }: {
   provider: ProviderPresetType;
-  templateId?: string;
   size?: CardIconSize;
 }) {
-  const { Icon: OutlineIcon, bg } = STYLES[provider];
-  const tileBg = (templateId && TEMPLATE_BG[templateId]) || bg;
-  const Icon =
-    size === "sm" && provider === "bob" ? BobFilledIcon : OutlineIcon;
+  const { Icon, Mark, tile, mark } = STYLES[provider];
+  if (size === "sm") {
+    const Glyph = provider === "bob" ? BobFilledIcon : Icon;
+    return (
+      <div aria-hidden="true" className={cn("shrink-0", TILE_SIZE_CLASS.sm)}>
+        <Glyph className="size-full" />
+      </div>
+    );
+  }
   return (
     <div
       aria-hidden="true"
       className={cn(
-        "shrink-0 flex items-center justify-center",
+        "flex shrink-0 items-center justify-center overflow-hidden",
         TILE_SIZE_CLASS[size],
-        size !== "sm" && ["text-white", tileBg],
+        tile,
       )}
     >
-      <Icon
-        className={
-          size === "sm" || provider === "ibm-litellm" ? "size-full" : "size-3/5"
-        }
-      />
+      <Mark className={mark} />
     </div>
   );
 }

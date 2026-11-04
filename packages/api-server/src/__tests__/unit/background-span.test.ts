@@ -1,29 +1,32 @@
 /** TEST_OVERVIEW: background work — a schedule fire, a channel turn — traced
  *  as a trace of its own, linked to whatever started it, carrying only bounded
  *  attributes and never an error's free-text message. */
-import { trace, SpanStatusCode } from "@opentelemetry/api";
+import { context, trace, SpanStatusCode } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
   InMemorySpanExporter,
-  NodeTracerProvider,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-node";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { annotateSpan, inBackgroundSpan } from "../../core/background-span.js";
 
 describe("inBackgroundSpan", () => {
   let spans: InMemorySpanExporter;
-  let tracerProvider: NodeTracerProvider;
+  let tracerProvider: TracerProvider;
 
   beforeEach(() => {
     spans = new InMemorySpanExporter();
-    tracerProvider = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(spans)],
+    context.setGlobalContextManager(new AsyncLocalStorageContextManager());
+    tracerProvider = new TracerProvider({
+      spanProcessors: [new SimpleSpanProcessor({ exporter: spans })],
     });
-    tracerProvider.register();
+    trace.setGlobalTracerProvider(tracerProvider);
   });
 
   afterEach(async () => {
     await tracerProvider.shutdown();
+    context.disable();
     trace.disable();
   });
 

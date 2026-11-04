@@ -33,3 +33,54 @@ open_main_bump_pr() {
 
   echo -e "Opened $pr_url bumping \x1b[36mmain\x1b[0m pending version to $version. Merge it once approved."
 }
+
+# next_rc_version <version>: the candidate after <version>, in the spelling
+# <version> already carries. A dotted number is a numeric identifier, which
+# semver forbids to start with a zero, so `rc.01` is refused; the legacy `rcN`
+# is one alphanumeric identifier, where a leading zero is legal. Both are
+# counted as decimal, so a legacy `rc09` becomes `rc10` and not an octal error.
+next_rc_version() {
+  local version="$1" core tail sep num
+  if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc(.*)$ ]]; then
+    return 1
+  fi
+  core="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+  tail="${BASH_REMATCH[4]}"
+  if [[ "$tail" =~ ^\.(0|[1-9][0-9]*)$ ]]; then
+    sep="."
+    num="${BASH_REMATCH[1]}"
+  elif [[ "$tail" =~ ^[0-9]+$ ]]; then
+    sep=""
+    num="$tail"
+  else
+    return 1
+  fi
+  printf '%s-rc%s%d\n' "$core" "$sep" "$((10#$num + 1))"
+}
+
+# rc_spelling_of < a set-version task: dotted when that task reads the `-rc.N`
+# spelling, legacy otherwise. A hotfix stamps its base tag's tree, so the task
+# it runs is the one that tag carries, not the one on main: a tag cut before
+# the spelling rule can only spell `-rcN`. A task that reads the spelling from
+# this library delegates to is_version_form; one from before the rule carries
+# the `-rcN` pattern itself.
+rc_spelling_of() {
+  local task
+  task=$(cat)
+  if [[ "$task" == *is_version_form* || "$task" == *'-rc\.?[0-9]+'* ]]; then
+    echo dotted
+  else
+    echo legacy
+  fi
+}
+
+# The version forms a release accepts: a stable `X.Y.Z`, a candidate in the
+# `-rc.N` spelling, or the legacy `-rcN` one a branch mid-release carries. A
+# dotted number is a numeric identifier, which semver forbids to start with a
+# zero, so `-rc.01` is refused and npm would refuse it too; the legacy `rcN` is
+# one alphanumeric identifier, where a leading zero is legal.
+version_forms='^[0-9]+\.[0-9]+\.[0-9]+(-rc([0-9]+|\.(0|[1-9][0-9]*)))?$'
+
+is_version_form() {
+  [[ "$1" =~ $version_forms ]]
+}

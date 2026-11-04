@@ -18,12 +18,19 @@ import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { renderAvatar } from "../domain/agent-avatar.js";
 import { resolveAgentOrExit } from "./errors.js";
 import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import {
+  describeKitUpdate,
+  parseAgentKitRef,
+  type KitService,
+} from "../../kit/index.js";
+import type { KitUpdateStatus } from "api-server-api";
 
 export function buildGetCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
   createAgentModelsService: (host: string) => AgentModelsService;
+  createKitService: (host: string) => KitService;
 }): Command {
   return new Command("get")
     .description("Show one Agent's details, addressed by name or ID")
@@ -34,7 +41,7 @@ export function buildGetCommand(deps: {
     )
     .option(
       "--json",
-      "emit the agent as JSON, with a `models` object: its providers, harnesses and defaults",
+      "emit the agent as JSON, with a `models` object: its providers, harnesses and defaults, and for an agent created from a starter kit a `kitUpdate` object: its update state",
     )
     .addHelpText(
       "after",
@@ -45,23 +52,46 @@ export function buildGetCommand(deps: {
 
       const svc = deps.createAgentService(host);
       const agent = await resolveAgentOrExit(svc, ref, host);
-      const models = await readAgentModels(
-        deps.createAgentModelsService(host),
-        agent.id,
-      );
+      const [models, kitUpdate] = await Promise.all([
+        readAgentModels(deps.createAgentModelsService(host), agent.id),
+        readKitUpdate(deps.createKitService(host), agent),
+      ]);
 
       if (opts.json) {
         return writeStdoutAndExit(
-          `${JSON.stringify({ ...agent, models })}\n`,
+          `${JSON.stringify({ ...agent, models, ...(agent.starterKit && { kitUpdate }) })}\n`,
           EXIT_SUCCESS,
         );
       }
 
-      return writeStdoutAndExit(renderAgent(agent, models), EXIT_SUCCESS);
+      return writeStdoutAndExit(
+        renderAgent(agent, models, kitUpdate),
+        EXIT_SUCCESS,
+      );
     });
 }
 
-function renderAgent(agent: AgentView, models: AgentModelsView): string {
+async function readKitUpdate(
+  svc: KitService,
+  agent: AgentView,
+): Promise<KitUpdateStatus | null> {
+  if (!agent.starterKit) return null;
+  const updates = await svc.updates();
+  if (!updates.ok) return null;
+  return updates.value.find((u) => u.agentId === agent.id) ?? null;
+}
+
+function renderKit(starterKit: string): string {
+  const ref = parseAgentKitRef(starterKit);
+  if (!ref) return starterKit;
+  return `${ref.kit} (${ref.catalog}/${ref.kit}${ref.version ? `@${ref.version.slice(0, 9)}` : ""})`;
+}
+
+function renderAgent(
+  agent: AgentView,
+  models: AgentModelsView,
+  kitUpdate: KitUpdateStatus | null,
+): string {
   const entries: [string, string][] = [
     ["NAME", agent.name],
     ["ID", agent.id],
@@ -71,6 +101,10 @@ function renderAgent(agent: AgentView, models: AgentModelsView): string {
     ["AVATAR", renderAvatar(agent.avatar)],
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);
+  if (agent.starterKit) {
+    entries.push(["STARTER KIT", renderKit(agent.starterKit)]);
+    entries.push(["KIT UPDATE", describeKitUpdate(kitUpdate, agent.name)]);
+  }
   entries.push(["CHANNELS", renderChannels(agent.channels)]);
   entries.push(...modelEntries(models));
   if (agent.state === "error" && agent.error)

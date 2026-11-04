@@ -1,11 +1,11 @@
 # Invocations
 
-Last verified: 2026-10-27
+Last verified: 2026-11-04
 
 ## Overview
 
 An **Invocation** is a run-once request from one Agent to another: a **Driver** asks a **target** to do one piece of work and return one result that matches a JSON Schema the Driver supplied, or, for a script, the script's exit code and output.
-The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped as soon as the Invocation goes terminal.
+The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped soon after the Invocation goes terminal ([Outcomes](#outcomes)).
 
 A Driver reaches Invocations two ways.
 A script — a loop an agent wrote that fans work out and gathers the results — speaks over the per-agent HTTP surface on the harness port through the [Driver SDK](#driver-sdk).
@@ -79,14 +79,20 @@ An image target declares nothing, so nothing is narrowed.
 **Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver.
 Network reach needs no grant of its own: a target has no egress identity and runs under its Driver's rules, though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 
-**Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)), and the wait counts against its deadline.
+**Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)).
+The wait does not count against its deadline (see [Deadline](#outcomes)), and while it lasts the Driver reads why it waits: the Invocation's view, await_subagents and the SDKs carry the controller's sentence, and the Driver's chat shows the target as waiting for room with the same sentence.
 A spawn whose root Driver is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is refused before anything is created, with a reason of its own that says which one and when it lifts, because the target could only fail its first model call.
 
 ## Outcomes
 
-**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — flips the Invocation to done and reaps the target 30 seconds later, so the target's closing reply and the last telemetry it exported land before its machine goes.
+**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — and flips the Invocation to done.
 The harness still sends the accepted answer back to the model, which costs one more model call; the answer tells the target to end its turn at once, so that call stays short.
-A closing call that runs longer is cut, and the spend ledger counts it as an estimate ([spend-limits](spend-limits.md#ledger)).
+**A reported target goes once its model calls have ended.** The target is reaped when the gateway meter shows no open model call of it on two checks five seconds apart, the first ten seconds after the report, so the closing reply and the last telemetry it exported land before its machine goes.
+A delete that cut the closing call would leave the meter no usage, and the spend ledger would count the call as an estimate ([spend-limits](spend-limits.md#estimates)).
+A call counts as open while the gateway still sends its records, every two seconds, so a call whose gateway went away stops counting ten seconds after its last record.
+A call that never ends does not keep the target: it is reaped 90 seconds after the report whatever still runs, since a finished target still holds its share of the owner's memory.
+When the meter cannot be read, the target is reaped 30 seconds after the report.
+The liveness sweep reaps a reported target that no wait holds any more, as after an api-server restart: from 30 seconds after the report when one read finds no open call, else at the 90-second limit.
 The schema lives on the Invocation record and never on a Kubernetes resource.
 
 **Failure says why.** A failed Invocation carries the platform's reason, because the target is gone by the time the Driver sees it.
@@ -105,6 +111,9 @@ The reasons:
   The check repeats every minute while something runs, so work that ends without a further turn fails the run then.
   A failed call's reason carries its status and body, since a harness such as Codex can go quiet after it without ending the turn.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
+  It runs from the target's start: the first delivery of its task to its runtime, which goes only to a Ready Agent whose runtime said hello, stamps the start and moves the deadline there, so a start that waited for room keeps the whole deadline for the work.
+  A target that has not started may wait as long as its deadline; past that the Invocation fails with a reason of its own that names the wait.
+  A script's task carries its stop and report times, which are set from the start when the task is delivered, so an old runtime keeps working unchanged.
 - **Restart.** A target whose machine restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.
 - **Stopped.** The owner stops a running target from the Driver's chat; the Invocation fails with that reason and the target is reaped like any other.
@@ -144,7 +153,7 @@ Spend is not on the record; it stays in telemetry, keyed by the invocation id th
 The root Driver reads it per sub-agent through its own cost read, which the delegation view's figures match ([metrics — agent-facing read](metrics.md#agent-facing-read)).
 The record also names each sub-agent row in the root Driver's spend by agent, by its label, else the first line of its prompt, after the target is gone ([spend limits](spend-limits.md#grouped-read)).
 
-**The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its machine and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
+**The target's conversation is kept on the root Driver's volume.** When a target reports, and again before its reap, the platform reads the target's one session out of its machine and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
 Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest.
 Capture is best effort and bounded: it never blocks a report, never fails a reap, and **never wakes the root** — a root that is not up (sleeping, crashed, or whose script did not await its spawn) keeps no copy.
 A cascade that deletes the root itself skips capture, since the root's volume goes too.
@@ -211,6 +220,7 @@ The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
 The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, and write result schemas in shorthand.
 A failure raises with the platform's reason; a failed script's error still reads its streams.
+A wait for a sub-agent logs why it has not started each time that reason changes, and its default client timeout is twice the deadline plus five minutes, since a sub-agent may wait its deadline for room and then run its whole deadline.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.
 The HTTP routes are the contract; the clients stay thin.
 Sources: [`packages/driver-sdk/`](../../packages/driver-sdk/), [`packages/driver-sdk-py/`](../../packages/driver-sdk-py/).

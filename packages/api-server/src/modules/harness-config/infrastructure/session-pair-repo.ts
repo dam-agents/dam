@@ -4,6 +4,8 @@ import {
   eq,
   inArray,
   isNull,
+  or,
+  sql,
   agents as agentsTable,
   connectionGrants,
   connections as connectionsTable,
@@ -23,12 +25,11 @@ import {
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import {
   choiceSlots,
+  harnessCapabilityOf,
   resolvedChoice,
   withoutPairApproval,
   type GrantedProvider,
 } from "../domain/session-pair.js";
-import { harnessCapability } from "agent-runtime-api";
-import { z } from "zod";
 import type { ProfileResolver } from "../../profiles/index.js";
 
 export interface SessionPairRepo {
@@ -64,6 +65,8 @@ export interface FillableSessionPairRepo extends SessionPairRepo {
 export function createSessionPairRepo(
   db: Db,
   resolveProfile: ProfileResolver,
+  /* UNIT_BOUNDARY_DESCRIPTION: a read that holds the agent's row resolves the profile it names through that transaction's own connection, so a publish never asks the pool for a second one while it holds the first (D193B). */
+  resolveProfileOn?: (executor: Db | DbTx) => ProfileResolver,
 ): FillableSessionPairRepo {
   /* UNIT_BOUNDARY_DESCRIPTION: a chat profile that cannot run resolves to no pair, which every reader already reports as no default; it never falls back to another harness or model. A platform sub-agent profile that cannot run leaves the pair as it is, and the spawn refuses it with its reason. */
   async function readSaved(
@@ -83,17 +86,13 @@ export function createSessionPairRepo(
       .from(agentsTable)
       .where(eq(agentsTable.id, agentId));
     const row = (await (lockIn ? query.for("update") : query))[0];
-    const carried =
-      z
-        .array(harnessCapability)
-        .safeParse(
-          (row?.capabilities as { harnesses?: unknown } | null)?.harnesses,
-        ).data ?? [];
+    /* UNIT_BOUNDARY_DESCRIPTION: a stored pair is answered as it is stored, platform-level: native subagent keys are derived only where a run's payload is built, so the picker, a page and a save compare like with like (D193B). */
     const plain = (pair: SessionPair | null) =>
       pair &&
       withoutPairApproval(
         pair,
-        carried.find((h) => h.name === pair.harness)?.harnessConfigCatalog,
+        harnessCapabilityOf(row?.capabilities, pair.harness)
+          ?.harnessConfigCatalog,
       );
     const chatProfileId = row?.sessionProfile ?? null;
     const slots = {
@@ -104,7 +103,11 @@ export function createSessionPairRepo(
         (row?.platformSubagentSettings as Record<string, string> | null) ??
         null,
     };
-    const chat = await resolvedChoice(slots, resolveProfile, agentId);
+    const chat = await resolvedChoice(
+      slots,
+      lockIn && resolveProfileOn ? resolveProfileOn(lockIn) : resolveProfile,
+      agentId,
+    );
     return {
       chat: plain(chat.refused ? null : chat.pair),
       channel: plain(parsePair(row?.channel)),
@@ -168,7 +171,10 @@ export function createSessionPairRepo(
         .where(
           and(
             eq(agentsTable.id, agentId),
-            isNull(agentsTable.sessionPair),
+            or(
+              isNull(agentsTable.sessionPair),
+              sql`${agentsTable.sessionPair}->>'model' IS NULL`,
+            ),
             isNull(agentsTable.sessionProfile),
           ),
         )

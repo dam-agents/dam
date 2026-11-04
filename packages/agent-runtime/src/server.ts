@@ -35,9 +35,11 @@ import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { startMemReaper, startRuntimeMetrics } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
+import { RESERVED } from "./modules/workspace-path.js";
 import { composeArtifactApi } from "./modules/artifact-api/compose.js";
 import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
+import { createTransferHandlers } from "./modules/transfer/index.js";
 import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
@@ -254,6 +256,11 @@ const sshUpgrade = createSshUpgrade({
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
+const transferHandlers = createTransferHandlers({
+  root: homeDir,
+  reserved: [...RESERVED],
+  log: (msg) => process.stderr.write(`[transfer] ${msg}\n`),
+});
 
 const artifactTouchReporter = createArtifactTouchReporter({
   client: harnessClient,
@@ -1258,6 +1265,25 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/transfer/stage") {
+    void transferHandlers.handleStage(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/transfer/publish") {
+    void transferHandlers.handlePublish(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && req.url?.startsWith("/api/transfer/read?")) {
+    void transferHandlers.handleRead(
+      req,
+      res,
+      new URL(req.url, "http://agent"),
+    );
+    return;
+  }
+
   if (
     jsonPost(
       req,
@@ -1412,7 +1438,10 @@ server.listen(config.PORT, () => {
       })),
     }),
   );
-  if (environmentOf === "") acpRuntime.prestart();
+  if (environmentOf === "") {
+    acpRuntime.prestart();
+    void sessionsService.adoptHarnessTitles();
+  }
 
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));

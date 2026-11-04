@@ -295,6 +295,30 @@ describe("GitHub user token scoping — engine", () => {
     });
   });
 
+  // TEST_SCENARIO: the scoped-token response names the account it acts as, and a custom host can name it with a hostile string, so the account arrives stripped of control bytes and capped.
+  it("cleans the account a hostile host names on a scoped token", async () => {
+    const { engine } = makeEngine(() =>
+      jsonResponse({
+        token: "ghu_scoped",
+        installation: {
+          account: { login: `\u001b[31m${"a".repeat(5000)}` },
+        },
+      }),
+    );
+    const out = await engine.scopeUserToken({
+      id: "connection:conn-1:github",
+      apiBaseUrl: "https://api.github.com/",
+      clientId: "Iv1.client",
+      clientSecret: "shh",
+      accessToken: "ghu_user",
+      targetId: 42,
+      repositoryIds: [7, 8],
+      permissions: { contents: "read" },
+    });
+
+    expect(out.accountLogin).toBe(`[31m${"a".repeat(196)}`);
+  });
+
   it("classifies a scope GitHub cannot cover as a rejected grant", async () => {
     const { engine } = makeEngine(() =>
       jsonResponse({ message: "Validation Failed" }, 422),
@@ -369,6 +393,36 @@ describe("GitHub user token scoping — engine", () => {
         repositories: [],
         repositoriesUnavailable: '404 {"message":"Not Found"}',
       },
+    ]);
+  });
+
+  // TEST_SCENARIO: a custom host lists an installation whose account name and repository names are hostile, and the CLI prints both, so they arrive stripped of control bytes and capped.
+  it("cleans the account and repository labels a hostile host lists", async () => {
+    const hostile = `\u001b[31m${"r".repeat(5000)}`;
+    const { engine } = makeEngine((call) =>
+      call.url.includes("/user/installations?")
+        ? jsonResponse({
+            installations: [
+              {
+                id: 100,
+                target_id: 42,
+                account: { id: 42, login: hostile },
+                permissions: { contents: "write" },
+                repository_selection: "selected",
+              },
+            ],
+          })
+        : jsonResponse({ repositories: [{ id: 7, name: hostile }] }),
+    );
+    const out = await engine.readUserInstallations({
+      id: "connection:conn-1:github",
+      apiBaseUrl: "https://api.github.com",
+      accessToken: "ghu_user",
+    });
+
+    expect(out.installations[0]!.accountLogin).toBe(`[31m${"r".repeat(196)}`);
+    expect(out.installations[0]!.repositories).toEqual([
+      { id: 7, name: `[31m${"r".repeat(196)}` },
     ]);
   });
 });

@@ -29,11 +29,15 @@ Call it from a button click or a form handler that prevents the default submissi
 
 The owner must enable Interactive artifacts and open the latest artifact version beside an existing chat with its publishing agent.
 The prompt is sent as a normal chat message, using the chat's existing queue and error handling.
+To let a button work where the owner opens the page outside that chat, such as from the library or beside another agent's chat, pass `{ newSession: true }`: `platform.sendPrompt('Refresh this dashboard.', { newSession: true })`.
+Outside a chat the prompt then starts or continues the owner's own Session for this page with you, unattended, so a tool call that asks for permission is refused; in the chat it still goes into the chat.
+Without the option, a prompt sent outside the chat starts nothing, and the owner is told to open the page in your chat.
 On a page shared with named people, a viewer's prompt starts or continues that viewer's own Session with you instead, and the page shows them a short notice that it was sent.
 The agent replies in chat and may publish a new artifact version normally.
 The function returns no answer or delivery receipt; do not await a result or claim the task is complete.
+Never show a busy state, such as "Refreshing…", that waits for the prompt to end, since nothing tells the page; to show progress, keep it in your Artifact API and have the page read it with `platform.request`.
 
-Buttons do not send prompts from library previews, historical versions, another agent's chat, or while the feature is disabled.
+Buttons do not send prompts from historical versions or while the feature is disabled, nor from library previews or another agent's chat unless they pass `{ newSession: true }`.
 Keep the page readable without this capability.
 Send prompts only in response to user actions, never automatically on load or on a timer.
 Prompts must be nonempty strings of at most 16,384 characters.
@@ -91,11 +95,27 @@ It rejects only when the platform cannot deliver the request, with an `Error` wh
   When you change it, the page sees it on its next read, so give the page a way to reload (on focus or with a button).
   If lost updates matter, reject a write based on an old version (for example with a version number in the state and a `409` answer).
 
+### Who is using the page
+
+Every request carries headers that the platform sets and the page cannot:
+
+- `x-platform-caller-role`: `owner` for the artifact's owner, `viewer` for a person it is shared with.
+- `x-platform-caller-sub`: that person's stable account id; it stays the same when their email changes.
+- `x-platform-caller-email`: that person's verified email, lowercased; absent when the platform has no verified email for them or it is not plain ASCII.
+
+Use them to give each person their own data: key what you store by `sub`, and use the email to show who it is or to match a list of people the owner gave you.
+Everyone still acts under the owner's authority; the headers say who is calling, not what they may do, so the rules are yours to enforce.
+A request without the role header did not come through the platform, for example your own `curl`.
+
+`platform.whoami()` resolves with `{ role, email, sub }` for the same person, for showing "Signed in as …" in the page.
+It works where `request` works and fails the same way elsewhere.
+Never send it back to your server as proof of identity: read the headers instead.
+
 ### Limits
 
 Text bodies only, no binary and no streaming.
 At most 1 MiB each way.
-Only `content-type` passes through: the platform drops every other request and response header, so do not rely on cookies, auth headers or custom headers.
+Only `content-type` and the caller headers above pass through: the platform drops every other request and response header, so do not rely on cookies, auth headers or custom headers.
 
 ### Where it works
 

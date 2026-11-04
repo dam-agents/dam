@@ -24,7 +24,7 @@ import {
 import { useAgentPageConnections } from "../../connections/api/queries.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
-import { sameModel } from "../lib/catalog-groups.js";
+import { modelGroups, sameModel } from "../lib/catalog-groups.js";
 import {
   fittingProviders,
   grantedProviderRefs,
@@ -170,6 +170,14 @@ export function useHarnessCatalogModels(
     ...query,
     data:
       query.data && harness ? harnessCatalogOf(query.data, harness) : undefined,
+    /** UNIT_BOUNDARY_DESCRIPTION: the model groups the owner catalog lists for any harness, so a harness change can keep or choose a model from the same catalog without another fetch. */
+    forHarness: (name: string) =>
+      query.data
+        ? modelGroups(
+            harnessCatalogOf(query.data, name),
+            agentId === null ? null : grantedIds,
+          )
+        : undefined,
     /** UNIT_BOUNDARY_DESCRIPTION: how many models the catalog lists for any harness, none until it has loaded. */
     modelCount: (name: string) =>
       query.data
@@ -373,14 +381,16 @@ export function rememberSessionPair(
     profileId?: string | null;
     platformSubagentProfileId?: string | null;
   },
-): void {
+  /** UNIT_BOUNDARY_DESCRIPTION: the pair a run shows, with a subagent a profile lends materialized; `pair` is what is stored and may leave it to the reference, so the cache holds `display` while the request sends `pair`. */
+  display: SessionPair = pair,
+): Promise<boolean> {
   const key = trpc.harnessConfig.sessionPair.queryKey(
     sessionPairInput(agentId, kind),
   );
   const previous = queryClient.getQueryData<SessionPair | null>(key);
   const resolved = pair.provider !== null;
-  if (resolved) queryClient.setQueryData<SessionPair | null>(key, pair);
-  void api.harnessConfig.rememberSessionPair
+  if (resolved) queryClient.setQueryData<SessionPair | null>(key, display);
+  return api.harnessConfig.rememberSessionPair
     .mutate({
       agentId,
       kind,
@@ -392,7 +402,10 @@ export function rememberSessionPair(
         platformSubagentProfileId: references.platformSubagentProfileId,
       }),
     })
-    .then(() => onSaved?.())
+    .then(() => {
+      onSaved?.();
+      return true;
+    })
     .catch((err: unknown) => {
       if (resolved)
         queryClient.setQueryData<SessionPair | null>(key, previous ?? null);
@@ -400,6 +413,7 @@ export function rememberSessionPair(
         kind: "error",
         message: `Couldn't save the ${kind} default: ${err instanceof Error ? err.message : String(err)}`,
       });
+      return false;
     })
     .finally(() => invalidateDefaults());
 }

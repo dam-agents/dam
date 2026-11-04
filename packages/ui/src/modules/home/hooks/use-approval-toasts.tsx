@@ -4,7 +4,11 @@ import { toast as sonner } from "sonner";
 
 import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
 import { useFeed } from "../api/queries.js";
-import { approvalHeadline } from "../lib/approval-copy.js";
+import {
+  ALL_AGENTS_SUBJECT,
+  approvalHeadline,
+  countsAllAgents,
+} from "../lib/approval-copy.js";
 import { approvalToastChanges } from "../lib/approval-toasts.js";
 import type { FeedItem } from "../lib/feed-item.js";
 
@@ -61,7 +65,9 @@ export function useApprovalToasts(): void {
       if (!raised.has(item.id)) continue;
       fireApprovalToast(
         item.id,
-        names.get(item.agentId) ?? "An agent",
+        countsAllAgents(item.approval)
+          ? ALL_AGENTS_SUBJECT
+          : (names.get(item.agentId) ?? "An agent"),
         approvalHeadline(item.approval),
         () => openSidePanel("approvals"),
       );

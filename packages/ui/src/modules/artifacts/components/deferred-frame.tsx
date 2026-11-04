@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { useArtifactPrint } from "../hooks/use-artifact-print.js";
 import { useArtifactPrompt } from "../hooks/use-artifact-prompt.js";
 import { useArtifactRequest } from "../hooks/use-artifact-request.js";
 
@@ -13,6 +14,7 @@ export function DeferredFrame({
   className,
   deferMs = MODAL_ANIMATION_MS,
   onSendPrompt,
+  onNewSessionPrompt,
   agentApiArtifactId,
 }: {
   html: string;
@@ -20,13 +22,15 @@ export function DeferredFrame({
   className: string;
   deferMs?: number;
   onSendPrompt?: (prompt: string) => Promise<void>;
+  onNewSessionPrompt?: (prompt: string) => Promise<void>;
   agentApiArtifactId?: string;
 }) {
   const [mounted, setMounted] = useState(deferMs === 0);
   const [loaded, setLoaded] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  useArtifactPrompt(frameRef, onSendPrompt);
+  useArtifactPrompt(frameRef, onSendPrompt, onNewSessionPrompt);
   useArtifactRequest(frameRef, agentApiArtifactId);
+  useArtifactPrint(frameRef);
   useEffect(() => {
     if (deferMs === 0) return;
     const timer = setTimeout(() => setMounted(true), deferMs);

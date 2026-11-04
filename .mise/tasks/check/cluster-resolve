@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Cluster tooling resolves one target and one install, and a worktree's name never reaches an Environment"
+#MISE description="Cluster tooling resolves one target and one install, a worktree's name never reaches an Environment, and e2e:loop skips only a current install"
 #MISE sources=[".mise/lib/cluster.sh", ".mise/tasks/cluster/*", ".mise/tasks/e2e/*", ".mise/tasks/check/cluster-resolve"]
 #MISE outputs=[]
 #MISE cache.enabled=true
@@ -113,5 +113,38 @@ for task in install loop reset gate run; do
     fail=1
   }
 done
+
+# --- an Environment's install is skipped only on its recorded, clean commit --
+# e2e:loop skips e2e:install when the Environment's last lane install was of
+# the checkout's commit from a clean tree, into the same cluster
+# (e2e_install_current), and says so.
+# current <checkout> <record> <cluster-id>: what e2e_install_current makes of it.
+current() {
+  (
+    # shellcheck disable=SC1090
+    CLUSTER_RESOLVE_ONLY=1 . "$LIB"
+    if MISE_CONFIG_ROOT="$1" e2e_install_current "$2" "$3" >/dev/null; then echo current; else echo install; fi
+  )
+}
+skips() { # <what> <current|install> <checkout> <record> [cluster-id]
+  local got
+  got="$(current "$3" "$4" "${5-cluster-a}")"
+  [ "$got" = "$2" ] || { echo "FAIL: $1: got '$got', want '$2'" >&2; fail=1; }
+}
+record="$work/e2e-installed"
+skips "no record installs" install "$WT" "$record"
+echo "$(git -C "$WT" rev-parse HEAD) cluster-a" > "$record"
+skips "the recorded commit, clean, skips" current "$WT" "$record"
+skips "the recorded commit on a cluster made again installs" install "$WT" "$record" cluster-b
+skips "a cluster that does not answer installs" install "$WT" "$record" ""
+touch "$WT/untracked"
+skips "an untracked file installs" install "$WT" "$record"
+rm "$WT/untracked"
+git -C "$WT" -c user.email=check@example.com -c user.name=check commit -q --allow-empty -m next
+skips "another commit installs" install "$WT" "$record"
+grep -q '^#USAGE flag "--no-install"' "$MISE_CONFIG_ROOT/.mise/tasks/e2e/loop" || {
+  echo "FAIL: .mise/tasks/e2e/loop: takes no --no-install, which the cluster-ops skill's debugging loop names" >&2
+  fail=1
+}
 
 exit "$fail"

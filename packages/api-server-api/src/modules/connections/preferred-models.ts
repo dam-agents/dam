@@ -8,7 +8,11 @@
  * happens to list, and a classifier call on the session's own work model.
  * `work` decides a new agent's default model, `classifier` what Claude Code's
  * non-reasoning permission classifier runs on. The order is the preference:
- * the first entry a listing answers wins. `family` is the model's words,
+ * the first entry a listing answers wins. Bob's own gateway lists only Bob's
+ * names, so the two its owners run on close the `work` list: a list that
+ * skipped them left a Bob agent that named no model with no default at all.
+ * Those are plain words other providers use too (`grok-4-fast`), so they
+ * answer only on the provider `alias` names. `family` is the model's words,
  * `version` the digits right behind them and `variant` the word right behind
  * those, all as tokens of `modelTokens`.
  */
@@ -19,19 +23,22 @@ export interface PreferredModel {
   family: readonly string[];
   version: readonly string[];
   variant?: string;
+  alias?: string;
 }
 
 export const PREFERRED_MODELS: readonly PreferredModel[] = [
   { role: "work", family: ["deepseek"], version: ["4", "1"], variant: "flash" },
   { role: "work", family: ["claude", "opus"], version: ["5", "5"] },
   { role: "work", family: ["gpt"], version: ["6", "1"], variant: "sol" },
+  { role: "work", family: ["fast"], version: [], alias: "bob" },
+  { role: "work", family: ["explorer"], version: [], alias: "bob" },
   {
     role: "classifier",
     family: ["nemotron"],
     version: ["3"],
     variant: "ultra",
   },
-  { role: "classifier", family: ["claude", "sonnet"], version: ["5", "5"] },
+  { role: "classifier", family: ["claude", "sonnet"], version: ["5"] },
 ];
 
 const NOT_AN_ID = /[^a-z0-9]+/g;
@@ -67,14 +74,18 @@ export function modelTokens(upstreamId: string): string[] {
  * DeepSeek 4.1, and gpt-5.6 is not gpt-6), and so is a different variant
  * (Nemotron 3 Nano is not the Ultra the platform prefers), so a listing that
  * holds only one of those falls through to the next entry rather than running
- * on it unseen. What may still follow is the build stamp providers append
- * (`-1017`, `-20260101`) — digits only, so a word there is a variant.
+ * on it unseen. A version that goes on past the listed digits is that other
+ * version too: Sonnet 5.5 is not the Sonnet 5 the list names. What may still
+ * follow is the build stamp providers append (`-1017`, `-20260101`), three
+ * digits or more — a version's own digits come one or two at a time, so a
+ * shorter number after the version continues it — and a word there is a
+ * variant.
  */
 export function modelMatches(
   tokens: readonly string[],
   pref: PreferredModel,
 ): boolean {
-  const stamp = /^\d+$/;
+  const stamp = /^\d{3,}$/;
   return tokens.some((_, at) => {
     if (!pref.family.every((token, offset) => tokens[at + offset] === token))
       return false;
@@ -116,6 +127,7 @@ export function preferredModelOf(
   for (const pref of PREFERRED_MODELS) {
     if (pref.role !== role) continue;
     for (const provider of providers) {
+      if (pref.alias !== undefined && pref.alias !== provider.alias) continue;
       const hit = provider.listed.find((id) =>
         modelMatches(modelTokens(id), pref),
       );

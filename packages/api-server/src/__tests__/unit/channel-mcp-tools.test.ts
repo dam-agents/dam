@@ -16,6 +16,7 @@ import type {
   AttachmentQuery,
   AttachmentResult,
   ChannelReply,
+  ChannelSendResult,
   MessageReactionsResult,
   ReactionsQuery,
   ThreadQuery,
@@ -36,7 +37,8 @@ vi.mock("../../core/security-log.js", () => ({
 }));
 
 async function mcpHarness(opts?: {
-  postResult?: { ok: true } | { error: string };
+  postResult?: ChannelSendResult;
+  replyResult?: ChannelSendResult;
   reactions?: MessageReactionsResult | { error: string };
   thread?: ThreadResult | { error: string };
   attachment?: AttachmentResult | { error: string };
@@ -56,13 +58,13 @@ async function mcpHarness(opts?: {
         options: Record<string, unknown>,
       ) => {
         posts.push({ text, options });
-        return opts?.postResult ?? { ok: true as const };
+        return opts?.postResult ?? ({ ok: true } as ChannelSendResult);
       },
     ),
     reply: vi.fn(
       async (_agentId: string, _type: ChannelType, args: ChannelReply) => {
         replies.push(args);
-        return { ok: true as const };
+        return opts?.replyResult ?? ({ ok: true } as ChannelSendResult);
       },
     ),
     describeMessageReactions: vi.fn(
@@ -592,6 +594,60 @@ describe("outbound MCP tools — activity", () => {
     sub.unsubscribe();
 
     expect(sent).toMatchObject([{ action: "post", outcome: "failure" }]);
+  });
+});
+
+describe("outbound MCP tools — the posted message", () => {
+  /**
+   * TEST_SCENARIO: An agent that starts a thread with a top-level post needs the post's ts to reply into that thread later.
+   */
+  it("names the conversation and ts of a Slack post", async () => {
+    const { client } = await mcpHarness({
+      postResult: {
+        ok: true,
+        conversationId: "D-UOWNER",
+        ts: "1712345.000100",
+      },
+    });
+
+    const result = await client.callTool({
+      name: "send_channel_message",
+      arguments: { channel: "slack", text: "kick-off", chatId: "UOWNER" },
+    });
+
+    expect((result.content as { text: string }[])[0]!.text).toBe(
+      "Message sent to chatId D-UOWNER as ts 1712345.000100",
+    );
+  });
+
+  it("names the conversation and ts of a Slack reply", async () => {
+    const { client } = await mcpHarness({
+      replyResult: { ok: true, conversationId: "C1", ts: "1712345.000200" },
+    });
+
+    const result = await client.callTool({
+      name: "reply",
+      arguments: { text: "answer", threadTs: "1.1" },
+    });
+
+    expect((result.content as { text: string }[])[0]!.text).toBe(
+      "Reply posted to chatId C1 as ts 1712345.000200",
+    );
+  });
+
+  it("says only that it was sent when the channel names no ts", async () => {
+    const { client } = await mcpHarness({
+      postResult: { ok: true, conversationId: "C-ALERTS" },
+    });
+
+    const result = await client.callTool({
+      name: "send_channel_message",
+      arguments: { channel: "slack", text: "report", chatId: "C-ALERTS" },
+    });
+
+    expect((result.content as { text: string }[])[0]!.text).toBe(
+      "Message sent",
+    );
   });
 });
 

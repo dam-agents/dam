@@ -4,6 +4,7 @@ import {
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_REQUEST_TIMEOUT_MS,
   ARTIFACT_RESPONSE_TYPE,
+  ARTIFACT_WHOAMI_TYPE,
 } from "api-server-api";
 import { artifactApiMethodSchema } from "agent-runtime-api";
 
@@ -16,18 +17,33 @@ window.platform = (() => {
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (event.source !== window.parent || !data || data.type !== ${JSON.stringify(ARTIFACT_RESPONSE_TYPE)}) return;
-    const call = pending.get(data.id);
-    if (!call) return;
+    const entry = pending.get(data.id);
+    if (!entry) return;
     pending.delete(data.id);
-    clearTimeout(call.timer);
-    if (data.ok) call.resolve({ status: data.status, contentType: data.contentType, body: data.body });
-    else call.reject(Object.assign(new Error("Artifact API request failed: " + data.reason), { reason: data.reason }));
+    clearTimeout(entry.timer);
+    if (data.ok) entry.resolve(entry.pick(data));
+    else entry.reject(Object.assign(new Error("Artifact API request failed: " + data.reason), { reason: data.reason }));
   });
+  const call = (message, pick) => {
+    const id = ++nextId + "-" + Math.random().toString(36).slice(2);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(Object.assign(new Error("Artifact API request failed: timeout"), { reason: "timeout" }));
+      }, ${ARTIFACT_REQUEST_TIMEOUT_MS});
+      pending.set(id, { resolve, reject, timer, pick });
+      window.parent.postMessage(Object.assign({ id }, message), "*");
+    });
+  };
   return Object.freeze({
-    sendPrompt(prompt) {
+    sendPrompt(prompt, options) {
       if (typeof prompt !== "string" || !prompt.trim() || prompt.trim().length > ${ARTIFACT_PROMPT_MAX_LENGTH})
         throw new Error("Provide a nonempty prompt of at most ${ARTIFACT_PROMPT_MAX_LENGTH} characters.");
-      window.parent.postMessage({ type: ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}, prompt }, "*");
+      if (options !== undefined && (options === null || typeof options !== "object"))
+        throw new Error("Provide the options as an object, such as { newSession: true }.");
+      const message = { type: ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}, prompt };
+      if (options && options.newSession === true) message.newSession = true;
+      window.parent.postMessage(message, "*");
     },
     request({ method, path, body, contentType } = {}) {
       if (!${JSON.stringify(METHODS)}.includes(method))
@@ -36,15 +52,13 @@ window.platform = (() => {
         throw new Error('Provide a path that starts with "/".');
       if (body !== undefined && typeof body !== "string")
         throw new Error("Provide the body as a string.");
-      const id = ++nextId + "-" + Math.random().toString(36).slice(2);
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pending.delete(id);
-          reject(Object.assign(new Error("Artifact API request failed: timeout"), { reason: "timeout" }));
-        }, ${ARTIFACT_REQUEST_TIMEOUT_MS});
-        pending.set(id, { resolve, reject, timer });
-        window.parent.postMessage({ type: ${JSON.stringify(ARTIFACT_REQUEST_TYPE)}, id, method, path, body, contentType }, "*");
-      });
+      return call(
+        { type: ${JSON.stringify(ARTIFACT_REQUEST_TYPE)}, method, path, body, contentType },
+        (data) => ({ status: data.status, contentType: data.contentType, body: data.body }),
+      );
+    },
+    whoami() {
+      return call({ type: ${JSON.stringify(ARTIFACT_WHOAMI_TYPE)} }, (data) => ({ role: data.role, email: data.email, sub: data.sub }));
     },
   });
 })();
@@ -74,6 +88,9 @@ window.platform = (() => {
       throw refuse();
     },
     request() {
+      return Promise.reject(refuse());
+    },
+    whoami() {
       return Promise.reject(refuse());
     },
   });

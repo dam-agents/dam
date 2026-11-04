@@ -30,6 +30,7 @@ import {
 import {
   createShareBridgeService,
   type ShareBridgeService,
+  type ViewerPromptDelivery,
 } from "./services/share-bridge-service.js";
 import { createViewerPromptDelivery } from "./infrastructure/viewer-prompt-delivery.js";
 import {
@@ -62,6 +63,8 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
+  featureOn: (owner: string) => Promise<boolean>;
+  prompts: ViewerPromptDelivery;
 }
 
 export type ArtifactLibraryFor = (
@@ -86,6 +89,8 @@ export function composeArtifactLibraryForOwner(
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
       ensureReady: opts.ensureReady,
       agentApi: opts.agentApi,
+      featureOn: () => opts.featureOn(opts.owner),
+      prompts: opts.prompts,
     }),
   };
 }
@@ -182,23 +187,20 @@ export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
   });
 }
 
+export function composeArtifactPromptDelivery(opts: {
+  makeAcpClient: AcpClientFactory;
+  ensureReady: (agentId: string) => Promise<void>;
+  spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
+  attendance: ChannelTurnAttendance;
+}): ViewerPromptDelivery {
+  return createViewerPromptDelivery(opts);
+}
+
 export function composeShareBridge(opts: {
   featureOn: (owner: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  makeAcpClient: AcpClientFactory;
-  spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
-  attendance: ChannelTurnAttendance;
+  prompts: ViewerPromptDelivery;
 }): ShareBridgeService {
-  return createShareBridgeService({
-    featureOn: opts.featureOn,
-    ensureReady: opts.ensureReady,
-    agentApi: opts.agentApi,
-    prompts: createViewerPromptDelivery({
-      makeAcpClient: opts.makeAcpClient,
-      ensureReady: opts.ensureReady,
-      spendHold: opts.spendHold,
-      attendance: opts.attendance,
-    }),
-  });
+  return createShareBridgeService(opts);
 }

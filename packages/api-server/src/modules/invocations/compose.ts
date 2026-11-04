@@ -39,8 +39,14 @@ import {
   createTargetReaper,
   type TargetReaper,
 } from "./services/target-reaper.js";
+import {
+  createReportedTargetReap,
+  type OpenCalls,
+  type ReportedTargetReap,
+} from "./services/reported-target-reap.js";
 import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createSetupFailure } from "./services/setup-failure.js";
+import { createInvocationStart } from "./services/invocation-start.js";
 import {
   createScriptOutputs,
   type OutputBlobStore,
@@ -70,6 +76,19 @@ function composeReaper(
   });
 }
 
+function composeReportedReap(
+  repo: InvocationsRepository,
+  agentsFor: (owner: string) => AgentsService,
+  frames: DelegationFramesPort,
+  openCalls: OpenCalls,
+): ReportedTargetReap {
+  return createReportedTargetReap({
+    reaper: composeReaper(repo, agentsFor, frames),
+    capture: createTargetCapture({ repo, frames }),
+    openCalls,
+  });
+}
+
 export function composeInvocationsForOwner(opts: {
   db: Db;
   owner: string;
@@ -77,11 +96,13 @@ export function composeInvocationsForOwner(opts: {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   frames: DelegationFramesPort;
+  openCalls: OpenCalls;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   scriptOutputsAvailable: boolean;
   spendHold?: SpendHoldGate;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
+  readStartWait?: (agentId: string) => Promise<string | null>;
 }): InvocationsService {
   const repo = createInvocationsRepository(opts.db);
   return createInvocationsService({
@@ -90,6 +111,12 @@ export function composeInvocationsForOwner(opts: {
     agents: opts.agents,
     driverResolution: createDriverResolution({ repo }),
     reaper: composeReaper(repo, () => opts.agents, opts.frames),
+    reportedReap: composeReportedReap(
+      repo,
+      () => opts.agents,
+      opts.frames,
+      opts.openCalls,
+    ),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
@@ -97,6 +124,7 @@ export function composeInvocationsForOwner(opts: {
     ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
+    ...(opts.readStartWait ? { readStartWait: opts.readStartWait } : {}),
   });
 }
 
@@ -130,18 +158,27 @@ export function composeInvocationLivenessSweep(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
+  readStartWait: (agentId: string) => Promise<string | null>;
   hasAgent: (agentId: string) => Promise<boolean>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   runsScripts: (agentId: string) => Promise<boolean | null>;
   outputs: ScriptOutputs;
   batchSize: number;
   frames: DelegationFramesPort;
+  openCalls: OpenCalls;
 }): InvocationLivenessSweep {
   const repo = createInvocationsRepository(opts.db);
   return createInvocationLivenessSweep({
     repo,
     reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+    reportedReap: composeReportedReap(
+      repo,
+      opts.agentsFor,
+      opts.frames,
+      opts.openCalls,
+    ),
     readTargetRestart: opts.readTargetRestart,
+    readStartWait: opts.readStartWait,
     hasAgent: opts.hasAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
     runsScripts: opts.runsScripts,
@@ -184,6 +221,13 @@ export function createSpawnSessionsAdapter(db: Db): SpawnSessions {
     driverResolution: createDriverResolutionAdapter(db),
     links: createInvocationLinks(db),
   });
+}
+
+export function createInvocationStartAdapter(
+  db: Db,
+  log: (msg: string) => void,
+): ReturnType<typeof createInvocationStart> {
+  return createInvocationStart({ repo: createInvocationsRepository(db), log });
 }
 
 export function createInvocationTasksAdapter(db: Db): InvocationTasks {

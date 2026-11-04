@@ -71,6 +71,7 @@ export const e2eRouter = t.router({
       return ctx.e2e.performFetch(input.agentId, {
         url: input.url,
         headers: input.headers,
+        timeoutMs: input.timeoutMs,
       });
     }),
 

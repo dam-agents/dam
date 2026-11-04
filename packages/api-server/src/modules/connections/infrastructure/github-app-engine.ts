@@ -4,6 +4,7 @@ import type {
   GitHubUserTokenProbe,
 } from "api-server-api";
 import { OAuthTokenEndpointError } from "./oauth-engine.js";
+import { displayLabel } from "./github-identity.js";
 
 export interface GitHubAppTokenSet {
   accessToken: string;
@@ -344,7 +345,7 @@ export function createGitHubAppEngine(
         const batch = body.repositories ?? [];
         for (const repo of batch) {
           if (typeof repo.id === "number" && repo.name) {
-            repositories.push({ id: repo.id, name: repo.name });
+            repositories.push({ id: repo.id, name: displayLabel(repo.name) });
           }
         }
         if (batch.length < REPOS_PER_PAGE) break;
@@ -399,12 +400,14 @@ export function createGitHubAppEngine(
       ),
     ]);
     const repositories = listed?.repositories?.flatMap((repo) =>
-      repo.name ? [repo.name] : [],
+      repo.name ? [displayLabel(repo.name)] : [],
     );
     return {
-      ...(installation?.app_slug ? { appSlug: installation.app_slug } : {}),
+      ...(installation?.app_slug
+        ? { appSlug: displayLabel(installation.app_slug) }
+        : {}),
       ...(installation?.account?.login
-        ? { accountLogin: installation.account.login }
+        ? { accountLogin: displayLabel(installation.account.login) }
         : {}),
       ...(repositories ? { repositories } : {}),
       ...(repositories &&
@@ -486,7 +489,7 @@ export function createGitHubAppEngine(
     const expiresAt = data.expires_at
       ? Math.floor(Date.parse(data.expires_at) / 1000)
       : undefined;
-    const accountLogin = data.installation?.account?.login;
+    const accountLogin = displayLabel(data.installation?.account?.login ?? "");
     return {
       accessToken: data.token,
       ...(expiresAt !== undefined && Number.isFinite(expiresAt)
@@ -523,7 +526,7 @@ export function createGitHubAppEngine(
       const batch = body.repositories ?? [];
       for (const repo of batch) {
         if (typeof repo.id === "number" && repo.name) {
-          repositories.push({ id: repo.id, name: repo.name });
+          repositories.push({ id: repo.id, name: displayLabel(repo.name) });
         }
       }
       if (batch.length < REPOS_PER_PAGE) return { repositories };
@@ -558,7 +561,7 @@ export function createGitHubAppEngine(
       const batch = body.installations ?? [];
       for (const inst of batch) {
         const targetId = inst.target_id ?? inst.account?.id;
-        const accountLogin = inst.account?.login;
+        const accountLogin = displayLabel(inst.account?.login ?? "");
         if (typeof inst.id !== "number" || typeof targetId !== "number") {
           continue;
         }
@@ -636,7 +639,7 @@ export function createGitHubAppEngine(
       const repositorySelection =
         info.repository_selection === "all" ? "all" : "selected";
       const permissions = info.permissions ?? {};
-      const accountLogin = info.account?.login;
+      const accountLogin = displayLabel(info.account?.login ?? "");
 
       let repositories: { id: number; name: string }[] = [];
       let repositoriesTruncated = false;

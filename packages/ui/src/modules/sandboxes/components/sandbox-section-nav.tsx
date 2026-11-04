@@ -76,7 +76,7 @@ export const SECTIONS: SectionEntry[] = [
     section: "environments",
     title: "Environments",
     description:
-      "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It controls them; you decide who may open them.",
+      "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It runs them; people, never the agent, decide who may open them.",
   },
   {
     section: "usage",

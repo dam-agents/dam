@@ -1,16 +1,32 @@
 import type { DelegationNode } from "api-server-api";
 
-import type { AgentState } from "../../../types.js";
+import type { AgentView } from "../../../types.js";
+import { VM_MEMORY_FULL } from "../../agents/lib/overlay-copy.js";
 
 export type DelegationDisplayState = "working" | "waiting" | "done" | "failed";
 
+export type DelegationTarget = Pick<
+  AgentView,
+  "state" | "overBudgetMessage" | "startWaitMessage"
+>;
+
+export function delegationWaitReason(
+  node: DelegationNode,
+  target: DelegationTarget | undefined,
+): string | null {
+  if (node.status !== "running" || node.started || !target) return null;
+  if (target.state === "over_budget")
+    return target.overBudgetMessage ?? VM_MEMORY_FULL;
+  return target.startWaitMessage ?? null;
+}
+
 export function delegationState(
   node: DelegationNode,
-  agentState: AgentState | undefined,
+  target: DelegationTarget | undefined,
 ): DelegationDisplayState {
   if (node.status === "done") return "done";
   if (node.status === "failed") return "failed";
-  return agentState === "over_budget" ? "waiting" : "working";
+  return delegationWaitReason(node, target) !== null ? "waiting" : "working";
 }
 
 export function flattenIds(nodes: readonly DelegationNode[]): string[] {

@@ -6,6 +6,7 @@ import {
   type OutcomeTurnDeps,
 } from "../../../core/outcome-turn.js";
 import type { JobRow } from "../domain/types.js";
+import { scopedName } from "../mcp-tools.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
 
 const MAX_OUTCOMES_PER_TURN = 20;
@@ -43,6 +44,10 @@ async function describe(
       );
     }
   }
+  if (job.images.length > 0)
+    lines.push(
+      `${job.images.length === 1 ? "An image came back with it" : `${job.images.length} images came back with it`}, which a turn cannot carry: read the job with ${scopedName(job.satellite, "get")} to see ${job.images.length === 1 ? "it" : "them"}.`,
+    );
   return lines.join("\n");
 }
 

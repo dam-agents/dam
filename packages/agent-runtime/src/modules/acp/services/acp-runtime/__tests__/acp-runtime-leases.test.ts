@@ -51,6 +51,7 @@ import {
 
 const IDLE_CHECK_MS = 10_000;
 const LEASE_IDLE_MS = 60_000;
+const ENV_WAIT_MS = 15_000;
 
 const SESSION_SETTINGS: Record<string, "process" | "session"> = {
   mode: "session",
@@ -67,7 +68,8 @@ const ALIAS_OF: Record<string, string> = {
 function createLeaseWorld(opts: {
   providers: string[];
   agentRequests?: AgentRequestObserver;
-  modelRequired?: boolean;
+  modelRequired?: boolean | (() => boolean);
+  envReady?: () => boolean;
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
@@ -95,7 +97,11 @@ function createLeaseWorld(opts: {
       [model, settings?.subagentModel].some((m) => m?.includes("/gpt-"))
         ? { CLAUDE_CODE_AUTO_MODE_SERVER: "0" }
         : undefined,
-    modelRequired: () => opts.modelRequired === true,
+    modelRequired: () =>
+      typeof opts.modelRequired === "function"
+        ? opts.modelRequired()
+        : opts.modelRequired === true,
+    ...(opts.envReady && { envReady: opts.envReady, envWaitMs: ENV_WAIT_MS }),
     settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
     settingsError: (_harness, settings) =>
       Object.keys(settings).some((id) => !SESSION_SETTINGS[id])
@@ -640,6 +646,49 @@ describe("acp-runtime: one harness process per harness", () => {
       data: { platform: { reason: PROVIDER_REMOVED_REASON } },
     });
     expect(world.harnessCount("claude-code")).toBe(0);
+  });
+
+  /** TEST_SCENARIO: A client that opens a session on a booting agent before
+   * the platform's env has reached it is not refused as having no model:
+   * nothing is known yet about the agent's providers, so session/new is held
+   * until the env lands and then decided on what it says. Here the env names
+   * no provider the harness reaches through the Model Router, so the session
+   * opens on the harness's own model configuration. With no env in time, the
+   * held session/new is decided on what is known then. */
+  it("holds a session/new with no model until the env reaches a booting agent", () => {
+    vi.useFakeTimers();
+    let envArrived = false;
+    const world = createLeaseWorld({
+      providers: [],
+      modelRequired: () => !envArrived,
+      envReady: () => envArrived,
+    });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    expect(client.reply(1)).toBeUndefined();
+    envArrived = true;
+    world.router.applyEnvChange({
+      namesChanged: true,
+      base: { namesChanged: true },
+      providers: [],
+      harnesses: [],
+    });
+    world.harness("claude-code").replyTo("session/new", { sessionId: "s-1" });
+    expect(client.reply(1)?.error).toBeUndefined();
+    expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-1" });
+
+    const late = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      envReady: () => false,
+    });
+    const other = late.connect();
+    other.send(newSessionOn(2, {}));
+    expect(other.reply(2)).toBeUndefined();
+    vi.advanceTimersByTime(ENV_WAIT_MS);
+    expect(other.reply(2)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
   });
 
   /** TEST_SCENARIO: On a harness that reaches its models through the Model

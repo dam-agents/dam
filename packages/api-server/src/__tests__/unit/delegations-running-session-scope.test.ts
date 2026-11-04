@@ -38,6 +38,7 @@ function row(
     exitCode: null,
     output: null,
     outputExpiresAt: null,
+    startedAt: null,
     harnessConfig: null,
     driverSessionId: null,
     ...overrides,

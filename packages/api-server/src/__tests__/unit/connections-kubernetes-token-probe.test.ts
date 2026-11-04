@@ -136,6 +136,22 @@ describe("Kubernetes token check", () => {
     ).resolves.toEqual({ status: "passed", account: "admin" });
   });
 
+  // TEST_SCENARIO: a cluster names the user the token acts as with a string it controls, and the check is stored and shown in a terminal, so a hostile username is stripped of control bytes and capped.
+  it("strips control bytes and caps a hostile username", async () => {
+    answer = {
+      status: 201,
+      body: {
+        status: { userInfo: { username: `\u001b[31m${"u".repeat(5000)}` } },
+      },
+    };
+    await expect(
+      probeKubernetesToken(target(), "opaque-token", 5_000),
+    ).resolves.toEqual({
+      status: "passed",
+      account: `[31m${"u".repeat(196)}`,
+    });
+  });
+
   // TEST_SCENARIO: the cluster refuses the token; a token whose claim is past says it expired, which is the usual cause for a service-account token.
   it("fails a refused token and says when it expired", async () => {
     answer = { status: 401, body: { kind: "Status", code: 401 } };
