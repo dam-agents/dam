@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
 import { convertedDefault } from "../../modules/harness-config/domain/converted-default.js";
-import { convertedDefaultModel } from "../../modules/harness-config/domain/default-conversion.js";
+import { convertedDefaultModel as converted } from "../../modules/harness-config/domain/default-conversion.js";
 import { defaultModelNoticesOf } from "../../modules/harness-config/domain/default-model-notice.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
@@ -39,6 +39,10 @@ const ROUTED = {
     },
   ],
 };
+
+/** The converted model alone, for the cases where the deciding step is not what is tested. */
+const convertedDefaultModel = (input: Parameters<typeof converted>[0]) =>
+  converted(input)?.model ?? null;
 
 const ANTHROPIC = {
   id: "anth",
@@ -113,7 +117,7 @@ describe("convertedDefaultModel", () => {
     expect(convert("claude/sonnet")).toBe("anthropic/claude-sonnet-5-5");
   });
 
-  // TEST_SCENARIO: a kit names the model its Agent must run on whatever provider serves it, so a declared model wins over the image's tier setting when the provider lists it, under its own name or as the one id ending in it; a declared model this provider does not list falls back to the tier, so the kit's pin never becomes a call that fails.
+  // TEST_SCENARIO: a kit names the model its Agent must run on whatever provider serves it, so a declared model wins over the image's tier setting when the provider lists it, under its own name or as the one id ending in it; a declared model this provider does not list falls through to the rest of the conversion, so the kit's pin never becomes a call that fails.
   it("takes the model the kit declared where the provider lists it", () => {
     const ibm = (declared: string, listed: string[]) =>
       convertedDefaultModel({
@@ -122,7 +126,9 @@ describe("convertedDefaultModel", () => {
         ran: [],
         declared,
       });
-    expect(ibm("claude-opus-5", ["aws/claude-sonnet-5-5"])).toBeNull();
+    expect(ibm("claude-opus-5", ["aws/claude-sonnet-5-5"])).toBe(
+      "ibm/aws/claude-sonnet-5-5",
+    );
     expect(
       ibm("claude-opus-5", ["aws/claude-opus-5-5", "aws/claude-opus-5"]),
     ).toBe("ibm/aws/claude-opus-5");
@@ -144,15 +150,20 @@ describe("convertedDefaultModel", () => {
     ).toBe("anthropic/claude-opus-5-5");
   });
 
-  // TEST_SCENARIO: a provider with no model of the tier gets no other tier in its place, so the owner picks.
-  it("takes no other tier when the provider has none of it", () => {
+  // TEST_SCENARIO: a provider with no model of the tier is not asked for another tier of it by name; the fallback answers instead — the preference list, else the first chat model listed — so an Agent holding a provider that lists models is never left without a default, and the image's tier preset is no pick of the owner's to tell them about.
+  it("falls back when the provider has none of the tier", () => {
     expect(
-      convertedDefaultModel({
+      converted({
         setting: "opus",
-        providers: [{ alias: "ibm", listed: ["aws/claude-sonnet-5-5"] }],
+        providers: [
+          {
+            alias: "ibm",
+            listed: ["aws/text-embedding-3", "aws/claude-sonnet-5-5"],
+          },
+        ],
         ran: [],
       }),
-    ).toBeNull();
+    ).toEqual({ model: "ibm/aws/claude-sonnet-5-5", step: "first-listed" });
   });
 
   // TEST_SCENARIO: Haiku on a provider that lists none runs on its newest Sonnet, as the gateway served it before the Model Router, and is noted; Haiku where it is listed, or any other tier missing, is not substituted.
@@ -165,23 +176,35 @@ describe("convertedDefaultModel", () => {
       });
     expect(
       ibm("haiku", ["aws/claude-sonnet-4-6", "aws/claude-sonnet-5-5"]),
-    ).toEqual({ model: "ibm/aws/claude-sonnet-5-5", changedFrom: "haiku" });
+    ).toEqual({
+      model: "ibm/aws/claude-sonnet-5-5",
+      step: "setting",
+      changedFrom: "haiku",
+    });
     expect(
       ibm("haiku", ["aws/claude-haiku-4-5", "aws/claude-sonnet-5-5"]),
-    ).toEqual({
-      model: "ibm/aws/claude-haiku-4-5",
-    });
-    expect(ibm("opus", ["aws/claude-sonnet-5-5"])).toBeNull();
-    expect(ibm("haiku", ["aws/gpt-5.5"])).toBeNull();
+    ).toEqual({ model: "ibm/aws/claude-haiku-4-5", step: "setting" });
+    expect(ibm("opus", ["aws/claude-sonnet-5-5"])?.changedFrom).toBeUndefined();
+    expect(ibm("haiku", ["aws/gpt-5.5"])?.model).toBe("ibm/aws/gpt-5.5");
   });
 
-  // TEST_SCENARIO: a model id is kept in the provider's own spelling when the provider lists it, and dropped when it does not.
-  it("keeps a listed model id and drops an unlisted one", () => {
+  // TEST_SCENARIO: a model id is kept in the provider's own spelling when the provider lists it; one it does not list is replaced by the preferred model and named as what it replaced, so the owner is told.
+  it("keeps a listed model id and replaces an unlisted one, noted", () => {
     expect(convert("Claude-Opus-4-8")).toBe("anthropic/claude-opus-4-8");
     expect(convert("anthropic/claude-opus-4-8")).toBe(
       "anthropic/claude-opus-4-8",
     );
-    expect(convert("claude-opus-3")).toBeNull();
+    expect(
+      converted({
+        setting: "claude-opus-3",
+        providers: [{ alias: "anthropic", listed: LISTED }],
+        ran: [],
+      }),
+    ).toEqual({
+      model: "anthropic/claude-opus-5-5",
+      step: "preferred",
+      changedFrom: "claude-opus-3",
+    });
   });
 
   // TEST_SCENARIO: the harness's own default is the model the Agent's calls mostly ran when the provider lists it; a model they ran less never stands in for an unlisted one, so that case falls to the platform's preferred model.
@@ -241,7 +264,7 @@ describe("convertedDefaultModel on several fitting providers", () => {
           },
         ],
       }),
-    ).toEqual({ model: "anthropic/claude-opus-5-5" });
+    ).toEqual({ model: "anthropic/claude-opus-5-5", step: "kit" });
     expect(
       convertedDefault({
         setting: "haiku",
@@ -249,12 +272,25 @@ describe("convertedDefaultModel on several fitting providers", () => {
         declared: "claude-opus-5-5",
         providers: [{ alias: "ibm", listed: ["aws/claude-opus-5-5"] }],
       }),
-    ).toEqual({ model: "ibm/aws/claude-opus-5-5" });
+    ).toEqual({ model: "ibm/aws/claude-opus-5-5", step: "kit" });
   });
 
-  // TEST_SCENARIO: an id no provider lists is still the owner's call, not a reason to run the platform's preferred model in its place.
-  it("drops an id no provider lists rather than substituting one", () => {
-    expect(both("claude-opus-3")).toBeNull();
+  // TEST_SCENARIO: an id no provider lists still leaves the Agent a default: the platform's preferred model, noted as replacing it.
+  it("replaces an id no provider lists with the preferred model, noted", () => {
+    expect(
+      converted({
+        setting: "claude-opus-3",
+        ran: [],
+        providers: [
+          { alias: "anthropic", listed: ["claude-opus-4-8"] },
+          { alias: "cb", listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"] },
+        ],
+      }),
+    ).toEqual({
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      step: "preferred",
+      changedFrom: "claude-opus-3",
+    });
   });
 
   // TEST_SCENARIO: the providers are asked in alias order, so two of them listing the same recorded model resolve the way a default provider always has.
@@ -273,20 +309,60 @@ describe("convertedDefaultModel on several fitting providers", () => {
 });
 
 describe("convertedDefaultModel on a provider that prefixes its ids", () => {
-  // TEST_SCENARIO: Claude Code on IBM records a call's model without IBM's route prefix, so the harness default matches the one listed id ending in that name, and none when two routes list it.
+  // TEST_SCENARIO: Claude Code on IBM records a call's model without IBM's route prefix, so the harness default matches the one listed id ending in that name; when two routes list it, the history names neither and the fallback decides.
   it("matches the recorded name to the one listed id ending in it", () => {
     const convert = (listed: string[]) =>
-      convertedDefaultModel({
+      converted({
         setting: null,
         providers: [{ alias: "ibm", listed }],
         ran: ["claude-sonnet-5-5"],
       });
-    expect(convert(["aws/claude-sonnet-5-5", "aws/claude-opus-5-5"])).toBe(
-      "ibm/aws/claude-sonnet-5-5",
-    );
+    expect(convert(["aws/claude-sonnet-5-5", "aws/claude-opus-5-5"])).toEqual({
+      model: "ibm/aws/claude-sonnet-5-5",
+      step: "history",
+    });
     expect(
-      convert(["aws/claude-sonnet-5-5", "gcp/claude-sonnet-5-5"]),
-    ).toBeNull();
+      convert(["aws/claude-sonnet-5-5", "gcp/claude-sonnet-5-5"])?.step,
+    ).toBe("first-listed");
+  });
+
+  // TEST_SCENARIO: a harness setting naming a model without IBM's route prefix (`claude-sonnet-4-6`) is the proxy's `aws/claude-sonnet-4-6`, matched as the conversion matches a recorded call's model, rather than replaced by the preferred model.
+  it("matches a setting to the one listed id ending in it", () => {
+    expect(
+      converted({
+        setting: "claude-sonnet-4-6",
+        providers: [
+          {
+            alias: "ibm",
+            listed: ["aws/claude-opus-5-5", "aws/claude-sonnet-4-6"],
+          },
+        ],
+        ran: [],
+      }),
+    ).toEqual({ model: "ibm/aws/claude-sonnet-4-6", step: "setting" });
+  });
+});
+
+describe("convertedDefaultModel on Bob", () => {
+  const BOB = ["fast", "premium-ide", "premium", "explorer", "background"];
+
+  // TEST_SCENARIO: Bob lists only its own model names, which the preference list names none of, and its calls before the Model Router left no per-call records; so its default is Bob's own `premium`, else the first model it lists, whatever the history says.
+  it("takes Bob's premium, else its first listed model", () => {
+    const bob = (listed: string[], ran: string[] = []) =>
+      converted({ setting: null, providers: [{ alias: "bob", listed }], ran });
+    expect(bob(BOB)).toEqual({
+      model: "bob/premium",
+      step: "provider-default",
+    });
+    expect(bob(BOB, ["fast"])).toEqual({
+      model: "bob/premium",
+      step: "provider-default",
+    });
+    expect(bob(["fast", "background"])).toEqual({
+      model: "bob/fast",
+      step: "first-listed",
+    });
+    expect(bob([])).toBeNull();
   });
 });
 
@@ -325,6 +401,8 @@ describe("the one-time default conversion", () => {
     running?: boolean;
     helloAfterWake?: boolean;
     kitDefaultModel?: string | null;
+    log?: string[];
+    profile?: string;
   }) => {
     const writes: SessionPair[] = [];
     const notes: unknown[] = [];
@@ -341,7 +419,7 @@ describe("the one-time default conversion", () => {
           chat: saved,
           channel: null,
           scheduled: null,
-          chatProfileId: null,
+          chatProfileId: opts.profile ?? null,
         }),
         write: async () => {},
         clear: async () => {},
@@ -388,7 +466,7 @@ describe("the one-time default conversion", () => {
         opts.helloAfterWake === false ? 0 : Number.MAX_SAFE_INTEGER,
       onSaved: () => {},
       now: () => (clock += 60_000),
-      log: () => {},
+      log: (msg) => opts.log?.push(msg),
       sleep: async () => {},
     });
     return {
@@ -477,16 +555,39 @@ describe("the one-time default conversion", () => {
     ]);
   });
 
-  // TEST_SCENARIO: with one provider and nothing that resolves, the save keeps that provider so the picker remembers which one the agent holds, and only the model is left for the owner.
-  it("keeps the one provider when no model resolves", async () => {
-    const options = {
+  // TEST_SCENARIO: a setting naming a model the one provider does not list is replaced by a model it does list, saved with a note naming the replaced model so the owner is told.
+  it("replaces an unlisted setting with a listed model, noted", async () => {
+    const { c, writes, notes } = converter({
       setting: "claude-opus-3",
       catalog: view("listed", ["claude-opus-4-8"]),
-    };
-    const { c, writes } = converter(options);
+    });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes).toEqual([
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-4-8",
+      },
+    ]);
+    expect(notes).toEqual([{ changedFrom: "claude-opus-3" }]);
+  });
+
+  // TEST_SCENARIO: with one provider that lists no chat model, the save keeps that provider so the picker remembers which one the agent holds, and only the model is left for the owner.
+  it("keeps the one provider when it lists no model", async () => {
+    const { c, writes } = converter({ catalog: view("listed", []) });
     expect(await c.convert("a")).toBe("not-set");
     expect(writes).toEqual([
       { harness: "claude-code", provider: "anth", model: null },
+    ]);
+  });
+
+  // TEST_SCENARIO: the log line names what the conversion decided from — the setting, how many models each provider listed, how many models the agent ran, and the deciding step — so a surprising default can be explained from the log alone.
+  it("logs what it decided from", async () => {
+    const logs: string[] = [];
+    const { c } = converter({ setting: "default", ran: ["claude-opus-4-8"], log: logs });
+    await c.convert("a");
+    expect(logs).toEqual([
+      '[default-conversion] a: default set to anthropic/claude-opus-4-8 on claude-code; setting "default", listed anthropic=2, ran 1, step history',
     ]);
   });
 
@@ -563,9 +664,13 @@ describe("the one-time default conversion", () => {
     expect(refused.writes[0]?.model).toBeNull();
   });
 
-  // TEST_SCENARIO: a fire wakes an Agent first only while it is moved to a new image and asleep, so the fire is checked against the new runtime; its start ends the move, so a later fire takes the normal order.
+  // TEST_SCENARIO: a fire wakes an Agent with a saved default first only while it is moved to a new image and asleep, so the fire is checked against the new runtime; its start ends the move, so a later fire takes the normal order.
   it("wakes first only an agent moved to a new image and asleep", async () => {
-    const notMoved = converter({ moved: false, running: false });
+    const notMoved = converter({
+      moved: false,
+      running: false,
+      saved: { harness: "claude-code", provider: "anth", model: "x/y" },
+    });
     expect(await notMoved.c.ensureForFire("a")).toBeNull();
     expect(notMoved.wakes).toEqual([]);
     expect(notMoved.writes).toEqual([]);
@@ -588,6 +693,32 @@ describe("the one-time default conversion", () => {
     await savedAlready.c.ensureForFire("a");
     expect(savedAlready.wakes).toEqual(["a"]);
     expect(savedAlready.writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: an Agent on the Model Router with nothing saved — one whose "not set" default the migration cleared — converts on its next fire, waking it first when it sleeps, so the fire goes out on the converted default without waiting for a start; an Agent on an older runtime is left alone.
+  it("converts an unconverted agent on its next fire", async () => {
+    const asleep = converter({ moved: false, running: false });
+    expect(await asleep.c.pendingAfterMove("a")).toBe(true);
+    expect(await asleep.c.ensureForFire("a")).toEqual({
+      previous: "T0",
+      written: "T1",
+    });
+    expect(asleep.writes[0]?.model).toBe("anthropic/claude-opus-5-5");
+    expect(await asleep.c.pendingAfterMove("a")).toBe(false);
+
+    const awake = converter({ moved: false, running: true });
+    expect(await awake.c.ensureForFire("a")).toBeNull();
+    expect(awake.wakes).toEqual([]);
+    expect(awake.writes[0]?.model).toBe("anthropic/claude-opus-5-5");
+
+    const profiled = converter({ moved: false, running: false, profile: "p" });
+    expect(await profiled.c.pendingAfterMove("a")).toBe(false);
+    expect(await profiled.c.ensureForFire("a")).toBeNull();
+
+    const old = converter({ moved: false, running: false, capabilities: {} });
+    expect(await old.c.pendingAfterMove("a")).toBe(false);
+    expect(await old.c.ensureForFire("a")).toBeNull();
+    expect(old.wakes).toEqual([]);
   });
 
   // TEST_SCENARIO: a moved Agent whose new runtime does not say hello in time fails the fire as still setting up, rather than letting it go out on the old runtime's view.

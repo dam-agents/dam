@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#MISE description="Check the clearing of not-set default models using temporary tables in the local cluster"
+set -euo pipefail
+repo="$(git rev-parse --show-toplevel)"
+{
+  cat <<'SQL'
+BEGIN;
+CREATE TEMP TABLE agents (id text, session_pair jsonb, session_profile text, runtime_capabilities jsonb, default_model_note jsonb);
+INSERT INTO agents VALUES
+  ('unset', '{"harness":"bob","provider":"c1","model":null}', NULL, '{"modelRouter":true}', NULL),
+  ('no-model-key', '{"harness":"pi","provider":null}', NULL, '{"modelRouter":true}', NULL),
+  ('set', '{"harness":"claude-code","provider":"c2","model":"ibm/aws/claude-opus-5-5"}', NULL, '{"modelRouter":true}', '{"changedFrom":"haiku"}'),
+  ('old-runtime', '{"harness":"claude-code","provider":"c3","model":null}', NULL, '{}', NULL),
+  ('profile', NULL, 'p1', '{"modelRouter":true}', NULL),
+  ('nothing', NULL, NULL, '{"modelRouter":true}', NULL);
+SQL
+  cat "$repo/packages/db/drizzle/0130_reconvert_unset_default_models.sql"
+  cat <<'SQL'
+DO $$
+BEGIN
+  ASSERT (SELECT session_pair IS NULL FROM agents WHERE id = 'unset'), 'Not-set default kept';
+  ASSERT (SELECT session_pair IS NULL FROM agents WHERE id = 'no-model-key'), 'Default without a model key kept';
+  ASSERT (SELECT session_pair ->> 'model' = 'ibm/aws/claude-opus-5-5' AND default_model_note IS NOT NULL FROM agents WHERE id = 'set'), 'A default with a model changed';
+  ASSERT (SELECT session_pair IS NOT NULL FROM agents WHERE id = 'old-runtime'), 'An older runtime''s default cleared';
+  ASSERT (SELECT session_profile = 'p1' FROM agents WHERE id = 'profile'), 'A profile default changed';
+END $$;
+ROLLBACK;
+SQL
+} | mise run //:cluster:kubectl -- exec -i platform-postgres-0 -- psql -U platform -d platform -v ON_ERROR_STOP=1

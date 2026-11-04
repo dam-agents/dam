@@ -47,9 +47,10 @@ const LISTING_WAIT_MS = 120_000;
  * Agent still on an older runtime, or whose providers have not listed, or are
  * unsupported only because an older runtime's env names no template for them,
  * is left for a later try. A fire
- * wakes an Agent first only while it is moved to a new image and asleep, so
+ * wakes an Agent first while it is moved to a new image and asleep, so
  * the fire is checked and resolved against the new runtime, not the one its
- * last hello came from; that start ends the move. When the new runtime does
+ * last hello came from; that start ends the move. A fire on an Agent on the
+ * Model Router with nothing saved converts it first the same way. When the new runtime does
  * not say hello in time, the fire fails as still setting up rather than go
  * out with the old runtime's view.
  */
@@ -90,12 +91,13 @@ export function createDefaultConverter(deps: {
   const save = async (
     agentId: string,
     pair: SessionPair,
+    decision: string,
     note?: DefaultModelNote,
   ): Promise<DefaultConversion> => {
     if (!(await deps.pairRepo.writeIfEmpty(agentId, pair, note)))
       return "saved";
     deps.log(
-      `[default-conversion] ${agentId}: ${pair.model === null ? "default not set" : `default set to ${pair.model}`} on ${pair.harness}${note ? ` (in place of ${note.changedFrom})` : ""}`,
+      `[default-conversion] ${agentId}: ${pair.model === null ? "default not set" : `default set to ${pair.model}`} on ${pair.harness}${note ? ` (in place of ${note.changedFrom})` : ""}; ${decision}`,
     );
     deps.onSaved(agentId);
     return pair.model === null ? "not-set" : "converted";
@@ -113,7 +115,11 @@ export function createDefaultConverter(deps: {
       (p) => harnessFits(deps.catalog, harness, p.type, p.templateId),
     );
     if (fitting.length === 0)
-      return save(agentId, { harness, provider: null, model: null });
+      return save(
+        agentId,
+        { harness, provider: null, model: null },
+        "no granted provider fits the harness",
+      );
     const view = await deps.catalogView(agentId, harness).catch(() => null);
     const groups = fitting.flatMap((p) => {
       const group = view?.providers.find((g) => g.connectionId === p.id);
@@ -138,14 +144,22 @@ export function createDefaultConverter(deps: {
       null;
     const needsRan =
       !setting?.trim() || setting.trim().toLowerCase() === "default";
+    const ran = needsRan ? await modelsRan(agentId) : [];
     const converted = convertedDefault({
       setting,
       providers,
-      ran: needsRan ? await modelsRan(agentId) : [],
+      ran,
       declared: await deps.kitDefaultModel(agentId),
     });
     const model = converted?.model ?? null;
     const alias = model ? parseQualifiedModel(model)?.alias : null;
+    /** UNIT_BOUNDARY_DESCRIPTION: what the conversion decided from, so a default saved as not set, or as an unexpected model, can be explained from the log alone. */
+    const decision = [
+      `setting ${setting === null ? "none" : JSON.stringify(setting)}`,
+      `listed ${providers.map((p) => `${p.alias}=${p.listed.length}`).join(",")}`,
+      `ran ${ran.length}`,
+      `step ${converted?.step ?? "none"}`,
+    ].join(", ");
     return save(
       agentId,
       {
@@ -155,6 +169,7 @@ export function createDefaultConverter(deps: {
           (providers.length === 1 ? providers[0]!.connectionId : null),
         model,
       },
+      decision,
       converted?.changedFrom
         ? { changedFrom: converted.changedFrom }
         : undefined,
@@ -186,6 +201,13 @@ export function createDefaultConverter(deps: {
     return run;
   };
 
+  /** UNIT_BOUNDARY_DESCRIPTION: an Agent on the Model Router with nothing saved, such as one whose "not set" default a migration cleared, converts on its next fire as it would on a start, so the fire need not wait for a hello that may not come. */
+  const unconverted = async (agentId: string): Promise<boolean> => {
+    if (!routesByModelName(await deps.getCapabilities(agentId))) return false;
+    const saved = await deps.pairRepo.readSaved(agentId);
+    return saved.chat === null && saved.chatProfileId === null;
+  };
+
   const helloSince = async (
     agentId: string,
     since: number,
@@ -202,14 +224,19 @@ export function createDefaultConverter(deps: {
     convert,
     ensure,
     async pendingAfterMove(agentId) {
-      if (!(await deps.movedToNewImage(agentId))) return false;
+      if (!(await deps.movedToNewImage(agentId)))
+        return unconverted(agentId);
       return (
         !(await deps.isRunning(agentId)) ||
         !(await deps.pairRepo.read(agentId, "chat"))
       );
     },
     async ensureForFire(agentId) {
-      if (!(await deps.movedToNewImage(agentId))) return null;
+      if (
+        !(await deps.movedToNewImage(agentId)) &&
+        !(await unconverted(agentId))
+      )
+        return null;
       let stamp: WakeStamp | null = null;
       if (!(await deps.isRunning(agentId))) {
         const since = now();
