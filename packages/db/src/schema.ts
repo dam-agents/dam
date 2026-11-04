@@ -16,6 +16,7 @@ import {
   unique,
   smallint,
   check,
+  uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
@@ -764,6 +765,7 @@ export const satellites = pgTable(
     maxConcurrent: integer("max_concurrent").notNull(),
     tools: jsonb("tools").notNull(),
     nextSequence: integer("next_sequence").notNull().default(1),
+    incarnation: uuid("incarnation").notNull().defaultRandom(),
     draining: boolean("draining").notNull().default(false),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })

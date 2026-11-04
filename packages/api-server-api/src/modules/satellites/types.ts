@@ -13,9 +13,15 @@ export type SatelliteTool = z.infer<typeof satelliteToolSchema>;
 export type SatelliteImage = z.infer<typeof satelliteImageSchema>;
 export type SatelliteManifest = z.infer<typeof satelliteManifestSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
-export type ClaimInput = z.infer<typeof claimInputSchema>;
-export type HeartbeatInput = z.infer<typeof heartbeatInputSchema>;
-export type ReportInput = z.infer<typeof reportInputSchema>;
+export type ClaimInput = z.infer<typeof claimInputSchema> & {
+  incarnation?: string;
+};
+export type HeartbeatInput = z.infer<typeof heartbeatInputSchema> & {
+  incarnation?: string;
+};
+export type ReportInput = z.infer<typeof reportInputSchema> & {
+  incarnation?: string;
+};
 
 export interface SatelliteView {
   name: string;
@@ -85,9 +91,10 @@ export interface SatelliteWorkerOps {
     owner: string,
     manifest: SatelliteManifest,
     host?: string,
-  ): Promise<void>;
+    resume?: string,
+  ): Promise<{ incarnation: string }>;
   claim(owner: string, input: ClaimInput): Promise<WorkItem[]>;
   heartbeat(owner: string, input: HeartbeatInput): Promise<void>;
   report(owner: string, input: ReportInput): Promise<void>;
-  drain(owner: string, satellite: string): Promise<void>;
+  drain(owner: string, satellite: string, incarnation?: string): Promise<void>;
 }
