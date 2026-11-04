@@ -614,8 +614,7 @@ export function createEnvironmentGate(
       );
     }
     const agentKey = agentKeyOf(c.req.header(AGENT_KEY_HEADER));
-    const startPath =
-      c.req.path === STATUS_PATH || c.req.path === START_PATH;
+    const startPath = c.req.path === STATUS_PATH || c.req.path === START_PATH;
     if (
       agentKey !== undefined &&
       c.req.path.startsWith(RESERVED_PREFIX) &&

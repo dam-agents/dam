@@ -77,7 +77,8 @@ An Agent opens an Environment as itself, from its sandbox, with whatever tool it
 - **The key decides.** A request that carries it is the Agent's, whatever cookie it carries, so a person's sign-in in the Agent's browser panel never opens more than the Agent's own lists do.
   The Owning Agent is always let in, as its owner is; any other Agent, the owner's own included, only when the Environment's list or its Owning Agent's list names it.
   Being of the same owner, or the agent of someone on a list, counts for nothing.
-  A key gets no session and no sign-in: the reserved paths refuse it, and a refusal is a page, not a redirect to the front door.
+  A key gets no session and no sign-in: the reserved paths refuse it, but for the loading page's status and retry, and a refusal is a page, not a redirect to the front door.
+  Let in, an Agent meets the app's start as a person does: a 503 to try again until the endpoint is ready.
   The cross-origin check holds for keyed requests too, so another site's page in the Agent's browser cannot use the key.
 - **The key reaches only the gate.** The relay strips it before the app; a request that carries it to any other host of the api-server is refused before any route reads it.
 - **A visible rule.** The key is sent only while the Agent carries the platform's Environments egress rule: an allow for the environments domain, `source: platform:environments`, added with the key and listed in its own group on the agent's egress rules, labelled as the platform's.
