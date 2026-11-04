@@ -50,7 +50,7 @@ test("a prompt queued when the connection drops is delivered after the tab recon
     await setMockLongTurnReply(api, agentId, { holdMs: 0, tail: replyB });
   });
 
-  await test.step("losing the connection raises nothing — the queue is parked", async () => {
+  await test.step("losing the connection raises nothing — the queue waits on", async () => {
     await dropWebSockets(page);
     await expect(deliveryError(page)).toBeHidden();
     await expect(undeliveredMarker(page)).toHaveCount(0);
