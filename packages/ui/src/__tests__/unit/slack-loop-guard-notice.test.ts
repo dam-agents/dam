@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the notice a Slack channel row shows after the loop guard dropped bot or app posts there. It names the count, the time of the last drop, the guard's limit as the server sends it, and the newest drops with their sender and place.
+// TEST_OVERVIEW: the notice a Slack channel row shows after the loop guard dropped bot or app posts there. It names the count, the time of the last drop, the guard's limit, window and pause as the server sends them, and the newest drops with their sender and place.
 import type { SlackLoopGuardDrops } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +12,9 @@ function drops(
   overrides: Partial<SlackLoopGuardDrops> = {},
 ): SlackLoopGuardDrops {
   return {
-    limit: 3,
+    limit: 10,
+    windowMs: 60_000,
+    cooldownMs: 300_000,
     dropped: 1,
     lastDroppedAt: at(22, 17),
     recent: [],
@@ -21,13 +23,19 @@ function drops(
 }
 
 describe("the loop guard notice", () => {
-  // TEST_SCENARIO: one drop today reads in the singular with the time alone, and the rule names the limit the server sent.
-  it("names one drop today and the server's limit", () => {
-    const copy = loopGuardNoticeCopy(drops({ limit: 5 }), NOW);
+  // TEST_SCENARIO: one drop today reads in the singular with the time alone, and the rule names the limit, window and pause the server sent.
+  it("names one drop today and the server's rate limit", () => {
+    const copy = loopGuardNoticeCopy(
+      drops({ limit: 5, windowMs: 120_000, cooldownMs: 60_000 }),
+      NOW,
+    );
     expect(copy.title).toMatch(
       /^1 bot or app post dropped by the loop guard, last [^,]*\.$/,
     );
-    expect(copy.rule).toContain("Once 5 bot or app posts in a row");
+    expect(copy.rule).toContain(
+      "When more than 5 bot or app posts reach one conversation within 2 minutes",
+    );
+    expect(copy.rule).toContain("start no turn for a minute");
     expect(copy.latest).toBeNull();
   });
 

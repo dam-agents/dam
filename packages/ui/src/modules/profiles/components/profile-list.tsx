@@ -3,6 +3,7 @@ import type { HarnessCapability } from "agent-runtime-api";
 import type { ProfileWithUsage } from "api-server-api";
 import { type ReactNode, useId, useState } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { PairSummary } from "../../sessions/components/session-pair-trigger.js";
@@ -37,6 +38,8 @@ export function ModelConfiguration({
   subagent,
   customHint,
   onAgentPicks,
+  defaultChoice,
+  onConfigureProviders,
 }: {
   agentId: string | null;
   profiles: readonly ProfileWithUsage[];
@@ -48,6 +51,15 @@ export function ModelConfiguration({
   subagent?: ProfileSlot;
   customHint: string;
   onAgentPicks: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: a page's pick that follows the agent's default, first in its list, which clears the pick; only a page that has a default to follow shows it. */
+  defaultChoice?: {
+    label: string;
+    detail: ReactNode;
+    selected: boolean;
+    onClick: () => void;
+  };
+  /** UNIT_BOUNDARY_DESCRIPTION: the gear the chat input's picker shows on the list's heading, which opens the agent's Providers section; a picker on a config page leaves it out. */
+  onConfigureProviders?: () => void;
 }) {
   const { attach, manage } = useProfileAttach(agentId);
   const choices = (slot: ProfileSlot, listed: readonly ProfileWithUsage[]) => (
@@ -80,19 +92,32 @@ export function ModelConfiguration({
     <div className="flex flex-col">
       <SectionHeading
         action={
-          <button
-            type="button"
-            aria-label="Configure providers"
-            title="Configure providers"
-            onClick={manage}
-            className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Settings size={14} />
-          </button>
+          onConfigureProviders && (
+            <Tooltip content="Configure providers">
+              <button
+                type="button"
+                aria-label="Configure providers"
+                onClick={onConfigureProviders}
+                className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Settings size={14} />
+              </button>
+            </Tooltip>
+          )
         }
       >
         Primary model
       </SectionHeading>
+      {defaultChoice && (
+        <CustomRow
+          label={defaultChoice.label}
+          detail={defaultChoice.detail}
+          selected={defaultChoice.selected}
+          onClick={defaultChoice.onClick}
+          next={false}
+          className="mt-0"
+        />
+      )}
       {choices(primary, profiles)}
       {subagent && (
         <>
@@ -249,11 +274,16 @@ export function CustomRow({
   detail,
   selected,
   onClick,
+  next = true,
+  className,
 }: {
   label: string;
   detail?: ReactNode;
   selected: boolean;
   onClick: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: a row that picks in place, rather than opening a screen of its own, carries no chevron. */
+  next?: boolean;
+  className?: string;
 }) {
   return (
     <button
@@ -263,6 +293,7 @@ export function CustomRow({
       className={cn(
         "mt-1 flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left hover:bg-muted",
         selected && "bg-muted",
+        className,
       )}
     >
       <span className="min-w-0">
@@ -282,7 +313,7 @@ export function CustomRow({
       </span>
       <span className="flex shrink-0 items-center gap-1">
         {selected && <Checkmark size={16} aria-hidden />}
-        <ChevronRight size={14} aria-hidden />
+        {next && <ChevronRight size={14} aria-hidden />}
       </span>
     </button>
   );

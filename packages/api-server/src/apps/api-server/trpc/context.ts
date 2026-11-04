@@ -15,6 +15,7 @@ import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
   createDefaultModelNoticeReader,
+  createRunBoundary,
   isNoDefaultModelError,
 } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
@@ -43,7 +44,10 @@ import {
 import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
-import { composeProfilesForOwner } from "../../../modules/profiles/index.js";
+import {
+  composeProfileResolverOn,
+  composeProfilesForOwner,
+} from "../../../modules/profiles/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
 import {
   composeChatFormPreferencesForOwner,
@@ -91,6 +95,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     outageAlerts,
     wrapperFrameSender,
     presetSeeder,
+    platformAccess,
     trustedHosts,
     agentCleanupHooks,
     environmentsFor,
@@ -190,6 +195,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { budgets, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
       owner: user.sub,
+      cpuPool: {
+        defaultCpu: config.defaultUserCpuBudget,
+        machineCpus: config.vmMachineCpus,
+        agentStore: { authority: config.agentStore, db },
+      },
       listAgentIds: async () =>
         (await agentsRepo.list(user.sub)).map((a) => a.id),
       isSlackUnlinked: async () =>
@@ -378,6 +388,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       l7Hosts,
       presetSeeder,
       trustedHosts,
+      platformAccess,
     });
     const { service: approvals } = composeApprovalsService({
       db,
@@ -418,7 +429,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
     });
     const satellites = satellitesBoot.serviceFor(user.sub, user.agentIds);
+    /* UNIT_BOUNDARY_DESCRIPTION: the defaults a runtime follows are settled for their run here, so the event carries the native subagent keys derived from each pair (D193B). */
+    const runBoundary = createRunBoundary({
+      inputsOf: async (agentId) => ({
+        capabilities: await getAgentCapabilities(agentId),
+        catalog: await connections.modelCatalog(agentId),
+      }),
+    });
     const { service: harnessConfig } = composeHarnessConfigModule({
+      boundary: runBoundary,
+      resolveProfileOn: composeProfileResolverOn(subPseudonymizer),
       catalog: harnesses,
       resolveProfile,
       db,
@@ -428,6 +448,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
+      ownerCatalog: (agentId) => connections.modelCatalog(agentId),
       specHarness: async (agentId) =>
         (await agentsRepo.get(agentId))?.spec.harness,
       isSettled: (agentId) =>

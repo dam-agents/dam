@@ -143,6 +143,7 @@ const profile = (
   harness: "claude-code",
   providerTemplate: "curve-bender-deployment",
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  subagent: null,
   settings: {},
   newAgentDefault: true,
   usage: { agents: 0, channels: 0, schedules: 0 },
@@ -345,11 +346,11 @@ describe("the schedule form's Runs on field", () => {
     expect(onProfile).toContain("&quot;profileId&quot;:&quot;p1&quot;");
   });
 
-  /** TEST_SCENARIO: a schedule written before profiles that follows the
-   * agent's chat default says so, which is what its empty values mean now
-   * that nothing writes a scheduled default (D90/D92), and names the default
-   * in the one summary; a new one does not offer it (D123). */
-  it("names the empty choice the agent's chat default, only where it is the row's own", () => {
+  /** TEST_SCENARIO: a schedule that names no choice of its own follows the
+   * agent's model for schedules, says so, and names what that is now in the one
+   * summary; a form with concrete values does not offer the empty choice
+   * (D123). */
+  it("names the empty choice the agent's model for schedules, only where it is the row's own", () => {
     state.profiles = [profile()];
     state.fallback = {
       harness: "claude-code",
@@ -362,8 +363,8 @@ describe("the schedule form's Runs on field", () => {
     );
     state.fallback = undefined;
     expect(follows).toContain("fable · Low (AWS Bedrock)");
-    expect(follows).toContain("follows the agent&#x27;s chat default");
-    expect(follows).not.toContain("Scheduled default");
+    expect(follows).toContain("follows the agent&#x27;s model for schedules");
+    expect(follows).not.toContain("The agent&#x27;s chat default");
     expect(
       renderToStaticMarkup(createElement(Field, { profile: "" })),
     ).not.toContain("follows the agent");

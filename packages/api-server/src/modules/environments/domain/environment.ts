@@ -62,6 +62,27 @@ export function clampExpiry(
   return new Date(Math.min(requested.getTime(), max));
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Resolves the idle timeout an owning Agent asks
+ * for, in minutes: the install's default for Environments when it asks for
+ * none, and at most the install's maximum, cut down to it as an expiry is. An
+ * Environment always sleeps when idle, so zero or less is refused rather than
+ * read as "never".
+ */
+export function clampIdleTimeout(
+  requested: number | undefined,
+  defaultMin: number,
+  maxMin: number,
+): number | { error: string } {
+  const minutes = requested ?? defaultMin;
+  if (!Number.isInteger(minutes) || minutes < 1)
+    return {
+      error:
+        "the idle timeout must be at least one minute: an Environment always sleeps when nobody uses it",
+    };
+  return Math.min(minutes, maxMin);
+}
+
 export function environmentAgentName(owningAgentName: string, name: string) {
   return `${owningAgentName} · ${name}`;
 }

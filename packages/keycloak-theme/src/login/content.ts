@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { safeDocsUrl } from "./lib/docs-url.js";
+
 /* UNIT_BOUNDARY_DESCRIPTION: The login page's deployment-specific content. The
  * docs link and the community link are the chart's keycloak.login values, read
  * from the PLATFORM_LOGIN_* properties by readLoginContent; an empty docs URL,
@@ -27,7 +29,7 @@ export type LoginContent = {
 };
 
 export type LoginContentProperties = {
-  PLATFORM_LOGIN_DOCS_URL: string;
+  PLATFORM_DOCS_URL: string;
   PLATFORM_LOGIN_COMMUNITY_LABEL: string;
   PLATFORM_LOGIN_COMMUNITY_URL: string;
 };
@@ -41,7 +43,7 @@ export function readLoginContent(
   const label = properties.PLATFORM_LOGIN_COMMUNITY_LABEL.trim();
   const url = properties.PLATFORM_LOGIN_COMMUNITY_URL.trim();
   return {
-    docsUrl: properties.PLATFORM_LOGIN_DOCS_URL.trim(),
+    docsUrl: safeDocsUrl(properties.PLATFORM_DOCS_URL.trim()) ?? "",
     community: label && url ? { label, url } : undefined,
   };
 }

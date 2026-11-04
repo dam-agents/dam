@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-02
+Last verified: 2026-11-03
 
 ## Overview
 
@@ -195,7 +195,7 @@ A schedule's choices live on its sessions alone.
 A new schedule names a **profile** rather than its own choices: one harness, model and settings the agent's owner holds, kept on the schedule and resolved when the schedule is read, so an edit of the profile reaches every later fire.
 Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else the owner's seeded Default, and picks in the chat's own picker, Custom selection included, for a schedule with a reason of its own.
 The picker sets the subagent slot beside the primary, kept as the chat default keeps it: a profile, values of its own, or neither, which lets the agent pick, and a fire runs on both slots.
-The form saves a Custom selection only with a model; a schedule written before profiles that still follows the chat default is the one exception, and its form shows the default's values as a hint, not as a selection.
+The form saves a Custom selection only with a model; a schedule that keeps no choice of its own, and so follows the agent's model for schedules, is the one exception, and its form shows that default's values as a hint, not as a selection.
 A schedule names a profile or its own values, never both: a save that names the profile keeps it, and one that gives values detaches it, keeping the profile's values for the choices it did not give.
 A profile that cannot run on the agent fails the fire with its reason, and the run is never reported as following the agent's default.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.

@@ -36,10 +36,11 @@ interface Props {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The moment a user unlocks an avatar character.
  * An egg wobbles and cracks, the character pops out with confetti in its own
- * colors, and a short message says where the user can use it. After a few
- * seconds, or on "Nice", it shrinks into the checklist below, where the
- * character takes its place. The countdown waits while the pointer or focus is
- * on it, so nobody loses it mid-read (WCAG 2.2.1), and restarts in full after.
+ * colors, and a short message beside it says where the user can use it. After
+ * a few seconds, or on "Nice", it shrinks into the Get started item in the
+ * sidebar, where the character takes its place. The countdown waits while the
+ * pointer or focus is on it, so nobody loses it mid-read (WCAG 2.2.1), and
+ * restarts in full after.
  */
 export function UnlockCelebration({ character, variant, onFinished }: Props) {
   const [collecting, setCollecting] = useState(false);
@@ -69,6 +70,7 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
     <div
       role="status"
       aria-live="polite"
+      data-testid="getting-started-celebration"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
@@ -76,11 +78,11 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
         if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
       }}
       className={cn(
-        "flex flex-col items-center gap-1 border-b border-border px-4 pt-2 pb-4 text-center",
+        "flex max-w-[calc(100vw-2rem)] items-center",
         collecting && "animate-[unlock-collect_0.45s_ease-in_forwards]",
       )}
     >
-      <div className="relative size-32 shrink-0">
+      <div className="relative -mr-5 size-32 shrink-0">
         <ConfettiBurst character={character} />
         <div className="absolute inset-9 animate-[unlock-wobble_0.9s_ease-in-out]">
           <AvatarEgg
@@ -96,9 +98,9 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
           <AgentAvatar name="" avatar={character} size={96} playing />
         </div>
       </div>
-      <div className="opacity-0 animate-[unlock-bubble_0.35s_ease-out_1.15s_forwards]">
+      <div className="w-[230px] rounded-xl border border-border bg-popover p-4 opacity-0 shadow-xl animate-[unlock-bubble_0.35s_ease-out_1.15s_forwards]">
         <p className="text-sm font-semibold text-foreground">{copy.title}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{copy.body}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{copy.body}</p>
         <Button size="sm" className="mt-3" onClick={() => setCollecting(true)}>
           Nice
         </Button>

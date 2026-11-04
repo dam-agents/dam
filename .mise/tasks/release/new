@@ -32,20 +32,20 @@ echo ""
 echo "What will happen:"
 echo -e "  - Nothing will be published yet."
 echo -e "  - Tip of the \x1b[36mmain\x1b[0m branch will be prepared for release $current_version in \x1b[36m$release_branch\x1b[0m branch."
-echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be bumped to ${current_version}-rc1."
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be bumped to ${current_version}-rc.1."
 echo -e "  - A PR bumping pending version in \x1b[36mmain\x1b[0m to $next_version will be opened — it needs one approval, then merge it. (This can be bumped more if the next release needs to be minor/major.)"
 echo -e "Want to release a different version than $current_version? Cancel, run \x1b[36mmise run release:set-version <version>\x1b[0m on the \x1b[36mmain\x1b[0m branch and then re-run this task."
 gum confirm "Proceed?"
 
 set -x
 git checkout -B $release_branch main
-mise run release:set-version "${current_version}-rc1"
+mise run release:set-version "${current_version}-rc.1"
 git push --set-upstream origin $release_branch
 set +x
-echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${current_version}-rc1 created."
+echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${current_version}-rc.1 created."
 
 open_main_bump_pr "$next_version" "after opening \`$release_branch\`"
 
 git checkout $release_branch
 
-echo -e "Now you can use \x1b[36mmise run release:publish-rc\x1b[0m to publish a release candidate ${current_version}-rc1, or \x1b[36mmise run release:publish-stable\x1b[0m to publish stable $current_version."
+echo -e "Now you can use \x1b[36mmise run release:publish-rc\x1b[0m to publish a release candidate ${current_version}-rc.1, or \x1b[36mmise run release:publish-stable\x1b[0m to publish stable $current_version."

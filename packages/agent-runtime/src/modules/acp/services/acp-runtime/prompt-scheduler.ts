@@ -13,7 +13,6 @@ import type { JsonRpcId } from "api-server-api";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
 const PROMPT_QUEUE_CAP = 32;
-const DEFAULT_QUEUE_PARK_MS = 90 * 1000;
 const DEFAULT_STEER_WAIT_MS = 60 * 1000;
 
 export type PromptFate = "started" | "queued" | "steering" | "refused";
@@ -22,8 +21,7 @@ export type SteerNowFate = "sent" | "not-queued" | "cannot-steer";
 
 export type SteerOutcome = "injected" | "refused";
 
-export type QueueDropCause =
-  "park-expired" | "session-forgotten" | "scheduler-cleared";
+export type QueueDropCause = "session-forgotten" | "scheduler-cleared";
 
 export type SteerOnlyAnswer =
   "injected" | "noRunningTurn" | "notYourTurn" | "queueFull";
@@ -166,7 +164,6 @@ export interface PromptSchedulerDeps {
     turn: { promptId: string | null; runPrompt: boolean },
   ) => void;
   atSteerPoint?: (sessionId: string) => boolean;
-  queueParkMs?: number;
   steerWaitMs?: number;
 }
 
@@ -210,23 +207,20 @@ export interface PromptSchedulerDeps {
  * no promptStarted is sent. The turn-started and turn-ended callbacks fire on
  * every path that starts or drops an active turn, so an observer timing a turn
  * cannot be left with one it believes is still running.
- * A queued prompt starts only when its session can take one — a channel
- * engaged to read the answer, and the harness holding the session — so this
- * is the single place anything waits, whether it waits for the turn ahead or
- * for the session to be loaded back into the harness. An unattended prompt
- * is the exception: a scheduled fire sent by a non-viewer channel has nobody
- * reading it live and nobody coming back for it, so it waits for the harness
- * alone, and a queue holding only such prompts is never parked. Otherwise the
- * last channel leaving parks the queue rather than dropping it, so a page
- * reload keeps its place; a client that engages again within the park window
- * resumes the queue, and only when that window passes with nobody back is the
- * queue dropped. Every route a queue can leave by — that window expiring, the
- * session being forgotten, the scheduler being cleared when the harness goes
- * down — announces it over onQueueDropped with the cause, so a queue cannot
- * be discarded anywhere without its prompts being written down first. Nothing
- * outside this module ever removes a queue itself. refuseQueue is the one
- * exception and answers each sender with an error instead, so the loss is
- * reported to the client that is still there to hear it rather than recorded.
+ * A queued prompt starts only when its session can take one — the harness
+ * holding the session — so this is the single place anything waits, whether
+ * it waits for the turn ahead or for the session to be loaded back into the
+ * harness. It never waits for a reader: a prompt the runtime accepted runs
+ * whether or not its sender is still engaged, as a turn already running does
+ * when its viewer leaves, so a person who opens another session while their
+ * message waits finds the answer when they come back. Every route a queue can
+ * leave by — the session being forgotten, the scheduler being cleared when
+ * the harness goes down — announces it over onQueueDropped with the cause, so
+ * a queue cannot be discarded anywhere without its prompts being written down
+ * first. Nothing outside this module ever removes a queue itself. refuseQueue
+ * is the one exception and answers each sender with an error instead, so the
+ * loss is reported to the client that is still there to hear it rather than
+ * recorded.
  * A setting change for a session (its model or mode) waits in the same place
  * but is not a turn: it applies to the session's next turn, so it waits for
  * the turn in flight to end and for the session to be loaded back into the
@@ -256,8 +250,6 @@ export function createPromptScheduler(
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
   const settingsInFlight = new Map<string, Map<number, PromptSubmission>>();
-  const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
   const steerWaitMs = deps.steerWaitMs ?? DEFAULT_STEER_WAIT_MS;
 
   function clearSteerTimer(sessionId: string): void {
@@ -271,12 +263,6 @@ export function createPromptScheduler(
       entry.queuedAt !== undefined &&
       Date.now() - Date.parse(entry.queuedAt) >= steerWaitMs
     );
-  }
-
-  function clearParkTimer(sessionId: string): void {
-    const timer = parkTimers.get(sessionId);
-    if (timer !== undefined) clearTimeout(timer);
-    parkTimers.delete(sessionId);
   }
 
   function joinsActiveTurn(entry: PromptSubmission): boolean {
@@ -318,7 +304,6 @@ export function createPromptScheduler(
       queues.set(sessionId, kept);
     } else {
       queues.delete(sessionId);
-      clearParkTimer(sessionId);
     }
     deps.onQueueChanged?.(sessionId);
   }
@@ -386,7 +371,6 @@ export function createPromptScheduler(
       sessionId,
       `the setting was not applied: the session's queue was dropped (${cause})`,
     );
-    clearParkTimer(sessionId);
     const inFlight = steering.get(sessionId);
     steering.delete(sessionId);
     const inFlightOrdinary =
@@ -585,7 +569,6 @@ export function createPromptScheduler(
 
   function start(entry: PromptSubmission): boolean {
     if (!deps.sendToAgent(entry.frame)) return false;
-    clearParkTimer(entry.sessionId);
     activeTurns.set(entry.sessionId, {
       outboundId: entry.outboundId,
       promptId: entry.promptId,
@@ -843,7 +826,6 @@ export function createPromptScheduler(
     },
 
     onEngaged(sessionId) {
-      clearParkTimer(sessionId);
       maybeStartNext(sessionId);
     },
 
@@ -857,7 +839,6 @@ export function createPromptScheduler(
       const queue = queues.get(sessionId);
       if (queue === undefined) return;
       queues.delete(sessionId);
-      clearParkTimer(sessionId);
       deps.onQueueChanged?.(sessionId);
       for (const entry of answerSteerOnly(queue, "noRunningTurn"))
         refuse(entry, message);
@@ -881,10 +862,7 @@ export function createPromptScheduler(
         ) ?? -1;
       if (queue === undefined || index === -1) return null;
       const [entry] = queue.splice(index, 1);
-      if (queue.length === 0) {
-        queues.delete(sessionId);
-        clearParkTimer(sessionId);
-      }
+      if (queue.length === 0) queues.delete(sessionId);
       deps.onQueueChanged?.(sessionId);
       if (index === 0) steerFromQueue(sessionId);
       return entry ?? null;
@@ -958,16 +936,6 @@ export function createPromptScheduler(
 
     onDetached(sessionId) {
       dropAbandonedSettings(sessionId);
-      const queue = queues.get(sessionId) ?? [];
-      const head = queue[0];
-      if (head === undefined) return;
-      if (queue.every((entry) => entry.unattended === true)) return;
-      if (deps.canStart(head)) return;
-      if (parkTimers.has(sessionId)) return;
-      parkTimers.set(
-        sessionId,
-        setTimeout(() => dropQueue(sessionId, "park-expired"), queueParkMs),
-      );
     },
 
     forget(sessionId) {
@@ -980,8 +948,6 @@ export function createPromptScheduler(
     },
 
     clear() {
-      for (const timer of parkTimers.values()) clearTimeout(timer);
-      parkTimers.clear();
       for (const timer of steerTimers.values()) clearTimeout(timer);
       steerTimers.clear();
       settingsInFlight.clear();

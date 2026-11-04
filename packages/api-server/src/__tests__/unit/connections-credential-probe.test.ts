@@ -62,6 +62,23 @@ describe("GitHub token check", () => {
     });
   });
 
+  // TEST_SCENARIO: a custom host can name the token's account with any string, and the check is stored and shown in a terminal, so a hostile login is stripped of control bytes and capped.
+  it("strips control bytes and caps a hostile login", async () => {
+    stubFetch(
+      () =>
+        new Response(
+          JSON.stringify({ login: `\u001b[31m${"o".repeat(5000)}` }),
+          {
+            status: 200,
+          },
+        ),
+    );
+    await expect(probe("github.example.com")).resolves.toEqual({
+      status: "passed",
+      account: `[31m${"o".repeat(196)}`,
+    });
+  });
+
   // TEST_SCENARIO: a wrong, expired or revoked token gets a 401, and the reason carries GitHub's message.
   it("fails a token GitHub refuses", async () => {
     stubFetch(

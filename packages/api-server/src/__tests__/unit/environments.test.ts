@@ -1,13 +1,15 @@
-// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner lists all of them, extends, shares and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints and expiry. Only people decide who may open one: the owner names Agent Environment Members for every Environment of an agent and Environment Members for one, while the agent reads only how many people may open each, and its tools refuse an `access` list. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
+// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner lists all of them, extends, shares and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints and expiry; an endpoint may name a readiness path, set at create and changed at update by endpoint name. Only people decide who may open one: the owner names Agent Environment Members for every Environment of an agent and Environment Members for one, while the agent reads only how many people may open each, and its tools refuse an `access` list. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
 import { describe, expect, it } from "vitest";
 import {
   listedAgents,
   type Agent,
   type AgentCreateInput,
   type AgentsService,
+  type AgentUpdateInput,
 } from "api-server-api";
 import {
   clampExpiry,
+  clampIdleTimeout,
   DAY_MS,
   endpointUrl,
   environmentHost,
@@ -15,7 +17,10 @@ import {
   type EnvironmentRecord,
 } from "../../modules/environments/domain/environment.js";
 import type { EnvironmentsRepository } from "../../modules/environments/infrastructure/environments-repository.js";
-import { parseExpiry } from "../../modules/environments/mcp-tools.js";
+import {
+  parseExpiry,
+  parseIdleTimeout,
+} from "../../modules/environments/mcp-tools.js";
 import type { MembersRepository } from "../../modules/environments/infrastructure/members-repository.js";
 import { createEnvironmentsService } from "../../modules/environments/services/environments-service.js";
 
@@ -52,6 +57,9 @@ function memoryRepo(): EnvironmentsRepository & { rows: EnvironmentRecord[] } {
 function memoryMembers(seed: Record<string, string[]> = {}) {
   const agentLists = new Map(Object.entries(seed));
   const environmentLists = new Map<string, string[]>();
+  const agentAgentLists = new Map<string, string[]>();
+  const environmentAgentLists = new Map<string, string[]>();
+  const visits = new Map<string, Date>();
   const repo: MembersRepository = {
     ofAgent: async (id) => agentLists.get(id) ?? [],
     setOfAgent: async (id, emails) => void agentLists.set(id, emails),
@@ -61,15 +69,61 @@ function memoryMembers(seed: Record<string, string[]> = {}) {
       new Map(ids.map((id) => [id, environmentLists.get(id) ?? []])),
     setOfEnvironment: async (id, emails) =>
       void environmentLists.set(id, emails),
+    agentsOfAgent: async (id) => agentAgentLists.get(id) ?? [],
+    setAgentsOfAgent: async (id, ids) => void agentAgentLists.set(id, ids),
+    agentsOfEnvironment: async (id) => environmentAgentLists.get(id) ?? [],
+    agentsOfEnvironments: async (ids) =>
+      new Map(ids.map((id) => [id, environmentAgentLists.get(id) ?? []])),
+    setAgentsOfEnvironment: async (id, ids) =>
+      void environmentAgentLists.set(id, ids),
+    environmentsSharedWith: async () => [],
+    recordVisit: async (env, agent, at) =>
+      void visits.set(`${env}|${agent}`, at),
+    lastOpened: async (envs, agents) => {
+      const out = new Map<string, Date>();
+      for (const [key, at] of visits) {
+        const [env, agent] = key.split("|") as [string, string];
+        if (!envs.includes(env) || !agents.includes(agent)) continue;
+        if (!out.has(agent) || out.get(agent)! < at) out.set(agent, at);
+      }
+      return out;
+    },
+    forgetMemberAgent: async () => undefined,
+    listMemberAgentIds: async () => [],
   };
-  return { repo, agentLists, environmentLists };
+  return {
+    repo,
+    agentLists,
+    environmentLists,
+    agentAgentLists,
+    environmentAgentLists,
+    visits,
+  };
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: other owners' Agents, by id, as the agent directory reads them across owners.
+const OTHER_AGENTS: Record<
+  string,
+  { name: string; ownerName: string | null; environment: boolean }
+> = {
+  "agent-qa00000000000001": {
+    name: "qa",
+    ownerName: "Bob",
+    environment: false,
+  },
+  "agent-env0000000000099": {
+    name: "dev · pr-1",
+    ownerName: "Bob",
+    environment: true,
+  },
+};
 
 function fakeAgents(seed: Partial<Agent>[]) {
   const agents = new Map<string, Agent>(
     seed.map((a) => [a.id!, { state: "running", ...a } as Agent]),
   );
   const created: AgentCreateInput[] = [];
+  const updated: AgentUpdateInput[] = [];
   const deleted: string[] = [];
   const woken: string[] = [];
   const disabled = new Set<string>();
@@ -84,12 +138,21 @@ function fakeAgents(seed: Partial<Agent>[]) {
         id,
         name: input.name,
         state: "starting",
+        effectiveHibernationTimeoutMin: input.hibernationTimeoutMin ?? 5,
         spec: {
           backend: { type: "vm" },
           environmentOf: input.environmentOf,
         },
       } as unknown as Agent;
       agents.set(id, agent);
+      return agent;
+    },
+    update: async (input: AgentUpdateInput) => {
+      updated.push(input);
+      const agent = agents.get(input.id);
+      if (!agent) return null;
+      if (typeof input.hibernationTimeoutMin === "number")
+        agent.effectiveHibernationTimeoutMin = input.hibernationTimeoutMin;
       return agent;
     },
     delete: async (id: string) => {
@@ -103,7 +166,7 @@ function fakeAgents(seed: Partial<Agent>[]) {
       return { ok: true, value: agents.get(id) };
     },
   } as unknown as AgentsService;
-  return { service, created, deleted, woken, disabled };
+  return { service, created, updated, deleted, woken, disabled };
 }
 
 const vmOwning = {
@@ -129,11 +192,21 @@ function setup(
     repo,
     members: members.repo,
     editorsOf: async () => opts.editors ?? [],
+    directory: {
+      describe: async (id) =>
+        OTHER_AGENTS[id] ??
+        (id === vmOwning.id
+          ? { name: "dev", ownerName: "Alice", environment: false }
+          : null),
+      environmentState: async () => "running",
+    },
     agents: agents.service,
     config: {
       urlTemplate: "https://{host}.env.example.com",
       maxPerAgent: opts.max ?? 5,
       expiryMaxDays: 30,
+      idleTimeoutDefaultMin: 60,
+      idleTimeoutMaxMin: 1440,
     },
     startCommand: async (id, command) => void starts.push([id, command]),
     now: () => NOW,
@@ -160,6 +233,7 @@ describe("creating an Environment", () => {
       environmentOf: vmOwning.id,
       noDefaultProvider: true,
       egressPreset: "none",
+      hibernationTimeoutMin: 60,
     });
     const host = repo.rows[0]!.host;
     expect(host).toMatch(/^pr-42-[0-9a-f]{6}$/);
@@ -176,6 +250,37 @@ describe("creating an Environment", () => {
       new Date(NOW.getTime() + 7 * DAY_MS).toISOString(),
     );
     expect(env.peopleWhoMayOpen).toBe(0);
+    expect(env.idleTimeoutMin).toBe(60);
+  });
+
+  // TEST_SCENARIO: an Environment's services take far longer to come back than an agent's, so the owning Agent may give it an idle timeout of its own; one past the install's maximum is cut down to it, and zero, which would mean never sleeping, is refused before any Agent is created.
+  it("takes an idle timeout, cut to the maximum, and refuses zero", async () => {
+    const { service, agents } = setup();
+    const mine = service.forOwningAgent(vmOwning.id!);
+    const endpoints = [{ name: "app", port: 80 }];
+
+    const short = await mine.create({
+      name: "a",
+      endpoints,
+      idleTimeoutMin: 90,
+    });
+    const long = await mine.create({
+      name: "b",
+      endpoints,
+      idleTimeoutMin: 3 * 1440,
+    });
+    await expect(
+      mine.create({ name: "c", endpoints, idleTimeoutMin: 0 }),
+    ).rejects.toThrow(/at least one minute/);
+
+    expect(agents.created.map((c) => c.hibernationTimeoutMin)).toEqual([
+      90, 1440,
+    ]);
+    expect([short.idleTimeoutMin, long.idleTimeoutMin]).toEqual([90, 1440]);
+    expect((await mine.list()).map((e) => [e.name, e.idleTimeoutMin])).toEqual([
+      ["a", 90],
+      ["b", 1440],
+    ]);
   });
 
   // TEST_SCENARIO: only a vm Agent can own Environments, since they run on its owner's VM runner beside it, and an Environment cannot own one in turn.
@@ -267,6 +372,76 @@ describe("changing and deleting Environments", () => {
     expect(repo.rows).toHaveLength(0);
   });
 
+  // TEST_SCENARIO: an endpoint declares its readiness path at create, and the owning Agent sets, changes or removes one by endpoint name later, leaving the others as they were; a name that is no endpoint is refused and nothing changes.
+  it("sets readiness paths at create and update", async () => {
+    const { service, repo } = setup();
+    const mine = service.forOwningAgent(vmOwning.id!);
+    const env = await mine.create({
+      name: "a",
+      endpoints: [
+        { name: "app", port: 80, ready: "/healthz" },
+        { name: "auth", port: 81 },
+      ],
+    });
+    expect(env.endpoints.map((e) => e.ready)).toEqual(["/healthz", undefined]);
+
+    const updated = await mine.update("a", {
+      ready: { app: null, auth: "/realms/x" },
+    });
+    expect(updated.endpoints.map((e) => e.ready)).toEqual([
+      undefined,
+      "/realms/x",
+    ]);
+    expect(repo.rows[0]!.endpoints).toEqual([
+      { name: "app", port: 80 },
+      { name: "auth", port: 81, ready: "/realms/x" },
+    ]);
+
+    await expect(mine.update("a", { ready: { web: "/" } })).rejects.toThrow(
+      /no endpoint named web/,
+    );
+    expect(repo.rows[0]!.endpoints[1]!.ready).toBe("/realms/x");
+  });
+
+  // TEST_SCENARIO: the owning Agent changes an existing Environment's idle timeout on its Agent, alone or with the expiry; an idle timeout alone leaves the expiry as it was, one beside readiness paths sets both, one past the maximum is cut, and zero is refused with nothing changed.
+  it("changes the idle timeout of an existing Environment", async () => {
+    const { service, agents, repo } = setup();
+    const mine = service.forOwningAgent(vmOwning.id!);
+    const env = await mine.create({
+      name: "a",
+      endpoints: [{ name: "app", port: 80 }],
+    });
+
+    const changed = await mine.update("a", { idleTimeoutMin: 240 });
+    expect(changed.idleTimeoutMin).toBe(240);
+    expect(changed.expiresAt).toBe(env.expiresAt);
+    expect(repo.rows[0]!.expiresAt.toISOString()).toBe(env.expiresAt);
+
+    const both = await mine.update("a", {
+      idleTimeoutMin: 10_000,
+      expiresAt: new Date(NOW.getTime() + DAY_MS),
+    });
+    expect(both.idleTimeoutMin).toBe(1440);
+    expect(both.expiresAt).toBe(new Date(NOW.getTime() + DAY_MS).toISOString());
+
+    await expect(mine.update("a", { idleTimeoutMin: 0 })).rejects.toThrow(
+      /at least one minute/,
+    );
+    const withReady = await mine.update("a", {
+      idleTimeoutMin: 30,
+      ready: { app: "/healthz" },
+    });
+    expect(withReady.idleTimeoutMin).toBe(30);
+    expect(repo.rows[0]!.endpoints[0]!.ready).toBe("/healthz");
+    expect(withReady.expiresAt).toBe(both.expiresAt);
+
+    expect(agents.updated).toEqual([
+      { id: env.id, hibernationTimeoutMin: 240 },
+      { id: env.id, hibernationTimeoutMin: 1440 },
+      { id: env.id, hibernationTimeoutMin: 30 },
+    ]);
+  });
+
   // TEST_SCENARIO: the owner names the agent's members once, for every Environment it has or creates later, and adds a person to one Environment only; the owner's view of each Environment lists its own members and counts the agent's, so the Share dialog can say who is in through the agent. The agent's own view says only how many people may open each, editors included, never who.
   it("adds people for every Environment of an agent, or for one", async () => {
     const { service, members } = setup({ editors: ["ed@example.com"] });
@@ -276,17 +451,17 @@ describe("changing and deleting Environments", () => {
     await mine.create({ name: "b", endpoints });
 
     expect(
-      await service.setAgentMembers(vmOwning.id!, [
-        "a@example.com",
-        "b@example.com",
-        "a@example.com",
-      ]),
-    ).toEqual(["a@example.com", "b@example.com"]);
-    expect(await service.agentMembers(vmOwning.id!)).toEqual([
-      "a@example.com",
-      "b@example.com",
-    ]);
-    const shared = await service.setMembers(first.id, ["c@example.com"]);
+      await service.setAgentMembers(vmOwning.id!, {
+        emails: ["a@example.com", "b@example.com", "a@example.com"],
+      }),
+    ).toEqual({ emails: ["a@example.com", "b@example.com"], agents: [] });
+    expect(await service.agentMembers(vmOwning.id!)).toEqual({
+      emails: ["a@example.com", "b@example.com"],
+      agents: [],
+    });
+    const shared = await service.setMembers(first.id, {
+      emails: ["c@example.com"],
+    });
     expect(shared).toMatchObject({
       members: ["c@example.com"],
       agentMemberCount: 2,
@@ -341,7 +516,9 @@ describe("changing and deleting Environments", () => {
     });
 
     await expect(
-      service.setMembers("agent-foreign000000001", ["x@example.com"]),
+      service.setMembers("agent-foreign000000001", {
+        emails: ["x@example.com"],
+      }),
     ).rejects.toThrow(/no such Environment/);
     expect(members.environmentLists.size).toBe(0);
   });
@@ -407,6 +584,31 @@ describe("refusing what cannot be stored", () => {
   });
 });
 
+describe("Environment idle timeouts", () => {
+  // TEST_SCENARIO: an agent writes an idle timeout as it writes an expiry, in minutes, hours or days, and the tool reads it as whole minutes; a word such as "never", a bare number or a negative one is refused where it is parsed, with a message, so nothing that means "never sleep" reaches the service as no timeout.
+  it("parses minutes, hours and days, and refuses anything else", () => {
+    expect(parseIdleTimeout(undefined)).toBeUndefined();
+    expect(parseIdleTimeout("90m")).toBe(90);
+    expect(parseIdleTimeout("4h")).toBe(240);
+    expect(parseIdleTimeout(" 2d ")).toBe(2880);
+    expect(parseIdleTimeout("0m")).toBe(0);
+    for (const value of ["never", "off", "60", "-5m", "1.5h", ""])
+      expect(() => parseIdleTimeout(value)).toThrow(/idle_timeout/);
+    expect(() => parseIdleTimeout(`${"9".repeat(20)}d`)).toThrow(/too long/);
+  });
+
+  // TEST_SCENARIO: the idle timeout is the install's default for Environments when none is asked for, at most the install's maximum, and never zero or less, since an Environment always sleeps when nobody uses it.
+  it("defaults, caps and refuses zero", () => {
+    expect(clampIdleTimeout(undefined, 60, 1440)).toBe(60);
+    expect(clampIdleTimeout(90, 60, 1440)).toBe(90);
+    expect(clampIdleTimeout(1441, 60, 1440)).toBe(1440);
+    for (const zero of [0, -1])
+      expect(clampIdleTimeout(zero, 60, 1440)).toEqual({
+        error: expect.stringMatching(/at least one minute/),
+      });
+  });
+});
+
 describe("listing agents", () => {
   // TEST_SCENARIO: an Environment is never listed as an agent, on any surface that lists agents — the app, the CLI and an API key's agent picker all list through the same rule — and a key bound to some agents lists only those.
   it("leaves Environments out of the agents a caller lists", () => {
@@ -452,5 +654,75 @@ describe("Environment addresses", () => {
     expect(clampExpiry(new Date(NOW.getTime() + DAY_MS), NOW, 30)).toEqual(
       new Date(NOW.getTime() + DAY_MS),
     );
+  });
+});
+
+describe("agents on an Environment's lists", () => {
+  // TEST_SCENARIO: the owner adds another user's QA agent by its id in an Environment's Share dialog. The list then shows the agent by name and whose it is, with when it last opened the Environment, and the agent's own view still says only how many people may open it, never which agents.
+  it("adds an agent of any owner by id and shows it by name and owner", async () => {
+    const { service, members } = setup();
+    const env = await service
+      .forOwningAgent(vmOwning.id!)
+      .create({ name: "a", endpoints: [{ name: "app", port: 80 }] });
+    await members.repo.recordVisit(env.id, "agent-qa00000000000001", NOW);
+
+    const view = await service.setMembers(env.id, {
+      emails: [],
+      agentIds: [" agent-qa00000000000001 ", "agent-qa00000000000001"],
+    });
+    expect(view.memberAgents).toEqual([
+      {
+        agentId: "agent-qa00000000000001",
+        name: "qa",
+        ownerName: "Bob",
+        lastOpenedAt: NOW.toISOString(),
+      },
+    ]);
+    expect(members.environmentAgentLists.get(env.id)).toEqual([
+      "agent-qa00000000000001",
+    ]);
+  });
+
+  // TEST_SCENARIO: the owner types an id that names no agent, or names an Environment. Nothing is saved, people included, and the refusal names the id, so a list never holds an entry that opens nothing.
+  it("refuses an id that is not an agent that can open an Environment", async () => {
+    const { service, members } = setup();
+    const env = await service
+      .forOwningAgent(vmOwning.id!)
+      .create({ name: "a", endpoints: [{ name: "app", port: 80 }] });
+    for (const id of ["agent-missing00000001", "agent-env0000000000099"])
+      await expect(
+        service.setMembers(env.id, {
+          emails: ["p@example.com"],
+          agentIds: [id],
+        }),
+      ).rejects.toThrow(`${id} is not an agent that can open an Environment`);
+    expect(members.environmentLists.get(env.id)).toBeUndefined();
+    expect(await service.lookupAgent("agent-env0000000000099")).toEqual({
+      found: false,
+    });
+    expect(await service.lookupAgent("agent-qa00000000000001")).toEqual({
+      found: true,
+      agentId: "agent-qa00000000000001",
+      name: "qa",
+      ownerName: "Bob",
+    });
+  });
+
+  // TEST_SCENARIO: an older client saves only people. The agents already on the list stay, since an omitted agent list is not an empty one.
+  it("keeps the agents when a save names only people", async () => {
+    const { service, members } = setup();
+    await service.setAgentMembers(vmOwning.id!, {
+      emails: [],
+      agentIds: ["agent-qa00000000000001"],
+    });
+    const after = await service.setAgentMembers(vmOwning.id!, {
+      emails: ["a@example.com"],
+    });
+    expect(after.agents.map((a) => a.agentId)).toEqual([
+      "agent-qa00000000000001",
+    ]);
+    expect(members.agentAgentLists.get(vmOwning.id!)).toEqual([
+      "agent-qa00000000000001",
+    ]);
   });
 });

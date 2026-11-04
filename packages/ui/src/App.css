@@ -26,6 +26,7 @@
   --color-warning-fg: var(--c-warning-fg);
   --color-danger: var(--c-danger);
   --color-danger-light: var(--c-danger-light);
+  --color-danger-fg: var(--c-danger-fg);
   --color-info: var(--c-info);
   --color-info-light: var(--c-info-light);
   --color-callout: var(--c-callout-bg);
@@ -47,6 +48,8 @@
   --color-icon-cb: #4d7e88;
   --color-icon-cb-deep: #38626a;
   --color-icon-litellm: #4962ab;
+  /* LiteLLM's blue behind its white train; the other provider marks carry their colours in the SVG. */
+  --color-logo-litellm: #0117be;
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
@@ -104,13 +107,16 @@
   /* ── z-index ladder — the ordered source of truth for stacking.
      Use the matching z-* utilities below; never raw z numbers.
      The Sonner toaster manages its own (higher) z-index and sits above z-toast,
-     modals included: an error a dialog raises must stay readable over its backdrop. ── */
+     modals included: an error a dialog raises must stay readable over its backdrop.
+     A confirm (z-alert) sits above popovers, since a picker's popover stays open
+     under the confirm it asks; a modal stays below them, for the popovers it opens. ── */
   --z-content: 10;
   --z-raised: 20;
   --z-nav: 30;
   --z-overlay: 40;
   --z-banner: 50;
   --z-popover: 60;
+  --z-alert: 65;
   --z-tooltip: 70;
   --z-toast: 80;
 }
@@ -138,6 +144,9 @@
 @utility z-popover {
   z-index: var(--z-popover);
 }
+@utility z-alert {
+  z-index: var(--z-alert);
+}
 @utility z-tooltip {
   z-index: var(--z-tooltip);
 }
@@ -158,6 +167,7 @@
   --c-warning-fg: #b45309;
   --c-danger: #dc2626;
   --c-danger-light: #fef2f2;
+  --c-danger-fg: #b91c1c;
   --c-info: #000000;
   --c-info-light: #f2f4f8;
   --c-callout-bg: #edf5ff4d;
@@ -206,6 +216,7 @@
   --c-warning-fg: #fbbf24;
   --c-danger: #f87171;
   --c-danger-light: #3a1515;
+  --c-danger-fg: #f87171;
   --c-info: #60a5fa;
   --c-info-light: #0f1f3a;
   --c-callout-bg: #0f1f3a;
@@ -285,6 +296,20 @@
 }
 .safe-top {
   padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ── App frame: on touch devices it follows the visible viewport, so the keyboard does not push it off screen ── */
+.app-frame {
+  height: 100dvh;
+}
+@media (pointer: coarse) {
+  .app-frame {
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    height: var(--app-height, 100dvh);
+    transform: translateY(var(--app-offset-top, 0px));
+  }
 }
 
 /* ── Animations ── */
@@ -372,6 +397,9 @@
 
 .anim-in {
   animation: fade-in 0.2s ease-out both;
+}
+.anim-in-late {
+  animation: fade-in 0.2s ease-out 1s both;
 }
 .anim-scale-in {
   animation: scale-in 0.15s ease both;

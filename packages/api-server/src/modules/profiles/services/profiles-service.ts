@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { lentSubagentOfProfile } from "agent-runtime-api";
 import {
   aliasForProviderType,
   aliasForTemplateId,
@@ -13,6 +14,7 @@ import {
   type HarnessCatalog,
   type OwnerModelCatalogView,
   preferredModelOf,
+  type ProfileCreateInput,
   type ProfilesService,
   type ProfileWithUsage,
   type SessionPair,
@@ -28,9 +30,14 @@ import {
 
 export interface ResolvedProfile {
   profile: ProfileRow;
+  /** UNIT_BOUNDARY_DESCRIPTION: the primary model alone, so a caller that overrides the subagent slot never inherits half of the profile's. */
   pair: SessionPair;
-  /** UNIT_BOUNDARY_DESCRIPTION: why the profile cannot run on the agent, or null; a run never substitutes another provider or model for it. */
+  /** UNIT_BOUNDARY_DESCRIPTION: why the primary model cannot run on the agent, or null; a run never substitutes another provider or model for it. */
   unavailable: string | null;
+  /** UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent the profile names, as a run takes it, or null when it names none; it reaches a run only where its slot holds nothing of its own. */
+  subagent: Record<string, string> | null;
+  /** UNIT_BOUNDARY_DESCRIPTION: why that sub-agent cannot run on the agent, or null; it says nothing about the primary, since a slot of its own never runs it. */
+  subagentUnavailable: string | null;
   /** UNIT_BOUNDARY_DESCRIPTION: the owner holds the provider and the agent does not, with no rival of its alias granted, so a pick may grant it first. */
   attachable: boolean;
 }
@@ -56,21 +63,40 @@ export function profileResolver(repo: ProfilesRepository): ProfileResolver {
       repo.ownerConnections(profile.owner),
       repo.agentConnections(profile.owner, agentId),
     ]);
-    const ofTemplate = owned.filter(
-      (c) => c.templateId === profile.providerTemplate,
-    );
-    const connection =
-      ofTemplate.find((c) => granted.some((g) => g.id === c.id)) ??
-      ofTemplate[0];
-    const isGranted =
-      connection !== undefined && granted.some((g) => g.id === connection.id);
+    /* UNIT_BOUNDARY_DESCRIPTION: the agent's grant of that template, else the owner's oldest one, and whether it is granted, which runs only once it is. */
+    const connectionOf = (templateId: string) => {
+      const ofTemplate = owned.filter((c) => c.templateId === templateId);
+      const connection =
+        ofTemplate.find((c) => granted.some((g) => g.id === c.id)) ??
+        ofTemplate[0];
+      return {
+        connection,
+        isGranted:
+          connection !== undefined &&
+          granted.some((g) => g.id === connection.id),
+      };
+    };
+    const nameOf = (templateId: string) =>
+      displayNameForTemplate(templateId) ?? templateId;
+    const { connection, isGranted } = connectionOf(profile.providerTemplate);
     const rival =
       connection && !isGranted
         ? providerAliasConflict(granted, connection)
         : null;
-    const providerName =
-      displayNameForTemplate(profile.providerTemplate) ??
-      profile.providerTemplate;
+    /* UNIT_BOUNDARY_DESCRIPTION: a sub-agent the profile names runs on the
+     * agent's Connection of its own template, which is the primary's when the
+     * two name one template. It is kept apart from the primary's availability:
+     * a slot with a sub-agent of its own never runs it (D193B). */
+    const subagentConnection =
+      profile.subagentProviderTemplate !== null &&
+      profile.subagentProviderTemplate === profile.providerTemplate
+        ? { connection, isGranted }
+        : profile.subagentProviderTemplate === null
+          ? null
+          : connectionOf(profile.subagentProviderTemplate);
+    const subagentName = profile.subagentProviderTemplate
+      ? nameOf(profile.subagentProviderTemplate)
+      : null;
     return {
       profile,
       pair: {
@@ -82,12 +108,29 @@ export function profileResolver(repo: ProfilesRepository): ProfileResolver {
         }),
       },
       unavailable: !connection
-        ? `${providerName} is not connected`
+        ? `${nameOf(profile.providerTemplate)} is not connected`
         : rival
           ? `this agent runs on ${rival.held.name}; detach it to use ${connection.name}`
           : !isGranted
-            ? `${providerName} isn't attached to this agent`
+            ? `${nameOf(profile.providerTemplate)} isn't attached to this agent`
             : null,
+      /* UNIT_BOUNDARY_DESCRIPTION: a profile lends its sub-agent as the slot it would be, platform keys only, by the one mapping the picker uses too (D193B). */
+      subagent: lentSubagentOfProfile({
+        harness: profile.harness,
+        settings: profile.settings,
+        subagent:
+          profile.subagentModel === null
+            ? null
+            : { model: profile.subagentModel },
+      }),
+      subagentUnavailable:
+        profile.subagentModel === null
+          ? null
+          : !subagentConnection?.connection
+            ? `${subagentName}, its sub-agent's provider, is not connected`
+            : !subagentConnection.isGranted
+              ? `${subagentName}, its sub-agent's provider, isn't attached to this agent`
+              : null,
       attachable: connection !== undefined && !isGranted && !rival,
     };
   };
@@ -213,13 +256,22 @@ export function createProfilesService(
   const { repo, owner, catalog } = deps;
   const agentIds = deps.agentBinding === "*" ? undefined : deps.agentBinding;
 
-  function validate(
-    profile: Pick<ProfileRow, "harness" | "providerTemplate" | "model">,
-  ): void {
-    const { harness, providerTemplate, model } = profile;
+  /* UNIT_BOUNDARY_DESCRIPTION: the sub-agent the profile names rides the pair its slots resolve to, so these are the columns that carry it. */
+  const subagentColumns = (
+    subagent: ProfileCreateInput["subagent"] = null,
+  ) => ({
+    subagentProviderTemplate: subagent?.providerTemplate ?? null,
+    subagentModel: subagent?.model ?? null,
+  });
+
+  function problemWith(
+    harness: string,
+    providerTemplate: string,
+    model: string,
+  ): string | null {
     const type = providerTypeForTemplateId(providerTemplate);
     const alias = parseQualifiedModel(model, { claudePrefix: true })?.alias;
-    const problem = !catalog.harnesses.some((h) => h.name === harness)
+    return !catalog.harnesses.some((h) => h.name === harness)
       ? `unknown harness ${harness}`
       : type === null || !PROVIDER_TEMPLATE_IDS.has(providerTemplate)
         ? `unknown provider ${providerTemplate}`
@@ -228,6 +280,29 @@ export function createProfilesService(
           : !harnessFits(catalog, harness, type, providerTemplate)
             ? `the ${harness} harness cannot run on ${providerTemplate}`
             : null;
+  }
+
+  function validate(
+    profile: Pick<
+      ProfileRow,
+      | "harness"
+      | "providerTemplate"
+      | "model"
+      | "subagentProviderTemplate"
+      | "subagentModel"
+    >,
+  ): void {
+    const { harness } = profile;
+    const problem =
+      problemWith(harness, profile.providerTemplate, profile.model) ??
+      (profile.subagentProviderTemplate !== null &&
+      profile.subagentModel !== null
+        ? problemWith(
+            harness,
+            profile.subagentProviderTemplate,
+            profile.subagentModel,
+          )
+        : null);
     if (problem) throw new TRPCError({ code: "BAD_REQUEST", message: problem });
   }
 
@@ -243,6 +318,13 @@ export function createProfilesService(
       harness: row.harness,
       providerTemplate: row.providerTemplate,
       model: row.model,
+      subagent:
+        row.subagentProviderTemplate !== null && row.subagentModel !== null
+          ? {
+              providerTemplate: row.subagentProviderTemplate,
+              model: row.subagentModel,
+            }
+          : null,
       settings: row.settings,
       newAgentDefault: row.id === defaultId,
       usage: {
@@ -312,7 +394,8 @@ export function createProfilesService(
     async create(input) {
       /* UNIT_BOUNDARY_DESCRIPTION: seeded first, so a user-made "Default" cannot take the seed's name. */
       const defaultId = (await ensureDefault(deps))?.id;
-      validate(input);
+      const columns = subagentColumns(input.subagent);
+      validate({ ...input, ...columns });
       const row = await repo
         .insert(owner, {
           name: input.name,
@@ -320,6 +403,7 @@ export function createProfilesService(
           providerTemplate: input.providerTemplate,
           model: input.model,
           settings: input.settings ?? {},
+          ...columns,
         })
         .catch((err: unknown) => {
           throw duplicate(err, input.name);
@@ -331,15 +415,19 @@ export function createProfilesService(
       );
     },
 
-    async update({ id, agentId: _agentId, ...patch }) {
+    async update({ id, agentId: _agentId, subagent, ...patch }) {
       const current = await owned(id);
-      validate({ ...current, ...patch });
+      const subagentPatch =
+        subagent === undefined ? {} : subagentColumns(subagent);
+      validate({ ...current, ...patch, ...subagentPatch });
       const written = await repo
-        .update(owner, id, patch)
+        .update(owner, id, { ...patch, ...subagentPatch })
         .catch((err: unknown) => {
           throw duplicate(err, patch.name ?? current.name);
         });
-      const renameOnly = Object.keys(patch).every((key) => key === "name");
+      const renameOnly =
+        subagent === undefined &&
+        Object.keys(patch).every((key) => key === "name");
       const { agents } = await repo.references(owner, undefined, id);
       const rejected = renameOnly
         ? []
@@ -357,12 +445,28 @@ export function createProfilesService(
           ).filter((r) => r !== null);
       /* UNIT_BOUNDARY_DESCRIPTION: an edit no agent that uses the profile can run is put back, or every new chat on them would fail on it (QA D5); a partial rejection keeps the edit, and those agents keep the pair they hold until fixed. */
       if (rejected.length > 0 && rejected.length === agents.length) {
-        const { name, harness, providerTemplate, model, settings } = current;
+        const {
+          name,
+          harness,
+          providerTemplate,
+          model,
+          subagentProviderTemplate,
+          subagentModel,
+          settings,
+        } = current;
         /* UNIT_BOUNDARY_DESCRIPTION: the revert is a compare-and-set against the version this call wrote, so an edit that landed while the fan-out ran stays; undoing it would lose a newer edit that was already answered. */
         await repo.update(
           owner,
           id,
-          { name, harness, providerTemplate, model, settings },
+          {
+            name,
+            harness,
+            providerTemplate,
+            model,
+            subagentProviderTemplate,
+            subagentModel,
+            settings,
+          },
           {
             expect: written?.updatedAt ?? current.updatedAt,
             at: current.updatedAt,

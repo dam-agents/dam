@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-30
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -98,7 +98,7 @@ Where a scope is claimed twice, the [per-Connection address](connections.md#addr
 A Lua step ahead of every other filter on a Connection chain reads the address — the path prefix, the token placeholder in a claimed header or query parameter, or the access key ID of a SigV4 credential (below) — and marks the request with its Connection.
 An injector skips when the marker names a rival on its header over an overlapping scope; on an Agent requiring addresses, unless it names its own Connection, so the request keeps its credential.
 The prefix and marker are dropped on the way upstream.
-A request naming no Connection on a contested scope is refused by that same step, not served from whichever credential sorted first.
+A request naming no Connection on a contested scope is refused by that same step, not served from whichever credential sorted first; on an Agent requiring addresses every injector skips it already, so it goes upstream with no credential added and nothing is refused.
 The gate reads the path with the prefix removed, so egress rules and approvals keep naming real paths.
 
 **Path-scoped chains and the request path.** A route carrying a path-scoped credential matches whole path segments, so a scope of `/v1/messages` admits `/v1/messages/count_tokens` and not `/v1/messagesX`.
@@ -111,6 +111,23 @@ A rewrite route keeps its plain prefix: it adds only the rewrite.
 On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, records the session and harness that the Model Router stamped, and sends a spend record per call to the api-server.
 On every chain, the gateway removes that stamp before the request leaves.
 The depth is on [spend-limits](spend-limits.md).
+
+## The Agent Key chain
+
+An Agent opens an [Environment](environments.md#agents-at-the-gate) as itself because its gateway sends its key there; the Agent never holds it.
+
+- **Its Secret.** The api-server writes one `agent-key` Secret per Agent while the Agent carries the platform's Environments egress rule, labelled with its owner and its Agent, its host pattern the environments domain, `*.<domain>`, and its one key, `sds.yaml`, the key as the credential injector reads it.
+  The controller gives it to the gateway of the Agent its label names and no other, with no grant needed: on the owner gateway its key reaches the owner Secret under that Agent's prefix, as a connection's does.
+  The controller's Secret watch reconciles that Agent when the Secret is written or deleted, so removing or restoring the rule reaches the gateway at once.
+- **Its chain.** The Secret makes one chain, which takes the domain from any other chain that claims it, so a connection's credential never reaches the gate and the key never reaches a connection's upstream; a Secret whose host is not a `*.` wildcard, or that lacks its key, makes none.
+  The domain joins the leaf's SANs as any chain's host does.
+  Its filters are ext_authz, the injector — header `x-platform-agent-key`, overwriting whatever the agent sent — and the router.
+  ext_authz still decides, so the owner's rule for the domain is what lets the request through.
+  An install whose addresses are plain HTTP, as the local cluster's are, reaches the same filters: the proxy listener sends an authority of one label under the domain, any port, to an internal listener that runs them.
+- **Where it goes.** The route sends every request to the api-server's public Service inside the cluster, plain HTTP, Host kept, WebSocket upgrades included, and never to an address the name resolves to: that works on a cluster whose environments domain resolves only from outside, and behind a proxy.
+  A Host outside the domain is answered 421 at the gateway, before ext_authz, so the key reaches the gate and no other route of the api-server; `X-Forwarded-For` and `X-Real-IP` are removed, as the ingress would.
+- **The port.** The gateway's egress policy admits the api-server's public port only on an install that serves Environments; every route there authenticates its caller, as the ingress already sends the whole internet to it, and only the gateway reaches it, never the machine behind it.
+  The controller reads the domain and the port from `PLATFORM_ENVIRONMENTS_DOMAIN` and `PLATFORM_APISERVER_PORT`.
 
 ## Request signing
 

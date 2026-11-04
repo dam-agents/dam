@@ -1,4 +1,5 @@
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import { trpc } from "../../../trpc.js";
 import { useFeatures } from "../../features/api/queries.js";
@@ -55,4 +56,16 @@ export function useAgentEnvironmentMembers(owningAgentId: string | null) {
     ),
     meta: { errorToast: "Couldn't load the agent's Environment members" },
   });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: looks up the Agent an id names before a person adds it to a list, so the row shows whose it is and an id that names no Agent is never added.
+export function useLookupAgent() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (agentId: string) =>
+      queryClient.fetchQuery(
+        trpc.environments.lookupAgent.queryOptions({ agentId }),
+      ),
+    [queryClient],
+  );
 }

@@ -157,6 +157,7 @@ Every restricted response is marked private and uncacheable so no shared cache r
 The outer page, on the share host, is platform chrome (title banner and source download); the inner document is the user content, loaded from the content host in an iframe.
 The browser's same-origin rule is the boundary: artifact code runs as the content origin, so it can neither read the share session cookie nor call the share host as the signed-in viewer.
 The sandbox blocks top-level navigation and forms, but permits scripts, same-origin access and unsandboxed popups: it does not provide an independent origin boundary.
+A popup the artifact opens is a normal top-level tab, an app-origin one included, and the artifact cannot read it: its document never runs on the app's origin, so the two are cross-origin.
 The content host agrees to be framed only by the share origin, and serves raw bytes under a sandbox directive so a document opened directly cannot run either.
 
 **Fragment links.** A page can open an item named in the URL fragment (`/a/<slug>#C-35`), and only the share page's own address carries the fragment of a shared link: the server never sees it.
@@ -185,7 +186,7 @@ Rendering is entirely client-side — the server never compiles or sanitizes use
   Raw bytes are served inline only for images — everything else is download-only, so no user-controlled document can execute on either by-link origin *outside* the frame.
 
 The viewer sends conservative headers (no-referrer, nosniff, framing pinned to the share origin) but deliberately no restrictive content CSP: the dedicated content origin provides origin isolation; the sandbox restricts specific browser capabilities.
-No search engine may index user content: every share- and content-host response, errors included, carries `X-Robots-Tag: noindex, nofollow, noarchive`, and both hosts answer `robots.txt` with `Disallow: /`.
+No search engine may index user content: every response of a share page, the share sign-in routes and the content host, errors included, carries `X-Robots-Tag: noindex, nofollow, noarchive`, and both hosts answer `robots.txt` with `Disallow: /`.
 
 Blob bytes relay through the api-server with constant memory: raw views stream store → response without ever buffering the object (the store is deliberately never exposed to the public side — no presigned links leave this origin), page renders buffer only size-capped text sources (anything bigger falls back to the download card), and the public folder listing is bounded.
 What remains on the api-server per public view is bounded work: a small HTML wrapper, an indexed slug lookup, and pass-through bandwidth.

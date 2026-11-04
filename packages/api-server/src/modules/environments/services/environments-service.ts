@@ -3,14 +3,20 @@ import { TRPCError } from "@trpc/server";
 import {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
   type Agent,
+  type AgentEnvironmentMembersView,
   type AgentEnvironmentView,
   type AgentsService,
+  type EnvironmentAgentLookup,
   type EnvironmentEndpoint,
+  type EnvironmentMemberAgent,
   type EnvironmentView,
+  type MembersUpdate,
+  type SharedEnvironmentView,
 } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import {
   clampExpiry,
+  clampIdleTimeout,
   DAY_MS,
   endpointUrl,
   environmentAgentName,
@@ -25,6 +31,8 @@ export interface EnvironmentsConfig {
   urlTemplate: string | null;
   maxPerAgent: number;
   expiryMaxDays: number;
+  idleTimeoutDefaultMin: number;
+  idleTimeoutMaxMin: number;
 }
 
 export interface CreateEnvironmentInput {
@@ -32,11 +40,26 @@ export interface CreateEnvironmentInput {
   endpoints: EnvironmentEndpoint[];
   storage?: string;
   expiresAt?: Date;
+  idleTimeoutMin?: number;
   start?: string;
 }
 
 export interface UpdateEnvironmentInput {
   expiresAt?: Date;
+  idleTimeoutMin?: number;
+  // UNIT_BOUNDARY_DESCRIPTION: readiness paths by endpoint name; null removes one, so the endpoint is ready once its port answers.
+  ready?: Record<string, string | null>;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent of any owner, by its id, as a list shows it: its name, its owner's display name, and whether it is an Environment, which no list may name.
+export interface AgentDirectory {
+  describe(agentId: string): Promise<{
+    name: string;
+    ownerName: string | null;
+    environment: boolean;
+  } | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: an Environment's Owning Agent and owner by name, for an Agent it is shared with; the Agents of another owner are read here, never through that owner's agents service.
+  environmentState(agentId: string): Promise<string>;
 }
 
 export interface EnvironmentsDeps {
@@ -44,6 +67,7 @@ export interface EnvironmentsDeps {
   repo: EnvironmentsRepository;
   members: MembersRepository;
   editorsOf: (owningAgentId: string) => Promise<string[]>;
+  directory: AgentDirectory;
   agents: AgentsService;
   config: EnvironmentsConfig;
   startCommand: (agentId: string, command: string) => Promise<void>;
@@ -51,8 +75,13 @@ export interface EnvironmentsDeps {
 }
 
 export interface OwningAgentEnvironments {
+  idleTimeout: { defaultMin: number; maxMin: number };
+  // UNIT_BOUNDARY_DESCRIPTION: whether the Agent may own Environments (its owner has the feature); without it, it only lists those shared with it.
+  manage: boolean;
   create(input: CreateEnvironmentInput): Promise<AgentEnvironmentView>;
   list(): Promise<AgentEnvironmentView[]>;
+  // UNIT_BOUNDARY_DESCRIPTION: the Environments other Agents' lists share with this Agent, read-only.
+  shared(): Promise<SharedEnvironmentView[]>;
   update(
     name: string,
     input: UpdateEnvironmentInput,
@@ -62,15 +91,39 @@ export interface OwningAgentEnvironments {
 }
 
 export interface EnvironmentsServiceImpl {
-  forOwningAgent(owningAgentId: string): OwningAgentEnvironments;
+  forOwningAgent(
+    owningAgentId: string,
+    opts?: { manage: boolean },
+  ): OwningAgentEnvironments;
   list(owningAgentId: string): Promise<EnvironmentView[]>;
   listAll(): Promise<EnvironmentView[]>;
-  agentMembers(owningAgentId: string): Promise<string[]>;
-  setAgentMembers(owningAgentId: string, emails: string[]): Promise<string[]>;
-  setMembers(id: string, emails: string[]): Promise<EnvironmentView>;
+  agentMembers(owningAgentId: string): Promise<AgentEnvironmentMembersView>;
+  setAgentMembers(
+    owningAgentId: string,
+    update: MembersUpdate,
+  ): Promise<AgentEnvironmentMembersView>;
+  setMembers(id: string, update: MembersUpdate): Promise<EnvironmentView>;
+  lookupAgent(agentId: string): Promise<EnvironmentAgentLookup>;
   extend(id: string, expiresAt: Date): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
   remove(record: EnvironmentRecord, actor: string): Promise<void>;
+}
+
+function withReadyPaths(
+  endpoints: EnvironmentEndpoint[],
+  ready: Record<string, string | null>,
+): EnvironmentEndpoint[] {
+  const unknown = Object.keys(ready).filter(
+    (name) => !endpoints.some((e) => e.name === name),
+  );
+  if (unknown.length > 0)
+    refuse(`ready: no endpoint named ${unknown.join(", ")}`);
+  return endpoints.map(({ ready: kept, ...endpoint }) => {
+    const path = Object.hasOwn(ready, endpoint.name)
+      ? ready[endpoint.name]
+      : kept;
+    return path ? { ...endpoint, ready: path } : endpoint;
+  });
 }
 
 function refuse(
@@ -87,6 +140,7 @@ function refuse(
  * owning Agent, on the default image, with no harness, no
  * connections and no default model provider, so nothing in it can act as the
  * owning Agent; a row beside it holds its host label, endpoints and expiry,
+ * its Agent carries the idle timeout it sleeps after,
  * and the owner alone adds people to one Environment, beside the people of its
  * Agent, whom the owner and the Agent's editors name. A `start` command becomes its first Startup Item through the
  * runtime channel. The owning Agent wakes a sleeping one before it opens the
@@ -101,7 +155,11 @@ export function createEnvironmentsService(
   function view(
     record: EnvironmentRecord,
     agent: Agent | null,
-    lists: { members: string[]; agentMemberCount: number },
+    lists: {
+      members: string[];
+      memberAgents: EnvironmentMemberAgent[];
+      agentMemberCount: number;
+    },
   ): EnvironmentView {
     return {
       id: record.agentId,
@@ -112,11 +170,41 @@ export function createEnvironmentsService(
         url: endpointUrl(deps.config.urlTemplate, e.name, record.host),
       })),
       members: lists.members,
+      memberAgents: lists.memberAgents,
       agentMemberCount: lists.agentMemberCount,
       expiresAt: record.expiresAt.toISOString(),
+      idleTimeoutMin: agent?.effectiveHibernationTimeoutMin ?? null,
       createdAt: record.createdAt.toISOString(),
       state: agent?.state ?? "unknown",
     };
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: the Agents on a list as its owner sees them, in the list's order, with when each last opened one of the given Environments; an id whose Agent is gone is left out.
+  async function describeAgents(
+    agentIds: string[],
+    environmentIds: string[],
+  ): Promise<EnvironmentMemberAgent[]> {
+    if (agentIds.length === 0) return [];
+    const opened = await deps.members.lastOpened(environmentIds, agentIds);
+    const out: EnvironmentMemberAgent[] = [];
+    for (const agentId of agentIds) {
+      const described = await deps.directory.describe(agentId);
+      if (!described) continue;
+      out.push({
+        agentId,
+        name: described.name,
+        ownerName: described.ownerName,
+        lastOpenedAt: opened.get(agentId)?.toISOString() ?? null,
+      });
+    }
+    return out;
+  }
+
+  async function agentMemberCount(owningAgentId: string): Promise<number> {
+    return (
+      (await deps.members.ofAgent(owningAgentId)).length +
+      (await deps.members.agentsOfAgent(owningAgentId)).length
+    );
   }
 
   async function views(
@@ -124,17 +212,23 @@ export function createEnvironmentsService(
   ): Promise<EnvironmentView[]> {
     const agents = new Map((await deps.agents.list()).map((a) => [a.id, a]));
     const live = records.filter((r) => agents.has(r.agentId));
-    const members = await deps.members.ofEnvironments(
-      live.map((r) => r.agentId),
-    );
+    const ids = live.map((r) => r.agentId);
+    const members = await deps.members.ofEnvironments(ids);
+    const memberAgentIds = await deps.members.agentsOfEnvironments(ids);
     const agentMemberCounts = new Map<string, number>();
     for (const id of new Set(live.map((r) => r.owningAgentId)))
-      agentMemberCounts.set(id, (await deps.members.ofAgent(id)).length);
-    return live.map((r) =>
-      view(r, agents.get(r.agentId) ?? null, {
-        members: members.get(r.agentId) ?? [],
-        agentMemberCount: agentMemberCounts.get(r.owningAgentId) ?? 0,
-      }),
+      agentMemberCounts.set(id, await agentMemberCount(id));
+    return Promise.all(
+      live.map(async (r) =>
+        view(r, agents.get(r.agentId) ?? null, {
+          members: members.get(r.agentId) ?? [],
+          memberAgents: await describeAgents(
+            memberAgentIds.get(r.agentId) ?? [],
+            [r.agentId],
+          ),
+          agentMemberCount: agentMemberCounts.get(r.owningAgentId) ?? 0,
+        }),
+      ),
     );
   }
 
@@ -144,9 +238,23 @@ export function createEnvironmentsService(
   ): Promise<EnvironmentView> {
     return view(record, agent, {
       members: await deps.members.ofEnvironment(record.agentId),
-      agentMemberCount: (await deps.members.ofAgent(record.owningAgentId))
-        .length,
+      memberAgents: await describeAgents(
+        await deps.members.agentsOfEnvironment(record.agentId),
+        [record.agentId],
+      ),
+      agentMemberCount: await agentMemberCount(record.owningAgentId),
     });
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: the Agent ids a person saves on a list, each checked to name an Agent that exists and is not an Environment, of any owner; the first that does not refuses the whole list, so nothing is saved that would open nothing.
+  async function checkedAgentIds(agentIds: string[]): Promise<string[]> {
+    const unique = [...new Set(agentIds.map((id) => id.trim()))];
+    for (const id of unique) {
+      const described = await deps.directory.describe(id);
+      if (!described || described.environment)
+        refuse(`${id} is not an agent that can open an Environment`);
+    }
+    return unique;
   }
 
   // UNIT_BOUNDARY_DESCRIPTION: an Environment as its owning agent reads it: how many people besides its owner may open it, never who, since only people decide that, in the app.
@@ -163,8 +271,24 @@ export function createEnvironmentsService(
       endpoints: env.endpoints,
       peopleWhoMayOpen: people.length,
       expiresAt: env.expiresAt,
+      idleTimeoutMin: env.idleTimeoutMin,
       createdAt: env.createdAt,
       state: env.state,
+    };
+  }
+
+  async function agentMembersView(
+    owningAgentId: string,
+  ): Promise<AgentEnvironmentMembersView> {
+    const environmentIds = (
+      await deps.repo.listByOwningAgent(owningAgentId)
+    ).map((r) => r.agentId);
+    return {
+      emails: await deps.members.ofAgent(owningAgentId),
+      agents: await describeAgents(
+        await deps.members.agentsOfAgent(owningAgentId),
+        environmentIds,
+      ),
     };
   }
 
@@ -198,6 +322,16 @@ export function createEnvironmentsService(
     return resolved;
   }
 
+  function idleTimeout(requested: number | undefined): number {
+    const resolved = clampIdleTimeout(
+      requested,
+      deps.config.idleTimeoutDefaultMin,
+      deps.config.idleTimeoutMaxMin,
+    );
+    if (typeof resolved !== "number") refuse(resolved.error);
+    return resolved;
+  }
+
   async function remove(
     record: EnvironmentRecord,
     actor: string,
@@ -213,7 +347,10 @@ export function createEnvironmentsService(
     });
   }
 
-  function forOwningAgent(owningAgentId: string): OwningAgentEnvironments {
+  function forOwningAgent(
+    owningAgentId: string,
+    opts: { manage: boolean } = { manage: true },
+  ): OwningAgentEnvironments {
     async function createUnder(
       input: CreateEnvironmentInput,
     ): Promise<AgentEnvironmentView> {
@@ -227,6 +364,7 @@ export function createEnvironmentsService(
           "PRECONDITION_FAILED",
         );
       const expiresAt = expiry(input.expiresAt);
+      const hibernationTimeoutMin = idleTimeout(input.idleTimeoutMin);
       const agent = await deps.agents.create({
         name: environmentAgentName(owning.name, input.name),
         description: `Environment ${input.name} of ${owning.name}`,
@@ -234,6 +372,7 @@ export function createEnvironmentsService(
         noDefaultProvider: true,
         egressPreset: "none",
         requireConnectionAddress: true,
+        hibernationTimeoutMin,
         ...(input.storage ? { storage: input.storage } : {}),
       });
       const record: EnvironmentRecord = {
@@ -278,6 +417,11 @@ export function createEnvironmentsService(
     }
 
     return {
+      idleTimeout: {
+        defaultMin: deps.config.idleTimeoutDefaultMin,
+        maxMin: deps.config.idleTimeoutMaxMin,
+      },
+      manage: opts.manage,
       create: createUnder,
 
       async list() {
@@ -287,18 +431,62 @@ export function createEnvironmentsService(
         return Promise.all(all.map(forAgent));
       },
 
+      async shared() {
+        const ids = await deps.members.environmentsSharedWith(owningAgentId);
+        const out: SharedEnvironmentView[] = [];
+        for (const id of ids) {
+          const record = await deps.repo.get(id);
+          if (!record || record.owningAgentId === owningAgentId) continue;
+          const owning = await deps.directory.describe(record.owningAgentId);
+          if (!owning) continue;
+          out.push({
+            id: record.agentId,
+            name: record.name,
+            sharedWithYou: true,
+            owningAgentName: owning.name,
+            ownerName: owning.ownerName,
+            endpoints: record.endpoints.map((e) => ({
+              ...e,
+              url: endpointUrl(deps.config.urlTemplate, e.name, record.host),
+            })),
+            expiresAt: record.expiresAt.toISOString(),
+            state: await deps.directory.environmentState(record.agentId),
+          });
+        }
+        return out;
+      },
+
       async update(name, input) {
-        if (input.expiresAt === undefined)
-          refuse("nothing to change: give an expiry");
+        if (
+          input.expiresAt === undefined &&
+          input.idleTimeoutMin === undefined &&
+          input.ready === undefined
+        )
+          refuse(
+            "nothing to change: give an expiry, an idle timeout or readiness paths",
+          );
         const record = await byName(name);
-        const expiresAt = expiry(input.expiresAt);
-        await deps.repo.update(record.agentId, { expiresAt });
-        return forAgent(
-          await viewOf(
-            { ...record, expiresAt },
-            await deps.agents.get(record.agentId),
-          ),
-        );
+        const patch: Partial<
+          Pick<EnvironmentRecord, "expiresAt" | "endpoints">
+        > = {};
+        if (input.expiresAt !== undefined)
+          patch.expiresAt = expiry(input.expiresAt);
+        if (input.ready !== undefined)
+          patch.endpoints = withReadyPaths(record.endpoints, input.ready);
+        const hibernationTimeoutMin =
+          input.idleTimeoutMin === undefined
+            ? undefined
+            : idleTimeout(input.idleTimeoutMin);
+        if (Object.keys(patch).length > 0)
+          await deps.repo.update(record.agentId, patch);
+        const agent =
+          hibernationTimeoutMin === undefined
+            ? await deps.agents.get(record.agentId)
+            : await deps.agents.update({
+                id: record.agentId,
+                hibernationTimeoutMin,
+              });
+        return forAgent(await viewOf({ ...record, ...patch }, agent));
       },
 
       async wake(name) {
@@ -332,37 +520,66 @@ export function createEnvironmentsService(
 
     async agentMembers(owningAgentId) {
       await ownedAgent(owningAgentId);
-      return deps.members.ofAgent(owningAgentId);
+      return agentMembersView(owningAgentId);
     },
 
-    async setAgentMembers(owningAgentId, emails) {
+    async setAgentMembers(owningAgentId, update) {
       await ownedAgent(owningAgentId);
-      const unique = [...new Set(emails)];
+      const unique = [...new Set(update.emails)];
+      const agentIds =
+        update.agentIds === undefined
+          ? undefined
+          : await checkedAgentIds(update.agentIds);
       await deps.members.setOfAgent(owningAgentId, unique);
+      if (agentIds !== undefined)
+        await deps.members.setAgentsOfAgent(owningAgentId, agentIds);
       securityLog("info", "environment.agent_members", {
         category: "authz-list",
         actor: deps.owner,
         actorKind: "user",
         agentId: owningAgentId,
         result: "success",
-        detail: { count: unique.length },
+        detail: {
+          count: unique.length,
+          ...(agentIds !== undefined ? { agents: agentIds } : {}),
+        },
       });
-      return deps.members.ofAgent(owningAgentId);
+      return agentMembersView(owningAgentId);
     },
 
-    async setMembers(id, emails) {
+    async setMembers(id, update) {
       const record = await ownRecord(id);
-      const unique = [...new Set(emails)];
+      const unique = [...new Set(update.emails)];
+      const agentIds =
+        update.agentIds === undefined
+          ? undefined
+          : await checkedAgentIds(update.agentIds);
       await deps.members.setOfEnvironment(id, unique);
+      if (agentIds !== undefined)
+        await deps.members.setAgentsOfEnvironment(id, agentIds);
       securityLog("info", "environment.members", {
         category: "authz-list",
         actor: deps.owner,
         actorKind: "user",
         agentId: id,
         result: "success",
-        detail: { count: unique.length },
+        detail: {
+          count: unique.length,
+          ...(agentIds !== undefined ? { agents: agentIds } : {}),
+        },
       });
       return viewOf(record, await deps.agents.get(id));
+    },
+
+    async lookupAgent(agentId) {
+      const described = await deps.directory.describe(agentId.trim());
+      if (!described || described.environment) return { found: false };
+      return {
+        found: true,
+        agentId: agentId.trim(),
+        name: described.name,
+        ownerName: described.ownerName,
+      };
     },
 
     async extend(id, expiresAt) {

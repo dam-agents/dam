@@ -139,7 +139,7 @@ export function PaletteDialog({
               }}
               placeholder="Type a command or search"
               data-testid="command-palette-input"
-              className="h-12 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-placeholder"
+              className="h-12 min-w-0 flex-1 bg-transparent text-sm pointer-coarse:text-base text-foreground outline-none placeholder:text-placeholder"
             />
           </div>
           {ranked.length === 0 && (

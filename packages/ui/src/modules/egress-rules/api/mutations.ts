@@ -33,3 +33,13 @@ export function useApplyEgressPreset() {
     },
   });
 }
+
+export function useRestorePlatformRule() {
+  return useMutation({
+    ...trpc.egressRules.restorePlatformRule.mutationOptions(),
+    meta: {
+      invalidates: [egressRulesKeys.all],
+      errorToast: "Couldn't restore the rule",
+    },
+  });
+}

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { turnContinuedNotice } from "../../interrupted-turn-recovery.js";
 import {
   createInMemoryUndeliveredStore,
@@ -271,7 +271,9 @@ describe("acp-runtime: steer points", () => {
   });
 });
 
-async function interruptedAtSteerPoint(): Promise<{
+async function interruptedAtSteerPoint(
+  afterSettle: () => void = () => {},
+): Promise<{
   world: World;
   bob: Client;
   undelivered: ReturnType<typeof createInMemoryUndeliveredStore>;
@@ -305,9 +307,11 @@ async function interruptedAtSteerPoint(): Promise<{
       status: "completed",
     }),
   );
-  await new Promise((r) => setTimeout(r, 600));
-  await settle();
-  expect(world.harness().received("session/cancel")).toHaveLength(1);
+  afterSettle();
+  await vi.waitFor(
+    () => expect(world.harness().received("session/cancel")).toHaveLength(1),
+    { timeout: 4_000, interval: 20 },
+  );
   return { world, bob, undelivered };
 }
 
@@ -374,6 +378,27 @@ describe("acp-runtime: interrupt and continue, races in the gap", () => {
   });
 
   /**
+   * TEST_SCENARIO: The quiet window's timer measures its own deadline, and it
+   * can come due while the clock the runtime reads still says the window is
+   * open by a millisecond or two. The window ends with the timer that opened
+   * it, so the steer goes at the steer point that timer marks. The test holds
+   * the clock back once the window is open, which no timer can make up for.
+   */
+  it("steers when the clock lags the quiet window's timer", async () => {
+    const clock = Date.now.bind(Date);
+    let lag = 0;
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => clock() - lag);
+    try {
+      const { world } = await interruptedAtSteerPoint(() => {
+        lag = 50;
+      });
+      expect(world.harness().received("session/cancel")).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  /**
    * TEST_SCENARIO: The harness refuses the continuing prompt for a moment
    * while it finishes the cancel. The runtime asks again, and once the
    * harness takes it, the turn goes on as one turn: the message joins it,
@@ -389,11 +414,12 @@ describe("acp-runtime: interrupt and continue, races in the gap", () => {
       code: -32000,
       message: "the previous turn is still being cancelled",
     });
-    await new Promise((r) => setTimeout(r, 400));
-    await settle();
+    await vi.waitFor(
+      () => expect(world.harness().received("session/prompt")).toHaveLength(3),
+      { timeout: 4_000, interval: 20 },
+    );
 
     const prompts = world.harness().received("session/prompt");
-    expect(prompts).toHaveLength(3);
     expect(promptTexts(prompts[2])).toEqual([
       "Change of plan",
       turnContinuedNotice({ toolCall: false, reply: "" }),

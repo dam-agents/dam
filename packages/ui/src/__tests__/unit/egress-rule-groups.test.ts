@@ -23,6 +23,22 @@ const rule = (
 });
 
 describe("groupRules", () => {
+  // TEST_SCENARIO: the platform's Environments rule is listed in a group of its own, last, never among the owner's own rules, so its owner sees it was added for them.
+  it("puts the platform's Environments rule in a group of its own", () => {
+    expect(
+      groupRules(
+        [
+          rule("*.env.example.com", "platform:environments"),
+          rule("api.example.com", "manual"),
+        ],
+        "",
+      ).map((g) => [g.key, g.rules.map((r) => r.host)]),
+    ).toEqual([
+      ["own", ["api.example.com"]],
+      ["platform", ["*.env.example.com"]],
+    ]);
+  });
+
   const rules = [
     rule("pypi.org", "preset:trusted"),
     rule("api.example.com", "manual"),

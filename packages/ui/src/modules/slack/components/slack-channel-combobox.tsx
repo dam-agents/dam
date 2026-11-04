@@ -127,7 +127,7 @@ export function SlackChannelCombobox({
               : undefined
           }
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-sm outline-hidden placeholder:text-placeholder"
+          className="min-w-0 flex-1 bg-transparent text-sm pointer-coarse:text-base outline-hidden placeholder:text-placeholder"
           data-testid="slack-channel-search"
         />
         <ChevronDown size={14} className="shrink-0 text-muted-foreground" />

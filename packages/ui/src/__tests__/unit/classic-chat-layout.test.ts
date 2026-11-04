@@ -15,7 +15,7 @@ import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
  * an artifact, the browser, the changes, a process output or a delegation)
  * opens on the right. Approvals is the one tab of the top bar that rides the
  * side panel, and it opens as a drawer over the chat, so it leaves the slot as
- * it is; Get started opens as a dock under the top bar. The side panel's own
+ * it is. The side panel's own
  * tabs, Files and the rest, show nothing there: their lists are the sections.
  */
 

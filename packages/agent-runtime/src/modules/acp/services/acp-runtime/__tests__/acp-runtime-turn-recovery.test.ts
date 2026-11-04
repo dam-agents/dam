@@ -121,15 +121,13 @@ describe("acp-runtime: interrupted-turn recovery with nobody watching", () => {
    * answered from that history before the harness holds the Session, and
    * recovery's own connection is gone by the time the harness loads it. A
    * Sleep and wake leaves exactly this: nobody has the chat open. The notice
-   * still reaches the harness, and is not written down as undelivered once
-   * the queue's park window passes.
+   * still reaches the harness once, and nothing is left behind.
    */
   it("resumes a session the harness loads after recovery has hung up", async () => {
     const activeTurns = createActiveTurnStore(disk);
     const world = createWorld({
       activeTurns,
       sessionMetadata,
-      queueParkMs: 20,
       historyProvider: { fetch: () => Promise.resolve([]) },
     });
     const recovery = recoverInterruptedTurns({

@@ -2,6 +2,7 @@ import type { BudgetVmUsage } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
+  agentsAtCpuCeiling,
   cpuBar,
   memoryBar,
   poolWarning,
@@ -142,16 +143,72 @@ describe("pool bars", () => {
     });
   });
 
-  it("fills the CPU bar with the server's congestion fill", () => {
-    const bar = cpuBar({
-      limitMilli: 4000,
-      usedMilli: 4000,
-      throttledPercent: 10,
-      pressurePercent: 50,
-      congestion: "high",
-      level: "critical",
-      fill: 0.5,
+  const cpu = (
+    over: Partial<NonNullable<BudgetVmUsage["cpu"]>> = {},
+  ): NonNullable<BudgetVmUsage["cpu"]> => ({
+    limitMilli: 4000,
+    usedMilli: 1500,
+    poolMilli: 8000,
+    machineMilli: 4000,
+    throttledPercent: 0,
+    pressurePercent: 5,
+    congestion: "low",
+    level: "ok",
+    fill: 0.04,
+    ...over,
+  });
+
+  it("measures CPU use against the owner's pool, agent by agent, largest first", () => {
+    // TEST_SCENARIO: 1.5 of 8 CPU, agent b 0.9 and a 0.1, the 0.5 the runner used beyond them as the last segment; the sleeping agent and the idle one are left out. The level stays the congestion's.
+    expect(cpuBar(cpu(), usage, agents)).toEqual({
+      level: "ok",
+      segments: [
+        {
+          agentId: "b",
+          label: "b · 0.9 CPU",
+          fraction: 900 / 8000,
+          filled: true,
+        },
+        {
+          agentId: null,
+          label: "1 more · 0.1 CPU",
+          fraction: 100 / 8000,
+          filled: false,
+        },
+        {
+          agentId: null,
+          label: "Runner and system · 0.5 CPU",
+          fraction: 500 / 8000,
+          filled: false,
+        },
+      ],
     });
+  });
+
+  it("takes the runner's limit as the pool when the server sends none", () => {
+    const bar = cpuBar(
+      cpu({ poolMilli: undefined, usedMilli: 1000 }),
+      usage,
+      agents,
+    );
+    expect(bar.segments[0]).toMatchObject({
+      agentId: "b",
+      fraction: 900 / 4000,
+    });
+  });
+
+  it("shows the congestion fill when there is nothing to measure use against", () => {
+    const bar = cpuBar(
+      cpu({
+        poolMilli: undefined,
+        limitMilli: 0,
+        congestion: "high",
+        level: "critical",
+        fill: 0.5,
+      }),
+      usage,
+      agents,
+    );
     expect(bar).toEqual({
       level: "critical",
       segments: [
@@ -163,6 +220,17 @@ describe("pool bars", () => {
         },
       ],
     });
+  });
+
+  it("names an agent at its own machine's vCPUs, and nobody when the install does not say them", () => {
+    // TEST_SCENARIO: with 1-vCPU machines, b at 0.9 is at its ceiling and a at 0.1 is not; without machineMilli nobody is named.
+    const at = (machineMilli?: number) =>
+      agentsAtCpuCeiling({ ...usage, cpu: cpu({ machineMilli }) }, agents).map(
+        (a) => a.id,
+      );
+    expect(at(1000)).toEqual(["b"]);
+    expect(at(4000)).toEqual([]);
+    expect(at(undefined)).toEqual([]);
   });
 
   it("names the agents using the most CPU", () => {

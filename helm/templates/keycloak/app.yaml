@@ -140,8 +140,8 @@ spec:
               value: {{ .Values.keycloak.shareClientId | quote }}
             - name: PLATFORM_BRAND_NAME_MEANINGS
               value: {{ .Values.brand.nameMeanings | default (list) | toJson | quote }}
-            - name: PLATFORM_LOGIN_DOCS_URL
-              value: {{ .Values.keycloak.login.docsUrl | default "" | quote }}
+            - name: PLATFORM_DOCS_URL
+              value: {{ .Values.links.docs | quote }}
             - name: PLATFORM_LOGIN_COMMUNITY_LABEL
               value: {{ dig "community" "label" "" .Values.keycloak.login | quote }}
             - name: PLATFORM_LOGIN_COMMUNITY_URL

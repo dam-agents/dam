@@ -273,6 +273,7 @@ export function createCommandBackend(
     get tools(): SatelliteTool[] {
       return [runTool(surface)];
     },
+    ensureReady: () => Promise.resolve({ restarted: false }),
     call,
     describeCall: (_tool, args) =>
       Array.isArray(args.cmd) ? args.cmd.join(" ") : JSON.stringify(args),

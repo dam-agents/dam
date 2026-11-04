@@ -332,6 +332,127 @@ fn a_node_cache_past_its_ceiling_refuses_to_fetch() {
     assert_eq!(resolved(cache.resolve(IMAGE, &[])).digest, held);
 }
 
+// TEST_SCENARIO: opening the directory is what reclaims a tree an earlier layout nested in it. No path the writer builds reaches such a tree, so it is charged to no budget and evicted by no trim; the writer that opens the directory removes it before serving anything.
+#[test]
+fn opening_the_cache_removes_the_trees_an_earlier_layout_nested() {
+    let f = Fixture::new("old-layout", PUBLIC_CRANE);
+    let dir = f.dir.path().join("images");
+    let stale = dir
+        .join("old-layout")
+        .join(format!("sha256_{}", "a".repeat(64)));
+    fs::create_dir_all(&stale).unwrap();
+    fs::write(stale.join("rootfs"), b"gone").unwrap();
+
+    let _open = f.cache(|_| {});
+
+    assert!(
+        !stale.exists(),
+        "a tree an earlier layout nested survived the open"
+    );
+}
+
+// TEST_SCENARIO: a pass can complete while the cache is over its budget — a pin waiting out a fetch retry is skipped, and its tree is still on disk — so ending a pass forgets the reported figure only when every pin that pass resolved fits. This is the case a retry skip creates and the per-pin check never sees.
+#[test]
+fn a_pass_that_completes_over_budget_keeps_the_reported_figure() {
+    let f = Fixture::new("pins-retry-skip", PUBLIC_CRANE);
+    let cache = f.cache(|c| c.budget = 5_000);
+    let pin = format!("sha256:{}", "c".repeat(64));
+    let pinned: HashSet<String> = [pin.clone()].into_iter().collect();
+    assert!(
+        cache.say_pins_over_budget(6_000),
+        "a new figure was not said"
+    );
+    locked(&cache.memory).entries.insert(
+        cache.digest_entry(&pin),
+        Entry {
+            path: cache.digest_entry(&pin),
+            size: 6_000,
+            modified: std::time::SystemTime::now(),
+        },
+    );
+
+    cache.forget_if_pins_fit(&pinned);
+
+    assert!(
+        locked(&cache.memory).pins_over_budget.is_some(),
+        "a pass that completed over budget forgot the figure, so the next one says it again"
+    );
+
+    locked(&cache.memory)
+        .entries
+        .get_mut(&cache.digest_entry(&pin))
+        .expect("the entry is there")
+        .size = 1_000;
+    cache.forget_if_pins_fit(&pinned);
+
+    assert!(
+        locked(&cache.memory).pins_over_budget.is_none(),
+        "a pass that ended inside the budget kept the figure, so a later one stays silent"
+    );
+}
+
+// TEST_SCENARIO: the over-budget report is said once per figure, not once per pass. Only a complete pass ending inside the budget forgets the figure (the pass calls forget_pins_over_budget then, and never on a prefix), so a cache that stays over budget says it once and then keeps serving.
+#[test]
+fn the_over_budget_report_is_said_once_per_figure() {
+    let f = Fixture::new("pins-report", PUBLIC_CRANE);
+    let cache = f.cache(|c| c.budget = 10_000);
+
+    assert!(
+        cache.say_pins_over_budget(12_000),
+        "a new figure was not said"
+    );
+    assert!(
+        !cache.say_pins_over_budget(12_000),
+        "the same figure was said a second time"
+    );
+    cache.forget_pins_over_budget();
+    assert!(
+        cache.say_pins_over_budget(12_000),
+        "a figure after a complete pass inside the budget was not said again"
+    );
+}
+
+// TEST_SCENARIO: a pin is spared from eviction for as long as the cache is open, so a budget below what the pinned images weigh together is one no pass can end inside. The pass fetches the pins until they outweigh it and then stops, rather than taking more of the node's disk for trees nothing may evict, and the figure is kept so the over-budget report can name it. A second pass, with those trees already there, stops at the same point and fetches nothing: the report is per figure, not per pass.
+#[test]
+fn a_pass_stops_pinning_once_the_pins_outweigh_the_budget() {
+    let f = Fixture::new("pins-over-budget", PUBLIC_CRANE);
+    fs::write(f.dir.path().join("inflate"), "6000").unwrap();
+    let cache = f.cache(|c| {
+        c.budget = 10_000;
+        c.pins = vec![
+            "quay.io/x/a:1".to_string(),
+            "quay.io/x/b:1".to_string(),
+            "quay.io/x/c:1".to_string(),
+        ];
+    });
+
+    cache.preload(&[]);
+
+    assert_eq!(
+        f.calls("export"),
+        2,
+        "the pass fetched a pin past the budget it could never hold"
+    );
+    let figure = locked(&cache.memory).pins_over_budget;
+    assert!(
+        figure.is_some(),
+        "the pass ended over budget and said nothing"
+    );
+
+    cache.preload(&[]);
+
+    assert_eq!(
+        f.calls("export"),
+        2,
+        "a second pass fetched a pin the budget could never hold again"
+    );
+    assert_eq!(
+        locked(&cache.memory).pins_over_budget,
+        figure,
+        "the figure was forgotten by a pass that ended over budget, so it is reported every pass"
+    );
+}
+
 // TEST_SCENARIO: the node service forgets every hold when it restarts. Until the runners have named theirs again, nothing is evicted, however far over budget the cache is.
 #[test]
 fn nothing_is_evicted_during_the_grace_after_opening() {

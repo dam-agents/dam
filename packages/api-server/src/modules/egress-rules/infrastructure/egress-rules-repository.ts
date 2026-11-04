@@ -1,6 +1,9 @@
 import { and, desc, eq, inArray, sql, type Db } from "db";
 import { egressRules } from "db";
-import { canonicalEgressHost } from "api-server-api";
+import {
+  canonicalEgressHost,
+  PLATFORM_ENVIRONMENTS_SOURCE,
+} from "api-server-api";
 import type {
   EgressPreset,
   EgressRuleSource,
@@ -46,6 +49,9 @@ export interface EgressRulesRepository {
   insertOrPromoteFromPreset(row: NewEgressRule): Promise<EgressRuleRow>;
   updateTakeOwnership(input: TakeOwnershipInput): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
+  platformRule(
+    agentId: string,
+  ): Promise<{ active: EgressRuleRow | null; everHeld: boolean }>;
   reassignActiveSource(
     agentId: string,
     fromSources: string[],
@@ -403,6 +409,24 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         )
         .returning();
       return updated.length ? toRow(updated[0] as RawRule) : null;
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: an Agent's platform Environments rule: the active one, if any, and whether it ever held one, which a removed rule's revoked row keeps saying, so the platform never adds back a rule its owner removed.
+    async platformRule(agentId) {
+      const rows = await db
+        .select()
+        .from(egressRules)
+        .where(
+          and(
+            eq(egressRules.agentId, agentId),
+            eq(egressRules.source, PLATFORM_ENVIRONMENTS_SOURCE),
+          ),
+        );
+      const active = rows.find((r) => r.status === "active");
+      return {
+        active: active ? toRow(active as RawRule) : null,
+        everHeld: rows.length > 0,
+      };
     },
 
     async listForAgent(agentId) {

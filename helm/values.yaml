@@ -85,10 +85,16 @@ signUps: open
 # -- Outbound links surfaced in the UI, changeable per install without a
 # rebuild (the api-server serves them over `links.all`).
 links:
+  # The documentation site, also on the sign-in page. Complete URL of its
+  # root: the UI builds the CLI reference, MCP and LiteLLM key pages under it.
+  # Empty string hides every documentation link.
+  docs: "https://pages.github.ibm.com/dam-agents/docs/"
   # Where "Request more" next to the compute meter points — a chat channel,
-  # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
-  # default, which is install-specific and slated for removal — set this.
-  computeRequest: ""
+  # form, or ticket queue. Complete URL. Empty string hides the link.
+  computeRequest: "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759"
+  # The #curvebender-community channel the CurveBender thank-you dialog
+  # invites people to. Complete URL. Empty string drops that sentence.
+  curveBenderCommunity: "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1"
   # Where "Request it" on the Slack setup surfaces points — the form people
   # use to ask for the Slack app in a workspace that does not have it yet.
   # Complete URL. Empty string hides that line; there is no bundled default.
@@ -256,6 +262,13 @@ environments:
   maxPerAgent: 5
   # -- Furthest ahead an Environment's expiry may be set, in days.
   expiryMaxDays: 30
+  # -- How long an Environment may sit idle before it sleeps, when its agent
+  # gives no idle timeout of its own. Longer than the agents' `vmIdleTimeout`,
+  # since what an Environment runs takes minutes to come back.
+  idleTimeout: "60m"
+  # -- Longest idle timeout an agent may give an Environment; a longer one is
+  # cut to it. An Environment always sleeps in the end.
+  idleTimeoutMax: "24h"
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
   # Environment address to the api-server; visitors sign in on the share
   # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
@@ -787,6 +800,16 @@ postgres:
     periodSeconds: 15
     timeoutSeconds: 10
     failureThreshold: 6
+  # -- Timing of the `pg_isready` check that holds the two checks around it off
+  # until Postgres first answers: after initdb on a first boot, after recovery
+  # when the last run was killed. On a loaded CI runner Postgres was still
+  # answering nothing 108 seconds in, and liveness's 90-second budget killed it
+  # inside initdb; the recovery that kill left took minutes more. Five minutes
+  # bounds such a start, and still bounds one that never answers.
+  startupProbe:
+    periodSeconds: 5
+    timeoutSeconds: 10
+    failureThreshold: 60
   readinessProbe:
     initialDelaySeconds: 5
     periodSeconds: 5
@@ -1074,9 +1097,6 @@ keycloak:
   # below it.
   login:
     allowPassword: true
-    # -- Where the login page's "Read the docs" links point. Empty string
-    # hides them.
-    docsUrl: "https://ibm.biz/dam-docs"
     # -- The chat channel the login page names for questions, shown as
     # "Questions? Ask in <label> on Slack." with the label linking to `url`.
     # Both empty, or either one, hides it.
@@ -1567,13 +1587,15 @@ apiServer:
     - pypi.org
     - files.pythonhosted.org
     - conda.anaconda.org
-    # GitHub
+    # GitHub. `cafe.github.com` is where gh posts its own telemetry, from the
+    # hidden `send-telemetry` command it runs after another command.
     - github.com
     - api.github.com
     - codeload.github.com
     - objects.githubusercontent.com
     - raw.githubusercontent.com
     - release-assets.githubusercontent.com
+    - cafe.github.com
     # Container registries. The registry host alone never pulls: Docker Hub
     # first hands out an anonymous token from auth.docker.io, then 307s the
     # blob off to whichever CDN serves the caller's region. ghcr.io redirects
@@ -1908,8 +1930,9 @@ controller:
       # kubelet (see `virtualization.imageCache`).
       imagePullSecrets: [] # must exist in agentNamespace
 
-      # Lifecycle. A machine starts fast, so every agent takes this and
-      # ignores its own hibernationTimeout; "0s" disables hibernation.
+      # Lifecycle. A machine starts fast, so every agent takes this unless
+      # its spec carries a hibernationTimeout of its own, as an Environment's
+      # does (`environments.idleTimeout`); "0s" disables hibernation.
       vmIdleTimeout: "5m"
 
     harnessTemplateDefaults:
@@ -1937,11 +1960,6 @@ controller:
       # No default env. `PORT` is baked into agent-runtime (defaults to 8080).
       # Platform-injected envs (HOME, HTTPS_PROXY, API_SERVER_URL, etc.) are
       # set unconditionally by the controller.
-      #
-      # `QUEUE_PARK_MS` is settable here: how long a session's queued prompts
-      # wait for a client to come back before they are recorded as undelivered
-      # (agent-runtime's own default is 90s). The e2e overlay shortens it so a
-      # spec need not spend the full window in a real wait.
       #
       # `MEM_REAPER` / `MEM_REAPER_THRESHOLD` tune agent-runtime's early-OOM
       # reaper: at the threshold fraction of the agent's memory ceiling (default

@@ -71,7 +71,7 @@ const BASE: LoginContext = {
     PLATFORM_ALLOW_PASSWORD: "true",
     PLATFORM_SHARE_CLIENT_ID: "platform-share",
     PLATFORM_BRAND_NAME_MEANINGS: '["Deploy Agents Massively"]',
-    PLATFORM_LOGIN_DOCS_URL: "https://ibm.biz/dam-docs",
+    PLATFORM_DOCS_URL: "https://ibm.biz/dam-docs",
     PLATFORM_LOGIN_COMMUNITY_LABEL: "#dam-community",
     PLATFORM_LOGIN_COMMUNITY_URL:
       "https://ibm.enterprise.slack.com/archives/C07PDAWV0QG",
@@ -96,7 +96,7 @@ export const NO_CONTENT: LoginContext = {
   ...BASE,
   properties: {
     ...BASE.properties,
-    PLATFORM_LOGIN_DOCS_URL: "",
+    PLATFORM_DOCS_URL: "",
     PLATFORM_LOGIN_COMMUNITY_LABEL: "",
     PLATFORM_LOGIN_COMMUNITY_URL: "",
     PLATFORM_API_URL: "/preview-api/empty",
