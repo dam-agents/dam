@@ -8,7 +8,11 @@
  * happens to list, and a classifier call on the session's own work model.
  * `work` decides a new agent's default model, `classifier` what Claude Code's
  * non-reasoning permission classifier runs on. The order is the preference:
- * the first entry a listing answers wins. `family` is the model's words,
+ * the first entry a listing answers wins. Bob's own gateway lists only Bob's
+ * names, so the two its owners run on close the `work` list: a list that
+ * skipped them left a Bob agent that named no model with no default at all.
+ * Those are plain words other providers use too (`grok-4-fast`), so they
+ * answer only on the provider `alias` names. `family` is the model's words,
  * `version` the digits right behind them and `variant` the word right behind
  * those, all as tokens of `modelTokens`.
  */
@@ -19,12 +23,15 @@ export interface PreferredModel {
   family: readonly string[];
   version: readonly string[];
   variant?: string;
+  alias?: string;
 }
 
 export const PREFERRED_MODELS: readonly PreferredModel[] = [
   { role: "work", family: ["deepseek"], version: ["4", "1"], variant: "flash" },
   { role: "work", family: ["claude", "opus"], version: ["5", "5"] },
   { role: "work", family: ["gpt"], version: ["6", "1"], variant: "sol" },
+  { role: "work", family: ["fast"], version: [], alias: "bob" },
+  { role: "work", family: ["explorer"], version: [], alias: "bob" },
   {
     role: "classifier",
     family: ["nemotron"],
@@ -120,6 +127,7 @@ export function preferredModelOf(
   for (const pref of PREFERRED_MODELS) {
     if (pref.role !== role) continue;
     for (const provider of providers) {
+      if (pref.alias !== undefined && pref.alias !== provider.alias) continue;
       const hit = provider.listed.find((id) =>
         modelMatches(modelTokens(id), pref),
       );

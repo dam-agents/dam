@@ -55,25 +55,13 @@ export function declaredModelOf(input: {
 
 /** UNIT_BOUNDARY_DESCRIPTION: the source that decided a converted default, named in the conversion's log line. */
 export type ConversionStep =
-  | "kit"
-  | "setting"
-  | "history"
-  | "preferred"
-  | "provider-default"
-  | "first-listed";
+  "kit" | "setting" | "history" | "preferred" | "first-listed";
 
 export interface ConvertedModel {
   model: string;
   step: ConversionStep;
   changedFrom?: string;
 }
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the model a provider's own service runs when it
- * is asked for none, for a provider whose models the platform's preference
- * list names none of: Bob lists only its own names (`premium`, `fast`, …).
- */
-const PROVIDER_DEFAULTS: Readonly<Record<string, string>> = { bob: "premium" };
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: providers whose calls before the Model Router
@@ -97,8 +85,8 @@ const WITHOUT_HISTORY: ReadonlySet<string> = new Set(["bob"]);
  * against each provider in turn, since it names the same model wherever it
  * is. What the first step leaves open falls back, so an Agent that holds a
  * provider listing a model always gets one: the platform's model preference
- * list across every fitting provider, whose order beats the providers' own;
- * then a provider's own default (Bob's `premium`); then the first chat model a
+ * list across every fitting provider, whose order beats the providers' own
+ * (it ends with Bob's own `fast` and `explorer`); then the first chat model a
  * provider lists. A model id the setting named and no provider lists is noted
  * as what the fallback replaced, so the owner is told; a tier word is the
  * image's preset (Claude Code's `opus`) rather than the owner's pick, so a new
@@ -151,11 +139,6 @@ function fallbackModelOf(
       model: `${preferred.alias}/${preferred.upstreamId}`,
       step: "preferred",
     };
-  for (const { alias, listed } of providers) {
-    const own = PROVIDER_DEFAULTS[alias];
-    const hit = own ? finder(alias, listed).listedAs(own) : undefined;
-    if (hit) return { model: `${alias}/${hit}`, step: "provider-default" };
-  }
   for (const { alias, listed } of providers) {
     const [first] = chatModels(listed);
     if (first) return { model: `${alias}/${first}`, step: "first-listed" };

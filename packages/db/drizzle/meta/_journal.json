@@ -918,13 +918,6 @@
       "when": 1793805387149,
       "tag": "0130_invocation_started_at",
       "breakpoints": true
-    },
-    {
-      "idx": 131,
-      "version": "7",
-      "when": 1793812700477,
-      "tag": "0131_reconvert_unset_default_models",
-      "breakpoints": true
     }
   ]
 }
