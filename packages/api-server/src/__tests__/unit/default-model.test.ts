@@ -199,6 +199,53 @@ describe("convertedDefaultModel", () => {
   });
 });
 
+describe("convertedDefaultModel on Bob's own gateway", () => {
+  const BOB = ["background", "explorer", "fast", "gpt-oss-20b", "premium-ide"];
+
+  // TEST_SCENARIO: 20 of 22 Bob agents converted to "not set" on 0.2.24: they named no model and ran on Bob's built-in default, which the preference list does not know, so they convert to the Bob model owners run on (`fast`, else `explorer`) — and the preference list still wins where another provider lists its model, and no other provider's `fast` is taken for Bob's.
+  it("takes Bob's built-in default for an agent that named no model", () => {
+    const bob = { alias: "bob", listed: BOB };
+    expect(
+      convertedDefaultModel({ setting: null, providers: [bob], ran: [] }),
+    ).toBe("bob/fast");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["aws/claude-opus-5-5"] }, bob],
+        ran: [],
+      }),
+    ).toBe("ibm/aws/claude-opus-5-5");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "bob", listed: ["background", "explorer"] }],
+        ran: [],
+      }),
+    ).toBe("bob/explorer");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["xai/grok-4-fast"] }, bob],
+        ran: [],
+      }),
+    ).toBe("bob/fast");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["xai/grok-4-fast"] }],
+        ran: [],
+      }),
+    ).toBeNull();
+    expect(
+      convertedDefaultModel({
+        setting: "codestral-2508",
+        providers: [bob],
+        ran: [],
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("convertedDefaultModel on several fitting providers", () => {
   const both = (setting: string | null, ran: string[] = []) =>
     convertedDefaultModel({
@@ -345,7 +392,7 @@ describe("the one-time default conversion", () => {
         write: async () => {},
         clear: async () => {},
         writeIfEmpty: async (_id, pair, note) => {
-          if (saved) return false;
+          if (saved?.model) return false;
           saved = pair;
           writes.push(pair);
           if (note) notes.push(note);
@@ -600,6 +647,39 @@ describe("the one-time default conversion", () => {
       name: "NoDefaultModelError",
       pending: true,
     });
+  });
+
+  // TEST_SCENARIO: 0.2.24 saved "not set" for Bob agents whose provider listed no model the conversion knew; once the runtime lists one, the next hello converts the default instead of leaving every schedule failing for good.
+  it("converts again over a saved not set", async () => {
+    const notSet = { harness: "claude-code", provider: "anth", model: null };
+    const { c, writes } = converter({ saved: notSet });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes).toEqual([
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-5-5",
+      },
+    ]);
+
+    const still = converter({
+      saved: notSet,
+      setting: "claude-opus-3",
+      catalog: view("listed", ["claude-opus-4-8"]),
+    });
+    expect(await still.c.convert("a")).toBe("not-set");
+    expect(still.writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a schedule of an asleep Agent whose default is "not set" wakes it and converts before the fire is checked, since nothing else would ever wake it to try again.
+  it("wakes an agent whose default is not set before a fire", async () => {
+    const { c, wakes, writes } = converter({
+      running: false,
+      saved: { harness: "claude-code", provider: "anth", model: null },
+    });
+    await c.ensureForFire("a");
+    expect(wakes).toEqual(["a"]);
+    expect(writes[0]?.model).toBe("anthropic/claude-opus-5-5");
   });
 
   // TEST_SCENARIO: a hello, a fire and a channel turn arriving together share one conversion instead of each polling the runtime.

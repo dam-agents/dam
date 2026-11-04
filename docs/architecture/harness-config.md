@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-27
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -54,7 +54,7 @@ On a routed runtime a default is saved only with a model: the Providers page sho
 In the JanUI experiment the new session's picker neither attaches nor disconnects a provider: it ends with a Manage providers row, counting the attached providers among the owner's, that opens the agent's Providers page.
 On a routed runtime (`modelRouter` on hello) the saved model is a qualified name and its provider follows from it; a bare name, a provider the agent does not hold, or a model missing from the harness's last reported list is refused.
 A run nobody picks for stays on the harness asked for, on the saved model and the provider it names; no saved model, or a model on a provider the agent no longer holds, fails the run as having no default model, with the reason, and no fitting provider fails it rather than moving it to another harness.
-**Conversion of an old default.** An agent from before per-session defaults has no saved pair, nor has a new agent before its first `hello`, and once it runs the Model Router the api-server converts its default once, while nothing is saved, so a model the person picked is never rewritten.
+**Conversion of an old default.** An agent from before per-session defaults has no saved pair, nor has a new agent before its first `hello`, and once it runs the Model Router the api-server converts its default once, while no model is saved, so a model the person picked is never rewritten.
 It reads what is certain first: the model setting its harness was left with, against the listing of each granted provider that fits its harness on the agent's own runtime; a tier word needs exactly one such provider, since it names no model across several.
 A tier word (`opus`, `opus[1m]`) becomes the provider's newest model containing exactly that word, never another tier; a model id is kept when the provider lists it; the harness's own default becomes the model the agent's calls mostly ran, by output tokens in the last day, week or month of telemetry, when the provider lists it, and no model the calls ran less takes its place.
 A model id the provider does not list is left to the owner rather than met with another version.
@@ -63,6 +63,7 @@ A kit may name the model its agent needs (`defaultModel`, [starter kits](starter
 Whatever the certain sources leave open — a tier word no provider lists a model of, a history the listings do not name, or more than one fitting provider, where no provider's own order can say which one the person meant — is answered by the platform's [preferred model list](#the-model-router) across every fitting provider, and the list's order beats the providers' own.
 An id the setting or the history names is not left to the list: it names the same model wherever it is, so it is resolved against each fitting provider in turn, and only a tier word, which names nothing on several, goes to the list.
 Nothing to go on at all saves the default as **not set**; a fitting provider not listed yet is left for a later try.
+A default that is not set runs nothing, so each later `hello` or fire converts it again.
 A new agent holds one provider ([agent-lifecycle](agent-lifecycle.md#create)) and its image presets its harness's model (Claude Code's `opus`), so its default becomes what the list prefers on that provider — DeepSeek V4.1 Flash on CurveBender, whose ids carry no tier word at all, and that provider's newest Opus on Anthropic — saved as a normal default the owner sees in the picker and can change; the save redelivers the agent's pending events, so a kit's setup turn waiting for it goes out at once.
 The owner is told on [Home](home-feed.md#default-model-notices) about a default that is not set, one on a provider the agent no longer holds, and one the conversion changed.
 The first two stop no work on an agent that runs nothing unattended: they are shown once the agent has an enabled Schedule or a Slack or Telegram Channel bound, which is the point where they start failing runs.
@@ -227,10 +228,11 @@ The router recognizes that call (auxiliary, no subagent id) and sends it to the 
 A session with **server-side auto mode** — a Claude model on a preset flagged `serverAutoMode` (Anthropic and the IBM proxy), and no non-Claude subagent model — leaves the call alone, since that provider answers the check itself.
 The router reads the catalog at each call while the process holds its spawn value, so a replaced listing reaches a running process only when it recycles.
 A title naming the classifier's model, which only a Haiku slot falling back to it sends, cannot be told from the classifier and follows the same rule.
-Claude Code ignores the knob below 2.1.302, so it arrives with the image's adapter pin: `@agentclientprotocol/claude-agent-acp` 0.94.0 bundles it through `@anthropic-ai/claude-agent-sdk` 0.3.303, whose CLI is 2.1.303.
+Claude Code ignores the knob below 2.1.302, so it arrives with the image's adapter pin.
 The platform's **preferred models** are one ordered list per role, `work` and `classifier`, a constant beside the provider presets in `api-server-api`; the list decides only where nothing the person chose does, never an agent that already runs or a model someone saved.
 Within a role the first entry whose model a provider lists wins, and providers are tried in the agent's own alias order, so the list's order beats a provider's.
-A model matches by its family, the version right behind it and the variant behind that where the list names one, across the spellings providers use: a deployment prefix (`rits/`, `aws/`, `eu/`), case, a version split by `-`, `_` or `.`, a `v` before it, a build stamp (`-1017`), Claude Code's `[1m]`.
+The `work` list ends with Bob's `fast`, then `explorer`, asked of Bob's gateway alone.
+A model matches by its family, the version right behind it and the variant behind that where the list names one, across the spellings providers use: a deployment prefix, case, separators, a build stamp.
 Another version or another variant is another model, so an older DeepSeek, gpt-6.1-nano or Nemotron 3 Nano never stands in for the one the list names.
 The **context window** reaches a routed Claude Code twice, because it keeps none from `/v1/models`: discovery parses each model as an id, a display name and a description, and throws the rest away.
 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is the widest window among the models the harness may run on, which is not a cap: it replaces the 200k default for an id Claude Code does not recognise, and is ignored for one it does.

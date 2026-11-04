@@ -4,6 +4,8 @@ import {
   eq,
   inArray,
   isNull,
+  or,
+  sql,
   agents as agentsTable,
   connectionGrants,
   connections as connectionsTable,
@@ -107,7 +109,13 @@ export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
         .update(agentsTable)
         .set({ sessionPair: pair, defaultModelNote: note ?? null })
         .where(
-          and(eq(agentsTable.id, agentId), isNull(agentsTable.sessionPair)),
+          and(
+            eq(agentsTable.id, agentId),
+            or(
+              isNull(agentsTable.sessionPair),
+              sql`${agentsTable.sessionPair}->'model' = 'null'::jsonb`,
+            ),
+          ),
         )
         .returning({ id: agentsTable.id });
       return rows.length > 0;
