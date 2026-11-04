@@ -28,6 +28,7 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     agentId: "agent-1",
     tool: "run",
     args: { cmd: ["./process.sh", "sales.db"] },
+    transferDirection: null,
     status: "running",
     isError: false,
     exitCode: null,
@@ -55,7 +56,17 @@ function harness(rows: JobRow[]) {
     return row !== undefined && row.agentId === agentId ? row : null;
   };
   const repo = {
-    grantedNames: async () => [{ owner: "alice", name: "gpu-box" }],
+    grantedSatellite: async () => ({
+      owner: "alice",
+      name: "gpu-box",
+      description: null,
+      host: null,
+      maxConcurrent: 16,
+      tools: [{ name: "run", inputSchema: {} }],
+      draining: false,
+      lastSeenAt: NOW,
+      incarnation: "11111111-1111-4111-8111-111111111111",
+    }),
     get: async () => ({
       owner: "alice",
       name: "gpu-box",
@@ -65,6 +76,7 @@ function harness(rows: JobRow[]) {
       tools: [{ name: "run", inputSchema: {} }],
       draining: false,
       lastSeenAt: NOW,
+      incarnation: "11111111-1111-4111-8111-111111111111",
     }),
     getJob: async (_o: string, s: string, q: number) => {
       calls.push("getJob");

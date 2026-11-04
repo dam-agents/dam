@@ -81,6 +81,18 @@ describe("loadConfig — version", () => {
     expect(loadConfig().recommendedClientCliVersion).toBe("0.2.24-rc3");
   });
 
+  // TEST_SCENARIO: a release branch cut after the spelling change reports `-rc.N`. The server must recommend that candidate like any other, or its clients are told nothing about the version to reach. A zero-padded number is not a semver identifier and npm refuses to publish it, so it is not recommended either.
+  it("recommends the CLI of a release candidate spelled -rc.N", () => {
+    process.env.PLATFORM_APP_VERSION = "0.2.25-rc.1";
+    expect(loadConfig().recommendedClientCliVersion).toBe("0.2.25-rc.1");
+    process.env.PLATFORM_APP_VERSION = "0.2.25-rc.10";
+    expect(loadConfig().recommendedClientCliVersion).toBe("0.2.25-rc.10");
+    for (const invalid of ["0.2.25-rc.01", "0.2.25-rc.09", "0.2.25-rc."]) {
+      process.env.PLATFORM_APP_VERSION = invalid;
+      expect(loadConfig().recommendedClientCliVersion).toBeUndefined();
+    }
+  });
+
   // TEST_SCENARIO: CD stamps a build from main `<version>-dev-<sha>`, a version npm never publishes. Recommending it would warn every CLI that is behind a release nobody can install.
   it("recommends no CLI for a build from main", () => {
     process.env.PLATFORM_APP_VERSION = "0.2.24-dev-db35e8abf4bd";

@@ -9,6 +9,8 @@ export interface SatelliteRow {
   tools: SatelliteTool[];
   draining: boolean;
   lastSeenAt: Date | null;
+  incarnation: string;
+  createdAt: Date;
 }
 
 export interface JobRow {
@@ -18,6 +20,7 @@ export interface JobRow {
   agentId: string;
   tool: string;
   args: Record<string, unknown>;
+  transferDirection: "download" | "upload" | null;
   status: JobStatus;
   isError: boolean;
   exitCode: number | null;

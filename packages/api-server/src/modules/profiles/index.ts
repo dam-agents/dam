@@ -1,4 +1,8 @@
-export { composeProfileResolver, composeProfilesForOwner } from "./compose.js";
+export {
+  composeProfileResolver,
+  composeProfileResolverOn,
+  composeProfilesForOwner,
+} from "./compose.js";
 export type {
   ProfileResolver,
   ResolvedProfile,

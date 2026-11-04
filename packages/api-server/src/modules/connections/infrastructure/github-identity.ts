@@ -24,6 +24,14 @@ export function stripControlChars(name: string): string {
     .join("");
 }
 
+export function displayLabel(label: string): string {
+  const kept = [...stripControlChars(label)].filter((c) => {
+    const code = c.codePointAt(0) ?? 0;
+    return code < 0xd800 || code > 0xdfff;
+  });
+  return kept.slice(0, 200).join("");
+}
+
 export async function resolveGitHubIdentity(
   accessToken: string,
 ): Promise<GitHubIdentity> {

@@ -22,6 +22,7 @@ const profile = (
   harness: "claude-code",
   providerTemplate: "anthropic",
   model: "anthropic/claude-mythos-5-1",
+  subagent: null,
   settings: {},
   newAgentDefault: false,
   usage: { agents: 0, channels: 0, schedules: 0 },

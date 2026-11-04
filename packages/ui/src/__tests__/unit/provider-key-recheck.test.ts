@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Settings / Providers rechecks the keys on every visit and offers no button for it. One pill on each row carries both states: "Not configured" for a provider the owner does not hold, else "Configured" with what the key is doing — "Verifying" while the check runs, "Connected" when it works or was never checked, "Key rejected" when the provider refused it, named in the row's accessible name, "Unverified" when the provider could not say, and "Degraded" while its template has an outage.
+// TEST_OVERVIEW: Settings / Providers rechecks the keys on every visit and offers no button for it. Each row says in words where it stands: "Not connected" for a provider the owner does not hold, else what the key is doing — "Checking…" while the check runs, "Connected" when it works or was never checked, "Key rejected" when the provider refused it, named in the row's accessible name, "Could not verify" when the provider could not say, and "Outage" while its template has one.
 import type { ProviderKeyCheck } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,6 +8,9 @@ import { ProviderSection } from "../../modules/providers/components/provider-sec
 
 const state = vi.hoisted(() => ({
   pending: false,
+  status: undefined as
+    | { damSide: { since: string } | null; outages: { templateId: string }[] }
+    | undefined,
   flags: {} as Record<string, boolean>,
   items: new Map<
     string,
@@ -70,12 +73,14 @@ vi.mock(
   }),
 );
 vi.mock("../../modules/provider-status/api/queries.js", () => ({
-  useProviderStatus: () => ({ data: undefined }),
+  useProviderStatus: () => ({ data: state.status }),
 }));
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
   useProviderItems: () => ({
-    itemByType: state.items,
-    itemByTemplateId: state.itemsByTemplate,
+    itemsByType: new Map([...state.items].map(([k, v]) => [k, [v]])),
+    itemsByTemplateId: new Map(
+      [...state.itemsByTemplate].map(([k, v]) => [k, [v]]),
+    ),
     isPending: false,
   }),
 }));
@@ -98,6 +103,7 @@ const CHECKED_AT = "2026-10-20T09:15:00.000Z";
 describe("provider key recheck", () => {
   beforeEach(() => {
     state.pending = false;
+    state.status = undefined;
     state.flags = {};
     state.items = new Map();
     state.itemsByTemplate = new Map();
@@ -112,7 +118,7 @@ describe("provider key recheck", () => {
     expect(render()).not.toContain("Recheck");
   });
 
-  // TEST_SCENARIO: a key that worked at its last check reads Connected, with a check mark saying it works right now beside the harnesses it supports.
+  // TEST_SCENARIO: a key that worked at its last check reads Connected.
   it("says a working key works right now", () => {
     state.items = new Map([
       [
@@ -127,9 +133,9 @@ describe("provider key recheck", () => {
       ],
     ]);
     const row = rowOf(render(), "Edit Anthropic");
-    expect(row).toContain("Configured · Connected");
-    expect(row).not.toContain("Verifying");
-    expect(row).not.toContain("Key rejected");
+    expect(row).toContain(">Connected<");
+    expect(row).not.toContain("Checking…");
+    expect(row).not.toContain(">Key rejected<");
   });
 
   // TEST_SCENARIO: a key the provider refused turns the pill red and says so in the row's accessible name.
@@ -153,8 +159,8 @@ describe("provider key recheck", () => {
     const row = rowOf(render(), "Edit Anthropic");
     expect(row).toContain('aria-label="Edit Anthropic, Key rejected on');
     expect(row).toContain("HTTP 401");
-    expect(row).toContain("Configured · Key rejected");
-    expect(row).not.toContain("Configured · Connected");
+    expect(row).toContain("Key rejected");
+    expect(row).not.toContain(">Connected<");
   });
 
   // TEST_SCENARIO: a check that said nothing about the key keeps the pill off the green Connected state and carries the reason in its tooltip.
@@ -176,8 +182,8 @@ describe("provider key recheck", () => {
       ],
     ]);
     const row = rowOf(render(), "Edit OpenAI");
-    expect(row).toContain("Configured · Unverified");
-    expect(row).not.toContain("Configured · Connected");
+    expect(row).toContain("Could not verify");
+    expect(row).not.toContain(">Connected<");
     expect(row).toContain(
       'aria-label="Edit OpenAI, Could not verify the key on',
     );
@@ -188,8 +194,8 @@ describe("provider key recheck", () => {
   it("says nothing about a key with no check", () => {
     state.items = new Map([["bob", { id: "c3", conn: { templateId: "bob" } }]]);
     const row = rowOf(render(), "Edit Bob");
-    expect(row).toContain("Configured · Connected");
-    expect(row).not.toContain("Verifying");
+    expect(row).toContain(">Connected<");
+    expect(row).not.toContain("Checking…");
   });
 
   // TEST_SCENARIO: while the recheck of a visit runs, each checkable row's pill says it is verifying, whatever its last result was.
@@ -213,8 +219,36 @@ describe("provider key recheck", () => {
     ]);
     const html = render();
     const row = rowOf(html, "Edit Anthropic");
-    expect(row).toContain("Configured · Verifying");
-    expect(row).not.toContain("Configured · Key rejected");
-    expect(row).not.toContain("Configured · Connected");
+    expect(row).toContain("Checking…");
+    expect(row).not.toContain(">Key rejected<");
+    expect(row).not.toContain(">Connected<");
+  });
+
+  // TEST_SCENARIO: a working key reads Outage while its template has an outage or the fault is on the platform's side; a rejected key still reads rejected, a running check still reads Checking…, and a provider the owner does not hold still reads Not connected.
+  it.each([
+    { damSide: null, outages: [{ templateId: "anthropic" }] },
+    { damSide: { since: CHECKED_AT }, outages: [] },
+  ])("says Outage over a working key (%j)", (status) => {
+    state.status = status;
+    const anthropic = (result: ProviderKeyCheck["result"]) =>
+      new Map([
+        [
+          "anthropic",
+          {
+            id: "c1",
+            conn: {
+              templateId: "anthropic",
+              keyCheck: { result, detail: "HTTP 401", checkedAt: CHECKED_AT },
+            },
+          },
+        ],
+      ]);
+    state.items = anthropic("ok");
+    expect(rowOf(render(), "Edit Anthropic")).toContain(">Outage<");
+    expect(rowOf(render(), "Connect OpenAI")).toContain(">Not connected<");
+    state.items = anthropic("refused");
+    expect(rowOf(render(), "Edit Anthropic")).toContain(">Key rejected<");
+    state.pending = true;
+    expect(rowOf(render(), "Edit Anthropic")).toContain("Checking…");
   });
 });

@@ -15,17 +15,18 @@ import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
 import { useSetEnvironmentMembers } from "../api/mutations.js";
 import { sharedThroughAgent } from "../lib/environment-list.js";
+import { AgentMembersEditor, useAgentEdits } from "./agent-members-editor.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The owner's Share dialog for one Environment. It
  * says who opens it through its agent — the owner, the agent's editors and how
  * many people the agent's page names — and links there, and edits the
- * Environment's own members, who open this one Environment only. The list only
- * adds people: nobody here narrows the agent's. An Environment is never
+ * Environment's own members, people and Agents, who open this one Environment
+ * only. The lists only add: nobody here narrows the agent's. An Environment is never
  * public, so there is no link to copy beyond its addresses. It holds the
- * owner's edits as people added and removed, applied to the members the list
- * polls, so a member added elsewhere while it is open shows up and stays
- * through a Save.
+ * owner's edits as people and Agents added and removed, applied to the members
+ * the list polls, so a member added elsewhere while it is open shows up and
+ * stays through a Save.
  */
 export function EnvironmentShareDialog({
   environment,
@@ -39,20 +40,28 @@ export function EnvironmentShareDialog({
   const save = useSetEnvironmentMembers();
   const [edits, setEdits] = useState<MemberEdits>(NO_EDITS);
   const [draft, setDraft] = useState("");
+  const agentEdits = useAgentEdits(environment.memberAgents);
+  const [agentDraft, setAgentDraft] = useState("");
   const members = applyEdits(environment.members, edits);
-  const dirty = !sameViewers(members, environment.members);
-  const pendingDraft = draft.trim().length > 0;
+  const memberAgents = agentEdits.agents;
+  const dirty = !sameViewers(members, environment.members) || agentEdits.dirty;
+  const pendingDraft = draft.trim().length > 0 || agentDraft.trim().length > 0;
   const agentName = agent?.name ?? "its agent";
 
   const onSave = () =>
     save.mutate(
-      { id: environment.id, emails: members },
+      {
+        id: environment.id,
+        emails: members,
+        agentIds: memberAgents.map((a) => a.agentId),
+      },
       {
         onSuccess: (saved) => {
           setEdits(NO_EDITS);
+          agentEdits.reset();
           emitToast({
             kind: "success",
-            message: `Sharing updated — ${saved.members.length === 0 ? "nobody of its own may open" : `${saved.members.length} of its own may open`} ${environment.name}.`,
+            message: `Sharing updated — ${ownMembersPhrase(saved.members.length, saved.memberAgents.length)} ${environment.name}.`,
           });
           onClose();
         },
@@ -117,9 +126,26 @@ export function EnvironmentShareDialog({
               })}
             />
           </div>
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium text-foreground">
+              Agents that may open it
+            </p>
+            <p className="text-xs text-muted-foreground">
+              An agent you add opens this Environment from its own sandbox, as
+              itself. It shares nothing with that agent&apos;s owner.
+            </p>
+            <AgentMembersEditor
+              agents={memberAgents}
+              onAdd={agentEdits.onAdd}
+              onRemove={agentEdits.onRemove}
+              disabled={save.isPending}
+              draft={agentDraft}
+              onDraftChange={setAgentDraft}
+            />
+          </div>
           {pendingDraft && (
             <p role="status" className="text-xs text-muted-foreground">
-              Add the email address to the list or clear it before saving.
+              Add what you typed to its list or clear it before saving.
             </p>
           )}
         </div>
@@ -162,4 +188,14 @@ function applyEdits(live: readonly string[], edits: MemberEdits): string[] {
     ...live.filter((e) => !edits.removed.includes(e)),
     ...edits.added.filter((e) => !live.includes(e)),
   ];
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: who of the Environment's own may open it after a save, its people and its agents counted apart.
+export function ownMembersPhrase(people: number, agents: number): string {
+  if (people === 0 && agents === 0) return "nobody of its own may open";
+  const parts = [
+    ...(people > 0 ? [`${people} ${people === 1 ? "person" : "people"}`] : []),
+    ...(agents > 0 ? [`${agents} ${agents === 1 ? "agent" : "agents"}`] : []),
+  ];
+  return `${parts.join(" and ")} of its own may open`;
 }

@@ -51,6 +51,19 @@ export const environmentMembersSchema = z
   .array(viewerEmailSchema)
   .max(VIEWER_ALLOWLIST_MAX);
 
+// UNIT_BOUNDARY_DESCRIPTION: an Agent named on a list by its id, of any owner; the same cap as the people on it.
+export const environmentMemberAgentIdsSchema = z
+  .array(z.string().trim().min(1).max(253))
+  .max(VIEWER_ALLOWLIST_MAX);
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent on a list, as its owner sees it: who it is and whose, and when it last opened one of the Environments the list covers; an Agent since deleted is not listed.
+export const environmentMemberAgentSchema = z.object({
+  agentId: z.string(),
+  name: z.string(),
+  ownerName: z.string().nullable(),
+  lastOpenedAt: z.string().nullable(),
+});
+
 export const environmentEndpointViewSchema = environmentEndpointSchema.extend({
   url: z.string().nullable(),
 });
@@ -61,6 +74,7 @@ export const environmentViewSchema = z.object({
   name: z.string(),
   endpoints: z.array(environmentEndpointViewSchema),
   members: z.array(z.string()),
+  memberAgents: z.array(environmentMemberAgentSchema),
   agentMemberCount: z.number().int(),
   expiresAt: z.string(),
   idleTimeoutMin: z.number().int().nullable(),
@@ -70,8 +84,41 @@ export const environmentViewSchema = z.object({
 
 // UNIT_BOUNDARY_DESCRIPTION: an Environment as its owning agent reads it: how many people may open it besides its owner, never who.
 export const agentEnvironmentViewSchema = environmentViewSchema
-  .omit({ members: true, agentMemberCount: true })
+  .omit({ members: true, memberAgents: true, agentMemberCount: true })
   .extend({ peopleWhoMayOpen: z.number().int() });
+
+// UNIT_BOUNDARY_DESCRIPTION: an Environment another Agent's list shares with the calling Agent, as that Agent reads it: what it is, whose, and its addresses, never who else may open it.
+export const sharedEnvironmentViewSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  sharedWithYou: z.literal(true),
+  owningAgentName: z.string(),
+  ownerName: z.string().nullable(),
+  endpoints: z.array(environmentEndpointViewSchema),
+  expiresAt: z.string(),
+  state: z.string(),
+});
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's Environment Members on its page: its people by email, and its Agents.
+export const agentEnvironmentMembersViewSchema = z.object({
+  emails: z.array(z.string()),
+  agents: z.array(environmentMemberAgentSchema),
+});
+
+export const environmentAgentLookupInputSchema = z.object({
+  agentId: z.string().trim().min(1).max(253),
+});
+
+// UNIT_BOUNDARY_DESCRIPTION: what a person adding an Agent by id is shown before saving: its name and whose it is, or that the id names no Agent that can open an Environment.
+export const environmentAgentLookupSchema = z.discriminatedUnion("found", [
+  z.object({
+    found: z.literal(true),
+    agentId: z.string(),
+    name: z.string(),
+    ownerName: z.string().nullable(),
+  }),
+  z.object({ found: z.literal(false) }),
+]);
 
 export const environmentIdInputSchema = z.object({ id: z.string().min(1) });
 
@@ -82,11 +129,13 @@ export const environmentListInputSchema = z.object({
 export const environmentAgentMembersInputSchema = z.object({
   owningAgentId: z.string().min(1),
   emails: environmentMembersSchema,
+  agentIds: environmentMemberAgentIdsSchema.optional(),
 });
 
 export const environmentMembersInputSchema = z.object({
   id: z.string().min(1),
   emails: environmentMembersSchema,
+  agentIds: environmentMemberAgentIdsSchema.optional(),
 });
 
 export const environmentExtendInputSchema = z.object({

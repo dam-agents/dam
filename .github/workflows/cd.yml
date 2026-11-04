@@ -79,6 +79,9 @@ jobs:
       # A pull request runs the reduced smoke set; the merge queue, the nightly
       # run and a tag run all of it.
       pr-scope: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'mergify/merge-queue/') }}
+      # The nightly run alone also takes the specs under src/tests/full/, in
+      # the default lane: no other run covers them.
+      full-tier: ${{ github.event_name == 'schedule' }}
     secrets:
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}

@@ -46,6 +46,8 @@ function satellite(patch: Partial<SatelliteRow> = {}): SatelliteRow {
     tools: TOOLS,
     draining: false,
     lastSeenAt: new Date(NOW.getTime() - 1000),
+    incarnation: "11111111-1111-4111-8111-111111111111",
+    createdAt: new Date(NOW.getTime() - 3_600_000),
     ...patch,
   };
 }
@@ -265,7 +267,7 @@ describe("a job that finishes while its agent is waiting", () => {
     });
     const repo = composition.repo as unknown as Record<string, unknown>;
     repo.get = async () => satellite();
-    repo.grantedNames = async () => [{ owner: "alice", name: "gpu-box" }];
+    repo.grantedSatellite = async () => satellite();
     repo.isGranted = async () => true;
     repo.markAwaited = async () => {
       calls.push("markAwaited");
@@ -501,6 +503,7 @@ describe("a claimed call", () => {
     agentId: "agent-1",
     tool: "run",
     args: { cmd: ["./process.sh"] },
+    transferDirection: null,
     status: "running",
     isError: false,
     exitCode: null,
@@ -518,13 +521,17 @@ describe("a claimed call", () => {
     createdAt: NOW,
   };
 
-  function claimWith(agentName: (id: string) => Promise<string | null>) {
+  function claimWith(
+    agentName: (id: string) => Promise<string | null>,
+    job: JobRow = queued,
+    tools = satellite().tools,
+  ) {
     const repo = {
-      get: async () => satellite(),
+      get: async () => satellite({ tools }),
       touch: async () => {},
       setDraining: async () => {},
       takeCancellations: async () => [],
-      claimQueued: async () => [queued],
+      claimQueued: async () => [{ job, transferToken: "f".repeat(64) }],
     };
     return createSatelliteWorkerOps({
       repo: repo as never,
