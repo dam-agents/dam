@@ -1,3 +1,5 @@
+import type { HarnessFamily } from "../templates/types.js";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the platform's own taste in models, one ordered
  * list per role, because a provider's Connection says which models it serves
@@ -8,9 +10,10 @@
  * happens to list, and a classifier call on the session's own work model.
  * `work` decides a new agent's default model, `classifier` what Claude Code's
  * non-reasoning permission classifier runs on. The order is the preference:
- * the first entry a listing answers wins. `family` is the model's words,
- * `version` the digits right behind them and `variant` the word right behind
- * those, all as tokens of `modelTokens`.
+ * the first entry a listing answers wins, unless it names the harness being
+ * decided in `notFor`. `family` is the model's words, `version` the digits
+ * right behind them and `variant` the word right behind those, all as tokens
+ * of `modelTokens`.
  */
 export type ModelRole = "work" | "classifier";
 
@@ -19,10 +22,32 @@ export interface PreferredModel {
   family: readonly string[];
   version: readonly string[];
   variant?: string;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the harnesses this entry is never the default
+   * for, on any provider, because what clashes is the harness's call and not
+   * the endpoint. Every Codex call carries Codex's own `reasoning.effort` (its
+   * config.toml `model_reasoning_effort`, `medium` by default): the ETE proxy
+   * refuses the parameter itself with HTTP 400 (staging QA of rc11), and the
+   * vLLM template behind CurveBender refuses `medium`, which `deepseekEffort`
+   * already rewrites on Claude Code's path, so Codex is expected to fail there
+   * too, though that is not measured. Where nothing else on the list is left,
+   * as on CurveBender, the conversion saves no default and the owner picks
+   * one. No listing says any of this: the model is reasoning-capable in the
+   * vendored table and IBM's proxy lists ids alone, so it is a recorded fact
+   * rather than a capability check, and it goes once a provider lists the
+   * capability per model.
+   */
+  notFor?: readonly HarnessFamily[];
 }
 
 export const PREFERRED_MODELS: readonly PreferredModel[] = [
-  { role: "work", family: ["deepseek"], version: ["4", "1"], variant: "flash" },
+  {
+    role: "work",
+    family: ["deepseek"],
+    version: ["4", "1"],
+    variant: "flash",
+    notFor: ["codex"],
+  },
   { role: "work", family: ["claude", "opus"], version: ["5", "5"] },
   { role: "work", family: ["gpt"], version: ["6", "1"], variant: "sol" },
   {
@@ -110,15 +135,20 @@ export interface ProviderListing {
  * provider order, and the providers' own order within one entry, so two
  * providers serving the same model resolve the way a default provider always
  * has. The listing's own order breaks a tie inside one provider, since a
- * provider lists its models newest first. Null when no provider lists anything
+ * provider lists its models newest first. `harness`, where the caller decides
+ * a default for one, skips the entries that name it, so no harness is
+ * defaulted to a model it cannot drive. Null when no provider lists anything
  * the list names, which leaves the caller its own last resort.
  */
 export function preferredModelOf(
   role: ModelRole,
   providers: readonly ProviderListing[],
+  harness?: string,
 ): { alias: string; upstreamId: string } | null {
   for (const pref of PREFERRED_MODELS) {
     if (pref.role !== role) continue;
+    if (harness !== undefined && pref.notFor?.some((h) => h === harness))
+      continue;
     for (const provider of providers) {
       const hit = provider.listed.find((id) =>
         modelMatches(modelTokens(id), pref),

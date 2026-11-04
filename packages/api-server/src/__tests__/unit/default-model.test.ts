@@ -23,6 +23,13 @@ const CATALOG: HarnessCatalog = {
       tags: [],
       experimental: false,
     },
+    {
+      name: "codex",
+      displayName: "Codex",
+      providers: ["ibm-litellm", "openai"],
+      tags: [],
+      experimental: false,
+    },
   ],
   telemetryEnv: () => [],
 };
@@ -412,6 +419,57 @@ describe("the one-time default conversion", () => {
         model: "anthropic/claude-opus-5-5",
       },
     ]);
+  });
+
+  // TEST_SCENARIO: the ETE proxy lists DeepSeek V4.1 Flash, which refuses the reasoning effort Codex sends on every call, so a Codex agent's default is the next model the list names on that provider; the same agent on Claude Code keeps DeepSeek.
+  it("skips a preferred model its harness cannot drive", async () => {
+    const ete = (harness: string): HarnessCatalogView => ({
+      harness,
+      routed: true,
+      providers: [
+        {
+          connectionId: "lite",
+          alias: "ibm",
+          template: "ibm-litellm",
+          displayName: "IBM ETE LiteLLM Proxy",
+          status: "listed",
+          listedAt: null,
+          native: false,
+          models: ["azure/DeepSeek-V4.1-Flash", "aws/claude-opus-5-5"].map(
+            (upstreamId) => ({ name: `claude/ibm/${upstreamId}`, upstreamId }),
+          ) as never,
+        },
+      ],
+    });
+    const on = (harness: string) =>
+      converter({
+        granted: [IBM],
+        setting: null,
+        catalog: ete(harness),
+        capabilities: {
+          ...ROUTED,
+          defaultHarness: harness,
+          harnesses: [
+            { name: harness, harnessConfig: true, sessionModel: true },
+          ],
+        },
+      });
+
+    const codex = on("codex");
+    expect(await codex.c.convert("a")).toBe("converted");
+    expect(codex.writes[0]).toEqual({
+      harness: "codex",
+      provider: "lite",
+      model: "ibm/aws/claude-opus-5-5",
+    });
+
+    const claude = on("claude-code");
+    expect(await claude.c.convert("a")).toBe("converted");
+    expect(claude.writes[0]).toEqual({
+      harness: "claude-code",
+      provider: "lite",
+      model: "ibm/azure/DeepSeek-V4.1-Flash",
+    });
   });
 
   // TEST_SCENARIO: a kit that needs its Agent on one model has it as the saved default when the granted provider lists it, and the tier conversion stands when the provider lists another model instead.

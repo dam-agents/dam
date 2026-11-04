@@ -143,6 +143,7 @@ export function createDefaultConverter(deps: {
       providers,
       ran: needsRan ? await modelsRan(agentId) : [],
       declared: await deps.kitDefaultModel(agentId),
+      harness,
     });
     const model = converted?.model ?? null;
     const alias = model ? parseQualifiedModel(model)?.alias : null;

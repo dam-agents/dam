@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-27
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -63,7 +63,7 @@ A kit may name the model its agent needs (`defaultModel`, [starter kits](starter
 Whatever the certain sources leave open — a tier word no provider lists a model of, a history the listings do not name, or more than one fitting provider, where no provider's own order can say which one the person meant — is answered by the platform's [preferred model list](#the-model-router) across every fitting provider, and the list's order beats the providers' own.
 An id the setting or the history names is not left to the list: it names the same model wherever it is, so it is resolved against each fitting provider in turn, and only a tier word, which names nothing on several, goes to the list.
 Nothing to go on at all saves the default as **not set**; a fitting provider not listed yet is left for a later try.
-A new agent holds one provider ([agent-lifecycle](agent-lifecycle.md#create)) and its image presets its harness's model (Claude Code's `opus`), so its default becomes what the list prefers on that provider — DeepSeek V4.1 Flash on CurveBender, whose ids carry no tier word at all, and that provider's newest Opus on Anthropic — saved as a normal default the owner sees in the picker and can change; the save redelivers the agent's pending events, so a kit's setup turn waiting for it goes out at once.
+A new agent holds one provider ([agent-lifecycle](agent-lifecycle.md#create)) and its image presets its harness's model (Claude Code's `opus`), so its default becomes what the list prefers on that provider — DeepSeek V4.1 Flash on CurveBender, whose ids carry no tier word at all (but not for Codex), and that provider's newest Opus on Anthropic — saved as a normal default the owner sees in the picker and can change; the save redelivers the agent's pending events, so a kit's setup turn waiting for it goes out at once.
 The owner is told on [Home](home-feed.md#default-model-notices) about a default that is not set, one on a provider the agent no longer holds, and one the conversion changed.
 The first two stop no work on an agent that runs nothing unattended: they are shown once the agent has an enabled Schedule or a Slack or Telegram Channel bound, which is the point where they start failing runs.
 Slack Channels and Telegram chats are bound in separate stores, each written by its own binding flow, so the notice reader asks both for the Agents they hold.

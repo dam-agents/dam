@@ -136,6 +136,23 @@ describe("preferredModelOf", () => {
     expect(preferredModelOf("work", [])).toBeNull();
   });
 
+  // TEST_SCENARIO: an entry names the harnesses it is never the default for, so a Codex agent on the ETE proxy takes the Opus it can drive, while Claude Code and Pi keep DeepSeek and a caller that names no harness keeps the list as it is.
+  it("skips an entry that names the harness it decides", () => {
+    const ibm = {
+      alias: "ibm",
+      listed: ["azure/DeepSeek-V4.1-Flash", "aws/claude-opus-5-5"],
+    };
+    expect(preferredModelOf("work", [ibm], "codex")).toEqual({
+      alias: "ibm",
+      upstreamId: "aws/claude-opus-5-5",
+    });
+    for (const harness of ["claude-code", "pi", undefined])
+      expect(preferredModelOf("work", [ibm], harness)).toEqual({
+        alias: "ibm",
+        upstreamId: "azure/DeepSeek-V4.1-Flash",
+      });
+  });
+
   // TEST_SCENARIO: Claude Code's classifier runs on Sonnet 5, so a provider listing 5.5 beside it still answers 5 in either order, and a provider listing 5.5 alone answers nothing rather than a newer model.
   it("never lets Sonnet 5.5 stand in for Sonnet 5", () => {
     for (const listed of [

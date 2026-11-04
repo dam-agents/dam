@@ -71,18 +71,20 @@ export function declaredModelOf(input: {
  * step leaves — a tier word the provider lists no model of (CurveBender's ids
  * carry no tier word at all), a history whose models it does not list — and it
  * decides an Agent that fits several providers, where the list's order beats
- * the providers' own. Null when neither holds, so the owner picks the default
- * instead of the platform guessing it.
+ * the providers' own, and it skips a model the Agent's harness cannot drive.
+ * Null when neither holds, so the owner picks the default instead of the
+ * platform guessing it.
  */
 export function convertedDefaultModel(input: {
   setting: string | null;
   providers: readonly ProviderListing[];
   ran: readonly string[];
   declared?: string | null;
+  harness?: string;
 }): string | null {
   const declared = declaredModelOf(input);
   if (declared) return declared;
-  const preferred = preferredModelOf("work", input.providers);
+  const preferred = preferredModelOf("work", input.providers, input.harness);
   const listed = preferred
     ? `${preferred.alias}/${preferred.upstreamId}`
     : null;
