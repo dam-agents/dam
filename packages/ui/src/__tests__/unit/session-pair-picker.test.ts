@@ -4,12 +4,19 @@ import type * as DropdownPrimitive from "@radix-ui/react-dropdown-menu";
 import type { HarnessCapability } from "agent-runtime-api";
 import { lentSubagentOfProfile } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
-import { act, createElement, Fragment, type PropsWithChildren } from "react";
+import {
+  act,
+  createElement,
+  Fragment,
+  type PropsWithChildren,
+  useState,
+} from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelIndicator } from "../../modules/sessions/components/model-indicator.js";
+import { ValueMenu } from "../../modules/sessions/components/session-model-picker.js";
 import { SessionPairPicker } from "../../modules/sessions/components/session-pair-picker.js";
 import { modelGroups } from "../../modules/sessions/lib/catalog-groups.js";
 
@@ -562,7 +569,11 @@ describe("the new session panel", () => {
     expect(menuItem(node, "IBM").getAttribute("aria-disabled")).toBeNull();
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
-    expect(curve.textContent).toContain("Doesn't offer Claude Opus 5.5 for Pi");
+    expect(
+      node.querySelector(`#${curve.getAttribute("aria-describedby")}`)
+        ?.textContent,
+    ).toContain("Doesn't offer Claude Opus 5.5 for Pi");
+    expect(curve.textContent).not.toMatch(/\d+ models?/);
     expect(menuItem(node, "Manage providers")).toBeDefined();
   });
 
@@ -648,6 +659,33 @@ describe("the new session panel", () => {
     expect(
       menuItems(node, "Model").map((row) => row.textContent?.trim()),
     ).toContain("Claude Opus 5.1");
+  });
+
+  /** TEST_SCENARIO: the older-versions toggle acts in place: the menu stays open, focus stays on it, and it selects nothing, whether clicked or pressed with Enter. */
+  it("toggles older versions without closing the menu or picking", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    state.chosenModel.mockReset();
+    const node = mount(picker());
+    const toggle = () => menuItem(node, "Show older versions");
+    act(() => toggle().click());
+    expect(menu(node, "Model")).not.toBeNull();
+    expect(menuItem(node, "Hide older versions")).toBeDefined();
+    expect(state.chosenModel).not.toHaveBeenCalled();
+
+    const back = menuItem(node, "Hide older versions");
+    act(() => back.focus());
+    act(() =>
+      back.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      ),
+    );
+    expect(menu(node, "Model")).not.toBeNull();
+    expect(menuItem(node, "Show older versions")).toBeDefined();
+    expect(state.chosenModel).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: a pick on a version behind the older-versions toggle still reads as the selected model while the older versions are collapsed, so the row never blanks a running session. */
@@ -1613,14 +1651,17 @@ describe("a model listing's own states", () => {
     );
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
-    expect(curve.textContent).toContain(
-      "Couldn't list this provider's models.",
-    );
+    expect(
+      node.querySelector(`#${curve.getAttribute("aria-describedby")}`)
+        ?.textContent,
+    ).toContain("Couldn't list this provider's models.");
     const anthropic = menuItem(node, "Anthropic");
     expect(anthropic.getAttribute("aria-disabled")).toBe("true");
-    expect(anthropic.textContent).toContain(
-      "Doesn't offer Claude Opus 5.5 for Pi",
-    );
+    expect(
+      node.querySelector(`#${anthropic.getAttribute("aria-describedby")}`)
+        ?.textContent,
+    ).toContain("Doesn't offer Claude Opus 5.5 for Pi");
+    expect(anthropic.textContent).not.toMatch(/\d+ models?/);
   });
 });
 
@@ -2307,5 +2348,62 @@ describe("a mounted picker switched to another agent", () => {
       platformSubagentProfileId: null,
     });
     expect(stored.settings).toBeUndefined();
+  });
+});
+
+describe("the older-versions toggle", () => {
+  /** TEST_SCENARIO: with one menu open, the toggle acts in place: the menu stays open, focus stays on the toggle, and it selects nothing, whether clicked or pressed with Enter. The Model and subagent Model menus share this component. */
+  it("keeps the menu open and focus on itself", () => {
+    const onPick = vi.fn();
+    function Host() {
+      const [older, setOlder] = useState(false);
+      return createElement(ValueMenu, {
+        labelId: "toggle-label",
+        menuLabel: "Model",
+        display: "Alpha",
+        currentKey: "alpha",
+        sections: [
+          {
+            title: "",
+            entries: older
+              ? [
+                  { key: "alpha", label: "Alpha" },
+                  { key: "beta", label: "Beta" },
+                ]
+              : [{ key: "alpha", label: "Alpha" }],
+          },
+        ],
+        foot: {
+          label: older ? "Hide older versions" : "Show older versions",
+          onSelect: () => setOlder(!older),
+        },
+        onPick,
+      });
+    }
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    act(() => root.render(createElement(Host)));
+    const toggle = () =>
+      [...container.querySelectorAll<HTMLElement>("[role=menuitem]")].find(
+        (item) => item.textContent?.includes("older versions"),
+      )!;
+    act(() => toggle().focus());
+    act(() => toggle().click());
+    expect(menu(container, "Model")).not.toBeNull();
+    expect(document.activeElement).toBe(toggle());
+    expect(onPick).not.toHaveBeenCalled();
+
+    act(() =>
+      toggle().dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      ),
+    );
+    expect(menu(container, "Model")).not.toBeNull();
+    expect(toggle().textContent).toContain("Show older versions");
+    expect(document.activeElement).toBe(toggle());
+    expect(onPick).not.toHaveBeenCalled();
+    act(() => root.unmount());
+    container.remove();
   });
 });

@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useProfileAttach } from "../../profiles/hooks/use-profile-attach.js";
@@ -658,9 +659,6 @@ export function SessionModelPicker({
                       currentId={provider?.id}
                       enabled={(id) => providerUsable(currentEntry, id)}
                       reason={(id) => providerReason(currentEntry, id, harness)}
-                      count={(id) =>
-                        groups.find((g) => g.connectionId === id)?.models.length
-                      }
                       onPick={changeProvider}
                       onManage={onManageProviders}
                     />
@@ -810,10 +808,6 @@ export function SessionModelPicker({
                               enabled={(id) => providerUsable(subEntry, id)}
                               reason={(id) =>
                                 providerReason(subEntry, id, harness)
-                              }
-                              count={(id) =>
-                                groups.find((g) => g.connectionId === id)
-                                  ?.models.length
                               }
                               none={{
                                 label: "Same as agent",
@@ -979,7 +973,7 @@ export function SessionModelPicker({
   );
 }
 
-function ValueMenu({
+export function ValueMenu({
   labelId,
   menuLabel,
   display,
@@ -1057,7 +1051,10 @@ function ValueMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={foot.onSelect}
+              onSelect={(event) => {
+                event.preventDefault();
+                foot.onSelect();
+              }}
               className="text-[13px] text-accent"
             >
               {foot.label}
@@ -1102,7 +1099,6 @@ function ProviderMenu({
   currentId,
   enabled,
   reason,
-  count,
   onPick,
   onManage,
   none,
@@ -1112,12 +1108,12 @@ function ProviderMenu({
   currentId: string | undefined;
   enabled: (id: string) => boolean;
   reason: (id: string) => string | null;
-  count?: (id: string) => number | undefined;
   onPick: (id: string) => void;
   onManage?: () => void;
   /** UNIT_BOUNDARY_DESCRIPTION: the empty choice a subagent slot has, "Same as agent", which no provider id stands for. */
   none?: { label: string; onPick: () => void };
 }) {
+  const menuId = useId();
   const current = providers.find((p) => p.id === currentId)?.name;
   const shown =
     current ??
@@ -1162,25 +1158,28 @@ function ProviderMenu({
           {providers.map((p) => {
             const usable = enabled(p.id);
             const why = reason(p.id);
-            const models = count?.(p.id);
+            const reasonId = `${menuId}-${p.id}-reason`;
             return (
               <DropdownMenuRadioItem
                 key={p.id}
                 value={p.id}
                 indicator="check"
-                disabled={!usable}
+                aria-disabled={!usable || undefined}
+                aria-describedby={why === null ? undefined : reasonId}
+                onSelect={(event) => {
+                  if (!usable) return event.preventDefault();
+                  onPick(p.id);
+                }}
+                className={
+                  usable ? undefined : "cursor-default text-muted-foreground"
+                }
               >
-                <span className="flex min-w-0 flex-col">
+                <Tooltip content={why ?? ""}>
                   <span className="truncate">{p.name}</span>
-                  {why !== null && (
-                    <span className="whitespace-normal text-[13px] text-muted-foreground">
-                      {why}
-                    </span>
-                  )}
-                </span>
-                {models !== undefined && (
-                  <span className="ml-auto shrink-0 text-[13px] text-muted-foreground">
-                    {models} {models === 1 ? "model" : "models"}
+                </Tooltip>
+                {why !== null && (
+                  <span id={reasonId} className="sr-only">
+                    {why}
                   </span>
                 )}
               </DropdownMenuRadioItem>
