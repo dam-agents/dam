@@ -21,9 +21,19 @@ export const environmentEndpointNameSchema = z
     "lowercase letters and digits, at most 12, starting with a letter",
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: the path on an endpoint that answers 2xx or 3xx once its app is ready, such as `/healthz`; the gate shows its loading page until it does.
+export const environmentReadyPathSchema = z
+  .string()
+  .max(256)
+  .regex(
+    /^\/[\x21-\x7e]*$/,
+    "a path starting with /, of printable characters and no spaces",
+  );
+
 export const environmentEndpointSchema = z.object({
   name: environmentEndpointNameSchema,
   port: z.number().int().min(1).max(65535),
+  ready: environmentReadyPathSchema.optional(),
 });
 
 export const environmentEndpointsSchema = z

@@ -16,7 +16,7 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Overlay
       className={cn(
         MODAL_BACKDROP,
-        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+        "z-alert data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
         className,
       )}
       {...props}

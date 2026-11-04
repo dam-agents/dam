@@ -990,6 +990,7 @@ export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
 
 export { linksSchema } from "./modules/links/types.js";
+export type { Links } from "./modules/links/types.js";
 
 export { publicAgentResponseSchema } from "./modules/agents/public-agent.js";
 export type {
@@ -1150,6 +1151,8 @@ export type {
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
   ENVIRONMENT_EXPIRY_MAX_DAYS,
+  environmentEndpointNameSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
+  environmentReadyPathSchema,
 } from "./modules/environments/schemas.js";

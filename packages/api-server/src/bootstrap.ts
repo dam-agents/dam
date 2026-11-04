@@ -854,7 +854,7 @@ export async function bootstrap() {
         ],
         isApiKey: isApiKeyToken,
       },
-      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      ensureReady: (agentId, opts) => agentsRepo.ensureReady(agentId, opts),
       stampActivity: (agentId) =>
         agentsRepo.patchAnnotation(
           agentId,

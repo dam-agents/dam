@@ -135,8 +135,8 @@ function renderGroup(environments: EnvironmentView[], showAgent = true) {
 }
 
 describe("Environments in the Artifacts list", () => {
-  // TEST_SCENARIO: AC-1 — each Environment is a row of the Environments group, with its name, whether it runs, its agent, and a link for each address that opens a new tab.
-  it("shows a row per Environment with its state, agent and links", () => {
+  // TEST_SCENARIO: AC-1 — each Environment is a row of the Environments group, with its name, whether it runs, its agent, and a link to its first address that opens a new tab.
+  it("shows a row per Environment with its state, agent and link", () => {
     const doc = renderGroup([demo, other]);
 
     const rows = [...doc.querySelectorAll('[data-testid="environment-row"]')];
@@ -157,9 +157,60 @@ describe("Environments in the Artifacts list", () => {
     ];
     expect(links.map((a) => a.getAttribute("href"))).toEqual([
       "https://app-demo-1.env.example.com",
-      "https://auth-demo-1.env.example.com",
     ]);
     for (const a of links) expect(a.getAttribute("target")).toBe("_blank");
+  });
+
+  // TEST_SCENARIO: #6182 — a row with four addresses shows one link inline, so the name, state and deletion chip keep their room and clip rather than run under the links; the row's menu opens every address in a new tab.
+  it("keeps a four-address row readable and opens each address from its menu", () => {
+    const names = ["app", "keycloak", "share", "content"];
+    const busy = environment("busy", "agent-dev", {
+      endpoints: names.map((name, i) => ({
+        name,
+        port: 4000 + i,
+        url: `https://${name}-busy.env.example.com`,
+      })),
+    });
+    const doc = mount(
+      createElement(EnvironmentsGroup, {
+        environments: [busy],
+        showAgent: true,
+        collapsed: false,
+        onToggle: vi.fn(),
+      }),
+    );
+    const row = doc.querySelector('[data-testid="environment-row"]')!;
+
+    const inline = [
+      ...row.querySelectorAll('[data-testid="environment-link"]'),
+    ];
+    expect(inline.map((a) => a.textContent)).toEqual(["app"]);
+    const label = row.querySelector(
+      '[data-testid="environment-state"]',
+    )!.parentElement!;
+    expect(label.className).toContain("overflow-hidden");
+    expect(label.textContent).toContain("busy");
+
+    act(() => {
+      row
+        .querySelector('[data-testid="environment-actions"]')!
+        .dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    const opened = [
+      ...doc.querySelectorAll<HTMLAnchorElement>(
+        '[data-testid="environment-menu-link"]',
+      ),
+    ];
+    expect(opened.map((a) => [a.textContent, a.getAttribute("href")])).toEqual(
+      names.map((name) => [
+        `Open ${name}`,
+        `https://${name}-busy.env.example.com`,
+      ]),
+    );
+    for (const a of opened) {
+      expect(a.getAttribute("role")).toBe("menuitem");
+      expect(a.getAttribute("target")).toBe("_blank");
+    }
   });
 
   // TEST_SCENARIO: AC-2 — in one agent's chat, scoped to that agent, the group shows only its Environments, and names no agent.

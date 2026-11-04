@@ -47,11 +47,11 @@ export function decodeFrame(buf: Uint8Array): TerminalFrame {
   if (op === OP_INPUT || op === OP_OUTPUT) return { op, data: payload };
   if (op === OP_RESIZE) {
     if (payload.byteLength < 4) throw new Error("resize frame too short");
-    return {
-      op,
-      cols: (payload[0]! << 8) | payload[1]!,
-      rows: (payload[2]! << 8) | payload[3]!,
-    };
+    const cols = (payload[0]! << 8) | payload[1]!;
+    const rows = (payload[2]! << 8) | payload[3]!;
+    if (cols < 1 || rows < 1)
+      throw new Error("resize frame needs positive cols and rows");
+    return { op, cols, rows };
   }
   if (op === OP_EXIT)
     return { op, code: payload.byteLength > 0 ? payload[0]! : 0 };

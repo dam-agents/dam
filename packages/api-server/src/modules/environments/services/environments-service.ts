@@ -42,6 +42,8 @@ export interface CreateEnvironmentInput {
 export interface UpdateEnvironmentInput {
   expiresAt?: Date;
   idleTimeoutMin?: number;
+  // UNIT_BOUNDARY_DESCRIPTION: readiness paths by endpoint name; null removes one, so the endpoint is ready once its port answers.
+  ready?: Record<string, string | null>;
 }
 
 export interface EnvironmentsDeps {
@@ -77,6 +79,23 @@ export interface EnvironmentsServiceImpl {
   extend(id: string, expiresAt: Date): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
   remove(record: EnvironmentRecord, actor: string): Promise<void>;
+}
+
+function withReadyPaths(
+  endpoints: EnvironmentEndpoint[],
+  ready: Record<string, string | null>,
+): EnvironmentEndpoint[] {
+  const unknown = Object.keys(ready).filter(
+    (name) => !endpoints.some((e) => e.name === name),
+  );
+  if (unknown.length > 0)
+    refuse(`ready: no endpoint named ${unknown.join(", ")}`);
+  return endpoints.map(({ ready: kept, ...endpoint }) => {
+    const path = Object.hasOwn(ready, endpoint.name)
+      ? ready[endpoint.name]
+      : kept;
+    return path ? { ...endpoint, ready: path } : endpoint;
+  });
 }
 
 function refuse(
@@ -313,19 +332,28 @@ export function createEnvironmentsService(
       },
 
       async update(name, input) {
-        if (input.expiresAt === undefined && input.idleTimeoutMin === undefined)
-          refuse("nothing to change: give an expiry or an idle timeout");
+        if (
+          input.expiresAt === undefined &&
+          input.idleTimeoutMin === undefined &&
+          input.ready === undefined
+        )
+          refuse(
+            "nothing to change: give an expiry, an idle timeout or readiness paths",
+          );
         const record = await byName(name);
-        const expiresAt =
-          input.expiresAt === undefined
-            ? record.expiresAt
-            : expiry(input.expiresAt);
+        const patch: Partial<
+          Pick<EnvironmentRecord, "expiresAt" | "endpoints">
+        > = {};
+        if (input.expiresAt !== undefined)
+          patch.expiresAt = expiry(input.expiresAt);
+        if (input.ready !== undefined)
+          patch.endpoints = withReadyPaths(record.endpoints, input.ready);
         const hibernationTimeoutMin =
           input.idleTimeoutMin === undefined
             ? undefined
             : idleTimeout(input.idleTimeoutMin);
-        if (input.expiresAt !== undefined)
-          await deps.repo.update(record.agentId, { expiresAt });
+        if (Object.keys(patch).length > 0)
+          await deps.repo.update(record.agentId, patch);
         const agent =
           hibernationTimeoutMin === undefined
             ? await deps.agents.get(record.agentId)
@@ -333,7 +361,7 @@ export function createEnvironmentsService(
                 id: record.agentId,
                 hibernationTimeoutMin,
               });
-        return forAgent(await viewOf({ ...record, expiresAt }, agent));
+        return forAgent(await viewOf({ ...record, ...patch }, agent));
       },
 
       async wake(name) {

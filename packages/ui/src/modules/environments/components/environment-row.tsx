@@ -29,9 +29,10 @@ import { environmentStateLabel } from "../lib/environment-list.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One Environment as a row of the Artifacts list,
  * shaped like an artifact's: the sharing icon that opens its Share dialog,
- * its name, whether it runs, when it is deleted, its agent, and a link per
- * address that opens a new tab. The row's menu sets its expiry and deletes
- * it. The icon says whether anyone beyond the owner and the agent's editors
+ * its name, whether it runs, when it is deleted, its agent, and a link that
+ * opens its first address in a new tab. With more than one address, the
+ * row's menu opens each of them, so the links never crowd out the name. The
+ * menu also sets its expiry and deletes it. The icon says whether anyone beyond the owner and the agent's editors
  * may open it; an Environment is never public.
  */
 export function EnvironmentRow({
@@ -51,6 +52,7 @@ export function EnvironmentRow({
   const remove = useDeleteEnvironment();
   const running = environment.state === "running";
   const links = environment.endpoints.filter((e) => e.url !== null);
+  const [inline] = links;
   const shared =
     environment.members.length > 0 || environment.agentMemberCount > 0;
   const shareLabel = shared
@@ -88,7 +90,7 @@ export function EnvironmentRow({
       >
         <ShareIcon size={16} />
       </Button>
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
         <span className="min-w-12 shrink-[100000] truncate">
           {environment.name}
         </span>
@@ -106,21 +108,23 @@ export function EnvironmentRow({
         />
       </div>
       {showAgent && <AgentByline agentId={environment.owningAgentId} />}
-      {links.map((endpoint) => (
-        <Tooltip key={endpoint.name} content={endpoint.url}>
+      {inline && (
+        <Tooltip content={inline.url}>
           <a
-            href={endpoint.url!}
+            href={inline.url!}
             target="_blank"
             rel="noreferrer"
-            aria-label={`Open ${endpoint.name} of ${environment.name}`}
+            aria-label={`Open ${inline.name} of ${environment.name}`}
             data-testid="environment-link"
-            className="flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-background hover:text-accent"
+            className="flex h-6 max-w-24 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-background hover:text-accent"
           >
-            {links.length > 1 && <span>{endpoint.name}</span>}
-            <Launch size={12} aria-hidden />
+            {links.length > 1 && (
+              <span className="truncate">{inline.name}</span>
+            )}
+            <Launch size={12} aria-hidden className="shrink-0" />
           </a>
         </Tooltip>
-      ))}
+      )}
       <div className="shrink-0">
         <RowActionsMenu
           label={`Actions for ${environment.name}`}
@@ -129,6 +133,24 @@ export function EnvironmentRow({
           className={HOVER_ACTION}
           disabled={remove.isPending}
         >
+          {links.length > 1 && (
+            <>
+              {links.map((endpoint) => (
+                <DropdownMenuItem key={endpoint.name} asChild>
+                  <a
+                    href={endpoint.url!}
+                    target="_blank"
+                    rel="noreferrer"
+                    data-testid="environment-menu-link"
+                  >
+                    <Launch size={14} />
+                    Open {endpoint.name}
+                  </a>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+            </>
+          )}
           <DropdownMenuItem onSelect={() => onShare(environment)}>
             <UserMultiple size={14} />
             Share

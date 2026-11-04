@@ -2,6 +2,7 @@ import type { BudgetVmUsage, PoolLevel } from "api-server-api";
 
 import { formatBytes } from "../../../lib/format-size.js";
 import type { AgentView } from "../../../types.js";
+import { formatCores } from "./format.js";
 
 export interface PoolSegment {
   agentId: string | null;
@@ -22,7 +23,7 @@ export interface PoolPart {
   bytes: number;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one pool as a bar: each agent's share largest first, the shares too thin to see folded into one "N more" segment, the named `parts` the pool holds beside the agents' shares, and what it counts beyond all of them as one last segment named `rest`.
+// UNIT_BOUNDARY_DESCRIPTION: one pool as a bar: each agent's share largest first, the shares too thin to see folded into one "N more" segment, the named `parts` the pool holds beside the agents' shares, and what it counts beyond all of them as one last segment named `rest`. Shares are bytes unless `format` says how to name another unit.
 function poolBar(
   shares: readonly { agent: AgentView; bytes: number }[],
   usedBytes: number,
@@ -30,6 +31,7 @@ function poolBar(
   level: PoolLevel,
   rest: string,
   parts: readonly PoolPart[] = [],
+  format: (amount: number) => string = formatBytes,
 ): PoolBarView {
   const of = (bytes: number) => (limitBytes > 0 ? bytes / limitBytes : 0);
   const sorted = shares
@@ -39,7 +41,7 @@ function poolBar(
   const folded = sorted.filter((s) => of(s.bytes) < MIN_SEGMENT_FRACTION);
   const segments: PoolSegment[] = shown.map((s) => ({
     agentId: s.agent.id,
-    label: `${s.agent.name} · ${formatBytes(s.bytes)}`,
+    label: `${s.agent.name} · ${format(s.bytes)}`,
     fraction: of(s.bytes),
     filled: true,
   }));
@@ -47,7 +49,7 @@ function poolBar(
   if (folded.length > 0)
     segments.push({
       agentId: null,
-      label: `${folded.length} more · ${formatBytes(foldedBytes)}`,
+      label: `${folded.length} more · ${format(foldedBytes)}`,
       fraction: of(foldedBytes),
       filled: false,
     });
@@ -55,7 +57,7 @@ function poolBar(
   for (const part of named)
     segments.push({
       agentId: null,
-      label: `${part.label} · ${formatBytes(part.bytes)}`,
+      label: `${part.label} · ${format(part.bytes)}`,
       fraction: of(part.bytes),
       filled: false,
     });
@@ -67,14 +69,16 @@ function poolBar(
   if (restBytes > 0)
     segments.push({
       agentId: null,
-      label: `${rest} · ${formatBytes(restBytes)}`,
+      label: `${rest} · ${format(restBytes)}`,
       fraction: of(restBytes),
       filled: false,
     });
   return { level, segments };
 }
 
-function vmShares<K extends "memoryUsedBytes" | "storageUsedBytes">(
+function vmShares<
+  K extends "memoryUsedBytes" | "storageUsedBytes" | "cpuMilli",
+>(
   usage: BudgetVmUsage,
   agents: readonly AgentView[],
   key: K,
@@ -161,18 +165,58 @@ export function storageRows(
     .sort((a, b) => b.bytes - a.bytes);
 }
 
-export function cpuBar(cpu: NonNullable<BudgetVmUsage["cpu"]>): PoolBarView {
-  return {
-    level: cpu.level,
-    segments: [
-      {
-        agentId: null,
-        label: `${cpu.congestion[0].toUpperCase()}${cpu.congestion.slice(1)} congestion`,
-        fraction: Math.min(1, Math.max(0, cpu.fill)),
-        filled: true,
-      },
-    ],
-  };
+export const CPU_REST = "Runner and system";
+
+const cpuOf = (milli: number) => `${formatCores(milli)} CPU`;
+
+// UNIT_BOUNDARY_DESCRIPTION: what the CPU row measures use against: the owner's CPU pool, else the runner's current limit for a server that does not send the pool, else nothing, and then the row falls back to its congestion alone.
+export function cpuPoolMilli(cpu: NonNullable<BudgetVmUsage["cpu"]>): number {
+  return cpu.poolMilli ?? cpu.limitMilli;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: CPU as a used-of-pool bar like memory's: each running agent's CPU largest first, and what the runner itself and the machines' I/O used as the last segment. The level is still the congestion's, so the colour and the warning sign say when agents wait for a CPU, which a bar short of full does not rule out. With no pool to measure against, the bar is the congestion's fill.
+export function cpuBar(
+  cpu: NonNullable<BudgetVmUsage["cpu"]>,
+  usage: BudgetVmUsage,
+  agents: readonly AgentView[],
+): PoolBarView {
+  const poolMilli = cpuPoolMilli(cpu);
+  if (poolMilli <= 0)
+    return {
+      level: cpu.level,
+      segments: [
+        {
+          agentId: null,
+          label: `${cpu.congestion[0].toUpperCase()}${cpu.congestion.slice(1)} congestion`,
+          fraction: Math.min(1, Math.max(0, cpu.fill)),
+          filled: true,
+        },
+      ],
+    };
+  return poolBar(
+    vmShares(usage, agents, "cpuMilli", (a) => a.state !== "hibernated"),
+    cpu.usedMilli,
+    poolMilli,
+    cpu.level,
+    CPU_REST,
+    [],
+    cpuOf,
+  );
+}
+
+const AT_CEILING = 0.9;
+
+// UNIT_BOUNDARY_DESCRIPTION: the agents using nine tenths or more of the vCPUs one machine gets: such an agent is slow because of its own machine's size, which neither the pool nor its congestion shows. Nobody is named when the install does not say how many vCPUs a machine gets.
+export function agentsAtCpuCeiling(
+  usage: BudgetVmUsage,
+  agents: readonly AgentView[],
+): AgentView[] {
+  const machineMilli = usage.cpu?.machineMilli;
+  if (!machineMilli) return [];
+  return vmShares(usage, agents, "cpuMilli", (a) => a.state !== "hibernated")
+    .filter((share) => share.bytes >= machineMilli * AT_CEILING)
+    .sort((a, b) => b.bytes - a.bytes)
+    .map((share) => share.agent);
 }
 
 export function topCpuAgents(

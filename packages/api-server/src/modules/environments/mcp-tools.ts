@@ -2,8 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
+  environmentEndpointNameSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
+  environmentReadyPathSchema,
 } from "api-server-api";
 import { json, run } from "../../core/mcp-tool-result.js";
 import type { OwningAgentEnvironments } from "./services/environments-service.js";
@@ -96,7 +98,7 @@ export function registerEnvironmentTools(
         "Unique among your Environments, e.g. pr-42.",
       ),
       endpoints: environmentEndpointsSchema.describe(
-        "What it serves: [{name, port}], a name of lowercase letters and digits.",
+        "What it serves: [{name, port, ready?}], a name of lowercase letters and digits. `ready` is a path that answers 2xx or 3xx once the app is up, e.g. /healthz; until it does, a visitor sees a loading page. Without it, the endpoint is ready once its port answers.",
       ),
       start: z
         .string()
@@ -138,11 +140,20 @@ export function registerEnvironmentTools(
 
   server.tool(
     "update_environment",
-    "Change one of your Environments: extend or shorten its expiry, or change how long it may sit idle before it sleeps. Who may open it is not yours to change: only people share it, in the app.",
+    "Change one of your Environments: extend or shorten its expiry, change how long it may sit idle before it sleeps, or set its endpoints' readiness paths. Who may open it is not yours to change: only people share it, in the app.",
     {
       name: environmentNameSchema,
       expires: expiresInput,
       idle_timeout: idleTimeout,
+      ready: z
+        .record(
+          environmentEndpointNameSchema,
+          environmentReadyPathSchema.nullable(),
+        )
+        .optional()
+        .describe(
+          'Readiness paths by endpoint name, e.g. {"app": "/healthz"}: a visitor sees a loading page until the path answers 2xx or 3xx. null removes one, so the endpoint is ready once its port answers.',
+        ),
       access: noAccessInput,
     },
     (args) =>
@@ -153,6 +164,7 @@ export function registerEnvironmentTools(
           await envs.update(args.name, {
             ...(args.expires ? { expiresAt: parseExpiry(args.expires)! } : {}),
             ...(idleTimeoutMin !== undefined ? { idleTimeoutMin } : {}),
+            ...(args.ready ? { ready: args.ready } : {}),
           }),
         );
       }),

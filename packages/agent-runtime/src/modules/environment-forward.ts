@@ -4,6 +4,7 @@ import type { Duplex } from "node:stream";
 
 export const FORWARD_PREFIX = "/api/environment/forward/";
 export const DECLARED_PORTS_HEADER = "x-platform-environment-ports";
+export const UNREACHABLE_HEADER = "x-platform-environment-unreachable";
 
 // UNIT_BOUNDARY_DESCRIPTION: the ports the runtime serves on its own loopback, which an Environment can never declare as an endpoint: the runtime itself, its model router and the browser display.
 const DISPLAY_PORT = 5999;
@@ -30,7 +31,9 @@ interface Target {
  * runtime's own ports. The api-server names the endpoint ports the
  * Environment declared on every request; a port it did not name is refused,
  * so an app on an undeclared port stays private. Only the api-server and the
- * controller reach the runtime's port, so the header is theirs to set.
+ * controller reach the runtime's port, so the header is theirs to set. When
+ * nothing listens on the port it answers 502 with a header of its own, so the
+ * api-server tells an app that has not started from an app's own 502.
  */
 export function createEnvironmentForward(opts: {
   ownPorts: number[];
@@ -88,7 +91,10 @@ export function createEnvironmentForward(opts: {
       upstream.on("error", (e) => {
         if (!res.headersSent)
           res
-            .writeHead(502, { "Content-Type": "text/plain" })
+            .writeHead(502, {
+              "Content-Type": "text/plain",
+              [UNREACHABLE_HEADER]: "1",
+            })
             .end(`nothing answers on port ${t.port}: ${e.message}`);
         else res.destroy();
       });
@@ -122,7 +128,10 @@ export function createEnvironmentForward(opts: {
         socket.destroy();
       };
       upstream.on("error", () => {
-        if (socket.writable) socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+        if (socket.writable)
+          socket.end(
+            `HTTP/1.1 502 Bad Gateway\r\n${UNREACHABLE_HEADER}: 1\r\n\r\n`,
+          );
         close();
       });
       socket.on("error", close);

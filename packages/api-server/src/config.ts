@@ -230,9 +230,10 @@ const configSchema = z.object({
   imgbbApiKey: z.string().nullable().default(null),
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
-  // UNIT_BOUNDARY_DESCRIPTION: the pool each owner's VM runner is created at, as the chart sizes it, read before any runner exists to ask. The storage is the claim every machine disk shares; a memory the install does not set leaves the runner sized by the owner's UserBudget alone, whose own absence refuses nothing.
+  // UNIT_BOUNDARY_DESCRIPTION: the pool each owner's VM runner is created at, as the chart sizes it, read before any runner exists to ask. The storage is the claim every machine disk shares; a memory the install does not set leaves the runner sized by the owner's UserBudget alone, whose own absence refuses nothing. The vCPUs every machine gets are 0 when the chart does not say.
   vmPoolStorage: z.string().default("100Gi"),
   vmPoolMemory: z.string().default(""),
+  vmMachineCpus: z.coerce.number().int().nonnegative().default(0),
   featureModes: featureModesSchema,
   curveBenderDeployment: curveBenderDeploymentSchema,
   defaultProfileSeed: defaultProfileSeedSchema,
@@ -442,6 +443,7 @@ export function loadConfig(): Config {
     e2eEnabled: process.env.E2E_ENABLED,
     vmPoolStorage: process.env.VM_POOL_STORAGE,
     vmPoolMemory: process.env.VM_POOL_MEMORY,
+    vmMachineCpus: process.env.VM_MACHINE_CPUS,
     featureModes: {
       named: process.env.FEATURE_MODES,
       fallback: process.env.FEATURE_DEFAULT_MODE,
@@ -572,7 +574,9 @@ export function loadConfig(): Config {
       },
     },
     links: {
+      docs: process.env.LINKS_DOCS || null,
       computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
+      curveBenderCommunity: process.env.LINKS_CURVE_BENDER_COMMUNITY || null,
       slackInstallRequest: process.env.LINKS_SLACK_INSTALL_REQUEST || null,
     },
     terms: {

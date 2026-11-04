@@ -251,10 +251,6 @@
     "options": {
       "skill": "dam-prototyper",
       "source": "dam-agents/dam-prototyper"
-    },
-    "deliver": {
-      "skill": "file-issue",
-      "source": "dam-agents/dam"
     }
   }
 }

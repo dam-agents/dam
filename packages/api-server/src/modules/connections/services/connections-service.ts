@@ -113,6 +113,7 @@ import { oauthClientSource } from "../domain/client-id-metadata.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
+import { stripControlChars } from "../infrastructure/github-identity.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
@@ -1323,7 +1324,7 @@ export function createConnectionsService(deps: {
       const rejection = tokenRejectionOf(err);
       if (rejection) {
         process.stderr.write(
-          `[connections] credential rejected: ${(err as Error).message}\n`,
+          `[connections] credential rejected: ${stripControlChars((err as Error).message)}\n`,
         );
       }
       throw new TRPCError({

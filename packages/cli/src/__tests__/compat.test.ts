@@ -15,6 +15,10 @@ describe("compareVersions", () => {
     ["1.0.0-alpha", "1.0.0-beta", -1],
     ["1.0.0-rc.1", "1.0.0-rc.1", 0],
     ["1.0.0-1", "1.0.0-rc.1", -1],
+    ["0.2.24-rc9", "0.2.24-rc10", -1],
+    ["0.2.24-rc10", "0.2.24-rc9", 1],
+    ["0.2.24-rc10", "0.2.24-rc10", 0],
+    ["0.2.24-rc10", "0.2.24", -1],
   ])("compareVersions(%j, %j) = %d", (a, b, expected) => {
     expect(compareVersions(a, b)).toBe(expected);
   });
@@ -24,6 +28,33 @@ describe("compareVersions", () => {
       /invalid semver/,
     );
     expect(() => compareVersions("1.0", "1.0.0")).toThrow(/invalid semver/);
+  });
+
+  // TEST_SCENARIO: this repository publishes its release candidates as `rc9`, `rc10`, … without a dot, so each is one alphanumeric identifier. SemVer compares those lexically, which puts rc9 above rc10 and hides the newer recommendation from `dam version` and `dam update`. A numeric-suffix special case alone is not transitive (`rc2 < rc10`, `rc10 < rc1a` lexically, `rc1a < rc2`), so sorting and an is-newer check would disagree. Word runs compare digits by value and letters lexically, digits before letters.
+  it("orders a mixed set of candidates as a total order", () => {
+    expect(compareVersions("0.2.24-rc9", "0.2.24-rc10")).toBe(-1);
+    expect(compareVersions("0.2.24-rc2", "0.2.24-rc02")).toBe(0);
+    expect(compareVersions("0.2.24-rc1", "0.2.24-beta9")).toBe(1);
+    expect(compareVersions("0.2.24-rc1a", "0.2.24-rc10")).toBe(-1);
+    expect(compareVersions("0.2.24-rc2", "0.2.24-rc1a")).toBe(1);
+
+    const order = [
+      "0.2.24-beta1",
+      "0.2.24-rc1",
+      "0.2.24-rc1a",
+      "0.2.24-rc2",
+      "0.2.24-rc10",
+      "0.2.24",
+    ];
+    expect([...order].reverse().sort(compareVersions)).toEqual(order);
+    for (const a of order)
+      for (const b of order) {
+        const ab = compareVersions(a, b);
+        expect(compareVersions(b, a), `${a} vs ${b}`).toBe(ab === 0 ? 0 : -ab);
+        for (const c of order)
+          if (ab < 0 && compareVersions(b, c) < 0)
+            expect(compareVersions(a, c), `${a} < ${b} < ${c}`).toBe(-1);
+      }
   });
 });
 
