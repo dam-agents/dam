@@ -318,7 +318,7 @@ describe("createSessionsService", () => {
 });
 
 describe("adoptHarnessTitle", () => {
-  function titled(meta: SessionMetaEntry["meta"]) {
+  function titled(meta: SessionMetaEntry["meta"], failedOpens = 0) {
     const entries = new Map<string, SessionMetaEntry>([
       ["term", { meta, createdAt: "2026-10-20T00:00:00.000Z" }],
     ]);
@@ -338,7 +338,10 @@ describe("adoptHarnessTitle", () => {
     const service = createSessionsService({
       defaultHarness: "claude-code",
       subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
-      openCaller: () => caller,
+      openCaller: () => {
+        if (failedOpens-- > 0) throw new Error("the runtime is closed");
+        return caller;
+      },
       sessionMetadata: {
         ...fakeStore(),
         get: (id) => entries.get(id),
@@ -377,16 +380,28 @@ describe("adoptHarnessTitle", () => {
       expect(t.meta()?.title).toBeUndefined();
     }
   });
+
+  // TEST_SCENARIO: No channel to the harness opens; the read fails without throwing, and the next read of the same Session asks again.
+  it("asks again after no channel to the harness opened", async () => {
+    const t = titled({ mode: "terminal", harness: "copilot" }, 1);
+    await expect(t.service.adoptHarnessTitle("term")).resolves.toBeUndefined();
+    expect(t.meta()?.title).toBeUndefined();
+    await t.service.adoptHarnessTitle("term");
+    expect(t.meta()?.title).toBe("fix the login");
+  });
 });
 
 describe("adoptHarnessTitles", () => {
   type Listed = { sessionId: string; title?: string };
-  function booted(listings: Record<string, Listed[] | Listed[][] | Error>) {
+  function booted(
+    listings: Record<string, Listed[] | Listed[][] | Error>,
+    failedOpens = 0,
+  ) {
     const entries = new Map<string, SessionMetaEntry>([
       [
         "old",
         {
-          meta: { mode: "chat", harness: "claude-code" },
+          meta: { mode: "chat" },
           createdAt: "2026-10-01T00:00:00.000Z",
         },
       ],
@@ -439,7 +454,10 @@ describe("adoptHarnessTitles", () => {
     const service = createSessionsService({
       defaultHarness: "claude-code",
       subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
-      openCaller: () => caller,
+      openCaller: () => {
+        if (failedOpens-- > 0) throw new Error("the runtime is closed");
+        return caller;
+      },
       sessionMetadata: {
         ...fakeStore(),
         all: () => Object.fromEntries(entries),
@@ -457,7 +475,7 @@ describe("adoptHarnessTitles", () => {
     return { service, asked, meta: (id: string) => entries.get(id)?.meta };
   }
 
-  // TEST_SCENARIO: Sessions an older runtime made carry no kept title; after a boot the runtime asks each harness for its own listing once and keeps the first line, so the list shows those Sessions with their harness's title again.
+  // TEST_SCENARIO: Sessions an older runtime made carry no kept title; after a boot the runtime asks each harness for its own listing once and keeps the first line, so the list shows those Sessions with their harness's title again; a Session that records no harness is asked of the default one.
   it("keeps the harness's title for every untitled session", async () => {
     const t = booted({
       "claude-code": [
@@ -525,5 +543,13 @@ describe("adoptHarnessTitles", () => {
 
     expect(t.meta("old")?.title).toBeUndefined();
     expect(t.meta("codex-session")?.title).toBe("port the hook");
+  });
+
+  // TEST_SCENARIO: No channel to the harnesses opens at boot; the backfill logs it and resolves, since a rejection there would end the runtime.
+  it("resolves when no channel to the harnesses opens", async () => {
+    const t = booted({}, 1);
+    await expect(t.service.adoptHarnessTitles()).resolves.toBeUndefined();
+    expect(t.asked).toEqual([]);
+    expect(t.meta("old")?.title).toBeUndefined();
   });
 });
