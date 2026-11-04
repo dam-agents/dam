@@ -381,3 +381,120 @@ describe("adoptHarnessTitle", () => {
     }
   });
 });
+
+describe("adoptHarnessTitles", () => {
+  function booted(
+    listings: Record<string, { sessionId: string; title?: string }[] | Error>,
+  ) {
+    const entries = new Map<string, SessionMetaEntry>([
+      [
+        "old",
+        {
+          meta: { mode: "chat", harness: "claude-code" },
+          createdAt: "2026-10-01T00:00:00.000Z",
+        },
+      ],
+      [
+        "named",
+        {
+          meta: { mode: "chat", harness: "claude-code", title: "kept" },
+          createdAt: "2026-10-02T00:00:00.000Z",
+        },
+      ],
+      [
+        "renamed",
+        {
+          meta: { mode: "chat", harness: "claude-code", customTitle: "mine" },
+          createdAt: "2026-10-03T00:00:00.000Z",
+        },
+      ],
+      [
+        "codex-session",
+        {
+          meta: { mode: "chat", harness: "codex" },
+          createdAt: "2026-10-04T00:00:00.000Z",
+        },
+      ],
+    ]);
+    const asked: { _meta?: { platform?: { harness?: string } } }[] = [];
+    const caller: InProcessCaller = {
+      request: async <T>(method: string, params: unknown): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        const harness = (
+          params as { _meta?: { platform?: { harness?: string } } }
+        )._meta?.platform?.harness;
+        if (harness === undefined) return { sessions: [] } as T;
+        asked.push(params as { _meta?: { platform?: { harness?: string } } });
+        const listing = listings[harness];
+        if (listing instanceof Error) throw listing;
+        return { sessions: listing ?? [] } as T;
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const service = createSessionsService({
+      defaultHarness: "claude-code",
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => caller,
+      sessionMetadata: {
+        ...fakeStore(),
+        all: () => Object.fromEntries(entries),
+        get: (id) => entries.get(id),
+        set: (id, m) => {
+          entries.set(id, { ...entries.get(id)!, meta: m });
+        },
+      },
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+    return { service, asked, meta: (id: string) => entries.get(id)?.meta };
+  }
+
+  // TEST_SCENARIO: Sessions an older runtime made carry no kept title; after a boot the runtime asks each harness for its own listing once and keeps the first line, so the list shows those Sessions with their harness's title again.
+  it("keeps the harness's title for every untitled session", async () => {
+    const t = booted({
+      "claude-code": [
+        { sessionId: "old", title: "fix the login\nand the logout" },
+        { sessionId: "named", title: "the harness's" },
+        { sessionId: "renamed", title: "the harness's" },
+      ],
+      codex: [{ sessionId: "codex-session", title: "port the hook" }],
+    });
+
+    await t.service.adoptHarnessTitles();
+
+    expect(t.asked).toEqual([
+      { cwd: ".", _meta: { platform: { harness: "claude-code" } } },
+      { cwd: ".", _meta: { platform: { harness: "codex" } } },
+    ]);
+    expect(t.meta("old")?.title).toBe("fix the login");
+    expect(t.meta("codex-session")?.title).toBe("port the hook");
+    expect(t.meta("named")?.title).toBe("kept");
+    expect(t.meta("renamed")).toEqual({
+      mode: "chat",
+      harness: "claude-code",
+      customTitle: "mine",
+    });
+
+    const listed = (await t.service.list()).sessions.find(
+      (s) => s.sessionId === "old",
+    );
+    expect(listed?.title).toBe("fix the login");
+  });
+
+  // TEST_SCENARIO: One harness failing to answer must not stop the others; its sessions stay untitled and the next harness still gets its titles.
+  it("keeps the other harness's titles when one listing fails", async () => {
+    const t = booted({
+      "claude-code": new Error("harness exited"),
+      codex: [{ sessionId: "codex-session", title: "port the hook" }],
+    });
+
+    await t.service.adoptHarnessTitles();
+
+    expect(t.meta("old")?.title).toBeUndefined();
+    expect(t.meta("codex-session")?.title).toBe("port the hook");
+  });
+});
