@@ -144,16 +144,24 @@ function namePost(
     : sent;
 }
 
+function attachmentFailureText(
+  sent: string,
+  repost: string,
+  attachmentError: string,
+): string {
+  return (
+    `${sent}, but the attachment failed to upload: ${attachmentError}. ` +
+    `The text itself landed, so do not ${repost}. If the file matters, ` +
+    `say so in a short follow-up.`
+  );
+}
+
 function renderAttachmentFailure(
   sent: string,
   repost: string,
   attachmentError: string,
 ): ToolContent {
-  return textResult(
-    `${sent}, but the attachment failed to upload: ${attachmentError}. ` +
-      `The text itself landed, so do not ${repost}. If the file matters, ` +
-      `say so in a short follow-up.`,
-  );
+  return textResult(attachmentFailureText(sent, repost, attachmentError));
 }
 
 function renderChecklist(steps: OnboardingStep[]): string {
@@ -336,6 +344,13 @@ export function createMcpSession(
     },
   );
 
+  const POST_ANSWERS: Record<ChannelType, string> = {
+    [ChannelType.Slack]:
+      "Replies under it are not followed and do not come back to this session; to get an answer here, ask with start_thread",
+    [ChannelType.Telegram]:
+      "The chat's next message goes to that chat's own session, which is this session only when it is that chat's session",
+  };
+
   const postInput = {
     channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
     text: z
@@ -421,13 +436,12 @@ export function createMcpSession(
     });
     if ("error" in result) return errorResult(result.error);
     const sent = namePost("Message sent", result);
+    const answers = POST_ANSWERS[channel];
     if (attachmentError)
-      return renderAttachmentFailure(
-        sent,
-        "send the message again",
-        attachmentError,
+      return textResult(
+        `${attachmentFailureText(sent, "send the message again", attachmentError)} ${answers}.`,
       );
-    return textResult(sent);
+    return textResult(`${sent}. ${answers}.`);
   };
 
   const POST_DESCRIPTION =

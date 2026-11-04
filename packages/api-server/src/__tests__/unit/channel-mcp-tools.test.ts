@@ -642,7 +642,7 @@ describe("outbound MCP tools — the posted message", () => {
     });
 
     expect((result.content as { text: string }[])[0]!.text).toBe(
-      "Message sent to chatId D-UOWNER as ts 1712345.000100",
+      "Message sent to chatId D-UOWNER as ts 1712345.000100. Replies under it are not followed and do not come back to this session; to get an answer here, ask with start_thread.",
     );
   });
 
@@ -671,8 +671,8 @@ describe("outbound MCP tools — the posted message", () => {
       arguments: { channel: "slack", text: "report", chatId: "C-ALERTS" },
     });
 
-    expect((result.content as { text: string }[])[0]!.text).toBe(
-      "Message sent",
+    expect((result.content as { text: string }[])[0]!.text).toMatch(
+      /^Message sent\. Replies under it are not followed/,
     );
   });
 });
