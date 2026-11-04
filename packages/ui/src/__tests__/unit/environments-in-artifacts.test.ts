@@ -551,6 +551,50 @@ describe("the agent's page", () => {
     );
   });
 
+  // TEST_SCENARIO: the person edits the list, types an agent id they never add, and presses Cancel. Both the edits and the typed text go, so the page is back to the list as saved.
+  it("clears typed text with the edits on Cancel", () => {
+    state.agentMembers = ["a@example.com"];
+    const doc = mount(
+      createElement(AgentEnvironmentsSection, {
+        agentId: "agent-dev",
+        header: () => null,
+      }),
+    );
+    act(() =>
+      (
+        doc.querySelector(
+          '[aria-label="Remove a@example.com"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    const input = doc.querySelector(
+      '[data-testid="agent-member-input"]',
+    ) as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(input, "agent-qa1");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() =>
+      [...doc.querySelectorAll("button")]
+        .find((b) => b.textContent === "Cancel")!
+        .click(),
+    );
+    expect(
+      (
+        doc.querySelector(
+          '[data-testid="agent-member-input"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("");
+    expect(
+      doc.querySelector('[data-testid="viewer-list"]')?.textContent,
+    ).toContain("a@example.com");
+  });
+
   // TEST_SCENARIO: while an agent id is being looked up, its field takes no more typing, so the lookup's result never clears text typed meanwhile.
   it("locks the agent id field while its lookup runs", () => {
     state.lookup = () => new Promise(() => {});

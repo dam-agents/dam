@@ -203,6 +203,8 @@ function MembersForm({
             onClick={() => {
               setEdited(null);
               agentEdits.reset();
+              setDraft("");
+              setAgentDraft("");
             }}
           >
             Cancel
