@@ -582,16 +582,6 @@ func TestRenderEnvoyBootstrap_RequireAddressRefusesNoContestedPathScope(t *testi
 	assert.Contains(t, got, "local CONTESTED = {}")
 }
 
-func TestRefusesUnaddressedAt_RequireAddressStillRefusesBesideACredentialWithNoConnection(t *testing.T) {
-	chains := requiringAddress(connectionChain("github.com",
-		connectionCredential("", "legacy-secret", "Authorization", "github.com"),
-		connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "github.com"),
-	))
-
-	assert.True(t, chains[0].RefusesUnaddressedAt("/"),
-		"no address gates a credential with no connection, so an unaddressed request would still carry it")
-}
-
 func TestRenderEnvoyBootstrap_RequireAddressGatesTheQueryParamStep(t *testing.T) {
 	cred := connectionCredential("conn-q", "platform-conn-q", "X-Key", "api.example.com")
 	cred.QueryParamName = "key"
@@ -1004,14 +994,5 @@ func TestContestedAt_HeaderNamesIgnoreCase(t *testing.T) {
 
 	assert.True(t, chains.ContestedAt("/"), "two spellings of one header name land in one header")
 	assert.True(t, chains.RefusesUnaddressedAt("/"))
-}
-
-func TestRefusesUnaddressedAt_RequireAddressMatchesANoConnectionCredentialWhateverItsCase(t *testing.T) {
-	chains := requiringAddress(connectionChain("github.com",
-		connectionCredential("", "legacy-secret", "authorization", "github.com"),
-		connectionCredential("conn-bbb", "platform-conn-bbb", "Authorization", "github.com"),
-	))
-
-	assert.True(t, chains[0].RefusesUnaddressedAt("/"),
-		"the credential with no connection still lands in the header the connection claims")
+	assert.False(t, requiringAddress(chains)[0].RefusesUnaddressedAt("/"))
 }

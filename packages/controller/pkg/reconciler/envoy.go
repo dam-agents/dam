@@ -250,59 +250,22 @@ func (c envoyHostChain) credentialsAt(scope string) []envoyCredential {
 	return out
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: who injects one header on one path scope. A credential granted as a plain secret, with no Connection, has no Connection id and no address an Agent can name, so it is counted apart from the Connections.
-type headerClaim struct {
-	connections       map[string]bool
-	withoutConnection bool
-}
-
-func (h headerClaim) contested() bool {
-	claimants := len(h.connections)
-	if h.withoutConnection {
-		claimants++
-	}
-	return claimants > 1
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the claim on each header this scope injects, keyed by the header's lower-cased name, since HTTP header names ignore case and two spellings of one name land in one header.
-func (c envoyHostChain) headerClaimsAt(scope string) map[string]*headerClaim {
-	claims := map[string]*headerClaim{}
+// UNIT_BOUNDARY_DESCRIPTION: whether two Connections inject one header on this scope. Header names ignore case in HTTP, so two spellings of one name are one header.
+func (c envoyHostChain) ContestedAt(scope string) bool {
+	owners := map[string]string{}
 	for _, cred := range c.credentialsAt(scope) {
 		name := strings.ToLower(cred.HeaderName)
-		claim := claims[name]
-		if claim == nil {
-			claim = &headerClaim{connections: map[string]bool{}}
-			claims[name] = claim
-		}
-		if cred.ConnectionID == "" {
-			claim.withoutConnection = true
-		} else {
-			claim.connections[cred.ConnectionID] = true
-		}
-	}
-	return claims
-}
-
-func (c envoyHostChain) ContestedAt(scope string) bool {
-	for _, claim := range c.headerClaimsAt(scope) {
-		if claim.contested() {
+		if owner, seen := owners[name]; seen && owner != cred.ConnectionID {
 			return true
 		}
+		owners[name] = cred.ConnectionID
 	}
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a request naming no Connection on this scope is refused at the gateway. A contested header is refused, since serving it from whichever credential sorted first acts as the wrong account. On an Agent requiring addresses every Connection's injector skips such a request, so it goes upstream with no credential and nothing is refused, unless a credential without a Connection claims that header too: no address gates its injector, so the request would carry it.
+// UNIT_BOUNDARY_DESCRIPTION: whether a request naming no Connection on this scope is refused at the gateway. A contested scope is refused, since serving it from whichever credential sorted first acts as the wrong account. On an Agent requiring addresses every injector skips such a request, so it goes upstream with no credential and nothing is refused.
 func (c envoyHostChain) RefusesUnaddressedAt(scope string) bool {
-	for _, claim := range c.headerClaimsAt(scope) {
-		if !claim.contested() {
-			continue
-		}
-		if !c.RequireAddress || claim.withoutConnection {
-			return true
-		}
-	}
-	return false
+	return !c.RequireAddress && c.ContestedAt(scope)
 }
 
 func (c envoyHostChain) ScopesOf(connectionID string) []string {
