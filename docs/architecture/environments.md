@@ -104,15 +104,16 @@ The api-server names the declared ports on every request, so a port the Environm
   An `Authorization` header reaches the app unless it is a platform credential: a platform API key, a bearer token that names the platform's identity provider as its issuer or names none, or a bearer value that is not one token, so an app that signs its own users in gets their tokens.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
-- **Wake and readiness.** A request to a sleeping Environment starts its wake and never waits for it.
-  The gate relays to an endpoint only once its app is **ready**: its readiness path, if the endpoint declares one (`ready: "/healthz"` on create, or set by endpoint name on update), answers 2xx or 3xx; without one, anything answers on its port but a proxy's 502, 503 or 504, which a bridge or an ingress in front of an app still starting answers at once; an app's own 500 counts as an answer.
-  The runtime marks its own 502 when nothing listens on the port, so the gate tells an app that has not started from one that answers with an error.
-  A readiness path matters where something answers before the app does, such as a k3s ingress in front of it.
-  The gate keeps a "not ready" for a few seconds, so a burst of requests costs one probe; a "ready" it keeps until a relay finds nothing listening or the Environment wakes again, so a running app costs no probe per request.
-- **The loading page.** Until the endpoint is ready, a page load (a `GET` navigation) gets the gate's "Starting…" page, with status 503, `Retry-After` and no caching.
-  The page shows a working indicator and asks the gate's status at `/.platform/status` every few seconds; it reloads once the status says ready, into the app, or failed, into the gate's "did not start" page, which offers one "Try again" (`/.platform/start`, which wakes it again at once and returns to the page).
+- **Wake.** A request to a sleeping Environment starts its wake and never waits for it.
+  While the machine wakes, a page load (a `GET` navigation) gets the loading page below, and every other request — a script's call, an API client, a WebSocket — a plain 503 with `Retry-After`, never the page and never a 200, so a health check or a monitor does not read the Environment as up and a client that expects JSON gets no HTML.
+- **The app answers for itself.** Once the machine runs, every request but a page load goes to the app as it is, whatever its answer: the gate never stands in for a script, a stylesheet or an API call of an app that is up.
+  The one exception is nothing at all on the port, which the runtime marks on its own 502; that request gets the plain 503 too.
+- **When a page load waits.** A page load to a running machine gets the loading page instead of the app's answer only while nothing behind the endpoint can answer it: nothing listens on the port, or, for an endpoint without a readiness path, a proxy in front of the app answers 502, 503 or 504, as a bridge or a k3s ingress does before the app behind it is up.
+  An endpoint may declare a readiness path (`ready: "/healthz"` on create, or set by endpoint name on update); a page load to it waits until that path answers 2xx or 3xx, for an app that answers before it can serve.
+  The gate keeps a "not ready" for a few seconds, so a burst of page loads costs one probe, and a "ready" until a relay finds nothing listening or the Environment wakes again.
+- **The loading page.** It has status 503, `Retry-After` and no caching.
+  It shows a working indicator and asks the gate's status at `/.platform/status` every few seconds; it reloads once the status says ready, into the app, or failed, into the gate's "did not start" page, which offers one "Try again" (`/.platform/start`, which wakes it again at once and returns to the page).
   A start that takes longer than five minutes, such as an install, is not a failure: the page says it is still starting and asks every fifteen seconds.
-  Every other request — a script's call, an API client, a WebSocket — gets a plain 503 with `Retry-After`, never the page and never a 200, so a health check or a monitor does not read the Environment as up and a client that expects JSON gets no HTML.
 - **Activity.** Requests refresh its activity at most once a minute, the loading page's status checks included, so a visitor waiting on the page does not let it fall asleep again.
   No open connection holds it awake, so a forgotten tab lets it sleep.
 - **Every response is uncacheable**, and the security log records each new session and each refusal.

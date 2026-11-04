@@ -134,9 +134,11 @@ export const noEnvironmentGate: EnvironmentGate = {
  * every request, while the share host's session it came from lasts), wakes a
  * sleeping Environment without waiting for it, and relays HTTP and WebSocket
  * to the Environment runtime's forward, which reaches only the declared port
- * on the Environment's loopback, once the endpoint's app is ready. Until then
- * a page load gets a loading page that opens the app by itself, and any other
- * request a 503 to try again. Any other host passes on untouched. A request
+ * on the Environment's loopback. While the machine wakes, a page load gets a
+ * loading page that opens the app by itself, and any other request a 503 to
+ * try again. Once it runs, every request but a page load goes to the app
+ * as it is; a page load waits on the loading page only while nothing behind
+ * the endpoint answers it, or while a declared readiness path does not. Any other host passes on untouched. A request
  * that another origin's page makes in the visitor's name is refused before
  * any of that, whatever cookie it carries. The relay never passes the
  * platform's own cookies or credentials to the app, never lets the app set
@@ -256,19 +258,28 @@ export function createEnvironmentGate(
     });
   }
 
+  // UNIT_BOUNDARY_DESCRIPTION: what the loading page's status says: the machine's state, and once it runs, whether the endpoint's app is ready.
   async function startState(
     resolved: Resolved,
+    machineState: MachineState,
     publicHost: string | undefined,
   ): Promise<"ready" | "starting" | "failed"> {
-    const state = await machine(resolved.record.agentId);
-    if (state === "failed") return "failed";
-    if (state === "waking") return "starting";
+    if (machineState === "failed") return "failed";
+    if (machineState === "waking") return "starting";
     return (await readiness.ready(probeTarget(resolved, publicHost)))
       ? "ready"
       : "starting";
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: the gate's answer while an Environment's app is not ready: a page load gets the loading page, which checks the gate's status and opens the app once it answers, or says it did not start; anything else, a script's call or an API client, gets a plain 503, never a page or a 200 a monitor would read as up. Both ask to be tried again after a few seconds.
+  // UNIT_BOUNDARY_DESCRIPTION: whether a page load waits on the loading page although the machine runs: only for an endpoint that declared a readiness path, until that path answers. Without one, the page load goes to the app, and its own answer decides (see relay).
+  async function pageWaits(c: Context, resolved: Resolved) {
+    if (!isPageLoad(c) || resolved.ready === undefined) return false;
+    return !(await readiness.ready(
+      probeTarget(resolved, c.req.header("host")),
+    ));
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: the gate's answer when nothing behind an endpoint can answer yet: a page load gets the loading page, which checks the gate's status and opens the app once it answers, or says it did not start; anything else, a script's call or an API client, gets a plain 503, never a page or a 200 a monitor would read as up. Both ask to be tried again after a few seconds.
   function notReady(
     c: Context,
     record: EnvironmentRecord,
@@ -277,7 +288,7 @@ export function createEnvironmentGate(
     gateHeaders(c);
     c.header("Retry-After", String(RETRY_AFTER_S));
     siblingCors(c, record);
-    if (!isNavigation(c))
+    if (!isPageLoad(c))
       return c.text(
         state === "failed"
           ? "The Environment could not be started."
@@ -327,6 +338,17 @@ export function createEnvironmentGate(
       (c.req.header("sec-fetch-mode") === "navigate" ||
         (c.req.header("accept") ?? "").includes("text/html"))
     );
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: a request the loading page may stand in for: a browser opening a page. A browser names every request's kind in Sec-Fetch-Mode, so a script's fetch that accepts HTML is never taken for one; only a client that sends no such header is judged by what it accepts.
+  function isPageLoad(c: Context) {
+    const mode = c.req.header("sec-fetch-mode");
+    if (mode !== undefined)
+      return (
+        mode === "navigate" &&
+        (c.req.method === "GET" || c.req.method === "HEAD")
+      );
+    return isNavigation(c);
   }
 
   // UNIT_BOUNDARY_DESCRIPTION: the browser's sign-in secret for this address: the one it holds, or a new one; either way set again for the next ten minutes, so a sign-in in another tab of the same browser keeps working.
@@ -498,7 +520,12 @@ export function createEnvironmentGate(
       readiness.failed(probeTarget(resolved, c.req.header("host")));
       return notReady(c, resolved.record, "starting");
     }
-    if (answer.headers.has(UNREACHABLE_HEADER)) {
+    if (
+      answer.headers.has(UNREACHABLE_HEADER) ||
+      (isPageLoad(c) &&
+        resolved.ready === undefined &&
+        isProxyWaiting(answer.status))
+    ) {
       void answer.body?.cancel().catch(() => {});
       readiness.failed(probeTarget(resolved, c.req.header("host")));
       return notReady(c, resolved.record, "starting");
@@ -607,13 +634,21 @@ export function createEnvironmentGate(
       gateHeaders(c);
       return c.redirect(safeNext(c.req.query("next")), 302);
     }
-    const state = await startState(resolved, c.req.header("host"));
-    if (state !== "failed") stamp(record.agentId);
+    const machineState = await machine(record.agentId);
+    if (machineState !== "failed") stamp(record.agentId);
     if (c.req.path === STATUS_PATH) {
       gateHeaders(c);
-      return c.json({ state });
+      return c.json({
+        state: await startState(resolved, machineState, c.req.header("host")),
+      });
     }
-    if (state !== "ready") return notReady(c, record, state);
+    if (machineState !== "ready")
+      return notReady(
+        c,
+        record,
+        machineState === "failed" ? "failed" : "starting",
+      );
+    if (await pageWaits(c, resolved)) return notReady(c, record, "starting");
     return relay(c, resolved);
   };
 
@@ -712,8 +747,7 @@ export function createEnvironmentGate(
             : "403 Forbidden",
         );
       }
-      const state = await startState(resolved, req.headers.host);
-      if (state !== "ready")
+      if ((await machine(resolved.record.agentId)) !== "ready")
         return refuseUpgrade(socket, "503 Service Unavailable");
       stamp(resolved.record.agentId);
 
