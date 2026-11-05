@@ -239,6 +239,33 @@ describe("the owner's provider model catalog", () => {
     );
   });
 
+  /** TEST_SCENARIO: a Bedrock key that may not list profiles still offers Pi the model the Connection pins, so an agent without a model can get one. */
+  it("offers Pi a Bedrock Connection's pinned model when the listing fails", async () => {
+    const catalog = createProviderModelCatalog({
+      secretStore: memorySecretStore(secrets),
+      discover: async () => ({ status: "unavailable" }),
+      table,
+      shipped,
+    });
+    const view = await catalog.read(
+      [
+        connection({
+          id: "conn-bedrock",
+          templateId: "bedrock",
+          env: {
+            AWS_ENDPOINT_URL_BEDROCK: "https://bedrock.us-east-1.amazonaws.com",
+            AWS_BEDROCK_MODEL: "us.anthropic.claude-sonnet-5-5",
+          },
+        }),
+      ],
+      harnesses,
+    );
+    expect(harnessCatalogOf(view, "pi").providers[0]).toMatchObject({
+      status: "listed",
+      models: [{ name: "bedrock/us.anthropic.claude-sonnet-5-5" }],
+    });
+  });
+
   /** TEST_SCENARIO: Bob's gateway speaks a dialect Pi speaks, but the installed harness catalog runs Bob's provider on Bob alone, so Pi is never offered a Bob model and a pick from it cannot be dropped. */
   it("offers a Bob model to Bob and never to Pi", async () => {
     const catalog = createProviderModelCatalog({

@@ -717,6 +717,7 @@ async function activateBedrock(
   }
 
   if (builtin && profiles && profiles.length > 0) {
+    keepBedrockModels(state, [...profiles, ...(model ? [model] : [])]);
     for (const id of profiles)
       if (!hasModel(builtin, id)) addBedrockModel(state, id);
     narrowBedrockModels(pi, builtin, profiles, model);
@@ -822,6 +823,18 @@ function hasModel(provider: Provider | undefined, id: string): boolean {
   const wanted = id.toLowerCase();
   return (provider?.getModels() ?? []).some(
     (m) => m.id.toLowerCase() === wanted,
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a profile the region no longer lists cannot run there, so its added entry goes once the region is listed again.
+function keepBedrockModels(state: ConfigState, ids: readonly string[]): void {
+  const provider = state.models.providers[BEDROCK_PROVIDER] as
+    | { models?: BedrockModelEntry[] }
+    | undefined;
+  if (!provider?.models) return;
+  const wanted = new Set(ids.map((id) => id.toLowerCase()));
+  provider.models = provider.models.filter((m) =>
+    wanted.has(m.id.toLowerCase()),
   );
 }
 

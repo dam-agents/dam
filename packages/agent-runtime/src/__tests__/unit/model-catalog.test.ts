@@ -411,6 +411,30 @@ describe("the model catalog", () => {
     expect(catalog.resolve("claude/bedrock/sonnet", "claude-code")).toBeNull();
   });
 
+  /** TEST_SCENARIO: a Bedrock key may invoke models without the right to
+   * list profiles; Pi is then offered the model the Connection pins, as
+   * listed, so the agent still gets a model. */
+  it("offers a natively run Connection's pinned model when its listing fails", async () => {
+    const { catalog } = catalogWith({ "https://bedrock.example": "down" }, [
+      {
+        ...bedrockLayer,
+        env: {
+          ...bedrockLayer.env,
+          AWS_BEDROCK_MODEL: "us.anthropic.claude-sonnet-5-5",
+        },
+      },
+    ]);
+    await catalog.refresh();
+    expect(
+      catalog
+        .view("pi")
+        .providers.find((p) => p.connectionId === "conn-bedrock"),
+    ).toMatchObject({
+      status: "listed",
+      models: [{ name: "bedrock/us.anthropic.claude-sonnet-5-5" }],
+    });
+  });
+
   /** TEST_SCENARIO: Bob's gateway serves chat completions only, so Claude
    * Code, which speaks Messages, cannot run on it: Claude Code's view says
    * the provider is unsupported rather than listed with no models, while
@@ -479,6 +503,30 @@ describe("the model catalog", () => {
     listing["https://ibm.example"] = { ids: ["gpt-5.5"] };
     await catalog.refresh();
     expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  /** TEST_SCENARIO: Pi's Bedrock profiles were listed, then the region's
+   * control plane stops answering: the known profiles stay, now marked
+   * unavailable, and the readers are told, though no model name changed. */
+  it("tells the listeners when a native listing fails with its models kept", async () => {
+    const listing: Listing = {
+      "https://bedrock.example": { ids: ["us.anthropic.claude-opus-5-5"] },
+    };
+    const { catalog } = catalogWith(listing, [bedrockLayer]);
+    await catalog.refresh();
+    const changed = vi.fn();
+    catalog.onChange(changed);
+    listing["https://bedrock.example"] = "down";
+    await catalog.refresh();
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(
+      catalog
+        .view("pi")
+        .providers.find((p) => p.connectionId === "conn-bedrock"),
+    ).toMatchObject({
+      status: "unavailable",
+      models: [{ name: "bedrock/us.anthropic.claude-opus-5-5" }],
+    });
   });
 
   /** TEST_SCENARIO: A grant restarts the agent's egress gateway, so the

@@ -11,11 +11,13 @@ unset ANTHROPIC_AUTH_TOKEN
 mkdir -p "$shared"
 [ -f "$shared/AGENTS.md" ] && [ ! -L "$shared/AGENTS.md" ] ||
   ln -sfn /etc/AGENTS.md "$shared/AGENTS.md"
-# With the Model Router one Pi process serves every provider, so the shared
-# directory is the only one; the per-provider lease directories are for the
-# pre-router runtime.
-if [ -n "$PLATFORM_PROVIDER" ] && [ -z "$PLATFORM_MODEL_ROUTER_SERVES" ]; then
-  lease="$HOME/.pi/leases/$PLATFORM_PROVIDER"
+# With the Model Router one Pi process serves every routed provider, in the
+# shared directory; a process on Bedrock, which Pi runs natively beside it,
+# keeps a lease directory of its own, as each provider did before the router.
+lease_name=$PLATFORM_PROVIDER
+[ -n "$lease_name" ] || [ -z "$AWS_BEARER_TOKEN_BEDROCK" ] || lease_name=bedrock
+if [ -n "$lease_name" ] && [ -z "$PLATFORM_MODEL_ROUTER_SERVES" ]; then
+  lease="$HOME/.pi/leases/$lease_name"
   mkdir -p "$lease" "$shared/sessions" "$shared/npm"
   for entry in "$shared"/*; do
     [ -e "$entry" ] || continue
@@ -59,10 +61,10 @@ elif [ -n "$OPENAI_BASE_URL" ]; then
   provider=openai pin=$OPENAI_MODEL
 fi
 # Pi refuses --provider without --model. The agent's default lease names no
-# model, so it runs on the saved default, else the provider's pin.
+# model, so it runs on the default saved for this provider, else its pin.
 model=$PLATFORM_MODEL
 if [ -n "$provider" ] && [ -z "$model" ]; then
-  model=$(jq -r '.defaultModel // empty' "$shared/settings.json" 2>/dev/null)
+  model=$(jq -r --arg p "$provider" 'select(.defaultProvider == $p) | .defaultModel // empty' "${PI_CODING_AGENT_DIR:-$shared}/settings.json" 2>/dev/null)
   model=${model:-$pin}
 fi
 [ -z "$provider" ] || [ -z "$model" ] || set -- "$@" --provider "$provider"

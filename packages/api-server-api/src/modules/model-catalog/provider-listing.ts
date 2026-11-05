@@ -12,7 +12,7 @@ const ALL_DIALECTS: readonly ModelDialect[] = [
  * UNIT_BOUNDARY_DESCRIPTION: a harness can run on a provider through the
  * Model Router only when the provider serves a dialect the harness's
  * manifest lists. Bedrock is empty: it has paths and a stream of its own, so
- * a Claude Code process on it stays in Claude Code's Bedrock mode and the
+ * a harness process on it stays in the harness's own Bedrock mode and the
  * router passes its calls on unchanged.
  */
 export const PROVIDER_DIALECTS: Record<ProviderAlias, readonly ModelDialect[]> =
@@ -150,4 +150,26 @@ export function nativeListingForTemplate(
     path: "/inference-profiles?maxResults=1000",
     shape: "bedrock-inference-profiles",
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the model a natively run Connection pins, which
+ * its listing always includes: a Bedrock key may invoke models without the
+ * right to list profiles, and the pin is then the one model known to run.
+ */
+export function nativePinOf(
+  templateId: string,
+  env: Record<string, string>,
+): string | null {
+  if (templateId !== "bedrock") return null;
+  return env.AWS_BEDROCK_MODEL?.trim() || null;
+}
+
+export function withNativePin(
+  ids: readonly string[],
+  pin: string | null,
+): string[] {
+  return pin && !ids.some((id) => id.toLowerCase() === pin.toLowerCase())
+    ? [...ids, pin]
+    : [...ids];
 }

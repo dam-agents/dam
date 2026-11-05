@@ -7,6 +7,7 @@ import {
   listingForTemplate,
   MIN_CONTEXT_WINDOW,
   nativeListingForTemplate,
+  nativePinOf,
   PROVIDER_DIALECTS,
   providerTypeForTemplateId,
   renderName,
@@ -20,6 +21,7 @@ import {
   type PriceTable,
   type ProviderCatalogView,
   type ProviderListingSpec,
+  withNativePin,
 } from "api-server-api";
 import { VENDORED_PRICE_TABLE } from "api-server-api/model-prices";
 import { getLogger } from "../../../core/logger.js";
@@ -254,9 +256,16 @@ export function createProviderModelCatalog(deps: {
               const models = new Map(
                 named.map((m) => [m.upstreamId, m.harnesses]),
               );
-              for (const entry of known?.entries ?? [])
-                models.set(entry.upstreamId, [
-                  ...(models.get(entry.upstreamId) ?? []),
+              const pin =
+                listedBy.length > 0
+                  ? nativePinOf(connection.templateId, envOf(connection))
+                  : null;
+              for (const upstreamId of withNativePin(
+                (known?.entries ?? []).map((e) => e.upstreamId),
+                pin,
+              ))
+                models.set(upstreamId, [
+                  ...(models.get(upstreamId) ?? []),
                   ...listedBy,
                 ]);
               if (named.length === 0 && listedBy.length === 0)
@@ -269,7 +278,7 @@ export function createProviderModelCatalog(deps: {
               return {
                 ...base,
                 status:
-                  named.length > 0
+                  named.length > 0 || pin
                     ? "listed"
                     : (known?.status ?? "unavailable"),
                 listedAt: known?.listedAt ?? null,

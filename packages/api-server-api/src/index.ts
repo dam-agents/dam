@@ -76,6 +76,8 @@ export {
   layerMetadata,
   listingForTemplate,
   nativeListingForTemplate,
+  nativePinOf,
+  withNativePin,
   lookupPrice,
   MIN_CONTEXT_WINDOW,
   modelDialect,

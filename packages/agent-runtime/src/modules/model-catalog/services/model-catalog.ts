@@ -5,11 +5,13 @@ import {
   layerMetadata,
   listingForTemplate,
   nativeListingForTemplate,
+  nativePinOf,
   parseQualifiedModel,
   PROVIDER_DIALECTS,
   providerTypeForTemplateId,
   renderName,
   servesHarness,
+  withNativePin,
   type CatalogEntry,
   type CatalogProvider,
   type DiscoveredModel,
@@ -33,6 +35,7 @@ interface NativeListing {
   status: ProviderListingStatus;
   listedAt: string | null;
   ids: string[];
+  failed: boolean;
 }
 
 export interface ModelCatalog {
@@ -178,7 +181,9 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a Connection the router never fronts is listed
    * only for a harness that runs it natively on the models it lists (Pi on
-   * Bedrock); a harness that names its own models there needs no listing.
+   * Bedrock); a harness that names its own models there needs no listing. A
+   * failed listing keeps the last good one, and with a pinned model counts as
+   * listed, since the pin runs whether or not the key may list.
    */
   const nativeListingOf = (template: string) =>
     Object.values(deps.harnesses).some(
@@ -194,15 +199,17 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   ): Promise<NativeListing | null> => {
     const spec = nativeListingOf(layer.template ?? "");
     if (!spec) return null;
+    const pin = nativePinOf(layer.template ?? "", layer.env);
     const outcome = await deps.discover(spec, layer.env);
     if (outcome.status !== "observed") {
       deps.log(
         `[model-catalog] ${layer.template} (${layer.id}): native listing ${outcome.status}${previous?.ids.length ? `; keeping ${previous.ids.length} known model(s)` : ""}`,
       );
       return {
-        status: "unavailable",
+        status: pin ? "listed" : "unavailable",
         listedAt: previous?.listedAt ?? null,
-        ids: previous?.ids ?? [],
+        ids: withNativePin(previous?.ids ?? [], pin),
+        failed: outcome.status === "unavailable",
       };
     }
     const ids = (
@@ -211,7 +218,12 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     deps.log(
       `[model-catalog] ${layer.template} (${layer.id}): ${ids.length} native model(s)`,
     );
-    return { status: "listed", listedAt: now().toISOString(), ids };
+    return {
+      status: "listed",
+      listedAt: now().toISOString(),
+      ids: withNativePin(ids, pin),
+      failed: false,
+    };
   };
 
   let markListed: () => void = () => {};
@@ -231,7 +243,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
         p.connectionId,
         p.status,
         p.entries.map((e) => e.name),
-        native.get(p.connectionId)?.ids ?? null,
+        native.get(p.connectionId) ?? null,
       ]),
     );
 
@@ -265,7 +277,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   const scheduleRetry = (): void => {
     const unavailable =
       providers.some((p) => p.status === "unavailable") ||
-      [...native.values()].some((l) => l.status === "unavailable");
+      [...native.values()].some((l) => l.failed);
     if (retry) {
       clearTimeout(retry);
       retry = null;
@@ -389,26 +401,45 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
           const own = binding?.native?.templates.includes(p.template)
             ? binding.native.models
             : null;
-          const listing =
-            own === "listed" ? native.get(p.connectionId) : undefined;
-          const ids = own === "listed" ? (listing?.ids ?? []) : own;
-          return {
+          const base = {
             connectionId: p.connectionId,
             alias: p.alias,
             template: p.template,
             displayName: p.displayName,
-            status: ids
-              ? (listing?.status ??
-                (own === "listed" ? "unavailable" : "listed"))
-              : binding && !servesHarness(p, harness, binding)
-                ? "unsupported"
-                : p.status,
-            listedAt:
-              own === "listed" ? (listing?.listedAt ?? null) : p.listedAt,
-            native: ids !== null,
-            models: ids
-              ? ids.map((id) => nativeModelView(p.alias, id, binding))
-              : forHarness(p.entries, harness, binding).map(modelView),
+          };
+          if (own === null)
+            return {
+              ...base,
+              status:
+                binding && !servesHarness(p, harness, binding)
+                  ? "unsupported"
+                  : p.status,
+              listedAt: p.listedAt,
+              native: false,
+              models: forHarness(p.entries, harness, binding).map(modelView),
+            };
+          const listing: NativeListing =
+            own === "listed"
+              ? (native.get(p.connectionId) ?? {
+                  status: "unavailable",
+                  listedAt: null,
+                  ids: [],
+                  failed: false,
+                })
+              : {
+                  status: "listed",
+                  listedAt: p.listedAt,
+                  ids: own,
+                  failed: false,
+                };
+          return {
+            ...base,
+            status: listing.status,
+            listedAt: listing.listedAt,
+            native: true,
+            models: listing.ids.map((id) =>
+              nativeModelView(p.alias, id, binding),
+            ),
           };
         }),
       };

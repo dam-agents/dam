@@ -12,6 +12,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32 } from "node:zlib";
 
+// TEST_OVERVIEW: a Pi process on a Bedrock Connection alone gets the router's URL but no routed provider, so it runs Pi's own Bedrock provider with the router as its Bedrock Runtime endpoint, in a lease directory of its own beside the shared one a routed Pi left. The fake router lists the region's profiles and answers in AWS event-stream frames (prelude with both lengths and its checksum, string headers, JSON payload, frame checksum).
+
 const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
 const extension = join(root, "rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts");
 const cli = join(dirname(extension), "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
@@ -20,8 +22,6 @@ const KNOWN = "us.anthropic.claude-sonnet-4-6";
 const UNKNOWN = "us.example.chat-model-v9:0";
 const CONNECTION = "conn-bedrock";
 
-// One AWS event-stream frame: a prelude with both lengths and its checksum,
-// string headers, the JSON payload and the frame's checksum.
 function frame(eventType, payload) {
   const headers = Buffer.concat(
     Object.entries({ ":event-type": eventType, ":message-type": "event", ":content-type": "application/json" }).map(([name, value]) => {
@@ -69,15 +69,20 @@ server.listen(0, "127.0.0.1");
 await once(server, "listening");
 const base = `http://127.0.0.1:${server.address().port}`;
 
+const GONE = "us.example.retired-model-v1:0";
+const sharedSettings = JSON.stringify({ defaultProvider: "platform", defaultModel: "ibm/gpt-5.5", packages: [] });
+const sharedModels = JSON.stringify({ providers: { platform: { baseUrl: "http://127.0.0.1:1/v1", api: "openai-completions", apiKey: "platform:conn:router", models: [{ id: "ibm/gpt-5.5" }] } } });
 mkdirSync(join(home, ".pi/agent"), { recursive: true });
+writeFileSync(join(home, ".pi/agent/settings.json"), sharedSettings);
+writeFileSync(join(home, ".pi/agent/models.json"), sharedModels);
+mkdirSync(join(home, ".pi/leases/bedrock"), { recursive: true });
+writeFileSync(join(home, ".pi/leases/bedrock/models.json"), JSON.stringify({ providers: { "amazon-bedrock": { models: [{ id: GONE, name: GONE, api: "bedrock-converse-stream", baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com" }] } } }));
 mkdirSync(join(home, "bin"));
 writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
 writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
 const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("extensions=/usr/local/share/pi-platform/extensions", `extensions=${dirname(dirname(extension))}`);
 writeFileSync(join(home, "pi-platform"), wrapper);
 
-// The env of a Pi process on a Bedrock Connection alone: the router's URL is
-// there, but no routed provider serves Pi, so PLATFORM_MODEL_ROUTER_SERVES is not.
 const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates"], {
   cwd: home,
   env: {
@@ -124,7 +129,7 @@ child.once("exit", (code) => {
 });
 
 try {
-  // TEST_SCENARIO: The router's URL alone does not switch Pi to the router: with no routed provider for Pi, it starts on Pi's own Bedrock provider and the session's model, and offers every inference profile the region lists, one Pi's catalog does not know included.
+  // TEST_SCENARIO: The router's URL alone does not switch Pi to the router: with no routed provider for Pi, it starts on Pi's own Bedrock provider and the session's model, and offers every inference profile the region lists, one Pi's catalog does not know included, and no longer one an earlier start added that the region stopped listing.
   const state = await rpc({ type: "get_state" });
   assert.equal(state.success, true, JSON.stringify(state).slice(0, 500));
   assert.equal(state.data.model?.provider, "amazon-bedrock", errors.slice(-800));
@@ -133,6 +138,7 @@ try {
   const ids = models.data.models.map((m) => `${m.provider}:${m.id}`);
   for (const id of [KNOWN, UNKNOWN]) assert.ok(ids.includes(`amazon-bedrock:${id}`), ids.join(", "));
   assert.equal(ids.some((m) => m.startsWith("platform:")), false, ids.join(", "));
+  assert.equal(ids.includes(`amazon-bedrock:${GONE}`), false, ids.join(", "));
   assert.equal(errors.includes("lists no model"), false, errors);
 
   // TEST_SCENARIO: A turn goes to the router's Bedrock path for the Connection, as a Converse stream on the session's model, naming the harness and the session so the router books it.
@@ -148,7 +154,12 @@ try {
   assert.equal(set.success, true, JSON.stringify(set).slice(0, 300));
   const unknown = await turn("Say ok (2).");
   assert.equal(unknown.at(-1)?.path, `/bedrock/${CONNECTION}/model/${UNKNOWN}/converse-stream`, JSON.stringify(unknown));
-  console.log("pi runs on Bedrock through the router's Bedrock path, on every profile the region lists");
+
+  // TEST_SCENARIO: The Bedrock process keeps its files in a lease directory of its own, so the routed process's default model and provider list in the shared directory come through unchanged.
+  assert.equal(readFileSync(join(home, ".pi/agent/settings.json"), "utf8"), sharedSettings);
+  assert.equal(readFileSync(join(home, ".pi/agent/models.json"), "utf8"), sharedModels);
+  assert.match(readFileSync(join(home, ".pi/leases/bedrock/models.json"), "utf8"), new RegExp(UNKNOWN.replace(/[.:]/g, "\\$&")));
+  console.log("pi runs on Bedrock through the router's Bedrock path, on every profile the region lists, beside a routed pi");
 } finally {
   if (child.exitCode === null) { child.kill(); await once(child, "exit"); }
   server.close();
