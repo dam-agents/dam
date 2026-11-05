@@ -97,6 +97,7 @@ Experimental features carries **Reset user onboarding** under the assistant's ow
 It is the person's own reset, scoped to the caller: it forgets that their assistant was ever used and starts the [Getting Started](getting-started.md) checklist over through the checklist's own reset.
 Nothing is deleted — not the assistant, its sessions or its files — and the one-time news of a rename, if there is one, stays.
 A person with no assistant yet is answered success, so the button is never a failure.
+The checklist it starts over is a first-timer's from the first moment: the assistant's own `Create` task is recorded again the way provisioning records it — done, and seen, so nothing celebrates an Agent nobody made — which is one task of eight rather than an empty checklist.
 
 What it restores is the first open: the assistant's record says it has never been used, so the greeting returns to an empty chat and the first landing routes the person into it again.
 The UI does not build that route itself — it fetches the record, the feature flags and the checklist again, releases the one-shot landing, and goes to the app's entry route, so the same landing logic decides, on fresh answers rather than the ones the cache held before the reset.
