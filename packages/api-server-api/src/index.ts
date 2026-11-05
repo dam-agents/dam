@@ -621,7 +621,10 @@ export type {
   ProfileCreateInput,
   ProfileUpdateInput,
 } from "./modules/profiles/types.js";
-export { DEFAULT_PROFILE_UNDELETABLE } from "./modules/profiles/schemas.js";
+export {
+  DEFAULT_PROFILE_UNDELETABLE,
+  PROFILE_NAME_MAX_LENGTH,
+} from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,
