@@ -30,6 +30,7 @@ A profile in use cannot be deleted, and the refusal names what uses it.
 
 Each owner has exactly one **default for new agents**, which cannot be deleted while it is; another profile is made the default first, from its row in Settings.
 An owner with no profile is given "Default" on the deployment's shared CurveBender, with the harness and model the install sets under `apiServer.defaultProfile`.
+A new agent whose default names the shared CurveBender, for an owner who holds none of it yet, reconciles the deployment-owned Connections before it starts, so the first create on an account that never listed Connections still starts on it.
 An install without the shared CurveBender, or with either value empty, gives "Default" from the owner's first provider once it has listed its models: the install's default harness where that provider runs it, else the first harness it runs, and the model the platform prefers for work on that harness, else the first it lists.
 An owner who already has profiles gets no "Default"; their oldest becomes the default.
 A new agent on the default template takes the default's harness unless its create names one, and then, on that harness, is granted the default's provider alone in place of the harness's provider order, and its chat default is the profile.

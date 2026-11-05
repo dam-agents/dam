@@ -27,6 +27,7 @@ export function composeProfilesForOwner(deps: {
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   seed: { harness: string; model: string } | null;
   ownerCatalog: () => Promise<OwnerModelCatalogView>;
+  reconcileConnections?: () => Promise<void>;
   republish: (agentId: string) => Promise<string | null>;
 }) {
   const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
@@ -47,7 +48,10 @@ export function composeProfilesForOwner(deps: {
     }),
     resolveProfile,
     defaultProfile: async () => {
-      const chosen = await newAgentDefault(owner);
+      const chosen = await newAgentDefault({
+        ...owner,
+        reconcileConnections: deps.reconcileConnections,
+      });
       return (
         chosen && {
           name: chosen.profile.name,

@@ -217,6 +217,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         catalog: harnesses,
         seed: config.curveBenderDeployment && config.defaultProfileSeed,
         ownerCatalog: () => connections.modelCatalog(),
+        // UNIT_BOUNDARY_DESCRIPTION: the deployment owns that Connection only while its key is set, so only then does a create reconcile it.
+        ...(config.curveBenderDeployment && {
+          reconcileConnections: () => connections.reconcileManagedConnections(),
+        }),
         republish: (agentId) => harnessConfig.republishDefaults(agentId),
       });
     const { agents, isOwnedAgent } = composeAgentsModule({
