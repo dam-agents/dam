@@ -1,3 +1,4 @@
+import { useAttention } from "../../home/api/queries.js";
 import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
 import { useOutageAlerts } from "../../home/hooks/use-outage-alerts.js";
 import { useWaitingApprovals } from "../../home/hooks/use-waiting-approvals.js";
@@ -7,7 +8,8 @@ export function useAppSidePanelTabs(): Pick<SidePanelTabProps, "badges"> {
   const waiting =
     useWaitingApprovals().length +
     useDefaultModelNotices().waiting.length +
-    useOutageAlerts().waiting.length;
+    useOutageAlerts().waiting.length +
+    ((useAttention().data?.costReviews.length ?? 0) > 0 ? 1 : 0);
   return {
     badges: {
       approvals: {

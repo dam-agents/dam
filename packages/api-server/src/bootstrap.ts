@@ -331,6 +331,7 @@ import {
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
+import { createCostReviewsCleanup } from "./modules/cost-reviews/index.js";
 import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
@@ -2232,6 +2233,10 @@ export async function bootstrap() {
       ...createChatFormPreferencesCleanup(db),
     },
     {
+      name: "cost-reviews",
+      ...createCostReviewsCleanup(db),
+    },
+    {
       name: "sidebar-order",
       listAgentIds: () => sidebarOrder.listAgentIds(),
       cleanup: (agentId: string) => sidebarOrder.deleteForAgent(agentId),
@@ -2574,6 +2579,7 @@ export async function bootstrap() {
     redisBus,
     spendForOwner: spend.forOwner,
     spendCeilingsForOperator: spend.ceilingsForOperator,
+    spendHold,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
       agentStore: { authority: config.agentStore, db },

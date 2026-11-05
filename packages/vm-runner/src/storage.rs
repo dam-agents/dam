@@ -64,11 +64,11 @@ impl StorageUse {
             < u128::from(self.usable) * u128::from(CRITICAL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `up` machines may still add to the claim before it reaches FULL_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. `up` counts the machines that are neither stopped nor absent, since a group woken together writes as soon as it boots, and no machine at all reads as one.
-    pub fn guest_room(&self, up: usize) -> u64 {
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes every machine that is up may still add to the claim: all that is left before it reaches FULL_PERCENT, not a part of it, so the one agent that needs the room gets it whatever number of idle siblings run beside it. The claim is overcommitted on purpose: guests that write at once can together pass FULL_PERCENT before the next look, and the last 100 - FULL_PERCENT of the claim is the reserve that absorbs them. A single guest reaches into the reserve by at most its floor and the writes it had not flushed when the runner looked, since its guard holds it to this grant.
+    pub fn guest_room(&self) -> u64 {
         let limit = u64::try_from(u128::from(self.usable) * u128::from(FULL_PERCENT) / 100)
             .unwrap_or(u64::MAX);
-        limit.saturating_sub(self.used) / u64::try_from(up.max(1)).unwrap_or(1)
+        limit.saturating_sub(self.used)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below FULL_PERCENT, that running ones may be failing to write from it, and the ways to free space.
@@ -219,12 +219,19 @@ mod tests {
         assert!(refusal.contains("50.0 of 100.0 GiB free"), "{refusal}");
     }
 
-    // TEST_SCENARIO: each guest of a machine that is up may add its even part of what is left below 95%, and nothing once the claim is full.
+    // TEST_SCENARIO: every guest that is up may add all that is left below 95%, however many run, so the reserve is the last 5% of the claim and its edge is exact: one byte short of it grants one byte, and at or past it nothing. The figures are a 100 GiB claim, so the reserve is 5 GiB whatever the claim's use.
     #[test]
-    fn each_guest_up_may_add_its_part_of_the_room() {
-        assert_eq!(at(55).guest_room(2), 20);
-        assert_eq!(at(55).guest_room(0), 40);
-        assert_eq!(at(95).guest_room(1), 0);
+    fn every_guest_up_may_add_all_the_room_above_the_reserve() {
+        const GIB: u64 = 1 << 30;
+        let claim = |used| StorageUse {
+            used,
+            usable: 100 * GIB,
+        };
+        assert_eq!(claim(55 * GIB).guest_room(), 40 * GIB);
+        assert_eq!(claim(95 * GIB - 1).guest_room(), 1);
+        assert_eq!(claim(95 * GIB).guest_room(), 0);
+        assert_eq!(claim(99 * GIB).guest_room(), 0);
+        assert_eq!(StorageUse { used: 0, usable: 0 }.guest_room(), 0);
     }
 
     // TEST_SCENARIO: what the runner asks each guest to give back is its even part of what brings the claim back under 70%, and nothing once it is there; no machine at all reads as one.

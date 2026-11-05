@@ -1,4 +1,5 @@
 import type { Sender } from "agent-runtime-api";
+import type { CostReviewOffer } from "../cost-reviews/types.js";
 import type { DefaultKind } from "../harness-config/types.js";
 import type { SessionMode, SessionType } from "../sessions/types.js";
 
@@ -79,6 +80,7 @@ export interface AttentionList {
   dismissed: DismissedEntry[];
   defaultModels: DefaultModelNotice[];
   outageAlerts: OutageAlertNotice[];
+  costReviews: CostReviewOffer[];
 }
 
 export interface AttentionListCursor {

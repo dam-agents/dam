@@ -1,5 +1,6 @@
 import type {
   AttentionService,
+  CostReviewOffer,
   DefaultModelNotice,
   OutageAlertNotice,
 } from "api-server-api";
@@ -24,6 +25,7 @@ export function composeAttentionService(deps: {
   ownsAgent: (agentId: string) => Promise<boolean>;
   defaultModelNotices: () => Promise<DefaultModelNotice[]>;
   outageAlerts: () => Promise<OutageAlertNotice[]>;
+  costReviews: () => Promise<CostReviewOffer[]>;
 }): AttentionService {
   return createAttentionService({
     repo: createAttentionRepository(deps.db),
@@ -32,6 +34,7 @@ export function composeAttentionService(deps: {
     ownsAgent: deps.ownsAgent,
     defaultModelNotices: deps.defaultModelNotices,
     outageAlerts: deps.outageAlerts,
+    costReviews: deps.costReviews,
     log: (message) => process.stderr.write(`${message}\n`),
   });
 }
