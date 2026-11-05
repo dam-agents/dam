@@ -537,21 +537,24 @@ describe("assistant provisioning", () => {
     await w.provisioner.ensure();
     expect(w.state.created.map((c) => c.id)).toEqual([FIRST, SECOND]);
     expect(w.state.created[1]).toMatchObject({ id: SECOND, initDone: [] });
+    // UNIT_BOUNDARY_DESCRIPTION: a new incarnation initializes from nothing — every step, the CLI included.
     expect(w.state.ran).toEqual([
       "env",
       "egress",
       "instructions",
       "grants",
+      "cli",
       "env",
       "egress",
       "instructions",
       "grants",
+      "cli",
     ]);
     expect(w.store.rows.get(ALICE)).toMatchObject({
       agentId: SECOND,
       incarnation: 2,
       state: "ready",
-      steps: ["env", "egress", "instructions", "grants"],
+      steps: ["env", "egress", "instructions", "grants", "cli"],
     });
   });
 
