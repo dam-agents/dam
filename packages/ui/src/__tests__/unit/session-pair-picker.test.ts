@@ -6,9 +6,13 @@ import { lentSubagentOfProfile, modelConstraintsFor } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import {
   act,
+  cloneElement,
   createElement,
   Fragment,
+  isValidElement,
   type PropsWithChildren,
+  type ReactElement,
+  type ReactNode,
   useState,
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -253,8 +257,15 @@ vi.mock("@/components/ui/popover", () => {
 });
 
 vi.mock("@/components/ui/tooltip", () => ({
-  Tooltip: ({ children }: PropsWithChildren) =>
-    createElement(Fragment, null, children),
+  Tooltip: ({
+    children,
+    content,
+  }: PropsWithChildren<{ content: ReactNode }>) =>
+    isValidElement(children) && typeof content === "string"
+      ? cloneElement(children as ReactElement<{ "data-tooltip": string }>, {
+          "data-tooltip": content,
+        })
+      : createElement(Fragment, null, children),
 }));
 
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
@@ -587,10 +598,9 @@ describe("the new session panel", () => {
     expect(menuItem(node, "IBM").getAttribute("aria-disabled")).toBeNull();
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
-    expect(
-      node.querySelector(`#${curve.getAttribute("aria-describedby")}`)
-        ?.textContent,
-    ).toContain("Doesn't offer Claude Opus 5.5 for Pi");
+    expect(curve.getAttribute("data-tooltip")).toContain(
+      "Doesn't offer Claude Opus 5.5 for Pi",
+    );
     expect(curve.textContent).not.toMatch(/\d+ models?/);
     expect(menuItem(node, "Manage providers")).toBeDefined();
   });
@@ -614,7 +624,7 @@ describe("the new session panel", () => {
     expect(state.remember).toHaveBeenCalledTimes(1);
   });
 
-  /** TEST_SCENARIO: each field's trigger announces its label and its value; a disabled provider announces the reason when focused, and no enabled provider carries an empty tooltip or reason. */
+  /** TEST_SCENARIO: each field's trigger announces its label and its value; a disabled provider is greyed and carries its reason only as the row's tooltip, never as text in the row, and no enabled provider carries an empty tooltip or reason. */
   it("announces the value and the disabled reason", () => {
     state.chosen = {
       harness: "pi",
@@ -638,19 +648,12 @@ describe("the new session panel", () => {
 
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
-    const described = node.querySelector(
-      `#${curve.getAttribute("aria-describedby")}`,
-    );
-    expect(described?.textContent).toContain("Doesn't offer");
-    expect(
-      curve.querySelector(".group-focus\\:block")?.textContent ??
-        curve.textContent,
-    ).toContain("Doesn't offer");
-    expect(
-      menuItem(node, "IBM").querySelector(
-        ":scope > span [aria-describedby], .group-focus\\:block",
-      ),
-    ).toBeNull();
+    expect(curve.getAttribute("data-tooltip")).toContain("Doesn't offer");
+    expect(curve.classList).toContain("opacity-50");
+    expect(curve.textContent).not.toContain("Doesn't offer");
+    const ibm = menuItem(node, "IBM");
+    expect(ibm.getAttribute("data-tooltip")).toBeNull();
+    expect(ibm.classList).not.toContain("opacity-50");
   });
 
   /** TEST_SCENARIO: picking a model from another provider takes that provider too, and a model every provider offers stays on the one already picked. */
@@ -1937,16 +1940,14 @@ describe("a model listing's own states", () => {
     );
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
-    expect(
-      node.querySelector(`#${curve.getAttribute("aria-describedby")}`)
-        ?.textContent,
-    ).toContain("Couldn't list this provider's models.");
+    expect(curve.getAttribute("data-tooltip")).toContain(
+      "Couldn't list this provider's models.",
+    );
     const anthropic = menuItem(node, "Anthropic");
     expect(anthropic.getAttribute("aria-disabled")).toBe("true");
-    expect(
-      node.querySelector(`#${anthropic.getAttribute("aria-describedby")}`)
-        ?.textContent,
-    ).toContain("Doesn't offer Claude Opus 5.5 for Pi");
+    expect(anthropic.getAttribute("data-tooltip")).toContain(
+      "Doesn't offer Claude Opus 5.5 for Pi",
+    );
     expect(anthropic.textContent).not.toMatch(/\d+ models?/);
   });
 });
@@ -2178,7 +2179,7 @@ describe("references kept apart from effective values", () => {
     const node = mount(picker());
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBeNull();
-    expect(curve.textContent).toContain(
+    expect(curve.getAttribute("data-tooltip")).toContain(
       "Couldn't refresh this provider's models; showing its last listing.",
     );
     expect(node.textContent).toContain(

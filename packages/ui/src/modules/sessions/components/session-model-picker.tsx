@@ -1164,7 +1164,6 @@ function ProviderMenu({
   /** UNIT_BOUNDARY_DESCRIPTION: the empty choice a subagent slot has, "Same as agent", which no provider id stands for. */
   none?: { label: string; onPick: () => void };
 }) {
-  const menuId = useId();
   const current = providers.find((p) => p.id === currentId)?.name;
   const shown =
     current ??
@@ -1209,45 +1208,26 @@ function ProviderMenu({
           {providers.map((p) => {
             const usable = enabled(p.id);
             const why = reason(p.id);
-            const reasonId = `${menuId}-${p.id}-reason`;
-            return (
+            const item = (
               <DropdownMenuRadioItem
                 key={p.id}
                 value={p.id}
                 indicator="check"
                 aria-disabled={!usable || undefined}
-                aria-describedby={why === null ? undefined : reasonId}
                 onSelect={(event) => {
                   if (!usable) event.preventDefault();
                 }}
-                className={cn(
-                  "group",
-                  usable ? undefined : "cursor-default text-muted-foreground",
-                )}
+                className={usable ? undefined : "cursor-default opacity-50"}
               >
-                <span className="flex min-w-0 flex-col">
-                  {why === null ? (
-                    <span className="truncate">{p.name}</span>
-                  ) : (
-                    <Tooltip content={why}>
-                      <span className="truncate">{p.name}</span>
-                    </Tooltip>
-                  )}
-                  {why !== null && (
-                    <span id={reasonId} className="sr-only">
-                      {why}
-                    </span>
-                  )}
-                  {why !== null && (
-                    <span
-                      aria-hidden
-                      className="hidden whitespace-normal text-xs text-muted-foreground group-focus:block"
-                    >
-                      {why}
-                    </span>
-                  )}
-                </span>
+                <span className="truncate">{p.name}</span>
               </DropdownMenuRadioItem>
+            );
+            return why === null ? (
+              item
+            ) : (
+              <Tooltip key={p.id} content={why} side="right">
+                {item}
+              </Tooltip>
             );
           })}
         </DropdownMenuRadioGroup>
