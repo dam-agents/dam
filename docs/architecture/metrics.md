@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-10-27
+Last verified: 2026-11-05
 
 ## Overview
 
@@ -182,7 +182,8 @@ On a runtime with the Model Router ([harness configuration](harness-config.md#th
 Router records from before the measuring start carried a cost, so the earlier estimates cover those days and show little after them.
 The reader sums an agent from the router's records when it has any in the window, else from the harness's own (Claude Code's, Pi's of the same shape, and Codex's, which the collector reshapes to it ([observability](observability.md#agent-export))), so a router export that never reached the store leaves the harness's count and no call is summed twice.
 The switch is per agent and invocation, at its own first router record, so an agent moved to a router image mid-window keeps the harness records from before, whenever the owner's other agents moved.
-A Claude Code call on a native Connection (Bedrock) has no router record; Claude Code's own record names the model without the `claude/` prefix and is always counted, with no provider.
+A call on a native Connection (Bedrock) reaches the router like any other call, so the router records it under the `bedrock` alias and the Connection behind it, its usage read from an invoke call's Messages events (Claude Code) or a Converse call's metadata event (Pi).
+Claude Code's own record of such a call names the model without the `claude/` prefix and is always counted beside the router's, with no provider.
 A call the router could not count is still a record: cut before its usage arrived, or answered without usage.
 Each per-model and per-provider row carries its **uncounted** count beside its total, and the earlier-estimates view says so, so a total reads as a floor.
 The **per-provider** rollup groups rows by the alias and Connection the router recorded, labelled with the Connection's live display name (a deleted Connection keeps its alias), with the harness's own records, which name no provider, in a row of their own.

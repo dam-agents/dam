@@ -2,7 +2,8 @@
  * TEST_OVERVIEW: The Model Router passes a Bedrock Connection's calls on
  * unchanged. It knows the Connection from its `/bedrock/<id>` path, bills
  * only the model paths, and reads a streamed call's usage from the AWS
- * event-stream frames as they pass, leaving every byte as it was.
+ * event-stream frames as they pass, an invoke call's (Claude Code) and a
+ * Converse call's (Pi), leaving every byte as it was.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -10,12 +11,14 @@ import {
   type BedrockUsageScanner,
 } from "../../modules/model-router/index.js";
 
-function frame(event: unknown): Buffer {
+function frame(event: unknown, invoke = true): Buffer {
   const headers = Buffer.from([0, 0, 0, 0, 0, 0, 0, 0]);
   const payload = Buffer.from(
-    JSON.stringify({
-      bytes: Buffer.from(JSON.stringify(event)).toString("base64"),
-    }),
+    JSON.stringify(
+      invoke
+        ? { bytes: Buffer.from(JSON.stringify(event)).toString("base64") }
+        : event,
+    ),
   );
   const total = 12 + headers.length + payload.length + 4;
   const prelude = Buffer.alloc(12);
@@ -63,6 +66,41 @@ describe("Bedrock event stream", () => {
       inputTokens: 11,
       outputTokens: 5,
       cacheReadTokens: 3,
+    });
+  });
+
+  /** TEST_SCENARIO: Pi streams a Converse call on Bedrock, whose frames carry
+   * the events themselves; the call's usage, cache reads and writes included,
+   * comes in the closing metadata event. */
+  it("reads a Converse stream's usage from its metadata event", async () => {
+    const stream = Buffer.concat([
+      frame({ contentBlockIndex: 0, delta: { text: "hi" } }, false),
+      frame({ stopReason: "end_turn" }, false),
+      frame(
+        {
+          usage: {
+            inputTokens: 9,
+            outputTokens: 4,
+            cacheReadInputTokens: 2,
+            cacheWriteInputTokens: 1,
+          },
+          metrics: { latencyMs: 10 },
+        },
+        false,
+      ),
+    ]);
+    const scanner = createBedrockUsageScanner(false);
+    const out = await pass(scanner, [
+      stream.subarray(0, 30),
+      stream.subarray(30),
+    ]);
+    expect(out.equals(stream)).toBe(true);
+    expect(scanner.completed()).toBe(true);
+    expect(scanner.usage()).toEqual({
+      inputTokens: 9,
+      outputTokens: 4,
+      cacheReadTokens: 2,
+      cacheCreationTokens: 1,
     });
   });
 });

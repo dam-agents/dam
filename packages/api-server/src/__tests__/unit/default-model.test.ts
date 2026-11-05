@@ -23,6 +23,13 @@ const CATALOG: HarnessCatalog = {
       tags: [],
       experimental: false,
     },
+    {
+      name: "pi",
+      displayName: "Pi",
+      providers: ["ibm-litellm", "anthropic", "bedrock"],
+      tags: [],
+      experimental: false,
+    },
   ],
   telemetryEnv: () => [],
 };
@@ -49,6 +56,12 @@ const IBM = {
   id: "lite",
   type: "ibm-litellm" as const,
   templateId: "ibm-litellm",
+};
+
+const BEDROCK = {
+  id: "bed",
+  type: "bedrock" as const,
+  templateId: "bedrock",
 };
 
 describe("a fire on an Agent with no default model", () => {
@@ -363,7 +376,7 @@ describe("the one-time default conversion", () => {
 
   const converter = (opts: {
     saved?: SessionPair | null;
-    granted?: (typeof ANTHROPIC | typeof IBM)[];
+    granted?: (typeof ANTHROPIC | typeof IBM | typeof BEDROCK)[];
     capabilities?: unknown;
     catalog?: HarnessCatalogView | null;
     setting?: string | null;
@@ -672,6 +685,60 @@ describe("the one-time default conversion", () => {
     });
     expect(await still.c.convert("a")).toBe("not-set");
     expect(still.writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a Pi agent on a Bedrock Connection alone was saved "not set" while Pi could not list Bedrock; once its runtime lists the region's inference profiles for Pi, the next conversion keeps the profile its Pi setting names, or else takes the preferred model among the profiles.
+  it("converts a not-set Pi agent on Bedrock to a listed profile", async () => {
+    const notSet = { harness: "pi", provider: "bed", model: null };
+    const pi = (setting: string | null) =>
+      converter({
+        saved: notSet,
+        granted: [BEDROCK],
+        setting,
+        catalog: {
+          harness: "pi",
+          routed: true,
+          providers: [
+            {
+              connectionId: "bed",
+              alias: "bedrock",
+              template: "bedrock",
+              displayName: "AWS Bedrock",
+              status: "listed",
+              listedAt: null,
+              native: true,
+              models: [
+                "us.amazon.nova-pro-v1:0",
+                "us.anthropic.claude-opus-4-8",
+                "us.anthropic.claude-opus-5-5",
+              ].map((upstreamId) => ({
+                name: `bedrock/${upstreamId}`,
+                upstreamId,
+              })) as never,
+            },
+          ],
+        },
+      });
+
+    const named = pi("us.anthropic.claude-opus-4-8");
+    expect(await named.c.convert("a")).toBe("converted");
+    expect(named.writes).toEqual([
+      {
+        harness: "pi",
+        provider: "bed",
+        model: "bedrock/us.anthropic.claude-opus-4-8",
+      },
+    ]);
+
+    const unnamed = pi(null);
+    expect(await unnamed.c.convert("a")).toBe("converted");
+    expect(unnamed.writes).toEqual([
+      {
+        harness: "pi",
+        provider: "bed",
+        model: "bedrock/us.anthropic.claude-opus-5-5",
+      },
+    ]);
   });
 
   // TEST_SCENARIO: a schedule of an asleep Agent whose default is "not set" wakes it and converts before the fire is checked, since nothing else would ever wake it to try again; an Agent nothing can convert fails its fire without being woken each time.
