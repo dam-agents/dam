@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
 import { convertedDefault } from "../../modules/harness-config/domain/converted-default.js";
-import { convertedDefaultModel } from "../../modules/harness-config/domain/default-conversion.js";
+import {
+  automaticModel,
+  convertedDefaultModel,
+} from "../../modules/harness-config/domain/default-conversion.js";
 import { defaultModelNoticesOf } from "../../modules/harness-config/domain/default-model-notice.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
@@ -209,6 +212,20 @@ describe("convertedDefaultModel", () => {
       "anthropic/claude-sonnet-5-5",
     );
     expect(convert("default", [])).toBe("anthropic/claude-opus-5-5");
+  });
+});
+
+describe("automaticModel", () => {
+  // TEST_SCENARIO: the platform's preferred model wins across providers, else the first model the first listing provider lists; providers that list nothing pick nothing.
+  it("takes the preferred model, else the first one listed", () => {
+    const empty = { alias: "ibm", listed: [] };
+    const other = { alias: "other", listed: ["foo-2", "foo-1"] };
+    const anthropic = { alias: "anthropic", listed: ["claude-opus-5-5"] };
+    expect(automaticModel([empty, other, anthropic])).toBe(
+      "anthropic/claude-opus-5-5",
+    );
+    expect(automaticModel([empty, other])).toBe("other/foo-2");
+    expect(automaticModel([empty])).toBeNull();
   });
 });
 
@@ -539,13 +556,26 @@ describe("the one-time default conversion", () => {
     ]);
   });
 
-  // TEST_SCENARIO: with one provider and nothing that resolves, the save keeps that provider so the picker remembers which one the agent holds, and only the model is left for the owner.
-  it("keeps the one provider when no model resolves", async () => {
-    const options = {
+  // TEST_SCENARIO: the setting names a model the provider does not list and the preference list names none it lists, so the default takes the automatic model, the first one listed, noted so the owner is told it runs another model than the setting named.
+  it("takes the first listed model when nothing else resolves", async () => {
+    const { c, writes, notes } = converter({
       setting: "claude-opus-3",
-      catalog: view("listed", ["claude-opus-4-8"]),
-    };
-    const { c, writes } = converter(options);
+      catalog: view("listed", ["claude-opus-4-8", "claude-opus-4-6"]),
+    });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes).toEqual([
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-4-8",
+      },
+    ]);
+    expect(notes).toEqual([{ changedFrom: "claude-opus-3" }]);
+  });
+
+  // TEST_SCENARIO: with one provider that lists no model for the harness, the save keeps that provider so the picker remembers which one the agent holds, and only the model is left for the owner.
+  it("keeps the one provider when it lists no model", async () => {
+    const { c, writes } = converter({ catalog: view("listed", []) });
     expect(await c.convert("a")).toBe("not-set");
     expect(writes).toEqual([
       { harness: "claude-code", provider: "anth", model: null },
@@ -680,8 +710,7 @@ describe("the one-time default conversion", () => {
 
     const still = converter({
       saved: notSet,
-      setting: "claude-opus-3",
-      catalog: view("listed", ["claude-opus-4-8"]),
+      catalog: view("listed", []),
     });
     expect(await still.c.convert("a")).toBe("not-set");
     expect(still.writes).toEqual([]);

@@ -6,6 +6,7 @@ import {
 } from "api-server-api";
 import { harnessFits } from "../../templates/index.js";
 import { convertedDefault } from "../domain/converted-default.js";
+import { automaticModel } from "../domain/default-conversion.js";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import type { FillableSessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
@@ -150,12 +151,23 @@ export function createDefaultConverter(deps: {
       null;
     const needsRan =
       !setting?.trim() || setting.trim().toLowerCase() === "default";
-    const converted = convertedDefault({
-      setting,
-      providers,
-      ran: needsRan ? await modelsRan(agentId) : [],
-      declared: await deps.kitDefaultModel(agentId),
-    });
+    /** UNIT_BOUNDARY_DESCRIPTION: what nothing certain converts takes the
+     * automatic model rather than stay "not set", noted when a setting named
+     * another model, so the owner is told. */
+    const automatic = automaticModel(providers);
+    const converted =
+      convertedDefault({
+        setting,
+        providers,
+        ran: needsRan ? await modelsRan(agentId) : [],
+        declared: await deps.kitDefaultModel(agentId),
+      }) ??
+      (automatic
+        ? {
+            model: automatic,
+            ...(!needsRan && { changedFrom: setting!.trim() }),
+          }
+        : null);
     const model = converted?.model ?? null;
     const alias = model ? parseQualifiedModel(model)?.alias : null;
     return save(

@@ -480,15 +480,17 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a turn on a harness that reaches its models
-   * through the Model Router runs on the session's model; with none, the
-   * router or the harness would pick one the user never chose, so the turn
-   * is refused and the user picks.
+   * through the Model Router runs on the session's model. The api-server
+   * fills a session with no model from the agent's providers, so a session
+   * still without one belongs to an agent that has no model provider to run
+   * on; the router or the harness would pick a model nobody set up, so the
+   * turn is refused and says to connect a provider.
    */
   function noModel(): object {
     return {
       code: -32001,
       message:
-        "This session has no model. Pick one for it, or set the agent's default model on its Providers page.",
+        "This agent has no model provider to run this session on. Connect a model provider on its Providers page, then pick a model for this session.",
       data: { platform: { reason: NO_MODEL_REASON } },
     };
   }
@@ -685,12 +687,19 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
    * A change that moves the session to another process waits while its turn
    * runs. Only the metadata changes here: the prompt that follows sends the
    * session's settings to the harness, after loading the session again when
-   * the harness closed it.
+   * the harness closed it. A session with no model on a harness that needs
+   * one has no pick to keep, so it takes its kind's default once, following
+   * or not, rather than be refused while the agent has a model to run on.
    */
   function followDefault(sessionId: string): void {
     const entry = deps.sessionMetadata.get(sessionId);
-    const kind = entry?.meta.follows;
-    if (!entry || !kind) return;
+    if (!entry) return;
+    const kind =
+      entry.meta.follows ??
+      (missesModel(sessionChoice(sessionId, false))
+        ? defaultKindOfType(entry.meta.type)
+        : null);
+    if (!kind) return;
     const after = entry.meta.followsAfter;
     if (after !== undefined && (deps.sessionDefaults?.revision() ?? 0) <= after)
       return;

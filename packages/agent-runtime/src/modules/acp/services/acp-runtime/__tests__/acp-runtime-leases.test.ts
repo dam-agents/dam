@@ -24,6 +24,7 @@ import {
 } from "../pending-agent-requests.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import { createContinuedFromStore } from "../../../infrastructure/continued-from-store.js";
+import type { SessionDefaultsStore } from "../../../infrastructure/session-defaults-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import {
   createLeaseRouter,
@@ -68,6 +69,7 @@ function createLeaseWorld(opts: {
   providers: string[];
   agentRequests?: AgentRequestObserver;
   modelRequired?: boolean;
+  sessionDefaults?: SessionDefaultsStore;
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
@@ -96,6 +98,7 @@ function createLeaseWorld(opts: {
         ? { CLAUDE_CODE_AUTO_MODE_SERVER: "0" }
         : undefined,
     modelRequired: () => opts.modelRequired === true,
+    ...(opts.sessionDefaults && { sessionDefaults: opts.sessionDefaults }),
     settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
     settingsError: (_harness, settings) =>
       Object.keys(settings).some((id) => !SESSION_SETTINGS[id])
@@ -667,6 +670,33 @@ describe("acp-runtime: one harness process per harness", () => {
     const harness = world.harness("claude-code");
     harness.replyToSession("session/set_config_option", "old", {});
     expect(promptTextsOf(harness)).toEqual(["now"]);
+  });
+
+  /** TEST_SCENARIO: An old session with no model and no follow marker has no
+   * pick of its own to keep, so while the agent holds a chat default with a
+   * model, its next prompt takes that model instead of being refused. */
+  it("runs an old session with no model on its kind's default", () => {
+    const chat = {
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "ibm/aws/claude-sonnet-4-6",
+    };
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      sessionDefaults: {
+        get: () => ({ chat, channel: null, scheduled: null }),
+        revision: () => 1,
+        set: () => {},
+      },
+    });
+    world.metadata.store.set("old", { mode: "chat" });
+    const client = world.connect();
+    client.send(frames.prompt(1, "old", "hi"));
+    const harness = world.harness("claude-code");
+    harness.replyToSession("session/set_config_option", "old", {});
+    expect(promptTextsOf(harness)).toEqual(["hi"]);
+    expect(world.metadata.store.get("old")?.meta.model).toBe(chat.model);
   });
 
   /** TEST_SCENARIO: A session whose harness this agent no longer carries is
