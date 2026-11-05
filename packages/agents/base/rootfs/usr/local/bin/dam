@@ -1,0 +1,13 @@
+#!/bin/sh
+# The dam CLI of this image, at the path every agent's shell reaches it on.
+# Which install and which Agent it drives is the machine's own business: the
+# assistant's Install Command writes the two values for the agent it set up, and
+# an agent that has none is telling the truth when it says the CLI is not for it.
+set -eu
+if [ ! -r "$HOME/.dam/harness.env" ]; then
+  echo "error: dam is not available to this Agent: only an assistant drives the install for its owner" >&2
+  exit 1
+fi
+. "$HOME/.dam/harness.env"
+export DAM_HARNESS_URL DAM_AGENT_ID
+exec node /usr/local/lib/dam/dam.mjs "$@"

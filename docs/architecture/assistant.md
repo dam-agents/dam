@@ -106,7 +106,7 @@ The greeting rests on that mark alone, not on how many sessions the assistant ho
 ## What it changes
 
 The assistant is the one Agent that may drive its owner's install, and it does so through the `dam` CLI every agent image carries for it ([cli](cli.md#harness-mode)).
-The image ships the CLI and a `dam` skill in its [staged-skills dir](agent-skills.md#skill-origin), and only an assistant gets them: provisioning's Install Command copies the skill onto its disk and puts `dam` on its PATH, pointed at this install's harness base and at its own Agent id — so it is a [platform skill](skills.md#platform-skill) of this feature, visible in the assistant's Skills list, and no other Agent's image change reaches it.
+The image ships the CLI and a `dam` skill in its [staged-skills dir](agent-skills.md#skill-origin), and only an assistant is pointed at the install: provisioning's Install Command copies the skill onto its disk and writes the harness base and its own Agent id that the image's `dam` reads, so the skill is a [platform skill](skills.md#platform-skill) of this feature, visible in the assistant's Skills list, and every other Agent keeps a `dam` that refuses.
 Nothing secret exists there: the CLI calls the platform API on the Agent's own harness path, which only that machine reaches, so the path itself is the proof of which Agent is asking, and the server derives the rest — the owner, their scopes, and whether any of it still holds ([cli](cli.md#harness-mode)).
 It reaches the platform API and nothing else: an agent's runtime, its files and every chat, terminal and shell socket are out of its reach, and its own verbs for those say so.
 Every use re-reads the Agent's kind, its owner, the owner's account and this install's feature flag for them.
