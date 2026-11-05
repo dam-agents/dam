@@ -25,6 +25,7 @@ import type { BlobHandoff } from "../../../core/blob-handoff.js";
 import {
   attachmentResultSchema,
   channelUserSchema,
+  messageLinkResultSchema,
   messageReactionsResultSchema,
   ownedThreadsResultSchema,
   sendResultSchema,
@@ -39,6 +40,8 @@ import {
   type ChannelSendResult,
   type ChannelUser,
   type ChannelWorker,
+  type MessageLinkQuery,
+  type MessageLinkResult,
   type MessageReactionsResult,
   type OwnedThreadsResult,
   type PersonNotice,
@@ -61,6 +64,8 @@ export type {
   ChannelReply,
   ChannelSendResult,
   ChannelUser,
+  MessageLinkQuery,
+  MessageLinkResult,
   MessageReactionsResult,
   OwnedThreadSummary,
   OwnedThreadsResult,
@@ -122,6 +127,11 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
+  getMessageLink(
+    instanceName: string,
+    channelType: ChannelType,
+    query: MessageLinkQuery,
+  ): Promise<MessageLinkResult | { error: string }>;
   resolveSlackConversationLabels(
     refs: SlackConversationRef[],
   ): Promise<SlackLabelledConversation[]>;
@@ -172,6 +182,7 @@ const ADDRESSED_METHODS = [
   "handOffTurn",
   "describeUsers",
   "describeMessageReactions",
+  "getMessageLink",
   "readThread",
   "fetchAttachment",
   "startThread",
@@ -222,6 +233,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   handOffTurn: forInstance.rest(z.unknown()),
   describeUsers: forInstance.rest(z.unknown()),
   describeMessageReactions: forInstance.rest(z.unknown()),
+  getMessageLink: forInstance.rest(z.unknown()),
   resolveConversationLabels: z.tuple([z.array(slackConversationRefSchema)]),
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   slackChannelChoices: z.tuple([z.string()]),
@@ -265,6 +277,10 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   ]),
   describeMessageReactions: z.union([
     messageReactionsResultSchema,
+    z.object({ error: z.string() }),
+  ]),
+  getMessageLink: z.union([
+    messageLinkResultSchema,
     z.object({ error: z.string() }),
   ]),
   resolveConversationLabels: z.array(
@@ -318,6 +334,9 @@ const unsupported: Record<
   }),
   describeMessageReactions: (channelType) => ({
     error: `message reactions not supported on ${channelType}`,
+  }),
+  getMessageLink: (channelType) => ({
+    error: `message links are not supported on ${channelType}`,
   }),
   readThread: (channelType) => ({
     error: `thread reads are not supported on ${channelType}`,

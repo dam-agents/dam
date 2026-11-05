@@ -65,6 +65,7 @@ import type {
   ChannelSendResult,
   ChannelUser,
   ChannelWorker,
+  MessageLinkQuery,
   PostMessageOptions,
   ReactionsQuery,
   ThreadLeave,
@@ -879,7 +880,7 @@ function labelMessages(
   names: Map<string, string>,
   readingAgentId: string,
   bot: { userId: string | null; label: string },
-  opts: { showThreadMarkers: boolean },
+  opts: { showThreadMarkers: boolean; showTs?: boolean },
 ): string[] {
   return entries.map((e) =>
     labelHistoryMessage(
@@ -2262,6 +2263,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       offeredThreads.set(`${instanceName} ${ts}`, channel);
   }
 
+  function noteTurnThread(ctx: {
+    instanceName: string;
+    channel: string;
+    threadTs: string;
+    hasThread: boolean;
+  }): void {
+    if (ctx.hasThread)
+      noteOfferedThreads(ctx.instanceName, ctx.channel, [ctx.threadTs]);
+  }
+
   function readOfferedThread(
     instanceName: string,
     ts: string,
@@ -3614,13 +3625,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       readHasMore,
       threadWindow,
     } = await readSlackContext(gw, ctx, null);
-    noteOfferedThreads(
-      ctx.instanceName,
-      ctx.channel,
-      threadWindow.cursor !== null
-        ? [...offeredHere, ctx.threadTs]
-        : offeredHere,
-    );
+    noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
+    noteTurnThread(ctx);
     const preamble = historyPreamble(
       ctx.hasThread
         ? "thread"
@@ -3727,6 +3733,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): Promise<CatchUpFrame> {
     const { threadKey } = ctx;
     const conversationTs = ctx.hasThread ? ctx.threadTs : undefined;
+    noteTurnThread(ctx);
     try {
       const since = await catchUpSince(gw, {
         instanceName: ctx.instanceName,
@@ -3771,6 +3778,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             {
               botLabel: hasUnattributedBot ? bot.label : null,
               someOmitted: readHasMore,
+              ...(conversationTs !== undefined
+                ? { threadTs: conversationTs }
+                : {}),
               hasThreadMarker,
               hasAttachmentMarker,
             },
@@ -7541,6 +7551,50 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     },
 
+    async getMessageLink(instanceName: string, query: MessageLinkQuery) {
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      const { messageTs } = query;
+      const liveChannels = new Set(
+        liveTurnRefs(instanceName).map((ref) => ref.channel),
+      );
+      const turnChannel =
+        findTurnRef(instanceName, (ref) => ref.eventTs === messageTs)
+          ?.channel ??
+        (liveChannels.size === 1 ? [...liveChannels][0] : undefined);
+      const target = await resolveOutboundTarget(
+        gw,
+        boundChannelIds,
+        query.conversationId ?? turnChannel,
+        turnWorkspace(instanceName),
+        async (id, teamId, dm) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+      );
+      if ("error" in target) return target;
+
+      try {
+        const link = await gw.getPermalink(target.id, messageTs, target.teamId);
+        if (!link) {
+          return {
+            error:
+              `Slack gave no link for message ${messageTs} in ` +
+              `${target.id} — check messageTs, and pass chatId when the ` +
+              "message is in another conversation",
+          };
+        }
+        return { link, conversationId: target.id, messageTs };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
     async readThread(instanceName: string, query: ThreadQuery) {
       const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
@@ -7557,11 +7611,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (!offered) {
         return {
           error:
-            "not a thread you were shown — only a ts taken from a " +
-            "[thread: ...] tag in the conversation history handed to you " +
-            "can be read, and offers age out. If someone wants you on an " +
-            "older thread, ask them to reply in it — it will reach you " +
-            "with its full history",
+            "not a thread you were shown — you can read the thread you are " +
+            "answering in, a thread you started with start_thread, and a " +
+            "thread from a [thread: ...] tag in the conversation history " +
+            "handed to you, and such a tag ages out after 48 hours. To read " +
+            "any other thread, ask a person to tag you in it, which makes " +
+            "it readable",
         };
       }
       const target = owned
@@ -7611,6 +7666,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const names = await resolveAuthorNames(entries, resolveAgentName);
         const labelled = labelMessages(entries, names, instanceName, bot, {
           showThreadMarkers: false,
+          showTs: true,
         });
         return {
           messages: markThreadWindow(labelled, offsets, {
