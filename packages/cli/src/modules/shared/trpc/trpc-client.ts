@@ -77,6 +77,10 @@ function buildAuthHeaders(deps: {
       reason?: string;
       host?: string;
     };
+    if (e.kind === "agent-token-unavailable")
+      throw new Error(
+        `this install will not vouch for this assistant right now: ${e.reason ?? "unknown reason"}`,
+      );
     if (e.kind === "not-logged-in" || e.kind === "session-expired") {
       const reason =
         e.kind === "not-logged-in"

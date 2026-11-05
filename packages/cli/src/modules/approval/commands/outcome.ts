@@ -34,7 +34,14 @@ export function printOutcomeAndExit(
   }
   switch (outcome.outcome) {
     case "applied":
-      if (outcome.type === "spend_limit" && wording.spendLimitLine) {
+      if (outcome.agentChange) {
+        const { procedure, status, error } = outcome.agentChange;
+        process.stdout.write(
+          status === "ran"
+            ? `Approved — \`${procedure}\` ran.\n`
+            : `Approved — but the server refused it: ${error ?? "unknown reason"}\n`,
+        );
+      } else if (outcome.type === "spend_limit" && wording.spendLimitLine) {
         process.stdout.write(`${wording.spendLimitLine}\n`);
       } else if (outcome.rule) {
         process.stdout.write(

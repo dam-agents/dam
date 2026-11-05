@@ -62,7 +62,7 @@ function makeStore(seed: Array<[HostUrl, HostAuth]> = []): AuthStore & {
 }
 
 function envReader(token: string | undefined): AuthEnvReader {
-  return { damToken: () => token };
+  return { damToken: () => token, agentTokenUrl: () => undefined };
 }
 
 function metadataResolver(): HostMetadataResolver {

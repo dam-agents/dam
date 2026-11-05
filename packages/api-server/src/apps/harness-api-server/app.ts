@@ -54,6 +54,7 @@ import type { AgentSecretRequests } from "../../modules/connections/services/age
 import type { EgressProposals } from "../../modules/approvals/services/egress-proposals.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
+import { mountCliTokenRoute } from "./cli-token.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import {
   createDriverOps,
@@ -62,6 +63,7 @@ import {
 } from "./driver-ops.js";
 import type { FirePair } from "../../modules/harness-config/index.js";
 import { createAgentImageReader } from "./agent-image.js";
+import type { AgentTokenCodec } from "../../modules/agent-tokens/index.js";
 import {
   limitRequestBody,
   MAX_AGENT_REQUEST_BODY_BYTES,
@@ -129,6 +131,7 @@ export interface HarnessApiServerAppDeps {
     agentId: string,
   ) => AgentSecretRequests;
   egressProposalsFor: (owner: string, agentId: string) => EgressProposals;
+  mintAgentToken: AgentTokenCodec;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -327,6 +330,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     kbMcp,
     connections: connectionsRepo,
     secretStore,
+  });
+  mountCliTokenRoute(app, {
+    readAgent: (id) => deps.agentStateCache.get(id),
+    mintToken: deps.mintAgentToken,
+    featureOn: async (owner) => (await featureFlagsFor(owner)).dambledore,
   });
   mountInvocationRoutes(app, {
     readAgent: (id) => deps.agentStateCache.get(id),

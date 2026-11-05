@@ -13,6 +13,7 @@ import {
 } from "../shared/trpc/trpc-client.js";
 import { createAuthConfigProbe } from "./infrastructure/auth-config-probe.js";
 import { createProcessAuthEnvReader } from "./infrastructure/auth-env-reader.js";
+import { createAgentTokenExchange } from "./infrastructure/agent-token-exchange.js";
 import { defaultAuthPath } from "./infrastructure/auth-path.js";
 import { createTomlAuthStore } from "./infrastructure/auth-store.js";
 import { createBrowserOpener } from "./infrastructure/browser-opener.js";
@@ -89,6 +90,7 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
     authEnvReader,
     tokenEndpointClient,
     hostMetadata,
+    agentTokenExchange: createAgentTokenExchange({}),
   });
 
   const authService: AuthService = createAuthService({

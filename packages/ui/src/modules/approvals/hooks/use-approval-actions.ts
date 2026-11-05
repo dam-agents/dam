@@ -219,9 +219,35 @@ export function useApprovalActions(
     },
   ];
 
+  const changeActions: ApprovalAction[] = [
+    {
+      id: "allow-once",
+      label: "Approve",
+      icon: Checkmark,
+      danger: false,
+      disabled: inflight || !live,
+      tooltip: live
+        ? "Runs the change as you"
+        : "The request expired before you decided",
+      resolvedLabel: "Approved",
+      run: () => direct(() => each(approveOnce.mutateAsync)),
+    },
+    {
+      id: "dismiss",
+      label: "Deny",
+      icon: Close,
+      danger: true,
+      disabled: inflight || !live,
+      tooltip: "Nothing runs, and the assistant is told you declined",
+      resolvedLabel: "Denied",
+      run: () => direct(() => each(dismiss.mutateAsync)),
+    },
+  ];
+
   const actions = match(row.type)
     .with("spend_limit", () => spendLimitActions)
     .with("egress_proposal", () => proposalActions)
+    .with("agent_change", () => changeActions)
     .otherwise(() => egressActions)
     .filter((action) => offeredByAgent(row, action.id));
   const preferred: ApprovalActionId =

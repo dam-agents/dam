@@ -8,6 +8,7 @@ export const approvalTypeSchema = z.enum([
   "acp_native",
   "spend_limit",
   "egress_proposal",
+  "agent_change",
 ]);
 
 export const approvalListOptionsSchema = z.object({
@@ -16,6 +17,8 @@ export const approvalListOptionsSchema = z.object({
 });
 
 const idSchema = z.object({ id: z.string().min(1) });
+
+export const approvalGetInputSchema = idSchema;
 
 export const approvalListForOwnerInputSchema =
   approvalListOptionsSchema.optional();
@@ -41,10 +44,21 @@ const approvalActionRuleSchema = z.object({
   verdict: z.enum(["allow", "deny"]),
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what became of the change an owner approved — the
+ * procedure that ran, whether it ran, and the server's reason when it did not.
+ */
+export const agentChangeResultSchema = z.object({
+  procedure: z.string().min(1),
+  status: z.enum(["ran", "failed"]),
+  error: z.string().nullable(),
+});
+
 export const approvalActionOutcomeSchema = z.object({
   outcome: z.enum(["applied", "rule_written_expired", "not_actionable"]),
   type: approvalTypeSchema.nullable(),
   rule: approvalActionRuleSchema.nullable(),
+  agentChange: agentChangeResultSchema.nullable().optional(),
 });
 
 export const EGRESS_PROPOSAL_REASON_MAX = 300;

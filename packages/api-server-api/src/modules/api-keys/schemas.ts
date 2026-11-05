@@ -19,6 +19,17 @@ export const ALL_SCOPES = [
   ...SATELLITE_SCOPES,
 ] as const;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what an assistant's own token acts with — its
+ * owner's permissions over that owner's Agents and the read half of their
+ * credentials, never `credentials:manage`: an assistant drives the install for
+ * its owner, and rotating or adding a credential stays the person's.
+ */
+export const AGENT_ON_BEHALF_SCOPES = [
+  ...AGENT_SCOPES,
+  "credentials:read",
+] as const;
+
 export const scopeSchema = z.enum(ALL_SCOPES);
 
 const agentBindingSchema = z.union([

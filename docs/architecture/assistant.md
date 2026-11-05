@@ -1,6 +1,6 @@
 # Assistant
 
-Last verified: 2026-11-04
+Last verified: 2026-11-05
 
 ## Overview
 
@@ -91,6 +91,20 @@ That file is written once, as one more **initialization step** of provisioning (
 The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
 Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
 
+## What it changes
+
+The assistant is the one Agent that may drive its owner's install: it does so through the `dam` CLI inside its own machine, with a short-lived token of its own rather than the owner's credentials ([security-and-credentials](security-and-credentials.md#identity)).
+The token is minted on the harness route that machine alone reaches, so nothing durable is stored in the machine and nothing of the owner's is ever read there: it expires in fifteen minutes and the CLI re-mints as it needs to.
+Its owner's feature flag and the Agent's own kind are checked at every use, not only at mint.
+
+It acts with its owner's permissions over that owner's Agents, minus `credentials:manage` — it can never add, rotate or read out a credential, and it is never an operator and never a person.
+**Reading and creating run freely.**
+Anything that changes or removes something that already exists — a rename, a restart, a sleep, a disable, a delete, an unbind, a revoked grant, a schedule edit, a new network rule — is **filed on the owner's approval queue** instead of running: the same Home queue a held network request appears in, showing which change it is and the exact arguments it would run with.
+The owner approves and it runs, once, as the owner; the owner refuses and nothing runs, and the CLI that asked is told so.
+A change nobody decides expires after a day.
+Its word is never the verdict: verdicts on approvals, API keys, the Terms, feature flags and the owner's own UI state are refused outright, not queued.
+Nothing re-runs a held change twice: the verdict runs it and writes what became of it on the record, and `dam approval wait` reads that back.
+
 ## Rolling it out
 
 Those refusals rest on the kind, and a replica older than this page reads an unknown kind as no kind at all: it would let the assistant be deleted, renamed, disabled, shared or bound like any Agent.
@@ -99,5 +113,6 @@ Rolling back below that version withdraws the protections, not the Agents: the a
 
 ## Boundaries
 
-Its owner's other Agents are not visible to it, it holds no platform tools, and it is never proactive: it knows what any Agent knows, with the access any Agent has.
+Its owner's other Agents are not visible to it and it is never proactive: it knows what any Agent knows, with the access any Agent has.
+Changing its owner's install is the one capability it has that no other Agent does, and that capability is the approval queue rather than a wider reach.
 Anything it should know later — a team knowledge base, the state of the owner's other Agents, cost and failure explanations — arrives as a grant or a capability, without changing provisioning or the blocked operations above.

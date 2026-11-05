@@ -14,6 +14,7 @@ import { legacyShareRoots } from "../../modules/kb-shares/domain/legacy-roots.js
 export interface AgentIdentity {
   agentId: string;
   owner: string;
+  kind?: AgentKind;
   kbShareRoots?: readonly string[];
   onboardingPending: boolean;
   kitUpdatePending: boolean;
@@ -37,6 +38,7 @@ export async function resolveAgent(
   return {
     agentId,
     owner,
+    ...(kindParse.success ? { kind: kindParse.data } : {}),
     onboardingPending:
       annotations[ANN_STARTER_KIT] !== undefined &&
       annotations[ANN_STARTER_KIT_ONBOARDED] === undefined,

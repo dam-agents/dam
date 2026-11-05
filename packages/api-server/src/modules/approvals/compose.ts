@@ -1,5 +1,8 @@
 import type { Db } from "db";
 import type {
+  AgentChangeApprovals,
+  AgentChangePayload,
+  AgentChangeResult,
   ApprovalsService,
   SpendLimitPayload,
   ToolApprovalReports,
@@ -42,6 +45,7 @@ import {
   createEgressProposals,
   type EgressProposals,
 } from "./services/egress-proposals.js";
+import { createAgentChangeApprovals } from "./services/agent-change-approvals.js";
 import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
 
@@ -54,6 +58,9 @@ interface ComposeApprovalsServiceDeps {
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
   wrapperFrameSender: WrapperFrameSender;
+  executeAgentChange?: (
+    payload: AgentChangePayload,
+  ) => Promise<AgentChangeResult>;
 }
 
 export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
@@ -69,8 +76,30 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     actor: deps.actor,
     actorEmail: deps.actorEmail,
     agentBinding: deps.agentBinding,
+    ...(deps.executeAgentChange && {
+      executeAgentChange: deps.executeAgentChange,
+    }),
   });
   return { service };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: where an assistant's token puts a change it may not
+ * make itself — the assistant's own queue row, on the owner's Home, with the
+ * procedure and the exact arguments it would run with.
+ */
+export function composeAgentChangeApprovals(deps: {
+  db: Db;
+  agentId: string | undefined;
+  ownerSub: string;
+  actor: string;
+}): AgentChangeApprovals {
+  return createAgentChangeApprovals({
+    repo: createApprovalsRepository(deps.db),
+    agentId: deps.agentId,
+    ownerSub: deps.ownerSub,
+    actor: deps.actor,
+  });
 }
 
 interface ComposeApprovalsSystemDeps {

@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type { apiKeyCreateInputSchema, scopeSchema } from "./schemas.js";
 
 export {
+  AGENT_ON_BEHALF_SCOPES,
   AGENT_SCOPES,
   ALL_SCOPES,
   CREDENTIAL_SCOPES,

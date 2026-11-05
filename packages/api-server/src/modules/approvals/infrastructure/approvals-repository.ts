@@ -40,6 +40,7 @@ export interface ApprovalsRepository {
       { status: "expired" } | { status: "resolved"; verdict: ApprovalVerdict },
   ): Promise<boolean>;
   getPending(id: string): Promise<PendingApprovalRow | null>;
+  setPayload(id: string, payload: ApprovalPayload): Promise<void>;
   findActivePendingExtAuthz(input: {
     agentId: string;
     host: string;
@@ -221,6 +222,13 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         .from(pendingApprovals)
         .where(eq(pendingApprovals.id, id));
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
+    },
+
+    async setPayload(id, payload) {
+      await db
+        .update(pendingApprovals)
+        .set({ payload })
+        .where(eq(pendingApprovals.id, id));
     },
 
     async findActivePendingExtAuthz({ agentId, host, port, method, path }) {

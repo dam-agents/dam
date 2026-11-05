@@ -5,6 +5,7 @@ import type { TokenProviderError } from "../domain/errors.js";
 import type { AuthStore, HostUrl } from "../infrastructure/auth-store.js";
 import type { AuthEnvReader } from "../infrastructure/auth-env-reader.js";
 import type { TokenEndpointClient } from "../infrastructure/token-endpoint-client.js";
+import type { AgentTokenExchange } from "../infrastructure/agent-token-exchange.js";
 
 const REFRESH_BUFFER_SECONDS = 60;
 
@@ -37,6 +38,7 @@ export interface TokenProviderDeps {
   authEnvReader: AuthEnvReader;
   tokenEndpointClient: TokenEndpointClient;
   hostMetadata: HostMetadataResolver;
+  agentTokenExchange?: AgentTokenExchange;
   now?: () => Date;
 }
 
@@ -44,6 +46,8 @@ export function createTokenProvider(
   deps: TokenProviderDeps,
 ): TokenProvider & SavedTokenProvider {
   const now = deps.now ?? (() => new Date());
+  /* UNIT_BOUNDARY_DESCRIPTION: one mint per process buys its minutes: a long attach outlives a single token, so it is re-minted near expiry rather than left to fail. */
+  let onBehalf: { token: string; expiresAt: Date } | null = null;
 
   const getSavedAccessToken: SavedTokenProvider["getSavedAccessToken"] = async (
     host,
@@ -107,10 +111,33 @@ export function createTokenProvider(
     return ok(body.access_token);
   };
 
+  const getAgentToken = async (
+    url: string,
+  ): Promise<Result<string, TokenProviderError>> => {
+    if (
+      onBehalf !== null &&
+      onBehalf.expiresAt.getTime() - now().getTime() >
+        REFRESH_BUFFER_SECONDS * 1000
+    )
+      return ok(onBehalf.token);
+    const minted = await deps.agentTokenExchange?.mint(url);
+    if (minted === undefined)
+      return err({
+        kind: "agent-token-unavailable",
+        reason: "no exchange configured",
+      });
+    if (!minted.ok)
+      return err({ kind: "agent-token-unavailable", reason: minted.reason });
+    onBehalf = minted.value;
+    return ok(minted.value.token);
+  };
+
   return {
     async getValidAccessToken(host) {
       const envToken = deps.authEnvReader.damToken();
       if (envToken !== undefined) return ok(envToken);
+      const exchange = deps.authEnvReader.agentTokenUrl();
+      if (exchange !== undefined) return getAgentToken(exchange);
       return getSavedAccessToken(host);
     },
     getSavedAccessToken,

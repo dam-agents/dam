@@ -33,6 +33,10 @@ export function approvalHeadline(approval: ApprovalView): string {
         : "Reached its spend limit",
     )
     .with({ kind: "egress_proposal" }, () => "Proposes a network rule")
+    .with(
+      { kind: "agent_change" },
+      ({ title }) => `Wants to make a change: ${title}`,
+    )
     .exhaustive();
 }
 
@@ -81,6 +85,7 @@ export function approvalDetail(
   if (payload.kind === "spend_limit")
     return spendLimitDetail(payload, connectionName);
   if (payload.kind === "acp_native") return payload.toolName;
+  if (payload.kind === "agent_change") return payload.detail;
   const target =
     payload.path === "*"
       ? `${payload.host} (any path)`

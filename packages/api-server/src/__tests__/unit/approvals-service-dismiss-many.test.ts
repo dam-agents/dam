@@ -41,6 +41,10 @@ function makeService(rows: PendingApprovalRow[]) {
     insertIfAbsent: async () => true,
     insertSettled: async () => true,
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
+    setPayload: async (id, payload) => {
+      const row = rows.find((r) => r.id === id);
+      if (row) row.payload = payload;
+    },
     findActivePendingExtAuthz: async () => null,
     listPendingForOwner: async () => rows,
     listPendingForInstance: async () => rows,

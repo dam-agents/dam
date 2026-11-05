@@ -81,6 +81,11 @@ export interface RefreshTransientError {
   reason: string;
 }
 
+export interface AgentTokenUnavailableError {
+  kind: "agent-token-unavailable";
+  reason: string;
+}
+
 export type TokenProviderError =
   | NotLoggedInError
   | SessionExpiredError
@@ -88,4 +93,5 @@ export type TokenProviderError =
   | RefreshTransientError
   | AuthStoreReadError
   | AuthStoreWriteError
-  | MalformedAuthStoreError;
+  | MalformedAuthStoreError
+  | AgentTokenUnavailableError;

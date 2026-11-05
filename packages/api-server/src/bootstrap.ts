@@ -255,6 +255,10 @@ import {
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
 import {
+  createAgentTokenCodec,
+  createAgentTokenVerifier,
+} from "./modules/agent-tokens/index.js";
+import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
   composeShareAuth,
@@ -787,6 +791,24 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant's own bearer — minted on the harness route its machine alone reaches, signed with the install's token pepper, and re-checked against the live Agent at every use. */
+  const agentTokenCodec = createAgentTokenCodec(config.apiKeyHmacKey);
+  const verifyAgentToken = createAgentTokenVerifier({
+    codec: agentTokenCodec,
+    agentOf: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent ? { owner: agent.owner ?? null, kind: agent.kind } : null;
+    },
+    featureOn: async (ownerSub) =>
+      (
+        await composeFeaturesForOwner({
+          db,
+          owner: ownerSub,
+          surface: "cli",
+          modes: config.featureModes,
+        }).features.flags()
+      ).dambledore,
+  });
   const auth = createAuth(
     {
       issuers: addresses.all.map((set) =>
@@ -800,6 +822,7 @@ export async function bootstrap() {
     {
       verifyApiKey: apiKeysModule.validator,
       verifyOwnerActive: apiKeysModule.verifyOwnerActive,
+      verifyAgentToken,
     },
   );
   const jwksWarmup = startJwksWarmup(auth.warmJwks);
@@ -2711,6 +2734,7 @@ export async function bootstrap() {
         agentId,
         ownerSub: owner,
       }),
+    mintAgentToken: agentTokenCodec,
     satellitesBoot,
     secretStore,
     spendHold,

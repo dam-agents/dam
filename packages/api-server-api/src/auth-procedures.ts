@@ -67,7 +67,7 @@ export const operatorProcedure = t.procedure.use(({ ctx, next }) => {
 });
 
 export const browserOnlyProcedure = t.procedure.use(({ ctx, next }) => {
-  if (ctx.user.keyId !== undefined) {
+  if (ctx.user.keyId !== undefined || ctx.user.onBehalfAgentId !== undefined) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message:
@@ -78,7 +78,7 @@ export const browserOnlyProcedure = t.procedure.use(({ ctx, next }) => {
 });
 
 export const signedInProcedure = t.procedure.use(({ ctx, next }) => {
-  if (ctx.user.keyId !== undefined) {
+  if (ctx.user.keyId !== undefined || ctx.user.onBehalfAgentId !== undefined) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "This needs a person signed in, not an API key.",

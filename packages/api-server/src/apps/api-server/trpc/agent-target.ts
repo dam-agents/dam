@@ -15,6 +15,7 @@ const APPROVAL_NEEDS: Record<ApprovalType, AgentPermission | null> = {
   ext_authz: "egressRules",
   egress_proposal: "egressRules",
   spend_limit: null,
+  agent_change: "settings",
 };
 
 const onAgent = (agentId: string | undefined | null): ResolvedTarget | null =>

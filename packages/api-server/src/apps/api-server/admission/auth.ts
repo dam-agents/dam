@@ -4,6 +4,7 @@ import { match } from "ts-pattern";
 import { JOSEError, JWKSInvalid, JWKSTimeout } from "jose/errors";
 import type { Context } from "hono";
 import { ALL_SCOPES, type Scope, type UserIdentity } from "api-server-api";
+import { AGENT_ON_BEHALF_SCOPES } from "api-server-api";
 import type { Result } from "../../../core/result.js";
 import {
   securityLog,
@@ -16,6 +17,10 @@ import {
   type ApiKeyValidationFailure,
   type ValidatedApiKey,
 } from "../../../modules/api-keys/index.js";
+import {
+  isAgentToken,
+  type AgentTokenIdentity,
+} from "../../../modules/agent-tokens/index.js";
 
 class ForbiddenError extends Error {
   constructor(
@@ -85,6 +90,9 @@ export interface AuthDeps {
     token: string,
   ) => Promise<Result<ValidatedApiKey, ApiKeyValidationFailure>>;
   verifyOwnerActive?: (sub: string) => Promise<boolean>;
+  verifyAgentToken?: (
+    token: string,
+  ) => Promise<Result<AgentTokenIdentity, string>>;
 }
 
 export interface VerifiedPrincipal {
@@ -141,6 +149,34 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
     };
   }
 
+  /*
+   * UNIT_BOUNDARY_DESCRIPTION: the principal an assistant's own token acts as —
+   * its owner, over that owner's Agents, with the read half of their credentials
+   * and never credentials:manage; never an operator, and never a person, so the
+   * gates that need one refuse it. The verifier has already re-checked the
+   * Agent, its kind, its owner and the install's feature flag for this use.
+   */
+  async function verifyAgentToken(token: string): Promise<VerifiedPrincipal> {
+    if (!deps.verifyAgentToken) {
+      throw new UnauthorizedError("agent tokens not enabled");
+    }
+    const result = await deps.verifyAgentToken(token);
+    if (!result.ok) throw new UnauthorizedError(`agent-token:${result.error}`);
+
+    const identity = result.value;
+    return {
+      user: {
+        sub: identity.ownerSub,
+        preferredUsername: identity.ownerSub,
+        scopes: AGENT_ON_BEHALF_SCOPES,
+        agentIds: "*",
+        onBehalfAgentId: identity.agentId,
+      },
+      azp: "",
+      roles: [],
+    };
+  }
+
   async function verifyApiKey(token: string): Promise<VerifiedPrincipal> {
     if (!deps.verifyApiKey) {
       throw new UnauthorizedError("api keys not enabled");
@@ -168,7 +204,9 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
   }
 
   async function verify(token: string): Promise<VerifiedPrincipal> {
-    return isApiKeyToken(token) ? verifyApiKey(token) : verifyJwt(token);
+    if (isApiKeyToken(token)) return verifyApiKey(token);
+    if (isAgentToken(token)) return verifyAgentToken(token);
+    return verifyJwt(token);
   }
 
   return { verify, warmJwks: () => JWKS.reload() };

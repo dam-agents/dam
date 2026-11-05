@@ -856,6 +856,12 @@ export type {
   ApprovalPayload,
   SpendLimitPayload,
   EgressProposalPayload,
+  AgentChangePayload,
+  AgentChangeArguments,
+  AgentChangeResult,
+  AgentChangeApprovals,
+  AgentChangeRequest,
+  AgentChangeFiled,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -863,6 +869,17 @@ export type {
   ApprovalListOptions,
   ApprovalActionOutcome,
 } from "./modules/approvals/types.js";
+export {
+  agentChangeKind,
+  agentChangeProcedurePaths,
+  describeAgentChange,
+  isClassifiedAgentChange,
+  pendingApprovalSchema,
+} from "./modules/approvals/agent-change.js";
+export type {
+  AgentChangeKind,
+  PendingApproval,
+} from "./modules/approvals/agent-change.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
 export {
   EGRESS_PROPOSAL_REASON_MAX,
@@ -1081,6 +1098,7 @@ export type {
 
 export {
   AGENT_SCOPES,
+  AGENT_ON_BEHALF_SCOPES,
   ALL_SCOPES,
   SATELLITE_SCOPES,
   API_KEY_PREFIX,
@@ -1205,3 +1223,9 @@ export {
   environmentNameSchema,
   environmentReadyPathSchema,
 } from "./modules/environments/schemas.js";
+
+export {
+  AGENT_TOKEN_PREFIX,
+  agentTokenResponseSchema,
+} from "./modules/agent-tokens/schemas.js";
+export type { AgentTokenResponse } from "./modules/agent-tokens/schemas.js";
