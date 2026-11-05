@@ -218,13 +218,19 @@ export function catchUpLegend(
   opts: {
     botLabel: string | null;
     someOmitted?: boolean;
+    threadTs?: string;
     hasThreadMarker?: boolean;
     hasAttachmentMarker?: boolean;
   },
 ): string {
+  const reach =
+    opts.threadTs === undefined
+      ? ""
+      : ` — read them with ${OUTBOUND_TOOL_PREFIX}read_thread, threadTs ` +
+        `"${opts.threadTs}"`;
   const omitted = opts.someOmitted
     ? "Some messages from this gap were left out, so this is not everything " +
-      "you missed. "
+      `you missed${reach}. `
     : "";
   return (
     "You were away. The messages below arrived while you were not reading " +
@@ -262,7 +268,7 @@ export function labelHistoryMessage(
   author: { agentId: string; name: string } | null,
   readingAgentId: string,
   bot: { userId: string | null; label: string },
-  opts: { showThreadMarkers: boolean },
+  opts: { showThreadMarkers: boolean; showTs?: boolean },
 ): string {
   const label = author
     ? author.agentId === readingAgentId
@@ -273,7 +279,8 @@ export function labelHistoryMessage(
       : message.botId
         ? `${message.botName || message.botId} (an app)`
         : (message.user ?? "unknown");
-  const when = message.ts ? ` [${formatSlackTs(message.ts)}]` : "";
+  const id = opts.showTs === true ? `, ts ${message.ts}` : "";
+  const when = message.ts ? ` [${formatSlackTs(message.ts)}${id}]` : "";
   const edited = message.edited ? " (edited)" : "";
   const marker = opts.showThreadMarkers ? threadMarker(message) : "";
   const attached = (message.attachments ?? []).map(attachmentMarker).join("");

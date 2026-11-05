@@ -91,8 +91,9 @@ export function createSessionChoicesValidator(deps: {
    * Router or a provider it runs natively (Bedrock), so a model-valued
    * setting (the subagent model) must be on the side of the model the fire
    * runs, resolved as the fire resolves it (the schedule's own, else the
-   * saved default; with no default model the fire's side is unknown and the
-   * check passes, since the fire reports the missing default). As in the
+   * saved default, else the automatic model; with no model to run on the
+   * fire's side is unknown and the check passes, since the fire reports
+   * it). As in the
    * runtime, a model is native only on a granted provider the harness runs
    * natively. A runtime that names no native templates splits nothing.
    */

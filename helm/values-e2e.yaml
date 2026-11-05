@@ -6,17 +6,6 @@
 e2e:
   enabled: true
 
-# Shorten the queued-prompt park window from its 90s default. A spec that
-# proves prompts outlive an abandoned tab has to wait the window out in real
-# time, so the production value would cost every such spec a minute and a
-# half of sleeping.
-controller:
-  agent:
-    harnessTemplateDefaults:
-      env:
-        - name: QUEUE_PARK_MS
-          value: "8000"
-
 # Only the mock image is built for the e2e cluster — disable the agent
 # templates values-local.yaml leaves enabled (default and nous). Any
 # enabled template is rendered, and cluster:install then imports its

@@ -145,10 +145,10 @@ func claimedQueryParams(c envoyHostChain) []string {
 	return out
 }
 
-func contestedScopes(c envoyHostChain) []string {
+func refusedScopes(c envoyHostChain) []string {
 	var out []string
 	for _, scope := range c.PathScopes() {
-		if c.ContestedAt(scope) {
+		if c.RefusesUnaddressedAt(scope) {
 			out = append(out, scope)
 		}
 	}
@@ -165,7 +165,7 @@ func luaStringList(items []string) string {
 
 func luaContestedList(c envoyHostChain) string {
 	entries := make([]string, 0)
-	for _, scope := range contestedScopes(c) {
+	for _, scope := range refusedScopes(c) {
 		entries = append(entries, "{scope = "+strconv.Quote(scope)+", body = "+strconv.Quote(refusedBody(c, scope))+"}")
 	}
 	return "{" + strings.Join(entries, ", ") + "}"

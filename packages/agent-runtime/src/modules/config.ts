@@ -17,7 +17,6 @@ const schema = z.object({
     .default("on")
     .transform((v) => v !== "off"),
   API_SERVER_URL: z.string().default(""),
-  QUEUE_PARK_MS: z.coerce.number().int().positive().optional(),
   MEM_REAPER: z
     .string()
     .default("on")

@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-11-02
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -103,6 +103,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   That Secret is platform-owned rather than per-Agent: the api-server reads it, and no agent gateway is ever handed it, so it sits outside the per-`(owner, connection)` credential classes on [security-and-credentials](security-and-credentials.md).
 - **identity and auth** — links between channel-side identities and platform users, the auth allow-list, and API keys for headless CLI use.
   Owned by [security-and-credentials](security-and-credentials.md).
+  `login_testimonials` holds the quotes the login page shows, in order, each naming an optional photo in `avatar_images`; only an operator changes them ([security-and-credentials](security-and-credentials.md#identity)).
 - **skills catalog** — connected sources, per-Agent install records, publish history, and the per-user named skill selections a user carries between agents.
   Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`).

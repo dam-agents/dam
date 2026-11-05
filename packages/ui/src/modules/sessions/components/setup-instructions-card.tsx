@@ -1,10 +1,21 @@
+import type { SessionPurpose } from "agent-runtime-api";
 import { useState } from "react";
 
 import { getBrand } from "../../../brand.js";
 import type { Message } from "../../../types.js";
 import { ActivityBlock } from "./activity-block.js";
 
-export function SetupInstructionsCard({ message }: { message: Message }) {
+const LABELS: Record<SessionPurpose, string> = {
+  "cost-review": "Cost review request",
+};
+
+export function SetupInstructionsCard({
+  message,
+  purpose,
+}: {
+  message: Message;
+  purpose?: SessionPurpose | undefined;
+}) {
   const [open, setOpen] = useState(false);
   const text = message.parts
     .flatMap((p) => (p.kind === "text" ? [p.text] : []))
@@ -12,7 +23,7 @@ export function SetupInstructionsCard({ message }: { message: Message }) {
   return (
     <div data-testid="setup-instructions" className="anim-in">
       <ActivityBlock
-        label={`Setup instructions sent by ${getBrand().name}`}
+        label={`${purpose ? LABELS[purpose] : "Setup instructions"} sent by ${getBrand().name}`}
         open={open}
         onToggle={() => setOpen((o) => !o)}
       >

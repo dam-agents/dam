@@ -3,6 +3,7 @@ import type {
   senderSchema,
   sessionNoticeSchema,
   sessionModeSchema,
+  sessionPurposeSchema,
   sessionSchema,
   sessionTypeSchema,
   sessionHistoryInputSchema,
@@ -27,6 +28,7 @@ export interface SessionSubAgentContext {
 
 export type SessionMode = z.infer<typeof sessionModeSchema>;
 export type SessionType = z.infer<typeof sessionTypeSchema>;
+export type SessionPurpose = z.infer<typeof sessionPurposeSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type Sender = z.infer<typeof senderSchema>;
 export type SessionNotice = z.infer<typeof sessionNoticeSchema>;

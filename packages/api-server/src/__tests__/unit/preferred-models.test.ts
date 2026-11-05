@@ -1,10 +1,14 @@
 /**
  * TEST_OVERVIEW: The platform's model preference list decides two things a
  * provider's Connection cannot: which model a new agent runs when nobody
- * picked one, and which model Claude Code's permission classifier runs on. Its
- * matcher folds the spellings providers use for the same model and refuses a
- * different version, so a listing that holds only an older model falls through
- * instead of running on it unseen.
+ * picked one, and which model Claude Code's permission classifier runs on. The
+ * `work` list answers a harness with its own models first — Claude Code Claude,
+ * Codex GPT, Bob Bob's own names — and then with DeepSeek V4.1 Flash, which
+ * every install serves, so an agent runs on the models its harness was built
+ * for wherever a granted provider serves them. Its matcher folds the spellings
+ * providers use for the same model and refuses a different version, so a
+ * listing that holds only an older model falls through instead of running on
+ * it unseen.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -88,22 +92,63 @@ describe("preferredModelOf", () => {
     ],
   };
 
-  // TEST_SCENARIO: the list's order beats the provider order, so an agent holding both Anthropic and CurveBender starts on DeepSeek; within one entry the providers' own order decides, and a provider that lists neither is passed over.
-  it("takes the list's order across providers, then the providers' order", () => {
-    expect(preferredModelOf("work", [anthropic, cb])).toEqual({
+  const bob = { alias: "bob", listed: ["background", "explorer", "fast"] };
+  const openai = {
+    alias: "openai",
+    listed: ["gpt-6.1-sol", "gpt-6.1-nano", "gpt-5.5"],
+  };
+
+  // TEST_SCENARIO: a harness's own models come first in the list, so a Claude Code agent holding both Anthropic and CurveBender starts on Claude Opus, and one holding only CurveBender on DeepSeek; within one entry the providers' own order decides, and a provider that lists neither is passed over.
+  it("answers a harness with its own models, then with DeepSeek", () => {
+    expect(preferredModelOf("work", [anthropic, cb], "claude-code")).toEqual({
+      alias: "anthropic",
+      upstreamId: "claude-opus-5-5",
+    });
+    expect(preferredModelOf("work", [cb, anthropic], "claude-code")).toEqual({
+      alias: "anthropic",
+      upstreamId: "claude-opus-5-5",
+    });
+    expect(preferredModelOf("work", [cb], "claude-code")).toEqual({
       alias: "cb",
       upstreamId: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
     });
-    expect(preferredModelOf("work", [cb, anthropic])).toEqual({
+    expect(preferredModelOf("work", [anthropic, openai], "codex")).toEqual({
+      alias: "openai",
+      upstreamId: "gpt-6.1-sol",
+    });
+    expect(preferredModelOf("work", [cb, bob], "bob")).toEqual({
+      alias: "bob",
+      upstreamId: "fast",
+    });
+    expect(preferredModelOf("work", [cb, bob], "claude-code")).toEqual({
       alias: "cb",
       upstreamId: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
     });
-    expect(
-      preferredModelOf("work", [
-        { alias: "ibm", listed: ["gpt-5.5"] },
-        anthropic,
-      ]),
-    ).toEqual({ alias: "anthropic", upstreamId: "claude-opus-5-5" });
+  });
+
+  // TEST_SCENARIO: a harness that names no model of its own runs on DeepSeek, whatever its providers serve: Pi and the experimental harnesses, and a caller that names no harness at all, such as an unrouted image's own harness.
+  it("falls to DeepSeek for a harness with no models of its own", () => {
+    for (const harness of ["pi", "hermes", "copilot", "gemini-cli", undefined])
+      expect(preferredModelOf("work", [anthropic, cb], harness)).toEqual({
+        alias: "cb",
+        upstreamId: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      });
+  });
+
+  // TEST_SCENARIO: another harness's models answer last, so an agent whose providers serve no DeepSeek still gets a curated model rather than the first one listed: Pi on Anthropic alone runs on Claude, and Claude Code on OpenAI alone on GPT.
+  it("answers another harness's models where nothing else is listed", () => {
+    expect(preferredModelOf("work", [anthropic], "pi")).toEqual({
+      alias: "anthropic",
+      upstreamId: "claude-opus-5-5",
+    });
+    expect(preferredModelOf("work", [openai], "claude-code")).toEqual({
+      alias: "openai",
+      upstreamId: "gpt-6.1-sol",
+    });
+    expect(preferredModelOf("work", [cb], "codex")).toEqual({
+      alias: "cb",
+      upstreamId: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    });
   });
 
   // TEST_SCENARIO: the classifier role has its own order — Nemotron before Claude's Sonnet — and a provider that lists nothing on either list gets null, which leaves the caller its own last resort.

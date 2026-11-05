@@ -52,6 +52,7 @@ import {
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 import { registerSpendLimitsTool } from "./spend-limits-tool.js";
 import { registerSessionMessageTools } from "./session-message-tools.js";
+import { registerThreadTools } from "./thread-tools.js";
 import type { SessionMessages } from "../../modules/runtime-delivery/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
@@ -143,16 +144,24 @@ function namePost(
     : sent;
 }
 
+function attachmentFailureText(
+  sent: string,
+  repost: string,
+  attachmentError: string,
+): string {
+  return (
+    `${sent}, but the attachment failed to upload: ${attachmentError}. ` +
+    `The text itself landed, so do not ${repost}. If the file matters, ` +
+    `say so in a short follow-up.`
+  );
+}
+
 function renderAttachmentFailure(
   sent: string,
   repost: string,
   attachmentError: string,
 ): ToolContent {
-  return textResult(
-    `${sent}, but the attachment failed to upload: ${attachmentError}. ` +
-      `The text itself landed, so do not ${repost}. If the file matters, ` +
-      `say so in a short follow-up.`,
-  );
+  return textResult(attachmentFailureText(sent, repost, attachmentError));
 }
 
 function renderChecklist(steps: OnboardingStep[]): string {
@@ -324,7 +333,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_channel",
-    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other channel both the bot and the agent's owner are members of; on Telegram the bound conversations. Use the id as chatId in send_channel_message.",
+    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other channel both the bot and the agent's owner are members of; on Telegram the bound conversations. Use the id as chatId in post or start_thread.",
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(
@@ -335,101 +344,115 @@ export function createMcpSession(
     },
   );
 
+  const POST_ANSWERS: Record<ChannelType, string> = {
+    [ChannelType.Slack]:
+      "Replies under it are not followed and do not come back to this session; to get an answer here, ask with start_thread",
+    [ChannelType.Telegram]:
+      "The chat's next message goes to that chat's own session, which is this session only when it is that chat's session",
+  };
+
+  const postInput = {
+    channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+    text: z
+      .string()
+      .describe(
+        "On Slack, use standard Markdown, not mrkdwn. Put code fences on separate lines, with an optional language after the opening fence.",
+      ),
+    chatId: z
+      .string()
+      .optional()
+      .describe(
+        "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message — only with your owner, the person in a 1:1 DM you are connected to, or a member of a channel you are connected to; anyone else is refused.",
+      ),
+    attachment: attachmentInput,
+    unfurlLinks: z
+      .boolean()
+      .optional()
+      .describe(
+        "Slack only: whether Slack should unfurl links. Omit for Slack's default behavior.",
+      ),
+    unfurlMedia: z
+      .boolean()
+      .optional()
+      .describe(
+        "Slack only: whether Slack should unfurl media. Omit for Slack's default behavior.",
+      ),
+  };
+
+  const postMessage = async ({
+    channel,
+    text: written,
+    chatId,
+    attachment,
+    unfurlLinks,
+    unfurlMedia,
+  }: z.infer<z.ZodObject<typeof postInput>>) => {
+    const linked = await channelLinks(
+      written,
+      channel === ChannelType.Slack ? "Slack" : "Telegram",
+    );
+    if ("error" in linked) return errorResult(linked.error);
+    const { text } = linked;
+    const loaded = attachment ? await loadAttachment(attachment) : undefined;
+    if (loaded && "error" in loaded) return errorResult(loaded.error);
+    const resolved = loaded?.resolved;
+    const attachmentAudit = loaded?.audit;
+    const result = await deps.channelManager.postMessage(
+      agentId,
+      channel,
+      text,
+      {
+        ...(chatId ? { conversationId: chatId } : {}),
+        ...(resolved ? { attachment: resolved } : {}),
+        ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+        ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
+      },
+    );
+    const failed = "error" in result;
+    const attachmentError = "ok" in result ? result.attachmentError : undefined;
+    const logLevel = failed || attachmentError ? "warn" : "info";
+    emit({
+      type: EventType.ChannelMessageSent,
+      channel,
+      agentId,
+      ownerSub: deps.owner,
+      action: "post",
+      outcome: failed ? "failure" : "success",
+      hasAttachment: resolved !== undefined,
+    });
+    securityLog(logLevel, "channel.outbound", {
+      ...channelAudit(channel),
+      result: failed ? "failure" : "success",
+      detail: {
+        ...(chatId ? { conversationId: chatId } : {}),
+        hasAttachment: attachmentAudit !== undefined,
+        ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
+        ...(attachmentError ? { attachmentError } : {}),
+        textLength: text.length,
+        ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+        ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
+      },
+    });
+    if ("error" in result) return errorResult(result.error);
+    const sent = namePost("Message sent", result);
+    const answers = POST_ANSWERS[channel];
+    if (attachmentError)
+      return textResult(
+        `${attachmentFailureText(sent, "send the message again", attachmentError)} ${answers}.`,
+      );
+    return textResult(`${sent}. ${answers}.`);
+  };
+
+  const POST_DESCRIPTION =
+    "Post a NEW top-level message to a connected channel (slack or telegram) — a one-way announcement or cross-post. On Slack, replies under the post are not followed: they do not come back to this session, so to ask something and get the answer here use start_thread instead, and to answer a message you are handling use reply. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on; the chat's next message goes to that chat's own session, which is this session only when it is that chat's session. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, the result names the posted message's chatId and ts, which react takes as chatId and messageTs. A message with an attachment may come back without a ts, when Slack posts it as a file share. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.";
+
+  server.tool("post", POST_DESCRIPTION, postInput, postMessage);
+
   server.tool(
     "send_channel_message",
-    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, the result names the posted message's chatId and ts: pass them to reply as chatId and threadTs to continue in its thread, or to react as chatId and messageTs. A message with an attachment may come back without a ts, when Slack posts it as a file share. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.`,
-    {
-      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
-      text: z
-        .string()
-        .describe(
-          "On Slack, use standard Markdown, not mrkdwn. Put code fences on separate lines, with an optional language after the opening fence.",
-        ),
-      chatId: z
-        .string()
-        .optional()
-        .describe(
-          "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message — only with your owner, the person in a 1:1 DM you are connected to, or a member of a channel you are connected to; anyone else is refused.",
-        ),
-      attachment: attachmentInput,
-      unfurlLinks: z
-        .boolean()
-        .optional()
-        .describe(
-          "Slack only: whether Slack should unfurl links. Omit for Slack's default behavior.",
-        ),
-      unfurlMedia: z
-        .boolean()
-        .optional()
-        .describe(
-          "Slack only: whether Slack should unfurl media. Omit for Slack's default behavior.",
-        ),
-    },
-    async ({
-      channel,
-      text: written,
-      chatId,
-      attachment,
-      unfurlLinks,
-      unfurlMedia,
-    }) => {
-      const linked = await channelLinks(
-        written,
-        channel === ChannelType.Slack ? "Slack" : "Telegram",
-      );
-      if ("error" in linked) return errorResult(linked.error);
-      const { text } = linked;
-      const loaded = attachment ? await loadAttachment(attachment) : undefined;
-      if (loaded && "error" in loaded) return errorResult(loaded.error);
-      const resolved = loaded?.resolved;
-      const attachmentAudit = loaded?.audit;
-      const result = await deps.channelManager.postMessage(
-        agentId,
-        channel,
-        text,
-        {
-          ...(chatId ? { conversationId: chatId } : {}),
-          ...(resolved ? { attachment: resolved } : {}),
-          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
-          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
-        },
-      );
-      const failed = "error" in result;
-      const attachmentError =
-        "ok" in result ? result.attachmentError : undefined;
-      const logLevel = failed || attachmentError ? "warn" : "info";
-      emit({
-        type: EventType.ChannelMessageSent,
-        channel,
-        agentId,
-        ownerSub: deps.owner,
-        action: "post",
-        outcome: failed ? "failure" : "success",
-        hasAttachment: resolved !== undefined,
-      });
-      securityLog(logLevel, "channel.outbound", {
-        ...channelAudit(channel),
-        result: failed ? "failure" : "success",
-        detail: {
-          ...(chatId ? { conversationId: chatId } : {}),
-          hasAttachment: attachmentAudit !== undefined,
-          ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
-          ...(attachmentError ? { attachmentError } : {}),
-          textLength: text.length,
-          ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
-          ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
-        },
-      });
-      if ("error" in result) return errorResult(result.error);
-      const sent = namePost("Message sent", result);
-      if (attachmentError)
-        return renderAttachmentFailure(
-          sent,
-          "send the message again",
-          attachmentError,
-        );
-      return textResult(sent);
-    },
+    `Deprecated: the old name of post, kept for one release; call post instead. ${POST_DESCRIPTION}`,
+    postInput,
+    postMessage,
   );
 
   server.tool(
@@ -540,14 +563,63 @@ export function createMcpSession(
   );
 
   server.tool(
+    "get_message_link",
+    "Get the Slack link of one message, to put in an issue, a document or a reply so that a person can open that message. A reply inside a thread gets a link too. Returns { link, conversationId, messageTs }, or an error if Slack has no such message there. Pass the message's ts as messageTs: the ts on a line that read_thread returned, or a ts that another tool result named. A message is linked only in a conversation this agent can reach. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Chat containing the message: an id from describe_channel, or the conversationId that read_thread returned. Omit for the conversation you are answering in.",
+        ),
+      messageTs: z
+        .string()
+        .min(1)
+        .describe(
+          "Message to link: the ts on a read_thread line, or a ts a tool result named.",
+        ),
+    },
+    async ({ channel, chatId, messageTs }) => {
+      const result = await deps.channelManager.getMessageLink(
+        agentId,
+        channel,
+        { conversationId: chatId, messageTs },
+      );
+      const audit = channelAudit(channel);
+      if ("error" in result) {
+        securityLog("warn", "channel.message_link", {
+          ...audit,
+          result: "failure",
+          reason: result.error,
+          detail: {
+            ...(chatId ? { conversationId: chatId } : {}),
+            messageTs,
+          },
+        });
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.message_link", {
+        ...audit,
+        result: "success",
+        detail: {
+          conversationId: result.conversationId,
+          messageTs: result.messageTs,
+        },
+      });
+      return textResult(JSON.stringify(result));
+    },
+  );
+
+  server.tool(
     "read_thread",
-    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. Only threads from such tags are readable: pass the tag's ts as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore, cursor }, messages being the thread in the same labelled form as your conversation history, oldest first, and always opening with the message that started the thread. A long thread comes back as its newest replies rather than its whole, with hasMore true and a cursor: call again with that cursor to read the window immediately before this one, as far back as you need, passing back only a cursor this same thread gave you; one from another thread or naming a point this thread does not reach is refused rather than answered. In a thread longer than one read, a line in square brackets after the opening message numbers the replies shown, counted from the thread's first reply, and names the replies left out; the numbers stay the same however much the thread grows, so two windows line up by them. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
+    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. It also reads the thread you are answering in, however old it is: pass the threadTs your turn's instructions name. And it reads a thread you started with start_thread. Only these threads are readable: pass the tag's ts, or that thread's ts, as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore, cursor }, messages being the thread in the same labelled form as your conversation history, oldest first, and always opening with the message that started the thread. Each line also carries its message's ts after the time, as [<time>, ts <ts>]: pass it as messageTs to get_message_link for a link to that message, or to describe_message_reactions. A long thread comes back as its newest replies rather than its whole, with hasMore true and a cursor: call again with that cursor to read the window immediately before this one, as far back as you need, passing back only a cursor this same thread gave you; one from another thread or naming a point this thread does not reach is refused rather than answered. In a thread longer than one read, a line in square brackets after the opening message numbers the replies shown, counted from the thread's first reply, and names the replies left out; the numbers stay the same however much the thread grows, so two windows line up by them. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       threadTs: z
         .string()
         .describe(
-          "Thread to read: the ts from a [thread: ...] tag in your conversation history.",
+          "Thread to read: the ts from a [thread: ...] tag in your conversation history, the threadTs of the thread you are answering in, or the threadTs of a thread you started.",
         ),
       cursor: z
         .string()
@@ -630,7 +702,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. The result names the reply's chatId and ts: pass them to react as chatId and messageTs. A private reply to a whisper names no ts, since only its sender sees it, and a reply with an attachment may come back without one, when Slack posts it as a file share. Use send_channel_message instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. The result names the reply's chatId and ts: pass them to react as chatId and messageTs. A private reply to a whisper names no ts, since only its sender sees it, and a reply with an attachment may come back without one, when Slack posts it as a file share. It also answers in a thread you started with start_thread: pass that thread's chatId and threadTs. Use post instead for a new top-level or cross-channel post.`,
     {
       text: z
         .string()
@@ -1376,6 +1448,47 @@ export function createMcpSession(
     agentTelemetry: deps.agentTelemetry,
   });
 
+  const callerSessionId = async () => {
+    const ref = deps.sessionRef;
+    if (!ref) return null;
+    try {
+      const { sessionId } = await runtimeClient.sessions.byRef.query(
+        { ref },
+        { signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS) },
+      );
+      return sessionId;
+    } catch {
+      return null;
+    }
+  };
+
+  registerThreadTools(server, {
+    callerSessionId,
+    startThread: (channel, start) =>
+      deps.channelManager.startThread(agentId, channel, start),
+    listThreads: (channel, sessionId) =>
+      deps.channelManager.listThreads(agentId, channel, sessionId),
+    leaveThread: (channel, leave) =>
+      deps.channelManager.leaveThread(agentId, channel, leave),
+    audit: (action, outcome) =>
+      securityLog(
+        "error" in outcome ? "warn" : "info",
+        `channel.thread_${action}`,
+        {
+          ...channelAudit(ChannelType.Slack),
+          result: "error" in outcome ? "failure" : "success",
+          ...("error" in outcome
+            ? { reason: outcome.error }
+            : {
+                detail: {
+                  conversationId: outcome.conversationId,
+                  threadTs: outcome.threadTs,
+                },
+              }),
+        },
+      ),
+  });
+
   const sessionMessages = deps.sessionMessages;
   if (sessionMessages)
     registerSessionMessageTools(server, {
@@ -1385,19 +1498,7 @@ export function createMcpSession(
             signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS),
           })
         ).sessions,
-      callerSessionId: async () => {
-        const ref = deps.sessionRef;
-        if (!ref) return null;
-        try {
-          const { sessionId } = await runtimeClient.sessions.byRef.query(
-            { ref },
-            { signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS) },
-          );
-          return sessionId;
-        } catch {
-          return null;
-        }
-      },
+      callerSessionId,
       acceptsSessionMessages: () => sessionMessages.accepts(agentId),
       send: async (payload) => {
         await sessionMessages.send(agentId, payload);
@@ -1539,7 +1640,10 @@ export interface MountMcpDeps {
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
   kitUpdateReporter: KitUpdateReporter;
-  artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  artifactLibraryFor: (
+    owner: string,
+    agentId: string,
+  ) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   driverOpsFor: DriverOpsFor;
   subAgentAwaitsFor: (driverAgentId: string) => SubAgentAwaitMarks;
@@ -1588,7 +1692,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
 
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
-    const artifactLibrary = deps.artifactLibraryFor(verified.owner);
+    const artifactLibrary = deps.artifactLibraryFor(verified.owner, agentId);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const [ownerIsInspector, chatForms, grantedSatellites, environments] =
       await Promise.all([

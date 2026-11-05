@@ -20,7 +20,10 @@ import type {
 import { forHarness } from "../../modules/model-catalog/index.js";
 import { explainUpstreamError } from "../../modules/model-router/domain/upstream-error.js";
 import type { ModelRouterBinding } from "../../modules/runtime-channel/manifest.js";
-import type { RuntimeEnvState } from "../../modules/runtime-channel/infrastructure/env-state-store.js";
+import type {
+  EnvLayer,
+  RuntimeEnvState,
+} from "../../modules/runtime-channel/infrastructure/env-state-store.js";
 import {
   applyReplayRules,
   composeModelRouter,
@@ -40,6 +43,7 @@ const seen: {
   headers: Record<string, string | string[] | undefined>;
 }[] = [];
 let upstream: Server;
+let upstreamBase = "";
 let router: ModelRouter;
 
 const HARNESSES: Record<string, ModelRouterBinding> = {
@@ -56,6 +60,38 @@ const HARNESSES: Record<string, ModelRouterBinding> = {
     tierAliases: ["premium-ide", "explorer", "fast", "premium", "ultra"],
   },
 };
+
+/* UNIT_BOUNDARY_DESCRIPTION: the same Connections on the fake upstream, for
+ * a router a test composes over its own catalog. */
+function envStateOn(base: string): () => RuntimeEnvState {
+  const providers: EnvLayer[] = [
+    {
+      id: "conn-ibm",
+      template: "ibm-litellm",
+      env: {
+        OPENAI_BASE_URL: `${base}/ibm`,
+        OPENAI_API_KEY: "platform:conn:conn-ibm",
+      },
+    },
+    {
+      id: "conn-cb",
+      template: "curve-bender",
+      env: {
+        OPENAI_BASE_URL: `${base}/cb`,
+        OPENAI_API_KEY: "platform:conn:conn-cb",
+      },
+    },
+    {
+      id: "conn-oauth",
+      template: "anthropic-oauth",
+      env: {
+        ANTHROPIC_BASE_URL: `${base}/anthropic`,
+        CLAUDE_CODE_OAUTH_TOKEN: "platform:conn:conn-oauth",
+      },
+    },
+  ];
+  return () => ({ env: {}, harnesses: [], providers });
+}
 
 function metadata(over: Partial<ModelMetadata> = {}): ModelMetadata {
   return {
@@ -152,6 +188,29 @@ beforeAll(async () => {
       unknown
     >;
     seen.push({ path: req.url ?? "", body, headers: req.headers });
+    /* UNIT_BOUNDARY_DESCRIPTION: the ETE proxy's Azure DeepSeek deployments
+     * answer a reasoning effort with HTTP 400, measured against the live
+     * proxy, so a test sees a Codex turn fail the way the staging report did.
+     * The refusal belongs to that proxy, which the `/ibm` base stands for. */
+    const eteProxy = (req.url ?? "").startsWith("/ibm/");
+    if (
+      eteProxy &&
+      /^azure\/.*deepseek/i.test(String(body.model)) &&
+      "reasoning" in body
+    ) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: {
+            message:
+              "Unsupported parameter: reasoning.effort is not supported with this model",
+            type: "invalid_request_error",
+            code: "400",
+          },
+        }),
+      );
+      return;
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(
       JSON.stringify({
@@ -167,36 +226,8 @@ beforeAll(async () => {
   await once(upstream, "listening");
   const addr = upstream.address();
   const base = `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : 0}`;
-  const envState = (): RuntimeEnvState => ({
-    env: {},
-    harnesses: [],
-    providers: [
-      {
-        id: "conn-ibm",
-        template: "ibm-litellm",
-        env: {
-          OPENAI_BASE_URL: `${base}/ibm`,
-          OPENAI_API_KEY: "platform:conn:conn-ibm",
-        },
-      },
-      {
-        id: "conn-cb",
-        template: "curve-bender",
-        env: {
-          OPENAI_BASE_URL: `${base}/cb`,
-          OPENAI_API_KEY: "platform:conn:conn-cb",
-        },
-      },
-      {
-        id: "conn-oauth",
-        template: "anthropic-oauth",
-        env: {
-          ANTHROPIC_BASE_URL: `${base}/anthropic`,
-          CLAUDE_CODE_OAUTH_TOKEN: "platform:conn:conn-oauth",
-        },
-      },
-    ],
-  });
+  upstreamBase = base;
+  const envState = envStateOn(base);
   router = composeModelRouter({
     catalog: {
       providers: () => providers,
@@ -270,6 +301,28 @@ describe("catalog endpoints", () => {
       piList.data.find((m) => m.id === "cb/rits/zai-org/glm-5-3")?.metadata
         .thinkingFormat,
     ).toBe("zai");
+  });
+
+  /** TEST_SCENARIO: A kit image's own harness has no modelRouter section, so
+   * the router lists it every model the agent's providers list, each under
+   * its plain qualified name with its dialects, since a chat call naming one
+   * resolves for any harness; before, it got an empty list and no way to
+   * find a model. The subscription's model is kept to Claude Code, so it is
+   * left out. */
+  it("serves an unrouted harness every listed model by its qualified name", async () => {
+    const r = await get("/v1/models", "image-agent");
+    expect(r.status).toBe(200);
+    const list = r.json as {
+      data: { id: string; metadata: { dialects: string[] } }[];
+    };
+    expect(list.data.map((m) => m.id).sort()).toEqual([
+      "cb/rits/zai-org/glm-5-3",
+      "ibm/aws/claude-opus-4-8",
+      "ibm/gpt-5.5",
+    ]);
+    expect(
+      list.data.find((m) => m.id === "ibm/gpt-5.5")?.metadata.dialects,
+    ).toContain("openai-chat");
   });
 
   /** TEST_SCENARIO: Codex drops a catalog with a missing required field, so
@@ -377,6 +430,107 @@ describe("provider errors", () => {
     expect(JSON.parse(html).error.message).toBe(
       "CurveBender (shared) refused rits/zai-org/glm-5-3 with HTTP 403 on the Anthropic Messages API, which claude-code uses. The provider said: 403 Forbidden 403 Forbidden",
     );
+  });
+});
+
+describe("a reasoning effort the route refuses", () => {
+  /** TEST_SCENARIO: Codex's first turn on the ETE proxy's DeepSeek died with
+   * HTTP 400, because that Azure deployment refuses `reasoning.effort`; the
+   * router now drops the parameter before the call leaves, so the turn runs,
+   * while the same model served from vLLM and Azure's own OpenAI models keep
+   * the effort their deployment honours. */
+  it("drops the effort an Azure deployment refuses and runs the turn", async () => {
+    const azureProviders: CatalogProvider[] = [
+      {
+        ...ibm,
+        displayName: "IBM",
+        status: "listed",
+        listedAt: null,
+        entries: [
+          entry(ibm, "azure/DeepSeek-V4.1-Flash"),
+          entry(ibm, "azure/gpt-6.1-sol"),
+          entry(ibm, "azure/codex-mini-latest"),
+        ],
+      },
+      {
+        ...cb,
+        displayName: "CB",
+        status: "listed",
+        listedAt: null,
+        entries: [
+          entry(cb, "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"),
+          entry(cb, "azure/DeepSeek-V4.1-Flash"),
+        ],
+      },
+    ];
+    const azureEntries = azureProviders.flatMap((p) => p.entries);
+    const composed = composeModelRouter({
+      catalog: {
+        providers: () => azureProviders,
+        forHarness: (harness) =>
+          forHarness(azureEntries, harness, HARNESSES[harness]),
+      },
+      envState: envStateOn(upstreamBase),
+      harnesses: HARNESSES,
+      defaultHarness: "codex",
+      port: 0,
+      log: () => {},
+    });
+    await composed.listen();
+    const call = async (model: string) => {
+      const r = await fetch(`${composed.baseUrl}/v1/responses`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [HARNESS_HEADER]: "codex",
+        },
+        body: JSON.stringify({
+          model,
+          input: [],
+          reasoning: { effort: "medium" },
+        }),
+      });
+      return { status: r.status, seen: seen.at(-1)?.body };
+    };
+    try {
+      seen.length = 0;
+      const azure = await call("ibm/azure/DeepSeek-V4.1-Flash");
+      expect(azure.status).toBe(200);
+      expect(azure.seen).not.toHaveProperty("reasoning");
+      expect(azure.seen?.model).toBe("azure/DeepSeek-V4.1-Flash");
+
+      const vllm = await call("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017");
+      expect(vllm.status).toBe(200);
+      expect(vllm.seen?.reasoning).toEqual({ effort: "medium" });
+
+      const openai = await call("ibm/azure/gpt-6.1-sol");
+      expect(openai.status).toBe(200);
+      expect(openai.seen?.reasoning).toEqual({ effort: "medium" });
+
+      const unknownOpenAi = await call("ibm/azure/codex-mini-latest");
+      expect(unknownOpenAi.status).toBe(200);
+      expect(unknownOpenAi.seen?.reasoning).toEqual({ effort: "medium" });
+
+      const elsewhere = await call("cb/azure/DeepSeek-V4.1-Flash");
+      expect(elsewhere.status).toBe(200);
+      expect(elsewhere.seen?.reasoning).toEqual({ effort: "medium" });
+
+      /* UNIT_BOUNDARY_DESCRIPTION: the picker offers the levels the wire
+       * carries, so the dropped deployment advertises none and the one that
+       * reasons still offers its four. */
+      const catalog = (await fetch(`${composed.baseUrl}/codex/models`, {
+        headers: { [HARNESS_HEADER]: "codex" },
+      }).then((r) => r.json())) as {
+        models: { slug: string; supported_reasoning_levels: unknown[] }[];
+      };
+      const levels = (slug: string) =>
+        catalog.models.find((m) => m.slug === slug)?.supported_reasoning_levels;
+      expect(levels("ibm/azure/DeepSeek-V4.1-Flash")).toEqual([]);
+      expect(levels("ibm/azure/gpt-6.1-sol")).toHaveLength(4);
+      expect(levels("cb/azure/DeepSeek-V4.1-Flash")).toHaveLength(4);
+    } finally {
+      await composed.close();
+    }
   });
 });
 
@@ -839,20 +993,75 @@ describe("replay rules", () => {
       dropUnsupportedReasoning(body, {
         dialect: "openai-responses",
         reasoning: false,
+        template: "ibm-litellm",
+        upstreamId: "gpt-4.1",
       }),
     ).toEqual({ model: "gpt-4.1" });
     expect(
       dropUnsupportedReasoning(body, {
         dialect: "openai-responses",
         reasoning: null,
+        template: "ibm-litellm",
+        upstreamId: "gpt-4.1",
       }),
     ).toBe(body);
     expect(
       dropUnsupportedReasoning(
         { reasoning_effort: "low" },
-        { dialect: "openai-chat", reasoning: false },
+        {
+          dialect: "openai-chat",
+          reasoning: false,
+          template: "ibm-litellm",
+          upstreamId: "gpt-4.1",
+        },
       ),
     ).toEqual({});
+  });
+
+  /** TEST_SCENARIO: Azure's Responses API refuses `reasoning.effort` with
+   * HTTP 400 on the ETE proxy's DeepSeek deployments, whatever the value, so a
+   * Codex turn to one of them loses the parameter and runs. The same proxy's
+   * other Azure models keep it and reason, and so does DeepSeek served from
+   * vLLM, an OpenAI id the platform has not seen, and the same Azure DeepSeek
+   * on another Connection, where the refusal was not measured. */
+  it("drops the reasoning effort the ETE proxy's Azure DeepSeek refuses", () => {
+    const body = {
+      model: "azure/DeepSeek-V4.1-Flash",
+      reasoning: { effort: "high" },
+    };
+    const on = (upstreamId: string, template = "ibm-litellm") =>
+      dropUnsupportedReasoning(body, {
+        dialect: "openai-responses",
+        reasoning: true,
+        template,
+        upstreamId,
+      });
+    expect(on("azure/DeepSeek-V4.1-Flash")).toEqual({
+      model: "azure/DeepSeek-V4.1-Flash",
+    });
+    expect(on("azure/DeepSeek-V3.2-ncf")).toEqual({
+      model: "azure/DeepSeek-V4.1-Flash",
+    });
+    for (const kept of [
+      "azure/gpt-6.1-sol",
+      "azure/gpt-5.3-codex",
+      "azure/codex-mini-latest",
+      "azure/computer-use-preview",
+      "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    ])
+      expect(on(kept)).toBe(body);
+    expect(on("azure/DeepSeek-V4.1-Flash", "curve-bender")).toBe(body);
+    expect(
+      dropUnsupportedReasoning(
+        { reasoning_effort: "high" },
+        {
+          dialect: "openai-chat",
+          reasoning: true,
+          template: "ibm-litellm",
+          upstreamId: "azure/DeepSeek-V4.1-Flash",
+        },
+      ),
+    ).toEqual({ reasoning_effort: "high" });
   });
 
   /** TEST_SCENARIO: Claude Code sends a thinking display Bedrock behind

@@ -35,7 +35,12 @@ People and Agents sit in tables of their own, so an email never matches an Agent
   The Agent is named `<owning agent> · <name>`, which keeps it unique among the owner's agents.
   If the row cannot be written, the Agent is deleted again.
 - **Start.** A `start` command is delivered once, as a workspace command, that writes it as a [Startup Item](agent-processes.md#startup-items), an openrc user service, which then runs at every boot.
-- **Sleep.** An Environment sleeps like any machine, after the install's idle time, and keeps its disk; there is no setting of its own.
+- **Sleep.** An Environment sleeps like any machine when it sits idle, and keeps its disk, but after an idle timeout of its own: what it runs, Docker, k3s and an install of an app, takes far longer to come back than an agent's harness.
+  The Owning Agent gives it at create or update (`idle_timeout`, in minutes, hours or days, as `"90m"` or `"4h"`), and the api-server writes it as the Environment Agent's `hibernationTimeout`, which the controller's idle sweep reads in place of the install's `vmIdleTimeout`.
+  Without one, a new Environment gets `environments.idleTimeout` (default 60 minutes); one created before the setting existed carries none and keeps the install's `vmIdleTimeout` until an update gives it one.
+  One past `environments.idleTimeoutMax` (default 24 hours) is cut to it, as an expiry is, and zero or a word such as `never` is refused, so an Environment always sleeps in the end.
+  The memory reclaim that puts an idle machine to sleep early when its owner needs the room still applies.
+  `list_environments` shows each one's idle timeout.
 - **Expiry.** Every Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
   The Owning Agent and the owner set and extend it, and a sweep every five minutes deletes an Environment whose expiry passed.
 - **Delete.** The Owning Agent or the owner deletes an Environment at any time; it goes through the agents service, so the Agent's own cleanup runs.
@@ -175,7 +180,8 @@ Beside the chart it installs two pieces the gate needs, and two the Environment'
 
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
-- **No image garbage collection** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full and delete the images the install just put in; nothing there pulls one back.
+- **No image garbage collection and no disk eviction** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full, delete the images the install just put in and evict its pods; nothing there pulls an image back.
+  Its hard eviction keeps memory alone, since its eviction manager deletes images under its disk thresholds whatever the collection thresholds say; the guard and the VM runner hold the disk.
 - **The VM runner's node directories on its home disk, after every restart too**: its root is an overlay, where the runner pod cannot mount them, so the install bind-mounts them from the home disk and leaves a boot service that mounts them again before k3s starts, so a VM agent starts after the Environment sleeps and wakes with no new install.
 
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.

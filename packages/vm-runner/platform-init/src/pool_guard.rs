@@ -87,6 +87,25 @@ pub fn guest_room(keep: u64, granted: bool, avail: u64) -> u64 {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the text of guest::STORAGE_GUARD_NOTE for a guard that holds `held` bytes and leaves the agent `room`, in GiB to a tenth, so it changes only when a reader would see it change.
+pub fn guard_note(held: u64, room: u64) -> String {
+    let gib = |bytes: u64| format!("{:.1} GiB", bytes as f64 / f64::from(1u32 << 30));
+    if held == 0 {
+        return "The platform holds back none of this disk now.\n".to_string();
+    }
+    format!(
+        "The platform holds back {} of this disk, so it reads that much fuller than its files: \
+         unnamed files that PID 1 (/mnt/init) keeps open under /system/{}, which `lsof +L1` lists as deleted. They are not a leak.\n\
+         This disk is sparse, on the storage this owner's VM agents share. Every running VM agent may write what that storage has \
+         left above its reserve, and the hold keeps this one to that: it may write {} more now.\n\
+         The hold follows the shared storage within a minute, and a restart does not release it. To get room, delete files in \
+         this or another VM agent, delete or put to sleep VM agents you no longer need, or request more storage.\n",
+        gib(held),
+        crate::guest::STORAGE_GUARD_DIR,
+        gib(room),
+    )
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: what the agent's room means for its writes, as one of three marks: nothing it writes lands below HOME_FULL_BYTES, its writes are held back below POOL_GUARD_FLOOR, and above that it writes as it likes. A mark that gets worse is made at once; one that gets better holds until the room passes its level by ROOM_BAND. Without that band a room hovering on a level — an agent that fills and frees around one, a guard that moves by a step — alternates its mark at every look, and each look is a console line.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Room {
@@ -171,7 +190,7 @@ impl EvictionPass {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a look evicts, and how. A guest a grant holds back is not judged by the disk: its disk is the owner's whole claim, so a healthy grant is a small share of it — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and a pass on that share would give every agent's scratch a ten-minute life for no shortage at all. Nor is it judged by the filesystem's free blocks when it is out of room, since btrfs reports room it does not have: its room is what the guard leaves it (POOL_GUARD_KEEP), and a pass is run once that is down to the floor, which is the agent's last allowance and the point at which its writes fail. That pass spares CLAIM_EVICT_AGE like the claim's, because the agent's own disk is the one thing it must not lose work from, and it is run at most once per that age (`swept_at`): an agent held at its floor by its own home's files has no room whatever it evicts, so a pass at every look would delete its scratch entry by entry as each crossed the hour, and one pass per shortage would never clear a burst younger than the age it spares, which keeps the agent at its floor for good. A disk whose room cannot be read is left alone unless a request or a grant asks for a pass.
+// UNIT_BOUNDARY_DESCRIPTION: whether a look evicts, and how. A guest a grant holds back is not judged by the disk: its disk is the owner's whole claim, so a healthy grant can be a small share of it — 4.5 GiB of 100 GiB on a nearly full pool — and a pass on that share would give every agent's scratch a ten-minute life for no shortage at all. Nor is it judged by the filesystem's free blocks when it is out of room, since btrfs reports room it does not have: its room is what the guard leaves it (POOL_GUARD_KEEP), and a pass is run once that is down to the floor, which is the agent's last allowance and the point at which its writes fail. That pass spares CLAIM_EVICT_AGE like the claim's, because the agent's own disk is the one thing it must not lose work from, and it is run at most once per that age (`swept_at`): an agent held at its floor by its own home's files has no room whatever it evicts, so a pass at every look would delete its scratch entry by entry as each crossed the hour, and one pass per shortage would never clear a burst younger than the age it spares, which keeps the agent at its floor for good. A disk whose room cannot be read is left alone unless a request or a grant asks for a pass.
 pub fn eviction_pass(
     granted: bool,
     room: u64,
@@ -252,6 +271,25 @@ mod tests {
 
     const GIB: u64 = 1 << 30;
 
+    // TEST_SCENARIO: the note names what is held back, where the files are, that they are no leak and what frees room, in figures a reader can check against `df`; a guard that holds nothing says so instead of explaining a hold.
+    #[test]
+    fn the_note_explains_the_hold() {
+        let note = guard_note(73 * GIB + GIB / 2, 4 * GIB);
+        for words in [
+            "73.5 GiB",
+            "/system/storage-guard",
+            "not a leak",
+            "4.0 GiB more",
+            "request more storage",
+        ] {
+            assert!(note.contains(words), "{words:?} missing from {note}");
+        }
+        assert_eq!(
+            guard_note(0, 4 * GIB),
+            "The platform holds back none of this disk now.\n"
+        );
+    }
+
     // TEST_SCENARIO: a guest that has run out of room is marked full on the console and marked again only when its room changes, and the room it is judged by is what it may really write: a grant's leftovers, no more than the disk has free, and the disk's own free space when no grant holds it back. Eviction counts the guard's blocks as the guest's free space only up to the room the last look left it, so a guest at its grant reads its disk as full: counting the guard's blocks in full is what kept the disk reading as free while every write failed.
     #[test]
     fn a_guest_at_its_grant_is_marked_full() {
@@ -283,7 +321,7 @@ mod tests {
         assert_eq!(eviction_pass(false, 0, None, None, None, None, 0), None);
     }
 
-    // TEST_SCENARIO: a grant is an even part of the claim, so a healthy one is a small share of a disk sized at the whole claim — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and that share alone reads as a disk in trouble on every look. Eviction is decided on the room the guard leaves, not on the share: nothing is evicted on while the grant still has room, and a grant that is spent evicts one pass of what the agent has not touched for CLAIM_EVICT_AGE, which is the agent's last allowance and not a disk shortage.
+    // TEST_SCENARIO: a grant is what the claim has left above its reserve, so a healthy one can be a small share of a disk sized at the whole claim — 4.5 GiB of 100 GiB on a nearly full pool — and that share alone reads as a disk in trouble on every look. Eviction is decided on the room the guard leaves, not on the share: nothing is evicted on while the grant still has room, and a grant that is spent evicts one pass of what the agent has not touched for CLAIM_EVICT_AGE, which is the agent's last allowance and not a disk shortage.
     #[test]
     fn a_healthy_grant_is_not_a_short_disk() {
         let grant = 4_608 << 20;

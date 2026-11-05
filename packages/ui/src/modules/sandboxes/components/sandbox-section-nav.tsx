@@ -59,7 +59,7 @@ export const SECTIONS: SectionEntry[] = [
     section: "chat-forms",
     title: "Chat forms",
     description:
-      "How this agent may use forms, choices and cards in its web chat replies.",
+      "How this agent may use forms, choices and cards in its web chat replies, and how its thinking shows while it streams.",
   },
   {
     section: "skills",

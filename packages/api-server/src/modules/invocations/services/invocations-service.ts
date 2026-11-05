@@ -222,6 +222,7 @@ export function createInvocationsService(deps: {
   reportedReap: Pick<ReportedTargetReap, "afterReport">;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
+  readStartWait?: (agentId: string) => Promise<string | null>;
   now?: () => Date;
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
@@ -276,6 +277,7 @@ export function createInvocationsService(deps: {
             Math.max(MIN_INVOCATION_TTL_MS, input.ttlMs),
           );
     const expiresAt = new Date(now().getTime() + ttlMs);
+    const tasksExpireAt = new Date(expiresAt.getTime() + ttlMs);
     await deps.repo.insert({
       id: targetId,
       driverAgentId: input.driverAgentId,
@@ -327,7 +329,7 @@ export function createInvocationsService(deps: {
 
     const at = now();
     try {
-      for (const event of work.ahead(agent.id, at, expiresAt)) {
+      for (const event of work.ahead(agent.id, at, tasksExpireAt)) {
         await deps.runtimeMutator.bump(agent.id, [event]);
       }
       if (input.setup.install)
@@ -340,7 +342,7 @@ export function createInvocationsService(deps: {
           ),
         ]);
       await deps.runtimeMutator.bump(agent.id, [
-        work.task(agent.id, at, expiresAt),
+        work.task(agent.id, at, tasksExpireAt),
       ]);
     } catch (err) {
       await deps.agents.delete(agent.id).catch(() => {});
@@ -523,12 +525,17 @@ export function createInvocationsService(deps: {
     async get(invocationId, driverAgentId) {
       const row = await deps.repo.get(invocationId);
       if (!row || row.driverAgentId !== driverAgentId) return null;
+      const waiting =
+        row.status === "running" && row.startedAt === null
+          ? await deps.readStartWait?.(row.id).catch(() => null)
+          : null;
       return {
         status: row.status,
         result: row.result,
         errorReason: row.errorReason ?? undefined,
         ...(row.exitCode !== null && { exitCode: row.exitCode }),
         ...(row.script !== null && { output: row.output ?? {} }),
+        ...(waiting && { waiting }),
       };
     },
 

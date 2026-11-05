@@ -18,15 +18,16 @@ const named = (platform: Platform, key: string): string | undefined => {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a client that starts a Session through the ACP
  * relay without naming a model, such as `dam run`, a script or an older CLI,
- * gets the agent's chat default filled in: the same Session Pair the web
+ * gets the agent's chat default, or with nothing saved the automatic model,
+ * filled in: the same Session Pair the web
  * chat sends, and with no harness named the session follows that default as
  * a web chat does. Without it, the runtime refuses the
  * session as having no model on a harness that reaches its models through
  * the Model Router. Null when the frame is not a `session/new` without a
  * model, so it is passed on as it is. The promise gives null when there is
- * nothing to fill in: no chat default model for the harness the frame
- * names, or a runtime that does not route Session Pairs. Then the runtime's
- * own `no-model` refusal tells the client what to set.
+ * nothing to fill in: no model to run on for the harness the frame names,
+ * or a runtime that does not route Session Pairs. Then the runtime's own
+ * `no-model` refusal tells the client what to set.
  */
 export function fillSavedDefault(
   frame: unknown,

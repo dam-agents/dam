@@ -37,6 +37,10 @@ def write_config() -> None:
     model = config.get("model") if isinstance(config.get("model"), dict) else {}
     model["provider"] = ROUTER_PROVIDER
     model["default"] = os.environ.get("PLATFORM_MODEL") or model.get("default") or "platform-no-model"
+    # Hermes stores a session's provider as plain "custom", and rebuilds a
+    # stored session on session/load only through model.base_url.
+    model["base_url"] = _router_url()
+    model["api_key"] = "platform-placeholder"
     # Auxiliary calls (titles, compression) read these headers, not the provider's.
     model["default_headers"] = {"X-Platform-Harness": "hermes"}
     config["model"] = model

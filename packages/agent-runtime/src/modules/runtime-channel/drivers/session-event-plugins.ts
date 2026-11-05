@@ -27,13 +27,16 @@ function sessionEventPlugin(
 export const createInitializationPlugin = sessionEventPlugin(
   "initialization",
   (payload) => {
-    const { task, ...pair } = initializationEventPayload.parse(payload);
+    const { task, purpose, title, ...pair } =
+      initializationEventPayload.parse(payload);
     return {
       task,
+      ...(purpose && { unattended: true }),
       platformMeta: {
         type: SessionType.Regular,
         mode: SessionMode.Chat,
-        initialization: true,
+        ...(purpose ? { purpose } : { initialization: true }),
+        ...(title && { customTitle: title }),
         follows: "chat",
         ...pair,
       },

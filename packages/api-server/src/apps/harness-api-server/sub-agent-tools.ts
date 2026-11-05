@@ -61,7 +61,7 @@ When the work is a command whose output you need (a test suite, an eval, a bench
 
 With a prompt, the sub-agent runs it to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on one of your model providers that its harness runs on (list_harnesses shows which, or what is missing); connections you pass must be your own grants (see list_connections). The user may set this session's platform sub-agents to a harness, model, mode or config option: those then bind, and the result names them. A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
 
-const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
+const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Under waitingToStart, a running sub-agent that has not started yet says why: it waits for room in the memory your user's agents share, and starts on its own once room frees, with its whole time limit still ahead of it. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
 
 const FETCH_DESCRIPTION = `Save the full stdout or stderr of a finished script sub-agent to a file in your sandbox, as await_subagents only shows its start and end. Returns one shell command: run it, and it downloads the stream byte for byte to the path you give and checks its sha256. Then read the file as often as you need. The platform deletes its copy once the download is checked, so fetch each stream once; one nobody fetches is deleted after seven days.`;
 
@@ -168,13 +168,13 @@ const spawnInput = {
     .min(1)
     .optional()
     .describe(
-      "Harness mode, as the Config panel names it. Leave unset unless you know the harness: a mode that asks for approvals stalls an unattended sub-agent. claude-code on haiku needs bypassPermissions, or its report_result waits for an approval until the deadline.",
+      "Harness mode, as the Config panel names it. Leave unset unless you know the harness: a mode that asks for approvals stalls an unattended sub-agent. claude-code on Haiku 4.5 needs bypassPermissions, or its report_result waits for an approval until the deadline.",
     ),
   configOptions: z
     .record(z.string(), z.string())
     .optional()
     .describe(
-      "Harness config options as {name: value}: effort on claude-code (low to xhigh; haiku takes none) and codex (minimal to xhigh), approvals on bob. A setting the harness cannot apply fails the sub-agent as soon as it boots.",
+      "Harness config options as {name: value}: effort on claude-code (low to xhigh; Haiku 4.5 takes none) and codex (minimal to xhigh), approvals on bob. A setting the harness cannot apply fails the sub-agent as soon as it boots.",
     ),
 };
 
@@ -253,7 +253,7 @@ type Settled =
       reason: string | undefined;
       script?: ScriptEnd;
     }
-  | { id: string; status: "running" }
+  | { id: string; status: "running"; waiting?: string }
   | { id: string; status: "unknown" };
 
 async function readAll(ops: DriverOps, ids: string[]): Promise<Settled[]> {
@@ -271,7 +271,11 @@ async function readAll(ops: DriverOps, ids: string[]): Promise<Settled[]> {
         return { id, status: "done", result: view.result, ...script };
       if (view.status === "failed")
         return { id, status: "failed", reason: view.errorReason, ...script };
-      return { id, status: "running" };
+      return {
+        id,
+        status: "running",
+        ...(view.waiting && { waiting: view.waiting }),
+      };
     }),
   );
 }
@@ -341,6 +345,11 @@ async function summarize(ops: DriverOps, settled: Settled[]) {
         : [],
     ),
     running: settled.flatMap((s) => (s.status === "running" ? [s.id] : [])),
+    waitingToStart: settled.flatMap((s) =>
+      s.status === "running" && s.waiting
+        ? [{ id: s.id, reason: s.waiting }]
+        : [],
+    ),
     unknown: settled.flatMap((s) => (s.status === "unknown" ? [s.id] : [])),
   };
 }
@@ -692,14 +701,15 @@ export function registerSubAgentTools(
             return;
           lastBeat = Date.now();
           beats += 1;
-          const running = settled.filter((s) => s.status === "running").length;
+          const running = settled.filter((s) => s.status === "running");
+          const waiting = running.filter((s) => s.waiting).length;
           await extra
             .sendNotification({
               method: "notifications/progress",
               params: {
                 progressToken,
                 progress: beats,
-                message: `Still waiting: ${running} running`,
+                message: `Still waiting: ${running.length} running${waiting > 0 ? `, ${waiting} of them waiting for room to start` : ""}`,
               },
             })
             .catch(() => {});

@@ -20,6 +20,7 @@ import {
 import type { CallerSessionLookup } from "./infrastructure/caller-session.js";
 import { createCallCostsEndpoint } from "./services/call-costs-endpoint.js";
 import { createCatalogEndpoints } from "./services/catalog-endpoints.js";
+import { unboundHarnessModels } from "./domain/unbound-harness-models.js";
 import {
   createModelRouter,
   type ModelCallRecord,
@@ -49,6 +50,8 @@ export interface ComposeModelRouterOpts {
 }
 
 export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
+  const bound = (harness: string): boolean =>
+    Object.hasOwn(opts.harnesses, harness) && !!opts.harnesses[harness];
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a Codex or Bob terminal runs under the
    * harness's own id, so an id that is no Session of the runtime is looked up
@@ -168,12 +171,24 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
               maxOutputTokens: entry.metadata.maxOutputTokens,
             },
           ),
-          { dialect, reasoning: entry.metadata.reasoning },
+          {
+            dialect,
+            reasoning: entry.metadata.reasoning,
+            template: entry.template,
+            upstreamId: entry.upstreamId,
+          },
         ),
         dialect,
       ),
     extensions: [
-      createCatalogEndpoints(opts.catalog),
+      createCatalogEndpoints({
+        ...opts.catalog,
+        forHarness: (harness) =>
+          bound(harness)
+            ? opts.catalog.forHarness(harness)
+            : unboundHarnessModels(opts.catalog.providers()),
+        ordered: (harness) => !bound(harness),
+      }),
       ...(opts.callCosts
         ? [createCallCostsEndpoint(opts.callCosts, opts.log)]
         : []),

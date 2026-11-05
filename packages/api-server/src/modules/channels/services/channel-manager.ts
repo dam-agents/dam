@@ -25,8 +25,11 @@ import type { BlobHandoff } from "../../../core/blob-handoff.js";
 import {
   attachmentResultSchema,
   channelUserSchema,
+  messageLinkResultSchema,
   messageReactionsResultSchema,
+  ownedThreadsResultSchema,
   sendResultSchema,
+  startedThreadSchema,
   threadResultSchema,
   type AddressedWorker,
   type AttachmentQuery,
@@ -37,12 +40,18 @@ import {
   type ChannelSendResult,
   type ChannelUser,
   type ChannelWorker,
+  type MessageLinkQuery,
+  type MessageLinkResult,
   type MessageReactionsResult,
+  type OwnedThreadsResult,
   type PersonNotice,
   type PostMessageOptions,
   type ReactionsQuery,
+  type StartedThread,
+  type ThreadLeave,
   type ThreadQuery,
   type ThreadResult,
+  type ThreadStart,
   type WireAttachment,
 } from "./worker-contract.js";
 
@@ -55,11 +64,18 @@ export type {
   ChannelReply,
   ChannelSendResult,
   ChannelUser,
+  MessageLinkQuery,
+  MessageLinkResult,
   MessageReactionsResult,
+  OwnedThreadSummary,
+  OwnedThreadsResult,
   PostMessageOptions,
   ReactionsQuery,
+  StartedThread,
+  ThreadLeave,
   ThreadQuery,
   ThreadResult,
+  ThreadStart,
 } from "./worker-contract.js";
 
 export interface ChannelManager {
@@ -111,6 +127,11 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
+  getMessageLink(
+    instanceName: string,
+    channelType: ChannelType,
+    query: MessageLinkQuery,
+  ): Promise<MessageLinkResult | { error: string }>;
   resolveSlackConversationLabels(
     refs: SlackConversationRef[],
   ): Promise<SlackLabelledConversation[]>;
@@ -134,6 +155,21 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: AttachmentQuery,
   ): Promise<AttachmentResult | { error: string }>;
+  startThread(
+    instanceName: string,
+    channelType: ChannelType,
+    start: ThreadStart,
+  ): Promise<StartedThread | { error: string }>;
+  listThreads(
+    instanceName: string,
+    channelType: ChannelType,
+    sessionId: string,
+  ): Promise<OwnedThreadsResult | { error: string }>;
+  leaveThread(
+    instanceName: string,
+    channelType: ChannelType,
+    leave: ThreadLeave,
+  ): Promise<{ ok: true } | { error: string }>;
   notifyPerson(
     keycloakSub: string,
     notice: PersonNotice,
@@ -146,8 +182,12 @@ const ADDRESSED_METHODS = [
   "handOffTurn",
   "describeUsers",
   "describeMessageReactions",
+  "getMessageLink",
   "readThread",
   "fetchAttachment",
+  "startThread",
+  "listThreads",
+  "leaveThread",
 ] as const;
 
 type AddressedMethod = (typeof ADDRESSED_METHODS)[number];
@@ -193,12 +233,16 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   handOffTurn: forInstance.rest(z.unknown()),
   describeUsers: forInstance.rest(z.unknown()),
   describeMessageReactions: forInstance.rest(z.unknown()),
+  getMessageLink: forInstance.rest(z.unknown()),
   resolveConversationLabels: z.tuple([z.array(slackConversationRefSchema)]),
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   slackChannelChoices: z.tuple([z.string()]),
   slackChannelMembership: z.tuple([z.string(), z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
+  startThread: forInstance.rest(z.unknown()),
+  listThreads: forInstance.rest(z.unknown()),
+  leaveThread: forInstance.rest(z.unknown()),
   notifyPerson: z.tuple([
     z.string(),
     z.object({ slack: z.string(), telegram: z.string().optional() }),
@@ -235,6 +279,10 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     messageReactionsResultSchema,
     z.object({ error: z.string() }),
   ]),
+  getMessageLink: z.union([
+    messageLinkResultSchema,
+    z.object({ error: z.string() }),
+  ]),
   resolveConversationLabels: z.array(
     slackConversationRefSchema.extend({
       label: slackConversationLabelSchema.nullable(),
@@ -261,6 +309,12 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     attachmentResultSchema,
     z.object({ error: z.string() }),
   ]),
+  startThread: z.union([startedThreadSchema, z.object({ error: z.string() })]),
+  listThreads: z.union([
+    ownedThreadsResultSchema,
+    z.object({ error: z.string() }),
+  ]),
+  leaveThread: okOrErrorSchema,
   notifyPerson: z.object({ sent: z.number() }),
 };
 
@@ -281,11 +335,21 @@ const unsupported: Record<
   describeMessageReactions: (channelType) => ({
     error: `message reactions not supported on ${channelType}`,
   }),
+  getMessageLink: (channelType) => ({
+    error: `message links are not supported on ${channelType}`,
+  }),
   readThread: (channelType) => ({
     error: `thread reads are not supported on ${channelType}`,
   }),
   fetchAttachment: (channelType) => ({
     error: `attachment fetches are not supported on ${channelType}`,
+  }),
+  startThread: (channelType) => ({
+    error: `${channelType} has no threads to start — use post`,
+  }),
+  listThreads: () => ({ threads: [] }),
+  leaveThread: (channelType) => ({
+    error: `${channelType} has no threads to leave`,
   }),
 };
 

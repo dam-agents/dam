@@ -67,6 +67,29 @@ describe("route round-trip", () => {
     });
   });
 
+  // TEST_SCENARIO: Settings › Profiles has its own tab, and a link may name one profile so its editor opens; ids that need escaping round-trip.
+  it("opens Settings › Profiles and a single profile", () => {
+    expect(parseRoute("/settings/profiles")).toEqual({
+      view: "settings",
+      settingsTab: "profiles",
+    });
+    expect(parseRoute("/settings/profiles/p%2F1")).toEqual({
+      view: "settings",
+      settingsTab: "profiles",
+      profileId: "p/1",
+    });
+    expect(routeToPath({ view: "settings", settingsTab: "profiles" })).toBe(
+      "/settings/profiles",
+    );
+    expect(
+      routeToPath({
+        view: "settings",
+        settingsTab: "profiles",
+        profileId: "p/1",
+      }),
+    ).toBe("/settings/profiles/p%2F1");
+  });
+
   // TEST_SCENARIO: an unknown path is Not found and keeps its URL, rather than rendering Home or a default tab under the bad address.
   it.each([
     "/nonexistent",

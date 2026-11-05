@@ -44,6 +44,7 @@ export interface InvocationRow extends InvocationSpec {
   output: InvocationOutput | null;
   outputExpiresAt: Date | null;
   createdAt: Date;
+  startedAt: Date | null;
   expiresAt: Date;
   completedAt: Date | null;
   reapedAt: Date | null;
@@ -68,8 +69,10 @@ export interface InvocationsRepository {
     },
   ): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
+  markStarted(id: string, at: Date): Promise<InvocationStart | null>;
   complete(id: string, result: unknown): Promise<boolean>;
   fail(id: string, reason: string): Promise<void>;
+  failExpired(id: string, reason: string, now: Date): Promise<boolean>;
   finishScript(id: string, finish: ScriptFinish): Promise<boolean>;
   dropOutputStream(id: string, stream: InvocationOutputStream): Promise<void>;
   clearOutput(id: string): Promise<void>;
@@ -90,6 +93,11 @@ export interface InvocationsRepository {
   ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
   delete(id: string): Promise<void>;
   deleteReapedByRoot(rootDriverId: string): Promise<number>;
+}
+
+export interface InvocationStart {
+  startedAt: Date;
+  expiresAt: Date;
 }
 
 export type ScriptFinish =
@@ -128,6 +136,7 @@ export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     output: r.output as InvocationOutput | null,
     outputExpiresAt: r.outputExpiresAt,
     createdAt: r.createdAt,
+    startedAt: r.startedAt,
     expiresAt: r.expiresAt,
     completedAt: r.completedAt,
     reapedAt: r.reapedAt,
@@ -171,6 +180,30 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       return rows[0] ? toRow(rows[0]) : null;
     },
 
+    async markStarted(id, at) {
+      const startedAt = sql`${at.toISOString()}::timestamptz`;
+      const rows = await db
+        .update(invocationsTable)
+        .set({
+          startedAt: sql`coalesce(${invocationsTable.startedAt}, ${startedAt})`,
+          expiresAt: sql`case when ${invocationsTable.startedAt} is null and ${invocationsTable.ttlMs} is not null then ${startedAt} + ${invocationsTable.ttlMs} * interval '1 millisecond' else ${invocationsTable.expiresAt} end`,
+        })
+        .where(
+          and(
+            eq(invocationsTable.id, id),
+            eq(invocationsTable.status, "running"),
+          ),
+        )
+        .returning({
+          startedAt: invocationsTable.startedAt,
+          expiresAt: invocationsTable.expiresAt,
+        });
+      const row = rows[0];
+      return row?.startedAt
+        ? { startedAt: row.startedAt, expiresAt: row.expiresAt }
+        : null;
+    },
+
     async complete(id, result) {
       const updated = await db
         .update(invocationsTable)
@@ -195,6 +228,21 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
             eq(invocationsTable.status, "running"),
           ),
         );
+    },
+
+    async failExpired(id, reason, now) {
+      const updated = await db
+        .update(invocationsTable)
+        .set({ status: "failed", errorReason: reason, completedAt: new Date() })
+        .where(
+          and(
+            eq(invocationsTable.id, id),
+            eq(invocationsTable.status, "running"),
+            lt(invocationsTable.expiresAt, now),
+          ),
+        )
+        .returning({ id: invocationsTable.id });
+      return updated.length > 0;
     },
 
     async finishScript(id, finish) {

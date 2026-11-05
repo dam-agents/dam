@@ -184,16 +184,51 @@ export function floorOutputBudget(
   return { ...body, max_tokens: MIN_NON_CLAUDE_OUTPUT_TOKENS };
 }
 
+const IBM_LITELLM_TEMPLATE = "ibm-litellm";
+const AZURE_DEEPSEEK = /^azure\/.*deepseek/i;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the route itself refuses a reasoning
+ * effort, whatever the model reasons. Measured on the ETE proxy, the
+ * `ibm-litellm` preset: its Azure-served DeepSeek deployments
+ * (`azure/DeepSeek-V4.1-Flash`, `azure/DeepSeek-V3.2-ncf`) answer
+ * `reasoning.effort` with HTTP 400 on the Responses API, whatever the value.
+ * The same proxy's other Azure models and DeepSeek served from vLLM keep the
+ * effort and reason, so only that family on that preset loses it: an id the
+ * platform has not seen keeps what it sends, and a wrong guess here loses the
+ * effort, never the call. Only the Responses shape carries the effort, and a
+ * probe of the chat shape with `reasoning_effort` answered 200.
+ */
+export function refusesReasoningEffort(target: {
+  dialect: ModelDialect;
+  template: string;
+  upstreamId: string;
+}): boolean {
+  if (target.dialect !== "openai-responses") return false;
+  if (target.template !== IBM_LITELLM_TEMPLATE) return false;
+  return AZURE_DEEPSEEK.test(target.upstreamId);
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Codex sends its session's reasoning effort
  * whatever the model, and OpenAI refuses it on a model that does not reason,
- * so a model the catalog knows does not reason loses the parameter.
+ * so a model the catalog knows does not reason loses the parameter. A route
+ * that refuses the effort loses it too, and there the harness's thinking
+ * cannot be asked for: no effort value and no summary request brings
+ * reasoning back on that API, which the probes confirmed at 0 reasoning
+ * tokens.
  */
 export function dropUnsupportedReasoning(
   body: Json,
-  target: { dialect: ModelDialect; reasoning: boolean | null },
+  target: {
+    dialect: ModelDialect;
+    reasoning: boolean | null;
+    template: string;
+    upstreamId: string;
+  },
 ): Json {
-  if (target.reasoning !== false) return body;
+  if (target.reasoning !== false && !refusesReasoningEffort(target))
+    return body;
   if (target.dialect === "openai-responses" && "reasoning" in body) {
     const { reasoning: _reasoning, ...rest } = body;
     return rest;

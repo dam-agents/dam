@@ -299,7 +299,7 @@ A channel thread whose session runs on another pair is still checked against the
   Whoever waits for an answer is told why none comes: a person gets a notice that only they see in Slack, or a chat post in Telegram; an app or another agent that mentioned the agent gets one notice in the thread; an agent that hands a turn over gets the reason as an error.
   A notice names the time when the agent answers again, and Slack and Telegram show that time in each reader's own time zone.
   Ambient reading waits for nobody, so it skips the agent with no notice in the channel ([channels](channels.md)); the owner hears of it ([Telling the owner](#unattended-work)).
-- **Shared interactive artifacts:** a viewer's prompt does not start a turn or wake the agent, and the page tells the viewer the agent reached its spend limit ([artifact library](artifact-library.md#viewers-of-a-shared-page)).
+- **Interactive artifacts:** a viewer's prompt, or an owner's that asks for a Session of its own, does not start a turn or wake the agent, and the page tells the viewer the agent reached its spend limit ([artifact library](artifact-library.md#viewers-of-a-shared-page)).
 
 At a soft limit, a hold also asks the owner whether to continue, so the owner is asked even when the call that reached the limit was the last one of its turn.
 The ceiling asks nothing.

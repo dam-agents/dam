@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   senderSchema,
   sessionDefaultKind,
+  sessionPurposeSchema,
   sessionSettingsSchema,
   type Sender,
 } from "agent-runtime-api";
@@ -18,6 +19,7 @@ export const platformSessionMetaSchema = z.object({
   type: z.string().optional(),
   scheduleId: z.string().optional(),
   initialization: z.boolean().optional(),
+  purpose: sessionPurposeSchema.optional().catch(undefined),
   threadTs: z.string().optional(),
   ref: z.string().optional(),
   reportTo: z.string().optional(),

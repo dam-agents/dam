@@ -19,7 +19,7 @@ import type {
   RunBoundary,
 } from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
-import type { SpendSystem } from "../../modules/spend/index.js";
+import type { SpendHoldGate, SpendSystem } from "../../modules/spend/index.js";
 import type { UserBudgetsForOperator } from "../../modules/budgets/index.js";
 import type { OutageAlertNotices } from "../../modules/outage-alerts/index.js";
 import type { TtlStore } from "../../core/ttl-store.js";
@@ -78,6 +78,10 @@ import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
 import type { AddressSets } from "../../core/address-sets.js";
+import type {
+  LoginTestimonialsForOperator,
+  PublicTestimonials,
+} from "../../modules/login-testimonials/index.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
 import type { SidebarOrderModule } from "../../modules/sidebar-order/index.js";
 export type { ApiVariables };
@@ -107,7 +111,12 @@ export interface ApiServerDeps {
   redisBus: RedisBus;
   spendForOwner: SpendSystem["forOwner"];
   spendCeilingsForOperator: SpendSystem["ceilingsForOperator"];
+  spendHold: SpendHoldGate;
   userBudgetsForOperator: UserBudgetsForOperator;
+  loginTestimonials: {
+    forOperator: LoginTestimonialsForOperator;
+    readPublic: PublicTestimonials;
+  };
   providerStatus: ProviderStatusService;
   outageAlerts: OutageAlertNotices;
   approvalsRelay: ApprovalsRelayService;

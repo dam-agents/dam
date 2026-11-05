@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 
 import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { useStore } from "../../../store.js";
-import type { AgentState } from "../../../types.js";
 import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
@@ -23,13 +22,15 @@ import {
   type DelegationModel,
   delegationModel,
   delegationState,
+  type DelegationTarget,
+  delegationWaitReason,
 } from "../lib/delegation-state.js";
 import { DelegationStatePill } from "./delegation-state-pill.js";
 
 interface Props {
   node: DelegationNode;
   driverAgentId: string;
-  agentStates: ReadonlyMap<string, AgentState>;
+  targets: ReadonlyMap<string, DelegationTarget>;
   turns: Readonly<Record<string, TurnSummary>> | undefined;
 }
 
@@ -38,14 +39,11 @@ function subtitle(node: DelegationNode): string {
   return parts.filter((p): p is string => !!p).join(" · ");
 }
 
-export function DelegationCard({
-  node,
-  driverAgentId,
-  agentStates,
-  turns,
-}: Props) {
+export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
   const [open, setOpen] = useState(false);
-  const state = delegationState(node, agentStates.get(node.id));
+  const target = targets.get(node.id);
+  const state = delegationState(node, target);
+  const waitReason = delegationWaitReason(node, target);
   const failed = state === "failed";
   const turn = turns?.[node.id];
   const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
@@ -80,7 +78,9 @@ export function DelegationCard({
               failed ? "text-danger" : "text-muted-foreground",
             )}
           >
-            {failed && node.errorReason ? node.errorReason : subtitle(node)}
+            {failed && node.errorReason
+              ? node.errorReason
+              : (waitReason ?? subtitle(node))}
           </span>
         </span>
         <DelegationStatePill state={state} />
@@ -132,7 +132,7 @@ export function DelegationCard({
               key={child.id}
               node={child}
               driverAgentId={driverAgentId}
-              agentStates={agentStates}
+              targets={targets}
               turns={turns}
             />
           ))}

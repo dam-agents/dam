@@ -4,12 +4,14 @@ import type {
   AgentTarget,
 } from "./modules/agents/permissions.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
+import type { LoginTestimonialsService } from "./modules/login-testimonials/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
 import type {
   BudgetsService,
   UserBudgetsService,
 } from "./modules/budgets/types.js";
 import type { AttentionService } from "./modules/attention/types.js";
+import type { CostReviewsService } from "./modules/cost-reviews/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type {
   SatellitesService,
@@ -87,6 +89,7 @@ export interface ApiContext {
   skills: SkillsService;
   approvals: ApprovalsService;
   attention: AttentionService;
+  costReviews: CostReviewsService;
   egressRules: EgressRulesService;
   invocationsQuery: InvocationsQueryService;
   invocationsControl: InvocationsControlService;
@@ -114,6 +117,7 @@ export interface ApiContext {
   satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
   userBudgets: UserBudgetsService;
+  loginTestimonials: LoginTestimonialsService;
   spend: SpendService;
   spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;

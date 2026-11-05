@@ -96,6 +96,10 @@ interface StartedCapabilities {
   steering: SessionSteering | null;
 }
 
+export interface AsideSession extends LiveSession {
+  close: () => void;
+}
+
 export interface StartedSession {
   connection: ClientConnection;
   sessionId: string;
@@ -107,6 +111,7 @@ export interface StartedSession {
 interface UseAcpConnectionResult {
   state: ConnectionState;
   ensureLive: () => Promise<LiveSession | null>;
+  engageAside: (sid: string) => Promise<AsideSession>;
   beginSession: () => Promise<StartedSession>;
   loadSessionHistory: (
     sid: string,
@@ -342,6 +347,39 @@ export function useAcpConnection(
     promise.catch(() => releaseStartSlot(holders));
     return promise;
   }, [startSession, releaseStartSlot]);
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a connection of its own, engaged to one session, for a send whose chat moved to another session before the chat's own connection could carry it. It reports to the delivery tracker only, since the chat no longer shows that session, and it lives until its caller closes it. */
+  const engageAside = useCallback(
+    async (sid: string): Promise<AsideSession> => {
+      if (!selectedAgent) throw new Error("No agent selected");
+      const { connection, ws } = await openInitializedConnection(
+        selectedAgent,
+        withDeliveryTracking(delivery, () => {}),
+      );
+      const close = () => {
+        try {
+          ws.close();
+        } catch {}
+      };
+      try {
+        await connection.agent.request("session/resume", {
+          sessionId: sid,
+          cwd: ".",
+          mcpServers: [],
+        });
+      } catch (err) {
+        close();
+        throw err;
+      }
+      return {
+        connection,
+        sessionId: sid,
+        isOpen: () => ws.readyState === WebSocket.OPEN,
+        close,
+      };
+    },
+    [selectedAgent, delivery],
+  );
 
   const collectorRef = useRef<{
     sid: string;
@@ -710,6 +748,7 @@ export function useAcpConnection(
     state,
     retry,
     ensureLive,
+    engageAside,
     beginSession,
     loadSessionHistory,
     runtimeIdle,

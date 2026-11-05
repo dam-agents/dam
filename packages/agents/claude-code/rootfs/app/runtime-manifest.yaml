@@ -205,7 +205,7 @@ drivers:
             - value: high
               name: "High"
             - value: xhigh
-              name: "Extra High"
+              name: "Extra high"
               description: "May use excessive tokens. Use sparingly for the hardest tasks."
         # The router writes it over the effort of each call Claude Code marks as
         # a subagent's, and only where Claude Code sent one.
@@ -222,7 +222,7 @@ drivers:
             - value: high
               name: "High"
             - value: xhigh
-              name: "Extra High"
+              name: "Extra high"
               description: "May use excessive tokens. Use sparingly for the hardest tasks."
         # promptCacheTtl and subagentPromptCacheTtl need Claude Code 2.1.242+.
         # Unset, Claude Code picks 1h only for a subscription's main conversation;
@@ -239,17 +239,20 @@ drivers:
             - value: 1h
               name: "1 hour"
               description: "Survives long pauses between turns · Cache writes cost more"
-      # Haiku supports neither "auto" mode nor effort levels.
+      # Haiku 4.5, by its tier alias or any concrete id (a date stamp allowed), supports neither "auto" mode nor effort levels; a later Haiku such as claude-haiku-5-5 is unconstrained.
       modelConstraints:
-        haiku:
+        haiku: &haiku-4-5
           mode: ["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"]
           effort: []
           subagentEffort: []
-    # On a LiteLLM provider the tiers above all resolve to the gateway's
-    # "latest" model, so the provider's other models are listed after them.
-    # Names match what the router publishes (and /model writes):
-    # lowercased, claude/-prefixed. No redirectEnv: the gateway maps the tiers,
-    # so nothing is seeded.
+        claude-haiku-4-5: *haiku-4-5
+    # On the Model Router a tier above is offered only where the provider
+    # lists a model of exactly that name, as Bedrock's tier ids are: the
+    # router resolves every name against the listing and refuses a bare tier a
+    # gateway would have mapped to another model, so a LiteLLM provider's full
+    # ids stand alone there. Names match what the router publishes (and /model
+    # writes): lowercased, claude/-prefixed. No redirectEnv: nothing seeds a
+    # model.
     modelDiscovery:
       urlEnv:
         - ANTHROPIC_BASE_URL

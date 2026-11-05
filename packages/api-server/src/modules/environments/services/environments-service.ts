@@ -16,6 +16,7 @@ import {
 import { securityLog } from "../../../core/security-log.js";
 import {
   clampExpiry,
+  clampIdleTimeout,
   DAY_MS,
   endpointUrl,
   environmentAgentName,
@@ -30,6 +31,8 @@ export interface EnvironmentsConfig {
   urlTemplate: string | null;
   maxPerAgent: number;
   expiryMaxDays: number;
+  idleTimeoutDefaultMin: number;
+  idleTimeoutMaxMin: number;
 }
 
 export interface CreateEnvironmentInput {
@@ -37,11 +40,13 @@ export interface CreateEnvironmentInput {
   endpoints: EnvironmentEndpoint[];
   storage?: string;
   expiresAt?: Date;
+  idleTimeoutMin?: number;
   start?: string;
 }
 
 export interface UpdateEnvironmentInput {
   expiresAt?: Date;
+  idleTimeoutMin?: number;
   // UNIT_BOUNDARY_DESCRIPTION: readiness paths by endpoint name; null removes one, so the endpoint is ready once its port answers.
   ready?: Record<string, string | null>;
 }
@@ -70,6 +75,7 @@ export interface EnvironmentsDeps {
 }
 
 export interface OwningAgentEnvironments {
+  idleTimeout: { defaultMin: number; maxMin: number };
   // UNIT_BOUNDARY_DESCRIPTION: whether the Agent may own Environments (its owner has the feature); without it, it only lists those shared with it.
   manage: boolean;
   create(input: CreateEnvironmentInput): Promise<AgentEnvironmentView>;
@@ -134,6 +140,7 @@ function refuse(
  * owning Agent, on the default image, with no harness, no
  * connections and no default model provider, so nothing in it can act as the
  * owning Agent; a row beside it holds its host label, endpoints and expiry,
+ * its Agent carries the idle timeout it sleeps after,
  * and the owner alone adds people to one Environment, beside the people of its
  * Agent, whom the owner and the Agent's editors name. A `start` command becomes its first Startup Item through the
  * runtime channel. The owning Agent wakes a sleeping one before it opens the
@@ -166,6 +173,7 @@ export function createEnvironmentsService(
       memberAgents: lists.memberAgents,
       agentMemberCount: lists.agentMemberCount,
       expiresAt: record.expiresAt.toISOString(),
+      idleTimeoutMin: agent?.effectiveHibernationTimeoutMin ?? null,
       createdAt: record.createdAt.toISOString(),
       state: agent?.state ?? "unknown",
     };
@@ -263,6 +271,7 @@ export function createEnvironmentsService(
       endpoints: env.endpoints,
       peopleWhoMayOpen: people.length,
       expiresAt: env.expiresAt,
+      idleTimeoutMin: env.idleTimeoutMin,
       createdAt: env.createdAt,
       state: env.state,
     };
@@ -313,6 +322,16 @@ export function createEnvironmentsService(
     return resolved;
   }
 
+  function idleTimeout(requested: number | undefined): number {
+    const resolved = clampIdleTimeout(
+      requested,
+      deps.config.idleTimeoutDefaultMin,
+      deps.config.idleTimeoutMaxMin,
+    );
+    if (typeof resolved !== "number") refuse(resolved.error);
+    return resolved;
+  }
+
   async function remove(
     record: EnvironmentRecord,
     actor: string,
@@ -345,6 +364,7 @@ export function createEnvironmentsService(
           "PRECONDITION_FAILED",
         );
       const expiresAt = expiry(input.expiresAt);
+      const hibernationTimeoutMin = idleTimeout(input.idleTimeoutMin);
       const agent = await deps.agents.create({
         name: environmentAgentName(owning.name, input.name),
         description: `Environment ${input.name} of ${owning.name}`,
@@ -352,6 +372,7 @@ export function createEnvironmentsService(
         noDefaultProvider: true,
         egressPreset: "none",
         requireConnectionAddress: true,
+        hibernationTimeoutMin,
         ...(input.storage ? { storage: input.storage } : {}),
       });
       const record: EnvironmentRecord = {
@@ -396,6 +417,10 @@ export function createEnvironmentsService(
     }
 
     return {
+      idleTimeout: {
+        defaultMin: deps.config.idleTimeoutDefaultMin,
+        maxMin: deps.config.idleTimeoutMaxMin,
+      },
       manage: opts.manage,
       create: createUnder,
 
@@ -432,8 +457,14 @@ export function createEnvironmentsService(
       },
 
       async update(name, input) {
-        if (input.expiresAt === undefined && input.ready === undefined)
-          refuse("nothing to change: give an expiry or readiness paths");
+        if (
+          input.expiresAt === undefined &&
+          input.idleTimeoutMin === undefined &&
+          input.ready === undefined
+        )
+          refuse(
+            "nothing to change: give an expiry, an idle timeout or readiness paths",
+          );
         const record = await byName(name);
         const patch: Partial<
           Pick<EnvironmentRecord, "expiresAt" | "endpoints">
@@ -442,13 +473,20 @@ export function createEnvironmentsService(
           patch.expiresAt = expiry(input.expiresAt);
         if (input.ready !== undefined)
           patch.endpoints = withReadyPaths(record.endpoints, input.ready);
-        await deps.repo.update(record.agentId, patch);
-        return forAgent(
-          await viewOf(
-            { ...record, ...patch },
-            await deps.agents.get(record.agentId),
-          ),
-        );
+        const hibernationTimeoutMin =
+          input.idleTimeoutMin === undefined
+            ? undefined
+            : idleTimeout(input.idleTimeoutMin);
+        if (Object.keys(patch).length > 0)
+          await deps.repo.update(record.agentId, patch);
+        const agent =
+          hibernationTimeoutMin === undefined
+            ? await deps.agents.get(record.agentId)
+            : await deps.agents.update({
+                id: record.agentId,
+                hibernationTimeoutMin,
+              });
+        return forAgent(await viewOf({ ...record, ...patch }, agent));
       },
 
       async wake(name) {

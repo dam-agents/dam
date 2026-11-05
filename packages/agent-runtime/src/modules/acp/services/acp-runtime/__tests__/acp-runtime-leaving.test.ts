@@ -5,7 +5,6 @@ import {
   promptTextsOf,
   transcriptOf,
   IDLE_REAP_DELAY_MS,
-  QUEUE_PARK_MS,
 } from "./acp-world.js";
 
 /**
@@ -15,9 +14,9 @@ import {
  * dies — and the conversation, the other people in it, and the work in
  * flight must be exactly as they would have been with the socket still
  * there. Only what belonged to the leaver alone goes with them; queued work
- * belongs to the conversation, so it waits out a departure rather than
- * following it. Once nothing belongs to anyone, the sandbox lets the
- * conversation go.
+ * belongs to the conversation, so it runs whether or not anyone stays to
+ * watch. Once nothing belongs to anyone, the sandbox lets the conversation
+ * go.
  *
  * See `acp-runtime-joining.test.ts` for the way back in; this feature is
  * about what a departure may and may not change.
@@ -154,19 +153,19 @@ describe("acp-runtime: leaving", () => {
   });
 
   /**
-   * TEST_SCENARIO: A parked queue is dropped because nobody came back, and now the
-   * session really is idle: no clients, no turn, no queue. It must be
-   * released like any other abandoned conversation.
+   * TEST_SCENARIO: The only person in the conversation sends a message while
+   * a turn runs, then opens another session before its turn comes. Nobody is
+   * engaged on the session any more, and the message must still run.
    *
-   * The release check runs a few seconds after the last client leaves, which
-   * is long before the park window closes — and it refuses to release a
-   * session that still has queued work, correctly, because that work is
-   * waiting for a return. Nothing else asks again afterwards, so dropping
-   * the queue has to be its own cue to re-check, or a session nobody will
-   * ever open again keeps its harness subprocess alive for the life of the
-   * pod.
+   * The runtime accepted the message, and the sender's chat said so. Holding
+   * it for a reader who may never come back, then writing it down as
+   * undelivered, broke that promise: the person came back to "Not delivered"
+   * and no answer. A turn already running keeps going when its viewer leaves,
+   * so a waiting message does the same, and its answer lands in the
+   * transcript for whoever opens the session next. Once it has run, nothing
+   * is left, and the session is released like any abandoned conversation.
    */
-  it("should release the session once its parked queue is dropped", () => {
+  it("should run a queued message after its sender leaves, then release the session", () => {
     vi.useFakeTimers();
     const world = createWorld();
 
@@ -178,7 +177,15 @@ describe("acp-runtime: leaving", () => {
     alice.disconnect();
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    vi.advanceTimersByTime(QUEUE_PARK_MS + IDLE_REAP_DELAY_MS);
+    expect(promptTextsOf(world.harness())).toEqual([
+      "run the migration",
+      "then check the logs",
+    ]);
+    expect(world.harness().received("session/close")).toEqual([]);
+
+    world.harness().emit(frames.agentMessage(SESSION, "the logs are clean"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
 
     expect(
       world

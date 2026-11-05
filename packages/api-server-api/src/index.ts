@@ -75,6 +75,9 @@ export {
   harnessCatalogOf,
   layerMetadata,
   listingForTemplate,
+  nativeListingForTemplate,
+  nativePinOf,
+  withNativePin,
   lookupPrice,
   MIN_CONTEXT_WINDOW,
   modelDialect,
@@ -224,6 +227,19 @@ export {
   userBudgetsSortSchema,
   userBudgetUserSchema,
 } from "./modules/budgets/schemas.js";
+export {
+  LOGIN_TESTIMONIAL_LIMITS,
+  LOGIN_TESTIMONIALS_MAX,
+  loginTestimonialInputSchema,
+  loginTestimonialPhotoIdSchema,
+  loginTestimonialsSaveInputSchema,
+} from "./modules/login-testimonials/schemas.js";
+export type {
+  LoginTestimonial,
+  LoginTestimonialInput,
+  LoginTestimonialsSaveInput,
+  LoginTestimonialsService,
+} from "./modules/login-testimonials/types.js";
 export type {
   ProviderOutage,
   ProviderOutageReason,
@@ -432,11 +448,14 @@ export type {
   ArtifactTouchService,
   ArtifactCallAgentApiInput,
   ArtifactCallAgentApiResult,
+  ArtifactSendPromptInput,
+  ArtifactSendPromptResult,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
   artifactPromptSchema,
+  type ArtifactPrompt,
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
   ARTIFACT_REQUEST_MAX_IN_FLIGHT,
@@ -618,7 +637,10 @@ export type {
   ProfileCreateInput,
   ProfileUpdateInput,
 } from "./modules/profiles/types.js";
-export { DEFAULT_PROFILE_UNDELETABLE } from "./modules/profiles/schemas.js";
+export {
+  DEFAULT_PROFILE_UNDELETABLE,
+  PROFILE_NAME_MAX_LENGTH,
+} from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,
@@ -748,6 +770,12 @@ export {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
 } from "./modules/attention/types.js";
+export type {
+  CostReviewOffer,
+  CostReviewStarted,
+  CostReviewsService,
+} from "./modules/cost-reviews/types.js";
+export { COST_REVIEW_LATER_DAYS } from "./modules/cost-reviews/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 

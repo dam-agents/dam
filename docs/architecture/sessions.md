@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-02
+Last verified: 2026-11-04
 
 ## Session inside the machine
 
@@ -22,6 +22,7 @@ Each lease is the unchanged ACP runtime this section describes, behind a **lease
 Each lease is told about the client as the first was, and an agent's question is answered to the lease that asked.
 The session list draws on the metadata store too, so a harness not running still lists its sessions.
 A listed session's title is its explicit title (a rename, a schedule's session title, or the original's on a rewind) when it has one, else the harness's own or the one its first prompt gave it; the list also carries the explicit and the automatic title apart, so the rename dialog prefills only an explicit one and offers the automatic one as its placeholder.
+The list is read from the platform's own session records, not from the harness, so a Session with no kept title (one a runtime before the Model Router made) gets the harness's title once: at each boot the runtime asks each harness's listing for its untitled Sessions and keeps the first line of the title.
 A channel turn's first prompt opens with the platform's instructions to the agent, so a Slack or Telegram Session's automatic title is instead the person's first message, which the channel names on `session/new` in `_meta.platform.title` (Slack sends its first line without leading mentions, Telegram the whole text); the runtime cuts it to one line of the same length as a title from a prompt.
 
 A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
@@ -102,7 +103,9 @@ Every `session/load` returns the copy in `_meta.platform.continuedFrom`, so a cl
 ## Prompt delivery
 
 A session runs one turn at a time, and one scheduler is the only place a prompt waits.
-A prompt is **queued** rather than refused or forwarded whenever its session cannot take it — a turn already running, no channel engaged to read the answer, or the harness not yet holding the session — and promoted the moment that clears — a scheduled fire is **unattended**, its sender gone once the prompt is accepted and nobody reading the turn live, so it waits on the harness alone and never on a channel; a queue at capacity rejects further prompts with an error whose cause a sender can tell from any other refusal.
+A prompt is **queued** rather than refused or forwarded whenever its session cannot take it — a turn already running, or the harness not yet holding the session — and promoted the moment that clears; a queue at capacity rejects further prompts with an error whose cause a sender can tell from any other refusal.
+A prompt never waits for a reader: one the runtime accepted runs whether or not its sender is still engaged, as a running turn keeps going when its viewer leaves, and its answer lands in the log for whoever opens the session next.
+A scheduled fire is **unattended**, its sender gone once the prompt is accepted and nobody reading the turn live.
 So a prompt has three fates its sender cares about — **accepted** (the runtime has it), **queued** (waiting for its session to be able to take it), and **started** (handed to the agent, where delivery becomes real) — and only the runtime can tell them apart.
 
 The runtime therefore reports them, over the same channel extension as the end-of-turn signal — which is logged and replayed, and names the ending turn's prompt id and stop reason: one notification on acceptance (and whether the prompt queued), one when it starts.
@@ -175,12 +178,14 @@ A client fails a prompt on evidence instead:
 
 - **No acceptance within a bounded wait** — the true delivery check, normally a matter of milliseconds.
   Unacknowledged this long means it never arrived, and the failure carries the socket's stated cause when it gave one.
+  Until the acceptance arrives the person's own message says it is **sending**, or that the agent is **waking** when the send woke it, after a second so a fast send shows nothing; the reply, the working indicator and the session's row in the sidebar wait for the acceptance, so none says the agent is working on a message it does not have.
+  A send whose chat moves to another session before it went out goes over a connection of its own, engaged to its session, so the move cannot strand it.
 - **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs.
   The user is told it is waiting, which is true.
 
-A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, except steer-only entries, which belong to their sender, so the last channel leaving **parks** the queue for a grace window, and a client engaging again within it resumes it.
-A queue holding only unattended fires is never parked: nobody is coming back for it, and it needs nobody.
-A queue leaves the scheduler by four routes — the window expiring, the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the machine, whole, inline images capped; the refusal errors each sender instead.
+A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, except steer-only entries, which belong to their sender.
+The queue keeps running with nobody engaged, so a person who opens another session while a message waits finds its answer when they come back.
+A queue leaves the scheduler by three routes — the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the machine, whole, inline images capped; the refusal errors each sender instead.
 Each session load hands the records back, marked on the conversation to send again or delete, and says whether a turn is still running; a record sent again or deleted is **retired** so its earlier echo drops from the replay rather than doubling.
 Recovery is always a send the user initiates: an automatic resend cannot know whether a prompt was dropped before or after the agent saw it, so it risks running it twice.
 A prompt already *handed to the harness* is the other side of that split: losing the channel costs the sender only its live view — the turn runs to completion and its output lands in the log for any later viewer.
@@ -207,7 +212,7 @@ When the harness exits during such a turn, the runtime moves the kept prompt to 
 When the harness cannot load an unstored session, the runtime moves the kept prompt to the undelivered document, retires a session left with no undelivered prompt, and puts `data.platform.unstored` with the undelivered prompts on the load error.
 The UI then moves those prompts to a new chat, where they show as not delivered, and deletes the session: a harness cannot create a session under a given id, so sending again starts a new session.
 
-When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a parked queue counts as queued work, holding the release back until its window passes.
+When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a queue nobody watches holds the release back until its prompts have run.
 The per-session subprocess is reaped; the next attach respawns it.
 Permission requests with no engaged channel time out after ten minutes, answered to the agent as an error so the tool call aborts cleanly.
 The runtime reports such a request to the api-server the moment no engaged channel can answer it — when the agent asks with nobody watching, or when the last viewer leaves before answering — so it is recorded with the time the agent asked.

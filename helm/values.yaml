@@ -262,6 +262,13 @@ environments:
   maxPerAgent: 5
   # -- Furthest ahead an Environment's expiry may be set, in days.
   expiryMaxDays: 30
+  # -- How long an Environment may sit idle before it sleeps, when its agent
+  # gives no idle timeout of its own. Longer than the agents' `vmIdleTimeout`,
+  # since what an Environment runs takes minutes to come back.
+  idleTimeout: "60m"
+  # -- Longest idle timeout an agent may give an Environment; a longer one is
+  # cut to it. An Environment always sleeps in the end.
+  idleTimeoutMax: "24h"
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
   # Environment address to the api-server; visitors sign in on the share
   # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
@@ -1090,6 +1097,12 @@ keycloak:
   # below it.
   login:
     allowPassword: true
+    # -- The chat channel the login page names for questions, shown as
+    # "Questions? Ask in <label> on Slack." with the label linking to `url`.
+    # Both empty, or either one, hides it.
+    community:
+      label: ""
+      url: ""
 
   # -- Event logging. Login + admin events are emitted to stdout via the
   # built-in `jboss-logging` event listener so they ride the cluster log
@@ -1427,6 +1440,16 @@ apiServer:
     grepDeadlineMs: 2000
     # -- Most shared-knowledge-base connections one account may hold.
     maxConnectionsPerOwner: 20
+  # -- The offer of a cost review in an owner's Approvals: an agent at least
+  # 7 days old, with scheduled or channel spend on 3 of the last 7 days,
+  # qualifies when it spent at least one of these amounts of Metered Spend
+  # over those days. Dollars and Bobcoins are never added up; subscription
+  # and free providers count toward neither.
+  costReview:
+    # -- Paid dollars over the last 7 days.
+    minWeeklyUsd: 25
+    # -- Bobcoins over the last 7 days.
+    minWeeklyBobcoins: 20
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's
@@ -1924,8 +1947,9 @@ controller:
       # kubelet (see `virtualization.imageCache`).
       imagePullSecrets: [] # must exist in agentNamespace
 
-      # Lifecycle. A machine starts fast, so every agent takes this and
-      # ignores its own hibernationTimeout; "0s" disables hibernation.
+      # Lifecycle. A machine starts fast, so every agent takes this unless
+      # its spec carries a hibernationTimeout of its own, as an Environment's
+      # does (`environments.idleTimeout`); "0s" disables hibernation.
       vmIdleTimeout: "5m"
 
     harnessTemplateDefaults:
@@ -1953,11 +1977,6 @@ controller:
       # No default env. `PORT` is baked into agent-runtime (defaults to 8080).
       # Platform-injected envs (HOME, HTTPS_PROXY, API_SERVER_URL, etc.) are
       # set unconditionally by the controller.
-      #
-      # `QUEUE_PARK_MS` is settable here: how long a session's queued prompts
-      # wait for a client to come back before they are recorded as undelivered
-      # (agent-runtime's own default is 90s). The e2e overlay shortens it so a
-      # spec need not spend the full window in a real wait.
       #
       # `MEM_REAPER` / `MEM_REAPER_THRESHOLD` tune agent-runtime's early-OOM
       # reaper: at the threshold fraction of the agent's memory ceiling (default

@@ -4,8 +4,8 @@ import { match } from "ts-pattern";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: which of the agent's three defaults a session
  * starts from and saves with "Set as default": chats and terminal runs use
- * the chat default, Slack and Telegram threads the channel default, schedule
- * runs the scheduled default. A sub-agent session takes its choices from the
+ * the chat default, Slack and Telegram threads and an artifact's prompt
+ * sessions the channel default, schedule runs the scheduled default. A sub-agent session takes its choices from the
  * session that spawned it, so it has no default of its own.
  */
 export function defaultKindOf(
@@ -21,6 +21,7 @@ export function defaultKindOf(
     .with(
       SessionType.ChannelSlack,
       SessionType.ChannelTelegram,
+      SessionType.Artifact,
       () => "channel" as const,
     )
     .with(

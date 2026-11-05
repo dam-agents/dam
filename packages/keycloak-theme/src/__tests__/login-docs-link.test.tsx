@@ -4,7 +4,7 @@ import { createGetKcContextMock } from "keycloakify/login/KcContext";
 import type { TemplateProps } from "keycloakify/login/TemplateProps";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { I18n } from "../login/i18n.js";
 import type { KcContext, KcContextExtension } from "../login/KcContext.js";
@@ -35,7 +35,7 @@ afterEach(() => {
   container.remove();
 });
 
-function renderLogin(docsUrl: string) {
+async function renderLogin(docsUrl: string) {
   const { getKcContextMock } = createGetKcContextMock({
     kcContextExtension: {
       themeName: "platform",
@@ -44,6 +44,9 @@ function renderLogin(docsUrl: string) {
         PLATFORM_SHARE_CLIENT_ID: "platform-share",
         PLATFORM_BRAND_NAME_MEANINGS: "[]",
         PLATFORM_DOCS_URL: docsUrl,
+        PLATFORM_LOGIN_COMMUNITY_LABEL: "",
+        PLATFORM_LOGIN_COMMUNITY_URL: "",
+        PLATFORM_API_URL: "",
       },
     } satisfies KcContextExtension,
     kcContextExtensionPerPage: {},
@@ -58,31 +61,35 @@ function renderLogin(docsUrl: string) {
       />,
     ),
   );
+  await vi.waitFor(() => {
+    if (!container.querySelector("#kc-form-login"))
+      throw new Error("not ready");
+  });
 }
 
 const docsLink = () =>
   [...container.querySelectorAll("a")].find(
-    (a) => a.textContent === "Read the docs to learn more.",
+    (a) => a.textContent === "Read the docs",
   );
 
 // TEST_SCENARIO: an install that names its documentation site gets the link to it, opening in a new tab.
-it("links the install's documentation site", () => {
-  renderLogin("https://docs.example.com/platform/");
+it("links the install's documentation site", async () => {
+  await renderLogin("https://docs.example.com/platform/");
   expect(docsLink()?.getAttribute("href")).toBe(
     "https://docs.example.com/platform/",
   );
   expect(docsLink()?.getAttribute("target")).toBe("_blank");
 });
 
-// TEST_SCENARIO: an install that sets links.docs empty has no documentation site, so the page shows no dead link and the sign-in text still ends cleanly.
-it("shows no link when the install sets no documentation site", () => {
-  renderLogin("");
+// TEST_SCENARIO: an install that sets links.docs empty has no documentation site, so the page shows no dead link and the section that held it still renders.
+it("shows no link when the install sets no documentation site", async () => {
+  await renderLogin("");
   expect(docsLink()).toBeUndefined();
-  expect(container.textContent).toContain("built to repeat.");
+  expect(container.textContent).toContain("Agents that work like teammates");
 });
 
 // TEST_SCENARIO: a value that is not an http(s) URL, such as a javascript: URL, is never rendered as a link.
-it("shows no link for a value that is not an http(s) URL", () => {
-  renderLogin("javascript:alert(1)");
+it("shows no link for a value that is not an http(s) URL", async () => {
+  await renderLogin("javascript:alert(1)");
   expect(docsLink()).toBeUndefined();
 });

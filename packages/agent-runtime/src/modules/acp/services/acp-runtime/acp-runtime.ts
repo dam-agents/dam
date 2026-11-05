@@ -223,7 +223,6 @@ export interface AcpRuntimeDeps {
   backgroundWorkRecheckMs?: number;
   harnessState?: HarnessStatePort;
   presumeIdleMs?: number;
-  queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
   continuedFrom: ContinuedFromStore;
   activeTurns: ActiveTurnStore;
@@ -556,8 +555,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
       recordRun(sessionId, turn.promptId, null);
     },
-    canStart: ({ sessionId, unattended }) =>
-      (unattended === true || hasEngagedChannel(sessionId)) &&
+    canStart: ({ sessionId }) =>
       !harnessColdSessions.has(sessionId) &&
       !registeringSessions.has(sessionId),
     sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
@@ -578,24 +576,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
       );
-      if (
-        harnessGone ||
-        (cause === "park-expired" &&
-          !promptScheduler.hasTurnInFlight(sessionId))
-      )
+      if (harnessGone)
         deps.onTurnOutcome?.(sessionId, {
           stopReason: null,
-          error: harnessGone
-            ? `${harnessGone} before it took the prompt`
-            : "the prompt was never taken: the harness did not start the turn",
+          error: `${harnessGone} before it took the prompt`,
         });
-      if (cause !== "park-expired") return;
-      maybeCloseIdleSession(sessionId);
-      lease.maybeRecycle();
     },
-    ...(deps.queueParkMs !== undefined
-      ? { queueParkMs: deps.queueParkMs }
-      : {}),
   });
 
   const interruptSteers = createInterruptSteers({
@@ -3165,6 +3151,7 @@ function toAcpPlatformMeta(session: Session): Record<string, unknown> {
       continuedScheduleIds: session.continuedScheduleIds,
     }),
     ...(session.initialization === true && { initialization: true }),
+    ...(session.purpose !== undefined && { purpose: session.purpose }),
     ...(session.threadTs !== null && { threadTs: session.threadTs }),
     ...(session.seenAt !== null && { seenAt: session.seenAt }),
     ...(session.runStartedAt !== null && {

@@ -142,6 +142,32 @@ export const slackLoopGuardDrops = pgTable("slack_loop_guard_drops", {
     .notNull(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: a Slack thread an Agent's Session started with
+ * start_thread, so every message in it reaches that Session as a turn of its
+ * own. A thread has at most one owner across the install. The row lives in
+ * the platform, not the Agent, so a reply is routed without waking the Agent
+ * to list its Sessions, and a restart keeps it. `deliveredUpTo` is the newest
+ * message the Session was handed, the boundary a later turn catches up from. */
+export const slackOwnedThreads = pgTable(
+  "slack_owned_threads",
+  {
+    channelId: text("channel_id").notNull(),
+    threadTs: text("thread_ts").notNull(),
+    teamId: text("team_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    firstLine: text("first_line").notNull(),
+    deliveredUpTo: text("delivered_up_to").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.threadTs] }),
+    index("slack_owned_threads_session_idx").on(table.agentId, table.sessionId),
+  ],
+);
+
 export const publicImageUrls = pgTable("public_image_urls", {
   sha256: text("sha256").primaryKey(),
   url: text("url").notNull(),
@@ -581,6 +607,17 @@ export const agentSessions = pgTable(
     index("agent_sessions_created_idx").on(table.createdAt),
   ],
 );
+
+/* UNIT_BOUNDARY_DESCRIPTION: the owner's answer to the platform's offer of a
+ * cost review for an Agent: accepted, which is final, or dismissed by Later,
+ * which hides the offer only until `decided_at` is old enough. */
+export const agentCostReviews = pgTable("agent_cost_reviews", {
+  agentId: text("agent_id").primaryKey(),
+  decision: text("decision").notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
 export const agentEnv = pgTable(
   "agent_env",
@@ -1278,6 +1315,7 @@ export const invocations = pgTable(
       .notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     reapedAt: timestamp("reaped_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     transcriptCaptured: boolean("transcript_captured").notNull().default(false),
     transcriptTruncated: boolean("transcript_truncated")
@@ -1449,6 +1487,23 @@ export const avatarImages = pgTable("avatar_images", {
     .defaultNow()
     .notNull(),
 });
+
+export const loginTestimonials = pgTable(
+  "login_testimonials",
+  {
+    id: text("id").primaryKey(),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    role: text("role").notNull().default(""),
+    quote: text("quote").notNull(),
+    photoId: text("photo_id"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedBy: text("updated_by").notNull(),
+  },
+  (t) => [uniqueIndex("login_testimonials_position_idx").on(t.position)],
+);
 
 export const spendDaily = pgTable(
   "spend_daily",

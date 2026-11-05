@@ -6,25 +6,66 @@
  * carry no tier word (CurveBender, the built-in one) has no tier to guess
  * from: an agent that picked no model would run on the newest id the provider
  * happens to list, and a classifier call on the session's own work model.
- * `work` decides a new agent's default model, `classifier` what Claude Code's
- * non-reasoning permission classifier runs on. The order is the preference:
- * the first entry a listing answers wins. `family` is the model's words,
- * `version` the digits right behind them and `variant` the word right behind
- * those, all as tokens of `modelTokens`.
+ *
+ * Entries are read in three groups: the harness's own, then those that name
+ * no harness, then another harness's. So the `work` list reads: the harness's
+ * own models where a granted provider serves them — Claude Code Claude Opus,
+ * Codex GPT, Gemini CLI Gemini, Bob Bob's fast then explorer — then DeepSeek
+ * V4.1 Flash, which every install serves, and then the models of the other
+ * harnesses, which answer only where a listing holds nothing the first two
+ * groups name. An agent runs on the models its harness was built for; a
+ * harness that names no model of its own, such as Pi or Hermes, takes
+ * DeepSeek, and another harness's model only where no provider lists DeepSeek.
+ * `work` decides a new agent's default model and the model a default with
+ * none runs on, `classifier` what Claude Code's non-reasoning permission
+ * classifier runs on, which is the same on every harness. The order is the
+ * preference: the first entry a listing answers wins. Bob's own gateway lists
+ * only Bob's names, so those two answer only on the provider `alias` names,
+ * since their plain words are other providers' models too (`grok-4-fast`).
+ * `family` is the model's words, `version` the digits right behind them and
+ * `variant` the word right behind those, all as tokens of `modelTokens`.
  */
 export type ModelRole = "work" | "classifier";
 
 export interface PreferredModel {
   role: ModelRole;
+  harness?: string;
   family: readonly string[];
   version: readonly string[];
   variant?: string;
+  alias?: string;
 }
 
 export const PREFERRED_MODELS: readonly PreferredModel[] = [
+  {
+    role: "work",
+    harness: "claude-code",
+    family: ["claude", "opus"],
+    version: ["5", "5"],
+  },
+  {
+    role: "work",
+    harness: "codex",
+    family: ["gpt"],
+    version: ["6", "1"],
+    variant: "sol",
+  },
+  {
+    role: "work",
+    harness: "gemini-cli",
+    family: ["gemini"],
+    version: ["3", "1"],
+    variant: "pro",
+  },
+  { role: "work", harness: "bob", family: ["fast"], version: [], alias: "bob" },
+  {
+    role: "work",
+    harness: "bob",
+    family: ["explorer"],
+    version: [],
+    alias: "bob",
+  },
   { role: "work", family: ["deepseek"], version: ["4", "1"], variant: "flash" },
-  { role: "work", family: ["claude", "opus"], version: ["5", "5"] },
-  { role: "work", family: ["gpt"], version: ["6", "1"], variant: "sol" },
   {
     role: "classifier",
     family: ["nemotron"],
@@ -106,20 +147,32 @@ export interface ProviderListing {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the model a role runs on across the providers an
- * agent holds: the list's order first, so the platform's preference beats the
- * provider order, and the providers' own order within one entry, so two
- * providers serving the same model resolve the way a default provider always
- * has. The listing's own order breaks a tie inside one provider, since a
- * provider lists its models newest first. Null when no provider lists anything
- * the list names, which leaves the caller its own last resort.
+ * agent holds, for the harness its runs use: the list's order first, so the
+ * platform's preference beats the provider order, and the providers' own order
+ * within one entry, so two providers serving the same model resolve the way a
+ * default provider always has. The harness's own entries are read before the
+ * harness-agnostic ones, which are read before another harness's, so a Claude
+ * Code agent gets Claude where a provider serves it, then DeepSeek, and never
+ * another harness's model ahead of them; a caller that names no harness reads
+ * the harness-agnostic entries first, as an unrouted image's own harness and a
+ * catalogue lookup do. The listing's own order breaks a tie inside one
+ * provider, since a provider lists its models newest first. Null when no
+ * provider lists anything the list answers with, which leaves the caller its
+ * own last resort.
  */
 export function preferredModelOf(
   role: ModelRole,
   providers: readonly ProviderListing[],
+  harness?: string,
 ): { alias: string; upstreamId: string } | null {
-  for (const pref of PREFERRED_MODELS) {
-    if (pref.role !== role) continue;
+  const groupOf = (pref: PreferredModel): number =>
+    pref.harness === undefined ? 1 : pref.harness === harness ? 0 : 2;
+  const ranked = PREFERRED_MODELS.filter((pref) => pref.role === role).sort(
+    (a, b) => groupOf(a) - groupOf(b),
+  );
+  for (const pref of ranked) {
     for (const provider of providers) {
+      if (pref.alias !== undefined && pref.alias !== provider.alias) continue;
       const hit = provider.listed.find((id) =>
         modelMatches(modelTokens(id), pref),
       );

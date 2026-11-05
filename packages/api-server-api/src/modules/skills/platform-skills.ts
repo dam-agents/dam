@@ -1,7 +1,7 @@
 import type { LocalSkill } from "./types.js";
 
 export type PlatformFeatureId =
-  "schedules" | "invocations" | "connections" | "chat-forms";
+  "schedules" | "invocations" | "connections" | "chat-forms" | "spend";
 
 export interface PlatformSkillFeature {
   id: PlatformFeatureId;
@@ -16,6 +16,7 @@ export const PLATFORM_SKILLS: ReadonlyMap<string, PlatformSkillFeature> =
     ["platform-github", { id: "connections", label: "GitHub accounts" }],
     ["platform-s3", { id: "connections", label: "Object Storage" }],
     ["platform-chat-forms", { id: "chat-forms", label: "Chat forms" }],
+    ["agent-cost-review", { id: "spend", label: "Spend" }],
   ] satisfies [string, PlatformSkillFeature][]);
 
 export function platformSkillFeature(
