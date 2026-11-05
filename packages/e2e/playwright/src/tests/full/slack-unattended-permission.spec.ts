@@ -11,7 +11,7 @@ const strangerSlackUserId = "U-E2E-STRANGER";
 const askedTs = "1700000950.000100";
 const platformAskedTs = "1700000951.000100";
 const spoofedAskedTs = "1700000952.000100";
-const platformTool = "mcp__platform-outbound__send_channel_message";
+const platformTool = "mcp__platform-outbound__post";
 
 test("harness permission prompts on a Slack turn: the platform's own tools are allowed, everything else refused (#3846, #4003)", async () => {
   test.setTimeout(360_000);

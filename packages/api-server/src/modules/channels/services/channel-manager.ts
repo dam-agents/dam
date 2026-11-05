@@ -26,7 +26,9 @@ import {
   attachmentResultSchema,
   channelUserSchema,
   messageReactionsResultSchema,
+  ownedThreadsResultSchema,
   sendResultSchema,
+  startedThreadSchema,
   threadResultSchema,
   type AddressedWorker,
   type AttachmentQuery,
@@ -38,11 +40,15 @@ import {
   type ChannelUser,
   type ChannelWorker,
   type MessageReactionsResult,
+  type OwnedThreadsResult,
   type PersonNotice,
   type PostMessageOptions,
   type ReactionsQuery,
+  type StartedThread,
+  type ThreadLeave,
   type ThreadQuery,
   type ThreadResult,
+  type ThreadStart,
   type WireAttachment,
 } from "./worker-contract.js";
 
@@ -56,10 +62,15 @@ export type {
   ChannelSendResult,
   ChannelUser,
   MessageReactionsResult,
+  OwnedThreadSummary,
+  OwnedThreadsResult,
   PostMessageOptions,
   ReactionsQuery,
+  StartedThread,
+  ThreadLeave,
   ThreadQuery,
   ThreadResult,
+  ThreadStart,
 } from "./worker-contract.js";
 
 export interface ChannelManager {
@@ -134,6 +145,21 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: AttachmentQuery,
   ): Promise<AttachmentResult | { error: string }>;
+  startThread(
+    instanceName: string,
+    channelType: ChannelType,
+    start: ThreadStart,
+  ): Promise<StartedThread | { error: string }>;
+  listThreads(
+    instanceName: string,
+    channelType: ChannelType,
+    sessionId: string,
+  ): Promise<OwnedThreadsResult | { error: string }>;
+  leaveThread(
+    instanceName: string,
+    channelType: ChannelType,
+    leave: ThreadLeave,
+  ): Promise<{ ok: true } | { error: string }>;
   notifyPerson(
     keycloakSub: string,
     notice: PersonNotice,
@@ -148,6 +174,9 @@ const ADDRESSED_METHODS = [
   "describeMessageReactions",
   "readThread",
   "fetchAttachment",
+  "startThread",
+  "listThreads",
+  "leaveThread",
 ] as const;
 
 type AddressedMethod = (typeof ADDRESSED_METHODS)[number];
@@ -199,6 +228,9 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   slackChannelMembership: z.tuple([z.string(), z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
+  startThread: forInstance.rest(z.unknown()),
+  listThreads: forInstance.rest(z.unknown()),
+  leaveThread: forInstance.rest(z.unknown()),
   notifyPerson: z.tuple([
     z.string(),
     z.object({ slack: z.string(), telegram: z.string().optional() }),
@@ -261,6 +293,12 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     attachmentResultSchema,
     z.object({ error: z.string() }),
   ]),
+  startThread: z.union([startedThreadSchema, z.object({ error: z.string() })]),
+  listThreads: z.union([
+    ownedThreadsResultSchema,
+    z.object({ error: z.string() }),
+  ]),
+  leaveThread: okOrErrorSchema,
   notifyPerson: z.object({ sent: z.number() }),
 };
 
@@ -286,6 +324,13 @@ const unsupported: Record<
   }),
   fetchAttachment: (channelType) => ({
     error: `attachment fetches are not supported on ${channelType}`,
+  }),
+  startThread: (channelType) => ({
+    error: `${channelType} has no threads to start — use post`,
+  }),
+  listThreads: () => ({ threads: [] }),
+  leaveThread: (channelType) => ({
+    error: `${channelType} has no threads to leave`,
   }),
 };
 

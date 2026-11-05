@@ -490,6 +490,7 @@ export function SessionModelPicker({
       !option.subagents &&
       option.category !== "mode" &&
       option.category !== "approvals" &&
+      option.id !== effort?.id &&
       !isModelOption(option) &&
       settings[option.id] !== undefined &&
       settings[option.id] !== defaults[option.id],
@@ -587,7 +588,7 @@ export function SessionModelPicker({
     ));
 
   return (
-    <div ref={bodyRef} className="flex flex-col gap-0.5 text-sm">
+    <div ref={bodyRef} className="flex flex-col text-sm">
       {!onProfiles && (
         <>
           {note && (
@@ -763,9 +764,10 @@ export function SessionModelPicker({
                   </button>
                 </div>
               )}
+              {pair && effortField}
             </>
           )}
-          <div className="flex items-center justify-between gap-2 px-4 pt-1">
+          <div className="flex items-center justify-between gap-2 px-4 pt-3">
             {!(follow?.active && followSubagent === null) && (
               <button
                 type="button"
@@ -793,15 +795,6 @@ export function SessionModelPicker({
             <div id={moreId} className="flex flex-col">
               {follow?.active ? (
                 <>
-                  {followingEffort && (
-                    <div className={ROW}>
-                      <span className={LABEL}>{followingEffort.name}</span>
-                      <span className="truncate text-sm">
-                        {choiceName(followingEffort, followingEffortValue) ??
-                          "—"}
-                      </span>
-                    </div>
-                  )}
                   {followSubagent && (
                     <>
                       <h3 className={cn("px-4 pt-2", labelVariants())}>
@@ -826,7 +819,6 @@ export function SessionModelPicker({
               ) : (
                 pair && (
                   <>
-                    {effortField}
                     <SessionSettingsControls
                       agentId={agentId}
                       carried={carried}
@@ -892,11 +884,11 @@ export function SessionModelPicker({
       {!onProfiles ? (
         profiles.length > 0 && (
           <>
-            <hr className="mx-4 border-border" />
+            <hr className="mx-3 mt-4.5 border-border" />
             <button
               type="button"
               onClick={() => setView("profiles")}
-              className="mx-4 flex min-h-[38px] items-center gap-2 rounded px-1 py-2 text-left text-sm hover:bg-muted"
+              className="mx-3 mt-3 flex min-h-[38px] items-center gap-1.5 rounded px-1 py-2 text-left text-sm hover:bg-muted"
             >
               <span className="min-w-0 flex-1 truncate">
                 {selectedProfileId
@@ -911,7 +903,7 @@ export function SessionModelPicker({
           </>
         )
       ) : (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 px-3">
           <button
             ref={backRef}
             type="button"
