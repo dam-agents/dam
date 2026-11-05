@@ -184,7 +184,11 @@ describe("an Environment's idle timeout, from the agent's tools", () => {
   it("passes an expiry of never on at create and update", async () => {
     const { call, environments } = await tools();
 
-    await call("create_environment", { name: "pr-1", endpoints, expires: "never" });
+    await call("create_environment", {
+      name: "pr-1",
+      endpoints,
+      expires: "never",
+    });
     await call("update_environment", { name: "pr-1", expires: "never" });
 
     expect(environments.create).toHaveBeenCalledWith({

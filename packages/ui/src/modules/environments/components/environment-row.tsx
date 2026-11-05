@@ -24,7 +24,10 @@ import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ArtifactDeletionChip } from "../../artifacts/components/artifact-badges.js";
 import { useDeleteEnvironment } from "../api/mutations.js";
-import { environmentStateLabel, NEVER_DELETED } from "../lib/environment-list.js";
+import {
+  environmentStateLabel,
+  NEVER_DELETED,
+} from "../lib/environment-list.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One Environment as a row of the Artifacts list,

@@ -779,8 +779,8 @@ describe("an Environment's expiry", () => {
     });
 
     expect(state.extended).toHaveLength(1);
-    expect(
-      (state.extended[0] as { expiresAt: string }).expiresAt,
-    ).not.toBe("never");
+    expect((state.extended[0] as { expiresAt: string }).expiresAt).not.toBe(
+      "never",
+    );
   });
 });

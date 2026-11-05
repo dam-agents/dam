@@ -418,7 +418,9 @@ describe("changing and deleting Environments", () => {
       env.id,
       new Date(NOW.getTime() + DAY_MS),
     );
-    expect(dated.expiresAt).toBe(new Date(NOW.getTime() + DAY_MS).toISOString());
+    expect(dated.expiresAt).toBe(
+      new Date(NOW.getTime() + DAY_MS).toISOString(),
+    );
 
     expect((await mine.update("mcp", { expiresAt: "never" })).expiresAt).toBe(
       "never",
