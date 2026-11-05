@@ -1,3 +1,4 @@
+import { LOGIN_TESTIMONIAL_LIMITS as LIMITS } from "api-server-api";
 import { useId, useRef, useState } from "react";
 
 import { FormError } from "@/components/form-error";
@@ -15,13 +16,14 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { uploadAvatarImage } from "../../../lib/upload-avatar-image.js";
 import type { TestimonialFields } from "../lib/draft.js";
+import { LengthCount, lengthError } from "./length-hint.js";
 import { TestimonialPhoto } from "./testimonial-photo.js";
 
 type Fields = TestimonialFields;
 
 const EMPTY: Fields = { name: "", role: "", quote: "", photoId: null };
 
-// UNIT_BOUNDARY_DESCRIPTION: adds or edits one testimonial. A photo uploads as soon as it is picked, through the avatar upload, which crops it to a square; its refusal shows under the photo. Save stores the testimonial at once, and the dialog closes once it is stored.
+// UNIT_BOUNDARY_DESCRIPTION: adds or edits one testimonial. Text is never cut: a field past its limit (the contract's LOGIN_TESTIMONIAL_LIMITS) says by how much and keeps Save off, and the quote shows its count as it is typed. A photo uploads as soon as it is picked, through the avatar upload, which crops it to a square; its refusal shows under the photo. Save stores the testimonial at once, and the dialog closes once it is stored.
 export function TestimonialDialog({
   testimonial,
   saving,
@@ -38,11 +40,20 @@ export function TestimonialDialog({
   const [photoError, setPhotoError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
   const hintId = useId();
+  const quoteCountId = useId();
+  const errors = {
+    name: lengthError("The name", fields.name, LIMITS.name),
+    role: lengthError("The role", fields.role, LIMITS.role),
+    quote: lengthError("The quote", fields.quote, LIMITS.quote),
+  };
   const set = (patch: Partial<Fields>) =>
     setFields((f) => ({ ...f, ...patch }));
   const canSave =
     fields.name.trim() !== "" &&
     fields.quote.trim() !== "" &&
+    !errors.name &&
+    !errors.role &&
+    !errors.quote &&
     !uploading &&
     !saving;
 
@@ -125,31 +136,45 @@ export function TestimonialDialog({
             </div>
             <FormError message={photoError} />
           </div>
-          <FormField label="Name">
+          <FormField label="Name" error={errors.name}>
             <Input
               autoFocus
-              maxLength={80}
+              variant={errors.name ? "invalid" : "standard"}
+              aria-invalid={errors.name !== undefined}
               value={fields.name}
               onChange={(event) => set({ name: event.target.value })}
             />
           </FormField>
-          <FormField label="Role" hint="Optional, such as their job title.">
+          <FormField
+            label="Role"
+            hint="Optional, such as their job title."
+            error={errors.role}
+          >
             <Input
-              maxLength={120}
+              variant={errors.role ? "invalid" : "standard"}
+              aria-invalid={errors.role !== undefined}
               value={fields.role}
               onChange={(event) => set({ role: event.target.value })}
             />
           </FormField>
-          <FormField label="Quote">
+          <FormField label="Quote" error={errors.quote}>
             <Textarea
-              rows={5}
-              maxLength={600}
-              aria-describedby={hintId}
+              rows={7}
+              variant={errors.quote ? "invalid" : "standard"}
+              aria-invalid={errors.quote !== undefined}
+              aria-describedby={`${hintId} ${quoteCountId}`}
               value={fields.quote}
               onChange={(event) => set({ quote: event.target.value })}
             />
-            <span id={hintId} className="text-sm text-muted-foreground">
-              Write {"{brand}"} where the quote names the product.
+            <span className="flex items-start justify-between gap-3">
+              <span id={hintId} className="text-sm text-muted-foreground">
+                Write {"{brand}"} where the quote names the product.
+              </span>
+              <LengthCount
+                id={quoteCountId}
+                value={fields.quote}
+                max={LIMITS.quote}
+              />
             </span>
           </FormField>
         </DialogBody>

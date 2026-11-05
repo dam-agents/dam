@@ -225,6 +225,7 @@ export {
   userBudgetUserSchema,
 } from "./modules/budgets/schemas.js";
 export {
+  LOGIN_TESTIMONIAL_LIMITS,
   LOGIN_TESTIMONIALS_MAX,
   loginTestimonialInputSchema,
   loginTestimonialPhotoIdSchema,

@@ -32,4 +32,11 @@ export const SAMPLE_TESTIMONIALS = [
     quote:
       "{brand} is doing a fleet sweep for me for several of my clusters every morning, and I use it to bridge Slack requests to GitHub.",
   },
+  {
+    name: "Sanjay Anasuri",
+    role: "Software Engineer",
+    quote:
+      "{brand}'s MCP integration and Slack connectivity gave us the foundation to automate our entire test workflow. We connected our voice agent testing software, Bluejay, through MCP, wired it into Slack through {brand}'s platform tools, and now our team queues simulations directly from chat — no more manual Excel tracking or multiple people navigating the testing UI. Furthermore, there is now clarity about who queued which tasks in their own respective threads. The {brand} agent gains context from other runs to analyze similar patterns. {brand} handled the infrastructure and integrations, letting us focus on building the automation. The best part is: everything lives in Slack where our team already works.",
+    photo: null,
+  },
 ];

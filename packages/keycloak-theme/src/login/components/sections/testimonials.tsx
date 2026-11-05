@@ -3,16 +3,11 @@ import { withBrand } from "../../content.js";
 import { SectionLabel, SectionTitle } from "./section-kit.js";
 
 /* UNIT_BOUNDARY_DESCRIPTION: The "From the community" section: what users say
- * about the product, three cards in the first row and the rest centred below.
- * Each card shows the person's photo when the operator uploaded one, and their
- * initials otherwise. With no
+ * about the product.
+ * Cards run in rows of three (two on a tablet, one on a phone), any number of
+ * them, and a short last row is centred. Each card shows the person's photo
+ * when the operator uploaded one, and their initials otherwise. With no
  * testimonials the section is not rendered. */
-const FIRST_ROW: Record<number, string> = {
-  1: "mx-auto grid w-full grid-cols-1 gap-5 md:max-w-[calc(50%-10px)] lg:max-w-[calc(33.333%-14px)]",
-  2: "mx-auto grid w-full grid-cols-1 gap-5 md:grid-cols-2 lg:max-w-[calc(66.666%+10px)]",
-  3: "grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3",
-};
-
 export function TestimonialsSection({
   brand,
   testimonials,
@@ -37,19 +32,10 @@ export function TestimonialsSection({
           </p>
         </div>
 
-        <div className="mt-16 flex flex-col gap-5">
-          <div className={FIRST_ROW[Math.min(testimonials.length, 3)]}>
-            {testimonials.slice(0, 3).map((t, i) => (
-              <TestimonialCard key={i} testimonial={t} brand={brand} />
-            ))}
-          </div>
-          {testimonials.length > 3 && (
-            <div className="mx-auto grid w-full grid-cols-1 gap-5 md:grid-cols-2 lg:max-w-[calc(66.666%+10px)]">
-              {testimonials.slice(3).map((t, i) => (
-                <TestimonialCard key={i + 3} testimonial={t} brand={brand} />
-              ))}
-            </div>
-          )}
+        <div className="mt-16 flex flex-wrap justify-center gap-5">
+          {testimonials.map((t, i) => (
+            <TestimonialCard key={i} testimonial={t} brand={brand} />
+          ))}
         </div>
       </div>
     </section>
@@ -64,7 +50,7 @@ function TestimonialCard({
   brand: string;
 }) {
   return (
-    <figure className="border-input bg-background break-inside-avoid rounded-2xl border p-6">
+    <figure className="border-input bg-background w-full rounded-2xl border p-6 md:w-[calc((100%-20px)/2)] lg:w-[calc((100%-40px)/3)]">
       <svg
         viewBox="0 0 24 24"
         className="text-foreground/10 size-6"
