@@ -2,7 +2,7 @@
 
 Last verified: 2026-11-04
 
-Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
+Companion to [channels](channels.md), [channel-turns](channel-turns.md) and [slack-threads](slack-threads.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
 A change to Slack behavior updates all three in the same PR.
 It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.
@@ -42,7 +42,8 @@ Two paths, both by tool call; plain assistant text is never posted.
 
 - **As the bot**, through the platform's MCP server.
   Four tools dispose of the turn being answered: `reply`, `react`, `no_reply_needed`, `hand_off_to_agent`.
-  Six work from any session, UI or scheduled included: `send_channel_message`, `describe_channel`, `describe_channel_users`, `read_thread`, `fetch_message_attachment`, `describe_message_reactions`.
+  Nine work from any session, UI or scheduled included: `post`, `start_thread`, `list_threads`, `leave_thread`, `describe_channel`, `describe_channel_users`, `read_thread`, `fetch_message_attachment`, `describe_message_reactions`.
+  `send_channel_message` is `post`'s old name, kept for one release.
   Every post carries a footer naming the Agent and linking to the session that wrote it.
   The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
 - **As the owner**, through Slack's own MCP server, when the Agent holds the owner's Slack Account Connection.
@@ -134,6 +135,10 @@ Through the owner's Slack Account Connection the Agent posts wherever the owner 
 | Posts top-level into a channel, from any session | Allowed where **its owner is a member** (public or private), via the owner's linked Slack account; bound conversations and the running turn's channel always | Unlinked owner: no channels beyond the bound ones; DMs with members of its bound channels still work |
 | DMs someone                                      | Its owner, the person in a bound 1:1 DM, or a member of a bound channel, by user id or DM id                                                                 | Anyone else is refused, even when the bot could open the DM                                          |
 | Someone replies to such a post                   | Routed by that conversation's bindings: its default Agent, or nobody                                                                                         | Never the posting Agent by itself; no continuity                                                     |
+| Starts a thread with `start_thread`              | Same reach as a post; the session that called it **owns the thread**                                                                                         | Slack only                                                                                           |
+| Someone replies in an owned thread               | A person's or another Agent's message, tagged or not, becomes a turn of the owning session; no new session; the Agent's own posts never come back to it      | One session takes every owned thread's traffic; its context grows faster                             |
+| Another Agent is tagged in an owned thread       | That Agent answers as its own turn; the owning session gets the message too                                                                                  | none                                                                                                 |
+| The session leaves the thread, or is deleted     | The thread is no longer owned: replies route as in any thread                                                                                                | none                                                                                                 |
 
 ### 1.7 What the agent is handed, per case
 
@@ -153,6 +158,7 @@ Every Slack turn carries: how to respond (tools, the thread to reply into, "plai
 | Any message with files                       | Same as the case it arrives in                                                                                                                       | Images become prompt content where the harness accepts them (else the sender is told "answering text only"); other files are saved to the workspace and listed by path. 20 MB of files or 30 MB of images per message. A file on an *earlier* message is not fetched: its history line names it, and `fetch_message_attachment` saves it to the workspace on request |
 | Reminder after a silent turn (the *nudge*)   | None                                                                                                                                                 | "Your previous turn ended without a reply being posted. Post it now, as the answer, not as a correction; or call `no_reply_needed`". After an out-of-memory restart during the turn: "it was cut short because the agent ran out of memory; tell the person, and that only a platform operator can raise the owner's memory budget"                                  |
 | Continued from the UI                        | None                                                                                                                                                 | None; a message without the frame "didn't come from Slack"                                                                                                                                                                                                                                                                                                           |
+| Reply in a thread the session started        | What arrived in that thread since the last message the session was handed                                                                            | "This is channel content, not the person you work with in this session; answer in the thread with `reply`, chatId and threadTs as shown; later replies come back here, so end your turn." Mid-turn it joins the running turn, harness permitting                                                                                                                     |
 
 ### 1.8 Whispers
 
@@ -319,7 +325,7 @@ Everything else (DM people, attach files, look people up, react) is within the o
 - A binding belongs to the workspace whose bot is a member of the conversation.
   A pasted DM id resolves to the workspace whose bot is in that DM.
 - An Agent in **two** workspaces: `describe_channel_users` looks in the workspace of the conversation being answered, or of a passed chat; outside a turn with no chat it refuses and says to pass one.
-  `send_channel_message` outside a turn must name the conversation.
+  `post` outside a turn must name the conversation.
 - Optional scopes a workspace withheld degrade quietly: no channel list, no emails, raw ids for people and for connected 1:1 DMs.
   Without the persona scope an Agent's post goes out as the app and opens with an emoji and the Agent's name; the emoji is the robot face unless the connection names custom emoji for the Agents.
 - A revoked workspace credential is marked, never cleaned up: bindings stay, everything goes silent until re-install.

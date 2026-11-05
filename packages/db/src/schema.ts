@@ -142,6 +142,32 @@ export const slackLoopGuardDrops = pgTable("slack_loop_guard_drops", {
     .notNull(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: a Slack thread an Agent's Session started with
+ * start_thread, so every message in it reaches that Session as a turn of its
+ * own. A thread has at most one owner across the install. The row lives in
+ * the platform, not the Agent, so a reply is routed without waking the Agent
+ * to list its Sessions, and a restart keeps it. `deliveredUpTo` is the newest
+ * message the Session was handed, the boundary a later turn catches up from. */
+export const slackOwnedThreads = pgTable(
+  "slack_owned_threads",
+  {
+    channelId: text("channel_id").notNull(),
+    threadTs: text("thread_ts").notNull(),
+    teamId: text("team_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    firstLine: text("first_line").notNull(),
+    deliveredUpTo: text("delivered_up_to").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.threadTs] }),
+    index("slack_owned_threads_session_idx").on(table.agentId, table.sessionId),
+  ],
+);
+
 export const publicImageUrls = pgTable("public_image_urls", {
   sha256: text("sha256").primaryKey(),
   url: text("url").notNull(),

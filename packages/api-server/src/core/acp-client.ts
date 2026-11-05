@@ -269,6 +269,7 @@ export type SendPromptOpts = (
   onUpdate?: (update: PromptUpdate) => void;
   onSession?: (sessionId: string, promptId?: string) => void;
   signal?: AbortSignal;
+  surface?: string;
 };
 
 export type TriggerSessionOpts = {
@@ -708,7 +709,14 @@ export function createAcpClient(opts: {
             connection.agent.request("session/prompt", {
               sessionId,
               prompt: finalBlocks,
-              _meta: { platform: { promptId } },
+              _meta: {
+                platform: {
+                  promptId,
+                  ...(sendOpts.surface !== undefined && {
+                    surface: sendOpts.surface,
+                  }),
+                },
+              },
             });
           const cancel = () => {
             connection.agent
