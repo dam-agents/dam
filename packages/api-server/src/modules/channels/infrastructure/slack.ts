@@ -65,6 +65,7 @@ import type {
   ChannelSendResult,
   ChannelUser,
   ChannelWorker,
+  MessageLinkQuery,
   PostMessageOptions,
   ReactionsQuery,
   ThreadLeave,
@@ -879,7 +880,7 @@ function labelMessages(
   names: Map<string, string>,
   readingAgentId: string,
   bot: { userId: string | null; label: string },
-  opts: { showThreadMarkers: boolean },
+  opts: { showThreadMarkers: boolean; showTs?: boolean },
 ): string[] {
   return entries.map((e) =>
     labelHistoryMessage(
@@ -7550,6 +7551,50 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     },
 
+    async getMessageLink(instanceName: string, query: MessageLinkQuery) {
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      const { messageTs } = query;
+      const liveChannels = new Set(
+        liveTurnRefs(instanceName).map((ref) => ref.channel),
+      );
+      const turnChannel =
+        findTurnRef(instanceName, (ref) => ref.eventTs === messageTs)
+          ?.channel ??
+        (liveChannels.size === 1 ? [...liveChannels][0] : undefined);
+      const target = await resolveOutboundTarget(
+        gw,
+        boundChannelIds,
+        query.conversationId ?? turnChannel,
+        turnWorkspace(instanceName),
+        async (id, teamId, dm) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+      );
+      if ("error" in target) return target;
+
+      try {
+        const link = await gw.getPermalink(target.id, messageTs, target.teamId);
+        if (!link) {
+          return {
+            error:
+              `Slack gave no link for message ${messageTs} in ` +
+              `${target.id} — check messageTs, and pass chatId when the ` +
+              "message is in another conversation",
+          };
+        }
+        return { link, conversationId: target.id, messageTs };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
     async readThread(instanceName: string, query: ThreadQuery) {
       const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
@@ -7621,6 +7666,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const names = await resolveAuthorNames(entries, resolveAgentName);
         const labelled = labelMessages(entries, names, instanceName, bot, {
           showThreadMarkers: false,
+          showTs: true,
         });
         return {
           messages: markThreadWindow(labelled, offsets, {

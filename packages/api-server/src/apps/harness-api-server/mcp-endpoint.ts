@@ -563,8 +563,57 @@ export function createMcpSession(
   );
 
   server.tool(
+    "get_message_link",
+    "Get the Slack link of one message, to put in an issue, a document or a reply so that a person can open that message. A reply inside a thread gets a link too. Returns { link, conversationId, messageTs }, or an error if Slack has no such message there. Pass the message's ts as messageTs: the ts on a line that read_thread returned, or a ts that another tool result named. A message is linked only in a conversation this agent can reach. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Chat containing the message: an id from describe_channel, or the conversationId that read_thread returned. Omit for the conversation you are answering in.",
+        ),
+      messageTs: z
+        .string()
+        .min(1)
+        .describe(
+          "Message to link: the ts on a read_thread line, or a ts a tool result named.",
+        ),
+    },
+    async ({ channel, chatId, messageTs }) => {
+      const result = await deps.channelManager.getMessageLink(
+        agentId,
+        channel,
+        { conversationId: chatId, messageTs },
+      );
+      const audit = channelAudit(channel);
+      if ("error" in result) {
+        securityLog("warn", "channel.message_link", {
+          ...audit,
+          result: "failure",
+          reason: result.error,
+          detail: {
+            ...(chatId ? { conversationId: chatId } : {}),
+            messageTs,
+          },
+        });
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.message_link", {
+        ...audit,
+        result: "success",
+        detail: {
+          conversationId: result.conversationId,
+          messageTs: result.messageTs,
+        },
+      });
+      return textResult(JSON.stringify(result));
+    },
+  );
+
+  server.tool(
     "read_thread",
-    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. It also reads the thread you are answering in, however old it is: pass the threadTs your turn's instructions name. And it reads a thread you started with start_thread. Only these threads are readable: pass the tag's ts, or that thread's ts, as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore, cursor }, messages being the thread in the same labelled form as your conversation history, oldest first, and always opening with the message that started the thread. A long thread comes back as its newest replies rather than its whole, with hasMore true and a cursor: call again with that cursor to read the window immediately before this one, as far back as you need, passing back only a cursor this same thread gave you; one from another thread or naming a point this thread does not reach is refused rather than answered. In a thread longer than one read, a line in square brackets after the opening message numbers the replies shown, counted from the thread's first reply, and names the replies left out; the numbers stay the same however much the thread grows, so two windows line up by them. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
+    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. It also reads the thread you are answering in, however old it is: pass the threadTs your turn's instructions name. And it reads a thread you started with start_thread. Only these threads are readable: pass the tag's ts, or that thread's ts, as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore, cursor }, messages being the thread in the same labelled form as your conversation history, oldest first, and always opening with the message that started the thread. Each line also carries its message's ts after the time, as [<time>, ts <ts>]: pass it as messageTs to get_message_link for a link to that message, or to describe_message_reactions. A long thread comes back as its newest replies rather than its whole, with hasMore true and a cursor: call again with that cursor to read the window immediately before this one, as far back as you need, passing back only a cursor this same thread gave you; one from another thread or naming a point this thread does not reach is refused rather than answered. In a thread longer than one read, a line in square brackets after the opening message numbers the replies shown, counted from the thread's first reply, and names the replies left out; the numbers stay the same however much the thread grows, so two windows line up by them. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       threadTs: z

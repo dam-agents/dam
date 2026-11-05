@@ -119,9 +119,9 @@ describe("slack thread visibility from a channel turn", () => {
       threadTs: ASK_TS,
       hasMore: false,
       messages: [
-        `U999 [${formatSlackTs(ASK_TS)}]: ${ASK}`,
-        `you (this agent) [${formatSlackTs(AGENT_REPLY_TS)}]: ${AGENT_REPLY}`,
-        `U777 [${formatSlackTs(HUMAN_REPLY_TS)}]: ${HUMAN_REPLY}`,
+        `U999 [${formatSlackTs(ASK_TS)}, ts ${ASK_TS}]: ${ASK}`,
+        `you (this agent) [${formatSlackTs(AGENT_REPLY_TS)}, ts ${AGENT_REPLY_TS}]: ${AGENT_REPLY}`,
+        `U777 [${formatSlackTs(HUMAN_REPLY_TS)}, ts ${HUMAN_REPLY_TS}]: ${HUMAN_REPLY}`,
       ],
     });
   });
@@ -250,7 +250,7 @@ describe("slack thread visibility from a channel turn", () => {
       cursor = window.cursor;
     } while (cursor !== undefined && windows.length <= replies.length);
 
-    const opener = `U999 [${formatSlackTs(LONG_PARENT_TS)}]: ${ASK}`;
+    const opener = `U999 [${formatSlackTs(LONG_PARENT_TS)}, ts ${LONG_PARENT_TS}]: ${ASK}`;
     expect(windows.map((w) => w.messages[0])).toEqual([opener, opener]);
     expect(windows.map((w) => w.hasMore)).toEqual([true, false]);
     expect(windows[0]!.messages[1]).toContain("Not shown: replies 1-10;");
@@ -258,7 +258,9 @@ describe("slack thread visibility from a channel turn", () => {
     expect(windows[0]!.messages[1]).toContain("Below: replies 11-60.");
     expect(windows[1]!.messages[1]).toBe("[Below: replies 1-10.]");
     expect([...windows].reverse().flatMap((w) => w.messages.slice(2))).toEqual(
-      replies.map((r) => `U777 [${formatSlackTs(r.ts)}]: ${r.text}`),
+      replies.map(
+        (r) => `U777 [${formatSlackTs(r.ts)}, ts ${r.ts}]: ${r.text}`,
+      ),
     );
 
     const foreign = await h.worker.readThread("agent-1", {
@@ -320,6 +322,8 @@ describe("the history a first turn in a long thread is handed", () => {
     const prompt = String(h.prompts[0]);
     const line = (r: { ts: string; text: string }) =>
       `U777 [${formatSlackTs(r.ts)}]: ${r.text}`;
+    const readLine = (r: { ts: string; text: string }) =>
+      `U777 [${formatSlackTs(r.ts)}, ts ${r.ts}]: ${r.text}`;
     expect(prompt).toContain(`U999 [${formatSlackTs(LONG_PARENT_TS)}]: ${ASK}`);
     expect(prompt).toContain(line(replies[11]!));
     expect(prompt).toContain(line(replies[59]!));
@@ -336,7 +340,9 @@ describe("the history a first turn in a long thread is handed", () => {
     });
     if ("error" in earlier) throw new Error(earlier.error);
     expect(earlier.messages[1]).toBe("[Below: replies 1-11.]");
-    expect(earlier.messages.slice(2)).toEqual(replies.slice(0, 11).map(line));
+    expect(earlier.messages.slice(2)).toEqual(
+      replies.slice(0, 11).map(readLine),
+    );
     expect(earlier.cursor).toBeUndefined();
   });
 

@@ -244,11 +244,11 @@ What the agent sees:
   Ids travel inbound only: the turn contract forbids writing a bare id back into a message — nobody in the channel can read one — and points the Agent at a Slack mention or the name it resolved instead.
   That holds whether or not the lookup is available.
   Slack-only: Telegram has no workspace directory.
-- **A thread is read with `read_thread`.** It returns the thread labelled exactly as injected history is, and a long one arrives **end first** — the question is usually what a conversation concluded.
+- **A thread is read with `read_thread`.** It returns the thread labelled as injected history is, and a long one arrives **end first** — the question is usually what a conversation concluded.
   It is not confined to that end: every window opens with the message that started the thread, and carries the handle that reads the window immediately before it, so an Agent walks back to the first reply a window at a time.
   Each window of a long thread is labelled with the positions of the replies it holds, counted from the first reply, and names the ones it leaves out.
   A position, unlike a total, never goes stale as the thread grows, so two windows read minutes apart still line up.
-  That handle is the only way back, since a labelled line carries a readable time, never the id a read takes.
+  That handle is the only way back: a line's `ts` names one message, to link or inspect, never a point a read starts from.
   A count that disagrees with Slack's own paging signal is dropped rather than shown wrong, and the window then names what it leaves out without numbering it.
   The handle stays free of platform state: a handle is a position and nothing more, because its holder can rewrite it, so anything the platform would have to *believe* on being handed one back is derived afresh from the thread instead.
   What a rewritten position buys is another window of a thread already offered, which is nothing.
@@ -265,6 +265,7 @@ What the agent sees:
 - **Reactions are otherwise invisible; `describe_message_reactions` is how an agent asks.** It returns each emoji with its count and the ids of who used it.
   Never cached, unlike the user directory: a tally is live state, and the current count is the point of asking.
   Gated by the binding; the log records the message and tally, never who reacted.
+  `get_message_link` returns a message's Slack link under the same gate.
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
   A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `post` can.

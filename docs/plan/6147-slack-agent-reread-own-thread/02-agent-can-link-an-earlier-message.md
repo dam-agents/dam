@@ -27,13 +27,14 @@ Apply the `/typescript-engineering` skill (code mode).
    A non-leader replica reaches the leader through this RPC, so a missing entry breaks the tool on every non-leader.
 4. **Slack worker.**
    In `slack.ts`, implement the method next to `describeMessageReactions`, and copy its gate:
-   resolve the target with `resolveOutboundTarget` from `query.conversationId`, else the conversation of a turn whose message has that `ts` (`findTurnRef`), with the same `refuseOutsideOwnerReach` check.
+   resolve the target with `resolveOutboundTarget` from `query.conversationId`, else the conversation of a turn whose message has that `ts` (`findTurnRef`), else the one conversation the agent's live turns run in, with the same `refuseOutsideOwnerReach` check.
+   Decided during implementation: a `ts` from `read_thread` is usually an earlier reply, not a turn's message, so without the last fallback an agent bound to several conversations would always need `chatId`.
    Call `gw.getPermalink(target.id, messageTs, target.teamId)`.
    A `null` link is an error that tells the agent to check `messageTs` and `chatId`.
    A thrown error goes through `formatError`, as in the other read methods.
    The worker already calls `getPermalink` for every turn, so the install has what the call needs; confirm on the dev cluster.
 5. **MCP tool.**
-   In `packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts`, add `get_message_link` next to `describe_message_reactions`, with the same parameter style: `channel`, `chatId` (optional: an id from `describe_channel` or the `conversationId` that `read_thread` returns; omit for the conversation of the message you are answering), `messageTs` (required: the `ts` on a `read_thread` line, or a `ts` a tool result named).
+   In `packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts`, add `get_message_link` next to `describe_message_reactions`, with the same parameter style: `channel`, `chatId` (optional: an id from `describe_channel` or the `conversationId` that `read_thread` returns; omit for the conversation you are answering in), `messageTs` (required: the `ts` on a `read_thread` line, or a `ts` a tool result named).
    Its description says what it is for (a link to one message, for an issue, a document or a reply), what it returns (`{ link, conversationId, messageTs }`), and "Slack only".
    Log it with `securityLog` as `channel.message_link`, success and failure, with the conversation and `ts`, never message content.
 6. **`read_thread` description.**
