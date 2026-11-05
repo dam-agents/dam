@@ -353,7 +353,9 @@ An optional model input becomes the provider's model pin.
 The Connection also asks the harness's Bedrock client for HTTP/1.1, which every credential chain speaks by default.
 IAM access keys and assumed roles are not accepted: Bedrock requires those to sign each request with SigV4, and the gateway's request signing serves S3-compatible storage only (below).
 
-**Claude Code** runs on it in Bedrock mode, through the Model Router; a routed Pi does not reach it ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
+**Claude Code** and **Pi** run on it in their own Bedrock mode, through the Model Router ([harness configuration](harness-config.md#the-model-catalog)).
+Pi is offered the inference profiles the control-plane host lists, but its image and video models, and runs them on its own Bedrock provider with the router as its Bedrock Runtime endpoint (`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`).
+The Connection's pinned model is always offered, and alone when the key may not list profiles.
 Claude Code has Bedrock built in; its image switches it on whenever the key placeholder is present in a process the runtime did not mark as routed, and leaves model choice to Claude Code itself.
 At start it resolves each of its model tiers to the region's profile, falling back to an earlier version, or from Opus to Sonnet, when the account cannot invoke the default; the platform pins no tier, which would lose that fallback.
 The pin is a new session's default only, and Claude Code ignores it when the account cannot invoke it.

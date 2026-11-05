@@ -178,9 +178,10 @@ Each preset lists the way its key allows: `/v1/models` for the LiteLLM proxies (
 A LiteLLM proxy is listed from `/v1/models` on its root with the Connection's placeholder, so the gateway adds the key, and the maximum model length each entry reports, where it reports one, is its context window.
 Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices, and a vLLM deployment's list the context window), then the vendored LiteLLM price table (`model_prices_and_context_window.json`, re-vendored by `//packages/agent-runtime:update:model-prices`), then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer, and cache marks and the thinking format are family rules by id.
 An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone; the router refuses it to any other harness by name.
-Bedrock is the one **native Connection**: the router lists no models for it, and every harness but Claude Code sees it as unsupported.
-Claude Code runs on it in Bedrock mode with the router as its base URL (`/bedrock/<connection id>`), and the router passes those calls on unchanged.
-Claude Code's view lists it under its alias with Claude Code's own tier names (`bedrock/sonnet`); a session on one runs in a Claude Code process of its own, started with the Connection's env instead of the router's, and switching between it and a routed model moves the session between processes once the running turn ends.
+Bedrock is the one **native Connection**: the router lists no models for it, and every harness but Claude Code and Pi sees it as unsupported.
+Claude Code and Pi run on it in their own Bedrock mode with the router as their Bedrock endpoint (`/bedrock/<connection id>`), and the router passes those calls on unchanged.
+Claude Code's view lists it under its alias with Claude Code's own tier names (`bedrock/sonnet`), Pi's with the region's inference profiles ([connections](connections.md#app-preset-aws-bedrock)).
+A session on one runs in a harness process of its own, started with the Connection's env instead of the router's, and switching between it and a routed model moves the session between processes once the running turn ends.
 Beside a routed provider, a turn with no model is refused (see **A turn with no model**), and a web terminal with none starts through the router on the harness's own default; Bedrock's env reaches a process only when no routed provider serves the harness.
 One process reaches either the router or Bedrock, so a session's subagent model is offered from, and must come from, the same side as its model.
 No model counts as the router side, since a session without a Bedrock model reaches the router.
@@ -259,8 +260,7 @@ Nothing is seeded into a harness's config file; a run with no choice gets the ag
 A routed harness that refuses to start without a model names a variable in its manifest's `defaultModelEnv` (Copilot's `COPILOT_MODEL`), and the runtime sets it to the first model of the default provider that serves the harness; the session's own model then reaches it over ACP.
 A model the provider does not list fails the turn with the router's reason rather than being replaced.
 
-Bedrock stays native: only Claude Code runs on it, and a routed Pi does not reach it.
-Pi's manifest declares the [AWS Bedrock](connections.md#app-preset-aws-bedrock) Connection's inference-profile listing as a source ahead of its OpenAI one.
+A harness process switches to the router only when the runtime marks a granted provider as routed for it, so Pi on Bedrock alone runs its own Bedrock provider.
 Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)); on the router the runtime fills each tier slot with the agent's default provider's newest model of that tier — or, on a provider whose ids carry no tier word, with the platform's preferred model — and a side call on a slot follows the session's provider ([the Model Router](#the-model-router)).
 The picker offers a tier only where a provider lists a model of exactly that name, as Bedrock's tier ids are, since the router refuses one a gateway would have mapped to another model.
 
