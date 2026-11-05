@@ -105,6 +105,23 @@ provision:
       elif ! { echo always > /sys/kernel/mm/transparent_hugepage/enabled; } 2>/dev/null; then
         echo "WARNING: transparent huge pages are not pinned on; nested VMs boot slowly." >&2
       fi
+      # Containers must be able to signal their own processes. Ubuntu's
+      # apparmor_restrict_unprivileged_unconfined turns runc's switch into a
+      # container's AppArmor profile into a stack, cri-containerd.apparmor.d//&unconfined,
+      # and containerd's default profile lets a process signal only its own
+      # unstacked name (containerd/containerd#14485). The runners' kernel enforces
+      # that since 7.0.0-1019 (runner image 20261101): Postgres cannot wake its own
+      # backends, answers nothing for five minutes, and its startup probe kills it
+      # (issue #6300). Off, the switch stays a switch. Set before k3s starts, as a
+      # container's label is fixed when its first process starts; the sysctl.d file
+      # keeps it across a reboot. A kernel without the setting has nothing to undo.
+      if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_unconfined ]; then
+        mkdir -p /etc/sysctl.d
+        echo 'kernel.apparmor_restrict_unprivileged_unconfined = 0' > /etc/sysctl.d/60-container-signals.conf
+        if ! { echo 0 > /proc/sys/kernel/apparmor_restrict_unprivileged_unconfined; } 2>/dev/null; then
+          echo "WARNING: AppArmor still stacks container profiles; a container may not signal its own processes." >&2
+        fi
+      fi
       if [ ! -d /var/lib/rancher/k3s ]; then
         # Pinned: k3s ships the Gateway API CRDs through its own gateway-api-crd
         # chart, so GATEWAY_API_VERSION in .mise/tasks/cluster/install must match the

@@ -579,6 +579,10 @@ jobs:
           fi
           [ "$canary" != 0 ] || echo "::warning::the seccomp canary left no record, so the kernel log may not keep seccomp records here, and a low count proves nothing"
           grep -h 'kauditd_printk_skb: .* callbacks suppressed\|audit: rate limit exceeded\|audit: backlog limit exceeded' /tmp/kernel-log/kernel.log || true
+          # A container whose processes may not signal each other hangs rather
+          # than fails (etc/lima/k3s-test.yaml says why), so its denials are named.
+          signals="$(grep -c 'apparmor="DENIED" operation="signal"' /tmp/kernel-log/kernel.log || true)"
+          [ "$signals" = 0 ] || echo "::warning::AppArmor denied $signals signals between processes; a pod that hung may be why"
       - if: ${{ failure() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
