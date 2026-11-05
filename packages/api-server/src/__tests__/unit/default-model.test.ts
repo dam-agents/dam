@@ -461,14 +461,13 @@ describe("convertedDefaultModel on several fitting providers", () => {
       ],
     });
 
-  // TEST_SCENARIO: an id the setting or the history names is the person's own pick, and it names the same model whichever provider is asked, so it wins over the platform's preferred model; a tier word names nothing on several providers, so it goes to the list, where a Claude Code agent's own models come first and DeepSeek follows, which is why the image's opus now lands on Claude wherever the agent fits an Anthropic provider and on DeepSeek only where none serves Claude.
-  it("keeps the person's own model and answers a tier word from the harness's own models first", () => {
+  // TEST_SCENARIO: an id the setting or the history names is the person's own pick, and it names the same model whichever provider is asked, so it wins over the platform's preferred model; a setting naming no model — the harness's own `default`, or no history — goes to the list, where a Claude Code agent's own models come first and DeepSeek follows.
+  it("keeps the person's own model, and reads the list where the setting names none", () => {
     expect(both("claude-opus-4-8")).toBe("anthropic/claude-opus-4-8");
     expect(both("default", ["claude-opus-4-8"])).toBe(
       "anthropic/claude-opus-4-8",
     );
     expect(both(null, ["claude-opus-5-5"])).toBe("anthropic/claude-opus-5-5");
-    expect(both("opus")).toBe("anthropic/claude-opus-5-5");
     expect(both("default", [])).toBe("anthropic/claude-opus-5-5");
     expect(
       convertedDefaultModel({
@@ -483,6 +482,47 @@ describe("convertedDefaultModel on several fitting providers", () => {
         ran: [],
       }),
     ).toBe("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017");
+  });
+
+  // TEST_SCENARIO: a tier word names a model on every provider that lists it, so several fitting providers no longer send it to the list: the harness's own provider order picks the provider, and that provider's newest model of the tier answers — never the tier the list prefers, and never the provider that happens to be listed first.
+  it("answers a tier word from its providers in the harness's order", () => {
+    const tiers = (
+      setting: string,
+      providers: { alias: string; listed: string[] }[],
+    ) =>
+      convertedDefaultModel({
+        harness: "claude-code",
+        setting,
+        providers,
+        ran: [],
+      });
+    expect(
+      tiers("sonnet", [
+        {
+          alias: "ibm",
+          listed: ["aws/claude-sonnet-4-6", "aws/claude-sonnet-5-5"],
+        },
+        { alias: "anthropic", listed: ["claude-opus-5-5"] },
+      ]),
+    ).toBe("ibm/aws/claude-sonnet-5-5");
+    expect(
+      tiers("sonnet", [
+        { alias: "ibm", listed: ["aws/claude-opus-5-5"] },
+        {
+          alias: "anthropic",
+          listed: ["claude-sonnet-5-5", "claude-opus-5-5"],
+        },
+      ]),
+    ).toBe("anthropic/claude-sonnet-5-5");
+    expect(
+      tiers("sonnet", [
+        { alias: "anthropic", listed: ["claude-opus-5-5"] },
+        {
+          alias: "cb",
+          listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"],
+        },
+      ]),
+    ).toBe("anthropic/claude-opus-5-5");
   });
 
   // TEST_SCENARIO: a kit's declared model is what the agent was created for, so it answers before the several-providers shortcut and before the Haiku substitution, and it is found on whichever fitting provider lists it.
