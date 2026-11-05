@@ -11,6 +11,7 @@ export function lengthError(
     : undefined;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a field's character count against its limit, red once over. It is not a live region: a screen reader hears it with the field's description on focus, and the field's error announces going over, so typing is not interrupted on every key.
 export function LengthCount({
   value,
   max,
@@ -24,7 +25,6 @@ export function LengthCount({
   return (
     <span
       id={id}
-      aria-live="polite"
       className={cn(
         "text-xs tabular-nums",
         length > max ? "text-danger" : "text-muted-foreground",

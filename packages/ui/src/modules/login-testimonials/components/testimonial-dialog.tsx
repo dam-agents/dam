@@ -157,7 +157,22 @@ export function TestimonialDialog({
               onChange={(event) => set({ role: event.target.value })}
             />
           </FormField>
-          <FormField label="Quote" error={errors.quote}>
+          <FormField
+            label="Quote"
+            error={errors.quote}
+            hint={
+              <span className="flex items-start justify-between gap-3">
+                <span id={hintId}>
+                  Write {"{brand}"} where the quote names the product.
+                </span>
+                <LengthCount
+                  id={quoteCountId}
+                  value={fields.quote}
+                  max={LIMITS.quote}
+                />
+              </span>
+            }
+          >
             <Textarea
               rows={7}
               variant={errors.quote ? "invalid" : "standard"}
@@ -166,16 +181,6 @@ export function TestimonialDialog({
               value={fields.quote}
               onChange={(event) => set({ quote: event.target.value })}
             />
-            <span className="flex items-start justify-between gap-3">
-              <span id={hintId} className="text-sm text-muted-foreground">
-                Write {"{brand}"} where the quote names the product.
-              </span>
-              <LengthCount
-                id={quoteCountId}
-                value={fields.quote}
-                max={LIMITS.quote}
-              />
-            </span>
           </FormField>
         </DialogBody>
         <DialogActions
