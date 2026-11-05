@@ -49,7 +49,18 @@ install:
     fi
     PATH="${PATH//"$(dirname "$0")":/}"
     case " $* " in
-    *" --output-format stream-json "* | *" --output-format json "*) exec claude "$@" > >(awk '/^\{"type":"result"/ { r = $0; next } /^\{/ { print; fflush() } END { if (r != "") print r }') ;;
+    *" --output-format stream-json "* | *" --output-format json "*)
+      # The engine reads a run's outcome from the last JSON object of the
+      # stream, and the CLI can write a status event after the result one.
+      # Key order inside an event is not contractual, so jq parses each line
+      # and marks it rather than matching the line's prefix; awk holds the
+      # marked lines back and writes the last of them at the end. Both flush
+      # every other line at once, so the engine still reads the stream live.
+      # exec keeps the CLI on this pid: the engine cancels a run by signalling
+      # the process it started, and its exit status is this script's.
+      exec claude "$@" > >(jq -R -r --unbuffered '(try fromjson catch null) as $o | if ($o|type) == "object" and $o.type == "result" then "R" + . else "P" + . end' |
+        awk '{ if (sub(/^R/, "")) { r = $0; next } sub(/^P/, ""); print; fflush() } END { if (r != "") print r }')
+      ;;
     *) exec claude "$@" ;;
     esac
     SHIM

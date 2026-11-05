@@ -9,6 +9,8 @@ import { err, ok, parseGithubRepo } from "agent-runtime-api";
 
 const GITHUB_API = "https://api.github.com";
 
+const GET_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000];
+
 const MAX_SKILL_FILE_BYTES = 1024 * 1024;
 
 export const MAX_SUBTREE_REQUESTS = 200;
@@ -159,18 +161,27 @@ export interface GitHubRestClient {
   ) => Promise<Result<PullRequest, SkillsDomainError>>;
 }
 
+type GithubFetch = (url: string, init: RequestInit) => Promise<Response>;
+
 export function createGitHubRestClient(clientOpts: {
   token: () => string;
+  sleep?: (ms: number) => Promise<void>;
+  log?: (msg: string) => void;
 }): GitHubRestClient {
   const { token } = clientOpts;
+  const send = githubFetch(
+    clientOpts.sleep ??
+      ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))),
+    clientOpts.log ?? (() => {}),
+  );
   const json = <T>(
     method: "GET" | "POST",
     endpoint: string,
     body?: unknown,
     opts: GithubFetchOpts = {},
-  ) => ghJson<T>(method, endpoint, token, body, opts);
+  ) => ghJson<T>(method, endpoint, token, send, body, opts);
   const bytes = (method: "GET", endpoint: string, opts: GithubFetchOpts = {}) =>
-    ghBytes(method, endpoint, token, opts);
+    ghBytes(method, endpoint, token, send, opts);
   return {
     async getRepo(host, opts) {
       const r = await json<{ default_branch: string }>(
@@ -482,16 +493,37 @@ function ghHeaders(
   };
 }
 
+function githubFetch(
+  sleep: (ms: number) => Promise<void>,
+  log: (msg: string) => void,
+): GithubFetch {
+  return async (url, init) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fetch(url, init);
+      } catch (e) {
+        const delayMs = GET_RETRY_DELAYS_MS[attempt];
+        if (init.method !== "GET" || delayMs === undefined) throw e;
+        log(
+          `${init.method} ${url}: ${errorDetail(e)}; retrying in ${delayMs}ms`,
+        );
+        await sleep(delayMs);
+      }
+    }
+  };
+}
+
 async function ghJson<T>(
   method: "GET" | "POST",
   endpoint: string,
   token: () => string,
+  send: GithubFetch,
   body?: unknown,
   opts: GithubFetchOpts = {},
 ): Promise<Result<T, SkillsDomainError>> {
   const withAuth = opts.withAuth ?? true;
   try {
-    const res = await fetch(`${GITHUB_API}${endpoint}`, {
+    const res = await send(`${GITHUB_API}${endpoint}`, {
       method,
       headers: ghHeaders(withAuth, body !== undefined, token),
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -516,11 +548,12 @@ async function ghBytes(
   method: "GET",
   endpoint: string,
   token: () => string,
+  send: GithubFetch,
   opts: GithubFetchOpts = {},
 ): Promise<Result<Uint8Array, SkillsDomainError>> {
   const withAuth = opts.withAuth ?? true;
   try {
-    const res = await fetch(`${GITHUB_API}${endpoint}`, {
+    const res = await send(`${GITHUB_API}${endpoint}`, {
       method,
       headers: ghHeaders(withAuth, false, token),
     });
@@ -540,18 +573,20 @@ async function ghBytes(
   }
 }
 
+function errorDetail(e: unknown): string {
+  return e instanceof Error
+    ? e.cause instanceof Error
+      ? `${e.message}: ${e.cause.message}`
+      : e.message
+    : String(e);
+}
+
 function toUnreachableError(
   method: string,
   path: string,
   e: unknown,
 ): SkillsDomainError {
-  const detail =
-    e instanceof Error
-      ? e.cause instanceof Error
-        ? `${e.message}: ${e.cause.message}`
-        : e.message
-      : String(e);
-  return { kind: "UpstreamUnreachable", method, path, detail };
+  return { kind: "UpstreamUnreachable", method, path, detail: errorDetail(e) };
 }
 
 function toUpstreamError(

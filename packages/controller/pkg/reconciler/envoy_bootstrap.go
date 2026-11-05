@@ -114,6 +114,7 @@ func newBootstrapParams(instanceID, attributionID string, cfg *config.Config, ch
 		CredentialsRoot:        envoyCredentialsRoot,
 		CredentialSDSName:      envoyCredentialSDSName,
 		LeafTLSDir:             envoyLeafTLSMount,
+		LeafSDSPath:            envoyBootstrapMount + "/" + envoyLeafSDSKey,
 		HarnessAuthority:       harnessAuthority,
 		HarnessHost:            cfg.HarnessHost(),
 		HarnessPort:            cfg.HarnessServerPort,
@@ -713,7 +714,7 @@ func buildUnaddressedRoutes(c envoyHostChain) []any {
 	emitted := map[string]bool{}
 	var routes []any
 	for _, scope := range c.PathScopes() {
-		if c.ContestedAt(scope) {
+		if c.RefusesUnaddressedAt(scope) {
 			if !emitted[scope] {
 				emitted[scope] = true
 				routes = append(routes, buildRefusedRoute(c, scope))

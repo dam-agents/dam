@@ -40,7 +40,10 @@ export function composeSkills(opts: ComposeSkillsOptions): SkillsComposition {
     opts.pristineSkillPaths,
     "pristine skill path",
   );
-  const github = createGitHubRestClient({ token: opts.githubToken });
+  const github = createGitHubRestClient({
+    token: opts.githubToken,
+    log: opts.log,
+  });
   const git = createGitProtocolClient();
   const repo = createLocalSkillRepository();
   const service = createSkillsService({

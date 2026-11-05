@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-21
+Last verified: 2026-10-30
 
 ## Overview
 
@@ -13,6 +13,7 @@ Model calls reach it through the agent-side [Model Router](harness-config.md#the
 
 The controller renders a per-Agent `Envoy bootstrap ConfigMap` and a cert-manager `Certificate` whose Secret holds the leaf TLS material the gateway uses to terminate agent egress TLS.
 The leaf is issued by a chart-managed MITM CA whose certificate is mounted into the agent — public half only, the key never leaves the gateway pod — so the agent's TLS clients trust Envoy's intercept cert.
+Envoy reads the leaf through an SDS file that watches its directory, as the owner gateway does, because cert-manager rewrites it whenever the intercepted hosts change — at create, when the grants land a moment after the Agent, and at every promotion — and a leaf named by plain filenames is read only when the pod starts.
 
 On the wire:
 
@@ -97,7 +98,7 @@ Where a scope is claimed twice, the [per-Connection address](connections.md#addr
 A Lua step ahead of every other filter on a Connection chain reads the address — the path prefix, the token placeholder in a claimed header or query parameter, or the access key ID of a SigV4 credential (below) — and marks the request with its Connection.
 An injector skips when the marker names a rival on its header over an overlapping scope; on an Agent requiring addresses, unless it names its own Connection, so the request keeps its credential.
 The prefix and marker are dropped on the way upstream.
-A request naming no Connection on a contested scope is refused by that same step, not served from whichever credential sorted first.
+A request naming no Connection on a contested scope is refused by that same step, not served from whichever credential sorted first; on an Agent requiring addresses every injector skips it already, so it goes upstream with no credential added and nothing is refused.
 The gate reads the path with the prefix removed, so egress rules and approvals keep naming real paths.
 
 **Path-scoped chains and the request path.** A route carrying a path-scoped credential matches whole path segments, so a scope of `/v1/messages` admits `/v1/messages/count_tokens` and not `/v1/messagesX`.
