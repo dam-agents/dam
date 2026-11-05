@@ -33,8 +33,9 @@ const ROUTER_PLACEHOLDER = "platform:conn:router";
  * auto-mode permission check, whose own Sonnet slot stays the person's, and a
  * provider that lists no classifier model gets no variable and keeps the
  * harness default. A harness whose manifest names a preferred-model variable
- * gets the platform's preferred work model across the providers that serve
- * it, for a process that starts with no model of its own (Pi's web terminal),
+ * gets the platform's preferred work model for that harness across the
+ * providers that serve it, the model a run with no saved default takes, for a
+ * process that starts with no model of its own (Pi's web terminal),
  * so it never falls back to whichever model the catalog lists first; no
  * listed preferred model sets no variable.
  */
@@ -89,7 +90,7 @@ export function routerEnvFor(input: {
       env[binding.classifierModelEnv] = classifier;
   }
   const preferred = binding.preferredModelEnv
-    ? preferredWorkName(serving, binding)
+    ? preferredWorkName(input.harness, serving, binding)
     : null;
   if (binding.preferredModelEnv && preferred)
     env[binding.preferredModelEnv] = preferred;
@@ -136,6 +137,7 @@ export function processClassifierName(input: {
 }
 
 function preferredWorkName(
+  harness: string,
   serving: readonly CatalogProvider[],
   binding: ModelRouterBinding,
 ): string | null {
@@ -145,6 +147,7 @@ function preferredWorkName(
       alias: p.alias,
       listed: p.entries.map((e) => e.upstreamId),
     })),
+    harness,
   );
   const entry = serving
     .find((p) => p.alias === preferred?.alias)

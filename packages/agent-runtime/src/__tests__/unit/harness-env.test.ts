@@ -450,6 +450,22 @@ describe("the preferred work model env", () => {
     expect(env.PLATFORM_PREFERRED_MODEL).toBe("ibm/aws/claude-opus-5-5");
   });
 
+  /** TEST_SCENARIO: The list reads for the harness asking: Opus 5.5 is Claude Code's own model, so Pi, which carries none, takes DeepSeek V4.1 Flash where both are listed, the model a run with no saved default takes on Pi. */
+  it("picks the model the list prefers for that harness", () => {
+    const providers = [
+      provider(ibm, [entry(ibm, "aws/claude-opus-5-5", 200_000)]),
+      provider(cb, [entry(cb, CB_WORK, 1_048_576)]),
+    ];
+    expect(
+      routerEnvFor({ harness: "pi", binding: pi, providers, port: 1 })
+        .PLATFORM_PREFERRED_MODEL,
+    ).toBe(`cb/${CB_WORK}`);
+    expect(
+      routerEnvFor({ harness: "claude-code", binding: pi, providers, port: 1 })
+        .PLATFORM_PREFERRED_MODEL,
+    ).toBe("ibm/aws/claude-opus-5-5");
+  });
+
   /** TEST_SCENARIO: The list's order beats the providers' own, so a preferred model on the second provider wins over a non-preferred one on the first; a listing with none of the list's models, and a harness whose manifest names no variable, set nothing. */
   it("follows the list across providers, and stays out of the way", () => {
     expect(
