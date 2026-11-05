@@ -40,5 +40,6 @@ export interface EnvironmentsService {
   setMembers(id: string, update: MembersUpdate): Promise<EnvironmentView>;
   lookupAgent(agentId: string): Promise<EnvironmentAgentLookup>;
   extend(id: string, expiresAt: Date | "never"): Promise<EnvironmentView>;
+  setAwake(id: string, awake: boolean): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
 }

@@ -143,6 +143,12 @@ export const environmentMembersInputSchema = z.object({
   agentIds: environmentMemberAgentIdsSchema.optional(),
 });
 
+// UNIT_BOUNDARY_DESCRIPTION: the owner's choice whether an Environment is kept awake: true keeps it from ever sleeping; false lets it sleep again after the install's default idle timeout for Environments.
+export const environmentSetAwakeInputSchema = z.object({
+  id: z.string().min(1),
+  awake: z.boolean(),
+});
+
 export const environmentExtendInputSchema = z.object({
   id: z.string().min(1),
   // UNIT_BOUNDARY_DESCRIPTION: the new expiry, or "never" to keep the Environment until someone deletes it.

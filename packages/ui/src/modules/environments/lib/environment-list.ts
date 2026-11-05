@@ -21,8 +21,18 @@ export function environmentStateLabel(state: string): string {
   return "Not running";
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the row and the Share dialog say of an Environment kept with no expiry.
-export const NEVER_DELETED = "Never deleted";
+// UNIT_BOUNDARY_DESCRIPTION: what the row, the Share dialog and the delete-after control call an Environment with no expiry: kept, until someone deletes it.
+export const KEPT = "Kept until deleted";
+
+// UNIT_BOUNDARY_DESCRIPTION: what the row and the Share dialog call an Environment that never sleeps: kept awake, holding its memory on the owner's runner.
+export const KEPT_AWAKE = "Kept awake — it never sleeps";
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an Environment never sleeps, as its view says it.
+export function keptAwake(environment: {
+  idleTimeoutMin: number | "never" | null;
+}): boolean {
+  return environment.idleTimeoutMin === "never";
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: who the Share dialog says may open an Environment through its agent: the owner, the agent's editors, and how many Agent Environment Members the agent has; the people of the Environment's own list are listed below it, one by one.
 export function sharedThroughAgent({

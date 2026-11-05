@@ -41,6 +41,7 @@ People and Agents sit in tables of their own, so an email never matches an Agent
   One past `environments.idleTimeoutMax` (default 24 hours) is cut to it, as an expiry is.
   `never`, or a zero, keeps it awake, for a server people rely on: the api-server writes `hibernationTimeout: 0s`, which the idle sweep reads as never sleeping and the memory reclaim skips, so the machine holds its memory on the owner's runner all the time; `environments.idleTimeoutMax` does not bound it, and any other word or a bare number is refused.
   Otherwise the memory reclaim that puts an idle machine to sleep early when its owner needs the room still applies.
+  The owner keeps one awake, or lets one the agent kept awake sleep again after `environments.idleTimeout`, from its row's menu (`environments.setAwake`); the last change wins, as with the expiry.
   `list_environments` shows each one's idle timeout, `never` for one that never sleeps.
 - **Expiry.** An Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
   Its expiry can also be `never`, so it is kept until someone deletes it, with no install-wide switch and no maximum, since it spends its owner's own runner; the row's `expires_at` is then null.
@@ -204,9 +205,10 @@ In the app, behind the feature:
 
 - **The Artifacts list** has an **Environments** group above its folders, which only the owner sees, as with artifacts, and only while there is one to show (see [artifact library](artifact-library.md#ui-surfaces)).
   In an Agent's chat it starts on that Agent's Environments; anywhere else it lists every one, each naming its agent; a search finds them by name.
-  A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, or `never` for one kept with no expiry, its agent, and a link per address that opens a new tab.
-  Its menu has the artifact's delete-after control for the expiry, with **Never delete**, and Delete; the owner's `extend` takes `never` for no expiry.
-- **The Share dialog** of an Environment says it is never deleted when it is kept with no expiry, and who opens it through its agent — the owner, the agent's editors, and how many the agent's page names, counted, never listed — links to that page, and edits the Environment's own members: people by email, and Agents by id.
+  A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, or `kept` for one with no expiry, `awake` for one that never sleeps, its agent, and a link per address that opens a new tab.
+  Its menu has the artifact's delete-after control for the expiry, with **Keep until deleted**, whose text says what the chosen value does; **Keep awake** or **Let it sleep when idle**; and Delete.
+  The owner's `extend` takes `never` for no expiry.
+- **The Share dialog** of an Environment says when it is kept with no expiry and when it is kept awake, and who opens it through its agent — the owner, the agent's editors, and how many the agent's page names, counted, never listed — links to that page, and edits the Environment's own members: people by email, and Agents by id.
   An id is looked up before it is added, so the row shows the Agent's name and its owner's display name, marked as an agent, and an id that names no Agent, or names an Environment, is refused; saving checks every id again.
   Each Agent row says when it last opened the Environment, which the gate records at most once a minute.
 - **An agent's page** has an **Environments** section with the agent's Environment Members, people and Agents as in the Share dialog, edited once the list has loaded, and a link to the Artifacts list; an editor, who has no Artifacts list of the owner's, reads there that the owner manages each Environment.

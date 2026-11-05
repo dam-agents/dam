@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The owner finds Environments in the Artifacts list, as they find artifacts: an Environments group above the folders, with a row for each Environment that names it, says whether it runs and when it is deleted, names its agent where the list spans agents, and links each address in a new tab. In an agent's chat the list starts on that agent's Environments; a search narrows them by name; with none to show there is no group. An Environment's Share dialog says who opens it through its agent, counted and never listed, and edits only the people of that one Environment. The agent's page keeps only the agent's Environment members and links to the Artifacts list.
+// TEST_OVERVIEW: The owner finds Environments in the Artifacts list, as they find artifacts: an Environments group above the folders, with a row for each Environment that names it, says whether it runs, when it is deleted or that it is kept, and whether it is kept awake, which its menu turns on and off, names its agent where the list spans agents, and links each address in a new tab. In an agent's chat the list starts on that agent's Environments; a search narrows them by name; with none to show there is no group. An Environment's Share dialog says who opens it through its agent, counted and never listed, and edits only the people of that one Environment. The agent's page keeps only the agent's Environment members and links to the Artifacts list.
 import type { EnvironmentView } from "api-server-api";
 import { act, createElement, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -20,10 +20,15 @@ const state = vi.hoisted(() => ({
   role: "owner" as "owner" | "editor",
   saveMembers: [] as unknown[],
   extended: [] as unknown[],
+  awake: [] as unknown[],
 }));
 
 vi.mock("../../modules/environments/api/mutations.js", () => ({
   useDeleteEnvironment: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetEnvironmentAwake: () => ({
+    mutate: (input: unknown) => state.awake.push(input),
+    isPending: false,
+  }),
   useExtendEnvironment: () => ({
     mutate: (input: unknown) => state.extended.push(input),
     isPending: false,
@@ -254,8 +259,8 @@ describe("Environments in the Artifacts list", () => {
     expect(visibleEnvironments([], { agentId: null, term: "" })).toEqual([]);
   });
 
-  // TEST_SCENARIO: #6318 AC-1 — an Environment kept with no expiry says in its row that it is never deleted, where a dated one shows the days it has left.
-  it("says a row kept with no expiry is never deleted", () => {
+  // TEST_SCENARIO: #6318 AC-1 — an Environment kept with no expiry says in its row that it is kept, where a dated one shows the days it has left.
+  it("says a row kept with no expiry is kept", () => {
     const kept = environment("kept", "agent-dev", { expiresAt: null });
     const rows = [
       ...renderGroup([demo, kept]).querySelectorAll(
@@ -263,11 +268,52 @@ describe("Environments in the Artifacts list", () => {
       ),
     ];
 
-    expect(rows[0]!.querySelector('[aria-label="Never deleted"]')).toBeNull();
+    expect(
+      rows[0]!.querySelector('[aria-label="Kept until deleted"]'),
+    ).toBeNull();
     expect(rows[0]!.textContent).toContain("3d");
     expect(
-      rows[1]!.querySelector('[aria-label="Never deleted"]')?.textContent,
-    ).toBe("never");
+      rows[1]!.querySelector('[aria-label="Kept until deleted"]')?.textContent,
+    ).toBe("kept");
+  });
+
+  // TEST_SCENARIO: #6318 AC-3 — an Environment that never sleeps says in its row that it is kept awake, and its menu lets it sleep again; one that sleeps offers to keep it awake instead.
+  it("shows a kept-awake row and lets it sleep again from its menu", () => {
+    state.awake = [];
+    const awake = environment("mcp", "agent-dev", { idleTimeoutMin: "never" });
+    const doc = mount(
+      createElement(EnvironmentsGroup, {
+        environments: [demo, awake],
+        showAgent: true,
+        collapsed: false,
+        onToggle: vi.fn(),
+      }),
+    );
+    const rows = [...doc.querySelectorAll('[data-testid="environment-row"]')];
+    const label = '[aria-label="Kept awake — it never sleeps"]';
+    expect(rows[0]!.querySelector(label)).toBeNull();
+    expect(rows[1]!.querySelector(label)?.textContent).toBe("awake");
+
+    const choose = (row: Element, item: string) => {
+      act(() => {
+        row
+          .querySelector('[data-testid="environment-actions"]')!
+          .dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      });
+      const entry = [...doc.querySelectorAll('[role="menuitem"]')].find(
+        (e) => e.textContent === item,
+      )!;
+      act(() => {
+        entry.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    };
+    choose(rows[1]!, "Let it sleep when idle");
+    choose(rows[0]!, "Keep awake");
+
+    expect(state.awake).toEqual([
+      { id: awake.id, awake: false },
+      { id: demo.id, awake: true },
+    ]);
   });
 
   // TEST_SCENARIO: a machine starting, sleeping or in any other state reads as one of four words, so the badge never shows a raw state.
@@ -296,16 +342,17 @@ describe("an Environment's Share dialog", () => {
     expect(doc.body.textContent).not.toContain("ed@example.com");
   });
 
-  // TEST_SCENARIO: #6318 — the Share dialog of an Environment kept with no expiry says it is never deleted, and a dated one says nothing of it.
-  it("says an Environment kept with no expiry is never deleted", () => {
+  // TEST_SCENARIO: #6318 — the Share dialog of an Environment kept with no expiry, and kept awake, says both, and a dated one that sleeps says neither.
+  it("says an Environment is kept, and kept awake", () => {
     const dated = mount(
       createElement(EnvironmentShareDialog, {
         environment: demo,
         onClose: vi.fn(),
       }),
     );
+    expect(dated.querySelector('[data-testid="environment-kept"]')).toBeNull();
     expect(
-      dated.querySelector('[data-testid="environment-never-deleted"]'),
+      dated.querySelector('[data-testid="environment-kept-awake"]'),
     ).toBeNull();
     act(() => root?.unmount());
     root = null;
@@ -313,14 +360,16 @@ describe("an Environment's Share dialog", () => {
 
     const kept = mount(
       createElement(EnvironmentShareDialog, {
-        environment: { ...demo, expiresAt: null },
+        environment: { ...demo, expiresAt: null, idleTimeoutMin: "never" },
         onClose: vi.fn(),
       }),
     );
     expect(
-      kept.querySelector('[data-testid="environment-never-deleted"]')
-        ?.textContent,
-    ).toBe("Never deleted — it is kept until you or dev delete it.");
+      kept.querySelector('[data-testid="environment-kept"]')?.textContent,
+    ).toBe("Kept until deleted — by you or dev.");
+    expect(
+      kept.querySelector('[data-testid="environment-kept-awake"]')?.textContent,
+    ).toContain("Kept awake — it never sleeps");
   });
 
   // TEST_SCENARIO: the people the owner added to this one Environment are listed one by one, beside the count from the agent.
@@ -728,8 +777,8 @@ describe("the agent's page", () => {
 });
 
 describe("an Environment's expiry", () => {
-  // TEST_SCENARIO: #6318 AC-1 — the owner opens an Environment's delete-after control and picks "Never delete"; Save asks for no expiry, where before the control could only move the date.
-  it("offers Never delete and saves it as no expiry", () => {
+  // TEST_SCENARIO: #6318 AC-1 — the owner opens an Environment's delete-after control and picks "Keep until deleted"; the text then says it is kept, not deleted on a date, and Save asks for no expiry, where before the control could only move the date.
+  it("offers Keep until deleted, says what it does, and saves no expiry", () => {
     state.extended = [];
     const doc = mount(
       createElement(EnvironmentExpiryDialog, {
@@ -739,13 +788,18 @@ describe("an Environment's expiry", () => {
     );
     const select = doc.querySelector("select")!;
     expect([...select.options].map((o) => o.textContent)).toContain(
-      "Never delete",
+      "Keep until deleted",
     );
+    const consequence = () =>
+      doc.querySelector('[data-testid="expiry-consequence"]')!.textContent;
+    expect(consequence()).toMatch(/deleted on that date/);
 
     act(() => {
       select.value = "never";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
+    expect(consequence()).toMatch(/kept until you or the agent delete it/);
+    expect(consequence()).not.toMatch(/deleted on/);
     act(() => {
       [...doc.querySelectorAll("button")]
         .find((b) => b.textContent === "Save")!
@@ -755,8 +809,8 @@ describe("an Environment's expiry", () => {
     expect(state.extended).toEqual([{ id: demo.id, expiresAt: "never" }]);
   });
 
-  // TEST_SCENARIO: an Environment already kept with no expiry opens on "Never delete", with no current date to keep, and a date the owner picks gives it an expiry again.
-  it("opens a kept one on Never delete, and gives it a date again", () => {
+  // TEST_SCENARIO: an Environment already kept with no expiry opens on "Keep until deleted", with no current date to keep, and a date the owner picks gives it an expiry again.
+  it("opens a kept one on Keep until deleted, and gives it a date again", () => {
     state.extended = [];
     const doc = mount(
       createElement(EnvironmentExpiryDialog, {

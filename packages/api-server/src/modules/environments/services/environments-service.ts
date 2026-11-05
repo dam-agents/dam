@@ -108,6 +108,7 @@ export interface EnvironmentsServiceImpl {
   setMembers(id: string, update: MembersUpdate): Promise<EnvironmentView>;
   lookupAgent(agentId: string): Promise<EnvironmentAgentLookup>;
   extend(id: string, expiresAt: ExpiryRequest): Promise<EnvironmentView>;
+  setAwake(id: string, awake: boolean): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
   remove(record: EnvironmentRecord, actor: string): Promise<void>;
 }
@@ -600,6 +601,16 @@ export function createEnvironmentsService(
       const at = expiry(expiresAt);
       await deps.repo.update(id, { expiresAt: at });
       return viewOf({ ...record, expiresAt: at }, await deps.agents.get(id));
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: the owner keeps an Environment awake, or lets one the agent kept awake sleep again after the install's default idle timeout; the last change wins, as with the expiry.
+    async setAwake(id, awake) {
+      const record = await ownRecord(id);
+      const agent = await deps.agents.update({
+        id,
+        hibernationTimeoutMin: idleTimeout(awake ? "never" : undefined),
+      });
+      return viewOf(record, agent);
     },
 
     async delete(id) {

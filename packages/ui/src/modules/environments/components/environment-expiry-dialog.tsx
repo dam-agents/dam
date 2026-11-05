@@ -21,13 +21,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const KEEP = "keep";
 const NEVER = "never";
 
+// UNIT_BOUNDARY_DESCRIPTION: what the dialog says each choice does, so its text never contradicts the choice: a date deletes the Environment then, "never" keeps it.
+function consequence(choice: string, current: string | null): string {
+  if (choice === NEVER || (choice === KEEP && current === null))
+    return "The Environment is kept until you or the agent delete it, with its machine, its disk and its addresses.";
+  return "The Environment, its machine and its disk are deleted on that date, and its addresses stop answering.";
+}
+
 const EXPIRY_DAYS = [1, 7, ENVIRONMENT_EXPIRY_MAX_DAYS];
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The delete-after control of an artifact, for an
- * Environment: "Never delete" keeps it until someone deletes it, as a server
- * people rely on needs, and the install cuts a later date to its maximum. The
- * agent may change it too, and the last change wins.
+ * Environment: "Keep until deleted" keeps it until someone deletes it, as a
+ * server people rely on needs, and the install cuts a later date to its
+ * maximum. Its text says what the choice in the field does. The agent may
+ * change it too, and the last change wins.
  */
 export function EnvironmentExpiryDialog({
   environment,
@@ -59,7 +67,7 @@ export function EnvironmentExpiryDialog({
             kind: "success",
             message: expiresAt
               ? `${environment.name} is deleted on ${deletionDate(expiresAt)}.`
-              : `${environment.name} is never deleted — it is kept until you delete it.`,
+              : `${environment.name} is kept until you or the agent delete it.`,
           });
           onClose();
         },
@@ -70,16 +78,20 @@ export function EnvironmentExpiryDialog({
   return (
     <Modal onClose={extend.isPending ? undefined : onClose}>
       <DialogHeader
-        title={`Set expiration for “${environment.name}”`}
+        title={`Delete “${environment.name}” after`}
         onClose={onClose}
         closeDisabled={extend.isPending}
       />
       <DialogBody>
         <div className="flex flex-col gap-5">
-          <p className="text-sm text-foreground">
-            The Environment, its machine and its disk are deleted on the date
-            you choose, and its addresses stop answering. The agent can change
-            it too, and the last change wins.
+          <p
+            className="text-sm text-foreground"
+            data-testid="expiry-consequence"
+          >
+            {consequence(choice, current)}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            The agent can change it too, and the last change wins.
           </p>
           <FormField label="Delete after">
             <Select
@@ -90,7 +102,7 @@ export function EnvironmentExpiryDialog({
               {current && (
                 <option value={KEEP}>{`Keep current date (${current})`}</option>
               )}
-              <option value={NEVER}>Never delete</option>
+              <option value={NEVER}>Keep until deleted</option>
               {EXPIRY_DAYS.map((days) => (
                 <option key={days} value={String(days)}>
                   {`Delete in ${days} day${days === 1 ? "" : "s"}`}

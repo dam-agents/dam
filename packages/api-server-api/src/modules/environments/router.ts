@@ -14,6 +14,7 @@ import {
   environmentIdInputSchema,
   environmentListInputSchema,
   environmentMembersInputSchema,
+  environmentSetAwakeInputSchema,
 } from "./schemas.js";
 import type { AgentTarget } from "../agents/permissions.js";
 
@@ -86,6 +87,15 @@ export const environmentsRouter = t.router({
         input.id,
         input.expiresAt === "never" ? "never" : new Date(input.expiresAt),
       ),
+    ),
+
+  setAwake: manageAgentsProcedure
+    .input(environmentSetAwakeInputSchema)
+    .use(
+      agentPermission("environments", (input) => environmentTarget(input.id)),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.environments.setAwake(input.id, input.awake),
     ),
 
   delete: manageAgentsProcedure

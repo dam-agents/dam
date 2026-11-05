@@ -1,4 +1,6 @@
 import {
+  Asleep,
+  Awake,
   Calendar,
   Launch,
   Locked,
@@ -23,19 +25,24 @@ import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ArtifactDeletionChip } from "../../artifacts/components/artifact-badges.js";
-import { useDeleteEnvironment } from "../api/mutations.js";
+import {
+  useDeleteEnvironment,
+  useSetEnvironmentAwake,
+} from "../api/mutations.js";
 import {
   environmentStateLabel,
-  NEVER_DELETED,
+  KEPT,
+  KEPT_AWAKE,
+  keptAwake,
 } from "../lib/environment-list.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One Environment as a row of the Artifacts list,
  * shaped like an artifact's: the sharing icon that opens its Share dialog,
- * its name, whether it runs, when it is deleted or that it never is, its agent, and a link that
+ * its name, whether it runs, when it is deleted or that it is kept, whether it is kept awake, its agent, and a link that
  * opens its first address in a new tab. With more than one address, the
  * row's menu opens each of them, so the links never crowd out the name. The
- * menu also sets its expiry and deletes it. The icon says whether anyone beyond the owner and the agent's editors
+ * menu also sets its expiry, keeps it awake or lets it sleep again, and deletes it. The icon says whether anyone beyond the owner and the agent's editors
  * may open it; an Environment is never public.
  */
 export function EnvironmentRow({
@@ -53,6 +60,8 @@ export function EnvironmentRow({
 }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const remove = useDeleteEnvironment();
+  const setAwake = useSetEnvironmentAwake();
+  const awake = keptAwake(environment);
   const running = environment.state === "running";
   const links = environment.endpoints.filter((e) => e.url !== null);
   const [inline] = links;
@@ -112,12 +121,22 @@ export function EnvironmentRow({
           />
         ) : (
           <HintTooltip
-            label={NEVER_DELETED}
-            content={NEVER_DELETED}
+            label={KEPT}
+            content={KEPT}
             className="shrink-0 gap-1 whitespace-nowrap text-xs text-muted-foreground"
           >
             <Calendar size={12} />
-            never
+            kept
+          </HintTooltip>
+        )}
+        {awake && (
+          <HintTooltip
+            label={KEPT_AWAKE}
+            content={KEPT_AWAKE}
+            className="shrink-0 gap-1 whitespace-nowrap text-xs text-muted-foreground"
+          >
+            <Awake size={12} />
+            awake
           </HintTooltip>
         )}
       </div>
@@ -173,6 +192,15 @@ export function EnvironmentRow({
           <DropdownMenuItem onSelect={() => onSetExpiry(environment)}>
             <Calendar size={14} />
             Set expiration
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={setAwake.isPending}
+            onSelect={() =>
+              setAwake.mutate({ id: environment.id, awake: !awake })
+            }
+          >
+            {awake ? <Asleep size={14} /> : <Awake size={14} />}
+            {awake ? "Let it sleep when idle" : "Keep awake"}
           </DropdownMenuItem>
           <DropdownMenuItem tone="danger" onSelect={() => void handleDelete()}>
             <TrashCan size={14} />

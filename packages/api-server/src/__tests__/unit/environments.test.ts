@@ -311,6 +311,31 @@ describe("creating an Environment", () => {
     expect(again.idleTimeoutMin).toBe("never");
   });
 
+  // TEST_SCENARIO: #6318 — the owner keeps an Environment awake from the app, and lets one the agent kept awake sleep again: it then takes the install's default idle timeout for Environments; another owner's Environment is not found.
+  it("lets the owner keep an Environment awake or let it sleep again", async () => {
+    const { service, agents } = setup();
+    const env = await service.forOwningAgent(vmOwning.id!).create({
+      name: "mcp",
+      endpoints: [{ name: "app", port: 80 }],
+      idleTimeoutMin: "never",
+    });
+
+    const asleep = await service.setAwake(env.id, false);
+    expect(agents.updated.at(-1)).toEqual({
+      id: env.id,
+      hibernationTimeoutMin: 60,
+    });
+    expect(asleep.idleTimeoutMin).toBe(60);
+
+    const awake = await service.setAwake(env.id, true);
+    expect(agents.updated.at(-1)!.hibernationTimeoutMin).toBe(0);
+    expect(awake.idleTimeoutMin).toBe("never");
+
+    await expect(service.setAwake("agent-nope", true)).rejects.toThrow(
+      /no such Environment/,
+    );
+  });
+
   // TEST_SCENARIO: only a vm Agent can own Environments, since they run on its owner's VM runner beside it, and an Environment cannot own one in turn.
   it("refuses an Environment as the owner", async () => {
     const env = {
