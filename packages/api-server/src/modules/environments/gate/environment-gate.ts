@@ -753,7 +753,7 @@ export function createEnvironmentGate(
     return admitted(c, resolved);
   };
 
-  // UNIT_BOUNDARY_DESCRIPTION: a page load of an endpoint with a session (the top document, never a frame, which the front door refuses to be shown in), in an Environment whose other endpoints the same sign-in left without one, or whose session there is gone: the browser passes through those endpoints and comes back to the page, so an app's call to them finds a session. Without this the app breaks for good, since its address's session still holds and no page load ever goes through the front door again.
+  // UNIT_BOUNDARY_DESCRIPTION: a page load of an endpoint with a session (the top document, never a frame, which the front door refuses to be shown in, and never the loading page's own paths), in an Environment whose other endpoints the same sign-in left without one, or whose session there is gone: the browser passes through those endpoints and comes back to the page, so an app's call to them finds a session. Without this the app breaks for good, since its address's session still holds and no page load ever goes through the front door again.
   async function completeSignIn(
     c: Context,
     resolved: Resolved,
@@ -762,6 +762,7 @@ export function createEnvironmentGate(
     const sessionId = getCookie(c, cookieName);
     if (
       visitor === null ||
+      c.req.path.startsWith(RESERVED_PREFIX) ||
       !isPageLoad(c) ||
       (c.req.header("sec-fetch-dest") ?? "document") !== "document" ||
       sessionId === undefined

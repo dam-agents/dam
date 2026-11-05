@@ -928,7 +928,7 @@ describe("the Environment gate", () => {
     expect(next.location).toBeNull();
   });
 
-  // TEST_SCENARIO: a sign-in whose step on a sibling keeps failing never sends the browser round in a loop: the page load after a completion that did not land goes to the app, and an endpoint with every sibling signed in, or with none, is never sent anywhere.
+  // TEST_SCENARIO: a sign-in whose step on a sibling keeps failing never sends the browser round in a loop: the page load after a completion that did not land goes to the app. A script's call, a frame and the loading page's retry are never sent through the sign-in, and an Environment with one endpoint never is.
   it("completes a sign-in once, and never for a frame or a script", async () => {
     const w = await world({
       endpoints: [
@@ -954,6 +954,11 @@ describe("the Environment gate", () => {
         })
       ).status,
     ).toBe(200);
+    const retry = await w.request(app, "/.platform/start?next=/a", {
+      cookie,
+      accept: "text/html",
+    });
+    expect(retry.location).toBe("/a");
     const first = await load({ accept: "text/html" });
     expect(first.status).toBe(302);
     expect(new URL(first.location!).pathname).toBe("/.platform/signin");
