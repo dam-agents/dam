@@ -28,6 +28,12 @@ interface Chain {
   returnTo: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a chain an address's session started to complete its sign-in, kept while the chain may still be walked, so that session starts no other.
+interface Completion {
+  startedAt: number;
+  missing: string[];
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the share host's sessions, as an address's session depends on them: whether one still holds, and ending one.
 export interface ShareSessions {
   alive(sessionId: string): Promise<boolean>;
@@ -61,6 +67,12 @@ export interface EnvironmentSignIn {
     session: EnvironmentSession;
     next: string;
   } | null>;
+  completeSignIn(
+    sessionId: string,
+    session: EnvironmentSession,
+    others: string[],
+    returnTo: string,
+  ): Promise<{ hop: string; missing: string[] } | null>;
   session(sessionId: string): Promise<EnvironmentSession | null>;
   signOut(sessionId: string): Promise<void>;
 }
@@ -80,12 +92,18 @@ export interface EnvironmentSignIn {
  * passes through each other endpoint in turn, which gets a session of its own
  * the same way, bound to a secret of its own, and then returns where it began.
  * So an app whose pages call another of its endpoints, such as its own login
- * server, finds a session there.
+ * server, finds a session there. A sign-in that left an endpoint without a
+ * session, or an endpoint whose session is gone while another's holds, is
+ * completed on the next page load of an endpoint that has one: the browser
+ * passes through the endpoints that miss one, once per session in the time a
+ * chain lasts, so a step that keeps failing never loops.
  */
 export function createEnvironmentSignIn(deps: {
   handoffs: TtlStore<Handoff>;
   sessions: TtlStore<EnvironmentSession>;
   chains: TtlStore<Chain>;
+  signedIn: TtlStore<string>;
+  completions: TtlStore<Completion>;
   share: ShareSessions;
   addressUrl: (address: string) => string;
   now: () => number;
@@ -97,6 +115,24 @@ export function createEnvironmentSignIn(deps: {
     url.searchParams.set("chain", chainId);
     return url.href;
   };
+  const signedInKey = (shareSession: string, address: string) =>
+    `${shareSession}:${address}`;
+
+  async function startChain(
+    visitor: Pick<Visitor, "sub" | "shareSession">,
+    others: string[],
+    returnTo: string,
+  ): Promise<string | null> {
+    if (others.length === 0) return null;
+    const chainId = random(32);
+    await deps.chains.set(chainId, {
+      sub: visitor.sub,
+      shareSession: visitor.shareSession,
+      remaining: others,
+      returnTo,
+    });
+    return chainHop(others[0]!, chainId);
+  }
 
   return {
     async handoff(visitor, address, next, binding, then) {
@@ -132,19 +168,32 @@ export function createEnvironmentSignIn(deps: {
         createdAt: deps.now(),
       };
       await deps.sessions.set(sessionId, session);
+      await deps.signedIn.set(
+        signedInKey(session.shareSession, address),
+        sessionId,
+      );
       return { sessionId, session, next: handoff.then ?? handoff.next };
     },
 
-    async startChain(visitor, others, returnTo) {
-      if (others.length === 0) return null;
-      const chainId = random(32);
-      await deps.chains.set(chainId, {
-        sub: visitor.sub,
-        shareSession: visitor.shareSession,
-        remaining: others,
-        returnTo,
+    startChain,
+
+    async completeSignIn(sessionId, session, others, returnTo) {
+      if (await deps.completions.peek(sessionId)) return null;
+      const missing: string[] = [];
+      for (const address of others) {
+        const id = await deps.signedIn.peek(
+          signedInKey(session.shareSession, address),
+        );
+        if (id === null || (await deps.sessions.peek(id)) === null)
+          missing.push(address);
+      }
+      if (missing.length === 0) return null;
+      await deps.completions.set(sessionId, {
+        startedAt: deps.now(),
+        missing,
       });
-      return chainHop(others[0]!, chainId);
+      const hop = await startChain(session, missing, returnTo);
+      return hop === null ? null : { hop, missing };
     },
 
     async continueChain(chainId, visitor, address) {
