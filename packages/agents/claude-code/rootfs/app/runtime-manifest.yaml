@@ -246,11 +246,13 @@ drivers:
           effort: []
           subagentEffort: []
         claude-haiku-4-5: *haiku-4-5
-    # On a LiteLLM provider the tiers above all resolve to the gateway's
-    # "latest" model, so the provider's other models are listed after them.
-    # Names match what the router publishes (and /model writes):
-    # lowercased, claude/-prefixed. No redirectEnv: the gateway maps the tiers,
-    # so nothing is seeded.
+    # On the Model Router a tier above is offered only where the provider
+    # lists a model of exactly that name, as Bedrock's tier ids are: the
+    # router resolves every name against the listing and refuses a bare tier a
+    # gateway would have mapped to another model, so a LiteLLM provider's full
+    # ids stand alone there. Names match what the router publishes (and /model
+    # writes): lowercased, claude/-prefixed. No redirectEnv: nothing seeds a
+    # model.
     modelDiscovery:
       urlEnv:
         - ANTHROPIC_BASE_URL

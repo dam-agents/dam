@@ -307,13 +307,22 @@ describe("convertedDefaultModel", () => {
     expect(ibm("haiku", ["aws/gpt-5.5"])).toBeNull();
   });
 
-  // TEST_SCENARIO: a tier word the fitting providers cannot answer falls to the platform's preference list, and the default keeps that word as `changedFrom`, so the owner is told which model the runs it pays for replaced; a tier they can answer names the model the setting meant, so nothing is noted — here on one provider and on several alike, now that the list answers a tier with the harness's own models first.
-  it("notes a default of another tier than the setting named", () => {
+  // TEST_SCENARIO: a tier word the fitting providers cannot answer falls to the platform's preference list, and a default that lands on another tier keeps that word as `changedFrom` once the Agent's calls ran that tier, so its owner is told which model the runs it pays for replaced; a tier they can answer names the model the setting meant, and a tier nobody ran — an image's preset on a new Agent — was never its owner's choice, so it gets no note.
+  it("notes a default of another tier only where the agent ran it", () => {
     const cb = {
       alias: "cb",
       listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"],
     };
     const anthropic = { alias: "anthropic", listed: ["claude-opus-5-5"] };
+    const deepSeek = "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
+    expect(
+      convertedDefault({
+        harness: "claude-code",
+        setting: "opus",
+        providers: [cb],
+        ran: ["claude-opus-5-5"],
+      }),
+    ).toEqual({ model: deepSeek, changedFrom: "opus" });
     expect(
       convertedDefault({
         harness: "claude-code",
@@ -321,16 +330,21 @@ describe("convertedDefaultModel", () => {
         providers: [cb],
         ran: [],
       }),
-    ).toEqual({
-      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-      changedFrom: "opus",
-    });
+    ).toEqual({ model: deepSeek });
+    expect(
+      convertedDefault({
+        harness: "claude-code",
+        setting: "opus",
+        providers: [cb],
+        ran: ["claude-sonnet-5-5"],
+      }),
+    ).toEqual({ model: deepSeek });
     expect(
       convertedDefault({
         harness: "claude-code",
         setting: "opus",
         providers: [anthropic],
-        ran: [],
+        ran: ["claude-opus-5-5"],
       }),
     ).toEqual({ model: "anthropic/claude-opus-5-5" });
     expect(
@@ -338,7 +352,7 @@ describe("convertedDefaultModel", () => {
         harness: "claude-code",
         setting: "opus",
         providers: [anthropic, cb],
-        ran: [],
+        ran: ["claude-opus-5-5"],
       }),
     ).toEqual({ model: "anthropic/claude-opus-5-5" });
   });
@@ -788,10 +802,10 @@ describe("the one-time default conversion", () => {
   });
 
   // TEST_SCENARIO: the harness default reads telemetry from the narrowest window that has calls, never more.
-  it("reads telemetry only for the harness default, narrowest window first", async () => {
-    const tier = converter({});
+  it("reads telemetry for the harness default and for a tier, narrowest window first", async () => {
+    const tier = converter({ ran: [] });
     await tier.c.convert("a");
-    expect(tier.ranQueries).toEqual([]);
+    expect(tier.ranQueries).toEqual([24, 7 * 24, 30 * 24]);
 
     const harnessDefault = converter({
       setting: "default",

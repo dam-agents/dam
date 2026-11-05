@@ -242,14 +242,15 @@ export function createHarnessConfigPlugin(deps: {
           env,
         )?.spec.extendsCatalog;
         const routed = outcome.via === "model-router";
-        const offers = (tier: string) =>
-          outcome.models.some((m) =>
+        const offers = (tier: string) => {
+          const word = tier.toLowerCase();
+          return outcome.models.some((m) =>
             routed
-              ? [m.name, m.value].some((id) =>
-                  id.toLowerCase().split("/").includes(tier.toLowerCase()),
-                )
-              : m.value.toLowerCase().includes(tier.toLowerCase()),
+              ? m.name.toLowerCase() === word ||
+                m.name.toLowerCase().split("/").at(-1) === word
+              : m.value.toLowerCase().includes(word),
           );
+        };
         const catalogModels = extendsCatalog
           ? (
               binding?.catalog?.options.find((o) => o.id === "model")

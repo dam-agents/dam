@@ -135,6 +135,22 @@ describe("preferredModelOf", () => {
       });
   });
 
+  // TEST_SCENARIO: another harness's models answer last, so an agent whose providers serve no DeepSeek still gets a curated model rather than the first one listed: Pi on Anthropic alone runs on Claude, and Claude Code on OpenAI alone on GPT.
+  it("answers another harness's models where nothing else is listed", () => {
+    expect(preferredModelOf("work", [anthropic], "pi")).toEqual({
+      alias: "anthropic",
+      upstreamId: "claude-opus-5-5",
+    });
+    expect(preferredModelOf("work", [openai], "claude-code")).toEqual({
+      alias: "openai",
+      upstreamId: "gpt-6.1-sol",
+    });
+    expect(preferredModelOf("work", [cb], "codex")).toEqual({
+      alias: "cb",
+      upstreamId: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    });
+  });
+
   // TEST_SCENARIO: the classifier role has its own order — Nemotron before Claude's Sonnet — and a provider that lists nothing on either list gets null, which leaves the caller its own last resort.
   it("resolves the classifier role on its own list", () => {
     expect(preferredModelOf("classifier", [cb])).toEqual({
