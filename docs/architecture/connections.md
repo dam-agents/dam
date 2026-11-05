@@ -349,6 +349,9 @@ Models an organization hosts in AWS Bedrock, authenticated with a **Bedrock API 
 Such a key authenticates as a bearer token on both the Bedrock and Bedrock Runtime APIs, so this is an ordinary header Connection: the gateway overwrites `Authorization` with `Bearer <key>` on the region's runtime host, and the agent holds only a placeholder in `AWS_BEARER_TOKEN_BEDROCK`.
 The region is a required input at connect time and decides that host — `bedrock-runtime.<region>.amazonaws.com` — so a Connection serves one region; it also lands in `AWS_REGION`.
 The key is injected on the region's control-plane host too, `bedrock.<region>.amazonaws.com`, which the Connection names in `AWS_ENDPOINT_URL_BEDROCK`: that is where the region's inference profiles are listed, so an agent is offered only models Bedrock can invoke there.
+That listing names the profiles that can be invoked from the region, each carrying a region prefix a bare model ID lacks, which is why a typed ID is the wrong unit to offer.
+Models Bedrock also serves on demand under their bare ID are not in that listing, so they are not offered either; the Anthropic models a coding harness runs on are reachable only through a profile.
+What no listing can say is whether the account has been granted a model: that is learned at the first call, as an error the turn reports.
 The key check lists those profiles too, before the key is saved: Bedrock answers a wrong, malformed or expired key with a 403 that says so, which refuses it, and any other answer leaves it unverified, since a key may invoke models without the right to list profiles.
 An optional model input becomes the provider's model pin.
 The Connection also asks the harness's Bedrock client for HTTP/1.1, which every credential chain speaks by default.

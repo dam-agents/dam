@@ -44,7 +44,7 @@ export function renderName(
  * several thousand tokens, so a model known to hold less than this would
  * compact on every turn and is not offered; an unknown window is offered.
  */
-const MIN_CONTEXT_WINDOW = 32_000;
+export const MIN_CONTEXT_WINDOW = 32_000;
 
 export function forHarness(
   entries: readonly CatalogEntry[],

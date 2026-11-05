@@ -184,6 +184,7 @@ No model counts as the router side, since a session without a Bedrock model reac
 A schedule's pair is checked at save against the model its fire resolves to (the schedule's own, else the scheduled default; with no default model the check passes and the fire reports the missing default), and each harness reports the templates it runs natively in its runtime capabilities.
 
 Each harness's manifest declares in its `modelRouter` section the dialects it speaks (Claude Code: Messages; Codex: Responses; Bob and Copilot: chat; Pi: all three) and its name spelling (Claude Code's gateway discovery keeps only ids containing `claude`, lowercased, so it sees `claude/<alias>/<id>`); a harness's view of the catalog is the entries whose provider serves one of its dialects.
+A harness with no `modelRouter` section, such as a kit image's own, sees every entry no preset keeps to named harnesses, whatever its dialects: it reaches a model by its qualified name in any chat call.
 The catalog is built when the env rail materialises, rebuilt on every env change and on a timer; a failed listing keeps that Connection's last good list, marked unavailable, and never empties another's.
 A failed listing is retried after two seconds, then twice as long each time up to five minutes, and an env change starts that ladder over: a grant also restarts the agent's egress gateway, so the listings that follow it fail until the gateway is back.
 A Connection granted but not yet listed is in the view at once, unavailable and never listed, and every change to that view sends the harness-config watch notice, so a failed first listing sends none.
@@ -218,6 +219,7 @@ The effort level Claude Code persists, sent as `output_config.effort`, is rewrit
 
 Beyond the model routes the router serves each harness's **catalog endpoint** from its view: `/v1/models` in the OpenAI list shape (`display_name` and `description` for Claude Code's picker, a `metadata` extension Pi registers its provider from), `/codex/models` in Codex's `ModelInfo` shape (a missing field makes Codex drop the catalog silently), `/inference/v1/model/info` in LiteLLM's shape for Bob, `HEAD /api/hello` for Claude Code's probe; Bob's `/admin/v1/*` calls get a JSON 404.
 A catalog request waits up to ten seconds for the pod's first listing and answers 503 while a provider has not listed, which a harness retries rather than caches.
+Such an unrouted harness gets that view from `/v1/models` under plain qualified names, the platform's preferred work model first, which a harness that takes the first entry runs on.
 A harness whose manifest says `modelFromSession` (Bob, one settings-file model per process) gets the session's model on every call; a tier alias its subagents ask for (`premium-ide`, `explorer`), and on Codex (`bareNamesFromSession`) any bare name, is mapped the same way.
 Claude Code's tier slots (`ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL`, manifest `claudeTiers`) are filled per process from the agent's default provider, and Claude Code resolves its own aliases through them, so a session moved to another provider would send its titles, WebFetch summaries and alias-named subagents to the provider it left.
 The router moves such a **side call**, one Claude Code classes as auxiliary, a subagent's, a workflow agent's or a side reply (`x-claude-code-request-class`, sent since the image turns its gateway hint headers on) or stamps with a subagent's id, to the session provider's model of the same tier, else to the session's own model, when it names a tier of another provider, or a model its own provider no longer lists: the tier of the slot the id fills on that provider, the smallest where one id fills several, else the tier its word carries.
@@ -250,16 +252,14 @@ Pi's image has no subagents, so Pi has neither setting.
 
 ## Model discovery and the agent's default model
 
-A harness without a `modelRouter` section (a custom template's own harness) lists its models from the `modelDiscovery` source its manifest declares: the first source whose variable is set answers, through the OpenAI model list, LiteLLM's model info or Bedrock's inference-profile listing, under the manifest's prefix and case.
+A harness without a `modelRouter` section (a custom template's or a kit image's own harness) lists its models for its settings from the `modelDiscovery` source its manifest declares, and reads the router's `/v1/models` above for a model to run on: the first source whose variable is set answers, through the OpenAI model list, LiteLLM's model info or Bedrock's inference-profile listing, under the manifest's prefix and case.
 Routed harnesses answer from the [model catalog](#the-model-catalog) instead.
 Nothing is seeded into a harness's config file; a run with no choice gets the agent's default ([session settings](#session-settings)).
 A routed harness that refuses to start without a model names a variable in its manifest's `defaultModelEnv` (Copilot's `COPILOT_MODEL`), and the runtime sets it to the first model of the default provider that serves the harness; the session's own model then reaches it over ACP.
 A model the provider does not list fails the turn with the router's reason rather than being replaced.
 
 A routed Pi does not reach it.
-The [AWS Bedrock](connections.md#app-preset-aws-bedrock) Connection names the region's control-plane endpoint, and Pi's manifest declares it as a source ahead of its OpenAI one, speaking Bedrock's inference-profile listing — the profiles that can be invoked from that region, each carrying a region prefix a bare model ID lacks, which is why a typed ID is the wrong unit to offer.
-Models Bedrock also serves on demand under their bare ID are not in that listing, so they are not offered either; the Anthropic models a coding harness runs on are reachable only through a profile.
-What no listing can say is whether the account has been granted a model: that is learned at the first call, as an error the turn reports.
+Pi's manifest declares the [AWS Bedrock](connections.md#app-preset-aws-bedrock) Connection's inference-profile listing as a source ahead of its OpenAI one.
 Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)); on the router the runtime fills each tier slot with the agent's default provider's newest model of that tier — or, on a provider whose ids carry no tier word, with the platform's preferred model — and a side call on a slot follows the session's provider ([the Model Router](#the-model-router)).
 
 The runtime also reports the harness's **default**, what a session runs on when the config file names no model: a manifest-declared value that selects the harness's built-in default for one session.
