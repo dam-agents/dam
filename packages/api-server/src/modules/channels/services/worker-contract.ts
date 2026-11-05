@@ -111,6 +111,48 @@ export const threadResultSchema = z.object({
 });
 export type ThreadResult = z.infer<typeof threadResultSchema>;
 
+export interface ThreadStart {
+  sessionId: string;
+  conversationId: string;
+  text: string;
+}
+
+export const startedThreadSchema = z.object({
+  ok: z.literal(true),
+  conversationId: z.string(),
+  threadTs: z.string(),
+});
+export type StartedThread = z.infer<typeof startedThreadSchema>;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One thread a Session started, as list_threads
+ * reports it. `replies` and `lastActivityAt` come from Slack at the time of
+ * the call and are absent when Slack did not answer; `replyWaiting` says a
+ * message from someone else arrived after the newest one the Session was
+ * handed, so a turn for it is still to come or was lost and will be caught up.
+ */
+export const ownedThreadSchema = z.object({
+  conversationId: z.string(),
+  threadTs: z.string(),
+  firstLine: z.string(),
+  startedAt: z.string(),
+  replies: z.number().optional(),
+  lastActivityAt: z.string().optional(),
+  replyWaiting: z.boolean().optional(),
+});
+export type OwnedThreadSummary = z.infer<typeof ownedThreadSchema>;
+
+export const ownedThreadsResultSchema = z.object({
+  threads: z.array(ownedThreadSchema),
+});
+export type OwnedThreadsResult = z.infer<typeof ownedThreadsResultSchema>;
+
+export interface ThreadLeave {
+  sessionId: string;
+  conversationId: string;
+  threadTs: string;
+}
+
 export interface AttachmentQuery {
   fileId: string;
 }
@@ -180,4 +222,16 @@ export interface AddressedWorker {
     instanceName: string,
     query: AttachmentQuery,
   ): Promise<AttachmentResult | { error: string }>;
+  startThread(
+    instanceName: string,
+    start: ThreadStart,
+  ): Promise<StartedThread | { error: string }>;
+  listThreads(
+    instanceName: string,
+    sessionId: string,
+  ): Promise<OwnedThreadsResult | { error: string }>;
+  leaveThread(
+    instanceName: string,
+    leave: ThreadLeave,
+  ): Promise<{ ok: true } | { error: string }>;
 }

@@ -180,12 +180,13 @@ export function slackTurnContract(ctx: {
         `react to or thread under — answer it with ${TOOL}reply. `
       : ctx.batch?.inThread === false
         ? "Your response belongs in a thread under the message you are " +
-          `answering — use ${TOOL}reply, not ${TOOL}send_channel_message. `
+          `answering — use ${TOOL}reply, not ${TOOL}post. `
         : "This message reached you from a thread, so your response belongs in " +
-          `that thread — use ${TOOL}reply, not ${TOOL}send_channel_message. `) +
-      `${TOOL}send_channel_message posts a new top-level message and is only ` +
+          `that thread — use ${TOOL}reply, not ${TOOL}post. `) +
+      `${TOOL}post makes a new top-level announcement and ${TOOL}start_thread ` +
+      "a new thread whose replies come back to this session; both are only " +
       "for when you are explicitly asked to announce something, cross-post to " +
-      "another channel, or start a new thread — never as a way to answer the " +
+      "another channel, or ask somewhere else — never a way to answer the " +
       "message in front of you.",
     "People appear here as bare Slack ids like U024BE7LH, in speaker labels " +
       "and inside message text" +

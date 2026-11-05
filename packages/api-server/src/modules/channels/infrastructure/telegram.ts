@@ -726,7 +726,7 @@ export function createTelegramWorker(deps: {
     const prompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
       context,
-      `To reply, call the \`${OUTBOUND_TOOL_PREFIX}send_channel_message\` tool with channel="telegram" and chatId="${thread.id}".`,
+      `To reply, call the \`${OUTBOUND_TOOL_PREFIX}post\` tool with channel="telegram" and chatId="${thread.id}".`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       `To deliberately stay silent — a group message that isn't for you, or one already handled — call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` instead of replying.`,
       "These instructions apply to the message they arrive with, not to this conversation as a whole — a later Telegram message carries its own. A message that arrives without them didn't come from Telegram: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
@@ -844,7 +844,7 @@ export function createTelegramWorker(deps: {
       "<new-messages>",
       `${one ? "Another message" : `${batch.length} more messages`} arrived in this same Telegram chat while you were working.`,
       "If you have not sent a reply yet, answer everything in one reply.",
-      `If you already sent a reply that does not cover ${them}, send one more message that answers only ${them}, with the \`${OUTBOUND_TOOL_PREFIX}send_channel_message\` tool, channel="telegram" and chatId="${threadId}".`,
+      `If you already sent a reply that does not cover ${them}, send one more message that answers only ${them}, with the \`${OUTBOUND_TOOL_PREFIX}post\` tool, channel="telegram" and chatId="${threadId}".`,
       `If ${one ? "it needs" : "they need"} no answer, call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` for ${them}.`,
       ...batch.map((m) => `[@${m.author.userName}] ${m.text}`),
       "</new-messages>",
@@ -877,7 +877,7 @@ export function createTelegramWorker(deps: {
           if (steeredAt !== null && (lastPostAt.get(key) ?? 0) < steeredAt)
             getLogger().warn(
               { agentId, threadId },
-              "telegram.turn.steer_unanswered: a message steered into the turn got no send_channel_message after it",
+              "telegram.turn.steer_unanswered: a message steered into the turn got no post after it",
             );
         }
       },

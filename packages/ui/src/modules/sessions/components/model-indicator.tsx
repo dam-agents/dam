@@ -275,7 +275,10 @@ export function ModelIndicator({
           collisionPadding={8}
           onInteractOutside={keepOpenWhileDialog}
           tail={false}
-          className="flex max-h-[var(--radix-popover-content-available-height)] w-[368px] flex-col overflow-y-auto text-sm shadow-[0_12px_32px_rgba(0,0,0,0.14)]"
+          className={cn(
+            "flex max-h-[var(--radix-popover-content-available-height)] w-[368px] flex-col overflow-y-auto text-sm shadow-[0_12px_32px_rgba(0,0,0,0.14)]",
+            routed && "px-1 pb-3",
+          )}
         >
           {!routed && activeProvider && (
             <h3 className={cn("px-1", labelVariants())}>
@@ -285,7 +288,7 @@ export function ModelIndicator({
           {routed && removed && (
             <section
               aria-label="Provider removed"
-              className="flex flex-col gap-1 px-1 text-muted-foreground"
+              className="flex flex-col gap-1 px-4 text-muted-foreground"
             >
               <p>
                 The provider this session ran on was removed. Pick another

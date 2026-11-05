@@ -2,7 +2,7 @@ import { Add } from "@carbon/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import { shortNameForTemplate } from "api-server-api";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -49,6 +49,7 @@ import {
   sortProfiles,
   usedBy,
 } from "../lib/profile-detail.js";
+import { RenameProfileDialog } from "./rename-profile-dialog.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: the owner's profiles in Settings: what each runs, edited with the chat picker's Custom screen, how often it is used, rename, and a delete that names what still uses it. */
 export function ProfileSection({
@@ -58,31 +59,14 @@ export function ProfileSection({
   openProfileId?: string | null;
 } = {}) {
   const { data: profiles = [], isPending } = useProfiles();
-  const update = useUpdateProfile();
   const remove = useDeleteProfile();
   const setDefault = useSetDefaultProfile();
   const showConfirm = useStore((s) => s.showConfirm);
   const showAlert = useStore((s) => s.showAlert);
   const agents = useAgents().data;
   const [creating, setCreating] = useState(false);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [name, setName] = useState("");
-
-  const startRename = (profile: ProfileWithUsage) => {
-    setRenaming(profile.id);
-    setName(profile.name);
-  };
-  const commitRename = (profile: ProfileWithUsage) => {
-    const next = name.trim();
-    if (next === "" || next === profile.name) {
-      setRenaming(null);
-      return;
-    }
-    update.mutate(
-      { id: profile.id, name: next },
-      { onSuccess: () => setRenaming(null) },
-    );
-  };
+  const [renaming, setRenaming] = useState<ProfileWithUsage | null>(null);
+  const renameAfterMenu = useRef<ProfileWithUsage | null>(null);
   const confirmDelete = async (profile: ProfileWithUsage) => {
     if (profileUses(profile) > 0) {
       const usage = await queryClient.fetchQuery(
@@ -121,6 +105,12 @@ export function ProfileSection({
           onClose={() => setCreating(false)}
         />
       )}
+      {renaming && (
+        <RenameProfileDialog
+          profile={renaming}
+          onClose={() => setRenaming(null)}
+        />
+      )}
       <p className="mb-3 text-sm text-muted-foreground">
         Save harness, provider and model settings as profiles to quickly set and
         change them in agents. Update a profile here to quickly change settings
@@ -136,34 +126,20 @@ export function ProfileSection({
               className="flex items-center gap-3 px-3 py-2 text-sm"
             >
               <div className="min-w-0 flex-1">
-                {renaming === profile.id ? (
-                  <Input
-                    autoFocus
-                    value={name}
-                    aria-label={`Name for ${profile.name}`}
-                    onChange={(e) => setName(e.target.value)}
-                    onBlur={() => commitRename(profile)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") commitRename(profile);
-                      if (e.key === "Escape") setRenaming(null);
-                    }}
-                  />
-                ) : (
-                  <p className="truncate font-medium text-foreground">
-                    {profile.name}
-                    {profile.newAgentDefault && (
-                      <Badge
-                        variant="muted"
-                        size="sm"
-                        title="Default for new agents"
-                        className="ml-2 align-middle"
-                      >
-                        Default
-                        <span className="sr-only"> for new agents</span>
-                      </Badge>
-                    )}
-                  </p>
-                )}
+                <p className="truncate font-medium text-foreground">
+                  {profile.name}
+                  {profile.newAgentDefault && (
+                    <Badge
+                      variant="muted"
+                      size="sm"
+                      title="Default for new agents"
+                      className="ml-2 align-middle"
+                    >
+                      Default
+                      <span className="sr-only"> for new agents</span>
+                    </Badge>
+                  )}
+                </p>
                 <ProfileValues
                   profile={profile}
                   defaultOpen={profile.id === openProfileId}
@@ -177,10 +153,17 @@ export function ProfileSection({
               <RowActionsMenu
                 label={`Actions for ${profile.name}`}
                 contentProps={{
-                  onCloseAutoFocus: (e) => e.preventDefault(),
+                  onCloseAutoFocus: (e) => {
+                    // UNIT_BOUNDARY_DESCRIPTION: Rename opens its dialog only once the menu has handed focus back to its button, so the dialog returns focus there on close; the menu item it was picked from is gone by then.
+                    if (!renameAfterMenu.current) return e.preventDefault();
+                    setRenaming(renameAfterMenu.current);
+                    renameAfterMenu.current = null;
+                  },
                 }}
               >
-                <DropdownMenuItem onSelect={() => startRename(profile)}>
+                <DropdownMenuItem
+                  onSelect={() => (renameAfterMenu.current = profile)}
+                >
                   Rename
                 </DropdownMenuItem>
                 {!profile.newAgentDefault && (

@@ -820,7 +820,10 @@ export function SessionPairPicker(props: Props) {
           }
           onInteractOutside={keepOpenWhileDialog}
           tail={false}
-          className="flex w-[368px] flex-col text-sm shadow-[0_12px_32px_rgba(0,0,0,0.14)]"
+          className={cn(
+            "flex w-[368px] flex-col text-sm shadow-[0_12px_32px_rgba(0,0,0,0.14)]",
+            routed && "px-1 pb-3",
+          )}
         >
           {body}
         </PopoverContent>

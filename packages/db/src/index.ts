@@ -11,6 +11,7 @@ export {
   slackInstalls,
   slackIgnoredApps,
   slackLoopGuardDrops,
+  slackOwnedThreads,
   publicImageUrls,
   telegramConversations,
   skillSources,
