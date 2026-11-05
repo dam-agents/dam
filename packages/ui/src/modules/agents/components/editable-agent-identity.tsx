@@ -5,7 +5,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { getErrorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
-import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { useFreshAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { useUpdateAgent } from "../api/mutations.js";
@@ -25,14 +24,10 @@ const ICON_BUTTON = "shrink-0 text-muted-foreground hover:text-foreground";
  */
 export function EditableAgentIdentity({
   agent,
-  showFixedNameReason = false,
   ...display
 }: {
   agent: AgentView;
-  /* UNIT_BOUNDARY_DESCRIPTION: a fixed name says why it is fixed where there is room for a sentence — the configuration pages' identity — and only in the tooltip where there is not, as in the chat's own header. */
-  showFixedNameReason?: boolean;
 } & IdentityDisplay) {
-  const assistantName = getBrand().assistantName;
   const rename = useUpdateAgent({ inlineError: true });
   const changeAvatar = useUpdateAgent();
   const name =
@@ -41,7 +36,7 @@ export function EditableAgentIdentity({
     (changeAvatar.isPending ? changeAvatar.variables.avatar : undefined) ??
     (rename.isPending ? rename.variables.avatar : undefined) ??
     agent.avatar;
-  // UNIT_BOUNDARY_DESCRIPTION: the assistant's name is the reserved one, so it is shown rather than edited, with the reason where the pencil used to be.
+  // UNIT_BOUNDARY_DESCRIPTION: the assistant's name is the reserved one, so it is shown as plain text, with no pencil to edit it.
   if (agent.kind === "assistant")
     return (
       <EditableIdentity
@@ -51,8 +46,6 @@ export function EditableAgentIdentity({
         onAvatarChange={(next) =>
           changeAvatar.mutate({ id: agent.id, avatar: next })
         }
-        whyReadOnly={`${assistantName} is your assistant, so its name is fixed.`}
-        showWhyReadOnly={showFixedNameReason}
       />
     );
   return (
@@ -94,8 +87,6 @@ export function EditableIdentity({
   avatar,
   onRename,
   onAvatarChange,
-  whyReadOnly,
-  showWhyReadOnly = false,
   avatarSize,
   mood,
   nameClassName,
@@ -105,8 +96,6 @@ export function EditableIdentity({
   avatar: string | null | undefined;
   onRename?: (name: string) => Promise<void> | void;
   onAvatarChange: (avatar: string) => void;
-  whyReadOnly?: string;
-  showWhyReadOnly?: boolean;
 } & IdentityDisplay) {
   const hasNewAvatar = useFreshAvatars().length > 0;
   const [draft, setDraft] = useState<string | null>(null);
@@ -158,23 +147,14 @@ export function EditableIdentity({
         {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
       </AvatarPicker>
       {onRename === undefined ? (
-        <span className="flex min-w-0 flex-col gap-0.5">
-          <NameTag className={cn("flex min-w-0", nameClassName)}>
-            <Tooltip content={whyReadOnly ?? "This name is fixed"}>
-              <span
-                className="flex min-w-0 items-center gap-1.5"
-                data-testid="agent-name-read-only"
-              >
-                <span className="truncate">{name}</span>
-              </span>
-            </Tooltip>
-          </NameTag>
-          {showWhyReadOnly && whyReadOnly !== undefined && (
-            <span className="text-xs font-normal text-muted-foreground">
-              {whyReadOnly}
-            </span>
-          )}
-        </span>
+        <NameTag className={cn("flex min-w-0", nameClassName)}>
+          <span
+            className="flex min-w-0 items-center gap-1.5"
+            data-testid="agent-name-read-only"
+          >
+            <span className="truncate">{name}</span>
+          </span>
+        </NameTag>
       ) : draft === null ? (
         <NameTag className={cn("flex min-w-0", nameClassName)}>
           <Tooltip content="Rename">
