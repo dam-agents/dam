@@ -19,13 +19,15 @@ import { useExtendEnvironment } from "../api/mutations.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const KEEP = "keep";
+const NEVER = "never";
 
 const EXPIRY_DAYS = [1, 7, ENVIRONMENT_EXPIRY_MAX_DAYS];
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The delete-after control of an artifact, for an
- * Environment: every Environment has an expiry, so there is no "never", and
- * the install cuts a later date to its maximum.
+ * Environment: "Never delete" keeps it until someone deletes it, as a server
+ * people rely on needs, and the install cuts a later date to its maximum. The
+ * agent may change it too, and the last change wins.
  */
 export function EnvironmentExpiryDialog({
   environment,
@@ -34,22 +36,30 @@ export function EnvironmentExpiryDialog({
   environment: EnvironmentView;
   onClose: () => void;
 }) {
-  const [choice, setChoice] = useState<string>(KEEP);
+  const current = environment.expiresAt
+    ? deletionDate(environment.expiresAt)
+    : null;
+  const [choice, setChoice] = useState<string>(current ? KEEP : NEVER);
   const extend = useExtendEnvironment();
-  const current = deletionDate(environment.expiresAt);
 
   const save = () => {
-    if (choice === KEEP) return onClose();
+    if (choice === KEEP || (choice === NEVER && current === null))
+      return onClose();
     extend.mutate(
       {
         id: environment.id,
-        expiresAt: new Date(Date.now() + Number(choice) * DAY_MS).toISOString(),
+        expiresAt:
+          choice === NEVER
+            ? NEVER
+            : new Date(Date.now() + Number(choice) * DAY_MS).toISOString(),
       },
       {
         onSuccess: ({ expiresAt }) => {
           emitToast({
             kind: "success",
-            message: `${environment.name} is deleted on ${deletionDate(expiresAt)}.`,
+            message: expiresAt
+              ? `${environment.name} is deleted on ${deletionDate(expiresAt)}.`
+              : `${environment.name} is never deleted — it is kept until you delete it.`,
           });
           onClose();
         },
@@ -68,8 +78,8 @@ export function EnvironmentExpiryDialog({
         <div className="flex flex-col gap-5">
           <p className="text-sm text-foreground">
             The Environment, its machine and its disk are deleted on the date
-            you choose, and its addresses stop answering. The agent can extend
-            it too.
+            you choose, and its addresses stop answering. The agent can change
+            it too, and the last change wins.
           </p>
           <FormField label="Delete after">
             <Select
@@ -77,7 +87,10 @@ export function EnvironmentExpiryDialog({
               onChange={(e) => setChoice(e.target.value)}
               disabled={extend.isPending}
             >
-              <option value={KEEP}>{`Keep current date (${current})`}</option>
+              {current && (
+                <option value={KEEP}>{`Keep current date (${current})`}</option>
+              )}
+              <option value={NEVER}>Never delete</option>
               {EXPIRY_DAYS.map((days) => (
                 <option key={days} value={String(days)}>
                   {`Delete in ${days} day${days === 1 ? "" : "s"}`}

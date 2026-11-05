@@ -39,6 +39,6 @@ export interface EnvironmentsService {
   ): Promise<AgentEnvironmentMembersView>;
   setMembers(id: string, update: MembersUpdate): Promise<EnvironmentView>;
   lookupAgent(agentId: string): Promise<EnvironmentAgentLookup>;
-  extend(id: string, expiresAt: Date): Promise<EnvironmentView>;
+  extend(id: string, expiresAt: Date | "never"): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
 }

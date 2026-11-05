@@ -21,6 +21,9 @@ export function environmentStateLabel(state: string): string {
   return "Not running";
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what the row and the Share dialog say of an Environment kept with no expiry.
+export const NEVER_DELETED = "Never deleted";
+
 // UNIT_BOUNDARY_DESCRIPTION: who the Share dialog says may open an Environment through its agent: the owner, the agent's editors, and how many Agent Environment Members the agent has; the people of the Environment's own list are listed below it, one by one.
 export function sharedThroughAgent({
   agentName,

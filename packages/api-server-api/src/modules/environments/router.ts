@@ -82,7 +82,10 @@ export const environmentsRouter = t.router({
       agentPermission("environments", (input) => environmentTarget(input.id)),
     )
     .mutation(({ ctx, input }) =>
-      ctx.environments.extend(input.id, new Date(input.expiresAt)),
+      ctx.environments.extend(
+        input.id,
+        input.expiresAt === "never" ? "never" : new Date(input.expiresAt),
+      ),
     ),
 
   delete: manageAgentsProcedure

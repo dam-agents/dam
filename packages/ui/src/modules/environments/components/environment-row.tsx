@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
-import { Tooltip } from "@/components/ui/tooltip";
+import { HintTooltip, Tooltip } from "@/components/ui/tooltip";
 import { treeIndent } from "@/components/ui/tree-guide";
 import { cn } from "@/lib/utils";
 
@@ -24,12 +24,12 @@ import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ArtifactDeletionChip } from "../../artifacts/components/artifact-badges.js";
 import { useDeleteEnvironment } from "../api/mutations.js";
-import { environmentStateLabel } from "../lib/environment-list.js";
+import { environmentStateLabel, NEVER_DELETED } from "../lib/environment-list.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One Environment as a row of the Artifacts list,
  * shaped like an artifact's: the sharing icon that opens its Share dialog,
- * its name, whether it runs, when it is deleted, its agent, and a link that
+ * its name, whether it runs, when it is deleted or that it never is, its agent, and a link that
  * opens its first address in a new tab. With more than one address, the
  * row's menu opens each of them, so the links never crowd out the name. The
  * menu also sets its expiry and deletes it. The icon says whether anyone beyond the owner and the agent's editors
@@ -102,10 +102,21 @@ export function EnvironmentRow({
         >
           {environmentStateLabel(environment.state)}
         </Badge>
-        <ArtifactDeletionChip
-          expiresAt={environment.expiresAt}
-          className="text-xs text-muted-foreground"
-        />
+        {environment.expiresAt ? (
+          <ArtifactDeletionChip
+            expiresAt={environment.expiresAt}
+            className="text-xs text-muted-foreground"
+          />
+        ) : (
+          <HintTooltip
+            label={NEVER_DELETED}
+            content={NEVER_DELETED}
+            className="shrink-0 gap-1 whitespace-nowrap text-xs text-muted-foreground"
+          >
+            <Calendar size={12} />
+            never
+          </HintTooltip>
+        )}
       </div>
       {showAgent && <AgentByline agentId={environment.owningAgentId} />}
       {inline && (

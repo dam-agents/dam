@@ -14,7 +14,7 @@ import { useAgent } from "../../agents/api/queries.js";
 import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.js";
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
 import { useSetEnvironmentMembers } from "../api/mutations.js";
-import { sharedThroughAgent } from "../lib/environment-list.js";
+import { NEVER_DELETED, sharedThroughAgent } from "../lib/environment-list.js";
 import { AgentMembersEditor, useAgentEdits } from "./agent-members-editor.js";
 
 /**
@@ -22,7 +22,7 @@ import { AgentMembersEditor, useAgentEdits } from "./agent-members-editor.js";
  * says who opens it through its agent — the owner, the agent's editors and how
  * many people the agent's page names — and links there, and edits the
  * Environment's own members, people and Agents, who open this one Environment
- * only. The lists only add: nobody here narrows the agent's. An Environment is never
+ * only. One kept with no expiry says it is never deleted. The lists only add: nobody here narrows the agent's. An Environment is never
  * public, so there is no link to copy beyond its addresses. It holds the
  * owner's edits as people and Agents added and removed, applied to the members
  * the list polls, so a member added elsewhere while it is open shows up and
@@ -77,6 +77,14 @@ export function EnvironmentShareDialog({
       />
       <DialogBody>
         <div className="flex flex-col gap-4">
+          {environment.expiresAt === null && (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="environment-never-deleted"
+            >
+              {NEVER_DELETED} — it is kept until you or {agentName} delete it.
+            </p>
+          )}
           <div
             className="flex flex-col gap-1"
             data-testid="environment-shared-through-agent"
