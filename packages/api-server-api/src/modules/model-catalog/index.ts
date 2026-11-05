@@ -11,6 +11,7 @@ export {
   ANTHROPIC_OAUTH_BETA,
   ANTHROPIC_OAUTH_TEMPLATE,
   listingForTemplate,
+  nativeListingForTemplate,
   PROVIDER_DIALECTS,
   type ProviderListingSpec,
 } from "./provider-listing.js";

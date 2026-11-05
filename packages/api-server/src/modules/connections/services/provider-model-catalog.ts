@@ -6,6 +6,7 @@ import {
   layerMetadata,
   listingForTemplate,
   MIN_CONTEXT_WINDOW,
+  nativeListingForTemplate,
   PROVIDER_DIALECTS,
   providerTypeForTemplateId,
   renderName,
@@ -167,22 +168,54 @@ export function createProviderModelCatalog(deps: {
     return started;
   };
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: what a Connection the router never fronts
+   * offers each harness that runs it natively: the harness's own names for
+   * its models, or, for a harness that takes them from the Connection, the
+   * models the Connection lists (`listedBy`).
+   */
   const nativeModels = (
     template: string,
     harnessNames: readonly string[],
-  ): { upstreamId: string; harnesses: string[] }[] => {
+  ): {
+    named: { upstreamId: string; harnesses: string[] }[];
+    listedBy: string[];
+  } => {
     const byModel = new Map<string, string[]>();
+    const listedBy: string[] = [];
     for (const harness of harnessNames) {
       const native = shipped[harness]?.native;
       if (!native?.templates.includes(template)) continue;
+      if (native.models === "listed") {
+        listedBy.push(harness);
+        continue;
+      }
       for (const upstreamId of native.models) {
         byModel.set(upstreamId, [...(byModel.get(upstreamId) ?? []), harness]);
       }
     }
-    return [...byModel].map(([upstreamId, harnesses]) => ({
-      upstreamId,
-      harnesses,
-    }));
+    return {
+      named: [...byModel].map(([upstreamId, harnesses]) => ({
+        upstreamId,
+        harnesses,
+      })),
+      listedBy,
+    };
+  };
+
+  const listed = async (
+    connection: Connection,
+    listing: ProviderListingSpec,
+    current: number,
+  ): Promise<KeptListing | undefined> => {
+    const cached = kept.get(connection.id);
+    if (!cached) await ensure(connection, listing);
+    else if (
+      current - cached.fetchedAt >
+      (cached.status === "unavailable" ? FAILED_REFRESH_MS : refreshMs)
+    )
+      void ensure(connection, listing);
+    return kept.get(connection.id);
   };
 
   return {
@@ -209,11 +242,24 @@ export function createProviderModelCatalog(deps: {
             };
             const listing = listingForTemplate(connection.templateId);
             if (!listing) {
-              const native = nativeModels(
+              const { named, listedBy } = nativeModels(
                 connection.templateId,
                 base.harnesses,
               );
-              if (native.length === 0)
+              const spec = nativeListingForTemplate(connection.templateId);
+              const known =
+                listedBy.length > 0 && spec
+                  ? await listed(connection, { spec }, current)
+                  : undefined;
+              const models = new Map(
+                named.map((m) => [m.upstreamId, m.harnesses]),
+              );
+              for (const entry of known?.entries ?? [])
+                models.set(entry.upstreamId, [
+                  ...(models.get(entry.upstreamId) ?? []),
+                  ...listedBy,
+                ]);
+              if (named.length === 0 && listedBy.length === 0)
                 return {
                   ...base,
                   status: "unsupported",
@@ -222,32 +268,25 @@ export function createProviderModelCatalog(deps: {
                 };
               return {
                 ...base,
-                status: "listed",
-                listedAt: null,
-                models: native.map((model) => ({
-                  name: renderName(
-                    { alias, upstreamId: model.upstreamId },
-                    undefined,
-                  ),
-                  upstreamId: model.upstreamId,
+                status:
+                  named.length > 0
+                    ? "listed"
+                    : (known?.status ?? "unavailable"),
+                listedAt: known?.listedAt ?? null,
+                models: [...models].map(([upstreamId, modelHarnesses]) => ({
+                  name: renderName({ alias, upstreamId }, undefined),
+                  upstreamId,
                   contextWindow: null,
                   maxOutputTokens: null,
                   reasoning: null,
                   vision: null,
                   prices: null,
                   source: { limits: "none", prices: "none" },
-                  harnesses: model.harnesses,
+                  harnesses: modelHarnesses,
                 })),
               };
             }
-            const cached = kept.get(connection.id);
-            if (!cached) await ensure(connection, listing);
-            else if (
-              current - cached.fetchedAt >
-              (cached.status === "unavailable" ? FAILED_REFRESH_MS : refreshMs)
-            )
-              void ensure(connection, listing);
-            const known = kept.get(connection.id);
+            const known = await listed(connection, listing, current);
             const entries = known?.entries ?? [];
             return {
               ...base,

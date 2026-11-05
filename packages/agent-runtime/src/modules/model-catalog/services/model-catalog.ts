@@ -4,6 +4,7 @@ import {
   forHarness,
   layerMetadata,
   listingForTemplate,
+  nativeListingForTemplate,
   parseQualifiedModel,
   PROVIDER_DIALECTS,
   providerTypeForTemplateId,
@@ -14,6 +15,7 @@ import {
   type DiscoveredModel,
   type ModelDiscovery,
   type PriceTable,
+  type ProviderListingStatus,
 } from "api-server-api";
 import type {
   CatalogModelView,
@@ -26,6 +28,12 @@ import type { RuntimeEnvState } from "../../runtime-channel/infrastructure/env-s
 const REFRESH_MS = 30 * 60_000;
 const RETRY_INITIAL_MS = 2_000;
 const RETRY_MAX_MS = 5 * 60_000;
+
+interface NativeListing {
+  status: ProviderListingStatus;
+  listedAt: string | null;
+  ids: string[];
+}
 
 export interface ModelCatalog {
   providers(): CatalogProvider[];
@@ -66,6 +74,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     max: RETRY_MAX_MS,
   };
   let providers: CatalogProvider[] = [];
+  let native = new Map<string, NativeListing>();
   const listeners = new Set<() => void>();
   let inFlight: Promise<void> | null = null;
   let again = false;
@@ -166,6 +175,45 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     };
   };
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a Connection the router never fronts is listed
+   * only for a harness that runs it natively on the models it lists (Pi on
+   * Bedrock); a harness that names its own models there needs no listing.
+   */
+  const nativeListingOf = (template: string) =>
+    Object.values(deps.harnesses).some(
+      (b) =>
+        b?.native?.models === "listed" && b.native.templates.includes(template),
+    )
+      ? nativeListingForTemplate(template)
+      : null;
+
+  const listNative = async (
+    layer: RuntimeEnvState["providers"][number],
+    previous: NativeListing | undefined,
+  ): Promise<NativeListing | null> => {
+    const spec = nativeListingOf(layer.template ?? "");
+    if (!spec) return null;
+    const outcome = await deps.discover(spec, layer.env);
+    if (outcome.status !== "observed") {
+      deps.log(
+        `[model-catalog] ${layer.template} (${layer.id}): native listing ${outcome.status}${previous?.ids.length ? `; keeping ${previous.ids.length} known model(s)` : ""}`,
+      );
+      return {
+        status: "unavailable",
+        listedAt: previous?.listedAt ?? null,
+        ids: previous?.ids ?? [],
+      };
+    }
+    const ids = (
+      outcome.entries ?? outcome.models.map((m) => ({ id: m.value }))
+    ).map((m) => m.id);
+    deps.log(
+      `[model-catalog] ${layer.template} (${layer.id}): ${ids.length} native model(s)`,
+    );
+    return { status: "listed", listedAt: now().toISOString(), ids };
+  };
+
   let markListed: () => void = () => {};
   const firstListing = new Promise<void>((resolve) => {
     markListed = resolve;
@@ -183,6 +231,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
         p.connectionId,
         p.status,
         p.entries.map((e) => e.name),
+        native.get(p.connectionId)?.ids ?? null,
       ]),
     );
 
@@ -190,18 +239,33 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     if (!deps.envReady()) return;
     const state = deps.envState();
     const known = new Map(providers.map((p) => [p.connectionId, p]));
-    const next = await Promise.all(
-      state.providers.map((layer) => listProvider(layer, known.get(layer.id))),
-    );
+    const [next, nextNative] = await Promise.all([
+      Promise.all(
+        state.providers.map((layer) =>
+          listProvider(layer, known.get(layer.id)),
+        ),
+      ),
+      Promise.all(
+        state.providers.map(
+          async (layer) =>
+            [layer.id, await listNative(layer, native.get(layer.id))] as const,
+        ),
+      ),
+    ]);
     const before = fingerprint();
     providers = next;
+    native = new Map(
+      nextNative.flatMap(([id, listing]) => (listing ? [[id, listing]] : [])),
+    );
     markListed();
     if (before !== fingerprint()) for (const listener of listeners) listener();
     scheduleRetry();
   };
 
   const scheduleRetry = (): void => {
-    const unavailable = providers.some((p) => p.status === "unavailable");
+    const unavailable =
+      providers.some((p) => p.status === "unavailable") ||
+      [...native.values()].some((l) => l.status === "unavailable");
     if (retry) {
       clearTimeout(retry);
       retry = null;
@@ -322,23 +386,28 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
         harness,
         routed: binding !== undefined,
         providers: withPending().map((p): CatalogProviderView => {
-          const native = binding?.native?.templates.includes(p.template)
+          const own = binding?.native?.templates.includes(p.template)
             ? binding.native.models
             : null;
+          const listing =
+            own === "listed" ? native.get(p.connectionId) : undefined;
+          const ids = own === "listed" ? (listing?.ids ?? []) : own;
           return {
             connectionId: p.connectionId,
             alias: p.alias,
             template: p.template,
             displayName: p.displayName,
-            status: native
-              ? "listed"
+            status: ids
+              ? (listing?.status ??
+                (own === "listed" ? "unavailable" : "listed"))
               : binding && !servesHarness(p, harness, binding)
                 ? "unsupported"
                 : p.status,
-            listedAt: p.listedAt,
-            native: native !== null,
-            models: native
-              ? native.map((id) => nativeModelView(p.alias, id, binding))
+            listedAt:
+              own === "listed" ? (listing?.listedAt ?? null) : p.listedAt,
+            native: ids !== null,
+            models: ids
+              ? ids.map((id) => nativeModelView(p.alias, id, binding))
               : forHarness(p.entries, harness, binding).map(modelView),
           };
         }),

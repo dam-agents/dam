@@ -132,3 +132,22 @@ export function listingForTemplate(
       return null;
   }
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how the catalog lists the models of a Connection
+ * a harness runs natively, for a harness whose manifest takes them from the
+ * Connection instead of naming its own: a Bedrock Connection names the
+ * region's control-plane endpoint, which lists the inference profiles
+ * invocable from that region. Null for a template with no such listing.
+ */
+export function nativeListingForTemplate(
+  templateId: string,
+): ModelDiscoverySpec | null {
+  if (templateId !== "bedrock") return null;
+  return {
+    urlEnv: ["AWS_ENDPOINT_URL_BEDROCK"],
+    tokenEnv: ["AWS_BEARER_TOKEN_BEDROCK"],
+    path: "/inference-profiles?maxResults=1000",
+    shape: "bedrock-inference-profiles",
+  };
+}

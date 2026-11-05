@@ -120,7 +120,9 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
   const onBedrock = env("AWS_BEARER_TOKEN_BEDROCK") !== undefined;
   const clearedBedrock = onBedrock ? false : clearBedrockDefaults(state);
 
-  const router = env("PLATFORM_MODEL_ROUTER_URL")?.replace(/\/+$/, "");
+  const router = env("PLATFORM_MODEL_ROUTER_SERVES")
+    ? env("PLATFORM_MODEL_ROUTER_URL")?.replace(/\/+$/, "")
+    : undefined;
   if (router) {
     bookCallCosts(pi, router);
     stampSession(pi);
@@ -142,6 +144,7 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
   }
 
   if (onBedrock) {
+    if (env("AWS_ENDPOINT_URL_BEDROCK_RUNTIME")) stampSession(pi, true);
     await activateBedrock(pi, state);
     writeJson(state.paths.models, state.models);
     writeJson(state.paths.auth, state.auth);
@@ -312,14 +315,15 @@ async function fetchCallCosts(
   }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Model Router reads a Pi call's Session from x-platform-session. In a chat, Pi's own session id is the ACP session id; a terminal's PTY sets HARNESS_SESSION_ID to the platform's Session id, while Pi runs there under an id of its own that changes on /new. The event names no provider, so a call to the router is told apart by the router provider's own X-Platform-Harness header.
-function stampSession(pi: ExtensionAPI): void {
+// UNIT_BOUNDARY_DESCRIPTION: the Model Router reads a Pi call's Session from x-platform-session. In a chat, Pi's own session id is the ACP session id; a terminal's PTY sets HARNESS_SESSION_ID to the platform's Session id, while Pi runs there under an id of its own that changes on /new. The event names no provider, so a call to the router is told apart by the router provider's own X-Platform-Harness header. On Bedrock every call goes to the router, which passes it on to Bedrock, so each one is stamped with both.
+function stampSession(pi: ExtensionAPI, everyCall = false): void {
   const terminalSession = env("HARNESS_SESSION_ID");
   pi.on("before_provider_headers", (event, ctx) => {
     const toRouter = Object.keys(event.headers).some(
       (name) => name.toLowerCase() === HARNESS_HEADER,
     );
-    if (!toRouter) return;
+    if (!toRouter && !everyCall) return;
+    if (!toRouter) event.headers[HARNESS_HEADER] = "pi";
     event.headers[SESSION_HEADER] =
       terminalSession ?? ctx.sessionManager.getSessionId();
   });
@@ -712,8 +716,11 @@ async function activateBedrock(
     delete state.settings.defaultModel;
   }
 
-  if (builtin && profiles && profiles.length > 0)
+  if (builtin && profiles && profiles.length > 0) {
+    for (const id of profiles)
+      if (!hasModel(builtin, id)) addBedrockModel(state, id);
     narrowBedrockModels(pi, builtin, profiles, model);
+  }
 }
 
 async function discoverBedrockProfiles(): Promise<string[] | undefined> {

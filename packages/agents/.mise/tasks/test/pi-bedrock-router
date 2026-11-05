@@ -1,0 +1,156 @@
+#!/usr/bin/env node
+//MISE description="Test that Pi on a Bedrock Connection alone runs Pi's own Bedrock provider on the region's inference profiles, even with the Model Router's URL set, and sends each call through the router's Bedrock path with its harness and session"
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/**", ".mise/tasks/test/pi-bedrock-router", "../../pnpm-lock.yaml"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { crc32 } from "node:zlib";
+
+const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
+const extension = join(root, "rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts");
+const cli = join(dirname(extension), "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+const home = mkdtempSync(join(tmpdir(), "pi-bedrock-router-"));
+const KNOWN = "us.anthropic.claude-sonnet-4-6";
+const UNKNOWN = "us.example.chat-model-v9:0";
+const CONNECTION = "conn-bedrock";
+
+// One AWS event-stream frame: a prelude with both lengths and its checksum,
+// string headers, the JSON payload and the frame's checksum.
+function frame(eventType, payload) {
+  const headers = Buffer.concat(
+    Object.entries({ ":event-type": eventType, ":message-type": "event", ":content-type": "application/json" }).map(([name, value]) => {
+      const n = Buffer.from(name);
+      const v = Buffer.from(value);
+      const len = Buffer.alloc(2);
+      len.writeUInt16BE(v.length);
+      return Buffer.concat([Buffer.from([n.length]), n, Buffer.from([7]), len, v]);
+    }),
+  );
+  const body = Buffer.from(JSON.stringify(payload));
+  const total = 12 + headers.length + body.length + 4;
+  const prelude = Buffer.alloc(8);
+  prelude.writeUInt32BE(total, 0);
+  prelude.writeUInt32BE(headers.length, 4);
+  const preludeCrc = Buffer.alloc(4);
+  preludeCrc.writeUInt32BE(crc32(prelude));
+  const head = Buffer.concat([prelude, preludeCrc, headers, body]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(head));
+  return Buffer.concat([head, crc]);
+}
+
+const seen = [];
+const server = createServer((req, res) => {
+  const url = new URL(req.url, "http://127.0.0.1");
+  if (req.method === "GET" && url.pathname === "/inference-profiles") {
+    res.setHeader("content-type", "application/json");
+    return res.end(JSON.stringify({ inferenceProfileSummaries: [KNOWN, UNKNOWN].map((inferenceProfileId) => ({ inferenceProfileId, status: "ACTIVE" })) }));
+  }
+  req.resume();
+  req.on("end", () => {
+    seen.push({ path: decodeURIComponent(url.pathname), harness: req.headers["x-platform-harness"], session: req.headers["x-platform-session"], auth: req.headers.authorization });
+    res.setHeader("content-type", "application/vnd.amazon.eventstream");
+    res.end(Buffer.concat([
+      frame("messageStart", { role: "assistant" }),
+      frame("contentBlockDelta", { contentBlockIndex: 0, delta: { text: "ok" } }),
+      frame("contentBlockStop", { contentBlockIndex: 0 }),
+      frame("messageStop", { stopReason: "end_turn" }),
+      frame("metadata", { usage: { inputTokens: 10, outputTokens: 1, totalTokens: 11 }, metrics: { latencyMs: 1 } }),
+    ]));
+  });
+});
+server.listen(0, "127.0.0.1");
+await once(server, "listening");
+const base = `http://127.0.0.1:${server.address().port}`;
+
+mkdirSync(join(home, ".pi/agent"), { recursive: true });
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
+writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("extensions=/usr/local/share/pi-platform/extensions", `extensions=${dirname(dirname(extension))}`);
+writeFileSync(join(home, "pi-platform"), wrapper);
+
+// The env of a Pi process on a Bedrock Connection alone: the router's URL is
+// there, but no routed provider serves Pi, so PLATFORM_MODEL_ROUTER_SERVES is not.
+const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates"], {
+  cwd: home,
+  env: {
+    PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
+    PLATFORM_MODEL_ROUTER_URL: `${base}/unused`, PLATFORM_MODEL_ROUTER_PORT: "1", PLATFORM_MODEL: KNOWN,
+    AWS_BEARER_TOKEN_BEDROCK: "platform:conn:conn-bedrock", AWS_REGION: "us-east-1", AWS_BEDROCK_FORCE_HTTP1: "1",
+    AWS_ENDPOINT_URL_BEDROCK: base, AWS_ENDPOINT_URL_BEDROCK_RUNTIME: `${base}/bedrock/${CONNECTION}`,
+  },
+  stdio: ["pipe", "pipe", "pipe"],
+});
+let errors = "";
+child.stderr.on("data", (d) => { errors += d; });
+const responses = new Map();
+let output = "";
+child.stdout.on("data", (data) => {
+  output += data;
+  const lines = output.split("\n");
+  output = lines.pop() ?? "";
+  for (const line of lines) {
+    let message;
+    try { message = JSON.parse(line); } catch { continue; }
+    if (message.type === "response" && message.id && responses.has(message.id)) responses.get(message.id)(message);
+    if (message.type === "agent_end" && responses.has("agent_end")) responses.get("agent_end")(message);
+  }
+});
+const rpc = (msg, timeoutMs = 60_000) => new Promise((resolve, reject) => {
+  const id = `${msg.type}-${Math.random().toString(36).slice(2)}`;
+  const timer = setTimeout(() => reject(new Error(`${msg.type} timed out: ${errors.slice(-800)}`)), timeoutMs);
+  responses.set(id, (m) => { clearTimeout(timer); responses.delete(id); resolve(m); });
+  child.stdin.write(`${JSON.stringify({ ...msg, id })}\n`);
+});
+const turn = async (text) => {
+  const before = seen.length;
+  const ended = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`turn timed out: ${errors.slice(-800)}`)), 60_000);
+    responses.set("agent_end", (m) => { clearTimeout(timer); responses.delete("agent_end"); resolve(m); });
+  });
+  child.stdin.write(`${JSON.stringify({ type: "prompt", message: text })}\n`);
+  await ended;
+  return seen.slice(before);
+};
+child.once("exit", (code) => {
+  for (const resolve of responses.values()) resolve({ type: "exit", code, errors });
+});
+
+try {
+  // TEST_SCENARIO: The router's URL alone does not switch Pi to the router: with no routed provider for Pi, it starts on Pi's own Bedrock provider and the session's model, and offers every inference profile the region lists, one Pi's catalog does not know included.
+  const state = await rpc({ type: "get_state" });
+  assert.equal(state.success, true, JSON.stringify(state).slice(0, 500));
+  assert.equal(state.data.model?.provider, "amazon-bedrock", errors.slice(-800));
+  assert.equal(state.data.model?.id, KNOWN);
+  const models = await rpc({ type: "get_available_models" });
+  const ids = models.data.models.map((m) => `${m.provider}:${m.id}`);
+  for (const id of [KNOWN, UNKNOWN]) assert.ok(ids.includes(`amazon-bedrock:${id}`), ids.join(", "));
+  assert.equal(ids.some((m) => m.startsWith("platform:")), false, ids.join(", "));
+  assert.equal(errors.includes("lists no model"), false, errors);
+
+  // TEST_SCENARIO: A turn goes to the router's Bedrock path for the Connection, as a Converse stream on the session's model, naming the harness and the session so the router books it.
+  const known = await turn("Say ok (1).");
+  assert.equal(known.at(-1)?.path, `/bedrock/${CONNECTION}/model/${KNOWN}/converse-stream`, JSON.stringify(known));
+  assert.equal(known.at(-1)?.harness, "pi");
+  const session = await rpc({ type: "get_state" });
+  assert.equal(known.at(-1)?.session, session.data.sessionId);
+  assert.equal(known.at(-1)?.auth, "Bearer platform:conn:conn-bedrock");
+
+  // TEST_SCENARIO: A profile Pi's catalog does not know runs too.
+  const set = await rpc({ type: "set_model", provider: "amazon-bedrock", modelId: UNKNOWN });
+  assert.equal(set.success, true, JSON.stringify(set).slice(0, 300));
+  const unknown = await turn("Say ok (2).");
+  assert.equal(unknown.at(-1)?.path, `/bedrock/${CONNECTION}/model/${UNKNOWN}/converse-stream`, JSON.stringify(unknown));
+  console.log("pi runs on Bedrock through the router's Bedrock path, on every profile the region lists");
+} finally {
+  if (child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  server.close();
+  rmSync(home, { recursive: true, force: true });
+}

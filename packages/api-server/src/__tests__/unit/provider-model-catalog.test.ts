@@ -39,7 +39,7 @@ const harnesses: Pick<HarnessCatalog, "default" | "harnesses"> = {
   default: "claude-code",
   harnesses: [
     harness("claude-code", ["anthropic", "openai", "bedrock"]),
-    harness("pi", ["anthropic", "openai"]),
+    harness("pi", ["anthropic", "openai", "bedrock"]),
     harness("codex", ["openai"]),
     harness("bob", ["bob"]),
   ],
@@ -70,6 +70,9 @@ const shipped: Record<string, ShippedHarnessFacts> = Object.fromEntries(
           templates: ["bedrock"],
           models: ["fable", "opus", "sonnet", "haiku"],
         },
+      }),
+      ...(h.name === "pi" && {
+        native: { templates: ["bedrock"], models: "listed" as const },
       }),
     },
   ]),
@@ -191,34 +194,49 @@ describe("the owner's provider model catalog", () => {
     expect(view.providers).toEqual([]);
   });
 
-  it("marks a template the router never lists as unsupported", async () => {
-    let listed = false;
+  /** TEST_SCENARIO: the router never lists Bedrock, so Claude Code is offered its own tier names there and Pi the inference profiles the Connection's region lists, each model to the harness that runs it. */
+  it("offers each harness a natively run Connection's models its own way", async () => {
+    const specs: string[] = [];
     const catalog = createProviderModelCatalog({
       secretStore: memorySecretStore(secrets),
-      discover: async () => {
-        listed = true;
-        return { status: "not-configured" };
+      discover: async (spec, env) => {
+        specs.push(
+          `${env.AWS_ENDPOINT_URL_BEDROCK} ${env.AWS_BEARER_TOKEN_BEDROCK}`,
+        );
+        return observed([{ id: "us.anthropic.claude-opus-5-5" }])(spec, env);
       },
       table,
       shipped,
     });
     const view = await catalog.read(
-      [connection({ id: "conn-bedrock", templateId: "bedrock" })],
+      [
+        connection({
+          id: "conn-bedrock",
+          templateId: "bedrock",
+          env: {
+            AWS_ENDPOINT_URL_BEDROCK: "https://bedrock.us-east-1.amazonaws.com",
+          },
+        }),
+      ],
       harnesses,
     );
 
-    expect(listed).toBe(false);
+    expect(specs).toEqual([
+      `https://bedrock.us-east-1.amazonaws.com ${CREDENTIAL}`,
+    ]);
     expect(view.providers[0]).toMatchObject({
       status: "listed",
-      harnesses: ["claude-code"],
+      harnesses: ["claude-code", "pi"],
     });
-    expect(view.providers[0]!.models.map((m) => m.name)).toEqual([
-      "bedrock/fable",
-      "bedrock/opus",
-      "bedrock/sonnet",
-      "bedrock/haiku",
-    ]);
-    expect(view.providers[0]!.models[0]!.harnesses).toEqual(["claude-code"]);
+    expect(view.providers[0]!.models.map((m) => [m.name, m.harnesses])).toEqual(
+      [
+        ["bedrock/fable", ["claude-code"]],
+        ["bedrock/opus", ["claude-code"]],
+        ["bedrock/sonnet", ["claude-code"]],
+        ["bedrock/haiku", ["claude-code"]],
+        ["bedrock/us.anthropic.claude-opus-5-5", ["pi"]],
+      ],
+    );
   });
 
   /** TEST_SCENARIO: Bob's gateway speaks a dialect Pi speaks, but the installed harness catalog runs Bob's provider on Bob alone, so Pi is never offered a Bob model and a pick from it cannot be dropped. */
@@ -335,6 +353,10 @@ describe("the shipped harness manifests", () => {
     expect(facts["claude-code"]?.native).toEqual({
       templates: ["bedrock"],
       models: ["fable", "opus", "sonnet", "haiku"],
+    });
+    expect(facts["pi"]?.native).toEqual({
+      templates: ["bedrock"],
+      models: "listed",
     });
     expect(
       facts["codex"]?.catalog?.options.some((o) => o.id === "effort"),

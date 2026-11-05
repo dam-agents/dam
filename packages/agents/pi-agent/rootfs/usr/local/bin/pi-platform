@@ -14,7 +14,7 @@ mkdir -p "$shared"
 # With the Model Router one Pi process serves every provider, so the shared
 # directory is the only one; the per-provider lease directories are for the
 # pre-router runtime.
-if [ -n "$PLATFORM_PROVIDER" ] && [ -z "$PLATFORM_MODEL_ROUTER_URL" ]; then
+if [ -n "$PLATFORM_PROVIDER" ] && [ -z "$PLATFORM_MODEL_ROUTER_SERVES" ]; then
   lease="$HOME/.pi/leases/$PLATFORM_PROVIDER"
   mkdir -p "$lease" "$shared/sessions" "$shared/npm"
   for entry in "$shared"/*; do
@@ -41,10 +41,12 @@ mem="$(mise where npm:@zhafron/pi-memory 2>/dev/null)/node_modules/@zhafron/pi-m
 [ -d "$shared/npm/node_modules/@zhafron/pi-memory" ] || [ ! -d "$mem" ] ||
   set -- -e "$mem" "$@"
 provider= pin=
-if [ -n "$PLATFORM_MODEL_ROUTER_URL" ]; then
+if [ -n "$PLATFORM_MODEL_ROUTER_SERVES" ]; then
   # The Model Router: one Pi provider, "platform", carrying every granted
   # provider's models under provider-qualified names; the session's model is
   # a catalog name the runtime sends (PLATFORM_MODEL for the TUI, ACP for chat).
+  # The runtime sets it only when a granted provider is routed for Pi; a
+  # process on Bedrock alone runs Pi's own Bedrock provider.
   provider=platform
   unset OPENAI_API_KEY ANTHROPIC_API_KEY
 elif [ -n "$AWS_BEARER_TOKEN_BEDROCK" ]; then

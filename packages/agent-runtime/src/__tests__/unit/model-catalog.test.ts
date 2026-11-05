@@ -9,8 +9,8 @@
  * offered to Claude Code alone. Bob's gateway is offered to the Bob harness
  * alone, though Pi speaks its dialect. A Connection the router never serves
  * (Bedrock) is listed as unsupported with no models; a harness that runs it
- * natively sees that Connection's models as its own names, which the router
- * never routes.
+ * natively sees that Connection's models as its own names, or as the models
+ * the Connection lists, which the router never routes.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -35,7 +35,10 @@ const HARNESSES: Record<string, ModelRouterBinding | undefined> = {
   },
   codex: { dialects: ["openai-responses"] },
   bob: { dialects: ["openai-chat"] },
-  pi: { dialects: ["anthropic-messages", "openai-chat", "openai-responses"] },
+  pi: {
+    dialects: ["anthropic-messages", "openai-chat", "openai-responses"],
+    native: { templates: ["bedrock"], models: "listed" },
+  },
   custom: undefined,
 };
 
@@ -85,7 +88,10 @@ const oauthLayer = {
 const bedrockLayer = {
   id: "conn-bedrock",
   template: "bedrock",
-  env: { AWS_BEARER_TOKEN_BEDROCK: "platform:conn:conn-bedrock" },
+  env: {
+    AWS_BEARER_TOKEN_BEDROCK: "platform:conn:conn-bedrock",
+    AWS_ENDPOINT_URL_BEDROCK: "https://bedrock.example",
+  },
 };
 
 type Listing = Record<
@@ -99,7 +105,8 @@ function discoveryFor(listing: Listing): ModelDiscovery & { calls: string[] } {
     const base =
       env.OPENAI_BASE_URL ??
       env.BOB_DEFAULT_GATEWAY_URL ??
-      env.ANTHROPIC_BASE_URL;
+      env.ANTHROPIC_BASE_URL ??
+      env.AWS_ENDPOINT_URL_BEDROCK;
     calls.push(base ?? "?");
     const answer = base ? listing[base] : undefined;
     if (!answer) return { status: "not-configured" as const };
@@ -359,12 +366,21 @@ describe("the model catalog", () => {
     });
   });
 
-  /** TEST_SCENARIO: Bedrock never passes the router, but Claude Code runs it
-   * natively: Claude Code's view lists the Connection under its alias with
-   * Claude Code's own tier names, while Codex still sees it as unsupported,
-   * and the router neither lists nor resolves those names. */
+  /** TEST_SCENARIO: Bedrock never passes the router, but Claude Code and Pi
+   * run it natively: Claude Code's view lists the Connection under its alias
+   * with Claude Code's own tier names, Pi's with the inference profiles the
+   * Connection lists, while Codex still sees it as unsupported, and the
+   * router neither lists nor resolves those names. */
   it("lists a natively run Connection's models for that harness only", async () => {
-    const { catalog } = catalogWith(BOTH, [ibmLayer, bedrockLayer]);
+    const { catalog } = catalogWith(
+      {
+        ...BOTH,
+        "https://bedrock.example": {
+          ids: ["us.anthropic.claude-opus-5-5", "us.amazon.nova-pro-v1:0"],
+        },
+      },
+      [ibmLayer, bedrockLayer],
+    );
     await catalog.refresh();
     const bedrock = catalog
       .view("claude-code")
@@ -374,6 +390,18 @@ describe("the model catalog", () => {
       ["claude/bedrock/opus", "opus"],
       ["claude/bedrock/sonnet", "sonnet"],
     ]);
+    expect(
+      catalog
+        .view("pi")
+        .providers.find((p) => p.connectionId === "conn-bedrock"),
+    ).toMatchObject({
+      status: "listed",
+      native: true,
+      models: [
+        { name: "bedrock/us.anthropic.claude-opus-5-5" },
+        { name: "bedrock/us.amazon.nova-pro-v1:0" },
+      ],
+    });
     expect(
       catalog
         .view("codex")

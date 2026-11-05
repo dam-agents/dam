@@ -75,6 +75,7 @@ export {
   harnessCatalogOf,
   layerMetadata,
   listingForTemplate,
+  nativeListingForTemplate,
   lookupPrice,
   MIN_CONTEXT_WINDOW,
   modelDialect,
