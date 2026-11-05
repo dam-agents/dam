@@ -386,8 +386,9 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	assert.Contains(t, yaml, "internal_listener", "must declare an internal listener")
 	assert.Contains(t, yaml, "envoy.bootstrap.internal_listener", "must enable the internal_listener bootstrap extension")
 	assert.Contains(t, yaml, "tls_inspector", "internal listener must inspect SNI")
-	assert.Contains(t, yaml, "/etc/envoy/tls/tls.crt", "must reference the cert-manager-issued leaf cert")
-	assert.Contains(t, yaml, "/etc/envoy/tls/tls.key", "must reference the leaf private key")
+	assert.Contains(t, yaml, "/etc/envoy/leaf-sds.yaml", "must read the leaf through its watched SDS file")
+	assert.Contains(t, cm.Data["leaf-sds.yaml"], "/etc/envoy/tls/tls.crt", "must reference the cert-manager-issued leaf cert")
+	assert.Contains(t, cm.Data["leaf-sds.yaml"], "/etc/envoy/tls/tls.key", "must reference the leaf private key")
 	assert.Contains(t, yaml, "dynamic_forward_proxy_https", "must re-originate upstream TLS")
 	assert.Contains(t, yaml, "sni_dynamic_forward_proxy", "must passthrough on SNI miss")
 }
