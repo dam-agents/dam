@@ -86,11 +86,6 @@ export function SchedulesPanel({
   return (
     <>
       {header()}
-      {!panel && (
-        <div className="mb-6">
-          <AgentModelPicker agentId={agentId} kind="scheduled" />
-        </div>
-      )}
       <ListSection
         label={panel ? "Schedules" : undefined}
         loading={schedulesQuery.isPending}
@@ -141,6 +136,7 @@ export function SchedulesPanel({
           )}
         </section>
       )}
+      {!panel && <AgentModelPicker agentId={agentId} kind="scheduled" />}
 
       {form && (
         <ScheduleFormModal

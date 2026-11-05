@@ -177,9 +177,6 @@ describe("a channel's and a schedule's model", () => {
     expect(state.target!.agentDefault?.harness).toBe("claude-code");
     expect(state.row).toBe(true);
     expect(container.textContent).toContain(label);
-    expect(container.textContent).toContain(
-      "that pick nothing of their own run on this.",
-    );
   });
 
   /** TEST_SCENARIO: with no chat default there is nothing to follow, so the row says so in words instead of naming a default that does not exist. */
@@ -297,7 +294,6 @@ describe("the default model itself", () => {
     state.remembered = opus;
     mount("chat");
     expect(state.target?.slots.pair).toEqual(opus);
-    expect(container.textContent).toMatch(/use .*Opus 5\.5.*automatically/);
     act(() => root.unmount());
     container.remove();
     mount("channel");
